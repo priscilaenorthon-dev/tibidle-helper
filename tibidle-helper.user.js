@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.8.3
+// @version      2.8.4
 // @description  Magia Inteligente (Econômica / Equilibrado / Área / Boss) + Analisador + Auto Hunt (mochila cheia → finalizar, purificar, vender, depot, voltar). Hunt, boss, mochila e ouro lidos do WebSocket; APLICAR NOS 4 e dano real pelo socket/REST, sem abrir janela. Scan: mede N mapas por 5 min cada (lure máximo, Equilibrado) e diz qual vale para XP, ouro ou os dois. Inteligente: 4 slots por DPS + poções, cura, suporte e munição. Nada automático nos slots. Equip: ranqueia corpo + depósito + mochila por vocação e slot e equipa pelo socket só por botão.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -28,7 +28,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.8.3';
+    const VERSAO = '2.8.4';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -3214,9 +3214,11 @@
      * 44 px na borda direita, gaveta de 300 px que abre ao clicar no ícone,
      * telas com botão principal no topo e explicação atrás de um "?". */
     const CSS = `
-    #tb-trilho{position:fixed;right:0;top:84px;width:44px;z-index:99999;background:#12151c;border:1px solid #2b3242;border-right:none;border-radius:10px 0 0 10px;display:flex;flex-direction:column;align-items:center;padding:5px 0 4px;gap:1px;font:12px/1.4 ui-monospace,Consolas,monospace;color:#dde3ee;box-shadow:0 8px 30px #0009;transition:transform .15s}
-    #tb-trilho.tb-oculto{transform:translateX(46px)}
+    #tb-caixa{position:fixed;z-index:99999;display:flex;align-items:flex-start;gap:4px}
+    #tb-caixa.tb-oculto{display:none}
+    #tb-trilho{width:44px;background:#12151c;border:1px solid #2b3242;border-radius:10px;display:flex;flex-direction:column;align-items:center;padding:5px 0 4px;gap:1px;font:12px/1.4 ui-monospace,Consolas,monospace;color:#dde3ee;box-shadow:0 8px 30px #0009;transition:transform .15s}
     #tb-alca{width:26px;height:12px;border-radius:6px;background:#2b3242;cursor:grab;margin-bottom:5px}
+    #tb-cab{cursor:grab}
     #tb-alca:active{cursor:grabbing}
     .tb-ico{position:relative;width:36px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#9fb0c9;font-size:17px;user-select:none}
     .tb-ico:hover{background:#232936;color:#fff}
@@ -3231,7 +3233,7 @@
     #tb-esconder:hover{color:#fff}
     #tb-mostrar{position:fixed;right:0;top:84px;width:12px;height:44px;background:#2b3242;border-radius:7px 0 0 7px;cursor:pointer;z-index:99999;display:none}
     #tb-mostrar:hover{background:#3a4356}
-    #tb-gaveta{position:fixed;right:48px;top:84px;width:300px;max-height:62vh;z-index:99998;background:#12151c;color:#dde3ee;border:1px solid #2b3242;border-radius:10px;font:11.5px/1.4 ui-monospace,Consolas,monospace;box-shadow:0 12px 40px #000a;display:none;flex-direction:column}
+    #tb-gaveta{width:300px;max-height:62vh;background:#12151c;color:#dde3ee;border:1px solid #2b3242;border-radius:10px;font:11.5px/1.4 ui-monospace,Consolas,monospace;box-shadow:0 12px 40px #000a;display:none;flex-direction:column}
     #tb-gaveta.on{display:flex}
     #tb-cab{display:flex;align-items:center;gap:6px;padding:6px 9px;border-bottom:1px solid #2b3242;background:#171b24;border-radius:10px 10px 0 0}
     #tb-cab b{color:#ffd479;letter-spacing:.3px;font-size:11px;text-transform:uppercase}
@@ -3317,7 +3319,7 @@
     function abrirAtualizacao() { window.open(RAW_URL, '_blank'); }
     /* v2.8.0 — estado da interface por conta: qual gaveta, aberta ou não,
      * posição vertical do trilho, trilho escondido. */
-    const UI_PADRAO = { aba: 'magia', aberta: false, top: 84, oculto: false };
+    const UI_PADRAO = { aba: 'magia', aberta: false, top: 84, right: 8, oculto: false };
     let UI = null;
     const ui = () => UI || (UI = Object.assign({}, UI_PADRAO, ler('ui', {})));
     const guardarUI = (patch) => { UI = Object.assign(ui(), patch); guardar('ui', UI); };
@@ -3325,32 +3327,48 @@
     /* "?" com a explicação escondida; data-k preserva aberto/fechado ao repintar */
     const aj = (k, html, rotulo) => `<details class="tb-aj" data-k="${k}"><summary>${rotulo || '?'}</summary><div class="tb-mut">${html}</div></details>`;
 
+    /* v2.8.4 — o helper não fica mais preso na borda: trilho + gaveta vivem
+     * numa caixa solta (#tb-caixa), arrastável pela alça ou pelo cabeçalho
+     * da gaveta para qualquer canto; posição (right/top) guardada por conta. */
+    let _caixa = null;
+    function posicionarCaixa() {
+        const cx = _caixa, m = $('#tb-mostrar'); if (!cx) return;
+        const u = ui(), w = cx.offsetWidth || 44, h = Math.min(cx.offsetHeight || 60, 120);
+        const right = Math.max(0, Math.min(window.innerWidth - w, +u.right || 0));
+        const top = Math.max(0, Math.min(window.innerHeight - h, +u.top || 84));
+        u.right = right; u.top = top;
+        cx.style.right = right + 'px'; cx.style.top = top + 'px';
+        if (m) m.style.top = top + 'px';
+    }
     function montarPainel() {
         if ($('#tb-trilho')) return;
         const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
         const u = ui(); ABA = ICONES.some(x => x[0] === u.aba) ? u.aba : 'magia';
+        const cx = document.createElement('div'); cx.id = 'tb-caixa'; _caixa = cx;
         const t = document.createElement('div'); t.id = 'tb-trilho';
         t.innerHTML = `<div id="tb-alca" title="arrastar"></div>` +
             ICONES.map(([k, ic, nome]) => `<div class="tb-ico" data-aba="${k}" title="${nome}">${ic}<span class="tb-dot"></span></div>`).join('') +
             `<div class="tb-ico" id="tb-atualizar" title="versão nova disponível" style="display:none;color:#6ede8a">↑</div>` +
             `<div id="tb-esconder" title="esconder o helper">›</div>`;
         const g = document.createElement('div'); g.id = 'tb-gaveta';
-        g.innerHTML = `<div id="tb-cab"><b id="tb-titulo"></b><span class="tb-mut">v${VERSAO}</span><span class="tb-x" id="tb-fechar" title="fechar">✕</span></div><div id="tb-corpo"></div>`;
+        g.innerHTML = `<div id="tb-cab" title="arrastar"><b id="tb-titulo"></b><span class="tb-mut">v${VERSAO}</span><span class="tb-x" id="tb-fechar" title="fechar">✕</span></div><div id="tb-corpo"></div>`;
         const m = document.createElement('div'); m.id = 'tb-mostrar'; m.title = 'mostrar o helper';
-        document.body.append(t, g, m);
-        const posicionar = () => { const top = Math.max(40, Math.min(window.innerHeight - 220, ui().top || 84)); t.style.top = top + 'px'; g.style.top = top + 'px'; m.style.top = top + 'px'; };
-        posicionar();
-        const mostrar = (v) => { t.classList.toggle('tb-oculto', !v); m.style.display = v ? 'none' : 'block'; if (!v) g.classList.remove('on'); };
+        cx.append(g, t);
+        document.body.append(cx, m);
+        posicionarCaixa();
+        const mostrar = (v) => { cx.classList.toggle('tb-oculto', !v); m.style.display = v ? 'none' : 'block'; if (!v) g.classList.remove('on'); };
         $$('.tb-ico[data-aba]', t).forEach(i => i.onclick = () => { const k = i.dataset.aba; const aberta = !(ui().aberta && ABA === k); ABA = k; guardarUI({ aba: k, aberta }); renderizar(); });
         $('#tb-fechar').onclick = () => { guardarUI({ aberta: false }); renderizar(); };
         $('#tb-atualizar').onclick = abrirAtualizacao;
         $('#tb-esconder').onclick = () => { guardarUI({ oculto: true }); mostrar(false); };
         m.onclick = () => { guardarUI({ oculto: false }); mostrar(true); renderizar(); };
         let arr = null;
-        $('#tb-alca').addEventListener('mousedown', e => { arr = { y: e.clientY, top: t.getBoundingClientRect().top }; e.preventDefault(); });
-        document.addEventListener('mousemove', e => { if (!arr) return; ui().top = arr.top + e.clientY - arr.y; posicionar(); });
-        document.addEventListener('mouseup', () => { if (arr) { arr = null; guardarUI({ top: ui().top }); } });
-        window.addEventListener('resize', posicionar);
+        const pegar = e => { if (e.button !== 0 || e.target.closest('.tb-x')) return; arr = { x: e.clientX, y: e.clientY, right: ui().right, top: ui().top }; e.preventDefault(); };
+        $('#tb-alca').addEventListener('mousedown', pegar);
+        $('#tb-cab').addEventListener('mousedown', pegar);
+        document.addEventListener('mousemove', e => { if (!arr) return; ui().right = arr.right - (e.clientX - arr.x); ui().top = arr.top + (e.clientY - arr.y); posicionarCaixa(); });
+        document.addEventListener('mouseup', () => { if (arr) { arr = null; guardarUI({ right: ui().right, top: ui().top }); } });
+        window.addEventListener('resize', posicionarCaixa);
         mostrar(!u.oculto);
         renderizar();
     }
@@ -3771,6 +3789,7 @@
         const g = $('#tb-gaveta'), c = $('#tb-corpo'); if (!g || !c) return;
         const u = ui();
         g.classList.toggle('on', !!u.aberta && !u.oculto);
+        posicionarCaixa();
         if (!u.aberta || u.oculto) { _abaPintada = null; return; }
         const tit = $('#tb-titulo'); if (tit) tit.textContent = (ICONES.find(x => x[0] === ABA) || [])[2] || ABA;
         /* v2.3.0 — trocar o innerHTML zera a rolagem: marcar um mapa no Scan
