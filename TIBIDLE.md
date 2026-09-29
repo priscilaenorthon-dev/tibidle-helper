@@ -3951,3 +3951,10 @@ conta logada: `docs/teste-ao-vivo-2.11.md`.
   resgatar a caixa de entrada por botão; nada re-anuncia sozinho.
 - **Diagnóstico (Status)**: relatório só de leitura com a FORMA das mensagens (sem valores) e o que falta.
 - **Repositório**: dados da conta fora; scripts Python pré-wipe apagados; §15 com as regras atuais da wiki.
+
+### 2.11.1 — primeiro teste ao vivo (29/09, noite)
+Diagnóstico com a conta logada: todos os formatos novos confirmados (skills `melee/distance/magic`,
+`keyBag {nome:n}`, `meta.huntBestiary`, prey, `frame.analyzer`, `inventory[].protected`, `ended.summary.reason/deaths`).
+Dois ajustes: (1) o "próximo marco" do bestiário pula marcos que valem 0 no catálogo (Vampire hell só dá +1 ML
+em 10k); (2) `ended.summary.title` é `{key, params}` — "Última caçada" mostrava `[object Object]`, agora usa o
+nome do catálogo pelo huntId.

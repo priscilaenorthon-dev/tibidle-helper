@@ -22,6 +22,13 @@ const perto = (a, b, tol, msg) => assert(Math.abs(a - b) <= tol, `${msg || ''} e
 const H = 3600000;
 
 // ---- 1. chaves ------------------------------------------------------------
+t('bestiário: marco que dá +0 não é "próximo" (Vampire hell ao vivo: 2k→0, 5k→0, 10k→+1 ML)', () => {
+    const vamp = { bonus: 'magicLevel', stages: [{ kills: 2000, value: 0 }, { kills: 5000, value: 0 }, { kills: 10000, value: 1 }] };
+    const e = M.pgEstagio(vamp, 1291);
+    assert(e.prox && e.prox.kills === 10000 && e.ganho === 1 && e.falta === 8709, JSON.stringify(e));
+    const cyc = { bonus: 'maxHealth', stages: [{ kills: 2000, value: 4 }, { kills: 5000, value: 8 }] };
+    assert(M.pgEstagio(cyc, 1326).prox.kills === 2000, 'marco com ganho real continua sendo o próximo');
+});
 t('keyBag {nome:n} + keyBagUsed/Max (formato do cliente)', () => {
     const kb = M.pgLerChaves({ keyBag: { 'Worgen Key': 2, 'Renegade Orc Key': 3, 'Vazia Key': 0 }, keyBagUsed: 5, keyBagMax: 5, keyBagTierId: 'kb1' });
     assert.deepStrictEqual(kb.chaves, { 'Worgen Key': 2, 'Renegade Orc Key': 3 });
