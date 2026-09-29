@@ -3810,3 +3810,21 @@ mhit/mcast/spawn/kill/wave/wave_timer). O que vale hoje:
 - **Publicar sem o dono no PC**: bump de versão não bastou (4 recargas); o
   caminho que funciona é ponte `window.__TB_SRC` → dashboard do Tampermonkey →
   `cm.setValue` → Ctrl+S → recarregar. Ver memória.
+
+### 2.8.2 → 2.8.4 — GitHub, aviso de versão nova e painel solto (29/09)
+
+- **2.8.2** — repositório público `github.com/priscilaenorthon-dev/tibidle-helper`;
+  o cabeçalho ganhou `@homepageURL`, `@updateURL` e `@downloadURL` apontando
+  para o raw do `main`. Instalar em qualquer navegador com Tampermonkey =
+  abrir o link raw uma vez e confirmar. O Tampermonkey confere o `@updateURL`
+  no intervalo dele (não a cada F5).
+- **2.8.3** — o helper mesmo lê o cabeçalho do raw (15 s após carregar e a
+  cada 30 min); se o `@version` de lá for maior, acende ↑ no trilho e um
+  botão na aba Status. Clicar abre o raw → o Tampermonkey mostra
+  "Atualização de Userscript" com o diff → Sobrescrever → F5. Conferido ao
+  vivo 2.8.2 → 2.8.3. ⚠ O raw fica em cache no navegador por ~5 min: logo
+  depois do push o Tampermonkey ainda vê a versão velha ("Reinstalação").
+- **2.8.4** — dono: "tira o programa da barra lateral, quero ele livre na
+  tela". Trilho + gaveta viraram uma caixa solta (`#tb-caixa`), arrastável
+  pela alça do trilho ou pelo cabeçalho da gaveta, travada dentro da tela;
+  posição (`right`/`top`) guardada por conta e sobrevive ao F5.
