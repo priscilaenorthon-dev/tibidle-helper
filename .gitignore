@@ -9,3 +9,9 @@ __pycache__/
 .agents/
 skills-lock.json
 Automação Outro TibiaIdle/
+# capturas e segredos que não podem ir para o repositório público
+*.har
+.env*
+node_modules/
+ws-*.json
+*.png
