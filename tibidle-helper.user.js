@@ -276,7 +276,7 @@
         },
         boss: {
             nome: 'Boss',
-            dica: 'Escolha o boss: só as magias que mais dão dano nele, todas com gatilho ≥1.'
+            dica: 'Escolha o boss: as magias e runas que mais dão dano por segundo nele com a mana que cada um tem (uma por grupo de recarga), todas com gatilho ≥1.'
         },
         inteligente: {
             nome: 'Inteligente',
@@ -293,7 +293,9 @@
         inteligente_seco: { base: 'inteligente', seco: true, nome: 'Intel. seco (só poção, sem cura/suporte)' }
     };
     const nomeModelo = (m) => (MODELOS[m] || VARIANTES[m] || { nome: m }).nome;
-    let _manaTodos = false, _semRuna = false, _seco = false;
+    /* v2.10 — as flags globais _manaTodos/_semRuna/_seco saíram: montarPlano
+     * lê a variante e passa as opções adiante ({ manaTodos, semRuna, seco }).
+     * Com o plano em cache, uma flag global de uma chamada vazava na outra. */
     /* @@MODELOS-FIM */
 
     /* =========================================================================
@@ -751,9 +753,17 @@
         for (const m of hunt.monsters) { const b = BESTIARIO[m.name]; if (!b) continue; const p = Math.max(1, m.weight || 1); s += 0.75 * ((b.armor || 0) + (b.defense || 0)) * p; w += p; }
         return w ? s / w : 0;
     }
+    /* v2.10 — VETO PONDERADO NA ÁREA (plano 2.11, item 6). O veto estrito
+     * ("qualquer monstro imune") é certo para ALVO ÚNICO: o golpe cai num
+     * bicho só, e se for o imune sai zero. Mas a magia de ÁREA acerta todos
+     * juntos — os imunes tomam 0 e os outros tomam cheio, e a média ponderada
+     * já diz isso. Com o veto estrito, um monstro imune em quatro tirava a
+     * onda do elemento certo do mapa inteiro. Área só é vetada se os imunes
+     * pesam ≥ 50 % da hunt; nota e veto estritos continuam em `notas`/`vetos`
+     * (alvo único, munição), os de área em `notasArea`/`vetosArea`. */
     function notasElementos(hunt) {
         if (!hunt || !hunt.monsters || !hunt.monsters.length) return null;
-        const soma = {}, peso = {}, pior = {};
+        const soma = {}, peso = {}, pior = {}, pesoImune = {};
         hunt.monsters.forEach(m => {
             const w = Math.max(1, m.weight || 1);
             const el = {};
@@ -763,15 +773,17 @@
                 soma[e] = (soma[e] || 0) + tomado * w;
                 peso[e] = (peso[e] || 0) + w;
                 if (pior[e] == null || tomado < pior[e]) pior[e] = tomado;
+                if (tomado <= 25) pesoImune[e] = (pesoImune[e] || 0) + w;
             });
         });
-        const notas = {}, vetos = {};
+        const notas = {}, vetos = {}, notasArea = {}, vetosArea = {};
         ELEMENTOS.forEach(e => {
             if (!peso[e]) return;
-            notas[e] = Math.round(soma[e] / peso[e]);
+            notas[e] = notasArea[e] = Math.round(soma[e] / peso[e]);
             if (pior[e] <= 25) { vetos[e] = pior[e]; notas[e] = Math.min(notas[e], 30); }
+            if ((pesoImune[e] || 0) / peso[e] >= 0.5) { vetosArea[e] = pior[e]; notasArea[e] = Math.min(notasArea[e], 30); }
         });
-        return { notas, vetos };
+        return { notas, vetos, notasArea, vetosArea };
     }
 
     /* =========================================================================
@@ -801,31 +813,124 @@
      * no 39 bate ML×1,403+8 / ML×2,203+13 com ML≈4,4. Só vira "velha" se a
      * distância passar de 20 níveis (aí skill/ML já andaram demais). */
     const NIVEIS_MAX_EXTRAPOLACAO = 20;
-    function danosConhecidos(vocForcada) {
-        const d = ler(chaveDano(vocForcada), {});
+    /* v2.10 — SEMENTE DA RUNA 3×3 MEDIDA (plano 2.11, item 9). A de 36–60 veio
+     * de uma conta no painel do grupo (22/09, nível 39). /spell-numbers no
+     * nível 61/62 deu 27–49 para as quatro runas 3×3 (avalanche, great
+     * fireball, thunderstorm, stone shower) — bate com a fórmula de /spells
+     * com ML efetivo 7: 62/5 + 1,2×7 + 7 = 27,8 · 62/5 + 2,8×7 + 17 = 49. A
+     * semente antiga superestimava a runa em 30 % e a punha na frente das
+     * ondas. Vale só enquanto a runa não foi medida. */
+    const RUNA_SEMENTE = { min: 27, max: 49, nivel: 62, ml: 7, semente: true };
+
+    /* v2.10 — FÓRMULA DE /spells SEM eval. O catálogo traz `formula.min/max`
+     * como texto ("((level / 5) + (maglevel * 1.2) + 7)"). Só aceita números,
+     * level/maglevel/skill/attack, + − × ÷ e parênteses; qualquer outra coisa
+     * vira NaN (e o chamador cai na regra antiga de nível÷5). */
+    const _formulas = new Map();
+    function compilarFormula(expr) {
+        const toks = String(expr).match(/\d+(?:\.\d+)?|[a-z_]+|\S/gi) || [];
+        let i = 0;
+        const prim = () => {
+            const t = toks[i++];
+            if (t === '(') { const v = soma(); if (toks[i++] !== ')') throw new Error('")" faltando'); return v; }
+            if (t === '-') { const v = prim(); return x => -v(x); }
+            if (/^\d/.test(t || '')) { const n = Number(t); return () => n; }
+            if (/^(level|maglevel|skill|attack)$/.test(t || '')) return x => Number(x[t]) || 0;
+            throw new Error('símbolo ' + t);
+        };
+        const prod = () => { let a = prim(); while (toks[i] === '*' || toks[i] === '/') { const op = toks[i++], b = prim(), l = a; a = op === '*' ? x => l(x) * b(x) : x => l(x) / b(x); } return a; };
+        const soma = () => { let a = prod(); while (toks[i] === '+' || toks[i] === '-') { const op = toks[i++], b = prod(), l = a; a = op === '+' ? x => l(x) + b(x) : x => l(x) - b(x); } return a; };
+        try { const f = soma(); return i === toks.length ? f : null; } catch (e) { return null; }
+    }
+    function valorFormula(expr, vars) {
+        if (typeof expr !== 'string' || expr.length > 300) return NaN;
+        if (!_formulas.has(expr)) _formulas.set(expr, compilarFormula(expr));
+        const f = _formulas.get(expr);
+        return f ? f(vars) : NaN;
+    }
+    /* Fórmula que depende SÓ de nível e nível mágico (magias e runas dos magos,
+     * Caldera/Missile do Paladino). As do Knight usam skill × ataque da arma:
+     * nelas o ML não entra e a extrapolação continua por nível÷5. */
+    const formulaDeML = (m) => !!(m && m.formula && typeof m.formula.min === 'string' && typeof m.formula.max === 'string'
+        && /maglevel/.test(m.formula.min + m.formula.max) && !/skill|attack/.test(m.formula.min + m.formula.max));
+    /* ML efetivo que uma medida (min–max no nível L) implica. A fórmula é
+     * linear no ML: f(L, ml) = f(L, 0) + ml × inclinação. Somando min e max a
+     * inclinação fica maior e o arredondamento do jogo pesa menos. */
+    function mlDaMedida(m, x, lvl) {
+        if (!formulaDeML(m) || !x || !(lvl > 0)) return null;
+        const f = (e, ml) => valorFormula(e, { level: lvl, maglevel: ml, skill: 0, attack: 0 });
+        const base = f(m.formula.min, 0) + f(m.formula.max, 0), incl = f(m.formula.min, 1) + f(m.formula.max, 1) - base;
+        if (!(incl > 0) || !Number.isFinite(base)) return null;
+        const ml = (x.min + x.max - base) / incl;
+        return ml > 0 && ml < 1000 ? ml : null;
+    }
+    /* ML efetivo de AGORA: mediana do que as magias medidas neste nível
+     * implicam. Sem nenhuma medida neste nível, null (e vale nível÷5). */
+    function mlEfetivoAgora(d, lvl, porNome) {
+        const est = [];
+        for (const k of Object.keys(d)) { const x = d[k]; if (x && x.nivel === lvl && !x.semente) { const ml = mlDaMedida(porNome[k], x, lvl); if (ml != null) est.push(ml); } }
+        if (!est.length) return null;
+        est.sort((a, b) => a - b);
+        return est[Math.floor(est.length / 2)];
+    }
+    /* Escala uma medida do nível x.nivel (ML x.ml, ou o que ela mesma implica)
+     * para o nível lvl com o ML efetivo medido agora. null = não dá. */
+    function escalarPorML(m, x, lvl, mlAgora) {
+        if (mlAgora == null || !formulaDeML(m) || x.nivel == null) return null;
+        const mlAntes = x.ml != null ? x.ml : mlDaMedida(m, x, x.nivel);
+        if (mlAntes == null) return null;
+        const f = (e, L, ml) => valorFormula(e, { level: L, maglevel: ml, skill: 0, attack: 0 });
+        const dMin = f(m.formula.min, lvl, mlAgora) - f(m.formula.min, x.nivel, mlAntes);
+        const dMax = f(m.formula.max, lvl, mlAgora) - f(m.formula.max, x.nivel, mlAntes);
+        return Number.isFinite(dMin) && Number.isFinite(dMax) ? { min: x.min + dMin, max: x.max + dMax } : null;
+    }
+    /* v2.10 — `dBruto` opcional: montarPlano já leu a tabela uma vez (antes
+     * cada avaliar() relia e reparseava o localStorage, ~20× por vocação).
+     * Extrapolação: pelo ML efetivo quando há medida neste nível (item 9);
+     * senão nível÷5 como antes. Com `comSemente` (só o planejador), a semente
+     * da runa 3×3 entra para as runas de 36 casas sem medida — fora dele a
+     * tabela continua sendo só o que foi medido (o APLICAR usa "tabela vazia"
+     * para saber que precisa ler /spell-numbers antes). */
+    function danosConhecidos(vocForcada, dBruto, comSemente) {
+        const d = dBruto || ler(chaveDano(vocForcada), {});
         const lvl = nivelAtual();
+        const porNome = {};
+        for (const m of (CAT.magias || [])) porNome[m.name] = m;
+        const mlAgora = lvl ? mlEfetivoAgora(d, lvl, porNome) : null;
         const fora = {};
-        Object.keys(d).forEach(k => {
-            const x = d[k];
+        const escala = (k, x) => {
             const delta = (x.nivel != null && lvl) ? lvl - x.nivel : 0;
-            const longe = Math.abs(delta) > NIVEIS_MAX_EXTRAPOLACAO;
+            const pml = delta !== 0 || (x.semente && x.ml != null) ? escalarPorML(porNome[k], x, lvl, mlAgora) : null;
+            const longe = !pml && Math.abs(delta) > NIVEIS_MAX_EXTRAPOLACAO;
             const aj = delta / 5;
-            fora[k] = Object.assign({}, x, {
-                min: Math.max(1, Math.round(x.min + aj)), max: Math.max(1, Math.round(x.max + aj)),
-                extrapolado: delta !== 0, nivelMedido: x.nivel,
-                semente: longe, velha: longe
+            return Object.assign({}, x, {
+                min: Math.max(1, Math.round(pml ? pml.min : x.min + aj)), max: Math.max(1, Math.round(pml ? pml.max : x.max + aj)),
+                extrapolado: delta !== 0, nivelMedido: x.nivel, porML: !!pml,
+                semente: !!x.semente || longe, velha: longe
             });
-        });
+        };
+        Object.keys(d).forEach(k => { fora[k] = escala(k, d[k]); });
+        if (comSemente) for (const m of Object.values(porNome)) if (m.isRune && m.areaCells === 36 && !fora[m.name]) fora[m.name] = escala(m.name, RUNA_SEMENTE);
         return fora;
     }
     function danosMedidosNesteNivel(vocForcada) {
         const d = ler(chaveDano(vocForcada), {}), lvl = nivelAtual();
         return Object.keys(d).filter(k => d[k].nivel === lvl).length;
     }
+    /* v2.10 — ML (o da ficha: valor + bônus) visto no frame. Decide se a
+     * runa pode ser usada (sudden death pede ML 15). Sem leitura, null — e aí
+     * nada é excluído por ML. */
+    function mlAtual(voc) {
+        let sk = ESTADO_WS.sk;
+        if (!sk || !sk[voc]) sk = ler('skills_vistas', {});
+        const x = sk && sk[voc];
+        return x && Number(x.ml) > 0 ? Number(x.ml) : null;
+    }
     function anotarDano(nome, min, max, mana, casas) {
         const d = ler(chaveDano(), {});
         d[nome] = { min, max, mana, casas, nivel: nivelAtual(), ts: Date.now() };
         guardar(chaveDano(), d);
+        invalidarPlanos();
     }
 
     /* =========================================================================
@@ -882,7 +987,7 @@
     }
     const MANA_SOBRANDO = 80;
 
-    function avaliar(m, hunt, info, vocForcada) {
+    function avaliar(m, hunt, info, vocForcada, danos) {
         const casas = casasDaMagia(m);
         /* v2.6.7 — FEIXE é uma linha: os monstros ficam em leque, não em fila.
          * Great Energy Beam: modelo dizia 364 por lançamento (8 casas × 45),
@@ -890,27 +995,27 @@
          * alvos; onda e runa 3×3 continuam com o teto min(casas, lure). */
         const feixe = /beam|feixe/i.test(m.area || '') || /beam/i.test(m.name || '');
         const alvos = Math.max(1, Math.min(feixe ? Math.ceil(casas / 2) : casas, lureMax(hunt)));
-        const nota = info.notas[m.combatType] != null ? info.notas[m.combatType] : 100;
+        /* v2.10 — área usa a nota ponderada (notasElementos, item 6) */
+        const notas = casas > 1 && info.notasArea ? info.notasArea : info.notas;
+        const nota = notas[m.combatType] != null ? notas[m.combatType] : 100;
 
         // dano: o medido manda; sem medição, cai no proxy de mana (jeito Stonegy)
         /* v1.8.0 — RUNA NÃO MOSTRA DANO no diálogo ("pulei 4, sem dano na
          * tela"), então nunca era confiável e nunca entrava em plano nenhum.
-         * Semente medida no painel do grupo em 22/09 (nível 39, ML≈4,4):
-         * Druida fez 23k com 120 cargas de runas 3×3 em lure 4 → ~192 por
-         * lançamento → ~48 por alvo. Vale para as quatro runas de 3×3 (great
-         * fireball, thunderstorm, avalanche, stone shower); o elemento entra
-         * pela nota da hunt. Medição real na tabela de danos sobrescreve. */
-        const RUNA_SEMENTE = { min: 36, max: 60, semente: true, nivel: 39 };
-        const conhecido = danosConhecidos(vocForcada)[m.name]
-            || (m.isRune && m.areaCells === 36 ? RUNA_SEMENTE : null);
+         * v2.10 — a semente das quatro runas 3×3 (RUNA_SEMENTE, 27–49 no nível
+         * 62) vem em danosConhecidos(…, true), escalada pelo ML efetivo; o
+         * elemento entra pela nota da hunt. Medição real sobrescreve. */
+        const conhecido = (danos || danosConhecidos(vocForcada, null, true))[m.name] || null;
         const danoMedio = conhecido ? (conhecido.min + conhecido.max) / 2 : (m.mana ? m.mana * 0.45 : 30);
         const medido = !!conhecido && !conhecido.semente;
         const semente = !!(conhecido && conhecido.semente);
 
-        /* físico contra armadura: desconto fixo por golpe (wiki). Aproximação:
-         * dano − armadura média dos monstros, nunca abaixo de 20 % do dano. */
-        const arm = m.combatType === 'COMBAT_PHYSICALDAMAGE' ? armaduraMedia(hunt) : 0;
-        const fatorArm = arm > 0 ? Math.max(0.2, (danoMedio - arm) / danoMedio) : 1;
+        /* físico contra armadura: desconto fixo por golpe (wiki). v2.10 (item
+         * 8) — a mesma redução da munição: 0,75 × (armadura + defesa), wiki
+         * /como-o-dano-e-calculado (reducaoFisicaMedia). Antes descontava 1,0 ×
+         * armadura e ignorava a defesa. Nunca abaixo de 20 % do dano. */
+        const red = m.combatType === 'COMBAT_PHYSICALDAMAGE' ? reducaoFisicaMedia(hunt) : 0;
+        const fatorArm = red > 0 ? Math.max(0.2, (danoMedio - red) / danoMedio) : 1;
         const danoEfetivo = danoMedio * (nota / 100) * fatorArm;
 
         const custo = m.isRune
@@ -1041,7 +1146,9 @@
     const MARGEM_LUCRO = 0.8;
     const FATOR_ALVOS_REAIS = 0.5;     // só metade dos alvos teóricos é atingida
 
-    function viabilidade(hunt, avaliadas, voc) {
+    /* v2.10 — `bebe`: se ESTE plano deixa a poção de mana ligada (o
+     * Inteligente decide pelo Druida; os outros modelos seguem o jogo). */
+    function viabilidade(hunt, avaliadas, voc, bebe) {
         const loot = LOOT_CACHE[hunt.id];
         if (loot == null) return null;              // ainda não baixou
         const w = hunt.monsters.reduce((s, m) => s + (m.weight || 1), 0) || 1;
@@ -1049,7 +1156,7 @@
         const orcamento = loot * MARGEM_LUCRO;
         const exigido = orcamento > 0 ? hp / orcamento : Infinity;
         // dano/ouro pessimista de cada magia
-        const regen = !manaPotionLigada(voc);
+        const regen = bebe == null ? !manaPotionLigada(voc) : !bebe;
         avaliadas.forEach(a => {
             const alvosReais = Math.max(1, a.alvos * FATOR_ALVOS_REAIS);
             a.danoPorOuroReal = Math.round((a.danoEfetivo * alvosReais) / Math.max(0.01, a.custo) * 100) / 100;
@@ -1115,24 +1222,53 @@
      * Paladino é runa + Caldera. Burst acerta 1,4 alvos medidos, não 4. */
     const MUNICAO_CUSTO = { arrow: 0, 'sniper arrow': 3, 'burst arrow': 9, 'tarsal arrow': 6, 'onyx arrow': 7, 'crystalline arrow': 100, 'diamond arrow': 200,
                             bolt: 0, 'piercing bolt': 5, 'vortex bolt': 6, 'power bolt': 7, 'drill bolt': 12, 'prismatic bolt': 20, 'infernal bolt': 13 };
+    /* v2.10 — PREÇO DA MUNIÇÃO (plano 2.11, item 10). O plano pedia ler de
+     * /buy-prices (CAT.precos: sniper 5, burst 15, crystalline 20, diamond
+     * 130). NÃO: TIBIDLE.md §7d-bis mediu na UI o custo POR DISPARO — burst
+     * arrow ×23 = −207 → 9 (o /buy-prices diz 15), tarsal −6 — e ele é o
+     * `cost` do catálogo /ammo, que a tabela acima copia (29/09: iguais). Com o
+     * /buy-prices a crystalline sairia 20 em vez de 100 e viraria "barata". A
+     * fonte agora é o /ammo vivo (CAT.municao se o carregador trouxer; senão
+     * uma leitura pública única, só leitura, feita aqui); a tabela é a reserva
+     * e o /buy-prices só entra para munição que nenhum dos dois conhece. */
+    let _ammoCat = null, _ammoTentou = 0;
+    function catalogoMunicao() {
+        const c = (Array.isArray(CAT.municao) && CAT.municao.length && CAT.municao) || _ammoCat;
+        if (c) return c;
+        if (Date.now() - _ammoTentou > 10 * 60 * 1000) {     // sem rede: tenta de novo em 10 min, não a cada plano
+            _ammoTentou = Date.now();
+            buscarJSON('/ammo').then(a => { if (Array.isArray(a) && a.length) { _ammoCat = a; invalidarPlanos(); } }).catch(() => { });
+        }
+        return null;
+    }
+    function custoMunicao(nome) {
+        const c = catalogoMunicao();
+        const x = c && c.find(a => a && (a.name || '').toLowerCase() === nome);
+        if (x && Number.isFinite(Number(x.cost))) return Number(x.cost);
+        if (MUNICAO_CUSTO[nome] != null) return MUNICAO_CUSTO[nome];
+        const p = CAT.precos && !Array.isArray(CAT.precos) ? CAT.precos[nome] : null;
+        return p != null ? Number(p) || 0 : 0;
+    }
     /* dono, 28/09: "a burst arrow é de fogo e o dragão é imune". A explosão
      * (a área) é fogo; contra imune sobra só o impacto. `notas` é a nota de
-     * elemento da hunt (notasElementos): fogo 0 % ⇒ a área não conta. */
+     * elemento da hunt (notasElementos): fogo 0 % ⇒ a área não conta.
+     * v2.10 — o ganho é pelo custo A MAIS que a munição básica (se um dia a
+     * básica deixar de ser grátis, a conta continua certa). */
     function melhorMunicao(tipo, lvl, lure, reducao, skillDist, notas) {
         const sk = skillDist || 30, red = reducao || 0;
         const notaElem = a => a.elem && notas && notas[a.elem] != null ? notas[a.elem] / 100 : 1;
         const dano = a => Math.max(1, lvl / 5 + 0.045 * sk * a.atk - red) * (a.area ? Math.max(1, Math.min(1.4, lure || 1) * notaElem(a)) * (notaElem(a) || 0.3) : 1);
         const lista = (MUNICAO[tipo] || MUNICAO.arrow).filter(a => a.lvl <= lvl);
-        const gratis = lista.find(a => !MUNICAO_CUSTO[a.n]) || lista[0];
-        let best = gratis, bv = 0;
+        if (!lista.length) return null;
+        const base = lista.slice().sort((a, b) => custoMunicao(a.n) - custoMunicao(b.n))[0];
+        let best = base, bv = 0;
         for (const a of lista) {
-            const custo = MUNICAO_CUSTO[a.n] || 0; if (!custo) continue;
-            const ganho = (dano(a) - dano(gratis)) / custo;
+            const extra = custoMunicao(a.n) - custoMunicao(base.n); if (!(extra > 0)) continue;
+            const ganho = (dano(a) - dano(base)) / extra;
             if (ganho >= 25 && ganho > bv) { bv = ganho; best = a; }
         }
-        return best ? best.n : null;
+        return best.n;
     }
-    /* cura: forte com gatilho baixo primeiro, fraca depois (a fila dispara a primeira que bater) */
     /* v2.6.5 — dono, 28/09: "só o Druida tem magia de cura" nesta conta. O
      * catálogo lista Wound Cleansing, Divine Healing etc., mas o livro-razão
      * nunca viu um cast de cura de ninguém além do Druida, e o Knight chegou a
@@ -1140,9 +1276,17 @@
      * outros três = poção de vida, com gatilho mais alto em quem apanha.
      * O Druida cura os outros com Heal Friend ≤60 (a mana dele vem da poção). */
     /* v2.6.9 — DEFESA nos 4, como o dono deixou à mão (prints de 28/09, 22h):
-     * cada personagem com cura própria ≤50–60 % e um suporte. A cura BARATA
-     * vem primeiro (Light Healing 20 de mana dispara mesmo com a mana no
-     * chão; Wound Cleansing 40), a forte com gatilho mais baixo. */
+     * cada personagem com cura própria ≤50–60 % e um suporte; a barata (Light
+     * Healing, 20 de mana) com gatilho alto, a forte com gatilho baixo.
+     * ⚠ v2.10 (plano 2.11, item 5) — A ORDEM NA FILA É POR GATILHO CRESCENTE.
+     * O comentário da 2.6.9 dizia "a barata vem primeiro", e a lista saía
+     * [Light Healing ≤60, Divine Healing ≤40]. Wiki (/configurando-o-combate):
+     * os slots de cura disparam "na ordem, o primeiro cujo gatilho foi
+     * atingido". Com 35 % de vida os DOIS gatilhos foram atingidos e saía a
+     * Light Healing — a forte nunca curava quem estava para morrer. Agora
+     * planoExtras ordena tudo (poção de vida junto) do gatilho mais baixo ao
+     * mais alto: ≤40 forte, ≤45 poção, ≤60 barata. Esta tabela só diz QUAIS e
+     * com que gatilho; a ordem é feita lá. */
     const CURAS = {
         KNIGHT: [['Wound Cleansing', 50]],
         PALADIN: [['Light Healing', 60], ['Divine Healing', 40]],
@@ -1171,16 +1315,20 @@
     function temMagia(nome, voc, lvl) {
         return (CAT.magias || []).some(m => m.name === nome && m.available !== false && (m.level || 1) <= lvl && (m.vocations || []).some(v => VOC_CAT[voc].includes(v)));
     }
-    function planoExtras(voc, hunt) {
+    /* v2.10 — `opc` = { manaTodos, seco } da variante (antes flags globais). */
+    function planoExtras(voc, hunt, opc) {
+        opc = opc || {};
         const lvl = nivelAtual();
         const heals = [];
         const vida = melhorPocao('vida', voc, lvl); if (vida) heals.push({ name: vida, percent: POCAO_VIDA_PCT[voc] || 40 });
-        if (!_seco) for (const [n, p] of (CURAS[voc] || [])) if (temMagia(n, voc, lvl)) heals.push({ name: n, percent: p });
+        if (!opc.seco) for (const [n, p] of (CURAS[voc] || [])) if (temMagia(n, voc, lvl)) heals.push({ name: n, percent: p });
+        /* gatilho crescente (item 5); empate mantém a ordem acima (poção antes) */
+        heals.sort((a, b) => a.percent - b.percent);
         while (heals.length < 5) heals.push(null);
         const mp = melhorPocao('mana', voc, lvl);
         /* só o Druida bebe mana por padrão (cura do Knight não pode faltar); os
          * outros três ficam na regeneração. Variante inteligente_mana liga nos 4. */
-        const pctMana = _manaTodos ? (voc === 'KNIGHT' ? 40 : 30) : (voc === 'DRUID' ? 30 : 0);
+        const pctMana = opc.manaTodos ? (voc === 'KNIGHT' ? 40 : 30) : (voc === 'DRUID' ? 30 : 0);
         const manaPotion = mp && pctMana ? { name: mp, percent: pctMana } : { percent: 0 };
         /* v2.9.0 — PROTECTOR NÃO É DE GRAÇA. Wiki (/magias-e-runas e
          * /como-o-dano-e-calculado): 200 de mana e, enquanto dura, escudo ×2,2,
@@ -1189,8 +1337,8 @@
          * vida mínima MEDIDA dele neste mapa ficou ≥ 60 %, sai; sem medida ou
          * abaixo disso, fica (morte de qualquer um encerra a caçada). */
         const knightSeguro = voc === 'KNIGHT' && hunt ? (vidaMinMedida(hunt, 'KNIGHT') ?? -1) >= 60 : false;
-        const supports = _seco ? [] : (SUPORTES[voc] || []).filter(n => temMagia(n, voc, lvl) && !(n === 'Protector' && knightSeguro)).slice(0, 2);
-        if (!_seco && supports.length < 2 && SUPORTES_SOBRANDO[voc] && temMagia(SUPORTES_SOBRANDO[voc], voc, lvl)) {
+        const supports = opc.seco ? [] : (SUPORTES[voc] || []).filter(n => temMagia(n, voc, lvl) && !(n === 'Protector' && knightSeguro)).slice(0, 2);
+        if (!opc.seco && supports.length < 2 && SUPORTES_SOBRANDO[voc] && temMagia(SUPORTES_SOBRANDO[voc], voc, lvl)) {
             const mm = hunt ? manaMedidaMedia(hunt, voc) : null;
             if (mm != null && mm >= 70) supports.push(SUPORTES_SOBRANDO[voc]);
         }
@@ -1200,7 +1348,8 @@
             const ro = rosterEquip(); const p = ro && ro.find(x => x.vocation === 'PALADIN');
             const tipo = (p && p.equipment && p.equipment.weapon && p.equipment.weapon.attrs && p.equipment.weapon.attrs.ammotype) || 'arrow';
             const fp = ((ESTADO_WS.frame && ESTADO_WS.frame.party) || []).find(x => x.voc === 'PALADIN');
-            const notasH = hunt ? (notasElementos(hunt) || {}).notas : null;
+            /* a explosão da burst arrow é área: nota ponderada (item 6) */
+            const notasH = hunt ? (notasElementos(hunt) || {}).notasArea : null;
             r.ammo = melhorMunicao(tipo, lvl, hunt ? lureMax(hunt) : 1, hunt ? reducaoFisicaMedia(hunt) : 0, fp && fp.dist, notasH);
         }
         return r;
@@ -1260,34 +1409,263 @@
         if (!o || !o.n) return null;
         return (o.matar / o.n) < (o.timer / o.n) * 0.5;
     }
+    /* v2.10 — RITMO DA ONDA para o simulador: quanto a onda leva para morrer e
+     * quanto se espera pela próxima (livro-razão vivo ou Scan guardado; sem
+     * medida, 2 s por criatura e 10 s de espera — a wiki diz 7–13 s). */
+    function ritmoOndas(hunt) {
+        const L = lureMax(hunt);
+        if (!hunt || hunt.boss) return { lure: 1, matarS: 1e6, esperaS: 0 };
+        let o = null;
+        try { if (ESTADO_WS.huntId === hunt.id && RAZAO.ondas.n >= 4) o = { matar: RAZAO.ondas.matar / RAZAO.ondas.n / 1000, espera: RAZAO.ondas.timer / RAZAO.ondas.n / 1000 }; } catch (e) { }
+        if (!o) try { for (const r of Object.values(scanResultados())) if (r.id === hunt.id && r.razao && r.razao.ondas && r.razao.ondas.n >= 4) { o = { matar: r.razao.ondas.matar, espera: r.razao.ondas.timer }; break; } } catch (e) { }
+        return { lure: L, matarS: o && o.matar > 0 ? o.matar : 2 * L, esperaS: o && o.espera >= 0 ? o.espera : 10 };
+    }
+
+    /* =========================================================================
+     *  ⭐ v2.10 — MINI-SIMULADOR DA FILA (plano 2.11, item 1)
+     *
+     *  O veredito do grupo olhava só o slot 1 de cada um e cobrava mana até de
+     *  quem vive de regeneração — e desde a 2.9.0 a runa NUNCA é o slot 1, então
+     *  o ouro dela sumia da conta. Aqui a fila roda como a wiki descreve
+     *  (/configurando-o-combate):
+     *    • quando o grupo de ataque libera (2 s; 4 s depois de Hell's Core,
+     *      Rage, Eternal Winter, Wrath — `groupCooldownMs`), o jogo confere os
+     *      slots 1→4 e lança o PRIMEIRO pronto;
+     *    • pronto = recarga própria vencida, grupo secundário livre
+     *      (`secondaryGroup`: focus 40 s, special 8 s, ultimatestrikes 30 s…),
+     *      mana suficiente (quem bebe poção nunca fica sem) e criaturas vivas
+     *      ≥ mínimo do slot;
+     *    • a onda: `lure` criaturas que morrem uma a uma em `matarS`, depois
+     *      `esperaS` sem ninguém; a mana regenera o tempo todo.
+     *  Devolve dano/s, mana/s, runas/s, ouro/s e quantas vezes cada slot saiu.
+     *  É MODELO: a regeneração é estimativa e a onda não depende do dano. Puro:
+     *  não lê estado nenhum (testes/magia.test.js roda ele sozinho).
+     * ====================================================================== */
+    /* Regeneração de mana por segundo: a wiki não publica. Estimada pelas
+     * medições desta conta em 28/09 (com o +6 MP/s do bestiário): Feiticeiro
+     * a 93–98 % com Fire Wave + Energy Beam (~16 MP/s de gasto) → ≥ 16; Knight
+     * a 20 % com Berserk (29 MP/s) e Paladino a 12 % com Caldera (40 MP/s) →
+     * bem abaixo do gasto. Ela só decide QUANTO a runa preenche nos ciclos sem
+     * mana de quem não bebe poção. */
+    const REGEN_MANA_S = { KNIGHT: 8, PALADIN: 12, SORCERER: 16, DRUID: 16 };
+    const SIM_PASSO_MS = 250;
+    function simularFila(slots, o) {
+        o = o || {};
+        const T = Math.max(10, o.seg || 180) * 1000, L = Math.max(1, o.lure || 1);
+        const matar = Math.max(500, (o.matarS != null ? o.matarS : 2 * L) * 1000), espera = Math.max(0, (o.esperaS != null ? o.esperaS : 10) * 1000);
+        const ciclo = matar + espera, porBicho = matar / L;
+        const vivos = t => { const x = t % ciclo; return x >= matar ? 0 : L - Math.floor(x / porBicho); };
+        const pocao = !!o.pocao, max = Math.max(0, o.manaMax || 0), regen = Math.max(0, o.regen || 0) / 1000, fAlvos = o.fatorAlvos || 1;
+        const pronto = slots.map(() => 0), sec = {}, disparos = slots.map(() => 0);
+        let t = 0, ult = 0, grupo = 0, mana = max, dano = 0, manaGasta = 0, runas = 0, ouroRuna = 0;
+        while (t < T) {
+            if (!pocao) mana = Math.min(max, mana + regen * (t - ult));
+            ult = t;
+            const v = vivos(t);
+            const i = v > 0 && t >= grupo
+                ? slots.findIndex((s, k) => pronto[k] <= t && !(s.sec && sec[s.sec] > t) && v >= (s.minimo || 1) && (s.runa || pocao || mana >= (s.mana || 0)))
+                : -1;
+            if (i < 0) { t = v > 0 ? (t < grupo ? grupo : t + SIM_PASSO_MS) : t - (t % ciclo) + ciclo; continue; }
+            const s = slots[i];
+            disparos[i]++;
+            if (s.runa) { runas++; ouroRuna += s.ouro || 0; } else { manaGasta += s.mana || 0; if (!pocao) mana -= s.mana || 0; }
+            dano += s.porLanc != null ? s.porLanc : (s.porAlvo || 0) * (s.alvos > 1 ? Math.max(1, Math.min(s.alvos, v) * fAlvos) : 1);
+            pronto[i] = t + (s.cd || 2000);
+            if (s.sec) sec[s.sec] = t + (s.secMs || s.cd || 2000);
+            grupo = t + Math.max(2000, s.grupo || 2000);
+            t = grupo;
+        }
+        const seg = T / 1000, ouroPocao = pocao ? manaGasta * OURO_POR_MANA : 0;
+        return { seg, danoS: dano / seg, manaS: manaGasta / seg, runasS: runas / seg,
+                 ouroS: (ouroRuna + ouroPocao) / seg, ouroPocaoS: ouroPocao / seg, ouroRunaS: ouroRuna / seg, disparos };
+    }
+    /* plano (slots do montarPlano) → entrada do simulador */
+    function slotsParaSimular(plano) {
+        return plano.map(p => {
+            const a = p.av, m = a.m;
+            return { nome: m.name, minimo: p.minimo, runa: !!m.isRune, mana: m.isRune ? 0 : (m.mana || 0), ouro: m.isRune ? (a.custo || 0) : 0,
+                     cd: m.cooldownMs || 2000, grupo: m.groupCooldownMs || 2000, sec: m.secondaryGroup || null,
+                     secMs: m.secondaryGroupCooldownMs || m.cooldownMs || 2000,
+                     porAlvo: a.danoEfetivo, alvos: a.alvos, porLanc: a.medidoNoMapa ? a.porLancamento : null };
+        });
+    }
+    /* mana máxima: a do frame quando há; sem frame, a curva do Tibia por
+     * vocação (5/15/30 por nível) — só serve para o começo da luta. */
+    function manaDoPersonagem(voc) {
+        const lvl = nivelAtual() || 1;
+        const fp = ((ESTADO_WS.frame && ESTADO_WS.frame.party) || []).find(x => x && x.voc === voc);
+        const tibia = { KNIGHT: 5 * lvl + 50, PALADIN: 15 * lvl - 30, SORCERER: 30 * lvl - 150, DRUID: 30 * lvl - 150 }[voc] || 5 * lvl;
+        return { manaMax: fp && fp.maxMana > 0 ? fp.maxMana : Math.max(60, tibia), regen: REGEN_MANA_S[voc] || 8 };
+    }
+
+    /* v2.10 — recarga igual à do grupo (2 s): pronto em todo ciclo. */
+    const enchimento = a => (a.m.cooldownMs || 2000) <= (a.m.groupCooldownMs || 2000);
+    /* v2.10 — SLOT MORTO (plano 2.11, item 7). A fila dispara o primeiro
+     * pronto; um slot só sai quando TODOS os da frente não podem. Atrás de um
+     * preenchimento (recarga de 2 s, pronto em todo ciclo) com mínimo ≤ o
+     * dele, um slot só sai quando o da frente não tem mana — então:
+     *   • atrás de RUNA (não gasta mana) nunca sai;
+     *   • magia atrás de magia que gasta a MESMA mana ou menos nunca sai
+     *     (Physical Strike atrás de Flame Strike, 20 e 20: slot vazio que o
+     *     painel mostrava como parte do kit — Zombies, Druida, 29/09);
+     *   • mínimo maior que o lure do mapa nunca junta criatura bastante.
+     * Mínimo MENOR que o do preenchimento vale: Missile ≥1 atrás da runa ≥2
+     * sai quando sobra um monstro. Devolve o motivo, ou null. */
+    function slotMorto(plano, j, lure) {
+        const b = plano[j];
+        if (b.minimo > lure) return `precisa de ${b.minimo} criaturas e o lure vai até ${lure}`;
+        for (let i = 0; i < j; i++) {
+            const a = plano[i], ma = a.av.m;
+            if (!enchimento(a.av) || a.minimo > b.minimo) continue;
+            if (ma.secondaryGroup && (ma.secondaryGroupCooldownMs || 0) > (ma.groupCooldownMs || 2000)) continue;
+            if (ma.isRune) return `atrás de ${ma.name} ≥${a.minimo} (runa: pronta em todo ciclo)`;
+            if (!b.av.m.isRune && (b.av.m.mana || 0) >= (ma.mana || 0)) return `atrás de ${ma.name} ≥${a.minimo} (${b.av.m.mana || 0} de mana contra ${ma.mana || 0}: só sairia sem mana para a da frente)`;
+        }
+        return null;
+    }
+    function permutacoes(arr) {
+        if (arr.length <= 1) return [arr.slice()];
+        const r = [];
+        arr.forEach((x, i) => { for (const p of permutacoes(arr.slice(0, i).concat(arr.slice(i + 1)))) r.push([x].concat(p)); });
+        return r;
+    }
+    /* =========================================================================
+     *  ⭐ v2.10 — BOSS POR DANO/SEGUNDO COM A MANA QUE HÁ (plano 2.11, item 3)
+     *
+     *  O Boss ordenava as magias por dano POR LANÇAMENTO e ignorava as runas:
+     *    • sudden death (91 num boss) ficava de fora e Death Strike (38) entrava;
+     *    • Rage of the Skies (600 de mana, 40 s) ia no slot 1 na frente de
+     *      golpe melhor por segundo — e Rage + Hell's Core entravam JUNTAS,
+     *      sendo que as duas são do grupo `focus` e uma bloqueia a outra 40 s;
+     *    • strike atrás de strike, os dois ≥1: o segundo nunca saía.
+     *  Agora: os candidatos (runa só se o ML do personagem alcança o
+     *  `magicLevel` dela — sem ML lido, não exclui) são combinados em kits de
+     *  até 4 (um por grupo secundário), cada kit em todas as ordens com os
+     *  preenchimentos por último, e o simulador escolhe o que mais tira de vida
+     *  do boss em 90 s com a mana que o personagem tem (poção: sem limite). */
+    function melhorKitBoss(cands, ent) {
+        const valor = a => a.porLancamento / Math.max(2, a.cd);
+        const longas = cands.filter(a => !enchimento(a)).sort((a, b) => valor(b) - valor(a)).slice(0, 4);
+        const ench = cands.filter(enchimento).sort((a, b) => b.porLancamento - a.porLancamento);
+        const pool = longas.concat(ench.filter(a => a.m.isRune).slice(0, 1), ench.filter(a => !a.m.isRune).slice(0, 2));
+        const o = Object.assign({ lure: 1, matarS: 1e6, esperaS: 0, seg: 90, pocao: ent.bebe }, ent.mana);
+        /* empate (±0,5 %): menos ouro, depois menos slots, depois o mais forte
+         * por lançamento na frente (Energy Beam e Great Fire Wave, as duas de
+         * 4 s, saem alternadas em qualquer ordem — fica a de 60 na frente) */
+        const ordemForte = k => k.reduce((s, a, i) => s + a.porLancamento * (4 - i), 0);
+        const melhorQue = (x, y) => {
+            if (!y) return true;
+            const tol = Math.max(1e-6, y.danoS * 0.005);
+            if (Math.abs(x.danoS - y.danoS) > tol) return x.danoS > y.danoS;
+            if (Math.abs(x.ouroS - y.ouroS) > 1e-6) return x.ouroS < y.ouroS;
+            if (x.ordem.length !== y.ordem.length) return x.ordem.length < y.ordem.length;
+            return ordemForte(x.ordem) > ordemForte(y.ordem);
+        };
+        let melhor = null;
+        for (let mask = 1; mask < (1 << pool.length); mask++) {
+            const kit = pool.filter((_, i) => mask & (1 << i));
+            if (kit.length > 4) continue;
+            const g = kit.map(a => a.m.secondaryGroup).filter(Boolean);
+            if (new Set(g).size < g.length) continue;
+            const kl = kit.filter(a => !enchimento(a)), ke = kit.filter(enchimento);
+            for (const pl of permutacoes(kl)) for (const pe of permutacoes(ke)) {
+                const plano = pl.concat(pe).map(a => ({ av: a, minimo: 1 }));
+                if (plano.some((p, j) => slotMorto(plano, j, 1))) continue;
+                const s = simularFila(slotsParaSimular(plano), o);
+                const x = { ordem: plano.map(p => p.av), danoS: s.danoS, ouroS: s.ouroS };
+                if (melhorQue(x, melhor)) melhor = x;
+            }
+        }
+        return melhor ? melhor.ordem : [];
+    }
+
+    /* =========================================================================
+     *  v2.10 — PLANO EM CACHE (plano 2.11, item 11). A aba Magia chamava
+     *  montarPlano 9× por render (1 + 4 fichas + 4 do veredito), e cada uma
+     *  reparseava a tabela de danos ~20× (uma por magia). A chave junta o que
+     *  muda o plano: modelo, mapa, vocação, nível, a tabela de danos, a mana e
+     *  a vida medidas, o regime, medições do mapa, loot, bestiário, ML, ritmo
+     *  da onda e os catálogos. O resto (arma do Paladino, frame) vence em 5 s.
+     *  Quem aprende dano (anotarDano, pedirReleituraDeDanos) limpa na hora.
+     * ====================================================================== */
+    const _planos = new Map();
+    let _planosCat = [];
+    const PLANO_TTL_MS = 5000;
+    const VOCS_PLANO = ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'];
+    function invalidarPlanos() { _planos.clear(); }
+    const _hash = (s) => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
+    function entradasDoPlano(modelo, hunt, voc, opc) {
+        const bruto = ler(chaveDano(voc), {});
+        /* v2.10 — QUEM BEBE POÇÃO (plano 2.11, item 4). O Inteligente liga a
+         * poção de mana no Druida (ou nos 4, variante _mana); os outros modelos
+         * não mexem em poção, então vale o que está no jogo. */
+        const bebe = modelo === 'inteligente' ? !!(opc.manaTodos || voc === 'DRUID') : !!manaPotionLigada(voc);
+        const med = indiceMedicoes(hunt);
+        const manaMed = hunt ? manaMedidaMedia(hunt, voc) : null;
+        /* "mana sobrando" é REGENERAÇÃO parada. Em quem bebe, 90 % de mana é a
+         * poção fazendo o trabalho dela (Druida a 90 % pegava Eternal Winter,
+         * 1050 de mana a cada 40 s ≈ 53k/h de poção). Só quem não bebe entra. */
+        const sobrando = modelo === 'inteligente' && !bebe && hunt ? regimeSobrando(hunt, voc, manaMed) : false;
+        const spawnLimita = modelo === 'inteligente' && hunt ? spawnLimitaMedido(hunt) === true : false;
+        const vidaMin = hunt && voc === 'KNIGHT' ? vidaMinMedida(hunt, voc) : null;
+        const ml = mlAtual(voc), ritmo = ritmoOndas(hunt), mana = manaDoPersonagem(voc);
+        const nBest = hunt && hunt.monsters ? hunt.monsters.filter(m => BESTIARIO[m.name]).length : 0;
+        const medK = Object.keys(med).sort().map(k => k + med[k].casts + ':' + med[k].porCast).join(',');
+        const danosK = Object.keys(bruto).sort().map(k => { const x = bruto[k] || {}; return k + x.min + '-' + x.max + '@' + x.nivel + (x.ml != null ? 'm' + x.ml : ''); }).join(',');
+        const carimbo = [nivelAtual(), _hash(danosK), bebe ? 1 : 0, manaMed, sobrando ? 1 : 0, spawnLimita ? 1 : 0, vidaMin, ml, hunt ? LOOT_CACHE[hunt.id] : null, nBest,
+                         _hash(medK), ritmo.matarS.toFixed(1), ritmo.esperaS.toFixed(1), mana.manaMax, opc.manaTodos ? 1 : 0, opc.semRuna ? 1 : 0, opc.seco ? 1 : 0].join('|');
+        return { bruto, bebe, med, manaMed, sobrando, spawnLimita, ml, ritmo, mana, carimbo };
+    }
+    function copiarResultado(r) {
+        if (!r || r.erro) return r;
+        return Object.assign({}, r, { plano: r.plano.map(p => Object.assign({}, p)), extras: r.extras ? JSON.parse(JSON.stringify(r.extras)) : r.extras });
+    }
     function montarPlano(modelo, hunt, vocForcada) {
+        /* v2.10 (item 12) — a variante vira opções explícitas; nada global */
         const vr = VARIANTES[modelo];
-        _manaTodos = !!(vr && vr.manaTodos); _semRuna = !!(vr && vr.semRuna); _seco = !!(vr && vr.seco);
-        if (vr) modelo = vr.base;
+        const opc = { manaTodos: !!(vr && vr.manaTodos), semRuna: !!(vr && vr.semRuna), seco: !!(vr && vr.seco) };
+        const base = vr ? vr.base : modelo;
+        const voc = vocForcada || vocacaoAtual();
+        if (!hunt) return { erro: 'não achei as resistências dessa hunt no catálogo' };
+        const cat = [CAT.magias, CAT.precos, CAT.pocoes, CAT.bosses, CAT.municao, _ammoCat];
+        if (cat.some((x, i) => x !== _planosCat[i])) { _planos.clear(); _planosCat = cat; }
+        const ent = entradasDoPlano(base, hunt, voc, opc);
+        const chave = [modelo, hunt.id, voc, ent.carimbo].join('|');
+        const c = _planos.get(chave);
+        if (c && Date.now() - c.t < PLANO_TTL_MS) return copiarResultado(c.r);
+        const r = planejar(base, hunt, voc, opc, ent);
+        if (_planos.size >= 80) _planos.delete(_planos.keys().next().value);
+        _planos.set(chave, { t: Date.now(), r });
+        return copiarResultado(r);
+    }
+    function planejar(modelo, hunt, voc, opc, ent) {
         const info = notasElementos(hunt);
         if (!info) return { erro: 'não achei as resistências dessa hunt no catálogo' };
-        info.med = indiceMedicoes(hunt);
+        info.med = ent.med;
+        const danos = danosConhecidos(voc, ent.bruto, true);
 
-        const avaliadas = magiasDaVocacao(vocForcada).map(m => avaliar(m, hunt, info, vocForcada))
+        const avaliadas = magiasDaVocacao(voc).map(m => avaliar(m, hunt, info, voc, danos))
             .sort((a, b) => b.danoEfetivo - a.danoEfetivo);   // RANKING IMUTÁVEL
 
         if (!avaliadas.length) return { erro: 'nenhuma magia de ataque elegível' };
+        /* v2.10 (item 3) — runa que o ML do personagem não alcança não entra
+         * (sudden death pede 15). Sem ML lido, não exclui. */
+        avaliadas.forEach(a => { a.semML = !!(a.m.isRune && a.m.magicLevel > 0 && ent.ml != null && ent.ml < a.m.magicLevel); });
 
         /* PISO DE POTÊNCIA (lição da v2.24.0 do Stonegy): sem piso, qualquer
          * magia com a "forma certa" ganhava slot, e o script chegou a pôr a
-         * versão fraca de uma magia na frente da forte. Quem estiver abaixo de
-         * 25% do melhor dano por lançamento vai pro fim da fila.
+         * versão fraca de uma magia na frente da forte.
          *
          * ⚠ E O PISO SÓ OLHA QUEM TEM DANO CONFIÁVEL. Sem isso, magia não
          * medida entra com o chute do fallback e vence de quem foi medido —
          * visto em 30/08: o plano do Feiticeiro veio com 4 runas de área só
          * porque o chute de 30 de dano era multiplicado por 7 alvos.
-         * Sem medição a magia não compete; fica reservada pro fim da fila. */
+         * Sem medição a magia não compete; fica reservada pro fim da fila.
+         * v2.10 — o piso de 25 % (`viavel`) nunca chegou a ser usado e saiu;
+         * o que corta é o de 10 % abaixo. */
         const confiaveis = avaliadas.filter(a => a.confiavel);
         const base = confiaveis.length ? confiaveis : avaliadas;
         const melhorLanc = Math.max(...base.map(a => a.porLancamento));
-        const PISO = melhorLanc * 0.25;
-        const viavel = a => a.confiavel && a.porLancamento >= PISO;
 
         /* ⛔⛔ CORTE DE MAGIA MORTA — o defeito mais caro achado nos testes.
          * Medido em 30/08 com o Feiticeiro em Water Elementals: o plano vinha
@@ -1302,15 +1680,19 @@
          * 120 de mana (67 ouro) por ZERO de dano, repetidamente.
          *
          * Regra: magia de elemento vetado ou com dano irrisório (<10% do
-         * melhor) NÃO entra em slot nenhum. Slot vazio não gasta mana. */
-        const morta = a => info.vetos[a.m.combatType] != null
+         * melhor) NÃO entra em slot nenhum. Slot vazio não gasta mana.
+         * v2.10 — área olha o veto ponderado (vetosArea, item 6); alvo único,
+         * o estrito. Runa sem ML também é cortada. */
+        const vetoDe = a => (a.casas > 1 ? info.vetosArea : info.vetos)[a.m.combatType];
+        const morta = a => vetoDe(a) != null
             || a.danoEfetivo <= 0
-            || a.porLancamento < melhorLanc * 0.10;
+            || a.porLancamento < melhorLanc * 0.10
+            || a.semML;
         avaliadas.forEach(a => { a.morta = morta(a); });
         const vivas = avaliadas.filter(a => !a.morta);
 
         // teto de gasto: preenche danoPorOuroReal / cabeNoOrcamento em cada magia
-        const viab = viabilidade(hunt, avaliadas, vocForcada);
+        const viab = viabilidade(hunt, avaliadas, voc, ent.bebe);
 
         /* ⭐ v1.8.1 — MODELOS REDEFINIDOS PELO DONO (23/09/2026):
          *   Econômica   = 2 magias, sem runa (as 2 de melhor dano/mana)
@@ -1333,13 +1715,26 @@
          * Barbarian Camp em 23/09 (Berserk na prévia, Brutal na aplicação). */
         const porEfic = arr => arr.slice().sort((a, b) => (b.danoPorOuro - a.danoPorOuro) || (b.porLancamento - a.porLancamento));
         const magias = conf.filter(a => !ehRuna(a)), runas = conf.filter(ehRuna);
-        const usados = new Set();
+        /* ⭐ v2.10 — UMA POR GRUPO SECUNDÁRIO (plano 2.11, item 2). /spells
+         * traz `secondaryGroup`: focus (Hell's Core, Rage of the Skies, Eternal
+         * Winter, Wrath of Nature — 40 s), special (Lightning e os Strong
+         * Strikes — 8 s), ultimatestrikes (30 s), greatbeams (6 s). Lançar uma
+         * bloqueia as outras do grupo pela recarga secundária — o Em área do
+         * Feiticeiro punha Hell's Core + Rage juntas em 19 de 29 mapas do nível
+         * 30–62, e a segunda passava 40 s travada. `pega` pula quem é de grupo
+         * já usado no plano. */
+        const usados = new Set(), gruposUsados = new Set();
         const pega = (lista, n) => {
             const r = [];
-            for (const a of lista) { if (r.length >= n) break; if (usados.has(a.m.name)) continue; usados.add(a.m.name); r.push(a); }
+            for (const a of lista) {
+                if (r.length >= n) break;
+                const g = a.m.secondaryGroup || null;
+                if (usados.has(a.m.name) || (g && gruposUsados.has(g))) continue;
+                usados.add(a.m.name); if (g) gruposUsados.add(g); r.push(a);
+            }
             return r;
         };
-        let escolhidas = [], ordemI = porDano;
+        let escolhidas = [];
         if (modelo === 'economica') {
             escolhidas = pega(porEfic(magias), 2);
         } else if (modelo === 'equilibrado') {
@@ -1367,17 +1762,16 @@
              *   ≤ 25 % → falta mana: escolha por dano/mana (regra normal).
              *   sem medida → regra normal.
              * v2.9.0 — com histerese: entra com ≥ 70 %, só sai abaixo de 40 %
-             * (regimeSobrando), e a medida zera quando o kit muda. */
-            const manaMed = manaMedidaMedia(hunt, vocForcada || vocacaoAtual());
-            const sobrando = regimeSobrando(hunt, vocForcada || vocacaoAtual(), manaMed);
+             * (regimeSobrando), e a medida zera quando o kit muda.
+             * v2.10 — só para quem NÃO bebe poção (entradasDoPlano, item 4). */
+            const sobrando = ent.sobrando;
             /* v2.7.0 — Djinns 28/09: Paladino 78 % e Feiticeiro 96 % de mana
              * PARADA porque a runa (cd 2 s) na frente tomava todos os ciclos —
              * Caldera e Energy Wave nunca saíram, e 6k/h de runa foi gasto onde
              * a mana de graça bastava. Regra: mana sobrando → magias ANTES da
              * runa; se além disso o spawn limita (onda morre em 2,5 s de 13),
              * a runa sai do kit — dano extra não vira xp, só custa ouro. */
-            const spawnLimita = spawnLimitaMedido(hunt) === true;
-            const semRunaAqui = _semRuna || (sobrando && spawnLimita);
+            const semRunaAqui = opc.semRuna || (sobrando && ent.spawnLimita);
             const cdMax = sobrando ? 40000 : 12000;
             const rapidas = conf.filter(a => (a.m.cooldownMs || 2000) <= cdMax);
             const ondas = rapidas.filter(a => !ehRuna(a) && ehArea(a)), runasA = rapidas.filter(a => ehRuna(a) && (a.m.cooldownMs || 2000) <= 12000 && ehArea(a));
@@ -1411,10 +1805,8 @@
              * Equilibrada estava melhor". A eficiência decide QUEM entra (quem
              * não bebe poção escolhe por dano/mana); o dano por lançamento
              * decide a ORDEM. Magia barata de cd curto só serve por último. */
-            const vocI = vocForcada || vocacaoAtual();
-            const comPocao = _manaTodos || vocI === 'DRUID' || sobrando;
+            const comPocao = ent.bebe || sobrando;
             const escolha = comPocao ? porDano : porEfic;
-            ordemI = porDano;
             const melhorEfic = Math.max(0, ...ondas.concat(golpes).map(a => a.danoPorOuro));
             const melhorOnda = Math.max(0, ...ondas.map(a => a.porLancamento));
             const eficiente = a => a.danoPorOuro >= melhorEfic * (comPocao ? 0.15 : 0.25);
@@ -1431,6 +1823,8 @@
              * mana sobrando é a runa que sai: ela custa ouro e a mana já paga
              * as ondas. */
             if (escolhidas.length > 4) { const soMagia = escolhidas.filter(a => !ehRuna(a)); if (soMagia.length >= 4) escolhidas = soMagia; }
+        } else if (modelo === 'boss') {
+            escolhidas = melhorKitBoss(conf, ent);
         } else {
             escolhidas = pega(porDano(magias), 3);
         }
@@ -1451,11 +1845,22 @@
          *           cobrava 8 de ouro a cada 2 s (simulado com /spells de 29/09)
          * Ordem: recarga longa primeiro, a mais forte na frente; depois os
          * preenchimentos, de área (≥2) antes do alvo único (≥1) — assim com 2+
-         * monstros sai a runa e com 1 sai o golpe (o padrão da comunidade). */
-        const enchimento = a => (a.m.cooldownMs || 2000) <= (a.m.groupCooldownMs || 2000);
-        const enchimentos = escolhidas.filter(enchimento).sort((a, b) => (modelo !== 'boss' ? ehArea(b) - ehArea(a) : 0) || (b.porLancamento - a.porLancamento));
-        escolhidas = porDano(escolhidas.filter(a => !enchimento(a))).concat(enchimentos).slice(0, 4);
-        const plano = escolhidas.map((a, i) => ({ slot: i + 1, av: a, minimo: (modelo === 'boss' || !ehArea(a)) ? 1 : 2 }));
+         * monstros sai a runa e com 1 sai o golpe (o padrão da comunidade).
+         * ⭐ v2.10 (item 7) — o golpe de ALVO ÚNICO de recarga longa (≥1) vai
+         * DEPOIS dos preenchimentos de área (≥2). Quara, Druida: Strong Terra
+         * Strike ≥1 (8 s, 60 de mana = 34 de ouro para quem bebe) na frente da
+         * runa ≥2 tomava um ciclo em cada quatro com 2+ monstros vivos — um
+         * alvo no lugar de três, pelo quádruplo do preço. Atrás da runa ele só
+         * sai quando sobra um monstro, que é para o que ele serve. Continua
+         * valendo a regra da 2.9.0 no que importa: nada fica atrás de um
+         * preenchimento com mínimo igual ou maior (slotMorto). O Boss já vem
+         * na ordem que o simulador escolheu. */
+        if (modelo !== 'boss') {
+            const longas = escolhidas.filter(a => !enchimento(a)), ench = escolhidas.filter(enchimento);
+            escolhidas = porDano(longas.filter(ehArea)).concat(porDano(ench.filter(ehArea)), porDano(longas.filter(a => !ehArea(a))), porDano(ench.filter(a => !ehArea(a))));
+        }
+        escolhidas = escolhidas.slice(0, 4);
+        let plano = escolhidas.map((a, i) => ({ slot: i + 1, av: a, minimo: (modelo === 'boss' || !ehArea(a)) ? 1 : 2 }));
         /* Sem slot extra: o dono pediu contagem exata (2 / 2+1 / 2+2). Se
          * nenhuma ficou com ≥1, a última do plano cai para ≥1. No Inteligente
          * o ≥1 vai para a runa (8 de ouro) ou, sem runa, para a magia mais
@@ -1464,11 +1869,24 @@
             const alvo1 = modelo === 'inteligente' ? (plano.find(p => ehRuna(p.av)) || plano.slice().sort((a, b) => b.av.danoPorOuro - a.av.danoPorOuro)[0]) : plano[plano.length - 1];
             alvo1.minimo = 1;
         }
+        /* v2.10 (item 7) — slot que nunca dispara sai do plano: slot vazio
+         * não gasta mana nem engana o painel. O motivo fica em `mortos`. */
+        const lure = hunt.boss ? 1 : lureMax(hunt);
+        const mortos = [];
+        for (let j = 0; j < plano.length;) {
+            const motivo = slotMorto(plano, j, lure);
+            if (motivo) { mortos.push({ nome: plano[j].av.m.name, minimo: plano[j].minimo, motivo }); plano.splice(j, 1); } else j++;
+        }
+        plano.forEach((p, i) => { p.slot = i + 1; });
+        /* v2.10 (item 1) — a fila simulada deste kit: o veredito do grupo soma
+         * isto, e `disparos` diz quanto cada slot trabalha. */
+        const sim = plano.length ? simularFila(slotsParaSimular(plano), Object.assign({ pocao: ent.bebe, fatorAlvos: FATOR_ALVOS_REAIS }, ent.mana, ent.ritmo)) : null;
+        if (sim) plano.forEach((p, i) => { p.disparos = sim.disparos[i]; });
 
         const cortadas = avaliadas.filter(a => a.morta).length;
         const naoCabe = viab && !vivas.some(a => a.cabeNoOrcamento);
-        const extras = modelo === 'inteligente' ? planoExtras(vocForcada || vocacaoAtual(), hunt) : null;
-        return { plano, ranking: avaliadas, info, hunt, modelo, cortadas, viab, naoCabe, extras };
+        const extras = modelo === 'inteligente' ? planoExtras(voc, hunt, opc) : null;
+        return { plano, ranking: avaliadas, info, hunt, modelo, cortadas, viab, naoCabe, extras, sim, mortos, bebe: ent.bebe };
     }
 
     /* =========================================================================
@@ -1483,45 +1901,84 @@
      *      Orcs Edron   consumiu ~5,7 ouro/abate → dano/ouro da party = 13,7
      *      Vampire hell consumiu ~150 ouro/abate → dano/ouro da party = 3,85
      *
-     *  Aqui a conta é feita sobre o slot 1 de cada personagem (o que mais
-     *  dispara na rotação), somando dano e custo dos quatro:
-     *      danoPorOuroParty = Σ(dano_i × alvos_i) / Σ(custo_i)
-     *      custoPorAbate    = HP / danoPorOuroParty
-     *  e a hunt só é viável se custoPorAbate ≤ loot × margem.
+     *  ⭐ v2.10 (plano 2.11, item 1) — O KIT INTEIRO, PELO SIMULADOR. Até a
+     *  2.9.0 a conta usava só o slot 1 de cada um e cobrava a mana dele como
+     *  poção. Dois erros que se somavam: (a) quem vive de regeneração não paga
+     *  mana — a UI dizia "0 ouro" mas o custo seguia na conta; (b) desde a
+     *  2.9.0 a runa nunca é slot 1, então o ouro da runa (8 por lançamento, o
+     *  que mais se gasta de verdade) sumiu, e o veredito virou "se paga" sempre
+     *  que ninguém bebia poção. Agora, por personagem:
+     *      ouro/s = mana/s × 0,56 (só se a poção de mana está ligada)
+     *             + runas/s × preço por carga
+     *      dano/s = tudo que a fila lança (área com metade dos alvos)
+     *  e para o grupo:
+     *      custoPorAbate = HP × (Σpoção/s × fatorDesperdicio(HP) + Σrunas/s) ÷ Σdano/s
+     *  a hunt só é viável se custoPorAbate ≤ loot × margem.
+     *  A curva de desperdício (0,47 × HP^0,332) foi medida com a party toda
+     *  bebendo mana (30/08): ela cresce com o HP porque "a party apanha mais e
+     *  cura é mana, e mana é ouro". Isso vale para a poção; na runa a perda
+     *  (alvos a menos) já está no simulador (metade dos alvos), então a curva
+     *  não multiplica a runa — senão uma party em regeneração com 12k/h de
+     *  runa num mapa que paga 26k/h saía "NÃO se paga" (Dragon Lair, sim).
+     *  `custoSemFator` = o mesmo custo sem a curva, para quem calibra.
      * ====================================================================== */
     function viabilidadeParty(modelo, hunt) {
+        if (!hunt || !hunt.monsters) return null;
         const loot = LOOT_CACHE[hunt.id];
         if (loot == null) return null;
         const w = hunt.monsters.reduce((s, m) => s + (m.weight || 1), 0) || 1;
         const hp = hunt.monsters.reduce((s, m) => s + m.health * (m.weight || 1), 0) / w;
 
-        let danoTotal = 0, custoTotal = 0;
-        const porVoc = {};
-        for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) {
+        let danoS = 0, ouroS = 0, pocaoS = 0, runaS = 0;
+        const porVoc = {}, pocoes = {};
+        for (const voc of VOCS_PLANO) {
             const r = montarPlano(modelo, hunt, voc);
-            const p1 = r.plano && r.plano[0];
-            if (!p1) { porVoc[voc] = null; continue; }
-            const a = p1.av;
-            const alvosReais = Math.max(1, a.alvos * FATOR_ALVOS_REAIS);
-            const d = a.danoEfetivo * alvosReais;
-            danoTotal += d; custoTotal += a.custo;
-            porVoc[voc] = { magia: a.m.name, dano: Math.round(d), custo: Math.round(a.custo) };
+            if (!r || r.erro || !r.plano.length || !r.sim) { porVoc[voc] = null; continue; }
+            pocoes[voc] = !!r.bebe;
+            danoS += r.sim.danoS; ouroS += r.sim.ouroS; pocaoS += r.sim.ouroPocaoS; runaS += r.sim.ouroRunaS;
+            porVoc[voc] = { magia: r.plano[0].av.m.name, kit: r.plano.map(p => `${p.av.m.name} ≥${p.minimo} ×${p.disparos}`).join(' · '),
+                            dano: Math.round(r.sim.danoS), ouroH: Math.round(r.sim.ouroS * 3600), manaS: Math.round(r.sim.manaS * 10) / 10,
+                            runasH: Math.round(r.sim.runasS * 3600), pocao: !!r.bebe };
         }
-        if (!custoTotal) return null;
-        const dOuroParty = danoTotal / custoTotal;
-        const custoPorAbate = hp / dOuroParty * fatorDesperdicio(hp);   // curva calibrada
+        if (!danoS) return null;
+        const custoPorAbate = hp * (pocaoS * fatorDesperdicio(hp) + runaS) / danoS;   // curva calibrada só na poção
         const orcamento = loot * MARGEM_LUCRO;
-        const regen = partyEmRegen();
+        const regen = VOCS_PLANO.every(v => !pocoes[v]);
         return {
             loot, hp: Math.round(hp), orcamento: Math.round(orcamento * 10) / 10,
-            dOuroParty: Math.round(dOuroParty * 100) / 100,
-            custoPorAbate: Math.round(custoPorAbate),
+            dOuroParty: ouroS > 0 ? Math.round(danoS / ouroS * 100) / 100 : null,
+            custoPorAbate: Math.round(custoPorAbate), custoSemFator: Math.round(hp * ouroS / danoS * 10) / 10,
             exigidoParty: Math.round(hp / orcamento * 10) / 10,
-            regen,
-            cabe: regen ? true : custoPorAbate <= orcamento,
+            regen, pocoes,
+            cabe: custoPorAbate <= orcamento,
             lucroPorAbate: Math.round(loot - custoPorAbate),
+            danoS: Math.round(danoS), ouroH: Math.round(ouroS * 3600),
             porVoc
         };
+    }
+
+    /* =========================================================================
+     *  v2.10 — RELER O DANO DEPOIS DE EQUIPAR (plano 2.11, item 13). O dano
+     *  de /spell-numbers muda com a arma (Knight: skill × ataque; magos: ML da
+     *  wand/rod), e a tabela só era relida no F5 ou ao subir de nível — o plano
+     *  seguia com o dano da arma velha. Quem equipa chama isto (uma linha): o
+     *  plano em cache cai na hora e /spell-numbers é relido 2,5 s depois (o
+     *  servidor precisa aplicar a troca; várias trocas seguidas viram uma
+     *  leitura só). É LEITURA — nada é enviado ao jogo.
+     * ====================================================================== */
+    const RELEITURA_DANOS_MS = 2500;
+    let _releituraT = null;
+    function pedirReleituraDeDanos(motivo) {
+        invalidarPlanos();
+        if (_releituraT) clearTimeout(_releituraT);
+        _releituraT = setTimeout(() => {
+            _releituraT = null;
+            Promise.resolve().then(() => aprenderDanosPorRest(true)).then(r => {
+                invalidarPlanos();
+                if (r && r.erro) log('dano das magias não relido depois de ' + (motivo || 'equipar') + ': ' + r.erro, 'info');
+            }).catch(() => { });
+        }, RELEITURA_DANOS_MS);
+        return true;
     }
 
     /* @@MAGIA-FIM */
@@ -3710,9 +4167,10 @@
         const vp = r.viab ? viabilidadeParty(modelo, h) : null;
         const cabe = vp ? vp.cabe : null;
         corpo += `<button class="tb-bt pri" id="tb-aplicar-todos" ${_aplicando ? 'disabled' : ''} style="width:100%;font-size:13px;padding:8px;margin-top:6px">${_aplicando ? 'APLICANDO…' : 'APLICAR NOS 4'}</button>` +
-            (vp ? (vp.regen
-                ? `<div class="tb-mut" style="font-size:10px">mana OFF: magia sai da regeneração (0 ouro). Com poção seriam ${vp.custoPorAbate}o/abate contra ${vp.loot}o de loot.</div>`
-                : `<div style="font-size:10px" class="${cabe ? 'tb-ok' : 'tb-ruim'}">${cabe ? 'se paga' : 'NÃO se paga'}: ${vp.custoPorAbate}o/abate contra ${vp.loot}o de loot · mana: ${VOCS.map(v => VOC_CURTO[v] + (manaPotionLigada(v) ? ' on' : ' off')).join(' · ')}</div>`) : '');
+            /* v2.10 — o veredito agora é do kit inteiro pela fila simulada (runa
+             * incluída, mana só de quem bebe): um texto só, com a poção que o
+             * PLANO usa (o Inteligente liga a do Druida). */
+            (vp ? `<div style="font-size:10px" class="${cabe ? 'tb-ok' : 'tb-ruim'}">${cabe ? 'se paga' : 'NÃO se paga'}: ${vp.custoPorAbate}o/abate contra ${vp.loot}o de loot (~${(vp.ouroH / 1000).toFixed(1)}k/h de ${vp.regen ? 'runa' : 'poção e runa'}) · mana: ${VOCS.map(v => VOC_CURTO[v] + ((vp.pocoes && v in vp.pocoes ? vp.pocoes[v] : manaPotionLigada(v)) ? ' on' : ' off')).join(' · ')}</div>` : '');
         const ficha = p => `<span class="tb-ficha${p.av.m.isRune ? ' r' : ''}" title="${p.av.m.name} · mínimo ${p.minimo} criatura(s)${p.av.medidoNoMapa ? ' · ' + p.av.porLancamento + ' de dano medido por lançamento neste mapa' : ''}">${p.av.m.name} <small>≥${p.minimo}${p.av.medidoNoMapa ? ' · ' + p.av.porLancamento : ''}</small></span>`;
         corpo += `<div class="tb-cx">` + VOCS.map(v => {
             const rv = montarPlano(modelo, h, v);
