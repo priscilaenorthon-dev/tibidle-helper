@@ -5222,7 +5222,6 @@
     /* texto montado pela lógica com decimal em ponto ("59.4 pt"): vírgula na tela */
     const decBR = (s) => String(s == null ? '' : s).replace(/(\d)\.(\d)/g, '$1,$2');
 
-    /* @@DIAGNOSTICO-INICIO */ function rodarDiagnostico() { avisar('estado', 'diagnóstico ainda não disponível', 'info'); } /* @@DIAGNOSTICO-FIM */
 
     /* v1.9.0 — STATUS no layout do Stonegy (print do dono, 27/09): cartões
      * LEVEL / OURO / CAP LIVRE / TAXA XP, linha da hunt e os dois botões

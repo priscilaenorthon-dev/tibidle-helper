@@ -187,9 +187,9 @@ const semXss = (html, onde) => {
 const botao = (html, id) => { const m = new RegExp(`<button\\b[^>]*\\bid="${id}"[^>]*>([^<]*)`).exec(html); return m ? { tag: m[0], texto: m[1], disabled: /\sdisabled(\s|>|=|$)/.test(m[0].replace(/"[^"]*"/g, '""')) } : null; };
 
 /* ================================================================ testes */
-t('marcadores do DIAGNÓSTICO: um bloco só, antes de telaEstado; o botão chama rodarDiagnostico', async () => {
-    const i = SRC.indexOf('/* @@DIAGNOSTICO-INICIO */'), f = SRC.indexOf('/* @@DIAGNOSTICO-FIM */'), te = SRC.indexOf('function telaEstado()');
-    assert(i > 0 && f > i && te > f, 'bloco @@DIAGNOSTICO fora do lugar');
+t('marcadores do DIAGNÓSTICO: um bloco só; o botão do Status chama rodarDiagnostico', async () => {
+    const i = SRC.indexOf('/* @@DIAGNOSTICO-INICIO */'), f = SRC.indexOf('/* @@DIAGNOSTICO-FIM */');
+    assert(i > 0 && f > i, 'bloco @@DIAGNOSTICO ausente');
     assert.strictEqual(SRC.indexOf('/* @@DIAGNOSTICO-INICIO */', i + 1), -1, 'bloco repetido');
     assert(/function rodarDiagnostico\(/.test(SRC.slice(i, f)), 'rodarDiagnostico fora do bloco');
     const W = criarMundo({ ls: comAba('estado') });
@@ -198,7 +198,7 @@ t('marcadores do DIAGNÓSTICO: um bloco só, antes de telaEstado; o botão chama
     assert(b && /DIAGNÓSTICO/.test(b.texto) && !b.disabled, 'botão DIAGNÓSTICO ausente no Status');
     await W.el('tb-diagnostico').click();
     await W.avancar(0);
-    assert(/diagnóstico ainda não disponível/.test(logTxt(W)), 'o stub não foi chamado');
+    assert(/diagnóstico: \d+ ok · \d+ faltando · \d+ a conferir/.test(logTxt(W)), 'o diagnóstico não rodou: ' + logTxt(W).slice(-300));
 });
 
 t('Status: "OURO —" sem saldo lido; HUD e frame dão o número em pt-BR', async () => {
