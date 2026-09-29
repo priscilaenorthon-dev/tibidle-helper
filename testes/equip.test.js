@@ -1,15 +1,24 @@
 // Roda: node testes/equip.test.js
-// Extrai o trecho puro do userscript (entre os marcadores) e testa com as fixtures de 28/09.
+// Extrai o trecho puro do userscript (entre os marcadores) e testa.
+// • Casos públicos: testes/fixtures/itens.json (GET /item/info, sem login) — rodam em qualquer clone.
+// • Casos com o estado da conta (data/estado-equip-2026-09-28.json, fora do git): só rodam se o arquivo existir.
 const fs = require('fs'), path = require('path'), assert = require('assert');
 const raiz = path.join(__dirname, '..');
 const src = fs.readFileSync(path.join(raiz, 'tibidle-helper.user.js'), 'utf8');
 const ini = src.indexOf('/* @@EQUIP-PURO-INICIO */'), fim = src.indexOf('/* @@EQUIP-PURO-FIM */');
 assert(ini > 0 && fim > ini, 'marcadores @@EQUIP-PURO não encontrados');
-const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, candidatosEquip, distribuirEquip };')();
-const fx = JSON.parse(fs.readFileSync(path.join(raiz, 'data/estado-equip-2026-09-28.json'), 'utf8'));
-const lib = JSON.parse(fs.readFileSync(path.join(raiz, 'data/lib-items-2026-09-28.json'), 'utf8'));
-const base = {}; for (const [nome, id] of Object.entries(lib.porNome)) { const it = lib.itens[id]; if (it) base[nome] = { id: it.id, attrs: it.attrs || {}, sell: it.sell || 0, equipPreview: it.equipPreview || null }; }
-let n = 0; const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
+const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, pesosDaVoc, candidatosEquip, distribuirEquip };')();
+const le = (p) => { try { return JSON.parse(fs.readFileSync(path.join(raiz, p), 'utf8')); } catch (e) { return null; } };
+const base = {};
+for (const [nome, it] of Object.entries(le('testes/fixtures/itens.json').itens)) base[nome] = { id: it.id, attrs: it.attrs || {}, sell: it.sell || 0, equipPreview: it.equipPreview || null };
+const lib = le('data/lib-items-2026-09-28.json');
+if (lib) for (const [nome, id] of Object.entries(lib.porNome)) { const it = lib.itens[id]; if (it) base[nome] = { id: it.id, attrs: it.attrs || {}, sell: it.sell || 0, equipPreview: it.equipPreview || null }; }
+const fx = le('data/estado-equip-2026-09-28.json');
+let n = 0, pulados = 0;
+const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
+const tConta = (nome, fn) => { if (!fx || !lib) { pulados++; console.log('pula', nome, '(data/ ausente)'); return; } t(nome, fn); };
+const F = (r, ...at) => ({ raridade: r, atributos: at.map(([id, valor]) => ({ id, valor })) });
+const peca = (nome, forja) => ({ nome, slot: null, attrs: base[nome].attrs, equipPreview: base[nome].equipPreview, forja: forja || F(0) });
 
 t('épico com atributos mortos perde para incomum certo (Knight, colar)', () => {
     const epico = { nome: 'wolf tooth chain', slot: 'necklace', attrs: {}, forja: { raridade: 4, atributos: [{ id: 'dano_magico', valor: 3 }, { id: 'resist_gelo', valor: 2 }, { id: 'capacidade', valor: 100 }, { id: 'chance_de_loot', valor: 0.3 }] } };
@@ -50,7 +59,7 @@ t('wand com +1 nível mágico (forja) bate wand mais forte; wand de fogo vale ze
 t('anel temporário (life ring) pontua pelo equipPreview com etiqueta', () => {
     const p = { nome: 'life ring', slot: 'ring', attrs: base['life ring'].attrs, equipPreview: base['life ring'].equipPreview, forja: { raridade: 0, atributos: [] } };
     const r = M.pontuarPeca(p, 'DRUID');
-    assert(r.pontos > 0 && r.temporario === true, JSON.stringify(r));
+    assert(r.pontos > 0 && r.temporario === true && r.duracaoS === 1200, JSON.stringify(r));
 });
 t('vocação: wand só para Feiticeiro, rod só para Druida, arco só para Paladino, espada só para Knight', () => {
     assert(M.vocacaoPode(base['wand of inferno'].attrs, 'SORCERER') && !M.vocacaoPode(base['wand of inferno'].attrs, 'DRUID'));
@@ -59,14 +68,105 @@ t('vocação: wand só para Feiticeiro, rod só para Druida, arco só para Palad
     assert(M.vocacaoPode(base['knight axe'].attrs, 'KNIGHT') && !M.vocacaoPode(base['knight axe'].attrs, 'PALADIN'));
     assert(M.vocacaoPode(base['brass helmet'].attrs, 'DRUID'), 'elmo sem vocação serve para todos');
 });
-t('candidatos: corpo dos 4 + depósito purificado, slots normalizados', () => {
+
+/* ---- v2.9.0 ------------------------------------------------------------ */
+t('lança não é arma de ninguém (wiki: Paladino usa arco ou besta)', () => {
+    for (const nome of ['spear', 'royal spear']) for (const v of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'])
+        assert(!M.vocacaoPode(base[nome].attrs, v), `${nome} liberada para ${v}`);
+    assert(M.vocacaoPode(base['crossbow'].attrs, 'PALADIN') && M.vocacaoPode(base['elvish bow'].attrs, 'PALADIN'));
+});
+t('besta vale mais que arco no Paladino (bolt grátis 30 contra arrow grátis 25)', () => {
+    const arco = M.pontuarPeca(peca('bow'), 'PALADIN'), besta = M.pontuarPeca(peca('crossbow'), 'PALADIN');
+    assert(arco.pontos === 0, 'arco comum deveria valer 0: ' + arco.pontos);
+    assert(besta.pontos >= 3, 'besta deveria valer o ganho do bolt: ' + besta.pontos);
+    assert(besta.motivos[0].includes('bolt'), 'motivo deveria citar o bolt: ' + besta.motivos);
+});
+t('Paladino: Dano Mágico conta (runa + Caldera + Missile), e divide com Dano Físico', () => {
+    const P = M.pesosDaVoc('PALADIN');
+    assert(P.dano_magico > 0 && P.dano_fisico > 0 && Math.abs(P.dano_magico + P.dano_fisico - 1) < 0.01, JSON.stringify({ m: P.dano_magico, f: P.dano_fisico }));
+    const soMagia = M.pesosDaVoc('PALADIN', { fracMagica: { PALADIN: 0.9 } });
+    assert(soMagia.dano_magico === 0.9 && soMagia.distancia < P.distancia, 'fração medida deveria mandar');
+});
+t('Knight: +1 de ataque vale quase o mesmo que +1 de skill (golpe e Berserk são simétricos)', () => {
+    const P = M.pesosDaVoc('KNIGHT');
+    assert(P.attack / P.corpo_a_corpo > 0.7 && P.attack / P.corpo_a_corpo < 1.3, `ataque ${P.attack} × skill ${P.corpo_a_corpo}`);
+    assert(P.skillaxe === P.corpo_a_corpo);
+});
+t('nível mágico pesa pelo ML atual: com ML 5 vale bem mais que com ML 20', () => {
+    const baixo = M.pesosDaVoc('SORCERER', { nivel: 39, sk: { SORCERER: { ml: 5 } } }), alto = M.pesosDaVoc('SORCERER', { nivel: 62, sk: { SORCERER: { ml: 20 } } });
+    assert(baixo.nivel_magico > 2 * alto.nivel_magico, `${baixo.nivel_magico} × ${alto.nivel_magico}`);
+    assert(alto.nivel_magico > 2.5 && alto.nivel_magico < 5, 'ML 20 deveria ficar entre 2,5 e 5: ' + alto.nivel_magico);
+    const lixo = M.pesosDaVoc('SORCERER', { sk: { SORCERER: { ml: undefined } } });
+    assert(lixo.nivel_magico === alto.nivel_magico, 'skill ausente cai na referência');
+});
+t('peça de carga ou de tempo é marcada temporária (stone skin, might ring, prismatic ring)', () => {
+    for (const nome of ['stone skin amulet', 'might ring', 'prismatic ring', 'ring of healing', 'terra amulet']) {
+        const r = M.pontuarPeca(peca(nome), 'KNIGHT');
+        assert(r.temporario, nome + ' não saiu temporária');
+    }
+    assert(M.pontuarPeca(peca('stone skin amulet'), 'KNIGHT').cargas === 5);
+    assert(!M.pontuarPeca(peca('platinum amulet'), 'KNIGHT').temporario, 'platinum amulet é permanente');
+});
+
+/* cenário montado com peças reais do catálogo */
+let k = 0;
+const eq = (nome, forja) => ({ name: nome, iid: 'c' + (++k), forja: forja || F(0) });
+const dep = (nome, slot, forja) => ({ itemName: nome, iid: 'd' + (++k), slot, forja: forja || F(0) });
+const roster = [
+    { vocation: 'KNIGHT', equipment: { weapon: eq('mace'), shield: eq('bonelord shield'), necklace: eq('platinum amulet') } },
+    { vocation: 'PALADIN', equipment: { weapon: eq('bow') } },
+    { vocation: 'SORCERER', equipment: { weapon: eq('wand of vortex'), ring: eq('crystal ring', F(1, ['regen_mana', 2.3])) } },
+    { vocation: 'DRUID', equipment: { weapon: eq('snakebite rod') } },
+];
+const depot = { entries: [
+    dep('crossbow', 'weapon'), dep('royal spear', 'weapon', F(1, ['distancia', 1])), dep('elvish bow', 'weapon'),
+    dep('ring of healing', 'ring'), dep('life ring', 'ring'), dep('might ring', 'ring'), dep('stone skin amulet', 'necklace'),
+    dep('wand of inferno', 'weapon'), dep('wand of dragonbreath', 'weapon'),
+] };
+const pecas = M.candidatosEquip(roster, depot, base, []);
+const fogoImune = { notas: { COMBAT_FIREDAMAGE: 0, COMBAT_ENERGYDAMAGE: 100 } };
+
+t('distribuir: Paladino fica com besta, nunca com lança; o 2º arco fica de reserva', () => {
+    const d = M.distribuirEquip(pecas);
+    const arma = d.porVoc.PALADIN.weapon.melhor;
+    assert(arma && arma.nome === 'crossbow' && arma.attrs.ammotype === 'bolt', 'arma do Paladino: ' + (arma && arma.nome));
+    assert(!Object.values(d.porVoc).some(x => x.weapon && x.weapon.melhor && /spear/.test(x.weapon.melhor.nome)), 'lança escolhida para alguém');
+    assert(d.reservas.has(pecas.find(p => p.nome === 'elvish bow').iid), 'o segundo melhor arco deveria ficar de reserva');
+    const lanca = d.dispensaveis.find(p => p.nome === 'royal spear');
+    assert(lanca && /nenhuma vocação/.test(lanca.motivo), 'lança deveria sair como "nenhuma vocação usa": ' + (lanca && lanca.motivo));
+});
+t('distribuir: peça temporária não é escolhida nem vendida; aparece em temporarios', () => {
+    const d = M.distribuirEquip(pecas);
+    for (const v of Object.keys(d.porVoc)) for (const s of ['ring', 'necklace']) {
+        const m = d.porVoc[v][s] && d.porVoc[v][s].melhor;
+        assert(!m || !['ring of healing', 'life ring', 'might ring', 'stone skin amulet'].includes(m.nome), `${v} ${s} escolheu ${m && m.nome}`);
+    }
+    assert(!d.dispensaveis.some(p => ['ring of healing', 'life ring', 'might ring', 'stone skin amulet'].includes(p.nome)), 'temporária na lista de venda');
+    assert(d.temporarios.map(p => p.nome).sort().join() === 'life ring,might ring,ring of healing,stone skin amulet', 'temporarios: ' + d.temporarios.map(p => p.nome));
+});
+t('distribuir: dispensável não depende do mapa (inferno fica fora da venda em mapa imune a fogo)', () => {
+    const mapa = M.distribuirEquip(pecas, undefined, fogoImune);
+    assert(mapa.porVoc.SORCERER.weapon.melhor.nome !== 'wand of inferno', 'no mapa imune a fogo a inferno não deveria ser a escolhida');
+    assert(!mapa.dispensaveis.some(p => p.nome === 'wand of inferno'), 'inferno na lista de venda');
+    const neutro = M.distribuirEquip(pecas);
+    assert(neutro.porVoc.SORCERER.weapon.melhor.nome === 'wand of inferno', 'no mapa neutro a inferno é a melhor');
+});
+t('distribuir: item único não vai para dois (cenário público)', () => {
+    const d = M.distribuirEquip(pecas);
+    const vistos = new Set();
+    for (const v of Object.keys(d.porVoc)) for (const s of Object.keys(d.porVoc[v])) { const m = d.porVoc[v][s].melhor; if (!m) continue; assert(!vistos.has(m.iid), 'peça repetida ' + m.iid); vistos.add(m.iid); }
+    assert(Object.keys(d.porVoc.PALADIN).length === 7 && Object.keys(d.porVoc.KNIGHT).length === 8);
+});
+
+/* ---- estado real da conta (28/09) ----------------------------------------- */
+tConta('candidatos: corpo dos 4 + depósito purificado, slots normalizados', () => {
     const c = M.candidatosEquip(fx.roster, fx.depot, base);
     assert(c.filter(p => p.origem === 'corpo').length === 31, 'corpo: 8+7+8+8 = 31 peças, veio ' + c.filter(p => p.origem === 'corpo').length);
     assert(c.every(p => M.SLOTS_EQUIP.includes(p.slot)), 'slot fora da lista: ' + (c.find(p => !M.SLOTS_EQUIP.includes(p.slot)) || {}).slot);
     assert(c.filter(p => p.origem === 'depósito').length > 100, 'depósito deveria ter >100 peças purificadas');
     assert(!c.some(p => p.nome === 'cyclops trophy'), 'troféu sem forja não é candidato');
 });
-t('distribuir: item único não vai para dois; cada voc tem 8 slots (Paladino 7)', () => {
+tConta('distribuir: item único não vai para dois; cada voc tem 8 slots (Paladino 7)', () => {
     const c = M.candidatosEquip(fx.roster, fx.depot, base);
     const d = M.distribuirEquip(c);
     const vistos = new Set();
@@ -74,13 +174,13 @@ t('distribuir: item único não vai para dois; cada voc tem 8 slots (Paladino 7)
     assert(Object.keys(d.porVoc.PALADIN).length === 7 && Object.keys(d.porVoc.KNIGHT).length === 8);
     assert(!d.porVoc.PALADIN.shield, 'paladino não tem escudo');
 });
-t('distribuir: o anel do Feiticeiro tem regen de mana', () => {
+tConta('distribuir: o anel do Feiticeiro tem regen de mana', () => {
     const c = M.candidatosEquip(fx.roster, fx.depot, base);
     const d = M.distribuirEquip(c);
     const anel = d.porVoc.SORCERER.ring.melhor;
     assert(anel, 'sem anel'); assert(anel.forja.atributos.some(a => a.id === 'regen_mana'), 'anel do Feiticeiro sem regen: ' + JSON.stringify(anel.forja));
 });
-t('distribuir: dispensáveis têm motivo e não incluem nada que foi escolhido', () => {
+tConta('distribuir: dispensáveis têm motivo e não incluem nada que foi escolhido', () => {
     const c = M.candidatosEquip(fx.roster, fx.depot, base);
     const d = M.distribuirEquip(c);
     assert(d.dispensaveis.length > 50, 'esperava >50 dispensáveis, veio ' + d.dispensaveis.length);
@@ -88,11 +188,11 @@ t('distribuir: dispensáveis têm motivo e não incluem nada que foi escolhido',
     console.log('     top dispensáveis:', d.dispensaveis.slice(0, 3).map(p => `${p.nome} ${p.sell}o`).join(' · '));
     for (const v of Object.keys(d.porVoc)) console.log('     ' + v, Object.entries(d.porVoc[v]).filter(([, x]) => x.ganho > 0).map(([s, x]) => `${s}: ${x.atual ? x.atual.nome : '—'} → ${x.melhor.nome} +${x.ganho}`).join(' | ') || 'sem troca');
 });
-t('candidatos: a mochila entra com origem "mochila" e slot deduzido da base', () => {
+tConta('candidatos: a mochila entra com origem "mochila" e slot deduzido da base', () => {
     const bag = [{ iid: 'b1', name: 'bone shield', forja: { raridade: 2, atributos: [{ id: 'resist_morte', valor: 2.1 }] } }, { iid: 'b2', name: 'battle axe', forja: { raridade: 0, atributos: [] } }, { iid: 'b3', name: 'metal spike' }];
     const c = M.candidatosEquip(fx.roster, null, base, bag);
     const m = c.filter(p => p.origem === 'mochila');
     assert(m.length === 2, 'esperava 2 da mochila (metal spike não é equipamento), veio ' + m.length);
     assert(m.find(p => p.iid === 'b1').slot === 'shield' && m.find(p => p.iid === 'b2').slot === 'weapon' && m.find(p => p.iid === 'b2').duasMaos === true);
 });
-console.log(`\n${n} testes ok`);
+console.log(`\n${n} testes ok` + (pulados ? ` · ${pulados} pulados (sem o estado da conta em data/)` : ''));

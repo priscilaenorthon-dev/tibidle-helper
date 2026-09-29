@@ -3828,3 +3828,49 @@ mhit/mcast/spawn/kill/wave/wave_timer). O que vale hoje:
   tela". Trilho + gaveta viraram uma caixa solta (`#tb-caixa`), arrastável
   pela alça do trilho ou pelo cabeçalho da gaveta, travada dentro da tela;
   posição (`right`/`top`) guardada por conta e sobrevive ao F5.
+
+### 2.9.0 — revisão do Inteligente e do Equip (29/09)
+
+Revisão do código com os catálogos públicos (`/spells`, `/item/info`, `/ammo`,
+`/potions`) e a wiki (`/configurando-o-combate`, `/equipamentos`, `/forja`,
+`/como-o-dano-e-calculado`, `/magias-e-runas`). Cada defeito tem teste em
+`testes/` (rodam em qualquer clone: `node testes/equip.test.js` e
+`node testes/magia.test.js`; os casos com o estado da conta só rodam com `data/`).
+
+**Inteligente (aba Magia)**
+- **Recarga ≤ 2 s vai por último, em todos os modelos.** Wiki: o jogo "confere os
+  slots de 1 a 4 e lança o primeiro que estiver pronto". Runa/strike/Divine
+  Missile estão prontos em todo ciclo; na frente, travavam o resto. Na 2.8.5,
+  sem mana medida, a runa de 36 casas ia para o slot 1 do Feiticeiro (dava mais
+  dano por lançamento que as ondas baratas) → ondas paradas, runa a 8 ouro/2 s.
+  Ordem nova: recarga longa (mais forte primeiro), depois runa ≥2, depois golpe ≥1.
+- **Nunca mais de 4 slots.** Mana sobrando + lure baixo montava 5 (3 ondas +
+  golpe + runa); o socket mandava 4 e a runa sumia calada. Agora a runa sai.
+- **Histerese no regime de mana**: entra em "sobrando" com ≥ 70 %, sai < 40 %; a
+  mana medida zera quando o kit do personagem muda (profiles_set /
+  update_battle_config). Antes o kit alternava a cada medição.
+- **Protector** (wiki: dano causado −35 %) só se o Knight apanha: sai se a vida
+  mínima medida no mapa ficou ≥ 60 %; sem medida fica.
+- **Poção de mana = a mais barata por ponto** (Mana Potion 0,56); a 2.8.5 dava
+  Strong Mana (0,72) ao Druida no 50+ e a conta usava 0,56. Poções vêm de
+  `/potions` (reserva embutida).
+- Sem socket (aplicação pelos diálogos) o Log avisa que poção/cura/suporte/munição
+  NÃO foram aplicados. Dica da tela atualizada.
+
+**Equip**
+- **Lança não é arma de ninguém** (wiki: Paladino usa arco ou besta). Uma royal
+  spear +1 distância tirava o arco (0 pt) e mandava bow e crossbow para a venda.
+- **Besta pontua pela munição**: bolt grátis 30 contra arrow grátis 25. Ao trocar
+  arco ↔ besta, o EQUIPAR põe a munição grátis do tipo novo no perfil do Paladino.
+- **Carga/tempo = temporária**: stone skin (5 cargas) saía com 160 pt para o
+  Knight, might ring (20) com 90, ring of healing (7,5 min) com 18. Temporárias
+  não entram nas trocas nem na venda; ficam numa lista própria.
+- **Dispensável não depende do mapa**: em mapa imune a fogo a wand of inferno ia
+  para a venda. Só é dispensável o que também sobra na conta neutra.
+- **Pesos pela fórmula e pelas skills do momento** (`pesosDaVoc`): Knight ataque
+  0,9 → ≈ skill (golpe e Berserk são simétricos); nível mágico 7 → ~3,9 no ML 20
+  (7 era a conta do ML≈4); Paladino ganha Dano Mágico (runa/Caldera/Missile),
+  dividido com Dano Físico pela fração medida no livro-razão (padrão metade).
+  Skills vêm do frame (`distance` confirmado; `melee`/`magicLevel` pelos nomes do
+  bestiário — se não baterem, cai na referência de 28/09).
+- A opção "guardar" diz a verdade: o jogo só tem "guardar tudo" (loot vai junto).

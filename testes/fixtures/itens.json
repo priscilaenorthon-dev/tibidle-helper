@@ -1,0 +1,1231 @@
+{
+"fonte": "GET https://play.tibidle.com/item/info?ids=… (público, sem login) — 29/09/2026",
+"itens": {
+"wand of vortex": {
+"id": 3074,
+"attrs": {
+"description": "Surges of energy rush through the tip of this wand",
+"weaponType": "wand",
+"shootType": "energy",
+"range": 3,
+"weight": 1900,
+"script": "moveevent;weapon",
+"level": 6,
+"mana": 1,
+"fromDamage": 8,
+"toDamage": 18,
+"wandType": "energy",
+"vocation": "Sorcerer;true, Master Sorcerer",
+"slot": "hand"
+},
+"sell": 100,
+"equipPreview": null
+},
+"wand of inferno": {
+"id": 3071,
+"attrs": {
+"description": "It unleashes the very fires of hell",
+"weaponType": "wand",
+"shootType": "fire",
+"range": 3,
+"weight": 2700,
+"script": "moveevent;weapon",
+"level": 33,
+"mana": 8,
+"fromDamage": 56,
+"toDamage": 74,
+"wandType": "fire",
+"vocation": "Sorcerer;true, Master Sorcerer",
+"slot": "hand"
+},
+"sell": 3000,
+"equipPreview": null
+},
+"snakebite rod": {
+"id": 3066,
+"attrs": {
+"primarytype": "rods",
+"description": "It seems to twitch and quiver as if trying to escape your grip",
+"weaponType": "wand",
+"shootType": "smallearth",
+"range": 3,
+"weight": 1900,
+"script": "moveevent;weapon",
+"level": 6,
+"mana": 2,
+"fromDamage": 8,
+"toDamage": 18,
+"wandType": "earth",
+"vocation": "Druid;true, Elder Druid",
+"slot": "hand"
+},
+"sell": 100,
+"equipPreview": null
+},
+"underworld rod": {
+"id": 8082,
+"attrs": {
+"primarytype": "rods",
+"description": "No one knows which hell this unholy rod comes from",
+"weaponType": "wand",
+"shootType": "death",
+"range": 3,
+"weight": 2900,
+"imbuementslot": 2,
+"life leech": 3,
+"mana leech": 3,
+"skillboost magic level": 3,
+"script": "moveevent;weapon",
+"level": 42,
+"mana": 13,
+"fromDamage": 56,
+"toDamage": 74,
+"wandType": "death",
+"vocation": "Druid;true, Elder Druid",
+"slot": "hand"
+},
+"sell": 4400,
+"equipPreview": null
+},
+"bow": {
+"id": 3350,
+"attrs": {
+"primarytype": "distance weapons",
+"weaponType": "distance",
+"slotType": "two-handed",
+"ammotype": "arrow",
+"range": 6,
+"weight": 3100,
+"script": "moveevent;weapon"
+},
+"sell": 400,
+"equipPreview": null
+},
+"crossbow": {
+"id": 3349,
+"attrs": {
+"primarytype": "distance weapons",
+"weaponType": "distance",
+"slotType": "two-handed",
+"ammotype": "bolt",
+"range": 5,
+"weight": 4000,
+"imbuementslot": 3,
+"elemental damage": 3,
+"life leech": 3,
+"mana leech": 3,
+"critical hit": 3,
+"skillboost distance": 3,
+"script": "moveevent;weapon"
+},
+"sell": 500,
+"equipPreview": null
+},
+"spellbook": {
+"id": 3059,
+"attrs": {
+"primarytype": "spellbooks",
+"description": "It shows your spells and can also shield against attacks when worn",
+"weaponType": "spellbook",
+"defense": 14,
+"weight": 1800,
+"imbuementslot": 1,
+"elemental protection death": 3,
+"elemental protection earth": 3,
+"elemental protection fire": 3,
+"elemental protection ice": 3,
+"elemental protection energy": 3,
+"elemental protection holy": 3,
+"skillboost shielding": 3,
+"script": "moveevent",
+"slot": "shield",
+"vocation": "Sorcerer;true, Druid;true, Master Sorcerer, Elder Druid"
+},
+"sell": 1,
+"equipPreview": null
+},
+"spellbook of enlightenment": {
+"id": 8072,
+"attrs": {
+"description": "It shows your spells and can also shield against attacks when worn",
+"weaponType": "spellbook",
+"magiclevelpoints": 1,
+"defense": 18,
+"weight": 1950,
+"imbuementslot": 1,
+"elemental protection death": 3,
+"elemental protection earth": 3,
+"elemental protection fire": 3,
+"elemental protection ice": 3,
+"elemental protection energy": 3,
+"elemental protection holy": 3,
+"skillboost shielding": 3,
+"script": "moveevent",
+"level": 30,
+"slot": "shield",
+"vocation": "Sorcerer;true, Druid;true, Master Sorcerer, Elder Druid"
+},
+"sell": 4000,
+"equipPreview": null
+},
+"bone shield": {
+"id": 3441,
+"attrs": {
+"primarytype": "shields",
+"weaponType": "shield",
+"defense": 20,
+"weight": 5500,
+"script": "moveevent",
+"slot": "shield"
+},
+"sell": 80,
+"equipPreview": null
+},
+"bonelord shield": {
+"id": 3418,
+"attrs": {
+"primarytype": "shields",
+"weaponType": "shield",
+"defense": 28,
+"weight": 4700,
+"imbuementslot": 1,
+"elemental protection death": 3,
+"elemental protection earth": 3,
+"elemental protection fire": 3,
+"elemental protection ice": 3,
+"elemental protection energy": 3,
+"elemental protection holy": 3,
+"skillboost shielding": 3,
+"script": "moveevent",
+"slot": "shield"
+},
+"sell": 1200,
+"equipPreview": null
+},
+"fur armor": {
+"id": 22085,
+"attrs": {
+"primarytype": "armors",
+"showAttributes": 1,
+"absorbpercentice": 5,
+"absorbpercentpoison": 5,
+"armor": 11,
+"weight": 4900,
+"script": "moveevent",
+"level": 50,
+"slot": "armor"
+},
+"sell": 5000,
+"equipPreview": null
+},
+"life ring": {
+"id": 3052,
+"attrs": {
+"primarytype": "rings",
+"stopduration": 1,
+"showduration": 1,
+"transformequipto": 3089,
+"weight": 80,
+"script": "moveevent",
+"slot": "ring"
+},
+"sell": 50,
+"equipPreview": {
+"durationS": 1200,
+"attrs": {
+"primarytype": "rings",
+"showduration": 1,
+"showAttributes": 1,
+"manaticks": 6000,
+"managain": 8,
+"healthticks": 6000,
+"healthgain": 2,
+"duration": 1200,
+"transformdeequipto": 3052,
+"decayTo": 0,
+"weight": 80,
+"script": "moveevent",
+"slot": "ring"
+}
+}
+},
+"ring of healing": {
+"id": 3098,
+"attrs": {
+"stopduration": 1,
+"showduration": 1,
+"transformequipto": 3100,
+"weight": 80,
+"script": "moveevent",
+"slot": "ring"
+},
+"sell": 100,
+"equipPreview": {
+"durationS": 450,
+"attrs": {
+"showduration": 1,
+"showAttributes": 1,
+"manaticks": 6000,
+"managain": 24,
+"healthticks": 6000,
+"healthgain": 6,
+"duration": 450,
+"transformdeequipto": 3098,
+"decayTo": 0,
+"weight": 80,
+"script": "moveevent",
+"slot": "ring"
+}
+}
+},
+"wolf tooth chain": {
+"id": 3012,
+"attrs": {
+"primarytype": "amulets and necklaces",
+"weight": 330,
+"script": "moveevent",
+"slot": "necklace"
+},
+"sell": 100,
+"equipPreview": null
+},
+"crystal ring": {
+"id": 3007,
+"attrs": {
+"primarytype": "rings",
+"weight": 90,
+"script": "moveevent",
+"slot": "ring"
+},
+"sell": 250,
+"equipPreview": null
+},
+"two handed sword": {
+"id": 3265,
+"attrs": {
+"primarytype": "sword weapons",
+"weaponType": "sword",
+"slotType": "two-handed",
+"attack": 30,
+"defense": 25,
+"weight": 7000,
+"script": "moveevent;weapon",
+"level": 20,
+"unproperly": "true",
+"vocation": "Knight;true, Elite Knight"
+},
+"sell": 450,
+"equipPreview": null
+},
+"dragon lance": {
+"id": 3302,
+"attrs": {
+"primarytype": "axe weapons",
+"description": "The extraordinary sharp blade penetrates every armor",
+"weaponType": "axe",
+"slotType": "two-handed",
+"attack": 47,
+"defense": 16,
+"weight": 6700,
+"imbuementslot": 3,
+"elemental damage": 3,
+"life leech": 3,
+"mana leech": 3,
+"critical hit": 3,
+"skillboost axe": 3,
+"script": "moveevent;weapon",
+"level": 60,
+"unproperly": "true"
+},
+"sell": 9000,
+"equipPreview": null
+},
+"spear": {
+"id": 3277,
+"attrs": {
+"primarytype": "distance weapons",
+"weaponType": "distance",
+"shootType": "spear",
+"maxhitchance": 76,
+"range": 3,
+"attack": 25,
+"weight": 2000,
+"script": "moveevent;weapon",
+"breakChance": 3,
+"slot": "hand"
+},
+"sell": 3,
+"equipPreview": null
+},
+"elvish bow": {
+"id": 7438,
+"attrs": {
+"primarytype": "distance weapons",
+"description": "This beautifully ornamented bow was made by a skilled elvish bowmaker",
+"weaponType": "distance",
+"slotType": "two-handed",
+"ammotype": "arrow",
+"hitchance": 5,
+"range": 6,
+"weight": 3900,
+"imbuementslot": 3,
+"elemental damage": 3,
+"life leech": 3,
+"mana leech": 3,
+"critical hit": 3,
+"skillboost distance": 3,
+"script": "moveevent;weapon"
+},
+"sell": 200,
+"equipPreview": null
+},
+"composite hornbow": {
+"id": 8027,
+"attrs": {
+"primarytype": "distance weapons",
+"weaponType": "distance",
+"slotType": "two-handed",
+"ammotype": "arrow",
+"hitchance": 2,
+"range": 6,
+"attack": 3,
+"weight": 5200,
+"imbuementslot": 3,
+"elemental damage": 3,
+"life leech": 3,
+"mana leech": 3,
+"critical hit": 3,
+"skillboost distance": 3,
+"script": "moveevent;weapon",
+"level": 50,
+"unproperly": "true",
+"vocation": "Paladin;true, Royal Paladin"
+},
+"sell": 25000,
+"equipPreview": null
+},
+"blue robe": {
+"id": 3567,
+"attrs": {
+"primarytype": "armors",
+"description": "It is a magic robe",
+"armor": 11,
+"weight": 2200,
+"imbuementslot": 2,
+"life leech": 3,
+"elemental protection death": 3,
+"elemental protection earth": 3,
+"elemental protection fire": 3,
+"elemental protection ice": 3,
+"elemental protection energy": 3,
+"elemental protection holy": 3,
+"script": "moveevent",
+"slot": "armor"
+},
+"sell": 3000,
+"equipPreview": null
+},
+"magician hat": {
+"id": 3573,
+"attrs": {
+"primarytype": "helmets",
+"armor": 1,
+"weight": 750,
+"imbuementslot": 2,
+"mana leech": 3,
+"skillboost axe": 3,
+"skillboost sword": 3,
+"skillboost club": 3,
+"skillboost shielding": 3,
+"skillboost distance": 3,
+"script": "moveevent",
+"slot": "head"
+},
+"sell": 1,
+"equipPreview": null
+},
+"terra rod": {
+"id": 3065,
+"attrs": {
+"primarytype": "rods",
+"description": "Small stones are flying from its tip",
+"weaponType": "wand",
+"shootType": "smallearth",
+"range": 3,
+"weight": 2500,
+"script": "moveevent;weapon",
+"level": 26,
+"mana": 8,
+"fromDamage": 37,
+"toDamage": 53,
+"wandType": "earth",
+"vocation": "Druid;true, Elder Druid",
+"slot": "hand"
+},
+"sell": 2000,
+"equipPreview": null
+},
+"wand of dragonbreath": {
+"id": 3075,
+"attrs": {
+"description": "Legends say that this wand holds the soul of a young dragon",
+"weaponType": "wand",
+"shootType": "fire",
+"range": 3,
+"weight": 2300,
+"imbuementslot": 2,
+"life leech": 3,
+"mana leech": 3,
+"skillboost magic level": 3,
+"script": "moveevent;weapon",
+"level": 13,
+"mana": 3,
+"fromDamage": 13,
+"toDamage": 25,
+"wandType": "fire",
+"vocation": "Sorcerer;true, Master Sorcerer",
+"slot": "hand"
+},
+"sell": 200,
+"equipPreview": null
+},
+"royal spear": {
+"id": 7378,
+"attrs": {
+"primarytype": "distance weapons",
+"weaponType": "distance",
+"shootType": "royalspear",
+"maxhitchance": 80,
+"range": 3,
+"attack": 35,
+"weight": 2500,
+"script": "moveevent;weapon",
+"breakChance": 3,
+"level": 25,
+"unproperly": "true",
+"slot": "hand"
+},
+"sell": 1,
+"equipPreview": null
+},
+"mace": {
+"id": 3286,
+"attrs": {
+"primarytype": "club weapons",
+"weaponType": "club",
+"attack": 16,
+"defense": 11,
+"weight": 3800,
+"script": "moveevent;weapon",
+"slot": "hand"
+},
+"sell": 30,
+"equipPreview": null
+},
+"steel shield": {
+"id": 3409,
+"attrs": {
+"primarytype": "shields",
+"weaponType": "shield",
+"defense": 21,
+"weight": 6900,
+"imbuementslot": 1,
+"elemental protection death": 3,
+"elemental protection earth": 3,
+"elemental protection fire": 3,
+"elemental protection ice": 3,
+"elemental protection energy": 3,
+"elemental protection holy": 3,
+"skillboost shielding": 3,
+"script": "moveevent",
+"slot": "shield"
+},
+"sell": 80,
+"equipPreview": null
+},
+"arrow": {
+"id": 3447,
+"attrs": {
+"primarytype": "ammunition",
+"weaponType": "ammunition",
+"ammotype": "arrow",
+"shootType": "arrow",
+"maxhitchance": 91,
+"attack": 25,
+"weight": 70,
+"script": "moveevent;weapon",
+"action": "removecount",
+"slot": "ammo"
+},
+"sell": 1,
+"equipPreview": null
+},
+"sniper arrow": {
+"id": 7364,
+"attrs": {
+"primarytype": "ammunition",
+"weaponType": "ammunition",
+"ammotype": "arrow",
+"shootType": "sniperarrow",
+"maxhitchance": 100,
+"attack": 28,
+"weight": 70,
+"script": "moveevent;weapon",
+"action": "removecount",
+"level": 20,
+"unproperly": "true",
+"slot": "ammo"
+},
+"sell": 1,
+"equipPreview": null
+},
+"dwarven shield": {
+"id": 3425,
+"attrs": {
+"primarytype": "shields",
+"weaponType": "shield",
+"defense": 26,
+"weight": 5500,
+"script": "moveevent",
+"slot": "shield"
+},
+"sell": 100,
+"equipPreview": null
+},
+"plate armor": {
+"id": 3357,
+"attrs": {
+"primarytype": "armors",
+"armor": 10,
+"weight": 12000,
+"script": "moveevent",
+"slot": "armor"
+},
+"sell": 400,
+"equipPreview": null
+},
+"might ring": {
+"id": 3048,
+"attrs": {
+"primarytype": "rings",
+"showCharges": 1,
+"showAttributes": 1,
+"absorbpercentphysical": 20,
+"absorbpercentfire": 20,
+"absorbpercentpoison": 20,
+"absorbpercentenergy": 20,
+"absorbpercentice": 20,
+"absorbpercentholy": 20,
+"absorbpercentdeath": 20,
+"charges": 20,
+"weight": 100,
+"script": "moveevent",
+"slot": "ring"
+},
+"sell": 250,
+"equipPreview": null
+},
+"power ring": {
+"id": 3050,
+"attrs": {
+"primarytype": "rings",
+"stopduration": 1,
+"showduration": 1,
+"transformequipto": 3087,
+"weight": 80,
+"script": "moveevent",
+"slot": "ring"
+},
+"sell": 50,
+"equipPreview": {
+"durationS": 1800,
+"attrs": {
+"primarytype": "rings",
+"showduration": 1,
+"skillfist": 6,
+"duration": 1800,
+"transformdeequipto": 3050,
+"decayTo": 0,
+"weight": 80,
+"script": "moveevent",
+"slot": "ring"
+}
+}
+},
+"energy ring": {
+"id": 3051,
+"attrs": {
+"primarytype": "rings",
+"stopduration": 1,
+"showduration": 1,
+"transformequipto": 3088,
+"weight": 80,
+"script": "moveevent",
+"slot": "ring",
+"vocation": "Knight;true, Paladin;true, Elite Knight, Royal Paladin"
+},
+"sell": 100,
+"equipPreview": {
+"durationS": 600,
+"attrs": {
+"primarytype": "rings",
+"manashield": 1,
+"showduration": 1,
+"showAttributes": 1,
+"duration": 600,
+"transformdeequipto": 3051,
+"decayTo": 0,
+"weight": 80,
+"script": "moveevent",
+"slot": "ring",
+"vocation": "Knight;true, Paladin;true, Elite Knight, Royal Paladin"
+}
+}
+},
+"stone skin amulet": {
+"id": 3081,
+"attrs": {
+"primarytype": "amulets and necklaces",
+"showCharges": 1,
+"showAttributes": 1,
+"absorbpercentphysical": 80,
+"absorbpercentdeath": 80,
+"charges": 5,
+"weight": 700,
+"script": "moveevent",
+"slot": "necklace"
+},
+"sell": 500,
+"equipPreview": null
+},
+"terra amulet": {
+"id": 814,
+"attrs": {
+"primarytype": "amulets and necklaces",
+"showCharges": 1,
+"showAttributes": 1,
+"absorbpercentpoison": 20,
+"absorbpercentfire": -10,
+"charges": 200,
+"weight": 500,
+"script": "moveevent",
+"level": 60,
+"slot": "necklace"
+},
+"sell": 1500,
+"equipPreview": null
+},
+"garlic necklace": {
+"id": 3083,
+"attrs": {
+"primarytype": "amulets and necklaces",
+"showCharges": 1,
+"showAttributes": 1,
+"absorbpercentlifedrain": 20,
+"charges": 150,
+"weight": 380,
+"script": "moveevent",
+"slot": "necklace"
+},
+"sell": 50,
+"equipPreview": null
+},
+"protection amulet": {
+"id": 3084,
+"attrs": {
+"primarytype": "amulets and necklaces",
+"showCharges": 1,
+"showAttributes": 1,
+"absorbpercentphysical": 6,
+"charges": 250,
+"weight": 550,
+"script": "moveevent",
+"slot": "necklace"
+},
+"sell": 100,
+"equipPreview": null
+},
+"time ring": {
+"id": 3053,
+"attrs": {
+"primarytype": "rings",
+"stopduration": 1,
+"showduration": 1,
+"transformequipto": 3090,
+"weight": 90,
+"script": "moveevent",
+"slot": "ring"
+},
+"sell": 100,
+"equipPreview": {
+"durationS": 600,
+"attrs": {
+"primarytype": "rings",
+"speed": 30,
+"duration": 600,
+"transformdeequipto": 3053,
+"decayTo": 0,
+"weight": 90,
+"script": "moveevent",
+"slot": "ring"
+}
+}
+},
+"dwarven ring": {
+"id": 3097,
+"attrs": {
+"primarytype": "rings",
+"stopduration": 1,
+"showduration": 1,
+"transformequipto": 3099,
+"weight": 110,
+"script": "moveevent",
+"slot": "ring"
+},
+"sell": 100,
+"equipPreview": {
+"durationS": 3600,
+"attrs": {
+"primarytype": "rings",
+"suppressdrunk": 1,
+"showduration": 1,
+"showAttributes": 1,
+"duration": 3600,
+"transformdeequipto": 3097,
+"decayTo": 0,
+"weight": 110,
+"script": "moveevent",
+"slot": "ring"
+}
+}
+},
+"sword ring": {
+"id": 3091,
+"attrs": {
+"primarytype": "rings",
+"stopduration": 1,
+"showduration": 1,
+"transformequipto": 3094,
+"weight": 90,
+"script": "moveevent",
+"slot": "ring"
+},
+"sell": 100,
+"equipPreview": {
+"durationS": 1800,
+"attrs": {
+"primarytype": "rings",
+"showduration": 1,
+"skillsword": 4,
+"duration": 1800,
+"transformdeequipto": 3091,
+"decayTo": 0,
+"weight": 90,
+"script": "moveevent",
+"slot": "ring"
+}
+}
+},
+"axe ring": {
+"id": 3092,
+"attrs": {
+"primarytype": "rings",
+"stopduration": 1,
+"showduration": 1,
+"transformequipto": 3095,
+"weight": 90,
+"script": "moveevent",
+"slot": "ring"
+},
+"sell": 100,
+"equipPreview": {
+"durationS": 1800,
+"attrs": {
+"primarytype": "rings",
+"showduration": 1,
+"skillaxe": 4,
+"duration": 1800,
+"transformdeequipto": 3092,
+"decayTo": 0,
+"weight": 90,
+"script": "moveevent",
+"slot": "ring"
+}
+}
+},
+"club ring": {
+"id": 3093,
+"attrs": {
+"primarytype": "rings",
+"stopduration": 1,
+"showduration": 1,
+"transformequipto": 3096,
+"weight": 90,
+"script": "moveevent",
+"slot": "ring"
+},
+"sell": 100,
+"equipPreview": {
+"durationS": 1800,
+"attrs": {
+"primarytype": "rings",
+"showduration": 1,
+"skillclub": 4,
+"duration": 1800,
+"transformdeequipto": 3093,
+"decayTo": 0,
+"weight": 90,
+"script": "moveevent",
+"slot": "ring"
+}
+}
+},
+"platinum amulet": {
+"id": 3055,
+"attrs": {
+"primarytype": "amulets and necklaces",
+"description": "It is an amulet of protection",
+"armor": 2,
+"weight": 600,
+"script": "moveevent",
+"slot": "necklace"
+},
+"sell": 2500,
+"equipPreview": null
+},
+"elven amulet": {
+"id": 3082,
+"attrs": {
+"primarytype": "amulets and necklaces",
+"showCharges": 1,
+"showAttributes": 1,
+"absorbpercentphysical": 5,
+"absorbpercentfire": 5,
+"absorbpercentpoison": 5,
+"absorbpercentenergy": 5,
+"absorbpercentice": 5,
+"absorbpercentholy": 5,
+"absorbpercentdeath": 5,
+"charges": 50,
+"weight": 270,
+"script": "moveevent",
+"slot": "necklace"
+},
+"sell": 100,
+"equipPreview": null
+},
+"silver amulet": {
+"id": 3054,
+"attrs": {
+"primarytype": "amulets and necklaces",
+"showCharges": 1,
+"showAttributes": 1,
+"absorbpercentpoison": 10,
+"charges": 200,
+"weight": 500,
+"script": "moveevent",
+"slot": "necklace"
+},
+"sell": 50,
+"equipPreview": null
+},
+"scarf": {
+"id": 3572,
+"attrs": {
+"primarytype": "amulets and necklaces",
+"armor": 1,
+"weight": 200,
+"script": "moveevent",
+"slot": "necklace"
+},
+"sell": 1,
+"equipPreview": null
+},
+"cobra amulet": {
+"id": 31631,
+"attrs": {
+"description": "The bearer of this amulet will command the gaze, the resilience and deadliness of the cobra. Yet what firmly has its place in the heart of its wearer, the cobra will conceal",
+"absorbpercentdeath": 9,
+"armor": 4,
+"weight": 530,
+"script": "moveevent",
+"level": 250,
+"slot": "necklace"
+},
+"sell": 1,
+"equipPreview": null
+},
+"charged spiritthorn ring": {
+"id": 39177,
+"attrs": {
+"primarytype": "rings",
+"transformEquipTo": 39178,
+"stopduration": 1,
+"showduration": 1,
+"showattributes": 1,
+"weight": 95,
+"script": "moveevent",
+"level": 400,
+"slot": "ring",
+"vocation": "Knight;true, Elite Knight"
+},
+"sell": 1,
+"equipPreview": null
+},
+"spiritthorn ring": {
+"id": 39179,
+"attrs": {
+"primarytype": "rings",
+"absorbpercentphysical": 2,
+"absorbpercentfire": 4,
+"absorbpercentearth": 4,
+"absorbpercentenergy": 4,
+"absorbpercentice": 4,
+"showattributes": 1,
+"weight": 95,
+"script": "moveevent",
+"level": 400,
+"slot": "ring",
+"vocation": "Knight;true, Elite Knight"
+},
+"sell": 1,
+"equipPreview": null
+},
+"ring of the sky": {
+"id": 3006,
+"attrs": {
+"weight": 40,
+"script": "moveevent",
+"slot": "ring"
+},
+"sell": 30000,
+"equipPreview": null
+},
+"death ring": {
+"id": 6299,
+"attrs": {
+"primarytype": "rings",
+"stopduration": 1,
+"showduration": 1,
+"absorbpercentdeath": 5,
+"transformequipto": 6300,
+"armor": 1,
+"weight": 80,
+"script": "moveevent",
+"slot": "ring"
+},
+"sell": 1000,
+"equipPreview": {
+"durationS": 480,
+"attrs": {
+"primarytype": "rings",
+"description": "Wearing it makes you feel a little weaker than usual",
+"showduration": 1,
+"absorbpercentdeath": 5,
+"skillshield": -10,
+"duration": 480,
+"transformdeequipto": 6299,
+"decayTo": 0,
+"armor": 1,
+"weight": 80,
+"script": "moveevent",
+"slot": "ring"
+}
+}
+},
+"prismatic ring": {
+"id": 16114,
+"attrs": {
+"primarytype": "rings",
+"stopduration": 1,
+"showduration": 1,
+"showAttributes": 1,
+"absorbpercentphysical": 10,
+"absorbpercentenergy": 8,
+"transformequipto": 16264,
+"weight": 105,
+"script": "moveevent",
+"level": 120,
+"slot": "ring"
+},
+"sell": 1,
+"equipPreview": {
+"durationS": 3600,
+"attrs": {
+"primarytype": "rings",
+"showduration": 1,
+"showAttributes": 1,
+"absorbpercentphysical": 10,
+"absorbpercentenergy": 8,
+"duration": 3600,
+"transformdeequipto": 16114,
+"decayTo": 0,
+"weight": 105,
+"script": "moveevent",
+"level": 120,
+"slot": "ring"
+}
+}
+},
+"sacred tree amulet": {
+"id": 9302,
+"attrs": {
+"primarytype": "amulets and necklaces",
+"description": "Its leaves stretch out to cover your whole body if you receive earth damage",
+"showCharges": 1,
+"showAttributes": 1,
+"absorbpercentphysical": 60,
+"absorbpercentpoison": 40,
+"charges": 5,
+"weight": 700,
+"script": "moveevent",
+"level": 80,
+"slot": "necklace"
+},
+"sell": 3000,
+"equipPreview": null
+},
+"amulet of loss": {
+"id": 3057,
+"attrs": {
+"charges": 1,
+"weight": 420,
+"script": "moveevent",
+"slot": "necklace"
+},
+"sell": 45000,
+"equipPreview": null
+},
+"star amulet": {
+"id": 3014,
+"attrs": {
+"primarytype": "amulets and necklaces",
+"weight": 610,
+"script": "moveevent",
+"slot": "necklace"
+},
+"sell": 500,
+"equipPreview": null
+},
+"wedding ring": {
+"id": 3004,
+"attrs": {
+"primarytype": "rings",
+"weight": 40,
+"script": "moveevent",
+"slot": "ring"
+},
+"sell": 100,
+"equipPreview": null
+},
+"golden amulet": {
+"id": 3013,
+"attrs": {
+"primarytype": "amulets and necklaces",
+"description": "Many gems glitter on the amulet",
+"weight": 830,
+"script": "moveevent",
+"slot": "necklace"
+},
+"sell": 2000,
+"equipPreview": null
+},
+"knight axe": {
+"id": 3318,
+"attrs": {
+"primarytype": "axe weapons",
+"weaponType": "axe",
+"attack": 33,
+"extradef": 1,
+"defense": 21,
+"weight": 5900,
+"imbuementslot": 2,
+"elemental damage": 3,
+"life leech": 3,
+"mana leech": 3,
+"critical hit": 3,
+"skillboost axe": 3,
+"script": "moveevent;weapon",
+"level": 25,
+"unproperly": "true",
+"slot": "hand"
+},
+"sell": 2000,
+"equipPreview": null
+},
+"brass helmet": {
+"id": 3354,
+"attrs": {
+"primarytype": "helmets",
+"armor": 3,
+"weight": 2700,
+"script": "moveevent",
+"slot": "head"
+},
+"sell": 30,
+"equipPreview": null
+},
+"battle axe": {
+"id": 3266,
+"attrs": {
+"primarytype": "axe weapons",
+"weaponType": "axe",
+"slotType": "two-handed",
+"attack": 25,
+"defense": 10,
+"weight": 5000,
+"script": "moveevent;weapon",
+"unproperly": "true",
+"vocation": "Knight;true, Elite Knight"
+},
+"sell": 80,
+"equipPreview": null
+},
+"leather armor": {
+"id": 3361,
+"attrs": {
+"primarytype": "armors",
+"armor": 4,
+"weight": 6000,
+"script": "moveevent",
+"slot": "armor"
+},
+"sell": 12,
+"equipPreview": null
+},
+"sword": {
+"id": 3264,
+"attrs": {
+"primarytype": "sword weapons",
+"weaponType": "sword",
+"attack": 14,
+"extradef": 1,
+"defense": 12,
+"weight": 3500,
+"imbuementslot": 2,
+"elemental damage": 3,
+"life leech": 3,
+"mana leech": 3,
+"critical hit": 3,
+"skillboost sword": 3,
+"script": "moveevent;weapon",
+"slot": "hand"
+},
+"sell": 25,
+"equipPreview": null
+},
+"wooden shield": {
+"id": 3412,
+"attrs": {
+"primarytype": "shields",
+"weaponType": "shield",
+"defense": 14,
+"weight": 4000,
+"script": "moveevent",
+"slot": "shield"
+},
+"sell": 5,
+"equipPreview": null
+}
+}
+}

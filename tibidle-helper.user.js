@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.8.5
+// @version      2.9.0
 // @description  Magia Inteligente (Econômica / Equilibrado / Área / Boss) + Analisador + Auto Hunt (mochila cheia → finalizar, purificar, vender, depot, voltar). Hunt, boss, mochila e ouro lidos do WebSocket; APLICAR NOS 4 e dano real pelo socket/REST, sem abrir janela. Scan: mede N mapas por 5 min cada (lure máximo, Equilibrado) e diz qual vale para XP, ouro ou os dois. Inteligente: 4 slots por DPS + poções, cura, suporte e munição. Nada automático nos slots. Equip: ranqueia corpo + depósito + mochila por vocação e slot e equipa pelo socket só por botão.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -28,7 +28,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.8.5';
+    const VERSAO = '2.9.0';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -243,7 +243,7 @@
         if (anterior === ERA) return false;
 
         /* medido = morre. escolhido = fica. */
-        const morre = new RegExp('^' + LS + '(danos_|loot_|sessoes$|cat_|hunt_id$|hunt_manual$)');
+        const morre = new RegExp('^' + LS + '(danos_|loot_|sessoes$|cat_|hunt_id$|hunt_manual$|regime$|skills_vistas$)');
         const mortos = Object.keys(localStorage).filter(k => morre.test(k));
         mortos.forEach(k => { try { localStorage.removeItem(k); } catch (e) { } });
 
@@ -260,6 +260,7 @@
         return velhas.length;
     }
 
+    /* @@MODELOS-INICIO */
     const MODELOS = {
         economica: {
             nome: 'Econômica',
@@ -279,7 +280,7 @@
         },
         inteligente: {
             nome: 'Inteligente',
-            dica: 'Mais por menos: mana é o orçamento. Magias por dano/mana (corta as que rendem menos da metade da melhor), runa por último como preenchimento (~50 de dano por ouro, 4× mais barato que poção de mana), poção de mana só no Druida, cura = poção + Heal Friend do Druida, suporte só onde sobra mana.'
+            dica: 'Mais por menos: mana é o orçamento. Magias por dano/mana; o que recarrega em 2 s (runa, strike, Divine Missile) vai no fim da fila como preenchimento — runa ≥2 antes do golpe ≥1. Poção de mana só no Druida (a mais barata por ponto), cura própria nos 4 + Heal Friend do Druida, Protector só se o Knight apanhar (ele corta 35 % do dano), segundo suporte só com mana sobrando.'
         }
     };
     /* v2.6.3 — VARIANTES do Inteligente para o estudo: mesmo modelo, outra
@@ -293,6 +294,7 @@
     };
     const nomeModelo = (m) => (MODELOS[m] || VARIANTES[m] || { nome: m }).nome;
     let _manaTodos = false, _semRuna = false, _seco = false;
+    /* @@MODELOS-FIM */
 
     /* =========================================================================
      *  UTILITÁRIOS
@@ -335,7 +337,7 @@
      *  O jogo serve isso em REST público; é o mesmo que o cliente já baixa.
      *  Guardamos com validade de 24h pra não repetir requisição à toa.
      * ====================================================================== */
-    const CAT = { hunts: null, magias: null, areas: null, precos: null };
+    const CAT = { hunts: null, magias: null, areas: null, precos: null, pocoes: null };
 
     async function buscarJSON(caminho) {
         const r = await fetch(API + caminho, { credentials: 'include' });
@@ -353,20 +355,23 @@
             CAT.precos = ler('cat_precos', null);
             CAT.bosses = normalizarBosses(ler('cat_bosses', null));
             if (!CAT.bosses) buscarJSON('/bosses/select').then(b => { CAT.bosses = normalizarBosses(b); guardar('cat_bosses', CAT.bosses); renderizar(); }).catch(() => { });
+            CAT.pocoes = ler('cat_pocoes', null);
+            if (!CAT.pocoes) buscarJSON('/potions').then(p => { CAT.pocoes = p; guardar('cat_pocoes', p); }).catch(() => { });
             if (CAT.hunts && CAT.magias) { log('catálogos do cache local', 'ok'); return true; }
         }
         try {
             log('baixando catálogos do jogo…');
-            const [hunts, magias, areas, precos, bosses] = await Promise.all([
+            const [hunts, magias, areas, precos, bosses, pocoes] = await Promise.all([
                 buscarJSON('/hunts/select'),
                 buscarJSON('/spells'),
                 buscarJSON('/assets/v100/spell-areas.json').catch(() => null),
                 buscarJSON('/buy-prices').catch(() => null),
-                buscarJSON('/bosses/select').catch(() => null)
+                buscarJSON('/bosses/select').catch(() => null),
+                buscarJSON('/potions').catch(() => null)
             ]);
-            CAT.hunts = hunts; CAT.magias = magias; CAT.areas = areas; CAT.precos = precos; CAT.bosses = normalizarBosses(bosses);
+            CAT.hunts = hunts; CAT.magias = magias; CAT.areas = areas; CAT.precos = precos; CAT.bosses = normalizarBosses(bosses); CAT.pocoes = pocoes;
             guardar('cat_hunts', hunts); guardar('cat_magias', magias);
-            guardar('cat_areas', areas); guardar('cat_precos', precos); guardar('cat_bosses', bosses);
+            guardar('cat_areas', areas); guardar('cat_precos', precos); guardar('cat_bosses', bosses); guardar('cat_pocoes', pocoes);
             guardar('cat_ts', Date.now());
             log(`catálogos ok — ${hunts.length} hunts, ${magias.length} magias`, 'ok');
             return true;
@@ -665,6 +670,7 @@
         return d ? d.hunt : null;
     }
 
+    /* @@MAGIA-INICIO — o planejador de magias; testes/magia.test.js roda este trecho no node com stubs para o DOM e o estado. */
     /* =========================================================================
      *  CÉREBRO 1 — NOTA DE ELEMENTO POR HUNT (com veto de imunidade)
      *
@@ -1065,14 +1071,32 @@
      *  ataque → suporte → cura; cura forte ~40 % e fraca ~70 %; poções nascem
      *  desligadas. /potions e /ammo lidos em 28/09 (TIBIDLE.md §14).
      * ====================================================================== */
+    /* Reserva: /potions de 29/09. O catálogo vivo (CAT.pocoes) manda quando baixou. */
     const POCOES = {
-        vida: [{ n: 'Health Potion', lvl: 1 }, { n: 'Strong Health Potion', lvl: 50, voc: ['KNIGHT', 'PALADIN'] },
-               { n: 'Great Health Potion', lvl: 80, voc: ['KNIGHT'] }, { n: 'Great Spirit Potion', lvl: 80, voc: ['PALADIN'] },
-               { n: 'Ultimate Health Potion', lvl: 130, voc: ['KNIGHT'] }, { n: 'Ultimate Spirit Potion', lvl: 130, voc: ['PALADIN'] }],
-        mana: [{ n: 'Mana Potion', lvl: 1 }, { n: 'Strong Mana Potion', lvl: 50 },
-               { n: 'Great Mana Potion', lvl: 80, voc: ['SORCERER', 'DRUID', 'PALADIN'] }, { n: 'Ultimate Mana Potion', lvl: 130, voc: ['SORCERER', 'DRUID'] }]
+        vida: [{ n: 'Health Potion', lvl: 1, custo: 50, media: 150 }, { n: 'Strong Health Potion', lvl: 50, voc: ['KNIGHT', 'PALADIN'], custo: 115, media: 300 },
+               { n: 'Great Health Potion', lvl: 80, voc: ['KNIGHT'], custo: 225, media: 500 }, { n: 'Great Spirit Potion', lvl: 80, voc: ['PALADIN'], custo: 254, media: 300 },
+               { n: 'Ultimate Health Potion', lvl: 130, voc: ['KNIGHT'], custo: 379, media: 750 }, { n: 'Ultimate Spirit Potion', lvl: 130, voc: ['PALADIN'], custo: 488, media: 500 }],
+        mana: [{ n: 'Mana Potion', lvl: 1, custo: 56, media: 100 }, { n: 'Strong Mana Potion', lvl: 50, custo: 108, media: 150 },
+               { n: 'Great Mana Potion', lvl: 80, voc: ['SORCERER', 'DRUID', 'PALADIN'], custo: 158, media: 200 }, { n: 'Ultimate Mana Potion', lvl: 130, voc: ['SORCERER', 'DRUID'], custo: 488, media: 500 }]
     };
-    const melhorPocao = (tipo, voc, lvl) => { const l = POCOES[tipo].filter(x => x.lvl <= lvl && (!x.voc || x.voc.includes(voc))); return l.length ? l[l.length - 1].n : null; };
+    function listaPocoes(tipo) {
+        const c = CAT.pocoes && CAT.pocoes[tipo === 'vida' ? 'health' : 'mana'];
+        if (!Array.isArray(c) || !c.length) return POCOES[tipo];
+        return c.filter(p => p && p.name && p.cost != null).map(p => ({ n: p.name, lvl: p.minLevel || 1, lvlMax: p.maxLevel || Infinity, voc: p.vocations || null,
+                                                                        custo: Number(p.cost) || 0, media: ((Number(p.min) || 0) + (Number(p.max) || 0)) / 2 }));
+    }
+    /* v2.9.0 — MANA: A MAIS BARATA POR PONTO, não a de nível mais alto. Na
+     * 2.8.5 o Druida passava a beber Strong Mana no nível 50 (108 por ~150 =
+     * 0,72 ouro/mana) enquanto a conta do modelo usava 0,56 (Mana Potion) — o
+     * custo real ficava 29 % acima do previsto. Vida continua a mais FORTE:
+     * aí o que se compra é não morrer. */
+    const melhorPocao = (tipo, voc, lvl) => {
+        const l = listaPocoes(tipo).filter(x => x.lvl <= lvl && lvl <= (x.lvlMax || Infinity) && (!x.voc || x.voc.includes(voc)) && x.media > 0);
+        if (!l.length) return null;
+        const ord = tipo === 'mana' ? (a, b) => (a.custo / a.media) - (b.custo / b.media) || b.media - a.media
+                                    : (a, b) => b.media - a.media || a.custo - b.custo;
+        return l.slice().sort(ord)[0].n;
+    };
     /* munição: área vale metade dos alvos teóricos (mesma regra do FATOR_ALVOS_REAIS) */
     const MUNICAO = {
         arrow: [{ n: 'arrow', atk: 25, lvl: 0 }, { n: 'sniper arrow', atk: 28, lvl: 25 }, { n: 'burst arrow', atk: 27, lvl: 30, area: 9, elem: 'COMBAT_FIREDAMAGE' },
@@ -1129,8 +1153,10 @@
     /* suporte só onde sobra mana (a fila gasta ataque → suporte → cura, wiki):
      * Knight/Paladino/Feiticeiro ficaram entre 4 e 19 % de mana em Dragon Lair
      * (28/09) — Magic Shield e Enchant Party ali só roubavam mana da onda. O
-     * Druida bebe poção, então Heal Party fica; Protector no Knight dispara só
-     * quando sobrar mana e custa nada quando não sobra. */
+     * Druida bebe poção, então Heal Party fica. ⚠ v2.9.0: Protector NÃO "custa
+     * nada" — corta 35 % do dano do Knight (wiki); só entra se ele apanha
+     * (planoExtras). Buff de grupo custa ~3× o do catálogo com 4 personagens
+     * (wiki: Enchant Party 120 → 350, Heal Party 120 → 350). */
     const SUPORTES = { KNIGHT: ['Protector'], PALADIN: ['Protect Party'], SORCERER: ['Magic Shield'], DRUID: ['Heal Party'] };
     /* v2.7.2 — wiki /magias-e-runas: buffs de GRUPO de 120 s — Train Party
      * (Knight, 60 mana: +3 Corpo a Corpo e Distância para os 4), Enchant Party
@@ -1156,7 +1182,14 @@
          * outros três ficam na regeneração. Variante inteligente_mana liga nos 4. */
         const pctMana = _manaTodos ? (voc === 'KNIGHT' ? 40 : 30) : (voc === 'DRUID' ? 30 : 0);
         const manaPotion = mp && pctMana ? { name: mp, percent: pctMana } : { percent: 0 };
-        const supports = _seco ? [] : (SUPORTES[voc] || []).filter(n => temMagia(n, voc, lvl)).slice(0, 2);
+        /* v2.9.0 — PROTECTOR NÃO É DE GRAÇA. Wiki (/magias-e-runas e
+         * /como-o-dano-e-calculado): 200 de mana e, enquanto dura, escudo ×2,2,
+         * dano recebido −15 % e DANO CAUSADO −35 %. No Knight — o que mais bate
+         * com Berserk — isso só se paga quando ele corre risco. Regra: se a
+         * vida mínima MEDIDA dele neste mapa ficou ≥ 60 %, sai; sem medida ou
+         * abaixo disso, fica (morte de qualquer um encerra a caçada). */
+        const knightSeguro = voc === 'KNIGHT' && hunt ? (vidaMinMedida(hunt, 'KNIGHT') ?? -1) >= 60 : false;
+        const supports = _seco ? [] : (SUPORTES[voc] || []).filter(n => temMagia(n, voc, lvl) && !(n === 'Protector' && knightSeguro)).slice(0, 2);
         if (!_seco && supports.length < 2 && SUPORTES_SOBRANDO[voc] && temMagia(SUPORTES_SOBRANDO[voc], voc, lvl)) {
             const mm = hunt ? manaMedidaMedia(hunt, voc) : null;
             if (mm != null && mm >= 70) supports.push(SUPORTES_SOBRANDO[voc]);
@@ -1194,6 +1227,28 @@
         try { if (ESTADO_WS.huntId === hunt.id) { const v = RAZAO.vitais[voc]; if (v && v.n >= 30) melhor = { m: v.mana / v.n * 100, n: v.n }; } } catch (e) { }
         try { for (const r of Object.values(scanResultados())) { const x = r.id === hunt.id && r.razao && r.razao.porVoc && r.razao.porVoc[voc]; if (x && x.manaMedia != null && (!melhor || melhor.n < 60)) melhor = melhor || { m: x.manaMedia, n: 60 }; } } catch (e) { }
         return melhor ? Math.round(melhor.m) : null;
+    }
+    /* v2.9.0 — vida MÍNIMA medida (mesmas fontes da mana): decide o Protector. */
+    function vidaMinMedida(hunt, voc) {
+        if (!hunt || hunt.boss) return null;
+        try { if (ESTADO_WS.huntId === hunt.id) { const v = RAZAO.vitais[voc]; if (v && v.n >= 30) return Math.round(v.hpMin * 100); } } catch (e) { }
+        try { for (const r of Object.values(scanResultados())) { const x = r.id === hunt.id && r.razao && r.razao.porVoc && r.razao.porVoc[voc]; if (x && x.hpMin != null) return x.hpMin; } } catch (e) { }
+        return null;
+    }
+    /* v2.9.0 — HISTERESE NO REGIME DE MANA. O kit de "mana sobrando" é mais
+     * caro, então a mana cai; o kit normal é mais barato, então ela sobe. Com
+     * um limite só (70 %), o Inteligente trocava de kit a cada medição. Entra
+     * em "sobrando" com ≥ 70 % e só sai abaixo de 40 %. Guardado por mapa e
+     * vocação. */
+    const _regime = {};
+    function regimeSobrando(hunt, voc, manaMed) {
+        if (!hunt || hunt.boss) return false;
+        const k = hunt.id + '|' + voc;
+        if (_regime[k] == null) _regime[k] = !!(ler('regime', {})[k]);
+        const antes = _regime[k];
+        const agora = manaMed == null ? antes : (antes ? manaMed > 40 : manaMed >= 70);
+        if (agora !== antes) { _regime[k] = agora; const g = ler('regime', {}); g[k] = agora; guardar('regime', g); }
+        return agora;
     }
     /* v2.7.0 — o SPAWN limita neste mapa? (onda morre em menos da metade da
      * espera pela próxima). Djinns 28/09: 7 mortos em 2,5 s, espera 10,6 s. */
@@ -1284,7 +1339,7 @@
             for (const a of lista) { if (r.length >= n) break; if (usados.has(a.m.name)) continue; usados.add(a.m.name); r.push(a); }
             return r;
         };
-        let escolhidas = [], ordemI = porDano, _runaPorUltimo = false;
+        let escolhidas = [], ordemI = porDano;
         if (modelo === 'economica') {
             escolhidas = pega(porEfic(magias), 2);
         } else if (modelo === 'equilibrado') {
@@ -1310,9 +1365,11 @@
              *     que houver, ultimate incluída (Rage of the Skies a cada 40 s é dano
              *     de graça para quem fica em 93 %); escolha por dano.
              *   ≤ 25 % → falta mana: escolha por dano/mana (regra normal).
-             *   sem medida → regra normal. */
+             *   sem medida → regra normal.
+             * v2.9.0 — com histerese: entra com ≥ 70 %, só sai abaixo de 40 %
+             * (regimeSobrando), e a medida zera quando o kit muda. */
             const manaMed = manaMedidaMedia(hunt, vocForcada || vocacaoAtual());
-            const sobrando = manaMed != null && manaMed >= 70;
+            const sobrando = regimeSobrando(hunt, vocForcada || vocacaoAtual(), manaMed);
             /* v2.7.0 — Djinns 28/09: Paladino 78 % e Feiticeiro 96 % de mana
              * PARADA porque a runa (cd 2 s) na frente tomava todos os ciclos —
              * Caldera e Energy Wave nunca saíram, e 6k/h de runa foi gasto onde
@@ -1321,7 +1378,6 @@
              * a runa sai do kit — dano extra não vira xp, só custa ouro. */
             const spawnLimita = spawnLimitaMedido(hunt) === true;
             const semRunaAqui = _semRuna || (sobrando && spawnLimita);
-            _runaPorUltimo = sobrando;
             const cdMax = sobrando ? 40000 : 12000;
             const rapidas = conf.filter(a => (a.m.cooldownMs || 2000) <= cdMax);
             const ondas = rapidas.filter(a => !ehRuna(a) && ehArea(a)), runasA = rapidas.filter(a => ehRuna(a) && (a.m.cooldownMs || 2000) <= 12000 && ehArea(a));
@@ -1367,20 +1423,38 @@
              * Knight, e sem ele 6 de mana por segundo de regeneração ficavam
              * parados); o corte vale para o golpe e para o preenchimento. */
             escolhidas = pega(escolha(ondas), sobrando ? 3 : 2).concat(pega(escolha(golpes.filter(a => eficiente(a) && forte(a))), 1), semRunaAqui ? [] : pega(porDano(runasA), 1));
-            const nRunas0 = escolhidas.filter(a => !ehRuna(a)).length;
-            if (nRunas0 < 2) escolhidas = escolhidas.concat(pega(escolha(rapidas.filter(a => !ehRuna(a) && eficiente(a) && forte(a))), 2 - nRunas0));
+            const nMagias = escolhidas.filter(a => !ehRuna(a)).length;
+            if (nMagias < 2) escolhidas = escolhidas.concat(pega(escolha(rapidas.filter(a => !ehRuna(a) && eficiente(a) && forte(a))), 2 - nMagias));
+            /* v2.9.0 — SÃO 4 SLOTS. Com mana sobrando saíam 3 ondas + golpe +
+             * runa = 5; o socket manda só os 4 primeiros e a runa (a última)
+             * sumia calada, com o Log dizendo que as 5 foram aplicadas. Com
+             * mana sobrando é a runa que sai: ela custa ouro e a mana já paga
+             * as ondas. */
+            if (escolhidas.length > 4) { const soMagia = escolhidas.filter(a => !ehRuna(a)); if (soMagia.length >= 4) escolhidas = soMagia; }
         } else {
             escolhidas = pega(porDano(magias), 3);
         }
         /* mais forte primeiro em todos os modelos: a fila dispara o primeiro pronto, então
          * o forte pega o ciclo sempre que puder e o fraco só preenche a recarga. Ordenar
          * por cd deixava o Berserk (4 s, 660) atrás do Lesser Front Sweep (6 s, 171). */
-        /* v2.6.8 — runa NO LUGAR do dano dela, não por último: "runa por último"
-         * deixava a Divine Missile (cd 2 s) na frente da thunderstorm rune, e a
-         * Missile tomava todos os ciclos com ≥2 monstros. Ordem única: mais
-         * forte por lançamento primeiro, para todos os modelos. */
-        escolhidas = porDano(escolhidas);
-        if (modelo === 'inteligente' && _runaPorUltimo) escolhidas = escolhidas.filter(a => !ehRuna(a)).concat(escolhidas.filter(ehRuna));
+        /* ⭐ v2.9.0 — MAS RECARGA ≤ 2 s VAI SEMPRE POR ÚLTIMO. Wiki
+         * (/configurando-o-combate): o jogo "confere os slots de 1 a 4 e lança o
+         * primeiro que estiver pronto". Runa, strike e Divine Missile têm recarga
+         * igual à do grupo (2 s): estão prontos em TODO ciclo, então o que vier
+         * atrás deles só dispara quando eles não podem. É o mesmo defeito nas três
+         * vezes que ele apareceu:
+         *   v2.6.7  Divine Missile no slot 1 → a Caldera nunca saiu (Quara)
+         *   v2.7.0  runa na frente → Caldera e Energy Wave paradas (Djinns)
+         *   v2.8.5  sem mana medida, a runa de 36 casas dava mais dano por
+         *           lançamento que as ondas baratas que o Inteligente escolheu
+         *           → slot 1 → as ondas nunca saíam, a mana sobrava e a runa
+         *           cobrava 8 de ouro a cada 2 s (simulado com /spells de 29/09)
+         * Ordem: recarga longa primeiro, a mais forte na frente; depois os
+         * preenchimentos, de área (≥2) antes do alvo único (≥1) — assim com 2+
+         * monstros sai a runa e com 1 sai o golpe (o padrão da comunidade). */
+        const enchimento = a => (a.m.cooldownMs || 2000) <= (a.m.groupCooldownMs || 2000);
+        const enchimentos = escolhidas.filter(enchimento).sort((a, b) => (modelo !== 'boss' ? ehArea(b) - ehArea(a) : 0) || (b.porLancamento - a.porLancamento));
+        escolhidas = porDano(escolhidas.filter(a => !enchimento(a))).concat(enchimentos).slice(0, 4);
         const plano = escolhidas.map((a, i) => ({ slot: i + 1, av: a, minimo: (modelo === 'boss' || !ehArea(a)) ? 1 : 2 }));
         /* Sem slot extra: o dono pediu contagem exata (2 / 2+1 / 2+2). Se
          * nenhuma ficou com ≥1, a última do plano cai para ≥1. No Inteligente
@@ -1450,6 +1524,7 @@
         };
     }
 
+    /* @@MAGIA-FIM */
     /* =========================================================================
      *  APLICADOR — dirige os diálogos reais do jogo pelas âncoras data-testid
      *
@@ -1592,7 +1667,7 @@
         }
         const original = vocacaoAtual();
         log(`aplicando ${nomeModelo(modelo)} nos 4 personagens em ${hunt.title}…`);
-        let total = 0;
+        let total = 0, semExtras = false;
         for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) {
             const aba = tid('party-member-' + voc);
             if (!aba) { log(`  ${voc}: aba não encontrada`, 'erro'); continue; }
@@ -1603,11 +1678,15 @@
             await dorme(250);
             const r = montarPlano(modelo, hunt);
             if (r.erro) { log(`  ${voc}: ${r.erro}`, 'erro'); continue; }
+            if (r.extras) semExtras = true;
             total += await aplicarPlano(r, true);
         }
         const volta = tid('party-member-' + original);
         if (volta) volta.click();
         log(`terminado — ${total} slots aplicados nos 4 personagens`, total ? 'ok' : 'erro');
+        /* v2.9.0 — pelos diálogos só os ataques mudam: poção, cura, suporte e
+         * munição do Inteligente só saem pelo socket. Antes isso era calado. */
+        if (semExtras) log('⚠ sem o socket, só os 4 slots de ataque foram trocados — poção, cura, suporte e munição do Inteligente NÃO foram aplicados. Recarregue a página (F5) com o helper instalado e aplique de novo.', 'erro');
         renderizar();
     }
 
@@ -2009,16 +2088,39 @@
         return vocs + (rz.ondas && rz.ondas.n ? ` · onda ${rz.ondas.tam} morta em ${rz.ondas.matar}s + espera ${rz.ondas.timer}s${rz.ondas.spawnLimita ? ' (spawn limita)' : ''}` : '');
     }
 
+    /* v2.9.0 — SKILLS DO FRAME, guardadas para o Equip usar na cidade (onde
+     * não chega frame). `skills.distance {value, bonus}` foi visto ao vivo em
+     * 28/09; `melee` e `magicLevel` seguem os nomes dos bônus do bestiário
+     * (TIBIDLE.md) — se o jogo usar outro nome, o Equip cai na referência. */
+    const _skill = (p, nomes) => {
+        let v = null;
+        for (const n of nomes) { const x = p.skills && p.skills[n]; const val = x == null ? NaN : typeof x === 'number' ? x : Number(x.value) + (Number(x.bonus) || 0); if (Number.isFinite(val) && val > 0 && (v == null || val > v)) v = val; }
+        return v;
+    };
+    let _skillsT = 0;
+    function anotarSkills(party) {
+        if (!ESTADO_WS.sk) ESTADO_WS.sk = ler('skills_vistas', {});
+        for (const p of party) {
+            if (!p || !p.vocation || !p.skills) continue;
+            const x = { dist: _skill(p, ['distance']), melee: _skill(p, ['melee', 'sword', 'axe', 'club', 'fist']), ml: _skill(p, ['magicLevel', 'magic', 'maglevel']) };
+            ESTADO_WS.sk[p.vocation] = Object.fromEntries(Object.entries(x).filter(([, v]) => v != null));
+        }
+        if (Date.now() - _skillsT > 60000) { _skillsT = Date.now(); guardar('skills_vistas', ESTADO_WS.sk); }
+    }
     function observarEnviado(o) {
         if (!o || !o.type) return;
         const d = o.data || {};
         if (o.type === 'start_hunt') { ESTADO_WS.ultimoStart = Object.assign({ t: Date.now() }, d); return; }
+        /* v2.9.0 — kit novo = medição nova. A mana média de cada personagem é o
+         * que decide o regime do Inteligente; misturar o kit velho com o novo
+         * fazia o regime oscilar (pesado → mana cai → leve → mana sobe → …). */
         if (o.type === 'profiles_set' && d.vocation && d.profiles) {
             if (!ESTADO_WS.profiles) ESTADO_WS.profiles = {};
             ESTADO_WS.profiles[d.vocation] = clonar(d.profiles);
+            delete RAZAO.vitais[d.vocation];
             return;
         }
-        if (o.type === 'update_battle_config' && d.who != null) { aplicarConfigLocal(vocDoIndice(d.who), d); }
+        if (o.type === 'update_battle_config' && d.who != null) { aplicarConfigLocal(vocDoIndice(d.who), d); const v = vocDoIndice(d.who); if (v) delete RAZAO.vitais[v]; }
     }
     function observarRecebido(o) {
         if (!o || !o.type) return;
@@ -2047,7 +2149,7 @@
                            suppliesGold: Number(p.suppliesGold) || 0, supplyUsed: p.supplyUsed || {},
                            dist: p.skills && p.skills.distance ? Number(p.skills.distance.value) + (Number(p.skills.distance.bonus) || 0) : null })).filter(Boolean) : []
             };
-            if (Array.isArray(st.party) && st.party.length) { ESTADO_WS.party = st.party.map(p => p && p.vocation).filter(Boolean); try { razaoVitais(RAZAO, st.party); } catch (e) { } }
+            if (Array.isArray(st.party) && st.party.length) { ESTADO_WS.party = st.party.map(p => p && p.vocation).filter(Boolean); try { razaoVitais(RAZAO, st.party); } catch (e) { } try { anotarSkills(st.party); } catch (e) { } }
             if (Array.isArray(d.events)) { const agora = Date.now(); for (const ev of d.events) {
                 if (!ev) continue;
                 try { razaoEvento(RAZAO, ev, agora); } catch (e) { }
@@ -3001,6 +3103,52 @@
         }, _fmap('dano_elem_', 0), _fmap('resist_', 0.4), _amap(0.4)),
     };
     PESOS_EQUIP.DRUID = Object.assign({}, PESOS_EQUIP.SORCERER, { cura_propria: 0.5, nivel_magico: 7.5, magiclevelpoints: 7.5 });
+    /* v2.9.0 — PESOS OFENSIVOS PELA FÓRMULA, com as skills do momento.
+     * Os números fixos acima envelheceram e um deles nasceu errado:
+     *  • Knight: ataque valia 0,9 e skill 2,8. Mas no golpe (wiki: média
+     *    nível/5 + 0,0425·atk·skill) e no Berserk (/spells: 1,1·(nível/5 +
+     *    skill + atk)) ataque e skill entram SIMÉTRICOS — +1 de ataque rende
+     *    quase o mesmo que +1 de skill (nível 61, melee 30, atk 33: 1,8 e 2,0).
+     *  • Magos: nível mágico valia 7 — conta certa com ML≈4 (22/09), mas o
+     *    TIBIDLE.md de 28/09 registra ML 20. Média de Energy Wave/Strong Ice
+     *    Wave com a runa de área (/spells) dá ~3,8 (Fei) e ~3,4 (Dru) no ML 20.
+     *  • Paladino: a wiki (/forja) diz que Dano Mágico "vale para qualquer
+     *    magia de ataque, runa e wand" — e o dano dele é runa + Caldera +
+     *    Missile. Valia 0. Agora Dano Físico e Dano Mágico dividem o peso pela
+     *    fração do dano que vem de magia (ctx.fracMagica, medida no
+     *    livro-razão; sem medida, metade). A skill Distância e a munição só
+     *    mexem no tiro, então também levam (1 − fração).
+     * ctx.sk[VOC] = {melee, atkArma, dist, ml} lidos do jogo; o que faltar
+     * cai na referência de 28/09 (REF_SK). */
+    const REF_SK = { nivel: 62, melee: 30, atkArma: 33, dist: 33, ml: 20 };
+    /* /ammo: as duas munições de custo 0. Besta usa bolt (30), arco usa arrow (25). */
+    const MUNICAO_GRATIS = { arrow: 25, bolt: 30 };
+    const FRAC_MAGICA_PADRAO = 0.5;
+    const _pct = (ganho, base) => base > 0 ? Math.round(1000 * ganho / base) / 10 : 0;
+    function pesosDaVoc(voc, ctx) {
+        const P = Object.assign({}, PESOS_EQUIP[voc] || {});
+        const s = Object.assign({}, REF_SK);
+        for (const [k, v] of Object.entries((ctx && ctx.sk && ctx.sk[voc]) || {})) if (Number.isFinite(v) && v > 0) s[k] = v;
+        const n5 = ((ctx && ctx.nivel > 0 && ctx.nivel) || s.nivel) / 5;
+        if (voc === 'KNIGHT') {
+            const golpe = n5 + 0.0425 * s.atkArma * s.melee, berserk = 1.1 * (n5 + s.melee + s.atkArma);
+            P.attack = Math.round((_pct(0.0425 * s.melee, golpe) + _pct(1.1, berserk)) / 2 * 10) / 10;
+            const sk = Math.round((_pct(0.0425 * s.atkArma, golpe) + _pct(1.1, berserk)) / 2 * 10) / 10;
+            P.corpo_a_corpo = P.skillsword = P.skillaxe = P.skillclub = sk;
+        } else if (voc === 'PALADIN') {
+            const f = ctx && ctx.fracMagica && ctx.fracMagica.PALADIN != null ? ctx.fracMagica.PALADIN : FRAC_MAGICA_PADRAO;
+            const tiro = n5 + 0.045 * MUNICAO_GRATIS.arrow * s.dist;
+            P.distancia = P.skilldist = Math.round(_pct(0.045 * MUNICAO_GRATIS.arrow, tiro) * (1 - f) * 10) / 10;
+            P.municao_atk = Math.round(_pct(0.045 * s.dist, tiro) * (1 - f) * 10) / 10;   // por ponto de ataque da munição grátis
+            P.dano_fisico = Math.round((1 - f) * 100) / 100; P.dano_magico = Math.round(f * 100) / 100;
+        } else if (voc === 'SORCERER' || voc === 'DRUID') {
+            const runa = _pct(2, n5 + 2 * s.ml + 12);                          // avalanche/gfb/thunderstorm: n/5 + 1,2–2,8·ML + 7–17
+            const onda = voc === 'SORCERER' ? _pct(6.75, n5 + 6.75 * s.ml)     // Energy Wave: n/5 + 4,5–9·ML
+                                            : _pct(6.05, n5 + 6.05 * s.ml + 34);  // Strong Ice Wave: n/5 + 4,5–7,6·ML + 20–48
+            P.nivel_magico = P.magiclevelpoints = Math.round((runa + onda) / 2 * 10) / 10;
+        }
+        return P;
+    }
     /* v2.7.3 — WAND/ROD NA ESCALA CERTA (dono, 29/09: "wand com +1 ML é melhor
      * que wand mais forte, porque o dano das magias é em área e aumenta tudo").
      * 1 ponto ≈ 1 % do dano do personagem. O tiro sai a cada ~4 s (28 tiros em
@@ -3029,8 +3177,14 @@
     const VOC_NOME = { KNIGHT: 'knight', PALADIN: 'paladin', SORCERER: 'sorcerer', DRUID: 'druid' };
     function vocacaoPode(attrs, voc) {
         const a = attrs || {};
-        if (a.vocation) return String(a.vocation).toLowerCase().includes(VOC_NOME[voc]);
         const w = a.weaponType || a.weapontype;
+        /* v2.9.0 — wiki /equipamentos: o Paladino usa "arco ou besta" e o dano
+         * vem da munição. Lança (spear, royal spear) é arma de distância SEM
+         * ammotype: não usa flecha, quebra, e ninguém do grupo a usa. Na 2.8.5
+         * uma royal spear +1 distância tirava o arco do Paladino (arco = 0 pt)
+         * e mandava bow e crossbow para a lista de venda. */
+        if (w === 'distance' && !a.ammotype) return false;
+        if (a.vocation) return String(a.vocation).toLowerCase().includes(VOC_NOME[voc]);
         if (w === 'sword' || w === 'axe' || w === 'club' || w === 'fist') return voc === 'KNIGHT';
         if (w === 'distance') return voc === 'PALADIN';
         if (w === 'shield') return voc !== 'PALADIN';
@@ -3044,21 +3198,41 @@
     const ehEncaixe = (k) => k.startsWith('skillboost') || k === 'life leech' || k === 'mana leech' || k === 'critical hit' || k === 'elemental damage'
                              || k.startsWith('elemental protection') || k === 'paralysis deflection' || k === 'increase speed';
     /* ctx.notas = notasElementos(hunt).notas do mapa atual (opcional) */
+    /* v2.9.0 — PEÇA QUE ACABA não entra na conta automática. Wiki
+     * /equipamentos: durabilidade "por cargas: cada golpe que a proteção
+     * reduziu gasta 1 carga" e "por tempo: o relógio só corre durante a
+     * caçada". Num jogo que caça 24 h, stone skin amulet (5 cargas) acaba em
+     * cinco golpes e ring of healing em 7,5 min — e eram as MAIORES trocas da
+     * lista (160 pt e 18 pt), porque os atributos contavam como permanentes.
+     * Continuam pontuadas (para mostrar o que dão enquanto duram), mas
+     * `distribuirEquip` não as escolhe nem as manda vender: são consumíveis. */
+    const ehTemporaria = (peca) => {
+        const a = (peca && peca.attrs) || {};
+        return !!(peca && peca.equipPreview && peca.equipPreview.attrs) || Number(a.charges) > 0 || !!a.showduration || !!a.stopduration;
+    };
     function pontuarPeca(peca, voc, ctx) {
-        const P = PESOS_EQUIP[voc] || {};
+        const P = pesosDaVoc(voc, ctx);
         const a = peca.attrs || {};
         const detalhe = [];
         const add = (id, valor, pt) => detalhe.push({ id, valor, pt: Math.round(pt * 100) / 100 });
-        let temporario = false;
+        const temporario = ehTemporaria(peca);
+        const cargas = Number(a.charges) || 0;
+        const duracaoS = (peca.equipPreview && peca.equipPreview.durationS) || null;
         let baseAttrs = a;
-        if (peca.equipPreview && peca.equipPreview.attrs) { temporario = true; baseAttrs = Object.assign({}, a, peca.equipPreview.attrs); }
-        const fator = temporario ? 0.5 : 1;
+        if (peca.equipPreview && peca.equipPreview.attrs) baseAttrs = Object.assign({}, a, peca.equipPreview.attrs);
         for (const [k, v] of Object.entries(baseAttrs)) {
             if (typeof v !== 'number' || ATTR_IGNORAR.has(k) || ehEncaixe(k)) continue;   // encaixes de imbuement não são bônus
-            if (k === 'managain') { add('regen_mana', v, v * 0.5 * (P.regen_mana || 0) * fator); continue; }
-            if (k === 'healthgain') { add('regen_vida', v, v * 0.5 * (P.regen_vida || 0) * fator); continue; }
-            if (k === 'skillmagic' || k === 'magiclevelpoints') { add('magiclevelpoints', v, v * (P.magiclevelpoints || 0) * fator); continue; }
-            if (k in P) { add(k, v, v * P[k] * fator); }
+            if (k === 'managain') { add('regen_mana', v, v * 0.5 * (P.regen_mana || 0)); continue; }
+            if (k === 'healthgain') { add('regen_vida', v, v * 0.5 * (P.regen_vida || 0)); continue; }
+            if (k === 'skillmagic' || k === 'magiclevelpoints') { add('magiclevelpoints', v, v * (P.magiclevelpoints || 0)); continue; }
+            if (k in P) { add(k, v, v * P[k]); }
+        }
+        /* arco/besta: o ataque da arma é 0 (wiki) — o que muda é a MUNIÇÃO que ela
+         * aceita. A besta usa bolt grátis (30), o arco arrow grátis (25): +20 % no
+         * ataque do tiro, de graça. Referência = arco (0 pt). */
+        if (voc === 'PALADIN' && a.ammotype && MUNICAO_GRATIS[a.ammotype] != null) {
+            const atk = MUNICAO_GRATIS[a.ammotype];
+            add('munição grátis (' + a.ammotype + ' ' + atk + ')', atk, (atk - MUNICAO_GRATIS.arrow) * (P.municao_atk || 0));
         }
         // wand/rod: dano fixo por tiro menos a mana que ele rouba da magia
         if ((a.weaponType === 'wand' || a.wandType) && a.fromDamage != null && voc !== 'KNIGHT' && voc !== 'PALADIN') {
@@ -3073,9 +3247,9 @@
         }
         const pontos = Math.round(detalhe.reduce((s, d) => s + d.pt, 0) * 10) / 10;
         const contam = detalhe.filter(d => d.pt > 0).sort((x, y) => y.pt - x.pt);
-        const mortos = detalhe.filter(d => d.pt === 0).map(d => d.id);
+        const mortos = detalhe.filter(d => d.pt === 0 && !/^munição grátis/.test(d.id)).map(d => d.id);
         const motivos = contam.slice(0, 2).map(d => `${rotulo(d.id)} +${d.valor} (${d.pt} pt)`);
-        return { pontos, motivos, contam: contam.map(d => d.id), mortos, temporario, detalhe };
+        return { pontos, motivos, contam: contam.map(d => d.id), mortos, temporario, cargas, duracaoS, detalhe };
     }
     /* roster (welcome/fibra) + depot_state.entries + base{nome:{attrs,sell,equipPreview}} → peças
      * {iid, nome, slot, attrs, forja, equipPreview, sell, origem:'corpo'|'depósito', dono?:voc, duasMaos} */
@@ -3151,7 +3325,7 @@
             for (const s of SLOTS_EQUIP) {
                 if (v === 'PALADIN' && s === 'shield') continue;
                 const atual = pecas.find(p => p.origem === 'corpo' && p.dono === v && p.slot === s) || null;
-                const cands = pecas.filter(p => p.slot === s && vocacaoPode(p.attrs, v)).map(p => ({ peca: p, r: P(p, v) })).sort((x, y) => y.r.pontos - x.r.pontos);
+                const cands = pecas.filter(p => p.slot === s && vocacaoPode(p.attrs, v) && !ehTemporaria(p)).map(p => ({ peca: p, r: P(p, v) })).sort((x, y) => y.r.pontos - x.r.pontos);
                 porVoc[v][s] = { atual, atualPt: atual ? P(atual, v).pontos : 0, melhor: null, melhorPt: 0, ganho: 0, candidatos: cands };
             }
         }
@@ -3192,7 +3366,15 @@
             const r = porVoc[v][s].candidatos.find(c => !usadas.has(c.peca.iid));
             if (r) reservas.add(r.peca.iid);
         }
-        const dispensaveis = pecas.filter(p => !usadas.has(p.iid) && !reservas.has(p.iid)).map(p => {
+        /* v2.9.0 — DISPENSÁVEL NÃO PODE DEPENDER DO MAPA. Com ctx.notas (elemento
+         * do mapa atual) a wand of inferno vale menos que nada em Dragon Lair
+         * (imune a fogo) e ia para a lista de venda — sendo a melhor wand em
+         * quase todo o resto. Só é dispensável o que também sobra na conta
+         * neutra (sem elemento). Temporárias/de carga nunca entram: consumíveis. */
+        const neutro = ctx && ctx.notas ? distribuirEquip(pecas, vocs, Object.assign({}, ctx, { notas: null })) : null;
+        const sobraNoNeutro = neutro ? new Set(neutro.dispensaveis.map(p => p.iid)) : null;
+        const temporarios = pecas.filter(p => ehTemporaria(p) && !(p.origem === 'corpo'));
+        const dispensaveis = pecas.filter(p => !usadas.has(p.iid) && !reservas.has(p.iid) && !ehTemporaria(p) && (!sobraNoNeutro || sobraNoNeutro.has(p.iid))).map(p => {
             let melhorUso = null;
             for (const v of vocs) if (vocacaoPode(p.attrs, v) && porVoc[v][p.slot]) {
                 const top = porVoc[v][p.slot].melhor; if (!top) continue;
@@ -3201,7 +3383,7 @@
             }
             return Object.assign({}, p, { motivo: melhorUso ? `superada por ${melhorUso.top.nome} (${melhorUso.v.toLowerCase()}, −${Math.round(melhorUso.d * 10) / 10} pt)` : 'nenhuma vocação usa' });
         }).sort((a, b) => (b.sell || 0) - (a.sell || 0));
-        return { porVoc, reservas, dispensaveis, usadas };
+        return { porVoc, reservas, dispensaveis, usadas, temporarios };
     }
     /* @@EQUIP-PURO-FIM */
 
@@ -3589,6 +3771,27 @@
     const EQUIP = { voc: 'KNIGHT', abertos: new Set(), base: null, res: null, lendo: false, erro: null, aviso: null, t: 0, verReservas: false, verTudo: false, equipando: false, ctx: null };
     const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     const rarTag = (p) => { const r = (p.forja && p.forja.raridade) || 0; return `<span class="tb-rar r${r}">${RAR_NOME[r] || r}</span>`; };
+    /* v2.9.0 — o que os pesos ofensivos precisam (pesosDaVoc): nível, skills
+     * vistas no frame, ataque da arma do Knight (base + refino) e quanto do dano
+     * do Paladino vem de magia/runa (livro-razão da última caçada). */
+    function contextoEquip(roster) {
+        const sk = {};
+        const vistas = Object.assign({}, ler('skills_vistas', {}), ESTADO_WS.sk || {});
+        for (const v of VOCS) if (vistas[v]) sk[v] = Object.assign({}, vistas[v]);
+        const kn = (roster || []).find(r => r && r.vocation === 'KNIGHT');
+        const arma = kn && kn.equipment && kn.equipment.weapon;
+        if (arma && arma.name) {
+            const b = (EQUIP.base && EQUIP.base[arma.name] && EQUIP.base[arma.name].attrs) || {};
+            const atk = Number((arma.attrs && arma.attrs.attack) || b.attack) + (Number(arma.forja && arma.forja.refino) || 0);
+            if (atk > 0) sk.KNIGHT = Object.assign(sk.KNIGHT || {}, { atkArma: atk });
+        }
+        const fracMagica = {};
+        try {
+            const rz = razaoResumo(RAZAO), pv = rz.porVoc.PALADIN;
+            if (pv && pv.dano >= 2000) fracMagica.PALADIN = Math.round(rz.magias.filter(m => m.voc === 'PALADIN').reduce((s, m) => s + m.dano, 0) / pv.dano * 100) / 100;
+        } catch (e) { }
+        return { nivel: nivelAtual(), sk, fracMagica };
+    }
     async function equipAtualizar() {
         if (EQUIP.lendo) return;
         EQUIP.lendo = true; EQUIP.erro = null; EQUIP.aviso = null; renderizar();
@@ -3607,7 +3810,7 @@
             const pecas = candidatosEquip(roster, d.depot || null, EQUIP.base, mochila);
             /* v2.7.3 — elemento da wand/rod contra o mapa atual */
             const hz = huntAtual(); const nz = hz ? notasElementos(hz) : null;
-            EQUIP.ctx = { notas: nz ? nz.notas : null, mapa: hz ? hz.title : null };
+            EQUIP.ctx = Object.assign({ notas: nz ? nz.notas : null, mapa: hz ? hz.title : null }, contextoEquip(roster));
             EQUIP.res = distribuirEquip(pecas, undefined, EQUIP.ctx);
             EQUIP.t = Date.now();
             const trocas = Object.values(EQUIP.res.porVoc).reduce((n, v) => n + Object.values(v).filter(x => x.ganho >= GANHO_MIN).length, 0);
@@ -3661,6 +3864,25 @@
         const ok = await esperarQue(() => { const w = ondeEsta(peca.iid); return w && w.lugar === 'corpo' && w.voc === voc; }, 6000, 150);
         return ok ? { ok: true } : { erro: `mandei equipar ${peca.nome} no ${VOC_ROTULO[voc]} e o slot não mudou` };
     }
+    /* v2.9.0 — ARCO ↔ BESTA TROCA A MUNIÇÃO. Besta com "arrow" no slot de
+     * munição não atira. Depois de trocar a arma do Paladino, se a munição
+     * configurada não é do tipo da arma nova, põe a grátis do tipo (bolt ou
+     * arrow) no perfil ativo — o mesmo profiles_set que a janela manda. Na
+     * cidade vale na próxima caçada. */
+    function ajustarMunicaoDoPaladino() {
+        const ro = rosterEquip(); const p = ro && ro.find(x => x && x.vocation === 'PALADIN');
+        const arma = p && p.equipment && p.equipment.weapon;
+        const b = arma && EQUIP.base && EQUIP.base[arma.name] ? EQUIP.base[arma.name].attrs : {};
+        const tipo = arma && ((arma.attrs && arma.attrs.ammotype) || (b && b.ammotype));
+        if (!tipo || !MUNICAO[tipo] || !ESTADO_WS.profiles) return;
+        const atual = normalizarConfig(configAtiva('PALADIN'));
+        if (atual.ammo && MUNICAO[tipo].some(a => a.n === atual.ammo)) return;
+        const nova = Object.assign({}, atual, { ammo: MUNICAO[tipo][0].n });
+        const perfil = perfilDaVoc('PALADIN');
+        perfil.list[perfil.active] = { name: perfil.list[perfil.active].name, config: nova };
+        enviarWS({ type: 'profiles_set', data: { vocation: 'PALADIN', profiles: perfil } });
+        log(`equip: Paladino agora usa ${arma.name} — munição trocada de ${atual.ammo || 'nenhuma'} para ${nova.ammo} (vale na próxima caçada)`, 'ok');
+    }
     async function equiparTrocas(vocs) {
         if (EQUIP.equipando) return;
         if (!EQUIP.res) { log('equip: clique ATUALIZAR antes', 'erro'); return; }
@@ -3690,9 +3912,12 @@
                 pend = resto;
             }
             for (const f of pend) { const w = ondeEsta(f.peca.iid) || {}; log(`equip: ${f.peca.nome} ficou no ${VOC_ROTULO[w.voc] || '?'} — ele não liberou a peça (troca dele não feita)`, 'erro'); }
+            if (fila.some(f => f.v === 'PALADIN' && f.s === 'weapon')) { try { ajustarMunicaoDoPaladino(); } catch (e) { log('equip: munição do Paladino não ajustada — ' + e.message, 'erro'); } }
+            /* ⚠ o jogo só tem "guardar tudo" (depot_store_all): vai a mochila
+             * INTEIRA, loot incluído — não só as peças que saíram do corpo. */
             if (ler('equip_guardar', true) && feitas) {
                 const g = await guardarNoDepot();
-                if (g.erro) log('equip: guardar as peças trocadas no depósito falhou — ' + g.erro, 'erro');
+                if (g.erro) log('equip: guardar a mochila no depósito falhou — ' + g.erro, 'erro');
             }
             log(`equip: ${feitas} de ${fila.length} troca(s) feita(s)`, feitas ? 'ok' : 'erro');
         } catch (e) { log('equip: estourou — ' + e.message, 'erro'); }
@@ -3741,7 +3966,14 @@
             disp.slice(0, 60).map(p => `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)}<span class="tb-tag">${p.origem}</span> <span class="tb-mut" style="font-size:9.5px">${escHtml(p.motivo)}</span></span><span>${(p.sell || 0).toLocaleString('pt-BR')}</span></div>`).join('') +
             (disp.length > 60 ? `<div class="tb-mut">… e mais ${disp.length - 60}</div>` : ''), `dispensáveis (${disp.length} · ${soma.toLocaleString('pt-BR')}o)`);
         h += aj('eq-res', [...R.reservas].map(iid => { const p = candidatoPorIid(iid); return p ? `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)} <span class="tb-mut">${p.slot} · ${p.origem}</span></span></div>` : ''; }).join(''), `reservas (${R.reservas.size})`);
-        h += aj('eq-opc', `<label class="tb-l"><input type="checkbox" id="tb-eq-guardar" ${ler('equip_guardar', true) ? 'checked' : ''}> guardar no depósito o que sair do corpo</label><div style="font-size:10px">pelo socket: tira do depósito e equipa; a peça que sai cai na mochila. Peça de outro personagem só depois que ele trocar.</div>`, 'opções');
+        const temp = R.temporarios || [];
+        if (temp.length) h += aj('eq-temp', `<div class="tb-mut" style="font-size:10px">acabam por carga ou por tempo de caçada (wiki): não entram nas trocas nem na lista de venda — use à mão (boss, mapa difícil).</div>` +
+            temp.slice(0, 40).map(p => {
+                const m = VOCS.filter(x => vocacaoPode(p.attrs, x)).map(x => ({ x, r: pontuarPeca(p, x, EQUIP.ctx) })).sort((a, b) => b.r.pontos - a.r.pontos)[0];
+                if (!m) return '';
+                const dura = m.r.cargas ? m.r.cargas + ' cargas' : m.r.duracaoS ? Math.round(m.r.duracaoS / 60) + ' min' : 'temporário';
+                return `<div class="tb-lin"><span>${escHtml(p.nome)} <span class="tb-mut">${p.slot} · ${p.origem} · ${dura}</span></span><span class="tb-mut">${VOC_CURTO[m.x]} ${m.r.pontos} pt</span></div>`; }).join(''), `temporários (${temp.length})`);
+        h += aj('eq-opc', `<label class="tb-l"><input type="checkbox" id="tb-eq-guardar" ${ler('equip_guardar', true) ? 'checked' : ''}> depois de equipar, guardar a mochila inteira no depósito</label><div style="font-size:10px">pelo socket: tira do depósito e equipa; a peça que sai cai na mochila. O jogo só tem "guardar tudo": o loot da mochila vai junto. Peça de outro personagem só depois que ele trocar. Arco ↔ besta troca a munição do Paladino junto.</div>`, 'opções');
         return h;
     }
     function ligarEquip() {
