@@ -3958,3 +3958,6 @@ Diagnóstico com a conta logada: todos os formatos novos confirmados (skills `me
 Dois ajustes: (1) o "próximo marco" do bestiário pula marcos que valem 0 no catálogo (Vampire hell só dá +1 ML
 em 10k); (2) `ended.summary.title` é `{key, params}` — "Última caçada" mostrava `[object Object]`, agora usa o
 nome do catálogo pelo huntId.
+Painel de venda confirmado ao vivo: `sell-row-<nome>` / `sell-check-<nome>` com o nome do item (espaços
+incluídos), e a caixa é `<span class="s-sellp-check">✓</span>` — marcada = tem ✓. Na 2.11.1 essa classe sem ✓
+conta como desmarcada (antes caía em "não sei" e a decisão ia para o total).

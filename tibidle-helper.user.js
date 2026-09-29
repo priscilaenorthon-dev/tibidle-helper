@@ -3075,6 +3075,10 @@
         if (/(^|[\s_-])(unchecked|desmarcad[oa]|off)($|[\s_-])/i.test(cls)) return false;
         if (/(^|[\s_-])(checked|marcad[oa]|on|selected|ativo|is-checked)($|[\s_-])/i.test(cls)) return true;
         if (/[✓✔]/.test(el.textContent || '')) return true;
+        /* 2.11.1 — confirmado ao vivo (29/09): a caixa do jogo é
+         * <span class="s-sellp-check" data-testid="sell-check-<nome>">✓</span>, sem input
+         * nem aria. Marcada = tem o ✓; sem o ✓ = desmarcada. */
+        if (/(^|\s)s-sellp-check(\s|$)/.test(cls)) return false;
         return null;
     }
     /* Por que o gatilho não dispara ('' = dispara agora; null = tudo pronto,
