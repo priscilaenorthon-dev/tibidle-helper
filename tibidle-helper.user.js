@@ -13,17 +13,12 @@
 // @run-at       document-start
 // ==/UserScript==
 
-/* eslint-disable curly, no-multi-spaces, no-empty */
-/* ⚠ Os três avisos acima são ESTILO, não defeito, e são desligados de
- * propósito:
- *   curly          — 75 ocorrências de "if (x) return;" numa linha. São
- *                    guardas de entrada; abrir chave em todas incha o arquivo
- *                    sem melhorar nada.
- *   no-multi-spaces— comentários alinhados à direita do código, de propósito.
- *   no-empty       — "catch (e) { }" proposital: leitura de DOM que pode não
- *                    existir ainda não deve derrubar o painel inteiro.
- * Isto é um userscript de arquivo único, sem config de ESLint no projeto — o
- * linter que apita é o padrão do editor, não uma regra nossa. */
+/* ⚠ ESTILO, não defeito, e de propósito: "if (x) return;" numa linha (guardas
+ * de entrada), comentários alinhados à direita e "catch (e) { }" em leitura de
+ * DOM que pode não existir ainda. v2.11 — a diretiva eslint-disable que ficava
+ * aqui saiu: o ESLint do projeto (config do plano 2.11) não liga essas regras
+ * e apontava a diretiva como inútil. Falha que IMPORTA não é mais engolida em
+ * silêncio: vai para falhou() (ver ERROS, perto de log()). */
 
 (function () {
     'use strict';
@@ -64,55 +59,88 @@
      * payload inventado pro servidor é convite a erro de estado ou a chamar
      * atenção. Primeiro captura, depois envia. */
     const WS = { tipos: {}, amostras: {}, bin: {}, enviados: {}, socket: null, frames: 0, desde: Date.now() };
+    /* v2.11 — SEGREDOS FORA DO DIAGNÓSTICO. `amostras` e `enviados` saem no
+     * "copiar JSON" do Analisador, e esse JSON é colado em conversa. O `auth`
+     * enviado leva o `ticket` e o `welcome` leva o `worldToken` (o Bearer das
+     * rotas REST): quem tivesse o JSON entrava na conta (CONFIRMADO na
+     * auditoria de 29/09). Toda chave terminada em token/ticket/password vira
+     * '***' ANTES de ser guardada — o que não fica guardado não vaza. */
+    const CHAVE_SEGREDO = /(token|ticket|password|senha)$/i;
+    const semSegredos = (o) => JSON.stringify(o, (k, v) => (typeof v === 'string' && CHAVE_SEGREDO.test(k)) ? '***' : v);
+    /* v2.11 — O GRAMPO NUNCA LANÇA PARA O JOGO. Ele roda dentro do send() e do
+     * construtor do WebSocket do próprio jogo: uma exceção nossa ali derruba a
+     * conexão do jogador. Tudo que é nosso fica em try e vai para falhou(); o
+     * que é do navegador (URL inválida, send com o socket fechando) continua
+     * saindo igual ao original, porque o jogo espera exatamente isso.
+     * Três correções da auditoria:
+     *   • construtor com Reflect.construct(…, new.target): `class X extends
+     *     WebSocket` (padrão de libs de reconexão) perdia a subclasse;
+     *   • WS.socket é o socket que recebeu welcome/resume — não "o último
+     *     criado" (um segundo socket qualquer roubava o envio do helper);
+     *   • estáticos (OPEN, CLOSED…) herdados do original, não copiados. */
     (function grampearWS() {
         try {
+            const receber = (ws, ev) => {
+                WS.frames++;
+                const dado = ev && ev.data;
+                if (typeof dado !== 'string') {
+                    try {
+                        const b = new Uint8Array(dado.slice ? dado.slice(0, 4) : dado);
+                        const k = [...b].map(x => x.toString(16).padStart(2, '0')).join(' ');
+                        WS.bin[k] = (WS.bin[k] || 0) + 1;
+                    } catch (e) { }
+                    return;
+                }
+                let o; try { o = JSON.parse(dado); } catch (e) { return; }
+                if (!o || typeof o !== 'object') return;
+                const t = typeof o.type === 'string' ? o.type : '?';
+                if (t === 'pong') return;
+                if (t === 'welcome' || t === 'resume') WS.socket = ws;      // o socket do JOGO é este
+                WS.tipos[t] = (WS.tipos[t] || 0) + 1;
+                if (!WS.amostras[t]) WS.amostras[t] = semSegredos(o).slice(0, 400);
+                try { observarRecebido(o); } catch (e) { falhou('observarRecebido', e); }
+            };
             const ouvir = (ws) => {
-                if (!ws || ws.__tbOuvindo) return;
-                ws.__tbOuvindo = true;
-                WS.socket = ws;
-                ws.addEventListener('message', ev => {
-                    WS.frames++;
-                    if (typeof ev.data !== 'string') {
-                        try {
-                            const b = new Uint8Array(ev.data.slice ? ev.data.slice(0, 4) : ev.data);
-                            const k = [...b].map(x => x.toString(16).padStart(2, '0')).join(' ');
-                            WS.bin[k] = (WS.bin[k] || 0) + 1;
-                        } catch (e) { }
-                        return;
-                    }
-                    let o; try { o = JSON.parse(ev.data); } catch (e) { return; }
-                    const t = (o && o.type) || '?';
-                    if (t === 'pong') return;
-                    WS.tipos[t] = (WS.tipos[t] || 0) + 1;
-                    if (!WS.amostras[t]) WS.amostras[t] = JSON.stringify(o).slice(0, 400);
-                    try { observarRecebido(o); } catch (e) { }
-                });
+                try {
+                    if (!ws || ws.__tbOuvindo) return;
+                    ws.__tbOuvindo = true;
+                    ws.addEventListener('message', ev => { try { receber(ws, ev); } catch (e) { falhou('grampo (recebido)', e); } });
+                } catch (e) { falhou('grampo (ouvir)', e); }
+            };
+            const espiarEnvio = (ws, d) => {
+                ouvir(ws);
+                if (typeof d !== 'string' || d.length >= 20000) return;
+                let o; try { o = JSON.parse(d); } catch (e) { return; }
+                if (!o || typeof o !== 'object') return;
+                const t = typeof o.type === 'string' ? o.type : '?';
+                if (t === 'ping') return;
+                /* helper instalado com o jogo já aberto: o welcome já passou.
+                 * O socket que fala o protocolo do jogo vale de reserva só
+                 * enquanto não houver um vivo — o próximo welcome manda. */
+                if (t !== '?' && (!WS.socket || WS.socket.readyState > 1)) WS.socket = ws;
+                if (!WS.enviados[t]) WS.enviados[t] = { n: 0, ultimo: null };
+                WS.enviados[t].n++;
+                // o payload inteiro (menos os segredos): é ele que vira o molde do envio
+                const s = semSegredos(o);
+                WS.enviados[t].ultimo = s.length < 8000 ? s : s.slice(0, 8000);
+                try { observarEnviado(o); } catch (e) { falhou('observarEnviado', e); }
             };
             // pega dos DOIS lados: construtor (sockets novos) e send (o vivo)
             const OrigSend = WebSocket.prototype.send;
             WebSocket.prototype.send = function (d) {
-                ouvir(this);
-                try {
-                    if (typeof d === 'string' && d.length < 20000) {
-                        const o = JSON.parse(d);
-                        const t = (o && o.type) || '?';
-                        if (t !== 'ping') {
-                            if (!WS.enviados[t]) WS.enviados[t] = { n: 0, ultimo: null };
-                            WS.enviados[t].n++;
-                            // guarda o payload INTEIRO: é ele que vira o molde do envio
-                            WS.enviados[t].ultimo = d.length < 8000 ? d : d.slice(0, 8000);
-                            try { observarEnviado(o); } catch (e) { }
-                        }
-                    }
-                } catch (e) { }
+                try { espiarEnvio(this, d); } catch (e) { falhou('grampo (enviado)', e); }
                 return OrigSend.apply(this, arguments);
             };
             const OrigWS = window.WebSocket;
-            const Embrulhado = function (...a) { const ws = new OrigWS(...a); ouvir(ws); return ws; };
+            const Embrulhado = function (...a) {
+                const ws = Reflect.construct(OrigWS, a, new.target || Embrulhado);
+                ouvir(ws);                                  // ouvir() tem try próprio
+                return ws;
+            };
             Embrulhado.prototype = OrigWS.prototype;
-            Object.assign(Embrulhado, OrigWS);
+            try { Object.setPrototypeOf(Embrulhado, OrigWS); } catch (e) { Object.assign(Embrulhado, OrigWS); }
             window.WebSocket = Embrulhado;
-        } catch (e) { console.warn('[TB] grampo do WS falhou', e); }
+        } catch (e) { try { console.warn('[TB] grampo do WS falhou', e); } catch (e2) { } }
     })();
 
     /* =========================================================================
@@ -196,17 +224,47 @@
      * Sem /auth/me (deslogado, erro de rede) cai no prefixo comum. */
     let LS = 'tb_helper_';
     let CONTA = null;
+    /* v2.11 — SEM /auth/me, A CONTA DO WELCOME. Com /auth/me fora do ar (rede,
+     * 5xx) a segunda conta caía na gaveta comum — que é a do DONO — e herdava
+     * a hunt, o dano e o log dele. O `welcome` do socket traz `account.name`
+     * (schema do cliente: name, level, mainVocation…; sem id). Cada /auth/me
+     * que dá certo anota nome → id em tb_helper_contas; quando ele falha, o
+     * nome do welcome acha a gaveta certa. Nome nunca visto com outra conta
+     * já anotada = conta nova: gaveta própria pelo nome. */
+    let _gavetaSemConta = false;
     async function escolherGaveta() {
         try {
             const me = await buscarJSON('/auth/me');
             const id = me && (me.accountId || me.id);
-            if (!id) return;
+            if (!id) { _gavetaSemConta = true; if (ESTADO_WS.conta) gavetaPeloWelcome(ESTADO_WS.conta); return; }
             CONTA = { id, nome: me.name || '?', mundo: me.worldId || '?' };
             let dono = null;
             try { dono = JSON.parse(localStorage.getItem('tb_helper_dono') || 'null'); } catch (e) { }
             if (!dono) { try { localStorage.setItem('tb_helper_dono', JSON.stringify(id)); } catch (e) { } dono = id; }
             LS = dono === id ? 'tb_helper_' : 'tb_helper_' + id + '_';
-        } catch (e) { /* deslogado ou sem rede: gaveta comum */ }
+            if (me.name) { const nomes = lerChave('tb_helper_contas', {}) || {}; if (nomes[me.name] !== id) { nomes[me.name] = id; gravar('tb_helper_contas', nomes); } }
+        } catch (e) { /* deslogado ou sem rede: gaveta comum até o welcome dizer a conta */
+            _gavetaSemConta = true;
+            if (ESTADO_WS.conta) gavetaPeloWelcome(ESTADO_WS.conta);
+        }
+    }
+    function gavetaPeloWelcome(conta) {
+        if (CONTA || !conta || !conta.nome) return;
+        const nomes = lerChave('tb_helper_contas', {}) || {};
+        if (!Object.keys(nomes).length) return;          // nada anotado ainda: não dá para distinguir o dono
+        const dono = lerChave('tb_helper_dono', null), id = nomes[conta.nome] || null;
+        const prefixo = id ? (id === dono ? 'tb_helper_' : 'tb_helper_' + id + '_')
+            : 'tb_helper_n' + String(conta.nome).normalize('NFD').replace(/[^A-Za-z0-9]/g, '').slice(0, 24) + '_';
+        CONTA = { id, nome: conta.nome, mundo: '?', peloWelcome: true };
+        if (prefixo !== LS) trocarGaveta(prefixo, 'conta ' + conta.nome + ' (pelo welcome — /auth/me falhou)');
+    }
+    /* troca de gaveta com o helper já de pé: memória que veio da gaveta velha cai */
+    function trocarGaveta(prefixo, porque) {
+        LS = prefixo; MEMO.clear();
+        try { purgarSeEraVelha(); } catch (e) { falhou('purga da era', e); }
+        LOG = ler('log', []);
+        log('gaveta: ' + porque, 'info');
+        renderizar();
     }
 
     /* =========================================================================
@@ -242,10 +300,17 @@
         try { anterior = JSON.parse(localStorage.getItem(LS + 'era') || 'null'); } catch (e) { }
         if (anterior === ERA) return false;
 
-        /* medido = morre. escolhido = fica. */
+        /* medido = morre. escolhido = fica.
+         * v2.11 — `cat_` aqui é a cópia ANTIGA por gaveta (até a 2.10). Os
+         * catálogos agora moram numa chave comum a todas as contas
+         * (LS_COMUM, ver carregarCatalogos) com o PRÓPRIO selo de era: quem
+         * vira a era apaga a cópia comum só se ela ainda for da era velha —
+         * a segunda conta a subir não derruba o que a primeira já baixou. */
         const morre = new RegExp('^' + LS + '(danos_|loot_|sessoes$|cat_|hunt_id$|hunt_manual$|regime$|skills_vistas$)');
         const mortos = Object.keys(localStorage).filter(k => morre.test(k));
+        if (lerChave(LS_COMUM + 'cat_era', null) !== ERA) mortos.push(...Object.keys(localStorage).filter(k => k.startsWith(LS_COMUM + 'cat_')));
         mortos.forEach(k => { try { localStorage.removeItem(k); } catch (e) { } });
+        MEMO.clear();
 
         try { localStorage.setItem(LS + 'era', JSON.stringify(ERA)); } catch (e) { }
         return { de: anterior, para: ERA, apagadas: mortos.length };
@@ -253,9 +318,13 @@
 
     /* Formato antigo (ate 1.6): danos_<VOC>_<nivel>. A 1.7 guarda por vocacao
      * com o nivel dentro. As chaves velhas nao fazem mal, mas ocupam espaco e
-     * confundem quem le o localStorage — somem no primeiro boot. */
+     * confundem quem le o localStorage — somem no primeiro boot.
+     * v2.11 — idem `equip_ids` (221 KB por gaveta: a lista nome → id de TODOS
+     * os itens do jogo). Agora vive só em memória; o JSON é rebaixado 1× por
+     * sessão, quando o Equip precisa. */
     function limparChavesLegadas() {
-        const velhas = Object.keys(localStorage).filter(k => new RegExp('^' + LS + 'danos_[A-Z]+_\\d+$').test(k));
+        const velhas = Object.keys(localStorage).filter(k => new RegExp('^' + LS + 'danos_[A-Z]+_\\d+$').test(k)
+            || (k.startsWith('tb_helper_') && /(^|_)equip_ids$/.test(k)));
         velhas.forEach(k => { try { localStorage.removeItem(k); } catch (e) { } });
         return velhas.length;
     }
@@ -315,21 +384,113 @@
         return null;
     }
 
-    const guardar = (k, v) => { try { localStorage.setItem(LS + k, JSON.stringify(v)); } catch (e) { } };
-    const ler = (k, padrao) => {
-        try { const v = localStorage.getItem(LS + k); return v ? JSON.parse(v) : padrao; }
-        catch (e) { return padrao; }
+    /* @@ARMAZEM-INICIO — guardar/ler, ERROS/falhou e log; testes/fumaca.test.js roda este trecho sozinho. */
+    /* v2.11 — guardar() DEVOLVE true/false. O localStorage tem ~5 MB por
+     * ORIGEM (todas as contas do navegador juntas) e, cheio, setItem lança
+     * QuotaExceededError — que o catch vazio engolia: o helper seguia "salvando"
+     * dano, sessão e Scan que nunca chegavam ao disco. Agora: false para quem
+     * chamou, e UM aviso no Log ("sem espaço") por sessão, não um por chamada.
+     *
+     * MEMÓRIA: `scan_resultados` e `sessoes` são lidos várias vezes por
+     * repintura (scanResultados() era JSON.parse de ~200 KB a cada chamada).
+     * Essas chaves são lidas do disco 1× e servidas da memória; guardar()
+     * atualiza a memória junto, e o evento `storage` (outra aba escreveu)
+     * derruba a cópia. `scan_resultados` fica com os 60 mais recentes. */
+    let _semEspacoAvisado = false;
+    const MEMO = new Map();
+    const EM_MEMORIA = new Set(['scan_resultados', 'sessoes']);
+    const SCAN_RESULTADOS_MAX = 60;
+    const PODAR = {
+        scan_resultados: (v) => {
+            if (!v || typeof v !== 'object') return v;
+            const e = Object.entries(v);
+            if (e.length <= SCAN_RESULTADOS_MAX) return v;
+            return Object.fromEntries(e.sort((a, b) => ((b[1] && b[1].t) || 0) - ((a[1] && a[1].t) || 0)).slice(0, SCAN_RESULTADOS_MAX));
+        }
     };
+    const cheioDeVerdade = (e) => !!e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || e.code === 22 || e.code === 1014);
+    function gravar(chave, v) {
+        try { localStorage.setItem(chave, JSON.stringify(v)); return true; }
+        catch (e) {
+            if (!cheioDeVerdade(e)) { falhou('guardar ' + chave.replace(/^tb_helper_/, ''), e); return false; }
+            if (!_semEspacoAvisado) {
+                _semEspacoAvisado = true;
+                log('localStorage sem espaço — o que o helper mediu NÃO está sendo salvo (' + chave.replace(/^tb_helper_/, '') + '). Limpe o histórico do Analisador e os resultados do Scan.', 'erro');
+            }
+            return false;
+        }
+    }
+    function lerChave(chave, padrao) {
+        try { const v = localStorage.getItem(chave); return v ? JSON.parse(v) : padrao; }
+        catch (e) { return padrao; }
+    }
+    const guardar = (k, v) => {
+        if (PODAR[k]) { try { v = PODAR[k](v); } catch (e) { } }
+        const ok = gravar(LS + k, v);
+        if (EM_MEMORIA.has(k)) { if (ok) MEMO.set(LS + k, v); else MEMO.delete(LS + k); }
+        return ok;
+    };
+    const ler = (k, padrao) => {
+        const chave = LS + k;
+        if (EM_MEMORIA.has(k) && MEMO.has(chave)) return MEMO.get(chave);
+        try {
+            const s = localStorage.getItem(chave);
+            if (!s) return padrao;
+            const v = JSON.parse(s);
+            if (EM_MEMORIA.has(k)) MEMO.set(chave, v);
+            return v;
+        } catch (e) { return padrao; }
+    };
+    try { window.addEventListener('storage', ev => { if (ev && ev.key) MEMO.delete(ev.key); else MEMO.clear(); }); } catch (e) { }
+    /* v2.11 — gaveta COMUM a todas as contas: o que é do JOGO, não da conta
+     * (catálogos). Cinco contas no navegador guardavam cinco cópias. */
+    const LS_COMUM = 'tb_helper_comum_';
+    const guardarComum = (k, v) => gravar(LS_COMUM + k, v);
+    const lerComum = (k, padrao) => lerChave(LS_COMUM + k, padrao);
+
+    /* =========================================================================
+     *  ⭐ v2.11 — ERROS À VISTA (auditoria de 29/09: "catch (e) { }" em volta
+     *  do grampo, do amostrador e do gatilho do Auto Hunt escondia defeito
+     *  real por dias). Toda falha que importa passa por falhou(onde, e):
+     *    • conta por LUGAR (ERROS.porLugar[onde] = {n, seguidas, t, msg});
+     *    • vai para o Log no máximo 1× por minuto por lugar (um erro a cada
+     *      frame viraria 3.600 linhas por hora);
+     *    • deuCerto(onde) zera as "seguidas" — o gatilho do Auto Hunt com 5
+     *      falhas SEGUIDAS desliga a automação (nunca ficar num laço quebrado).
+     *  ERROS.naoLidos — PARA A ÁREA DE UI: quantos log(…, 'erro') desde que o
+     *  Log foi aberto pela última vez. A UI desenha o ponto/contador no trilho
+     *  e ZERA ao abrir a aba Log (ERROS.naoLidos = 0).
+     * ====================================================================== */
+    const ERROS = { naoLidos: 0, total: 0, porLugar: {} };
+    const FALHA_LOG_MS = 60000, FALHAS_SEGUIDAS_AUTO_HUNT = 5;
+    function falhou(onde, e) {
+        try {
+            const agora = Date.now(), msg = (e && e.message) || String(e);
+            const x = ERROS.porLugar[onde] || (ERROS.porLugar[onde] = { n: 0, seguidas: 0, t: 0, logado: 0, msg: '' });
+            x.n++; x.seguidas++; x.t = agora; x.msg = msg; ERROS.total++;
+            try { console.warn('[TB] falhou em ' + onde, e); } catch (e2) { }
+            if (agora - x.logado >= FALHA_LOG_MS) { x.logado = agora; log(`falha em ${onde}: ${msg}` + (x.n > 1 ? ` (${x.n}ª vez)` : ''), 'erro'); }
+            if (onde === 'gatilhoAutoHunt' && x.seguidas >= FALHAS_SEGUIDAS_AUTO_HUNT && autoHunt().on) {
+                guardarAutoHunt({ on: false });
+                log(`Auto Hunt DESLIGADO: ${x.seguidas} falhas seguidas no gatilho (${msg})`, 'erro');
+                renderizar();
+            }
+        } catch (e3) { }
+        return null;
+    }
+    function deuCerto(onde) { const x = ERROS.porLugar[onde]; if (x) x.seguidas = 0; }
 
     let LOG = [];
     function log(msg, tipo) {
-        const linha = { t: Date.now(), msg, tipo: tipo || 'info' };
+        const linha = { t: Date.now(), msg: String(msg), tipo: tipo || 'info' };
         LOG.push(linha);
         while (LOG.length > 300) LOG.shift();
+        if (linha.tipo === 'erro') ERROS.naoLidos++;
         guardar('log', LOG);
-        pintarLog();
-        console.log('[TB]', msg);
+        try { pintarLog(); } catch (e) { try { console.error('[TB] pintarLog', e); } catch (e2) { } }
+        try { console.log('[TB]', linha.msg); } catch (e) { }
     }
+    /* @@ARMAZEM-FIM */
 
     /* =========================================================================
      *  CATÁLOGOS — busca no próprio jogo e guarda em localStorage
@@ -339,43 +500,72 @@
      * ====================================================================== */
     const CAT = { hunts: null, magias: null, areas: null, precos: null, pocoes: null };
 
+    /* v2.11 — PRAZO DE 10 s. fetch sem prazo pendura para sempre com a rede
+     * meio morta: o boot esperava /auth/me sem fim e o painel nem montava. */
+    const PRAZO_REDE_MS = 10000;
+    function comPrazo(fazer, ms) {
+        const AC = window.AbortController, ctl = typeof AC === 'function' ? new AC() : null;
+        let timer = null;
+        const prazo = new Promise((_, rej) => { timer = setTimeout(() => { try { if (ctl) ctl.abort(); } catch (e) { } rej(new Error('sem resposta em ' + Math.round(ms / 1000) + ' s')); }, ms); });
+        return Promise.race([Promise.resolve().then(() => fazer(ctl ? ctl.signal : undefined)), prazo]).finally(() => clearTimeout(timer));
+    }
     async function buscarJSON(caminho) {
-        const r = await fetch(API + caminho, { credentials: 'include' });
-        if (!r.ok) throw new Error(caminho + ' → HTTP ' + r.status);
-        return r.json();
+        return comPrazo(async (signal) => {
+            const r = await fetch(API + caminho, signal ? { credentials: 'include', signal } : { credentials: 'include' });
+            if (!r.ok) throw new Error(caminho + ' → HTTP ' + r.status);
+            return r.json();
+        }, PRAZO_REDE_MS);
     }
 
+    /* v2.11 — catálogos na gaveta COMUM (LS_COMUM), com selo de era próprio,
+     * e rede fora ≠ catálogo nulo: se o download falha, a cópia local vale
+     * mesmo vencida (CAT null = lista de hunts vazia e nenhum plano). */
+    const CAT_ARQ = { hunts: '/hunts/select', magias: '/spells', areas: '/assets/v100/spell-areas.json', precos: '/buy-prices', bosses: '/bosses/select', pocoes: '/potions' };
+    function catalogosDoCache() {
+        if (lerComum('cat_era', null) !== ERA) return false;
+        const c = {};
+        for (const k of Object.keys(CAT_ARQ)) c[k] = lerComum('cat_' + k, null);
+        if (!c.hunts || !c.magias) return false;
+        Object.assign(CAT, c, { bosses: normalizarBosses(c.bosses) });
+        return true;
+    }
+    /* cópias por gaveta (até a 2.10) saem depois que a comum existe */
+    function limparCatalogosPorGaveta() {
+        Object.keys(localStorage).filter(k => k.startsWith('tb_helper_') && !k.startsWith(LS_COMUM) && /(^|_)cat_(hunts|magias|areas|precos|bosses|pocoes|ts)$/.test(k))
+            .forEach(k => { try { localStorage.removeItem(k); } catch (e) { } });
+    }
     async function carregarCatalogos(forcar) {
-        const idade = Date.now() - (ler('cat_ts', 0) || 0);
-        const valido = !forcar && idade < 24 * 3600 * 1000;
-        if (valido) {
-            CAT.hunts = ler('cat_hunts', null);
-            CAT.magias = ler('cat_magias', null);
-            CAT.areas = ler('cat_areas', null);
-            CAT.precos = ler('cat_precos', null);
-            CAT.bosses = normalizarBosses(ler('cat_bosses', null));
-            if (!CAT.bosses) buscarJSON('/bosses/select').then(b => { CAT.bosses = normalizarBosses(b); guardar('cat_bosses', CAT.bosses); renderizar(); }).catch(() => { });
-            CAT.pocoes = ler('cat_pocoes', null);
-            if (!CAT.pocoes) buscarJSON('/potions').then(p => { CAT.pocoes = p; guardar('cat_pocoes', p); }).catch(() => { });
-            if (CAT.hunts && CAT.magias) { log('catálogos do cache local', 'ok'); return true; }
+        const idade = Date.now() - (lerComum('cat_ts', 0) || 0);
+        if (!forcar && idade < 24 * 3600 * 1000 && catalogosDoCache()) {
+            if (!CAT.bosses) buscarJSON('/bosses/select').then(b => { CAT.bosses = normalizarBosses(b); guardarComum('cat_bosses', CAT.bosses); renderizar(); }).catch(() => { });
+            if (!CAT.pocoes) buscarJSON('/potions').then(p => { CAT.pocoes = p; guardarComum('cat_pocoes', p); }).catch(() => { });
+            log('catálogos do cache local', 'ok');
+            limparCatalogosPorGaveta();
+            return true;
         }
         try {
             log('baixando catálogos do jogo…');
             const [hunts, magias, areas, precos, bosses, pocoes] = await Promise.all([
-                buscarJSON('/hunts/select'),
-                buscarJSON('/spells'),
-                buscarJSON('/assets/v100/spell-areas.json').catch(() => null),
-                buscarJSON('/buy-prices').catch(() => null),
-                buscarJSON('/bosses/select').catch(() => null),
-                buscarJSON('/potions').catch(() => null)
+                buscarJSON(CAT_ARQ.hunts),
+                buscarJSON(CAT_ARQ.magias),
+                buscarJSON(CAT_ARQ.areas).catch(() => null),
+                buscarJSON(CAT_ARQ.precos).catch(() => null),
+                buscarJSON(CAT_ARQ.bosses).catch(() => null),
+                buscarJSON(CAT_ARQ.pocoes).catch(() => null)
             ]);
+            if (!Array.isArray(hunts) || !Array.isArray(magias)) throw new Error('catálogo de hunts/magias veio num formato inesperado');
             CAT.hunts = hunts; CAT.magias = magias; CAT.areas = areas; CAT.precos = precos; CAT.bosses = normalizarBosses(bosses); CAT.pocoes = pocoes;
-            guardar('cat_hunts', hunts); guardar('cat_magias', magias);
-            guardar('cat_areas', areas); guardar('cat_precos', precos); guardar('cat_bosses', bosses); guardar('cat_pocoes', pocoes);
-            guardar('cat_ts', Date.now());
-            log(`catálogos ok — ${hunts.length} hunts, ${magias.length} magias`, 'ok');
+            const salvo = [guardarComum('cat_hunts', hunts), guardarComum('cat_magias', magias),
+                guardarComum('cat_areas', areas), guardarComum('cat_precos', precos), guardarComum('cat_bosses', bosses), guardarComum('cat_pocoes', pocoes)].every(Boolean);
+            if (salvo) { guardarComum('cat_ts', Date.now()); guardarComum('cat_era', ERA); limparCatalogosPorGaveta(); }
+            log(`catálogos ok — ${hunts.length} hunts, ${magias.length} magias` + (salvo ? '' : ' (não couberam no localStorage: valem só nesta sessão)'), salvo ? 'ok' : 'erro');
             return true;
         } catch (e) {
+            if ((CAT.hunts && CAT.magias) || catalogosDoCache()) {
+                const ts = lerComum('cat_ts', 0);
+                log('falha ao baixar catálogos (' + e.message + ') — usando a cópia local' + (ts ? ' de ' + new Date(ts).toLocaleString('pt-BR') : ''), 'erro');
+                return true;
+            }
             log('falha ao baixar catálogos: ' + e.message, 'erro');
             return false;
         }
@@ -1646,8 +1836,10 @@
             }
         }
         /* v2.1.0 — PELO SOCKET. Sem trocar de aba, sem abrir janela: calcula o
-         * plano de cada vocação e manda os mesmos frames que a janela manda. */
-        if (socketAberto() && ESTADO_WS.profiles) {
+         * plano de cada vocação e manda os mesmos frames que a janela manda.
+         * v2.11 — só com os perfis que vieram INTEIROS do servidor
+         * (welcome/resume); perfil montado aos pedaços vai pelos diálogos. */
+        if (socketAberto() && ESTADO_WS.perfisDoServidor) {
             log(`aplicando ${nomeModelo(modelo)} nos 4 personagens em ${hunt.title} — pelo socket, sem abrir janela…`);
             let total = 0, semEco = 0;
             for (const voc of VOCS) {
@@ -1744,33 +1936,9 @@
         renderizar();
     }
 
-    /* LURE NO MAXIMO. Trocar de hunt reseta o lure para o tier 1 (medido em
-     * 19/09). No modal, a linha DESABILITADA e a ATIVA — as outras sao
-     * clicaveis. Sobe para o maior "Nivel N" habilitado e fecha. */
-    async function lureNoMaximo() {
-        if (socketAberto() && emHunt() && frameFresco()) {
-            try { const r = await lureNoMaximoSocket(); if (!r.erro) return r; log('lure pelo socket: ' + r.erro + ' — tentando pela janela', 'info'); } catch (e) { }
-        }
-        /* 23/09: o botão fica `disabled` enquanto o jogo está "Lurando
-         * Monstros" (e logo após trocar de hunt). Espera liberar até 40 s. */
-        const abrir = await esperarQue(() => { const b = tid('lure-toggle'); return b && !b.disabled ? b : null; }, 40000, 500);
-        if (!abrir) return { erro: tid('lure-toggle') ? 'botão de lure desabilitado (lurando monstros) — tente de novo em instantes' : 'sem botão de lure' };
-        abrir.click();
-        const radios = await esperarQue(() => { const r = $$('[role="radio"]'); return r.length ? r : null; }, 5000, 150);
-        const fechar = () => { const b = tid('lure-modal-close'); if (b) b.click(); };
-        if (!radios) { fechar(); return { erro: 'modal de lure não abriu' }; }
-        const nivel = r => parseInt(((r.textContent || '').match(/Nível\s*(\d+)/) || [])[1] || '0', 10);
-        const livres = radios.filter(r => !r.disabled && r.getAttribute('aria-disabled') !== 'true');
-        const ativo = radios.find(r => r.disabled || r.getAttribute('aria-disabled') === 'true');
-        const alvo = livres.sort((a, b) => nivel(b) - nivel(a))[0];
-        if (!alvo || (ativo && nivel(ativo) >= nivel(alvo))) { fechar(); await dorme(300); return { ja: true, nivel: ativo ? nivel(ativo) : null }; }
-        alvo.click();
-        await dorme(600);
-        fechar();
-        await dorme(400);
-        log(`lure subido para o nível ${nivel(alvo)}`, 'ok');
-        return { nivel: nivel(alvo) };
-    }
+    /* v2.11 — lureNoMaximo() (lure pela JANELA) saiu: só era chamado pelo
+     * window.__tbHelper, que agora é só leitura. O lure máximo do Scan é
+     * lureNoMaximoSocket() (set_lure), abaixo. */
 
     /* Os quatro de uma vez — o dano e por personagem, entao troca a aba,
      * aprende, e volta para quem estava selecionado. So leitura. */
@@ -1826,18 +1994,30 @@
      *  sem abrir a tela CAÇADAS, e mochila/ouro/lure saem do frame em vez
      *  de serem lidos do texto da tela. O DOM continua como reserva.
      *  ⚠ Nada é ENVIADO por aqui. Só leitura. */
+    /* v2.11 — perfisDoServidor: `profiles` veio INTEIRO de um welcome/resume.
+     * Sem isso, ESTADO_WS.profiles pode ter só a vocação que o cliente salvou
+     * (profiles_set dele) — ver perfilReal(). conta: `account` do welcome
+     * (gaveta sem /auth/me). ultimoEnded: o último `ended` {t, huntId, reason}. */
     const ESTADO_WS = { huntId: null, boss: null, ultimoStart: null, frame: null, hunt_t: 0,
-                        worldToken: null, profiles: null, battleConfigs: null, roster: [], party: [], eco: {},
-                        rosterFull: null, rosterFull_t: 0, depot: null, depot_t: 0 };
+                        worldToken: null, profiles: null, perfisDoServidor: false, battleConfigs: null, roster: [], party: [], eco: {},
+                        rosterFull: null, rosterFull_t: 0, depot: null, depot_t: 0, conta: null, ultimoEnded: null };
     const VOCS = ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'];
     const FRAME_FRESCO_MS = 5000;
     const frameFresco = () => !!(ESTADO_WS.frame && Date.now() - ESTADO_WS.frame.t < FRAME_FRESCO_MS);
+    /* v2.11 — o id 800 é o "slot" de boss no servidor (TIBIDLE.md, 27/09). */
+    const HUNT_ID_BOSS = 800;
+    /* true/false quando o catálogo já carregou; null quando ainda não dá para saber */
+    const huntNoCatalogo = (id) => CAT.hunts ? CAT.hunts.some(x => x.id === id) : null;
+    /* `who` do servidor é a POSIÇÃO em state.party: um buraco (null) não pode
+     * deslocar os outros — por isso map mantendo a posição, sem filter. */
+    const vocsPorPosicao = (lista) => lista.map(p => (p && typeof p.vocation === 'string') ? p.vocation : null);
     function estadoWS() {
         const f = ESTADO_WS.frame;
         return { huntId: ESTADO_WS.huntId, boss: ESTADO_WS.boss, cap: f && f.cap, balance: f && f.balance,
                  lureTier: f && f.lureTier, active: f && f.active, idadeMs: f ? Date.now() - f.t : null,
                  ultimoStart: ESTADO_WS.ultimoStart, party: ESTADO_WS.party, roster: ESTADO_WS.roster,
-                 temToken: !!ESTADO_WS.worldToken, temPerfis: !!ESTADO_WS.profiles, socketAberto: socketAberto(),
+                 temToken: !!ESTADO_WS.worldToken, temPerfis: !!ESTADO_WS.profiles, perfisDoServidor: ESTADO_WS.perfisDoServidor,
+                 perfisReais: VOCS.filter(perfilReal), socketAberto: socketAberto(), conta: ESTADO_WS.conta, ultimoEnded: ESTADO_WS.ultimoEnded,
                  configs: ESTADO_WS.profiles ? Object.fromEntries(VOCS.map(v => [v, configAtiva(v)])) : null };
     }
 
@@ -1868,6 +2048,7 @@
      *  O caminho pelos diálogos continua como reserva se o socket não deu
      *  os perfis (ex.: helper instalado com o jogo já aberto).
      * ====================================================================== */
+    /* @@PERFIS-INICIO — socket, perfis e aplicarPlanoSocket; testes/fumaca.test.js roda este trecho sozinho. */
     function socketAberto() { return !!(WS.socket && WS.socket.readyState === 1); }
     function enviarWS(obj) {
         if (!socketAberto()) throw new Error('socket do jogo não está aberto');
@@ -1877,6 +2058,16 @@
     const vocDoIndice = (i) => ordemParty()[i] || null;
     const indiceDaVoc = (v) => { const i = ordemParty().indexOf(v); return i >= 0 ? i : null; };
     const clonar = (x) => JSON.parse(JSON.stringify(x));
+    /* ⚠ v2.11 — PERFIL REAL. profiles_set SUBSTITUI os 4 presets da vocação
+     * inteiros. Montado em cima de um esqueleto (vocação que nunca chegou do
+     * servidor), ele apagava os outros 3 presets e a cura do jogador —
+     * CONFIRMADO na auditoria: helper instalado com o jogo aberto (welcome
+     * perdido) + o jogador salva UM slot do Knight na janela = ESTADO_WS
+     * .profiles passava a existir só com KNIGHT, e o APLICAR NOS 4 mandava
+     * profiles_set de esqueleto para os outros três. Real = a vocação veio
+     * num welcome/resume ou num profiles_set do próprio cliente (que manda o
+     * perfil inteiro). */
+    const perfilReal = (v) => !!(ESTADO_WS.profiles && ESTADO_WS.profiles[v] && typeof ESTADO_WS.profiles[v] === 'object' && Array.isArray(ESTADO_WS.profiles[v].list));
     function perfilDaVoc(v) {                          // mesmo preenchimento que o cliente faz (4 perfis)
         const p = ESTADO_WS.profiles && ESTADO_WS.profiles[v];
         const base = p ? clonar(p) : { active: 0, list: [] };
@@ -1920,21 +2111,37 @@
         if (typeof c.ammo === 'string' && c.ammo) t.ammo = c.ammo;
         return t;
     }
+    /* Eco do servidor / update_battle_config do cliente → estado local.
+     * v2.11 — NUNCA cria esqueleto: sem perfil real, a config vai para
+     * battleConfigs (a reserva de configAtiva), e ESTADO_WS.profiles fica
+     * sem a vocação — que é o que impede o profiles_set de esqueleto. */
     function aplicarConfigLocal(voc, cfg) {
-        if (!voc || !cfg) return;
-        if (!ESTADO_WS.profiles) ESTADO_WS.profiles = {};
-        const p = perfilDaVoc(voc);
-        p.list[p.active] = { name: p.list[p.active].name, config: normalizarConfig(cfg) };
-        ESTADO_WS.profiles[voc] = p;
+        if (!voc || !cfg || typeof cfg !== 'object') return;
+        const nova = normalizarConfig(cfg);
+        if (perfilReal(voc)) {
+            const p = ESTADO_WS.profiles[voc];
+            while (p.list.length < 4) p.list.push({ name: String(p.list.length + 1), config: null });   // o mesmo preenchimento de perfilDaVoc
+            const i = (p.active >= 0 && p.active < p.list.length) ? p.active : 0;
+            p.list[i] = Object.assign({ name: String(i + 1) }, p.list[i], { config: nova });
+            return;
+        }
+        if (!ESTADO_WS.battleConfigs || typeof ESTADO_WS.battleConfigs !== 'object') ESTADO_WS.battleConfigs = {};
+        ESTADO_WS.battleConfigs[voc] = nova;
     }
 
     /* Aplica o plano de UMA vocação pelo socket: mantém poções, suportes e
      * munição como estão, troca só skills + minCreatures. Manda os mesmos
-     * dois frames que a janela manda. */
+     * dois frames que a janela manda.
+     * v2.11 — sem a config atual (configAtiva null) NADA sai; sem perfil real
+     * o profiles_set NÃO sai (caçando: só update_battle_config, que vale para
+     * esta caçada e não mexe nos presets; na cidade: a vocação é pulada). O
+     * preset é montado com Object.assign — campos do preset que o helper não
+     * conhece seguem junto. */
     async function aplicarPlanoSocket(resultado, voc) {
-        if (!resultado || !resultado.plano) return 0;
-        if (!ESTADO_WS.profiles) throw new Error('perfis ainda não chegaram pelo socket (welcome/resume)');
-        const atual = normalizarConfig(configAtiva(voc));
+        if (!resultado || !resultado.plano) return { n: 0, who: null, eco: false, cacando: false };
+        const cfg = configAtiva(voc);
+        if (!cfg) throw new Error('sem a configuração atual de ' + voc + ' (perfis do servidor não chegaram) — nada enviado; dê F5 com o helper instalado');
+        const atual = normalizarConfig(cfg);
         const skills = [null, null, null, null], mc = {};
         resultado.plano.slice(0, 4).forEach((p, i) => { skills[i] = p.av.m.name; mc[p.av.m.name] = p.minimo; });
         const nova = Object.assign({}, atual, { skills, minCreatures: mc });
@@ -1945,28 +2152,49 @@
         }
         const cacando = emHunt();
         const who = cacando ? indiceDaVoc(voc) : null;
+        const real = perfilReal(voc);
+        if (!real && who == null) throw new Error(`o perfil de ${voc} não veio do servidor — profiles_set pulado para não apagar os presets e a cura dele (dê F5 com o helper instalado)`);
         const t0 = Date.now();
         if (cacando && who != null) enviarWS({ type: 'update_battle_config', data: payloadBattleConfig(nova, who) });
-        const perfil = perfilDaVoc(voc);
-        perfil.list[perfil.active] = { name: perfil.list[perfil.active].name, config: nova };
-        enviarWS({ type: 'profiles_set', data: { vocation: voc, profiles: perfil } });
+        if (real) {
+            const perfil = perfilDaVoc(voc);
+            perfil.list[perfil.active] = Object.assign({}, perfil.list[perfil.active], { config: nova });
+            enviarWS({ type: 'profiles_set', data: { vocation: voc, profiles: perfil } });
+        } else log(`  ${voc}: perfil não veio do servidor — só update_battle_config (vale nesta caçada, não fica salvo no preset)`, 'erro');
         let eco = null;
         if (cacando && who != null) eco = await esperarQue(() => ESTADO_WS.eco[who] && ESTADO_WS.eco[who] > t0, 4000, 150);
-        return { n: resultado.plano.length, who, eco: !!eco, cacando };
+        return { n: resultado.plano.length, who, eco: !!eco, cacando, soCacada: !real };
     }
+    /* @@PERFIS-FIM */
 
-    /* Dano real de TODAS as magias e runas numa chamada, com o worldToken. */
-    let _danosRestPendente = false;
+    /* Dano real de TODAS as magias e runas numa chamada, com o worldToken.
+     * v2.11 — a leitura automática (amostrar) só baixa a bandeira
+     * _danosRestPendente quando DÁ CERTO; com erro tenta de novo depois
+     * (1 min, dobrando até 16 min). Antes a bandeira caía antes da chamada e
+     * um 5xx no boot deixava a sessão inteira sem dano medido. */
+    let _danosRestPendente = false, _danosRestEmCurso = false, _danosRestProxima = 0, _danosRestEspera = 60000;
+    function lerDanosPendentes() {
+        if (!_danosRestPendente || _danosRestEmCurso || Date.now() < _danosRestProxima) return;
+        if (!(ESTADO_WS.worldToken && CAT.magias && (tid('rail-level-n') || (ESTADO_WS.frame && ESTADO_WS.frame.nivel)))) return;
+        _danosRestEmCurso = true;
+        aprenderDanosPorRest(true)
+            .then(r => { if (r && r.ok) { _danosRestPendente = false; _danosRestEspera = 60000; } else throw new Error((r && r.erro) || 'sem resposta'); })
+            .catch(e => { _danosRestProxima = Date.now() + _danosRestEspera; _danosRestEspera = Math.min(_danosRestEspera * 2, 16 * 60000); falhou('dano por /spell-numbers', e); })
+            .finally(() => { _danosRestEmCurso = false; });
+    }
     async function aprenderDanosPorRest(silencioso) {
         const tok = ESTADO_WS.worldToken;
         if (!tok) return { erro: 'sem worldToken — o welcome do socket ainda não chegou (recarregue com o helper instalado)' };
         if (!CAT.magias) return { erro: 'catálogo de magias ainda não carregou' };
         let nums;
         try {
-            const r = await fetch(API + '/spell-numbers', { headers: { authorization: 'Bearer ' + tok }, credentials: 'include' });
-            if (!r.ok) return { erro: '/spell-numbers respondeu HTTP ' + r.status };
-            nums = await r.json();
+            nums = await comPrazo(async (signal) => {
+                const r = await fetch(API + '/spell-numbers', Object.assign({ headers: { authorization: 'Bearer ' + tok }, credentials: 'include' }, signal ? { signal } : {}));
+                if (!r.ok) throw new Error('/spell-numbers respondeu HTTP ' + r.status);
+                return r.json();
+            }, PRAZO_REDE_MS);
         } catch (e) { return { erro: '/spell-numbers falhou: ' + e.message }; }
+        if (!nums || typeof nums !== 'object') return { erro: '/spell-numbers veio vazio' };
         let n = 0; const lvl = nivelAtual();
         for (const voc of VOCS) {
             const d = ler('danos_' + voc, {});
@@ -2099,41 +2327,50 @@
     };
     let _skillsT = 0;
     function anotarSkills(party) {
-        if (!ESTADO_WS.sk) ESTADO_WS.sk = ler('skills_vistas', {});
+        if (!ESTADO_WS.sk) ESTADO_WS.sk = ler('skills_vistas', {}) || {};
         for (const p of party) {
             if (!p || !p.vocation || !p.skills) continue;
             const x = { dist: _skill(p, ['distance']), melee: _skill(p, ['melee', 'sword', 'axe', 'club', 'fist']), ml: _skill(p, ['magicLevel', 'magic', 'maglevel']) };
-            ESTADO_WS.sk[p.vocation] = Object.fromEntries(Object.entries(x).filter(([, v]) => v != null));
+            const bons = Object.fromEntries(Object.entries(x).filter(([, v]) => v != null));
+            /* v2.11 — frame sem as skills (ou com nome que o helper não conhece)
+             * dava {} e APAGAVA o que já tinha sido visto; agora só soma. */
+            if (!Object.keys(bons).length) continue;
+            ESTADO_WS.sk[p.vocation] = Object.assign({}, ESTADO_WS.sk[p.vocation], bons);
         }
         if (Date.now() - _skillsT > 60000) { _skillsT = Date.now(); guardar('skills_vistas', ESTADO_WS.sk); }
     }
     function observarEnviado(o) {
         if (!o || !o.type) return;
-        const d = o.data || {};
+        const d = (o.data && typeof o.data === 'object') ? o.data : {};
         if (o.type === 'start_hunt') { ESTADO_WS.ultimoStart = Object.assign({ t: Date.now() }, d); return; }
         /* v2.9.0 — kit novo = medição nova. A mana média de cada personagem é o
          * que decide o regime do Inteligente; misturar o kit velho com o novo
          * fazia o regime oscilar (pesado → mana cai → leve → mana sobe → …). */
-        if (o.type === 'profiles_set' && d.vocation && d.profiles) {
+        if (o.type === 'profiles_set' && d.vocation && d.profiles && typeof d.profiles === 'object') {
+            /* o cliente manda o perfil INTEIRO da vocação: vale como real (perfilReal),
+             * mas não marca perfisDoServidor — as outras três continuam sem */
             if (!ESTADO_WS.profiles) ESTADO_WS.profiles = {};
             ESTADO_WS.profiles[d.vocation] = clonar(d.profiles);
             delete RAZAO.vitais[d.vocation];
             return;
         }
-        if (o.type === 'update_battle_config' && d.who != null) { aplicarConfigLocal(vocDoIndice(d.who), d); const v = vocDoIndice(d.who); if (v) delete RAZAO.vitais[v]; }
+        if (o.type === 'update_battle_config' && d.who != null) { aplicarConfigLocal(vocDoIndice(d.who), d); const v = vocDoIndice(d.who); if (v) delete RAZAO.vitais[v]; return; }
+        /* v2.11 — analisador zerado (botão da janela ou o Scan): a sessão do
+         * Analisador fecha aqui — as contas dela partiam do zero antigo. */
+        if (o.type === 'analyzer_reset') { if (SESSAO) fecharSessao('analisador zerado'); }
     }
     function observarRecebido(o) {
         try { observarProgresso(o); } catch { }       // v2.11 — aba Progresso: só leitura (chaves, bestiário, prey, plano offline)
         if (!o || !o.type) return;
-        const d = o.data || {};
+        const d = (o.data && typeof o.data === 'object') ? o.data : {};
         if (o.type === 'depot_state' && Array.isArray(d.entries)) {
             ESTADO_WS.depot = { entries: clonar(d.entries), used: d.used, total: d.total }; ESTADO_WS.depot_t = Date.now();
             if (ABA === 'equip') renderizar();
             return;
         }
         if (o.type === 'frame') {
-            const st = d.state || {};
-            const an = d.analyzer || null;
+            const st = (d.state && typeof d.state === 'object') ? d.state : {};
+            const an = (d.analyzer && typeof d.analyzer === 'object') ? d.analyzer : null;
             ESTADO_WS.frame = {
                 t: Date.now(), cap: st.cap || null, balance: st.balance != null ? Number(st.balance) : null,
                 lureTier: st.lureTier != null ? st.lureTier : null,
@@ -2145,15 +2382,21 @@
                            lootGold: Number(an.lootGold) || 0, suppliesGold: Number(an.suppliesGold) || 0,
                            damageDealt: Number(an.damageDealt) || 0, damageTaken: Number(an.damageTaken) || 0, healingDone: Number(an.healingDone) || 0,
                            drops: (an.drops && typeof an.drops === 'object') ? an.drops : {} } : null,
-                /* v2.6.3 — por personagem: vida/mana e o que cada um bebeu (estudo de builds) */
+                /* v2.6.3 — por personagem: vida/mana e o que cada um bebeu (estudo de builds).
+                 * Esta lista é buscada por `voc`, então pode pular buracos; a
+                 * ORDEM (o `who`) mora em ESTADO_WS.party. */
                 party: Array.isArray(st.party) ? st.party.map(p => p && ({ voc: p.vocation, hp: p.hp, maxHp: p.maxHp, mana: p.mana, maxMana: p.maxMana,
                            suppliesGold: Number(p.suppliesGold) || 0, supplyUsed: p.supplyUsed || {},
                            dist: p.skills && p.skills.distance ? Number(p.skills.distance.value) + (Number(p.skills.distance.bonus) || 0) : null })).filter(Boolean) : []
             };
-            if (Array.isArray(st.party) && st.party.length) { ESTADO_WS.party = st.party.map(p => p && p.vocation).filter(Boolean); try { razaoVitais(RAZAO, st.party); } catch (e) { } try { anotarSkills(st.party); } catch (e) { } }
+            if (Array.isArray(st.party) && st.party.length) {
+                ESTADO_WS.party = vocsPorPosicao(st.party);
+                try { razaoVitais(RAZAO, st.party); } catch (e) { falhou('livro-razão (vitais)', e); }
+                try { anotarSkills(st.party); } catch (e) { falhou('anotarSkills', e); }
+            }
             if (Array.isArray(d.events)) { const agora = Date.now(); for (const ev of d.events) {
-                if (!ev) continue;
-                try { razaoEvento(RAZAO, ev, agora); } catch (e) { }
+                if (!ev || typeof ev !== 'object') continue;
+                try { razaoEvento(RAZAO, ev, agora); } catch (e) { falhou('livro-razão (eventos)', e); }
                 if (ev.kind === 'update_battle_config' && ev.who != null) {
                     ESTADO_WS.eco[ev.who] = Date.now();
                     aplicarConfigLocal(vocDoIndice(ev.who), ev.config);
@@ -2162,29 +2405,51 @@
             return;
         }
         if (o.type === 'welcome' || o.type === 'resume') {
-            if (d.worldToken) ESTADO_WS.worldToken = d.worldToken;
-            if (d.profiles && typeof d.profiles === 'object') ESTADO_WS.profiles = clonar(d.profiles);
+            /* v2.11 — RECONEXÃO. welcome = sessão NOVA no servidor: boss, hunt,
+             * party, start pendente e ecos da sessão anterior não valem mais
+             * (o boss "em andamento" ficava preso depois de uma queda). */
+            if (o.type === 'welcome') {
+                Object.assign(ESTADO_WS, { boss: null, huntId: null, party: [], ultimoStart: null, eco: {}, frame: null });
+                if (d.account && typeof d.account === 'object' && d.account.name) {
+                    ESTADO_WS.conta = { nome: String(d.account.name), main: d.account.mainVocation || null };
+                    if (_gavetaSemConta) gavetaPeloWelcome(ESTADO_WS.conta);
+                }
+            }
+            if (typeof d.worldToken === 'string' && d.worldToken) ESTADO_WS.worldToken = d.worldToken;
+            if (d.profiles && typeof d.profiles === 'object') { ESTADO_WS.profiles = clonar(d.profiles); ESTADO_WS.perfisDoServidor = true; }
             if (d.battleConfigs && typeof d.battleConfigs === 'object') ESTADO_WS.battleConfigs = clonar(d.battleConfigs);
-            if (Array.isArray(d.roster) && d.roster.length) ESTADO_WS.roster = d.roster.map(r => r && r.vocation).filter(Boolean);
+            if (Array.isArray(d.roster) && d.roster.length) ESTADO_WS.roster = vocsPorPosicao(d.roster);
             if (Array.isArray(d.roster) && d.roster.length && d.roster.some(r => r && r.equipment)) {
                 ESTADO_WS.rosterFull = clonar(d.roster); ESTADO_WS.rosterFull_t = Date.now();
             }
-            if (Array.isArray(d.state && d.state.party) && d.state.party.length) ESTADO_WS.party = d.state.party.map(p => p && p.vocation).filter(Boolean);
-            if (d.worldToken) _danosRestPendente = true;   // amostrar() lê /spell-numbers quando o catálogo estiver pronto
+            if (Array.isArray(d.state && d.state.party) && d.state.party.length) ESTADO_WS.party = vocsPorPosicao(d.state.party);
+            if (d.worldToken) { _danosRestPendente = true; _danosRestProxima = 0; }   // amostrar() lê /spell-numbers quando o catálogo estiver pronto
             if (o.type === 'welcome') { renderizar(); return; }
+            /* v2.11 — resume SEM huntId = retomada na cidade: não é caçada, e
+             * não pode criar frame "fresco" (emHunt() mentiria por 5 s) */
+            if (d.huntId == null) { ESTADO_WS.huntId = null; ESTADO_WS.boss = null; ESTADO_WS.frame = null; renderizar(); return; }
         }
         if (o.type === 'hunt_started' || o.type === 'resume') {
+            /* v2.11 — BOSS / TORRE. Boss é o que o cliente PEDIU com bossId, o
+             * id 800 (o "slot" de boss do servidor) ou um id fora do catálogo
+             * de hunts (Elite, torre, treino). O `autoBoss` NÃO decide: ele vem
+             * como boolean em hunt comum também, e a 2.10 marcava "boss em
+             * andamento" numa caçada normal — travando Scan e Auto Hunt. */
             const u = ESTADO_WS.ultimoStart;
-            const bossId = (u && Date.now() - u.t < 60000 && u.bossId) ? u.bossId : null;
-            const ehBoss = !!bossId || typeof d.autoBoss === 'boolean';
+            const recente = !!(u && Date.now() - u.t < 60000);
+            const bossId = recente && u.bossId ? String(u.bossId) : null;
+            const torre = (recente && !!u.tower) || !!(d.state && typeof d.state === 'object' && d.state.tower != null);
+            const noCat = huntNoCatalogo(d.huntId);
+            const ehBoss = !!bossId || torre || d.huntId === HUNT_ID_BOSS || noCat === false || d.training === true;
             ESTADO_WS.huntId = d.huntId != null ? d.huntId : null;
             ESTADO_WS.hunt_t = Date.now();
             RAZAO = razaoNovo();
-            ESTADO_WS.frame = ESTADO_WS.frame || { t: Date.now(), cap: null, balance: null, lureTier: null, active: [] };
+            if (Array.isArray(d.state && d.state.party) && d.state.party.length) ESTADO_WS.party = vocsPorPosicao(d.state.party);
+            ESTADO_WS.frame = ESTADO_WS.frame || { t: Date.now(), cap: null, balance: null, lureTier: null, active: [], party: [] };
             if (ehBoss) {
-                ESTADO_WS.boss = bossId || ESTADO_WS.boss || '?';
+                ESTADO_WS.boss = bossId || (torre ? 'torre' : d.training === true ? 'treino' : '?');
                 if (bossId) { guardar('boss_nome', bossId); }
-                log('boss em andamento (socket): ' + ESTADO_WS.boss, 'ok');
+                log('boss em andamento (socket): ' + ESTADO_WS.boss + (d.huntId != null ? ' · id ' + d.huntId : ''), 'ok');
             } else {
                 ESTADO_WS.boss = null;
                 const h = (CAT.hunts || []).find(x => x.id === d.huntId);
@@ -2199,20 +2464,29 @@
             return;
         }
         if (o.type === 'error') {
-            ESTADO_WS.ultimoErro = (d.code || d.key || JSON.stringify(d)).toString();
+            ESTADO_WS.ultimoErro = String(d.code || d.key || JSON.stringify(d));
             log('servidor respondeu erro: ' + ESTADO_WS.ultimoErro, 'erro');
             return;
         }
         if (o.type === 'ended' || o.type === 'exit_pending') {
             if (o.type === 'ended') {
-                ESTADO_WS.boss = null; ESTADO_WS.ultimoStart = null; ESTADO_WS.frame = null; ESTADO_WS.party = [];
-                const sm = d.summary || {};
-                if (sm.huntId != null && (CAT.hunts || []).some(x => x.id === sm.huntId)) { guardar('hunt_id', sm.huntId); guardar('hunt_manual', sm.huntId); }
+                const sm = (d.summary && typeof d.summary === 'object') ? d.summary : {};
+                /* v2.11 — `ended` = fora da caçada: huntId zera junto (o Scan e o
+                 * Auto Hunt viam "ainda na hunt X" depois de uma morte). O que
+                 * acabou fica em ultimoEnded para quem precisar do motivo. */
+                ESTADO_WS.ultimoEnded = { t: Date.now(), huntId: sm.huntId != null ? sm.huntId : ESTADO_WS.huntId, reason: sm.reason || null, boss: ESTADO_WS.boss };
+                ESTADO_WS.boss = null; ESTADO_WS.ultimoStart = null; ESTADO_WS.frame = null; ESTADO_WS.party = []; ESTADO_WS.huntId = null;
+                if (sm.huntId != null && sm.huntId !== HUNT_ID_BOSS && huntNoCatalogo(sm.huntId)) { guardar('hunt_id', sm.huntId); guardar('hunt_manual', sm.huntId); }
             }
             return;
         }
     }
 
+    /* v2.11 — O ANALISADOR DO PRÓPRIO JOGO PRIMEIRO. frame.analyzer (em
+     * ESTADO_WS.frame.an) traz abates, xp, xp raw, loot e tempo da caçada — o
+     * mesmo número da janela "Estatísticas da caça", sem depender dela aberta.
+     * O DOM fica de reserva (frame velho: helper sem socket), só LENDO. */
+    const anDoFrame = () => (frameFresco() && ESTADO_WS.frame.an) ? ESTADO_WS.frame.an : null;
     function lerExpTotal() {
         // "EXP 1.868.791 / 1.965.000" — aria-label ou texto
         const el = tid('rail-level-xp-pair');
@@ -2223,24 +2497,23 @@
     /* Acha UMA vez o elemento-folha que mostra "N abates" e guarda a
      * referência. innerText do body custa relayout completo; textContent de um
      * nó conhecido custa nada. Se o nó sair da árvore (troca de tela), procura
-     * de novo — no máximo uma varredura por troca, não uma por amostra. */
-    let _noAbates = null, _reabriuAnalyzerEm = 0;
+     * de novo — no máximo uma varredura por troca, não uma por amostra.
+     * ⚠ v2.11 — NUNCA CLICA. Até a 2.10, com a janela "Estatísticas da caça"
+     * fechada, isto clicava em hud-analyzer a cada 60 s — o jogador fechava a
+     * janela e ela voltava sozinha (CONFIRMADO). Com o frame não precisa: o
+     * contador vem de frame.analyzer.killsTotal. Sem frame e sem janela: null. */
+    let _noAbates = null;
     function lerAbates() {
+        const an = anDoFrame();
+        if (an && Number.isFinite(an.kills)) return an.kills;
         const bom = (el) => el && el.isConnected && /\d+\s*abates/i.test(el.textContent || '');
         if (!bom(_noAbates)) {
             _noAbates = null;
-            /* ⚠ O CONTADOR SO EXISTE COM A JANELA "ESTATISTICAS DA CACA" ABERTA.
-             * Fechada (o "x" dela e vizinho de outros fechar), toda sessao sai
-             * sem abates e sem ponto de calibracao. hud-analyzer reabre. */
-            if (!tid('analyzer-session') && tid('hud-analyzer') && Date.now() - _reabriuAnalyzerEm > 60000) {
-                _reabriuAnalyzerEm = Date.now();
-                try { tid('hud-analyzer').click(); } catch (e) { }
-                return null;   // a janela monta no proximo tick
-            }
             /* o contador vive na janela "Estatisticas da caca" (data-testid
              * analyzer-session, mapeado em 19/09). Procurar so dentro dela: e
              * barato e nao confunde com "abates" de outro texto da pagina. */
-            const raiz = tid('analyzer-session') || document;
+            const raiz = tid('analyzer-session');
+            if (!raiz) return null;
             const cands = raiz.querySelectorAll('div,span,p');
             for (let i = 0; i < cands.length; i++) {
                 const e = cands[i];
@@ -2299,6 +2572,10 @@
     /* Taxa XP = EXP/h ÷ EXP raw/h da janela "Estatísticas da caça". Os dois
      * números só existem com a janela aberta e a party caçando. */
     function lerTaxaXp() {
+        /* v2.11 — pelo frame: xp ÷ xp raw da caçada é a mesma razão (as duas
+         * por hora têm o mesmo tempo embaixo). A janela é só reserva. */
+        const an = anDoFrame();
+        if (an && an.xpRaw > 0 && an.xp > 0) return Math.round(an.xp / an.xpRaw * 100);
         const w = tid('analyzer-session');
         const raiz = w ? (w.closest('[data-testid^="window"]') || w.parentElement || w) : null;
         const t = raiz ? (raiz.innerText || '') : '';
@@ -2702,7 +2979,7 @@
             if (fechar) { fechar.click(); }
             if (!ok) return { erro: 'start_hunt enviado e o servidor não confirmou a entrada em 20 s' + (ESTADO_WS.ultimoErro ? ' (erro do servidor: ' + ESTADO_WS.ultimoErro + ')' : '') };
         } else if (c.lureMax) {
-            try { await lureNoMaximoSocket(h); } catch (e) { }
+            try { await lureNoMaximoSocket(h); } catch (e) { falhou('lure do Scan', e); }
         }
         await esperarQue(() => frameFresco() && ESTADO_WS.frame.an, 8000, 250);
         return { ok: true, lure };
@@ -2822,16 +3099,23 @@
         guardar('sessoes', t);
     }
 
+    /* v2.11 — a0 À PARTE. A sessão guarda até 400 amostras e, passando disso,
+     * cortava as 100 MAIS ANTIGAS — inclusive a primeira: uma caçada de 25 min
+     * fechava medindo só os últimos 20 (CONFIRMADO). SESSAO.a0 é a amostra
+     * inicial, e o corte agora começa na 2ª (amostras[0] continua sendo a0).
+     * O pico da mochila é acumulado (pctMax), senão sumia no corte também.
+     * XP pelo analisador do jogo quando as duas pontas têm (anXp/anMs). */
     function fecharSessao(motivo) {
         if (!SESSAO || SESSAO.amostras.length < 2) { SESSAO = null; return; }
-        const a0 = SESSAO.amostras[0], aN = SESSAO.amostras[SESSAO.amostras.length - 1];
+        const a0 = SESSAO.a0 || SESSAO.amostras[0], aN = SESSAO.amostras[SESSAO.amostras.length - 1];
         const dur = (aN.t - a0.t) / 1000;
         if (dur < 60) { SESSAO = null; return; }        // amostra curta demais pra valer
 
         const dOuro = aN.ouro - a0.ouro;
-        const dExp = (aN.exp != null && a0.exp != null) ? aN.exp - a0.exp : null;
+        const anOk = a0.anXp != null && aN.anXp != null && aN.anMs >= a0.anMs && aN.anXp >= a0.anXp;
+        const dExp = anOk ? aN.anXp - a0.anXp : (aN.exp != null && a0.exp != null) ? aN.exp - a0.exp : null;
         const dAbates = (aN.abates != null && a0.abates != null) ? aN.abates - a0.abates : null;
-        const pctMax = Math.max(...SESSAO.amostras.map(x => x.mochilaPct || 0));
+        const pctMax = Math.max(SESSAO.pctMax || 0, ...SESSAO.amostras.map(x => x.mochilaPct || 0));
         const suja = pctMax > 0.85;
         /* Em regeneracao a magia nao custa ouro, entao o "custo real por abate"
          * medido aqui e so pocao de vida + munição — nao serve para calibrar a
@@ -2852,6 +3136,7 @@
                 ? Math.round((SESSAO.loot - dOuro / dAbates) * 10) / 10 : null,
             custoPrevisto: SESSAO.custoPrevisto != null ? SESSAO.custoPrevisto : null
         };
+        if (anOk && aN.anLoot != null && a0.anLoot != null) { s.lootH = Math.round((aN.anLoot - a0.anLoot) / dur * 3600); s.supH = Math.round((aN.anSup - a0.anSup) / dur * 3600); }
         // fator real = custo medido / custo previsto SEM o fator (o previsto já traz o fator)
         if (s.custoRealAbate != null && s.custoPrevisto && !regen) {
             const semFator = s.custoPrevisto / fatorDesperdicio(SESSAO.hp || 1);
@@ -2876,16 +3161,27 @@
      * confiavel e o CONTADOR DE ABATES VOLTAR A ZERO (a sessao do jogo
      * reinicia na troca). Qualquer queda no contador = hunt nova. */
     function amostrar() {
-        try { gatilhoAutoHunt(); } catch (e) { }
+        try { gatilhoAutoHunt(); deuCerto('gatilhoAutoHunt'); } catch (e) { falhou('gatilhoAutoHunt', e); }
         if (SCAN.ativo) scanPasso().catch(() => { });
         /* v2.1.0: assim que houver token + catálogo, lê o dano real de tudo (só leitura, sem janela) */
-        if (_danosRestPendente && ESTADO_WS.worldToken && CAT.magias && (tid('rail-level-n') || (ESTADO_WS.frame && ESTADO_WS.frame.nivel))) { _danosRestPendente = false; aprenderDanosPorRest(true).catch(() => { }); }
+        lerDanosPendentes();
         const dentro = emHunt();
         if (!dentro) { _estavaEmHunt = false; _ultimosAbates = null; if (SESSAO) fecharSessao('saiu da caçada'); return; }
+
+        /* v2.11 — id fora do catálogo = boss/torre/treino. No hunt_started o
+         * catálogo às vezes ainda não carregou (boot); aqui ele já está. */
+        if (!ESTADO_WS.boss && ESTADO_WS.huntId != null && huntNoCatalogo(ESTADO_WS.huntId) === false) ESTADO_WS.boss = '?';
+        /* v2.11 — BOSS NÃO É CAÇADA. Durante boss (huntId 800) o socket "não
+         * conhecia" a hunt: hunt_id era APAGADO e, 10 s depois, a tela CAÇADAS
+         * abria sozinha no meio da luta; a sessão do Analisador media o boss
+         * como se fosse a hunt. Agora: nada de sessão, nada de modal; quando o
+         * jogo devolve a party para a hunt anterior, a entrada roda de novo. */
+        if (ESTADO_WS.boss) { _estavaEmHunt = false; _ultimosAbates = null; if (SESSAO) fecharSessao('boss'); return; }
 
         const ab = lerAbates();
         const resetou = ab != null && _ultimosAbates != null && ab < _ultimosAbates;
         if (ab != null) _ultimosAbates = ab;
+        if (resetou && SESSAO) fecharSessao('analisador zerado');
         if (!_estavaEmHunt || resetou) {
             _estavaEmHunt = true;
             _entrouEmHuntEm = Date.now();
@@ -2895,9 +3191,9 @@
              * só o analisador do jogo sendo reiniciado (botão zerar, Scan,
              * boss): NÃO abre a tela CAÇADAS. A reserva pelo modal fica só
              * para quando o socket nunca falou. */
-            const socketSabe = ESTADO_WS.huntId != null && (CAT.hunts || []).some(x => x.id === ESTADO_WS.huntId);
+            const socketSabe = ESTADO_WS.huntId != null && huntNoCatalogo(ESTADO_WS.huntId) === true;
             if (!socketSabe) { guardar('hunt_id', null); guardar('hunt_manual', null); }
-            else if (ler('hunt_id', null) !== ESTADO_WS.huntId && !ESTADO_WS.boss) { guardar('hunt_id', ESTADO_WS.huntId); guardar('hunt_manual', ESTADO_WS.huntId); }
+            else if (ler('hunt_id', null) !== ESTADO_WS.huntId) { guardar('hunt_id', ESTADO_WS.huntId); guardar('hunt_manual', ESTADO_WS.huntId); }
             if (resetou) { _huntTrocou = !socketSabe; log(socketSabe ? 'contador de abates zerou (analisador reiniciado)' : 'contador de abates zerou — hunt nova, reconfirmando', 'info'); }
         }
         if (ler('hunt_id', null) == null && !_confirmandoHunt && Date.now() > _proximaTentativaHunt && CAT.hunts
@@ -2915,7 +3211,7 @@
                         log('hunt nova: ' + r.hunt.title + ' — confira o plano na aba Magia e use APLICAR NOS 4 se quiser', 'info');
                     }
                 })
-                .catch(() => { _proximaTentativaHunt = Date.now() + 30000; })
+                .catch(e => { _proximaTentativaHunt = Date.now() + 30000; falhou('confirmar hunt pela tela', e); })
                 .finally(() => { _confirmandoHunt = false; renderizar(); });
             return;   // sem hunt confirmada a amostra sairia com o nome errado
         }
@@ -2926,7 +3222,7 @@
         const lvl = nivelAtual();
         if (lvl && _nivelAprendido !== lvl) {
             if (_nivelAprendido != null) {
-                if (ESTADO_WS.worldToken) { log('nível ' + lvl + ': relendo o dano real de /spell-numbers', 'info'); aprenderDanosPorRest(true).catch(() => { }); }
+                if (ESTADO_WS.worldToken) { log('nível ' + lvl + ': relendo o dano real de /spell-numbers', 'info'); _danosRestPendente = true; _danosRestProxima = 0; lerDanosPendentes(); }
                 else log('nível ' + lvl + ': dano das magias escalado por nível÷5 (medir de novo só se quiser, botão Aprender dano)', 'info');
             }
             _nivelAprendido = lvl;
@@ -2944,17 +3240,19 @@
             SESSAO = {
                 huntId: idAgora, huntTitle: h ? h.title : 'desconhecida',
                 hp: hp ? Math.round(hp) : null, loot: h ? LOOT_CACHE[h.id] : null,
-                custoPrevisto: custoPrev, regen: partyEmRegen(), amostras: []
+                custoPrevisto: custoPrev, regen: partyEmRegen(), amostras: [], a0: null, pctMax: 0
             };
         }
         const exp = lerExpTotal();
         const moch = lerMochilaOz();
-        SESSAO.amostras.push({
-            t: Date.now(), ouro: ouroAtual(), exp: exp ? exp.atual : null,
-            abates: lerAbates(), mochilaPct: moch ? moch.pct : 0
-        });
-        // não deixa a sessão crescer sem limite
-        if (SESSAO.amostras.length > 400) SESSAO.amostras.splice(0, 100);
+        const an = anDoFrame();
+        const amostra = { t: Date.now(), ouro: ouroAtual(), exp: exp ? exp.atual : null, abates: ab, mochilaPct: moch ? moch.pct : 0 };
+        if (an) Object.assign(amostra, { anMs: an.elapsedMs, anXp: an.xp, anLoot: an.lootGold, anSup: an.suppliesGold });
+        if (!SESSAO.a0) SESSAO.a0 = amostra;
+        SESSAO.pctMax = Math.max(SESSAO.pctMax || 0, amostra.mochilaPct);
+        SESSAO.amostras.push(amostra);
+        // não deixa a sessão crescer sem limite — mas a amostra 0 (o começo) fica
+        if (SESSAO.amostras.length > 400) SESSAO.amostras.splice(1, 100);
     }
 
     /* Agrega as sessões por hunt, ignorando as sujas no cálculo de custo */
@@ -2986,7 +3284,17 @@
      *  depósito (depot_get → depot_state) e atributos base por /item/info.
      *  Só leitura — depot_get não muda nada no servidor.
      * ====================================================================== */
+    /* v2.11 — CACHE DE 2 s. A varredura anda até 200 mil fibras; quando o
+     * shell não existe (lobby, campo renomeado) ela vai até o fim toda vez, e
+     * a aba Equip chama isto várias vezes por repintura. */
+    let _shellCache = { t: 0, v: null };
     function lerShellFibra() {
+        if (Date.now() - _shellCache.t < 2000) return _shellCache.v;
+        const v = _lerShellFibra();
+        _shellCache = { t: Date.now(), v };
+        return v;
+    }
+    function _lerShellFibra() {
         try {
             const raiz = tid('shell') || $('.s-ui-root'); if (!raiz) return null;
             const k = Object.keys(raiz).find(x => x.startsWith('__reactFiber$')); if (!k) return null;
@@ -3036,14 +3344,16 @@
         return { erro };
     }
     /* atributos base por nome. Cache em localStorage (equip_base) por 7 dias;
-     * id por nome vem de /assets/v167/items-by-name.json (cache equip_ids). */
+     * id por nome vem de /assets/v167/items-by-name.json.
+     * v2.11 — equip_ids (221 KB, todos os itens do jogo) só em MEMÓRIA: era a
+     * maior chave do localStorage, repetida por conta, e é rebaixada em
+     * milissegundos quando o Equip precisa. */
     let _idsPorNome = null;
     async function idsPorNome() {
         if (_idsPorNome) return _idsPorNome;
-        const c = ler('equip_ids', null);
-        if (c && c.t && Date.now() - c.t < 7 * 864e5 && c.m) { _idsPorNome = c.m; return c.m; }
         const m = await buscarJSON('/assets/v167/items-by-name.json');
-        _idsPorNome = m; guardar('equip_ids', { t: Date.now(), m });
+        if (!m || typeof m !== 'object') throw new Error('items-by-name.json veio vazio');
+        _idsPorNome = m;
         return m;
     }
     async function basePorNome(nomes) {
@@ -3478,7 +3788,6 @@
     `;
 
     let ABA = 'magia';
-    let ULTIMO = null;
     /* v2.8.3 — AVISO DE VERSÃO NOVA (dono, 29/09: "quando alterar aqui, altera
      * no GitHub e só dá um refresh"). O Tampermonkey só confere o @updateURL no
      * intervalo dele, não a cada F5. Então o helper mesmo lê o cabeçalho do
@@ -3488,13 +3797,40 @@
     const RAW_URL = 'https://raw.githubusercontent.com/priscilaenorthon-dev/tibidle-helper/main/tibidle-helper.user.js';
     let NOVA_VERSAO = null;
     const versaoMaior = (a, b) => { const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number); for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d > 0; } return false; };
+    /* v2.11 — SÓ O CABEÇALHO, E SÓ VERSÃO DE VERDADE. Antes: baixava os
+     * ~300 KB do arquivo a cada 30 min para ler 1 linha, e o que viesse depois
+     * de "@version" ia cru para o Log (e o Log não escapava — CONFIRMADO).
+     * Agora: Range 0-4095 (e, se o servidor ignorar, a leitura para no
+     * primeiro ==/UserScript==), e a versão tem que casar /^\d+(\.\d+){1,3}$/. */
+    const VERSAO_VALIDA = /^\d+(\.\d+){1,3}$/;
+    async function lerCabecalhoRemoto() {
+        const pedir = (comRange) => comPrazo(signal => fetch(RAW_URL + '?t=' + Date.now(),
+            Object.assign({ cache: 'no-store' }, comRange ? { headers: { Range: 'bytes=0-4095' } } : {}, signal ? { signal } : {})), PRAZO_REDE_MS);
+        let r;
+        try { r = await pedir(true); } catch (e) { r = await pedir(false); }   // Range recusado no CORS: sem ele
+        if (!r || !r.ok) return null;
+        if (r.body && typeof r.body.getReader === 'function' && typeof TextDecoder === 'function') {
+            const leitor = r.body.getReader(), dec = new TextDecoder();
+            let txt = '';
+            while (txt.length < 8192) {
+                const { done, value } = await leitor.read();
+                if (done) break;
+                txt += dec.decode(value, { stream: true });
+                if (txt.includes('==/UserScript==')) break;
+            }
+            try { leitor.cancel().catch(() => { }); } catch (e) { }
+            return txt;
+        }
+        return (await r.text()).slice(0, 8192);
+    }
     async function verificarAtualizacao() {
         try {
-            const r = await fetch(RAW_URL + '?t=' + Date.now(), { cache: 'no-store' });
-            if (!r.ok) return null;
-            const cab = (await r.text()).slice(0, 2000);
-            const v = (cab.match(/@version\s+(\S+)/) || [])[1];
-            if (v && versaoMaior(v, VERSAO) && NOVA_VERSAO !== v) { NOVA_VERSAO = v; log('versão nova no GitHub: ' + v + ' (esta é ' + VERSAO + ') — clique em ↑ no trilho para atualizar', 'ok'); }
+            const cab = await lerCabecalhoRemoto();
+            if (!cab) return null;
+            const fimCab = cab.indexOf('==/UserScript==');
+            const v = ((fimCab > 0 ? cab.slice(0, fimCab) : cab).match(/@version\s+(\S+)/) || [])[1];
+            if (!v || !VERSAO_VALIDA.test(v)) return null;
+            if (versaoMaior(v, VERSAO) && NOVA_VERSAO !== v) { NOVA_VERSAO = v; log('versão nova no GitHub: ' + v + ' (esta é ' + VERSAO + ') — clique em ↑ no trilho para atualizar', 'ok'); }
             try { pintarTrilho(); } catch (e) { }
             return v;
         } catch (e) { return null; }
@@ -3560,7 +3896,10 @@
         c.innerHTML = LOG.slice(-80).reverse().map(l => {
             const cor = l.tipo === 'erro' ? 'tb-ruim' : l.tipo === 'ok' ? 'tb-ok' : 'tb-mut';
             const h = new Date(l.t).toLocaleTimeString('pt-BR');
-            return `<div><span class="tb-mut">${h}</span> <span class="${cor}">${l.msg}</span></div>`;
+            /* v2.11 — escHtml: o Log guarda texto que vem de FORA (erro do servidor,
+             * nome de item, versão do GitHub) e é persistido; sem escapar, um
+             * "<img onerror>" rodava a cada vez que o Log abria (CONFIRMADO). */
+            return `<div><span class="tb-mut">${h}</span> <span class="${cor}">${escHtml(l.msg)}</span></div>`;
         }).join('');
     }
 
@@ -3706,7 +4045,6 @@
         if (!h.boss && LOOT_CACHE[h.id] == null) ouroPorAbate(h.id).then(v => { if (v != null) renderizar(); });
         if (!h.boss && h.monsters && h.monsters.some(m => !BESTIARIO[m.name])) bestiarioHunt(h).then(() => renderizar()).catch(() => { });
         const r = montarPlano(modelo, h);
-        ULTIMO = r;
         if (r.erro) return corpo + `<div class="tb-cx tb-ruim">${r.erro}</div>`;
         const vp = r.viab ? viabilidadeParty(modelo, h) : null;
         const cabe = vp ? vp.cabe : null;
@@ -3875,12 +4213,16 @@
         const arma = p && p.equipment && p.equipment.weapon;
         const b = arma && EQUIP.base && EQUIP.base[arma.name] ? EQUIP.base[arma.name].attrs : {};
         const tipo = arma && ((arma.attrs && arma.attrs.ammotype) || (b && b.ammotype));
-        if (!tipo || !MUNICAO[tipo] || !ESTADO_WS.profiles) return;
-        const atual = normalizarConfig(configAtiva('PALADIN'));
+        if (!tipo || !MUNICAO[tipo]) return;
+        /* v2.11 — mesmo cuidado de aplicarPlanoSocket: profiles_set só em cima
+         * do perfil REAL e da config atual (senão apaga presets e cura) */
+        const cfg = configAtiva('PALADIN');
+        if (!perfilReal('PALADIN') || !cfg) { log('equip: munição do Paladino não ajustada — o perfil dele não veio do servidor (dê F5 com o helper instalado)', 'erro'); return; }
+        const atual = normalizarConfig(cfg);
         if (atual.ammo && MUNICAO[tipo].some(a => a.n === atual.ammo)) return;
         const nova = Object.assign({}, atual, { ammo: MUNICAO[tipo][0].n });
         const perfil = perfilDaVoc('PALADIN');
-        perfil.list[perfil.active] = { name: perfil.list[perfil.active].name, config: nova };
+        perfil.list[perfil.active] = Object.assign({}, perfil.list[perfil.active], { config: nova });
         enviarWS({ type: 'profiles_set', data: { vocation: 'PALADIN', profiles: perfil } });
         log(`equip: Paladino agora usa ${arma.name} — munição trocada de ${atual.ammo || 'nenhuma'} para ${nova.ammo} (vale na próxima caçada)`, 'ok');
     }
@@ -4845,9 +5187,23 @@
      * iniciar(), abortando a linha seguinte — `await carregarCatalogos()`.
      * Resultado: catálogos "não carregados" e lista de hunts VAZIA, um sintoma
      * a três passos da causa. Uma tela quebrada nunca mais derruba o boot. */
+    /* v2.11 — RENDER AGENDADO. renderizar() era síncrono e era chamado de
+     * dentro do evento do socket (welcome, hunt_started, depot_state) e em
+     * rajada (um log + um render por passo): cada chamada refazia a tela
+     * inteira — montarPlano 9× na aba Magia — no meio do frame do jogo.
+     * Agora renderizar() só MARCA; o desenho sai uma vez, fora do evento, no
+     * próximo giro (setTimeout 0 — requestAnimationFrame pararia com a aba em
+     * segundo plano). Todas as chamadas do mesmo giro viram um desenho só. */
+    let _renderAgendado = false;
     function renderizar() {
-        try { _renderizar(); }
-        catch (e) { console.error('[TB] erro ao desenhar a tela', e); }
+        if (_renderAgendado) return;
+        _renderAgendado = true;
+        try {
+            setTimeout(() => {
+                _renderAgendado = false;
+                try { _renderizar(); } catch (e) { falhou('desenhar a tela', e); }
+            }, 0);
+        } catch (e) { _renderAgendado = false; }
     }
 
     let _abaPintada = null, _scanFiltro = '';
@@ -5074,7 +5430,7 @@
                 if (cicloTravadoPorOutraAba()) { log('party na cidade, mas outra aba está no ciclo — aguardando', 'info'); return; }
                 log('Auto Hunt ligado e party na cidade: retomando o ciclo (purificar → vender → depot → voltar)', 'info');
                 await cicloDeVenda('auto');
-            } catch (e) { }
+            } catch (e) { falhou('retomada do Auto Hunt (F5)', e); }
         })();
 
         /* a purga vem ANTES dos catalogos: ela apaga cat_* justamente para
@@ -5098,7 +5454,7 @@
         /* o analisador roda SEMPRE, mesmo com a aba fechada — é o que garante
          * que nenhuma caçada passe sem virar dado. Fecha a sessão ao sair da
          * página pra não perder o que já foi medido. */
-        setInterval(() => { try { amostrar(); } catch (e) { } }, AMOSTRA_MS);
+        setInterval(() => { try { amostrar(); deuCerto('amostrar'); } catch (e) { falhou('amostrar', e); } }, AMOSTRA_MS);
         setTimeout(() => verificarAtualizacao().catch(() => { }), 15000);
         setInterval(() => verificarAtualizacao().catch(() => { }), 30 * 60 * 1000);
         window.addEventListener('beforeunload', () => { try { fecharSessao('página fechada'); } catch (e) { } });
@@ -5106,33 +5462,35 @@
 
     /* GANCHO DE DEPURACAO — so leitura. Deixa simular o plano de fora
      * (console ou Playwright) ANTES de clicar em aplicar. Nasceu em 19/09:
-     * sem isso a unica forma de ver o que "APLICAR NOS 4" faria era aplicar. */
-    window.__tbHelper = {
-        // v1.9.0 — Auto Hunt. Os cinco passos ESCREVEM no jogo; cicloDeVenda também.
-        autoHunt, guardarAutoHunt, capLivre, lerTaxaXp, itemSelado, modalAberto, mochilaNoLimite, estadoWS,
-        finalizarHunt, purificarTodos, venderNoNpc, guardarNoDepot, voltarParaHunt, cicloDeVenda, cliqueCompleto,
+     * sem isso a unica forma de ver o que "APLICAR NOS 4" faria era aplicar.
+     * ⚠ v2.11 — SÓ COM DEBUG LIGADO E SÓ LEITURA. window.__tbHelper é global:
+     * qualquer script da página (ou extensão) chamava cicloDeVenda, enviarWS,
+     * equiparTrocas… e lia o ticket em WS. Agora ele só existe com
+     *     localStorage.setItem('tb_helper_debug', 'true')   (e F5)
+     * e só expõe o que LÊ: nada que clique no jogo ou mande frame pelo socket
+     * (lerDepot/equipAtualizar mandam depot_get e ficaram de fora também).
+     * WS sai como cópia, sem o socket. */
+    if (lerChave('tb_helper_debug', false)) window.__tbHelper = {
+        // v1.9.0 — Auto Hunt (leituras)
+        autoHunt, capLivre, lerTaxaXp, itemSelado, modalAberto, mochilaNoLimite, estadoWS, motivoNaoDispara,
         versao: VERSAO, montarPlano, viabilidadeParty, huntAtual, magiasDaVocacao, danosConhecidos, ouroPorAbate, planoExtras, melhorMunicao, melhorPocao, bestiarioHunt, armaduraMedia, reducaoFisicaMedia, nomeModelo,
         get BESTIARIO() { return BESTIARIO; },
         get CAT() { return CAT; },
-        // v2.4.0 — Equip (lerDepot ENVIA depot_get: leitura)
-        lerShellFibra, lerRosterFibra, rosterEquip, lerDepot, basePorNome, idsPorNome,
-        equipAtualizar, pontuarPeca, candidatosEquip, distribuirEquip, vocacaoPode, mochilaEquip,
-        // v2.5.0 — ESCREVEM no servidor: depot_withdraw + equip
-        equiparTrocas, retirarDoDepot, equiparPeca, ondeEsta, slotsTrocas,
+        // v2.4.0 — Equip (leituras e modelo puro)
+        lerShellFibra, lerRosterFibra, rosterEquip, basePorNome, idsPorNome,
+        pontuarPeca, candidatosEquip, distribuirEquip, vocacaoPode, mochilaEquip, ondeEsta, slotsTrocas,
         get EQUIP() { return EQUIP; }, get PESOS_EQUIP() { return PESOS_EQUIP; },
-        // estes dois ESCREVEM no jogo — existem aqui so para teste de ida-e-volta
-        aplicarSlot, esvaziarSlot, aprenderDanosTodos, lureNoMaximo,
-        // v2.1.0 — socket/REST. aplicarPlanoSocket, enviarWS e lureNoMaximoSocket ESCREVEM no servidor.
-        socketAberto, enviarWS, configAtiva, perfilDaVoc, normalizarConfig, payloadBattleConfig,
-        aplicarPlanoSocket, aprenderDanosPorRest, lureNoMaximoSocket,
-        // v2.2.0 — Scan (scanIniciar/scanIrPara ESCREVEM: trocam de mapa e aplicam plano)
-        scanCfg, guardarScanCfg, scanResultados, scanVereditos, scanIniciar, scanParar, scanIrPara, scanMedidaViva,
-        scanDividirLoot, lootTabela, xpFaltando, fmtHoras,
+        // v2.1.0 — socket/REST (leituras; /spell-numbers só LÊ do servidor)
+        socketAberto, configAtiva, perfilDaVoc, perfilReal, normalizarConfig, payloadBattleConfig, aprenderDanosPorRest,
+        // v2.2.0 — Scan (leituras)
+        scanCfg, scanResultados, scanVereditos, scanMedidaViva, scanDividirLoot, lootTabela, xpFaltando, fmtHoras,
         // v2.6.4 — livro-razão de combate (só leitura dos eventos do frame)
         razaoResumo, razaoHtml, razaoTexto, manaMedidaMedia, spawnLimitaMedido, get RAZAO() { return RAZAO; },
         get SCAN() { return SCAN; },
-        get WS() { return WS; },
+        get WS() { return { tipos: WS.tipos, amostras: WS.amostras, bin: WS.bin, enviados: WS.enviados, frames: WS.frames, desde: WS.desde, socket: !!WS.socket, aberto: socketAberto() }; },
         get aprendendo() { return _aprendendo; },
+        // v2.11 — erros por lugar, a sessão do Analisador e as leituras do analisador
+        get ERROS() { return ERROS; }, get SESSAO() { return SESSAO; }, lerAbates, lerExpTotal,
         verificarAtualizacao, get NOVA_VERSAO() { return NOVA_VERSAO; }
     };
 
