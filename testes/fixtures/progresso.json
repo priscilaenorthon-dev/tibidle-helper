@@ -1,0 +1,1220 @@
+{
+ "_fonte": "GET público play.tibidle.com em 29/09/2026: /hunts/select (recorte: 5 caçadas, loot só chaves/fragmentos/moeda), /bosses/select (5), /assets/v167/imbuements.json (bases + 3 efeitos), /buy-prices (materiais desses efeitos)",
+ "hunts": [
+  {
+   "id": 170,
+   "title": "Wolves Den",
+   "levelMin": 1,
+   "bestiary": {
+    "bonus": "hpRegen",
+    "stages": [
+     {
+      "kills": 1000,
+      "value": 1
+     },
+     {
+      "kills": 2000,
+      "value": 2
+     },
+     {
+      "kills": 4000,
+      "value": 3
+     }
+    ]
+   },
+   "island": "tibidle_island",
+   "monsters": [
+    {
+     "name": "Wolf",
+     "weight": 1
+    }
+   ],
+   "loot": [
+    {
+     "id": 3031,
+     "name": "gold coin",
+     "chance": 100000,
+     "value": 1,
+     "slot": null
+    },
+    {
+     "id": 100312,
+     "name": "refine fragment t1",
+     "chance": 167,
+     "value": 0,
+     "slot": null
+    },
+    {
+     "id": 100201,
+     "name": "Worgen Key",
+     "chance": 150,
+     "value": 0,
+     "slot": null
+    },
+    {
+     "id": 100313,
+     "name": "guarantee fragment t1",
+     "chance": 125,
+     "value": 0,
+     "slot": null
+    }
+   ]
+  },
+  {
+   "id": 178,
+   "title": "Salamander Cave",
+   "levelMin": 12,
+   "bestiary": {
+    "bonus": "hpRegen",
+    "stages": [
+     {
+      "kills": 1000,
+      "value": 1
+     },
+     {
+      "kills": 2000,
+      "value": 2
+     },
+     {
+      "kills": 4000,
+      "value": 3
+     }
+    ]
+   },
+   "island": "tibidle_island",
+   "monsters": [
+    {
+     "name": "Dawnfly",
+     "weight": 1
+    },
+    {
+     "name": "Salamander",
+     "weight": 1
+    },
+    {
+     "name": "Marsh Stalker",
+     "weight": 1
+    }
+   ],
+   "loot": [
+    {
+     "id": 3031,
+     "name": "gold coin",
+     "chance": 72000,
+     "value": 1,
+     "slot": null
+    },
+    {
+     "id": 100312,
+     "name": "refine fragment t1",
+     "chance": 167,
+     "value": 0,
+     "slot": null
+    },
+    {
+     "id": 100217,
+     "name": "gordzila key",
+     "chance": 150,
+     "value": 0,
+     "slot": null
+    },
+    {
+     "id": 100313,
+     "name": "guarantee fragment t1",
+     "chance": 125,
+     "value": 0,
+     "slot": null
+    }
+   ]
+  },
+  {
+   "id": 34,
+   "title": "Orc Fortress",
+   "levelMin": 35,
+   "bestiary": {
+    "bonus": "maxHealth",
+    "stages": [
+     {
+      "kills": 2000,
+      "value": 3
+     },
+     {
+      "kills": 5000,
+      "value": 6
+     },
+     {
+      "kills": 10000,
+      "value": 9
+     }
+    ]
+   },
+   "island": "tibidle_island",
+   "monsters": [
+    {
+     "name": "Orc Berserker",
+     "weight": 2
+    },
+    {
+     "name": "Orc Leader",
+     "weight": 1
+    },
+    {
+     "name": "Orc Shaman",
+     "weight": 2
+    }
+   ],
+   "loot": [
+    {
+     "id": 3031,
+     "name": "gold coin",
+     "chance": 100000,
+     "value": 1,
+     "slot": null
+    },
+    {
+     "id": 100312,
+     "name": "refine fragment t1",
+     "chance": 167,
+     "value": 0,
+     "slot": null
+    },
+    {
+     "id": 100313,
+     "name": "guarantee fragment t1",
+     "chance": 125,
+     "value": 0,
+     "slot": null
+    },
+    {
+     "id": 100167,
+     "name": "Renegade Orc Key",
+     "chance": 92,
+     "value": 0,
+     "slot": null
+    }
+   ]
+  },
+  {
+   "id": 46,
+   "title": "Dragon Lair",
+   "levelMin": 60,
+   "bestiary": {
+    "bonus": "capacity",
+    "stages": [
+     {
+      "kills": 2000,
+      "value": 20
+     },
+     {
+      "kills": 5000,
+      "value": 40
+     },
+     {
+      "kills": 10000,
+      "value": 60
+     }
+    ]
+   },
+   "island": "tibidle_island",
+   "monsters": [
+    {
+     "name": "Dragon Hatchling",
+     "weight": 2
+    },
+    {
+     "name": "Dragon",
+     "weight": 3
+    }
+   ],
+   "loot": [
+    {
+     "id": 3031,
+     "name": "gold coin",
+     "chance": 95540,
+     "value": 1,
+     "slot": null
+    },
+    {
+     "id": 100312,
+     "name": "refine fragment t1",
+     "chance": 250,
+     "value": 0,
+     "slot": null
+    },
+    {
+     "id": 100313,
+     "name": "guarantee fragment t1",
+     "chance": 208,
+     "value": 0,
+     "slot": null
+    },
+    {
+     "id": 100177,
+     "name": "Rhaegal Key",
+     "chance": 92,
+     "value": 0,
+     "slot": null
+    },
+    {
+     "id": 100315,
+     "name": "attribute fragment t1",
+     "chance": 67,
+     "value": 0,
+     "slot": null
+    },
+    {
+     "id": 100314,
+     "name": "cleansing fragment t1",
+     "chance": 67,
+     "value": 0,
+     "slot": null
+    }
+   ]
+  },
+  {
+   "id": 62,
+   "title": "Lizard City",
+   "levelMin": 80,
+   "bestiary": {
+    "bonus": "maxMana",
+    "stages": [
+     {
+      "kills": 15000,
+      "value": 6
+     },
+     {
+      "kills": 30000,
+      "value": 12
+     },
+     {
+      "kills": 75000,
+      "value": 18
+     }
+    ]
+   },
+   "island": "zao",
+   "monsters": [
+    {
+     "name": "Lizard High Guard",
+     "weight": 4
+    },
+    {
+     "name": "Lizard Dragon Priest",
+     "weight": 2
+    },
+    {
+     "name": "Lizard Noble",
+     "weight": 1
+    }
+   ],
+   "loot": [
+    {
+     "id": 3031,
+     "name": "gold coin",
+     "chance": 91300,
+     "value": 1,
+     "slot": null
+    },
+    {
+     "id": 100312,
+     "name": "refine fragment t1",
+     "chance": 417,
+     "value": 0,
+     "slot": null
+    },
+    {
+     "id": 100313,
+     "name": "guarantee fragment t1",
+     "chance": 375,
+     "value": 0,
+     "slot": null
+    },
+    {
+     "id": 100291,
+     "name": "The Bloodscaled Key",
+     "chance": 150,
+     "value": 0,
+     "slot": null
+    },
+    {
+     "id": 100315,
+     "name": "attribute fragment t1",
+     "chance": 133,
+     "value": 0,
+     "slot": null
+    },
+    {
+     "id": 100314,
+     "name": "cleansing fragment t1",
+     "chance": 133,
+     "value": 0,
+     "slot": null
+    }
+   ]
+  }
+ ],
+ "bosses": [
+  {
+   "name": "Worgen",
+   "kind": "mini",
+   "health": 250,
+   "levelMin": 1,
+   "elements": [
+    {
+     "type": "COMBAT_ENERGYDAMAGE",
+     "percent": 15
+    },
+    {
+     "type": "COMBAT_FIREDAMAGE",
+     "percent": -5
+    },
+    {
+     "type": "COMBAT_ICEDAMAGE",
+     "percent": -5
+    },
+    {
+     "type": "COMBAT_HOLYDAMAGE",
+     "percent": -5
+    }
+   ],
+   "loot": [
+    {
+     "id": 3271,
+     "name": "spike sword",
+     "chance": 9440,
+     "value": 1000,
+     "slot": "weapon"
+    },
+    {
+     "id": 3070,
+     "name": "moonlight rod",
+     "chance": 9450,
+     "value": 200,
+     "slot": "weapon"
+    },
+    {
+     "id": 3075,
+     "name": "wand of dragonbreath",
+     "chance": 9450,
+     "value": 200,
+     "slot": "weapon"
+    },
+    {
+     "id": 7438,
+     "name": "elvish bow",
+     "chance": 9450,
+     "value": 200,
+     "slot": "weapon"
+    },
+    {
+     "id": 3377,
+     "name": "scale armor",
+     "chance": 9440,
+     "value": 75,
+     "slot": "armor"
+    },
+    {
+     "id": 3367,
+     "name": "viking helmet",
+     "chance": 9440,
+     "value": 66,
+     "slot": "head"
+    },
+    {
+     "id": 3430,
+     "name": "copper shield",
+     "chance": 9440,
+     "value": 50,
+     "slot": "shield"
+    },
+    {
+     "id": 3372,
+     "name": "brass legs",
+     "chance": 9440,
+     "value": 49,
+     "slot": "legs"
+    },
+    {
+     "id": 3572,
+     "name": "scarf",
+     "chance": 9450,
+     "value": 1,
+     "slot": "necklace"
+    },
+    {
+     "id": 100312,
+     "name": "refine fragment t1",
+     "chance": 9750,
+     "value": 0,
+     "slot": null
+    },
+    {
+     "id": 100313,
+     "name": "guarantee fragment t1",
+     "chance": 5250,
+     "value": 0,
+     "slot": null
+    }
+   ],
+   "keyItem": "Worgen Key",
+   "cooldownHours": 0
+  },
+  {
+   "name": "Gordzila",
+   "kind": "mini",
+   "health": 350,
+   "levelMin": 1,
+   "elements": [
+    {
+     "type": "COMBAT_FIREDAMAGE",
+     "percent": 30
+    },
+    {
+     "type": "COMBAT_ICEDAMAGE",
+     "percent": 30
+    },
+    {
+     "type": "COMBAT_HOLYDAMAGE",
+     "percent": 1
+    },
+    {
+     "type": "COMBAT_DEATHDAMAGE",
+     "percent": 100
+    }
+   ],
+   "loot": [
+    {
+     "id": 3271,
+     "name": "spike sword",
+     "chance": 9440,
+     "value": 1000,
+     "slot": "weapon"
+    },
+    {
+     "id": 3070,
+     "name": "moonlight rod",
+     "chance": 9450,
+     "value": 200,
+     "slot": "weapon"
+    },
+    {
+     "id": 3075,
+     "name": "wand of dragonbreath",
+     "chance": 9450,
+     "value": 200,
+     "slot": "weapon"
+    },
+    {
+     "id": 7438,
+     "name": "elvish bow",
+     "chance": 9450,
+     "value": 200,
+     "slot": "weapon"
+    },
+    {
+     "id": 3377,
+     "name": "scale armor",
+     "chance": 9440,
+     "value": 75,
+     "slot": "armor"
+    },
+    {
+     "id": 3367,
+     "name": "viking helmet",
+     "chance": 9440,
+     "value": 66,
+     "slot": "head"
+    },
+    {
+     "id": 3430,
+     "name": "copper shield",
+     "chance": 9440,
+     "value": 50,
+     "slot": "shield"
+    },
+    {
+     "id": 3372,
+     "name": "brass legs",
+     "chance": 9440,
+     "value": 49,
+     "slot": "legs"
+    },
+    {
+     "id": 3572,
+     "name": "scarf",
+     "chance": 9450,
+     "value": 1,
+     "slot": "necklace"
+    },
+    {
+     "id": 100312,
+     "name": "refine fragment t1",
+     "chance": 9750,
+     "value": 0,
+     "slot": null
+    },
+    {
+     "id": 100313,
+     "name": "guarantee fragment t1",
+     "chance": 5250,
+     "value": 0,
+     "slot": null
+    }
+   ],
+   "keyItem": "gordzila key",
+   "cooldownHours": 0
+  },
+  {
+   "name": "Renegade Orc",
+   "kind": "mini",
+   "health": 8500,
+   "levelMin": 1,
+   "elements": [
+    {
+     "type": "COMBAT_ENERGYDAMAGE",
+     "percent": 20
+    },
+    {
+     "type": "COMBAT_EARTHDAMAGE",
+     "percent": -10
+    },
+    {
+     "type": "COMBAT_FIREDAMAGE",
+     "percent": 100
+    },
+    {
+     "type": "COMBAT_HOLYDAMAGE",
+     "percent": 20
+    },
+    {
+     "type": "COMBAT_DEATHDAMAGE",
+     "percent": -2
+    }
+   ],
+   "loot": [
+    {
+     "id": 8073,
+     "name": "spellbook of warding",
+     "chance": 2000,
+     "value": 8000,
+     "slot": "shield"
+    },
+    {
+     "id": 3322,
+     "name": "dragon hammer",
+     "chance": 6500,
+     "value": 2000,
+     "slot": "weapon"
+    },
+    {
+     "id": 6299,
+     "name": "death ring",
+     "chance": 6500,
+     "value": 1000,
+     "slot": "ring"
+    },
+    {
+     "id": 10392,
+     "name": "twin hooks",
+     "chance": 6500,
+     "value": 500,
+     "slot": "weapon"
+    },
+    {
+     "id": 6131,
+     "name": "tortoise shield",
+     "chance": 6500,
+     "value": 150,
+     "slot": "shield"
+    },
+    {
+     "id": 22007,
+     "name": "gloom wolf fur",
+     "chance": 33000,
+     "value": 70,
+     "slot": null
+    },
+    {
+     "id": 100375,
+     "name": "Panther Fang",
+     "chance": 24000,
+     "value": 0,
+     "slot": null
+    },
+    {
+     "id": 100312,
+     "name": "refine fragment t1",
+     "chance": 9750,
+     "value": 0,
+     "slot": null
+    },
+    {
+     "id": 100313,
+     "name": "guarantee fragment t1",
+     "chance": 5250,
+     "value": 0,
+     "slot": null
+    }
+   ],
+   "keyItem": "Renegade Orc Key",
+   "cooldownHours": 0
+  },
+  {
+   "name": "Rhaegal",
+   "kind": "mini",
+   "health": 23000,
+   "levelMin": 1,
+   "elements": [
+    {
+     "type": "COMBAT_ENERGYDAMAGE",
+     "percent": 20
+    },
+    {
+     "type": "COMBAT_EARTHDAMAGE",
+     "percent": 80
+    },
+    {
+     "type": "COMBAT_FIREDAMAGE",
+     "percent": 100
+    },
+    {
+     "type": "COMBAT_ICEDAMAGE",
+     "percent": -10
+    }
+   ],
+   "loot": [
+    {
+     "id": 3386,
+     "name": "dragon scale mail",
+     "chance": 2000,
+     "value": 40000,
+     "slot": "armor"
+    },
+    {
+     "id": 826,
+     "name": "magma coat",
+     "chance": 8000,
+     "value": 11000,
+     "slot": "armor"
+    },
+    {
+     "id": 821,
+     "name": "magma legs",
+     "chance": 8000,
+     "value": 11000,
+     "slot": "legs"
+    },
+    {
+     "id": 3071,
+     "name": "wand of inferno",
+     "chance": 8000,
+     "value": 3000,
+     "slot": "weapon"
+    },
+    {
+     "id": 818,
+     "name": "magma boots",
+     "chance": 8000,
+     "value": 2500,
+     "slot": "boots"
+    },
+    {
+     "id": 7457,
+     "name": "fur boots",
+     "chance": 8000,
+     "value": 2000,
+     "slot": "boots"
+    },
+    {
+     "id": 9665,
+     "name": "wyrm scale",
+     "chance": 35000,
+     "value": 400,
+     "slot": null
+    },
+    {
+     "id": 9667,
+     "name": "boggy dreads",
+     "chance": 8000,
+     "value": 200,
+     "slot": null
+    },
+    {
+     "id": 100312,
+     "name": "refine fragment t1",
+     "chance": 6750,
+     "value": 0,
+     "slot": null
+    },
+    {
+     "id": 100313,
+     "name": "guarantee fragment t1",
+     "chance": 5250,
+     "value": 0,
+     "slot": null
+    },
+    {
+     "id": 100315,
+     "name": "attribute fragment t1",
+     "chance": 1500,
+     "value": 0,
+     "slot": null
+    },
+    {
+     "id": 100314,
+     "name": "cleansing fragment t1",
+     "chance": 1500,
+     "value": 0,
+     "slot": null
+    }
+   ],
+   "keyItem": "Rhaegal Key",
+   "cooldownHours": 0
+  },
+  {
+   "name": "Azerus",
+   "kind": "boss",
+   "health": 130000,
+   "levelMin": 1,
+   "elements": [
+    {
+     "type": "COMBAT_ENERGYDAMAGE",
+     "percent": 15
+    },
+    {
+     "type": "COMBAT_EARTHDAMAGE",
+     "percent": 15
+    },
+    {
+     "type": "COMBAT_FIREDAMAGE",
+     "percent": 15
+    },
+    {
+     "type": "COMBAT_ICEDAMAGE",
+     "percent": 15
+    },
+    {
+     "type": "COMBAT_HOLYDAMAGE",
+     "percent": 15
+    },
+    {
+     "type": "COMBAT_DEATHDAMAGE",
+     "percent": 15
+    }
+   ],
+   "loot": [
+    {
+     "id": 8063,
+     "name": "paladin armor",
+     "chance": 10000,
+     "value": 15000,
+     "slot": "armor"
+    },
+    {
+     "id": 3382,
+     "name": "crown legs",
+     "chance": 10000,
+     "value": 12000,
+     "slot": "legs"
+    },
+    {
+     "id": 3428,
+     "name": "tower shield",
+     "chance": 15000,
+     "value": 8000,
+     "slot": "shield"
+    },
+    {
+     "id": 3419,
+     "name": "crown shield",
+     "chance": 10000,
+     "value": 8000,
+     "slot": "shield"
+    },
+    {
+     "id": 22195,
+     "name": "onyx pendant",
+     "chance": 10000,
+     "value": 3500,
+     "slot": "necklace"
+    },
+    {
+     "id": 21169,
+     "name": "metal spats",
+     "chance": 10000,
+     "value": 2000,
+     "slot": "boots"
+    },
+    {
+     "id": 3073,
+     "name": "wand of cosmic energy",
+     "chance": 15000,
+     "value": 100,
+     "slot": "weapon"
+    },
+    {
+     "id": 8862,
+     "name": "yalahari armor",
+     "chance": 8000,
+     "value": 1,
+     "slot": "armor"
+    },
+    {
+     "id": 8863,
+     "name": "yalahari leg piece",
+     "chance": 6000,
+     "value": 1,
+     "slot": "legs"
+    },
+    {
+     "id": 8864,
+     "name": "yalahari mask",
+     "chance": 6000,
+     "value": 1,
+     "slot": "head"
+    },
+    {
+     "id": 100318,
+     "name": "refine fragment t2",
+     "chance": 40000,
+     "value": 0,
+     "slot": null
+    },
+    {
+     "id": 100320,
+     "name": "reroll fragment t2",
+     "chance": 13000,
+     "value": 0,
+     "slot": null
+    },
+    {
+     "id": 100319,
+     "name": "cleansing fragment t2",
+     "chance": 13000,
+     "value": 0,
+     "slot": null
+    },
+    {
+     "id": 100321,
+     "name": "order fragment t2",
+     "chance": 13000,
+     "value": 0,
+     "slot": null
+    },
+    {
+     "id": 100317,
+     "name": "rarity fragment t1",
+     "chance": 7500,
+     "value": 0,
+     "slot": null
+    },
+    {
+     "id": 100316,
+     "name": "reroll fragment t1",
+     "chance": 7500,
+     "value": 0,
+     "slot": null
+    },
+    {
+     "id": 100322,
+     "name": "rarity fragment t2",
+     "chance": 6000,
+     "value": 0,
+     "slot": null
+    }
+   ]
+  }
+ ],
+ "imbuements": {
+  "bases": [
+   {
+    "id": 1,
+    "name": "Basic",
+    "price": 5000,
+    "protectionPrice": 10000,
+    "percent": 90,
+    "removecost": 15000,
+    "duration": 72000
+   },
+   {
+    "id": 2,
+    "name": "Intricate",
+    "price": 30000,
+    "protectionPrice": 30000,
+    "percent": 70,
+    "removecost": 15000,
+    "duration": 72000
+   },
+   {
+    "id": 3,
+    "name": "Powerful",
+    "price": 200000,
+    "protectionPrice": 50000,
+    "percent": 50,
+    "removecost": 15000,
+    "duration": 72000
+   }
+  ],
+  "categories": [
+   {
+    "id": 1,
+    "name": "Life Leech",
+    "agressive": 1
+   },
+   {
+    "id": 3,
+    "name": "Critical Hit",
+    "agressive": 1
+   },
+   {
+    "id": 4,
+    "name": "Elemental Protection (Death)",
+    "agressive": 1
+   }
+  ],
+  "imbuements": [
+   {
+    "name": "Vampirism",
+    "base": 1,
+    "category": 1,
+    "subgroup": null,
+    "iconid": 46,
+    "description": "Converts 5% of damage to HP with a chance of 100%.",
+    "effect": {
+     "type": "skill",
+     "value": "lifeleech",
+     "bonus": 500,
+     "chance": 100
+    },
+    "items": [
+     {
+      "id": 9685,
+      "count": 25,
+      "name": "vampire teeth"
+     }
+    ]
+   },
+   {
+    "name": "Vampirism",
+    "base": 2,
+    "category": 1,
+    "subgroup": null,
+    "iconid": 46,
+    "description": "Converts 10% of damage to HP with a chance of 100%.",
+    "effect": {
+     "type": "skill",
+     "value": "lifeleech",
+     "bonus": 1000,
+     "chance": 100
+    },
+    "items": [
+     {
+      "id": 9685,
+      "count": 25,
+      "name": "vampire teeth"
+     },
+     {
+      "id": 9633,
+      "count": 15,
+      "name": "bloody pincers"
+     }
+    ]
+   },
+   {
+    "name": "Vampirism",
+    "base": 3,
+    "category": 1,
+    "subgroup": null,
+    "iconid": 46,
+    "description": "Converts 25% of damage to HP with a chance of 100%.",
+    "effect": {
+     "type": "skill",
+     "value": "lifeleech",
+     "bonus": 2500,
+     "chance": 100
+    },
+    "items": [
+     {
+      "id": 9685,
+      "count": 25,
+      "name": "vampire teeth"
+     },
+     {
+      "id": 9633,
+      "count": 15,
+      "name": "bloody pincers"
+     },
+     {
+      "id": 9663,
+      "count": 5,
+      "name": "piece of dead brain"
+     }
+    ]
+   },
+   {
+    "name": "Strike",
+    "base": 1,
+    "category": 3,
+    "subgroup": null,
+    "iconid": 1,
+    "description": "Raises crit hit damage by 15% and crit hit chance by 10%.",
+    "effect": {
+     "type": "skill",
+     "value": "critical",
+     "bonus": 1500,
+     "chance": 1000
+    },
+    "items": [
+     {
+      "id": 11444,
+      "count": 20,
+      "name": "protective charm"
+     }
+    ]
+   },
+   {
+    "name": "Strike",
+    "base": 2,
+    "category": 3,
+    "subgroup": null,
+    "iconid": 1,
+    "description": "Raises crit hit damage by 25% and crit hit chance by 10%.",
+    "effect": {
+     "type": "skill",
+     "value": "critical",
+     "bonus": 2500,
+     "chance": 1000
+    },
+    "items": [
+     {
+      "id": 11444,
+      "count": 20,
+      "name": "protective charm"
+     },
+     {
+      "id": 10311,
+      "count": 25,
+      "name": "sabretooth"
+     }
+    ]
+   },
+   {
+    "name": "Strike",
+    "base": 3,
+    "category": 3,
+    "subgroup": null,
+    "iconid": 1,
+    "description": "Raises crit hit damage by 50% and crit hit chance by 10%.",
+    "effect": {
+     "type": "skill",
+     "value": "critical",
+     "bonus": 5000,
+     "chance": 1000
+    },
+    "items": [
+     {
+      "id": 11444,
+      "count": 20,
+      "name": "protective charm"
+     },
+     {
+      "id": 10311,
+      "count": 25,
+      "name": "sabretooth"
+     },
+     {
+      "id": 22728,
+      "count": 5,
+      "name": "vexclaw talon"
+     }
+    ]
+   },
+   {
+    "name": "Lich Shroud",
+    "base": 1,
+    "category": 4,
+    "subgroup": null,
+    "iconid": 25,
+    "description": "Reduces death damage by 2%.",
+    "effect": {
+     "type": "reduction",
+     "combat": "death",
+     "value": 2
+    },
+    "items": [
+     {
+      "id": 11466,
+      "count": 25,
+      "name": "flask of embalming fluid"
+     }
+    ]
+   },
+   {
+    "name": "Lich Shroud",
+    "base": 2,
+    "category": 4,
+    "subgroup": null,
+    "iconid": 25,
+    "description": "Reduces death damage by 5%.",
+    "effect": {
+     "type": "reduction",
+     "combat": "death",
+     "value": 5
+    },
+    "items": [
+     {
+      "id": 11466,
+      "count": 25,
+      "name": "flask of embalming fluid"
+     },
+     {
+      "id": 22007,
+      "count": 20,
+      "name": "gloom wolf fur"
+     }
+    ]
+   },
+   {
+    "name": "Lich Shroud",
+    "base": 3,
+    "category": 4,
+    "subgroup": null,
+    "iconid": 25,
+    "description": "Reduces death damage by 10%.",
+    "effect": {
+     "type": "reduction",
+     "combat": "death",
+     "value": 10
+    },
+    "items": [
+     {
+      "id": 11466,
+      "count": 25,
+      "name": "flask of embalming fluid"
+     },
+     {
+      "id": 22007,
+      "count": 20,
+      "name": "gloom wolf fur"
+     },
+     {
+      "id": 9660,
+      "count": 5,
+      "name": "mystical hourglass"
+     }
+    ]
+   }
+  ]
+ },
+ "precos": {
+  "vampire teeth": 275,
+  "bloody pincers": 100,
+  "piece of dead brain": 420,
+  "protective charm": 60,
+  "sabretooth": 400,
+  "vexclaw talon": 1100,
+  "flask of embalming fluid": 30,
+  "gloom wolf fur": 70,
+  "mystical hourglass": 700
+ }
+}

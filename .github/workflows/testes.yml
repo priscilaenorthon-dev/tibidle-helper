@@ -1,0 +1,26 @@
+name: testes
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Sintaxe do userscript
+        run: node --check tibidle-helper.user.js
+      - name: "@version do cabeçalho = VERSAO do código"
+        run: |
+          cab=$(grep -m1 -oP '^// @version\s+\K\S+' tibidle-helper.user.js)
+          cod=$(grep -m1 -oP "const VERSAO = '\K[^']+" tibidle-helper.user.js)
+          echo "cabeçalho=$cab código=$cod"
+          test "$cab" = "$cod"
+      - name: Testes (testes/*.test.js)
+        run: for f in testes/*.test.js; do echo "== $f"; node "$f" || exit 1; done
+      - name: ESLint (nomes indefinidos, redeclaração)
+        run: npx --yes eslint@10 --no-config-lookup -c eslint.config.mjs tibidle-helper.user.js

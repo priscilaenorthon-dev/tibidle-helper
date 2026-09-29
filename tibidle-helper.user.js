@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.9.0
-// @description  Magia Inteligente (Econômica / Equilibrado / Área / Boss) + Analisador + Auto Hunt (mochila cheia → finalizar, purificar, vender, depot, voltar). Hunt, boss, mochila e ouro lidos do WebSocket; APLICAR NOS 4 e dano real pelo socket/REST, sem abrir janela. Scan: mede N mapas por 5 min cada (lure máximo, Equilibrado) e diz qual vale para XP, ouro ou os dois. Inteligente: 4 slots por DPS + poções, cura, suporte e munição. Nada automático nos slots. Equip: ranqueia corpo + depósito + mochila por vocação e slot e equipa pelo socket só por botão.
+// @version      2.11.0
+// @description  Magia (Econômica / Equilibrado / Área / Boss / Inteligente, com simulador da fila) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
 // @updateURL    https://raw.githubusercontent.com/priscilaenorthon-dev/tibidle-helper/main/tibidle-helper.user.js
@@ -13,22 +13,17 @@
 // @run-at       document-start
 // ==/UserScript==
 
-/* eslint-disable curly, no-multi-spaces, no-empty */
-/* ⚠ Os três avisos acima são ESTILO, não defeito, e são desligados de
- * propósito:
- *   curly          — 75 ocorrências de "if (x) return;" numa linha. São
- *                    guardas de entrada; abrir chave em todas incha o arquivo
- *                    sem melhorar nada.
- *   no-multi-spaces— comentários alinhados à direita do código, de propósito.
- *   no-empty       — "catch (e) { }" proposital: leitura de DOM que pode não
- *                    existir ainda não deve derrubar o painel inteiro.
- * Isto é um userscript de arquivo único, sem config de ESLint no projeto — o
- * linter que apita é o padrão do editor, não uma regra nossa. */
+/* ⚠ ESTILO, não defeito, e de propósito: "if (x) return;" numa linha (guardas
+ * de entrada), comentários alinhados à direita e "catch (e) { }" em leitura de
+ * DOM que pode não existir ainda. v2.11 — a diretiva eslint-disable que ficava
+ * aqui saiu: o ESLint do projeto (config do plano 2.11) não liga essas regras
+ * e apontava a diretiva como inútil. Falha que IMPORTA não é mais engolida em
+ * silêncio: vai para falhou() (ver ERROS, perto de log()). */
 
 (function () {
     'use strict';
 
-    const VERSAO = '2.9.0';
+    const VERSAO = '2.11.0';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -64,55 +59,88 @@
      * payload inventado pro servidor é convite a erro de estado ou a chamar
      * atenção. Primeiro captura, depois envia. */
     const WS = { tipos: {}, amostras: {}, bin: {}, enviados: {}, socket: null, frames: 0, desde: Date.now() };
+    /* v2.11 — SEGREDOS FORA DO DIAGNÓSTICO. `amostras` e `enviados` saem no
+     * "copiar JSON" do Analisador, e esse JSON é colado em conversa. O `auth`
+     * enviado leva o `ticket` e o `welcome` leva o `worldToken` (o Bearer das
+     * rotas REST): quem tivesse o JSON entrava na conta (CONFIRMADO na
+     * auditoria de 29/09). Toda chave terminada em token/ticket/password vira
+     * '***' ANTES de ser guardada — o que não fica guardado não vaza. */
+    const CHAVE_SEGREDO = /(token|ticket|password|senha)$/i;
+    const semSegredos = (o) => JSON.stringify(o, (k, v) => (typeof v === 'string' && CHAVE_SEGREDO.test(k)) ? '***' : v);
+    /* v2.11 — O GRAMPO NUNCA LANÇA PARA O JOGO. Ele roda dentro do send() e do
+     * construtor do WebSocket do próprio jogo: uma exceção nossa ali derruba a
+     * conexão do jogador. Tudo que é nosso fica em try e vai para falhou(); o
+     * que é do navegador (URL inválida, send com o socket fechando) continua
+     * saindo igual ao original, porque o jogo espera exatamente isso.
+     * Três correções da auditoria:
+     *   • construtor com Reflect.construct(…, new.target): `class X extends
+     *     WebSocket` (padrão de libs de reconexão) perdia a subclasse;
+     *   • WS.socket é o socket que recebeu welcome/resume — não "o último
+     *     criado" (um segundo socket qualquer roubava o envio do helper);
+     *   • estáticos (OPEN, CLOSED…) herdados do original, não copiados. */
     (function grampearWS() {
         try {
+            const receber = (ws, ev) => {
+                WS.frames++;
+                const dado = ev && ev.data;
+                if (typeof dado !== 'string') {
+                    try {
+                        const b = new Uint8Array(dado.slice ? dado.slice(0, 4) : dado);
+                        const k = [...b].map(x => x.toString(16).padStart(2, '0')).join(' ');
+                        WS.bin[k] = (WS.bin[k] || 0) + 1;
+                    } catch (e) { }
+                    return;
+                }
+                let o; try { o = JSON.parse(dado); } catch (e) { return; }
+                if (!o || typeof o !== 'object') return;
+                const t = typeof o.type === 'string' ? o.type : '?';
+                if (t === 'pong') return;
+                if (t === 'welcome' || t === 'resume') WS.socket = ws;      // o socket do JOGO é este
+                WS.tipos[t] = (WS.tipos[t] || 0) + 1;
+                if (!WS.amostras[t]) WS.amostras[t] = semSegredos(o).slice(0, 400);
+                try { observarRecebido(o); } catch (e) { falhou('observarRecebido', e); }
+            };
             const ouvir = (ws) => {
-                if (!ws || ws.__tbOuvindo) return;
-                ws.__tbOuvindo = true;
-                WS.socket = ws;
-                ws.addEventListener('message', ev => {
-                    WS.frames++;
-                    if (typeof ev.data !== 'string') {
-                        try {
-                            const b = new Uint8Array(ev.data.slice ? ev.data.slice(0, 4) : ev.data);
-                            const k = [...b].map(x => x.toString(16).padStart(2, '0')).join(' ');
-                            WS.bin[k] = (WS.bin[k] || 0) + 1;
-                        } catch (e) { }
-                        return;
-                    }
-                    let o; try { o = JSON.parse(ev.data); } catch (e) { return; }
-                    const t = (o && o.type) || '?';
-                    if (t === 'pong') return;
-                    WS.tipos[t] = (WS.tipos[t] || 0) + 1;
-                    if (!WS.amostras[t]) WS.amostras[t] = JSON.stringify(o).slice(0, 400);
-                    try { observarRecebido(o); } catch (e) { }
-                });
+                try {
+                    if (!ws || ws.__tbOuvindo) return;
+                    ws.__tbOuvindo = true;
+                    ws.addEventListener('message', ev => { try { receber(ws, ev); } catch (e) { falhou('grampo (recebido)', e); } });
+                } catch (e) { falhou('grampo (ouvir)', e); }
+            };
+            const espiarEnvio = (ws, d) => {
+                ouvir(ws);
+                if (typeof d !== 'string' || d.length >= 20000) return;
+                let o; try { o = JSON.parse(d); } catch (e) { return; }
+                if (!o || typeof o !== 'object') return;
+                const t = typeof o.type === 'string' ? o.type : '?';
+                if (t === 'ping') return;
+                /* helper instalado com o jogo já aberto: o welcome já passou.
+                 * O socket que fala o protocolo do jogo vale de reserva só
+                 * enquanto não houver um vivo — o próximo welcome manda. */
+                if (t !== '?' && (!WS.socket || WS.socket.readyState > 1)) WS.socket = ws;
+                if (!WS.enviados[t]) WS.enviados[t] = { n: 0, ultimo: null };
+                WS.enviados[t].n++;
+                // o payload inteiro (menos os segredos): é ele que vira o molde do envio
+                const s = semSegredos(o);
+                WS.enviados[t].ultimo = s.length < 8000 ? s : s.slice(0, 8000);
+                try { observarEnviado(o); } catch (e) { falhou('observarEnviado', e); }
             };
             // pega dos DOIS lados: construtor (sockets novos) e send (o vivo)
             const OrigSend = WebSocket.prototype.send;
             WebSocket.prototype.send = function (d) {
-                ouvir(this);
-                try {
-                    if (typeof d === 'string' && d.length < 20000) {
-                        const o = JSON.parse(d);
-                        const t = (o && o.type) || '?';
-                        if (t !== 'ping') {
-                            if (!WS.enviados[t]) WS.enviados[t] = { n: 0, ultimo: null };
-                            WS.enviados[t].n++;
-                            // guarda o payload INTEIRO: é ele que vira o molde do envio
-                            WS.enviados[t].ultimo = d.length < 8000 ? d : d.slice(0, 8000);
-                            try { observarEnviado(o); } catch (e) { }
-                        }
-                    }
-                } catch (e) { }
+                try { espiarEnvio(this, d); } catch (e) { falhou('grampo (enviado)', e); }
                 return OrigSend.apply(this, arguments);
             };
             const OrigWS = window.WebSocket;
-            const Embrulhado = function (...a) { const ws = new OrigWS(...a); ouvir(ws); return ws; };
+            const Embrulhado = function (...a) {
+                const ws = Reflect.construct(OrigWS, a, new.target || Embrulhado);
+                ouvir(ws);                                  // ouvir() tem try próprio
+                return ws;
+            };
             Embrulhado.prototype = OrigWS.prototype;
-            Object.assign(Embrulhado, OrigWS);
+            try { Object.setPrototypeOf(Embrulhado, OrigWS); } catch (e) { Object.assign(Embrulhado, OrigWS); }
             window.WebSocket = Embrulhado;
-        } catch (e) { console.warn('[TB] grampo do WS falhou', e); }
+        } catch (e) { try { console.warn('[TB] grampo do WS falhou', e); } catch (e2) { } }
     })();
 
     /* =========================================================================
@@ -196,17 +224,47 @@
      * Sem /auth/me (deslogado, erro de rede) cai no prefixo comum. */
     let LS = 'tb_helper_';
     let CONTA = null;
+    /* v2.11 — SEM /auth/me, A CONTA DO WELCOME. Com /auth/me fora do ar (rede,
+     * 5xx) a segunda conta caía na gaveta comum — que é a do DONO — e herdava
+     * a hunt, o dano e o log dele. O `welcome` do socket traz `account.name`
+     * (schema do cliente: name, level, mainVocation…; sem id). Cada /auth/me
+     * que dá certo anota nome → id em tb_helper_contas; quando ele falha, o
+     * nome do welcome acha a gaveta certa. Nome nunca visto com outra conta
+     * já anotada = conta nova: gaveta própria pelo nome. */
+    let _gavetaSemConta = false;
     async function escolherGaveta() {
         try {
             const me = await buscarJSON('/auth/me');
             const id = me && (me.accountId || me.id);
-            if (!id) return;
+            if (!id) { _gavetaSemConta = true; if (ESTADO_WS.conta) gavetaPeloWelcome(ESTADO_WS.conta); return; }
             CONTA = { id, nome: me.name || '?', mundo: me.worldId || '?' };
             let dono = null;
             try { dono = JSON.parse(localStorage.getItem('tb_helper_dono') || 'null'); } catch (e) { }
             if (!dono) { try { localStorage.setItem('tb_helper_dono', JSON.stringify(id)); } catch (e) { } dono = id; }
             LS = dono === id ? 'tb_helper_' : 'tb_helper_' + id + '_';
-        } catch (e) { /* deslogado ou sem rede: gaveta comum */ }
+            if (me.name) { const nomes = lerChave('tb_helper_contas', {}) || {}; if (nomes[me.name] !== id) { nomes[me.name] = id; gravar('tb_helper_contas', nomes); } }
+        } catch (e) { /* deslogado ou sem rede: gaveta comum até o welcome dizer a conta */
+            _gavetaSemConta = true;
+            if (ESTADO_WS.conta) gavetaPeloWelcome(ESTADO_WS.conta);
+        }
+    }
+    function gavetaPeloWelcome(conta) {
+        if (CONTA || !conta || !conta.nome) return;
+        const nomes = lerChave('tb_helper_contas', {}) || {};
+        if (!Object.keys(nomes).length) return;          // nada anotado ainda: não dá para distinguir o dono
+        const dono = lerChave('tb_helper_dono', null), id = nomes[conta.nome] || null;
+        const prefixo = id ? (id === dono ? 'tb_helper_' : 'tb_helper_' + id + '_')
+            : 'tb_helper_n' + String(conta.nome).normalize('NFD').replace(/[^A-Za-z0-9]/g, '').slice(0, 24) + '_';
+        CONTA = { id, nome: conta.nome, mundo: '?', peloWelcome: true };
+        if (prefixo !== LS) trocarGaveta(prefixo, 'conta ' + conta.nome + ' (pelo welcome — /auth/me falhou)');
+    }
+    /* troca de gaveta com o helper já de pé: memória que veio da gaveta velha cai */
+    function trocarGaveta(prefixo, porque) {
+        LS = prefixo; MEMO.clear();
+        try { purgarSeEraVelha(); } catch (e) { falhou('purga da era', e); }
+        LOG = ler('log', []);
+        log('gaveta: ' + porque, 'info');
+        renderizar();
     }
 
     /* =========================================================================
@@ -242,10 +300,17 @@
         try { anterior = JSON.parse(localStorage.getItem(LS + 'era') || 'null'); } catch (e) { }
         if (anterior === ERA) return false;
 
-        /* medido = morre. escolhido = fica. */
+        /* medido = morre. escolhido = fica.
+         * v2.11 — `cat_` aqui é a cópia ANTIGA por gaveta (até a 2.10). Os
+         * catálogos agora moram numa chave comum a todas as contas
+         * (LS_COMUM, ver carregarCatalogos) com o PRÓPRIO selo de era: quem
+         * vira a era apaga a cópia comum só se ela ainda for da era velha —
+         * a segunda conta a subir não derruba o que a primeira já baixou. */
         const morre = new RegExp('^' + LS + '(danos_|loot_|sessoes$|cat_|hunt_id$|hunt_manual$|regime$|skills_vistas$)');
         const mortos = Object.keys(localStorage).filter(k => morre.test(k));
+        if (lerChave(LS_COMUM + 'cat_era', null) !== ERA) mortos.push(...Object.keys(localStorage).filter(k => k.startsWith(LS_COMUM + 'cat_')));
         mortos.forEach(k => { try { localStorage.removeItem(k); } catch (e) { } });
+        MEMO.clear();
 
         try { localStorage.setItem(LS + 'era', JSON.stringify(ERA)); } catch (e) { }
         return { de: anterior, para: ERA, apagadas: mortos.length };
@@ -253,9 +318,13 @@
 
     /* Formato antigo (ate 1.6): danos_<VOC>_<nivel>. A 1.7 guarda por vocacao
      * com o nivel dentro. As chaves velhas nao fazem mal, mas ocupam espaco e
-     * confundem quem le o localStorage — somem no primeiro boot. */
+     * confundem quem le o localStorage — somem no primeiro boot.
+     * v2.11 — idem `equip_ids` (221 KB por gaveta: a lista nome → id de TODOS
+     * os itens do jogo). Agora vive só em memória; o JSON é rebaixado 1× por
+     * sessão, quando o Equip precisa. */
     function limparChavesLegadas() {
-        const velhas = Object.keys(localStorage).filter(k => new RegExp('^' + LS + 'danos_[A-Z]+_\\d+$').test(k));
+        const velhas = Object.keys(localStorage).filter(k => new RegExp('^' + LS + 'danos_[A-Z]+_\\d+$').test(k)
+            || (k.startsWith('tb_helper_') && /(^|_)equip_ids$/.test(k)));
         velhas.forEach(k => { try { localStorage.removeItem(k); } catch (e) { } });
         return velhas.length;
     }
@@ -276,7 +345,7 @@
         },
         boss: {
             nome: 'Boss',
-            dica: 'Escolha o boss: só as magias que mais dão dano nele, todas com gatilho ≥1.'
+            dica: 'Escolha o boss: as magias e runas que mais dão dano por segundo nele com a mana que cada um tem (uma por grupo de recarga), todas com gatilho ≥1.'
         },
         inteligente: {
             nome: 'Inteligente',
@@ -293,7 +362,9 @@
         inteligente_seco: { base: 'inteligente', seco: true, nome: 'Intel. seco (só poção, sem cura/suporte)' }
     };
     const nomeModelo = (m) => (MODELOS[m] || VARIANTES[m] || { nome: m }).nome;
-    let _manaTodos = false, _semRuna = false, _seco = false;
+    /* v2.10 — as flags globais _manaTodos/_semRuna/_seco saíram: montarPlano
+     * lê a variante e passa as opções adiante ({ manaTodos, semRuna, seco }).
+     * Com o plano em cache, uma flag global de uma chamada vazava na outra. */
     /* @@MODELOS-FIM */
 
     /* =========================================================================
@@ -315,20 +386,124 @@
         return null;
     }
 
-    const guardar = (k, v) => { try { localStorage.setItem(LS + k, JSON.stringify(v)); } catch (e) { } };
-    const ler = (k, padrao) => {
-        try { const v = localStorage.getItem(LS + k); return v ? JSON.parse(v) : padrao; }
-        catch (e) { return padrao; }
+    /* @@ARMAZEM-INICIO — guardar/ler, ERROS/falhou e log; testes/fumaca.test.js roda este trecho sozinho. */
+    /* v2.11 — guardar() DEVOLVE true/false. O localStorage tem ~5 MB por
+     * ORIGEM (todas as contas do navegador juntas) e, cheio, setItem lança
+     * QuotaExceededError — que o catch vazio engolia: o helper seguia "salvando"
+     * dano, sessão e Scan que nunca chegavam ao disco. Agora: false para quem
+     * chamou, e UM aviso no Log ("sem espaço") por sessão, não um por chamada.
+     *
+     * MEMÓRIA: `scan_resultados` e `sessoes` são lidos várias vezes por
+     * repintura (scanResultados() era JSON.parse de ~200 KB a cada chamada).
+     * Essas chaves são lidas do disco 1× e servidas da memória; guardar()
+     * atualiza a memória junto, e o evento `storage` (outra aba escreveu)
+     * derruba a cópia. `scan_resultados` fica com os 60 mais recentes. */
+    let _semEspacoAvisado = false;
+    const MEMO = new Map();
+    const EM_MEMORIA = new Set(['scan_resultados', 'sessoes']);
+    const SCAN_RESULTADOS_MAX = 60;
+    const PODAR = {
+        scan_resultados: (v) => {
+            if (!v || typeof v !== 'object') return v;
+            const e = Object.entries(v);
+            if (e.length <= SCAN_RESULTADOS_MAX) return v;
+            return Object.fromEntries(e.sort((a, b) => ((b[1] && b[1].t) || 0) - ((a[1] && a[1].t) || 0)).slice(0, SCAN_RESULTADOS_MAX));
+        }
     };
+    const cheioDeVerdade = (e) => !!e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || e.code === 22 || e.code === 1014);
+    function gravar(chave, v) {
+        try { localStorage.setItem(chave, JSON.stringify(v)); return true; }
+        catch (e) {
+            if (!cheioDeVerdade(e)) { falhou('guardar ' + chave.replace(/^tb_helper_/, ''), e); return false; }
+            if (!_semEspacoAvisado) {
+                _semEspacoAvisado = true;
+                log('localStorage sem espaço — o que o helper mediu NÃO está sendo salvo (' + chave.replace(/^tb_helper_/, '') + '). Limpe o histórico do Analisador e os resultados do Scan.', 'erro');
+            }
+            return false;
+        }
+    }
+    function lerChave(chave, padrao) {
+        try { const v = localStorage.getItem(chave); return v ? JSON.parse(v) : padrao; }
+        catch (e) { return padrao; }
+    }
+    const guardar = (k, v) => {
+        if (PODAR[k]) { try { v = PODAR[k](v); } catch (e) { } }
+        const ok = gravar(LS + k, v);
+        if (EM_MEMORIA.has(k)) { if (ok) MEMO.set(LS + k, v); else MEMO.delete(LS + k); }
+        return ok;
+    };
+    const ler = (k, padrao) => {
+        const chave = LS + k;
+        if (EM_MEMORIA.has(k) && MEMO.has(chave)) return MEMO.get(chave);
+        try {
+            const s = localStorage.getItem(chave);
+            if (!s) return padrao;
+            const v = JSON.parse(s);
+            if (EM_MEMORIA.has(k)) MEMO.set(chave, v);
+            return v;
+        } catch (e) { return padrao; }
+    };
+    try { window.addEventListener('storage', ev => { if (ev && ev.key) MEMO.delete(ev.key); else MEMO.clear(); }); } catch (e) { }
+    /* v2.11 — gaveta COMUM a todas as contas: o que é do JOGO, não da conta
+     * (catálogos). Cinco contas no navegador guardavam cinco cópias. */
+    const LS_COMUM = 'tb_helper_comum_';
+    const guardarComum = (k, v) => gravar(LS_COMUM + k, v);
+    const lerComum = (k, padrao) => lerChave(LS_COMUM + k, padrao);
+
+    /* =========================================================================
+     *  ⭐ v2.11 — ERROS À VISTA (auditoria de 29/09: "catch (e) { }" em volta
+     *  do grampo, do amostrador e do gatilho do Auto Hunt escondia defeito
+     *  real por dias). Toda falha que importa passa por falhou(onde, e):
+     *    • conta por LUGAR (ERROS.porLugar[onde] = {n, seguidas, t, msg});
+     *    • vai para o Log no máximo 1× por minuto por lugar (um erro a cada
+     *      frame viraria 3.600 linhas por hora);
+     *    • deuCerto(onde) zera as "seguidas" — o gatilho do Auto Hunt com 5
+     *      falhas SEGUIDAS desliga a automação (nunca ficar num laço quebrado).
+     *  ERROS.naoLidos — PARA A ÁREA DE UI: quantos log(…, 'erro') desde que o
+     *  Log foi aberto pela última vez. A UI desenha o ponto/contador no trilho
+     *  e ZERA ao abrir a aba Log (ERROS.naoLidos = 0).
+     * ====================================================================== */
+    const ERROS = { naoLidos: 0, total: 0, porLugar: {} };
+    const FALHA_LOG_MS = 60000, FALHAS_SEGUIDAS_AUTO_HUNT = 5;
+    function falhou(onde, e) {
+        try {
+            const agora = Date.now(), msg = (e && e.message) || String(e);
+            const x = ERROS.porLugar[onde] || (ERROS.porLugar[onde] = { n: 0, seguidas: 0, t: 0, logado: 0, msg: '' });
+            x.n++; x.seguidas++; x.t = agora; x.msg = msg; ERROS.total++;
+            try { console.warn('[TB] falhou em ' + onde, e); } catch (e2) { }
+            if (agora - x.logado >= FALHA_LOG_MS) { x.logado = agora; log(`falha em ${onde}: ${msg}` + (x.n > 1 ? ` (${x.n}ª vez)` : ''), 'erro'); }
+            if (onde === 'gatilhoAutoHunt' && x.seguidas >= FALHAS_SEGUIDAS_AUTO_HUNT && autoHunt().on) {
+                guardarAutoHunt({ on: false });
+                log(`Auto Hunt DESLIGADO: ${x.seguidas} falhas seguidas no gatilho (${msg})`, 'erro');
+                renderizar();
+            }
+        } catch (e3) { }
+        return null;
+    }
+    function deuCerto(onde) { const x = ERROS.porLugar[onde]; if (x) x.seguidas = 0; }
 
     let LOG = [];
     function log(msg, tipo) {
-        const linha = { t: Date.now(), msg, tipo: tipo || 'info' };
+        const linha = { t: Date.now(), msg: String(msg), tipo: tipo || 'info' };
         LOG.push(linha);
         while (LOG.length > 300) LOG.shift();
+        if (linha.tipo === 'erro') ERROS.naoLidos++;
         guardar('log', LOG);
-        pintarLog();
-        console.log('[TB]', msg);
+        try { pintarLog(); } catch (e) { try { console.error('[TB] pintarLog', e); } catch (e2) { } }
+        try { console.log('[TB]', linha.msg); } catch (e) { }
+    }
+    /* @@ARMAZEM-FIM */
+    /* v2.10 — FAIXA DE RETORNO (auditoria de UI, 29/09): "Venda rápida" fora
+     * da cidade não mostrava nada na aba — o erro ia só para o Log, com um
+     * ponto vermelho que sumia na linha seguinte. avisar() grava no Log (via
+     * log) E mostra a mensagem por 10 s numa faixa logo abaixo do cabeçalho da
+     * gaveta, só na aba que pediu. Use no lugar de log() para o RESULTADO de
+     * uma ação da tela — não chame os dois (sairia duplicado no Log).
+     * aba = chave de ICONES ('estado', 'magia', 'scan'…); tipo = 'ok' | 'erro' | 'info'. */
+    const AVISOS = {};
+    function avisar(aba, msg, tipo) {
+        AVISOS[aba] = { t: Date.now(), msg: String(msg), tipo: tipo || 'info' };
+        log(msg, tipo);
     }
 
     /* =========================================================================
@@ -339,43 +514,72 @@
      * ====================================================================== */
     const CAT = { hunts: null, magias: null, areas: null, precos: null, pocoes: null };
 
+    /* v2.11 — PRAZO DE 10 s. fetch sem prazo pendura para sempre com a rede
+     * meio morta: o boot esperava /auth/me sem fim e o painel nem montava. */
+    const PRAZO_REDE_MS = 10000;
+    function comPrazo(fazer, ms) {
+        const AC = window.AbortController, ctl = typeof AC === 'function' ? new AC() : null;
+        let timer = null;
+        const prazo = new Promise((_, rej) => { timer = setTimeout(() => { try { if (ctl) ctl.abort(); } catch (e) { } rej(new Error('sem resposta em ' + Math.round(ms / 1000) + ' s')); }, ms); });
+        return Promise.race([Promise.resolve().then(() => fazer(ctl ? ctl.signal : undefined)), prazo]).finally(() => clearTimeout(timer));
+    }
     async function buscarJSON(caminho) {
-        const r = await fetch(API + caminho, { credentials: 'include' });
-        if (!r.ok) throw new Error(caminho + ' → HTTP ' + r.status);
-        return r.json();
+        return comPrazo(async (signal) => {
+            const r = await fetch(API + caminho, signal ? { credentials: 'include', signal } : { credentials: 'include' });
+            if (!r.ok) throw new Error(caminho + ' → HTTP ' + r.status);
+            return r.json();
+        }, PRAZO_REDE_MS);
     }
 
+    /* v2.11 — catálogos na gaveta COMUM (LS_COMUM), com selo de era próprio,
+     * e rede fora ≠ catálogo nulo: se o download falha, a cópia local vale
+     * mesmo vencida (CAT null = lista de hunts vazia e nenhum plano). */
+    const CAT_ARQ = { hunts: '/hunts/select', magias: '/spells', areas: '/assets/v100/spell-areas.json', precos: '/buy-prices', bosses: '/bosses/select', pocoes: '/potions' };
+    function catalogosDoCache() {
+        if (lerComum('cat_era', null) !== ERA) return false;
+        const c = {};
+        for (const k of Object.keys(CAT_ARQ)) c[k] = lerComum('cat_' + k, null);
+        if (!c.hunts || !c.magias) return false;
+        Object.assign(CAT, c, { bosses: normalizarBosses(c.bosses) });
+        return true;
+    }
+    /* cópias por gaveta (até a 2.10) saem depois que a comum existe */
+    function limparCatalogosPorGaveta() {
+        Object.keys(localStorage).filter(k => k.startsWith('tb_helper_') && !k.startsWith(LS_COMUM) && /(^|_)cat_(hunts|magias|areas|precos|bosses|pocoes|ts)$/.test(k))
+            .forEach(k => { try { localStorage.removeItem(k); } catch (e) { } });
+    }
     async function carregarCatalogos(forcar) {
-        const idade = Date.now() - (ler('cat_ts', 0) || 0);
-        const valido = !forcar && idade < 24 * 3600 * 1000;
-        if (valido) {
-            CAT.hunts = ler('cat_hunts', null);
-            CAT.magias = ler('cat_magias', null);
-            CAT.areas = ler('cat_areas', null);
-            CAT.precos = ler('cat_precos', null);
-            CAT.bosses = normalizarBosses(ler('cat_bosses', null));
-            if (!CAT.bosses) buscarJSON('/bosses/select').then(b => { CAT.bosses = normalizarBosses(b); guardar('cat_bosses', CAT.bosses); renderizar(); }).catch(() => { });
-            CAT.pocoes = ler('cat_pocoes', null);
-            if (!CAT.pocoes) buscarJSON('/potions').then(p => { CAT.pocoes = p; guardar('cat_pocoes', p); }).catch(() => { });
-            if (CAT.hunts && CAT.magias) { log('catálogos do cache local', 'ok'); return true; }
+        const idade = Date.now() - (lerComum('cat_ts', 0) || 0);
+        if (!forcar && idade < 24 * 3600 * 1000 && catalogosDoCache()) {
+            if (!CAT.bosses) buscarJSON('/bosses/select').then(b => { CAT.bosses = normalizarBosses(b); guardarComum('cat_bosses', CAT.bosses); renderizar(); }).catch(() => { });
+            if (!CAT.pocoes) buscarJSON('/potions').then(p => { CAT.pocoes = p; guardarComum('cat_pocoes', p); }).catch(() => { });
+            log('catálogos do cache local', 'ok');
+            limparCatalogosPorGaveta();
+            return true;
         }
         try {
             log('baixando catálogos do jogo…');
             const [hunts, magias, areas, precos, bosses, pocoes] = await Promise.all([
-                buscarJSON('/hunts/select'),
-                buscarJSON('/spells'),
-                buscarJSON('/assets/v100/spell-areas.json').catch(() => null),
-                buscarJSON('/buy-prices').catch(() => null),
-                buscarJSON('/bosses/select').catch(() => null),
-                buscarJSON('/potions').catch(() => null)
+                buscarJSON(CAT_ARQ.hunts),
+                buscarJSON(CAT_ARQ.magias),
+                buscarJSON(CAT_ARQ.areas).catch(() => null),
+                buscarJSON(CAT_ARQ.precos).catch(() => null),
+                buscarJSON(CAT_ARQ.bosses).catch(() => null),
+                buscarJSON(CAT_ARQ.pocoes).catch(() => null)
             ]);
+            if (!Array.isArray(hunts) || !Array.isArray(magias)) throw new Error('catálogo de hunts/magias veio num formato inesperado');
             CAT.hunts = hunts; CAT.magias = magias; CAT.areas = areas; CAT.precos = precos; CAT.bosses = normalizarBosses(bosses); CAT.pocoes = pocoes;
-            guardar('cat_hunts', hunts); guardar('cat_magias', magias);
-            guardar('cat_areas', areas); guardar('cat_precos', precos); guardar('cat_bosses', bosses); guardar('cat_pocoes', pocoes);
-            guardar('cat_ts', Date.now());
-            log(`catálogos ok — ${hunts.length} hunts, ${magias.length} magias`, 'ok');
+            const salvo = [guardarComum('cat_hunts', hunts), guardarComum('cat_magias', magias),
+                guardarComum('cat_areas', areas), guardarComum('cat_precos', precos), guardarComum('cat_bosses', bosses), guardarComum('cat_pocoes', pocoes)].every(Boolean);
+            if (salvo) { guardarComum('cat_ts', Date.now()); guardarComum('cat_era', ERA); limparCatalogosPorGaveta(); }
+            log(`catálogos ok — ${hunts.length} hunts, ${magias.length} magias` + (salvo ? '' : ' (não couberam no localStorage: valem só nesta sessão)'), salvo ? 'ok' : 'erro');
             return true;
         } catch (e) {
+            if ((CAT.hunts && CAT.magias) || catalogosDoCache()) {
+                const ts = lerComum('cat_ts', 0);
+                log('falha ao baixar catálogos (' + e.message + ') — usando a cópia local' + (ts ? ' de ' + new Date(ts).toLocaleString('pt-BR') : ''), 'erro');
+                return true;
+            }
             log('falha ao baixar catálogos: ' + e.message, 'erro');
             return false;
         }
@@ -751,9 +955,17 @@
         for (const m of hunt.monsters) { const b = BESTIARIO[m.name]; if (!b) continue; const p = Math.max(1, m.weight || 1); s += 0.75 * ((b.armor || 0) + (b.defense || 0)) * p; w += p; }
         return w ? s / w : 0;
     }
+    /* v2.10 — VETO PONDERADO NA ÁREA (plano 2.11, item 6). O veto estrito
+     * ("qualquer monstro imune") é certo para ALVO ÚNICO: o golpe cai num
+     * bicho só, e se for o imune sai zero. Mas a magia de ÁREA acerta todos
+     * juntos — os imunes tomam 0 e os outros tomam cheio, e a média ponderada
+     * já diz isso. Com o veto estrito, um monstro imune em quatro tirava a
+     * onda do elemento certo do mapa inteiro. Área só é vetada se os imunes
+     * pesam ≥ 50 % da hunt; nota e veto estritos continuam em `notas`/`vetos`
+     * (alvo único, munição), os de área em `notasArea`/`vetosArea`. */
     function notasElementos(hunt) {
         if (!hunt || !hunt.monsters || !hunt.monsters.length) return null;
-        const soma = {}, peso = {}, pior = {};
+        const soma = {}, peso = {}, pior = {}, pesoImune = {};
         hunt.monsters.forEach(m => {
             const w = Math.max(1, m.weight || 1);
             const el = {};
@@ -763,15 +975,17 @@
                 soma[e] = (soma[e] || 0) + tomado * w;
                 peso[e] = (peso[e] || 0) + w;
                 if (pior[e] == null || tomado < pior[e]) pior[e] = tomado;
+                if (tomado <= 25) pesoImune[e] = (pesoImune[e] || 0) + w;
             });
         });
-        const notas = {}, vetos = {};
+        const notas = {}, vetos = {}, notasArea = {}, vetosArea = {};
         ELEMENTOS.forEach(e => {
             if (!peso[e]) return;
-            notas[e] = Math.round(soma[e] / peso[e]);
+            notas[e] = notasArea[e] = Math.round(soma[e] / peso[e]);
             if (pior[e] <= 25) { vetos[e] = pior[e]; notas[e] = Math.min(notas[e], 30); }
+            if ((pesoImune[e] || 0) / peso[e] >= 0.5) { vetosArea[e] = pior[e]; notasArea[e] = Math.min(notasArea[e], 30); }
         });
-        return { notas, vetos };
+        return { notas, vetos, notasArea, vetosArea };
     }
 
     /* =========================================================================
@@ -801,31 +1015,124 @@
      * no 39 bate ML×1,403+8 / ML×2,203+13 com ML≈4,4. Só vira "velha" se a
      * distância passar de 20 níveis (aí skill/ML já andaram demais). */
     const NIVEIS_MAX_EXTRAPOLACAO = 20;
-    function danosConhecidos(vocForcada) {
-        const d = ler(chaveDano(vocForcada), {});
+    /* v2.10 — SEMENTE DA RUNA 3×3 MEDIDA (plano 2.11, item 9). A de 36–60 veio
+     * de uma conta no painel do grupo (22/09, nível 39). /spell-numbers no
+     * nível 61/62 deu 27–49 para as quatro runas 3×3 (avalanche, great
+     * fireball, thunderstorm, stone shower) — bate com a fórmula de /spells
+     * com ML efetivo 7: 62/5 + 1,2×7 + 7 = 27,8 · 62/5 + 2,8×7 + 17 = 49. A
+     * semente antiga superestimava a runa em 30 % e a punha na frente das
+     * ondas. Vale só enquanto a runa não foi medida. */
+    const RUNA_SEMENTE = { min: 27, max: 49, nivel: 62, ml: 7, semente: true };
+
+    /* v2.10 — FÓRMULA DE /spells SEM eval. O catálogo traz `formula.min/max`
+     * como texto ("((level / 5) + (maglevel * 1.2) + 7)"). Só aceita números,
+     * level/maglevel/skill/attack, + − × ÷ e parênteses; qualquer outra coisa
+     * vira NaN (e o chamador cai na regra antiga de nível÷5). */
+    const _formulas = new Map();
+    function compilarFormula(expr) {
+        const toks = String(expr).match(/\d+(?:\.\d+)?|[a-z_]+|\S/gi) || [];
+        let i = 0;
+        const prim = () => {
+            const t = toks[i++];
+            if (t === '(') { const v = soma(); if (toks[i++] !== ')') throw new Error('")" faltando'); return v; }
+            if (t === '-') { const v = prim(); return x => -v(x); }
+            if (/^\d/.test(t || '')) { const n = Number(t); return () => n; }
+            if (/^(level|maglevel|skill|attack)$/.test(t || '')) return x => Number(x[t]) || 0;
+            throw new Error('símbolo ' + t);
+        };
+        const prod = () => { let a = prim(); while (toks[i] === '*' || toks[i] === '/') { const op = toks[i++], b = prim(), l = a; a = op === '*' ? x => l(x) * b(x) : x => l(x) / b(x); } return a; };
+        const soma = () => { let a = prod(); while (toks[i] === '+' || toks[i] === '-') { const op = toks[i++], b = prod(), l = a; a = op === '+' ? x => l(x) + b(x) : x => l(x) - b(x); } return a; };
+        try { const f = soma(); return i === toks.length ? f : null; } catch (e) { return null; }
+    }
+    function valorFormula(expr, vars) {
+        if (typeof expr !== 'string' || expr.length > 300) return NaN;
+        if (!_formulas.has(expr)) _formulas.set(expr, compilarFormula(expr));
+        const f = _formulas.get(expr);
+        return f ? f(vars) : NaN;
+    }
+    /* Fórmula que depende SÓ de nível e nível mágico (magias e runas dos magos,
+     * Caldera/Missile do Paladino). As do Knight usam skill × ataque da arma:
+     * nelas o ML não entra e a extrapolação continua por nível÷5. */
+    const formulaDeML = (m) => !!(m && m.formula && typeof m.formula.min === 'string' && typeof m.formula.max === 'string'
+        && /maglevel/.test(m.formula.min + m.formula.max) && !/skill|attack/.test(m.formula.min + m.formula.max));
+    /* ML efetivo que uma medida (min–max no nível L) implica. A fórmula é
+     * linear no ML: f(L, ml) = f(L, 0) + ml × inclinação. Somando min e max a
+     * inclinação fica maior e o arredondamento do jogo pesa menos. */
+    function mlDaMedida(m, x, lvl) {
+        if (!formulaDeML(m) || !x || !(lvl > 0)) return null;
+        const f = (e, ml) => valorFormula(e, { level: lvl, maglevel: ml, skill: 0, attack: 0 });
+        const base = f(m.formula.min, 0) + f(m.formula.max, 0), incl = f(m.formula.min, 1) + f(m.formula.max, 1) - base;
+        if (!(incl > 0) || !Number.isFinite(base)) return null;
+        const ml = (x.min + x.max - base) / incl;
+        return ml > 0 && ml < 1000 ? ml : null;
+    }
+    /* ML efetivo de AGORA: mediana do que as magias medidas neste nível
+     * implicam. Sem nenhuma medida neste nível, null (e vale nível÷5). */
+    function mlEfetivoAgora(d, lvl, porNome) {
+        const est = [];
+        for (const k of Object.keys(d)) { const x = d[k]; if (x && x.nivel === lvl && !x.semente) { const ml = mlDaMedida(porNome[k], x, lvl); if (ml != null) est.push(ml); } }
+        if (!est.length) return null;
+        est.sort((a, b) => a - b);
+        return est[Math.floor(est.length / 2)];
+    }
+    /* Escala uma medida do nível x.nivel (ML x.ml, ou o que ela mesma implica)
+     * para o nível lvl com o ML efetivo medido agora. null = não dá. */
+    function escalarPorML(m, x, lvl, mlAgora) {
+        if (mlAgora == null || !formulaDeML(m) || x.nivel == null) return null;
+        const mlAntes = x.ml != null ? x.ml : mlDaMedida(m, x, x.nivel);
+        if (mlAntes == null) return null;
+        const f = (e, L, ml) => valorFormula(e, { level: L, maglevel: ml, skill: 0, attack: 0 });
+        const dMin = f(m.formula.min, lvl, mlAgora) - f(m.formula.min, x.nivel, mlAntes);
+        const dMax = f(m.formula.max, lvl, mlAgora) - f(m.formula.max, x.nivel, mlAntes);
+        return Number.isFinite(dMin) && Number.isFinite(dMax) ? { min: x.min + dMin, max: x.max + dMax } : null;
+    }
+    /* v2.10 — `dBruto` opcional: montarPlano já leu a tabela uma vez (antes
+     * cada avaliar() relia e reparseava o localStorage, ~20× por vocação).
+     * Extrapolação: pelo ML efetivo quando há medida neste nível (item 9);
+     * senão nível÷5 como antes. Com `comSemente` (só o planejador), a semente
+     * da runa 3×3 entra para as runas de 36 casas sem medida — fora dele a
+     * tabela continua sendo só o que foi medido (o APLICAR usa "tabela vazia"
+     * para saber que precisa ler /spell-numbers antes). */
+    function danosConhecidos(vocForcada, dBruto, comSemente) {
+        const d = dBruto || ler(chaveDano(vocForcada), {});
         const lvl = nivelAtual();
+        const porNome = {};
+        for (const m of (CAT.magias || [])) porNome[m.name] = m;
+        const mlAgora = lvl ? mlEfetivoAgora(d, lvl, porNome) : null;
         const fora = {};
-        Object.keys(d).forEach(k => {
-            const x = d[k];
+        const escala = (k, x) => {
             const delta = (x.nivel != null && lvl) ? lvl - x.nivel : 0;
-            const longe = Math.abs(delta) > NIVEIS_MAX_EXTRAPOLACAO;
+            const pml = delta !== 0 || (x.semente && x.ml != null) ? escalarPorML(porNome[k], x, lvl, mlAgora) : null;
+            const longe = !pml && Math.abs(delta) > NIVEIS_MAX_EXTRAPOLACAO;
             const aj = delta / 5;
-            fora[k] = Object.assign({}, x, {
-                min: Math.max(1, Math.round(x.min + aj)), max: Math.max(1, Math.round(x.max + aj)),
-                extrapolado: delta !== 0, nivelMedido: x.nivel,
-                semente: longe, velha: longe
+            return Object.assign({}, x, {
+                min: Math.max(1, Math.round(pml ? pml.min : x.min + aj)), max: Math.max(1, Math.round(pml ? pml.max : x.max + aj)),
+                extrapolado: delta !== 0, nivelMedido: x.nivel, porML: !!pml,
+                semente: !!x.semente || longe, velha: longe
             });
-        });
+        };
+        Object.keys(d).forEach(k => { fora[k] = escala(k, d[k]); });
+        if (comSemente) for (const m of Object.values(porNome)) if (m.isRune && m.areaCells === 36 && !fora[m.name]) fora[m.name] = escala(m.name, RUNA_SEMENTE);
         return fora;
     }
     function danosMedidosNesteNivel(vocForcada) {
         const d = ler(chaveDano(vocForcada), {}), lvl = nivelAtual();
         return Object.keys(d).filter(k => d[k].nivel === lvl).length;
     }
+    /* v2.10 — ML (o da ficha: valor + bônus) visto no frame. Decide se a
+     * runa pode ser usada (sudden death pede ML 15). Sem leitura, null — e aí
+     * nada é excluído por ML. */
+    function mlAtual(voc) {
+        let sk = ESTADO_WS.sk;
+        if (!sk || !sk[voc]) sk = ler('skills_vistas', {});
+        const x = sk && sk[voc];
+        return x && Number(x.ml) > 0 ? Number(x.ml) : null;
+    }
     function anotarDano(nome, min, max, mana, casas) {
         const d = ler(chaveDano(), {});
         d[nome] = { min, max, mana, casas, nivel: nivelAtual(), ts: Date.now() };
         guardar(chaveDano(), d);
+        invalidarPlanos();
     }
 
     /* =========================================================================
@@ -868,21 +1175,8 @@
         return preco / Math.max(1, m.charges || 1);
     }
 
-    /* v1.8.0 — MANA SOBRANDO. O bestiário da conta dá +6 MP/s; em 22/09 o
-     * Feiticeiro ficava em 98% de mana com Fire Wave e Energy Beam nos slots.
-     * Nesse caso a mana NÃO é o gargalo e ordenar por eficiência (6 de mana
-     * primeiro) só deixa regeneração na mesa. Regra: em regeneração, se a
-     * barra do personagem está ≥ 80%, o Equilibrado ordena por DPS. */
-    function manaPercent(voc) {
-        const el = $$('[aria-label]').find(e => (e.getAttribute('aria-label') || '').toUpperCase().startsWith(voc + ':'));
-        const m = el && (el.getAttribute('aria-label') || '').match(/Mana\s*(\d+)%/i);
-        if (!m) return null;
-        const cache = ler('mana_pct', {}); cache[voc] = parseInt(m[1]); guardar('mana_pct', cache);
-        return parseInt(m[1]);
-    }
-    const MANA_SOBRANDO = 80;
 
-    function avaliar(m, hunt, info, vocForcada) {
+    function avaliar(m, hunt, info, vocForcada, danos) {
         const casas = casasDaMagia(m);
         /* v2.6.7 — FEIXE é uma linha: os monstros ficam em leque, não em fila.
          * Great Energy Beam: modelo dizia 364 por lançamento (8 casas × 45),
@@ -890,27 +1184,27 @@
          * alvos; onda e runa 3×3 continuam com o teto min(casas, lure). */
         const feixe = /beam|feixe/i.test(m.area || '') || /beam/i.test(m.name || '');
         const alvos = Math.max(1, Math.min(feixe ? Math.ceil(casas / 2) : casas, lureMax(hunt)));
-        const nota = info.notas[m.combatType] != null ? info.notas[m.combatType] : 100;
+        /* v2.10 — área usa a nota ponderada (notasElementos, item 6) */
+        const notas = casas > 1 && info.notasArea ? info.notasArea : info.notas;
+        const nota = notas[m.combatType] != null ? notas[m.combatType] : 100;
 
         // dano: o medido manda; sem medição, cai no proxy de mana (jeito Stonegy)
         /* v1.8.0 — RUNA NÃO MOSTRA DANO no diálogo ("pulei 4, sem dano na
          * tela"), então nunca era confiável e nunca entrava em plano nenhum.
-         * Semente medida no painel do grupo em 22/09 (nível 39, ML≈4,4):
-         * Druida fez 23k com 120 cargas de runas 3×3 em lure 4 → ~192 por
-         * lançamento → ~48 por alvo. Vale para as quatro runas de 3×3 (great
-         * fireball, thunderstorm, avalanche, stone shower); o elemento entra
-         * pela nota da hunt. Medição real na tabela de danos sobrescreve. */
-        const RUNA_SEMENTE = { min: 36, max: 60, semente: true, nivel: 39 };
-        const conhecido = danosConhecidos(vocForcada)[m.name]
-            || (m.isRune && m.areaCells === 36 ? RUNA_SEMENTE : null);
+         * v2.10 — a semente das quatro runas 3×3 (RUNA_SEMENTE, 27–49 no nível
+         * 62) vem em danosConhecidos(…, true), escalada pelo ML efetivo; o
+         * elemento entra pela nota da hunt. Medição real sobrescreve. */
+        const conhecido = (danos || danosConhecidos(vocForcada, null, true))[m.name] || null;
         const danoMedio = conhecido ? (conhecido.min + conhecido.max) / 2 : (m.mana ? m.mana * 0.45 : 30);
         const medido = !!conhecido && !conhecido.semente;
         const semente = !!(conhecido && conhecido.semente);
 
-        /* físico contra armadura: desconto fixo por golpe (wiki). Aproximação:
-         * dano − armadura média dos monstros, nunca abaixo de 20 % do dano. */
-        const arm = m.combatType === 'COMBAT_PHYSICALDAMAGE' ? armaduraMedia(hunt) : 0;
-        const fatorArm = arm > 0 ? Math.max(0.2, (danoMedio - arm) / danoMedio) : 1;
+        /* físico contra armadura: desconto fixo por golpe (wiki). v2.10 (item
+         * 8) — a mesma redução da munição: 0,75 × (armadura + defesa), wiki
+         * /como-o-dano-e-calculado (reducaoFisicaMedia). Antes descontava 1,0 ×
+         * armadura e ignorava a defesa. Nunca abaixo de 20 % do dano. */
+        const red = m.combatType === 'COMBAT_PHYSICALDAMAGE' ? reducaoFisicaMedia(hunt) : 0;
+        const fatorArm = red > 0 ? Math.max(0.2, (danoMedio - red) / danoMedio) : 1;
         const danoEfetivo = danoMedio * (nota / 100) * fatorArm;
 
         const custo = m.isRune
@@ -1041,7 +1335,9 @@
     const MARGEM_LUCRO = 0.8;
     const FATOR_ALVOS_REAIS = 0.5;     // só metade dos alvos teóricos é atingida
 
-    function viabilidade(hunt, avaliadas, voc) {
+    /* v2.10 — `bebe`: se ESTE plano deixa a poção de mana ligada (o
+     * Inteligente decide pelo Druida; os outros modelos seguem o jogo). */
+    function viabilidade(hunt, avaliadas, voc, bebe) {
         const loot = LOOT_CACHE[hunt.id];
         if (loot == null) return null;              // ainda não baixou
         const w = hunt.monsters.reduce((s, m) => s + (m.weight || 1), 0) || 1;
@@ -1049,7 +1345,7 @@
         const orcamento = loot * MARGEM_LUCRO;
         const exigido = orcamento > 0 ? hp / orcamento : Infinity;
         // dano/ouro pessimista de cada magia
-        const regen = !manaPotionLigada(voc);
+        const regen = bebe == null ? !manaPotionLigada(voc) : !bebe;
         avaliadas.forEach(a => {
             const alvosReais = Math.max(1, a.alvos * FATOR_ALVOS_REAIS);
             a.danoPorOuroReal = Math.round((a.danoEfetivo * alvosReais) / Math.max(0.01, a.custo) * 100) / 100;
@@ -1065,7 +1361,7 @@
      *  ⭐ v2.6.0 — INTELIGENTE (pedido do dono, 28/09: "a mais inteligente de
      *  todas, para matar o mob mais rápido; combinações de poções, magias,
      *  runas, defesa e suporte para cada personagem").
-     *  Fontes: logbook da comunidade (Toxic Butter, Discord 27/09) e a Wiki
+     *  Fontes: logbook de um jogador da comunidade (Discord 27/09) e a Wiki
      *  /configurando-o-combate: os slots de ataque são FILA DE PREFERÊNCIA
      *  (o primeiro pronto dispara → cd longo no slot 1); mana gasta em
      *  ataque → suporte → cura; cura forte ~40 % e fraca ~70 %; poções nascem
@@ -1115,24 +1411,53 @@
      * Paladino é runa + Caldera. Burst acerta 1,4 alvos medidos, não 4. */
     const MUNICAO_CUSTO = { arrow: 0, 'sniper arrow': 3, 'burst arrow': 9, 'tarsal arrow': 6, 'onyx arrow': 7, 'crystalline arrow': 100, 'diamond arrow': 200,
                             bolt: 0, 'piercing bolt': 5, 'vortex bolt': 6, 'power bolt': 7, 'drill bolt': 12, 'prismatic bolt': 20, 'infernal bolt': 13 };
+    /* v2.10 — PREÇO DA MUNIÇÃO (plano 2.11, item 10). O plano pedia ler de
+     * /buy-prices (CAT.precos: sniper 5, burst 15, crystalline 20, diamond
+     * 130). NÃO: TIBIDLE.md §7d-bis mediu na UI o custo POR DISPARO — burst
+     * arrow ×23 = −207 → 9 (o /buy-prices diz 15), tarsal −6 — e ele é o
+     * `cost` do catálogo /ammo, que a tabela acima copia (29/09: iguais). Com o
+     * /buy-prices a crystalline sairia 20 em vez de 100 e viraria "barata". A
+     * fonte agora é o /ammo vivo (CAT.municao se o carregador trouxer; senão
+     * uma leitura pública única, só leitura, feita aqui); a tabela é a reserva
+     * e o /buy-prices só entra para munição que nenhum dos dois conhece. */
+    let _ammoCat = null, _ammoTentou = 0;
+    function catalogoMunicao() {
+        const c = (Array.isArray(CAT.municao) && CAT.municao.length && CAT.municao) || _ammoCat;
+        if (c) return c;
+        if (Date.now() - _ammoTentou > 10 * 60 * 1000) {     // sem rede: tenta de novo em 10 min, não a cada plano
+            _ammoTentou = Date.now();
+            buscarJSON('/ammo').then(a => { if (Array.isArray(a) && a.length) { _ammoCat = a; invalidarPlanos(); } }).catch(() => { });
+        }
+        return null;
+    }
+    function custoMunicao(nome) {
+        const c = catalogoMunicao();
+        const x = c && c.find(a => a && (a.name || '').toLowerCase() === nome);
+        if (x && Number.isFinite(Number(x.cost))) return Number(x.cost);
+        if (MUNICAO_CUSTO[nome] != null) return MUNICAO_CUSTO[nome];
+        const p = CAT.precos && !Array.isArray(CAT.precos) ? CAT.precos[nome] : null;
+        return p != null ? Number(p) || 0 : 0;
+    }
     /* dono, 28/09: "a burst arrow é de fogo e o dragão é imune". A explosão
      * (a área) é fogo; contra imune sobra só o impacto. `notas` é a nota de
-     * elemento da hunt (notasElementos): fogo 0 % ⇒ a área não conta. */
+     * elemento da hunt (notasElementos): fogo 0 % ⇒ a área não conta.
+     * v2.10 — o ganho é pelo custo A MAIS que a munição básica (se um dia a
+     * básica deixar de ser grátis, a conta continua certa). */
     function melhorMunicao(tipo, lvl, lure, reducao, skillDist, notas) {
         const sk = skillDist || 30, red = reducao || 0;
         const notaElem = a => a.elem && notas && notas[a.elem] != null ? notas[a.elem] / 100 : 1;
         const dano = a => Math.max(1, lvl / 5 + 0.045 * sk * a.atk - red) * (a.area ? Math.max(1, Math.min(1.4, lure || 1) * notaElem(a)) * (notaElem(a) || 0.3) : 1);
         const lista = (MUNICAO[tipo] || MUNICAO.arrow).filter(a => a.lvl <= lvl);
-        const gratis = lista.find(a => !MUNICAO_CUSTO[a.n]) || lista[0];
-        let best = gratis, bv = 0;
+        if (!lista.length) return null;
+        const base = lista.slice().sort((a, b) => custoMunicao(a.n) - custoMunicao(b.n))[0];
+        let best = base, bv = 0;
         for (const a of lista) {
-            const custo = MUNICAO_CUSTO[a.n] || 0; if (!custo) continue;
-            const ganho = (dano(a) - dano(gratis)) / custo;
+            const extra = custoMunicao(a.n) - custoMunicao(base.n); if (!(extra > 0)) continue;
+            const ganho = (dano(a) - dano(base)) / extra;
             if (ganho >= 25 && ganho > bv) { bv = ganho; best = a; }
         }
-        return best ? best.n : null;
+        return best.n;
     }
-    /* cura: forte com gatilho baixo primeiro, fraca depois (a fila dispara a primeira que bater) */
     /* v2.6.5 — dono, 28/09: "só o Druida tem magia de cura" nesta conta. O
      * catálogo lista Wound Cleansing, Divine Healing etc., mas o livro-razão
      * nunca viu um cast de cura de ninguém além do Druida, e o Knight chegou a
@@ -1140,9 +1465,17 @@
      * outros três = poção de vida, com gatilho mais alto em quem apanha.
      * O Druida cura os outros com Heal Friend ≤60 (a mana dele vem da poção). */
     /* v2.6.9 — DEFESA nos 4, como o dono deixou à mão (prints de 28/09, 22h):
-     * cada personagem com cura própria ≤50–60 % e um suporte. A cura BARATA
-     * vem primeiro (Light Healing 20 de mana dispara mesmo com a mana no
-     * chão; Wound Cleansing 40), a forte com gatilho mais baixo. */
+     * cada personagem com cura própria ≤50–60 % e um suporte; a barata (Light
+     * Healing, 20 de mana) com gatilho alto, a forte com gatilho baixo.
+     * ⚠ v2.10 (plano 2.11, item 5) — A ORDEM NA FILA É POR GATILHO CRESCENTE.
+     * O comentário da 2.6.9 dizia "a barata vem primeiro", e a lista saía
+     * [Light Healing ≤60, Divine Healing ≤40]. Wiki (/configurando-o-combate):
+     * os slots de cura disparam "na ordem, o primeiro cujo gatilho foi
+     * atingido". Com 35 % de vida os DOIS gatilhos foram atingidos e saía a
+     * Light Healing — a forte nunca curava quem estava para morrer. Agora
+     * planoExtras ordena tudo (poção de vida junto) do gatilho mais baixo ao
+     * mais alto: ≤40 forte, ≤45 poção, ≤60 barata. Esta tabela só diz QUAIS e
+     * com que gatilho; a ordem é feita lá. */
     const CURAS = {
         KNIGHT: [['Wound Cleansing', 50]],
         PALADIN: [['Light Healing', 60], ['Divine Healing', 40]],
@@ -1171,16 +1504,20 @@
     function temMagia(nome, voc, lvl) {
         return (CAT.magias || []).some(m => m.name === nome && m.available !== false && (m.level || 1) <= lvl && (m.vocations || []).some(v => VOC_CAT[voc].includes(v)));
     }
-    function planoExtras(voc, hunt) {
+    /* v2.10 — `opc` = { manaTodos, seco } da variante (antes flags globais). */
+    function planoExtras(voc, hunt, opc) {
+        opc = opc || {};
         const lvl = nivelAtual();
         const heals = [];
         const vida = melhorPocao('vida', voc, lvl); if (vida) heals.push({ name: vida, percent: POCAO_VIDA_PCT[voc] || 40 });
-        if (!_seco) for (const [n, p] of (CURAS[voc] || [])) if (temMagia(n, voc, lvl)) heals.push({ name: n, percent: p });
+        if (!opc.seco) for (const [n, p] of (CURAS[voc] || [])) if (temMagia(n, voc, lvl)) heals.push({ name: n, percent: p });
+        /* gatilho crescente (item 5); empate mantém a ordem acima (poção antes) */
+        heals.sort((a, b) => a.percent - b.percent);
         while (heals.length < 5) heals.push(null);
         const mp = melhorPocao('mana', voc, lvl);
         /* só o Druida bebe mana por padrão (cura do Knight não pode faltar); os
          * outros três ficam na regeneração. Variante inteligente_mana liga nos 4. */
-        const pctMana = _manaTodos ? (voc === 'KNIGHT' ? 40 : 30) : (voc === 'DRUID' ? 30 : 0);
+        const pctMana = opc.manaTodos ? (voc === 'KNIGHT' ? 40 : 30) : (voc === 'DRUID' ? 30 : 0);
         const manaPotion = mp && pctMana ? { name: mp, percent: pctMana } : { percent: 0 };
         /* v2.9.0 — PROTECTOR NÃO É DE GRAÇA. Wiki (/magias-e-runas e
          * /como-o-dano-e-calculado): 200 de mana e, enquanto dura, escudo ×2,2,
@@ -1189,8 +1526,8 @@
          * vida mínima MEDIDA dele neste mapa ficou ≥ 60 %, sai; sem medida ou
          * abaixo disso, fica (morte de qualquer um encerra a caçada). */
         const knightSeguro = voc === 'KNIGHT' && hunt ? (vidaMinMedida(hunt, 'KNIGHT') ?? -1) >= 60 : false;
-        const supports = _seco ? [] : (SUPORTES[voc] || []).filter(n => temMagia(n, voc, lvl) && !(n === 'Protector' && knightSeguro)).slice(0, 2);
-        if (!_seco && supports.length < 2 && SUPORTES_SOBRANDO[voc] && temMagia(SUPORTES_SOBRANDO[voc], voc, lvl)) {
+        const supports = opc.seco ? [] : (SUPORTES[voc] || []).filter(n => temMagia(n, voc, lvl) && !(n === 'Protector' && knightSeguro)).slice(0, 2);
+        if (!opc.seco && supports.length < 2 && SUPORTES_SOBRANDO[voc] && temMagia(SUPORTES_SOBRANDO[voc], voc, lvl)) {
             const mm = hunt ? manaMedidaMedia(hunt, voc) : null;
             if (mm != null && mm >= 70) supports.push(SUPORTES_SOBRANDO[voc]);
         }
@@ -1200,7 +1537,8 @@
             const ro = rosterEquip(); const p = ro && ro.find(x => x.vocation === 'PALADIN');
             const tipo = (p && p.equipment && p.equipment.weapon && p.equipment.weapon.attrs && p.equipment.weapon.attrs.ammotype) || 'arrow';
             const fp = ((ESTADO_WS.frame && ESTADO_WS.frame.party) || []).find(x => x.voc === 'PALADIN');
-            const notasH = hunt ? (notasElementos(hunt) || {}).notas : null;
+            /* a explosão da burst arrow é área: nota ponderada (item 6) */
+            const notasH = hunt ? (notasElementos(hunt) || {}).notasArea : null;
             r.ammo = melhorMunicao(tipo, lvl, hunt ? lureMax(hunt) : 1, hunt ? reducaoFisicaMedia(hunt) : 0, fp && fp.dist, notasH);
         }
         return r;
@@ -1260,34 +1598,263 @@
         if (!o || !o.n) return null;
         return (o.matar / o.n) < (o.timer / o.n) * 0.5;
     }
+    /* v2.10 — RITMO DA ONDA para o simulador: quanto a onda leva para morrer e
+     * quanto se espera pela próxima (livro-razão vivo ou Scan guardado; sem
+     * medida, 2 s por criatura e 10 s de espera — a wiki diz 7–13 s). */
+    function ritmoOndas(hunt) {
+        const L = lureMax(hunt);
+        if (!hunt || hunt.boss) return { lure: 1, matarS: 1e6, esperaS: 0 };
+        let o = null;
+        try { if (ESTADO_WS.huntId === hunt.id && RAZAO.ondas.n >= 4) o = { matar: RAZAO.ondas.matar / RAZAO.ondas.n / 1000, espera: RAZAO.ondas.timer / RAZAO.ondas.n / 1000 }; } catch (e) { }
+        if (!o) try { for (const r of Object.values(scanResultados())) if (r.id === hunt.id && r.razao && r.razao.ondas && r.razao.ondas.n >= 4) { o = { matar: r.razao.ondas.matar, espera: r.razao.ondas.timer }; break; } } catch (e) { }
+        return { lure: L, matarS: o && o.matar > 0 ? o.matar : 2 * L, esperaS: o && o.espera >= 0 ? o.espera : 10 };
+    }
+
+    /* =========================================================================
+     *  ⭐ v2.10 — MINI-SIMULADOR DA FILA (plano 2.11, item 1)
+     *
+     *  O veredito do grupo olhava só o slot 1 de cada um e cobrava mana até de
+     *  quem vive de regeneração — e desde a 2.9.0 a runa NUNCA é o slot 1, então
+     *  o ouro dela sumia da conta. Aqui a fila roda como a wiki descreve
+     *  (/configurando-o-combate):
+     *    • quando o grupo de ataque libera (2 s; 4 s depois de Hell's Core,
+     *      Rage, Eternal Winter, Wrath — `groupCooldownMs`), o jogo confere os
+     *      slots 1→4 e lança o PRIMEIRO pronto;
+     *    • pronto = recarga própria vencida, grupo secundário livre
+     *      (`secondaryGroup`: focus 40 s, special 8 s, ultimatestrikes 30 s…),
+     *      mana suficiente (quem bebe poção nunca fica sem) e criaturas vivas
+     *      ≥ mínimo do slot;
+     *    • a onda: `lure` criaturas que morrem uma a uma em `matarS`, depois
+     *      `esperaS` sem ninguém; a mana regenera o tempo todo.
+     *  Devolve dano/s, mana/s, runas/s, ouro/s e quantas vezes cada slot saiu.
+     *  É MODELO: a regeneração é estimativa e a onda não depende do dano. Puro:
+     *  não lê estado nenhum (testes/magia.test.js roda ele sozinho).
+     * ====================================================================== */
+    /* Regeneração de mana por segundo: a wiki não publica. Estimada pelas
+     * medições desta conta em 28/09 (com o +6 MP/s do bestiário): Feiticeiro
+     * a 93–98 % com Fire Wave + Energy Beam (~16 MP/s de gasto) → ≥ 16; Knight
+     * a 20 % com Berserk (29 MP/s) e Paladino a 12 % com Caldera (40 MP/s) →
+     * bem abaixo do gasto. Ela só decide QUANTO a runa preenche nos ciclos sem
+     * mana de quem não bebe poção. */
+    const REGEN_MANA_S = { KNIGHT: 8, PALADIN: 12, SORCERER: 16, DRUID: 16 };
+    const SIM_PASSO_MS = 250;
+    function simularFila(slots, o) {
+        o = o || {};
+        const T = Math.max(10, o.seg || 180) * 1000, L = Math.max(1, o.lure || 1);
+        const matar = Math.max(500, (o.matarS != null ? o.matarS : 2 * L) * 1000), espera = Math.max(0, (o.esperaS != null ? o.esperaS : 10) * 1000);
+        const ciclo = matar + espera, porBicho = matar / L;
+        const vivos = t => { const x = t % ciclo; return x >= matar ? 0 : L - Math.floor(x / porBicho); };
+        const pocao = !!o.pocao, max = Math.max(0, o.manaMax || 0), regen = Math.max(0, o.regen || 0) / 1000, fAlvos = o.fatorAlvos || 1;
+        const pronto = slots.map(() => 0), sec = {}, disparos = slots.map(() => 0);
+        let t = 0, ult = 0, grupo = 0, mana = max, dano = 0, manaGasta = 0, runas = 0, ouroRuna = 0;
+        while (t < T) {
+            if (!pocao) mana = Math.min(max, mana + regen * (t - ult));
+            ult = t;
+            const v = vivos(t);
+            const i = v > 0 && t >= grupo
+                ? slots.findIndex((s, k) => pronto[k] <= t && !(s.sec && sec[s.sec] > t) && v >= (s.minimo || 1) && (s.runa || pocao || mana >= (s.mana || 0)))
+                : -1;
+            if (i < 0) { t = v > 0 ? (t < grupo ? grupo : t + SIM_PASSO_MS) : t - (t % ciclo) + ciclo; continue; }
+            const s = slots[i];
+            disparos[i]++;
+            if (s.runa) { runas++; ouroRuna += s.ouro || 0; } else { manaGasta += s.mana || 0; if (!pocao) mana -= s.mana || 0; }
+            dano += s.porLanc != null ? s.porLanc : (s.porAlvo || 0) * (s.alvos > 1 ? Math.max(1, Math.min(s.alvos, v) * fAlvos) : 1);
+            pronto[i] = t + (s.cd || 2000);
+            if (s.sec) sec[s.sec] = t + (s.secMs || s.cd || 2000);
+            grupo = t + Math.max(2000, s.grupo || 2000);
+            t = grupo;
+        }
+        const seg = T / 1000, ouroPocao = pocao ? manaGasta * OURO_POR_MANA : 0;
+        return { seg, danoS: dano / seg, manaS: manaGasta / seg, runasS: runas / seg,
+                 ouroS: (ouroRuna + ouroPocao) / seg, ouroPocaoS: ouroPocao / seg, ouroRunaS: ouroRuna / seg, disparos };
+    }
+    /* plano (slots do montarPlano) → entrada do simulador */
+    function slotsParaSimular(plano) {
+        return plano.map(p => {
+            const a = p.av, m = a.m;
+            return { nome: m.name, minimo: p.minimo, runa: !!m.isRune, mana: m.isRune ? 0 : (m.mana || 0), ouro: m.isRune ? (a.custo || 0) : 0,
+                     cd: m.cooldownMs || 2000, grupo: m.groupCooldownMs || 2000, sec: m.secondaryGroup || null,
+                     secMs: m.secondaryGroupCooldownMs || m.cooldownMs || 2000,
+                     porAlvo: a.danoEfetivo, alvos: a.alvos, porLanc: a.medidoNoMapa ? a.porLancamento : null };
+        });
+    }
+    /* mana máxima: a do frame quando há; sem frame, a curva do Tibia por
+     * vocação (5/15/30 por nível) — só serve para o começo da luta. */
+    function manaDoPersonagem(voc) {
+        const lvl = nivelAtual() || 1;
+        const fp = ((ESTADO_WS.frame && ESTADO_WS.frame.party) || []).find(x => x && x.voc === voc);
+        const tibia = { KNIGHT: 5 * lvl + 50, PALADIN: 15 * lvl - 30, SORCERER: 30 * lvl - 150, DRUID: 30 * lvl - 150 }[voc] || 5 * lvl;
+        return { manaMax: fp && fp.maxMana > 0 ? fp.maxMana : Math.max(60, tibia), regen: REGEN_MANA_S[voc] || 8 };
+    }
+
+    /* v2.10 — recarga igual à do grupo (2 s): pronto em todo ciclo. */
+    const enchimento = a => (a.m.cooldownMs || 2000) <= (a.m.groupCooldownMs || 2000);
+    /* v2.10 — SLOT MORTO (plano 2.11, item 7). A fila dispara o primeiro
+     * pronto; um slot só sai quando TODOS os da frente não podem. Atrás de um
+     * preenchimento (recarga de 2 s, pronto em todo ciclo) com mínimo ≤ o
+     * dele, um slot só sai quando o da frente não tem mana — então:
+     *   • atrás de RUNA (não gasta mana) nunca sai;
+     *   • magia atrás de magia que gasta a MESMA mana ou menos nunca sai
+     *     (Physical Strike atrás de Flame Strike, 20 e 20: slot vazio que o
+     *     painel mostrava como parte do kit — Zombies, Druida, 29/09);
+     *   • mínimo maior que o lure do mapa nunca junta criatura bastante.
+     * Mínimo MENOR que o do preenchimento vale: Missile ≥1 atrás da runa ≥2
+     * sai quando sobra um monstro. Devolve o motivo, ou null. */
+    function slotMorto(plano, j, lure) {
+        const b = plano[j];
+        if (b.minimo > lure) return `precisa de ${b.minimo} criaturas e o lure vai até ${lure}`;
+        for (let i = 0; i < j; i++) {
+            const a = plano[i], ma = a.av.m;
+            if (!enchimento(a.av) || a.minimo > b.minimo) continue;
+            if (ma.secondaryGroup && (ma.secondaryGroupCooldownMs || 0) > (ma.groupCooldownMs || 2000)) continue;
+            if (ma.isRune) return `atrás de ${ma.name} ≥${a.minimo} (runa: pronta em todo ciclo)`;
+            if (!b.av.m.isRune && (b.av.m.mana || 0) >= (ma.mana || 0)) return `atrás de ${ma.name} ≥${a.minimo} (${b.av.m.mana || 0} de mana contra ${ma.mana || 0}: só sairia sem mana para a da frente)`;
+        }
+        return null;
+    }
+    function permutacoes(arr) {
+        if (arr.length <= 1) return [arr.slice()];
+        const r = [];
+        arr.forEach((x, i) => { for (const p of permutacoes(arr.slice(0, i).concat(arr.slice(i + 1)))) r.push([x].concat(p)); });
+        return r;
+    }
+    /* =========================================================================
+     *  ⭐ v2.10 — BOSS POR DANO/SEGUNDO COM A MANA QUE HÁ (plano 2.11, item 3)
+     *
+     *  O Boss ordenava as magias por dano POR LANÇAMENTO e ignorava as runas:
+     *    • sudden death (91 num boss) ficava de fora e Death Strike (38) entrava;
+     *    • Rage of the Skies (600 de mana, 40 s) ia no slot 1 na frente de
+     *      golpe melhor por segundo — e Rage + Hell's Core entravam JUNTAS,
+     *      sendo que as duas são do grupo `focus` e uma bloqueia a outra 40 s;
+     *    • strike atrás de strike, os dois ≥1: o segundo nunca saía.
+     *  Agora: os candidatos (runa só se o ML do personagem alcança o
+     *  `magicLevel` dela — sem ML lido, não exclui) são combinados em kits de
+     *  até 4 (um por grupo secundário), cada kit em todas as ordens com os
+     *  preenchimentos por último, e o simulador escolhe o que mais tira de vida
+     *  do boss em 90 s com a mana que o personagem tem (poção: sem limite). */
+    function melhorKitBoss(cands, ent) {
+        const valor = a => a.porLancamento / Math.max(2, a.cd);
+        const longas = cands.filter(a => !enchimento(a)).sort((a, b) => valor(b) - valor(a)).slice(0, 4);
+        const ench = cands.filter(enchimento).sort((a, b) => b.porLancamento - a.porLancamento);
+        const pool = longas.concat(ench.filter(a => a.m.isRune).slice(0, 1), ench.filter(a => !a.m.isRune).slice(0, 2));
+        const o = Object.assign({ lure: 1, matarS: 1e6, esperaS: 0, seg: 90, pocao: ent.bebe }, ent.mana);
+        /* empate (±0,5 %): menos ouro, depois menos slots, depois o mais forte
+         * por lançamento na frente (Energy Beam e Great Fire Wave, as duas de
+         * 4 s, saem alternadas em qualquer ordem — fica a de 60 na frente) */
+        const ordemForte = k => k.reduce((s, a, i) => s + a.porLancamento * (4 - i), 0);
+        const melhorQue = (x, y) => {
+            if (!y) return true;
+            const tol = Math.max(1e-6, y.danoS * 0.005);
+            if (Math.abs(x.danoS - y.danoS) > tol) return x.danoS > y.danoS;
+            if (Math.abs(x.ouroS - y.ouroS) > 1e-6) return x.ouroS < y.ouroS;
+            if (x.ordem.length !== y.ordem.length) return x.ordem.length < y.ordem.length;
+            return ordemForte(x.ordem) > ordemForte(y.ordem);
+        };
+        let melhor = null;
+        for (let mask = 1; mask < (1 << pool.length); mask++) {
+            const kit = pool.filter((_, i) => mask & (1 << i));
+            if (kit.length > 4) continue;
+            const g = kit.map(a => a.m.secondaryGroup).filter(Boolean);
+            if (new Set(g).size < g.length) continue;
+            const kl = kit.filter(a => !enchimento(a)), ke = kit.filter(enchimento);
+            for (const pl of permutacoes(kl)) for (const pe of permutacoes(ke)) {
+                const plano = pl.concat(pe).map(a => ({ av: a, minimo: 1 }));
+                if (plano.some((p, j) => slotMorto(plano, j, 1))) continue;
+                const s = simularFila(slotsParaSimular(plano), o);
+                const x = { ordem: plano.map(p => p.av), danoS: s.danoS, ouroS: s.ouroS };
+                if (melhorQue(x, melhor)) melhor = x;
+            }
+        }
+        return melhor ? melhor.ordem : [];
+    }
+
+    /* =========================================================================
+     *  v2.10 — PLANO EM CACHE (plano 2.11, item 11). A aba Magia chamava
+     *  montarPlano 9× por render (1 + 4 fichas + 4 do veredito), e cada uma
+     *  reparseava a tabela de danos ~20× (uma por magia). A chave junta o que
+     *  muda o plano: modelo, mapa, vocação, nível, a tabela de danos, a mana e
+     *  a vida medidas, o regime, medições do mapa, loot, bestiário, ML, ritmo
+     *  da onda e os catálogos. O resto (arma do Paladino, frame) vence em 5 s.
+     *  Quem aprende dano (anotarDano, pedirReleituraDeDanos) limpa na hora.
+     * ====================================================================== */
+    const _planos = new Map();
+    let _planosCat = [];
+    const PLANO_TTL_MS = 5000;
+    const VOCS_PLANO = ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'];
+    function invalidarPlanos() { _planos.clear(); }
+    const _hash = (s) => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
+    function entradasDoPlano(modelo, hunt, voc, opc) {
+        const bruto = ler(chaveDano(voc), {});
+        /* v2.10 — QUEM BEBE POÇÃO (plano 2.11, item 4). O Inteligente liga a
+         * poção de mana no Druida (ou nos 4, variante _mana); os outros modelos
+         * não mexem em poção, então vale o que está no jogo. */
+        const bebe = modelo === 'inteligente' ? !!(opc.manaTodos || voc === 'DRUID') : !!manaPotionLigada(voc);
+        const med = indiceMedicoes(hunt);
+        const manaMed = hunt ? manaMedidaMedia(hunt, voc) : null;
+        /* "mana sobrando" é REGENERAÇÃO parada. Em quem bebe, 90 % de mana é a
+         * poção fazendo o trabalho dela (Druida a 90 % pegava Eternal Winter,
+         * 1050 de mana a cada 40 s ≈ 53k/h de poção). Só quem não bebe entra. */
+        const sobrando = modelo === 'inteligente' && !bebe && hunt ? regimeSobrando(hunt, voc, manaMed) : false;
+        const spawnLimita = modelo === 'inteligente' && hunt ? spawnLimitaMedido(hunt) === true : false;
+        const vidaMin = hunt && voc === 'KNIGHT' ? vidaMinMedida(hunt, voc) : null;
+        const ml = mlAtual(voc), ritmo = ritmoOndas(hunt), mana = manaDoPersonagem(voc);
+        const nBest = hunt && hunt.monsters ? hunt.monsters.filter(m => BESTIARIO[m.name]).length : 0;
+        const medK = Object.keys(med).sort().map(k => k + med[k].casts + ':' + med[k].porCast).join(',');
+        const danosK = Object.keys(bruto).sort().map(k => { const x = bruto[k] || {}; return k + x.min + '-' + x.max + '@' + x.nivel + (x.ml != null ? 'm' + x.ml : ''); }).join(',');
+        const carimbo = [nivelAtual(), _hash(danosK), bebe ? 1 : 0, manaMed, sobrando ? 1 : 0, spawnLimita ? 1 : 0, vidaMin, ml, hunt ? LOOT_CACHE[hunt.id] : null, nBest,
+                         _hash(medK), ritmo.matarS.toFixed(1), ritmo.esperaS.toFixed(1), mana.manaMax, opc.manaTodos ? 1 : 0, opc.semRuna ? 1 : 0, opc.seco ? 1 : 0].join('|');
+        return { bruto, bebe, med, manaMed, sobrando, spawnLimita, ml, ritmo, mana, carimbo };
+    }
+    function copiarResultado(r) {
+        if (!r || r.erro) return r;
+        return Object.assign({}, r, { plano: r.plano.map(p => Object.assign({}, p)), extras: r.extras ? JSON.parse(JSON.stringify(r.extras)) : r.extras });
+    }
     function montarPlano(modelo, hunt, vocForcada) {
+        /* v2.10 (item 12) — a variante vira opções explícitas; nada global */
         const vr = VARIANTES[modelo];
-        _manaTodos = !!(vr && vr.manaTodos); _semRuna = !!(vr && vr.semRuna); _seco = !!(vr && vr.seco);
-        if (vr) modelo = vr.base;
+        const opc = { manaTodos: !!(vr && vr.manaTodos), semRuna: !!(vr && vr.semRuna), seco: !!(vr && vr.seco) };
+        const base = vr ? vr.base : modelo;
+        const voc = vocForcada || vocacaoAtual();
+        if (!hunt) return { erro: 'não achei as resistências dessa hunt no catálogo' };
+        const cat = [CAT.magias, CAT.precos, CAT.pocoes, CAT.bosses, CAT.municao, _ammoCat];
+        if (cat.some((x, i) => x !== _planosCat[i])) { _planos.clear(); _planosCat = cat; }
+        const ent = entradasDoPlano(base, hunt, voc, opc);
+        const chave = [modelo, hunt.id, voc, ent.carimbo].join('|');
+        const c = _planos.get(chave);
+        if (c && Date.now() - c.t < PLANO_TTL_MS) return copiarResultado(c.r);
+        const r = planejar(base, hunt, voc, opc, ent);
+        if (_planos.size >= 80) _planos.delete(_planos.keys().next().value);
+        _planos.set(chave, { t: Date.now(), r });
+        return copiarResultado(r);
+    }
+    function planejar(modelo, hunt, voc, opc, ent) {
         const info = notasElementos(hunt);
         if (!info) return { erro: 'não achei as resistências dessa hunt no catálogo' };
-        info.med = indiceMedicoes(hunt);
+        info.med = ent.med;
+        const danos = danosConhecidos(voc, ent.bruto, true);
 
-        const avaliadas = magiasDaVocacao(vocForcada).map(m => avaliar(m, hunt, info, vocForcada))
+        const avaliadas = magiasDaVocacao(voc).map(m => avaliar(m, hunt, info, voc, danos))
             .sort((a, b) => b.danoEfetivo - a.danoEfetivo);   // RANKING IMUTÁVEL
 
         if (!avaliadas.length) return { erro: 'nenhuma magia de ataque elegível' };
+        /* v2.10 (item 3) — runa que o ML do personagem não alcança não entra
+         * (sudden death pede 15). Sem ML lido, não exclui. */
+        avaliadas.forEach(a => { a.semML = !!(a.m.isRune && a.m.magicLevel > 0 && ent.ml != null && ent.ml < a.m.magicLevel); });
 
         /* PISO DE POTÊNCIA (lição da v2.24.0 do Stonegy): sem piso, qualquer
          * magia com a "forma certa" ganhava slot, e o script chegou a pôr a
-         * versão fraca de uma magia na frente da forte. Quem estiver abaixo de
-         * 25% do melhor dano por lançamento vai pro fim da fila.
+         * versão fraca de uma magia na frente da forte.
          *
          * ⚠ E O PISO SÓ OLHA QUEM TEM DANO CONFIÁVEL. Sem isso, magia não
          * medida entra com o chute do fallback e vence de quem foi medido —
          * visto em 30/08: o plano do Feiticeiro veio com 4 runas de área só
          * porque o chute de 30 de dano era multiplicado por 7 alvos.
-         * Sem medição a magia não compete; fica reservada pro fim da fila. */
+         * Sem medição a magia não compete; fica reservada pro fim da fila.
+         * v2.10 — o piso de 25 % (`viavel`) nunca chegou a ser usado e saiu;
+         * o que corta é o de 10 % abaixo. */
         const confiaveis = avaliadas.filter(a => a.confiavel);
         const base = confiaveis.length ? confiaveis : avaliadas;
         const melhorLanc = Math.max(...base.map(a => a.porLancamento));
-        const PISO = melhorLanc * 0.25;
-        const viavel = a => a.confiavel && a.porLancamento >= PISO;
 
         /* ⛔⛔ CORTE DE MAGIA MORTA — o defeito mais caro achado nos testes.
          * Medido em 30/08 com o Feiticeiro em Water Elementals: o plano vinha
@@ -1302,15 +1869,19 @@
          * 120 de mana (67 ouro) por ZERO de dano, repetidamente.
          *
          * Regra: magia de elemento vetado ou com dano irrisório (<10% do
-         * melhor) NÃO entra em slot nenhum. Slot vazio não gasta mana. */
-        const morta = a => info.vetos[a.m.combatType] != null
+         * melhor) NÃO entra em slot nenhum. Slot vazio não gasta mana.
+         * v2.10 — área olha o veto ponderado (vetosArea, item 6); alvo único,
+         * o estrito. Runa sem ML também é cortada. */
+        const vetoDe = a => (a.casas > 1 ? info.vetosArea : info.vetos)[a.m.combatType];
+        const morta = a => vetoDe(a) != null
             || a.danoEfetivo <= 0
-            || a.porLancamento < melhorLanc * 0.10;
+            || a.porLancamento < melhorLanc * 0.10
+            || a.semML;
         avaliadas.forEach(a => { a.morta = morta(a); });
         const vivas = avaliadas.filter(a => !a.morta);
 
         // teto de gasto: preenche danoPorOuroReal / cabeNoOrcamento em cada magia
-        const viab = viabilidade(hunt, avaliadas, vocForcada);
+        const viab = viabilidade(hunt, avaliadas, voc, ent.bebe);
 
         /* ⭐ v1.8.1 — MODELOS REDEFINIDOS PELO DONO (23/09/2026):
          *   Econômica   = 2 magias, sem runa (as 2 de melhor dano/mana)
@@ -1333,13 +1904,26 @@
          * Barbarian Camp em 23/09 (Berserk na prévia, Brutal na aplicação). */
         const porEfic = arr => arr.slice().sort((a, b) => (b.danoPorOuro - a.danoPorOuro) || (b.porLancamento - a.porLancamento));
         const magias = conf.filter(a => !ehRuna(a)), runas = conf.filter(ehRuna);
-        const usados = new Set();
+        /* ⭐ v2.10 — UMA POR GRUPO SECUNDÁRIO (plano 2.11, item 2). /spells
+         * traz `secondaryGroup`: focus (Hell's Core, Rage of the Skies, Eternal
+         * Winter, Wrath of Nature — 40 s), special (Lightning e os Strong
+         * Strikes — 8 s), ultimatestrikes (30 s), greatbeams (6 s). Lançar uma
+         * bloqueia as outras do grupo pela recarga secundária — o Em área do
+         * Feiticeiro punha Hell's Core + Rage juntas em 19 de 29 mapas do nível
+         * 30–62, e a segunda passava 40 s travada. `pega` pula quem é de grupo
+         * já usado no plano. */
+        const usados = new Set(), gruposUsados = new Set();
         const pega = (lista, n) => {
             const r = [];
-            for (const a of lista) { if (r.length >= n) break; if (usados.has(a.m.name)) continue; usados.add(a.m.name); r.push(a); }
+            for (const a of lista) {
+                if (r.length >= n) break;
+                const g = a.m.secondaryGroup || null;
+                if (usados.has(a.m.name) || (g && gruposUsados.has(g))) continue;
+                usados.add(a.m.name); if (g) gruposUsados.add(g); r.push(a);
+            }
             return r;
         };
-        let escolhidas = [], ordemI = porDano;
+        let escolhidas = [];
         if (modelo === 'economica') {
             escolhidas = pega(porEfic(magias), 2);
         } else if (modelo === 'equilibrado') {
@@ -1367,17 +1951,16 @@
              *   ≤ 25 % → falta mana: escolha por dano/mana (regra normal).
              *   sem medida → regra normal.
              * v2.9.0 — com histerese: entra com ≥ 70 %, só sai abaixo de 40 %
-             * (regimeSobrando), e a medida zera quando o kit muda. */
-            const manaMed = manaMedidaMedia(hunt, vocForcada || vocacaoAtual());
-            const sobrando = regimeSobrando(hunt, vocForcada || vocacaoAtual(), manaMed);
+             * (regimeSobrando), e a medida zera quando o kit muda.
+             * v2.10 — só para quem NÃO bebe poção (entradasDoPlano, item 4). */
+            const sobrando = ent.sobrando;
             /* v2.7.0 — Djinns 28/09: Paladino 78 % e Feiticeiro 96 % de mana
              * PARADA porque a runa (cd 2 s) na frente tomava todos os ciclos —
              * Caldera e Energy Wave nunca saíram, e 6k/h de runa foi gasto onde
              * a mana de graça bastava. Regra: mana sobrando → magias ANTES da
              * runa; se além disso o spawn limita (onda morre em 2,5 s de 13),
              * a runa sai do kit — dano extra não vira xp, só custa ouro. */
-            const spawnLimita = spawnLimitaMedido(hunt) === true;
-            const semRunaAqui = _semRuna || (sobrando && spawnLimita);
+            const semRunaAqui = opc.semRuna || (sobrando && ent.spawnLimita);
             const cdMax = sobrando ? 40000 : 12000;
             const rapidas = conf.filter(a => (a.m.cooldownMs || 2000) <= cdMax);
             const ondas = rapidas.filter(a => !ehRuna(a) && ehArea(a)), runasA = rapidas.filter(a => ehRuna(a) && (a.m.cooldownMs || 2000) <= 12000 && ehArea(a));
@@ -1411,10 +1994,8 @@
              * Equilibrada estava melhor". A eficiência decide QUEM entra (quem
              * não bebe poção escolhe por dano/mana); o dano por lançamento
              * decide a ORDEM. Magia barata de cd curto só serve por último. */
-            const vocI = vocForcada || vocacaoAtual();
-            const comPocao = _manaTodos || vocI === 'DRUID' || sobrando;
+            const comPocao = ent.bebe || sobrando;
             const escolha = comPocao ? porDano : porEfic;
-            ordemI = porDano;
             const melhorEfic = Math.max(0, ...ondas.concat(golpes).map(a => a.danoPorOuro));
             const melhorOnda = Math.max(0, ...ondas.map(a => a.porLancamento));
             const eficiente = a => a.danoPorOuro >= melhorEfic * (comPocao ? 0.15 : 0.25);
@@ -1431,6 +2012,8 @@
              * mana sobrando é a runa que sai: ela custa ouro e a mana já paga
              * as ondas. */
             if (escolhidas.length > 4) { const soMagia = escolhidas.filter(a => !ehRuna(a)); if (soMagia.length >= 4) escolhidas = soMagia; }
+        } else if (modelo === 'boss') {
+            escolhidas = melhorKitBoss(conf, ent);
         } else {
             escolhidas = pega(porDano(magias), 3);
         }
@@ -1451,11 +2034,22 @@
          *           cobrava 8 de ouro a cada 2 s (simulado com /spells de 29/09)
          * Ordem: recarga longa primeiro, a mais forte na frente; depois os
          * preenchimentos, de área (≥2) antes do alvo único (≥1) — assim com 2+
-         * monstros sai a runa e com 1 sai o golpe (o padrão da comunidade). */
-        const enchimento = a => (a.m.cooldownMs || 2000) <= (a.m.groupCooldownMs || 2000);
-        const enchimentos = escolhidas.filter(enchimento).sort((a, b) => (modelo !== 'boss' ? ehArea(b) - ehArea(a) : 0) || (b.porLancamento - a.porLancamento));
-        escolhidas = porDano(escolhidas.filter(a => !enchimento(a))).concat(enchimentos).slice(0, 4);
-        const plano = escolhidas.map((a, i) => ({ slot: i + 1, av: a, minimo: (modelo === 'boss' || !ehArea(a)) ? 1 : 2 }));
+         * monstros sai a runa e com 1 sai o golpe (o padrão da comunidade).
+         * ⭐ v2.10 (item 7) — o golpe de ALVO ÚNICO de recarga longa (≥1) vai
+         * DEPOIS dos preenchimentos de área (≥2). Quara, Druida: Strong Terra
+         * Strike ≥1 (8 s, 60 de mana = 34 de ouro para quem bebe) na frente da
+         * runa ≥2 tomava um ciclo em cada quatro com 2+ monstros vivos — um
+         * alvo no lugar de três, pelo quádruplo do preço. Atrás da runa ele só
+         * sai quando sobra um monstro, que é para o que ele serve. Continua
+         * valendo a regra da 2.9.0 no que importa: nada fica atrás de um
+         * preenchimento com mínimo igual ou maior (slotMorto). O Boss já vem
+         * na ordem que o simulador escolheu. */
+        if (modelo !== 'boss') {
+            const longas = escolhidas.filter(a => !enchimento(a)), ench = escolhidas.filter(enchimento);
+            escolhidas = porDano(longas.filter(ehArea)).concat(porDano(ench.filter(ehArea)), porDano(longas.filter(a => !ehArea(a))), porDano(ench.filter(a => !ehArea(a))));
+        }
+        escolhidas = escolhidas.slice(0, 4);
+        let plano = escolhidas.map((a, i) => ({ slot: i + 1, av: a, minimo: (modelo === 'boss' || !ehArea(a)) ? 1 : 2 }));
         /* Sem slot extra: o dono pediu contagem exata (2 / 2+1 / 2+2). Se
          * nenhuma ficou com ≥1, a última do plano cai para ≥1. No Inteligente
          * o ≥1 vai para a runa (8 de ouro) ou, sem runa, para a magia mais
@@ -1464,11 +2058,24 @@
             const alvo1 = modelo === 'inteligente' ? (plano.find(p => ehRuna(p.av)) || plano.slice().sort((a, b) => b.av.danoPorOuro - a.av.danoPorOuro)[0]) : plano[plano.length - 1];
             alvo1.minimo = 1;
         }
+        /* v2.10 (item 7) — slot que nunca dispara sai do plano: slot vazio
+         * não gasta mana nem engana o painel. O motivo fica em `mortos`. */
+        const lure = hunt.boss ? 1 : lureMax(hunt);
+        const mortos = [];
+        for (let j = 0; j < plano.length;) {
+            const motivo = slotMorto(plano, j, lure);
+            if (motivo) { mortos.push({ nome: plano[j].av.m.name, minimo: plano[j].minimo, motivo }); plano.splice(j, 1); } else j++;
+        }
+        plano.forEach((p, i) => { p.slot = i + 1; });
+        /* v2.10 (item 1) — a fila simulada deste kit: o veredito do grupo soma
+         * isto, e `disparos` diz quanto cada slot trabalha. */
+        const sim = plano.length ? simularFila(slotsParaSimular(plano), Object.assign({ pocao: ent.bebe, fatorAlvos: FATOR_ALVOS_REAIS }, ent.mana, ent.ritmo)) : null;
+        if (sim) plano.forEach((p, i) => { p.disparos = sim.disparos[i]; });
 
         const cortadas = avaliadas.filter(a => a.morta).length;
         const naoCabe = viab && !vivas.some(a => a.cabeNoOrcamento);
-        const extras = modelo === 'inteligente' ? planoExtras(vocForcada || vocacaoAtual(), hunt) : null;
-        return { plano, ranking: avaliadas, info, hunt, modelo, cortadas, viab, naoCabe, extras };
+        const extras = modelo === 'inteligente' ? planoExtras(voc, hunt, opc) : null;
+        return { plano, ranking: avaliadas, info, hunt, modelo, cortadas, viab, naoCabe, extras, sim, mortos, bebe: ent.bebe };
     }
 
     /* =========================================================================
@@ -1483,45 +2090,84 @@
      *      Orcs Edron   consumiu ~5,7 ouro/abate → dano/ouro da party = 13,7
      *      Vampire hell consumiu ~150 ouro/abate → dano/ouro da party = 3,85
      *
-     *  Aqui a conta é feita sobre o slot 1 de cada personagem (o que mais
-     *  dispara na rotação), somando dano e custo dos quatro:
-     *      danoPorOuroParty = Σ(dano_i × alvos_i) / Σ(custo_i)
-     *      custoPorAbate    = HP / danoPorOuroParty
-     *  e a hunt só é viável se custoPorAbate ≤ loot × margem.
+     *  ⭐ v2.10 (plano 2.11, item 1) — O KIT INTEIRO, PELO SIMULADOR. Até a
+     *  2.9.0 a conta usava só o slot 1 de cada um e cobrava a mana dele como
+     *  poção. Dois erros que se somavam: (a) quem vive de regeneração não paga
+     *  mana — a UI dizia "0 ouro" mas o custo seguia na conta; (b) desde a
+     *  2.9.0 a runa nunca é slot 1, então o ouro da runa (8 por lançamento, o
+     *  que mais se gasta de verdade) sumiu, e o veredito virou "se paga" sempre
+     *  que ninguém bebia poção. Agora, por personagem:
+     *      ouro/s = mana/s × 0,56 (só se a poção de mana está ligada)
+     *             + runas/s × preço por carga
+     *      dano/s = tudo que a fila lança (área com metade dos alvos)
+     *  e para o grupo:
+     *      custoPorAbate = HP × (Σpoção/s × fatorDesperdicio(HP) + Σrunas/s) ÷ Σdano/s
+     *  a hunt só é viável se custoPorAbate ≤ loot × margem.
+     *  A curva de desperdício (0,47 × HP^0,332) foi medida com a party toda
+     *  bebendo mana (30/08): ela cresce com o HP porque "a party apanha mais e
+     *  cura é mana, e mana é ouro". Isso vale para a poção; na runa a perda
+     *  (alvos a menos) já está no simulador (metade dos alvos), então a curva
+     *  não multiplica a runa — senão uma party em regeneração com 12k/h de
+     *  runa num mapa que paga 26k/h saía "NÃO se paga" (Dragon Lair, sim).
+     *  `custoSemFator` = o mesmo custo sem a curva, para quem calibra.
      * ====================================================================== */
     function viabilidadeParty(modelo, hunt) {
+        if (!hunt || !hunt.monsters) return null;
         const loot = LOOT_CACHE[hunt.id];
         if (loot == null) return null;
         const w = hunt.monsters.reduce((s, m) => s + (m.weight || 1), 0) || 1;
         const hp = hunt.monsters.reduce((s, m) => s + m.health * (m.weight || 1), 0) / w;
 
-        let danoTotal = 0, custoTotal = 0;
-        const porVoc = {};
-        for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) {
+        let danoS = 0, ouroS = 0, pocaoS = 0, runaS = 0;
+        const porVoc = {}, pocoes = {};
+        for (const voc of VOCS_PLANO) {
             const r = montarPlano(modelo, hunt, voc);
-            const p1 = r.plano && r.plano[0];
-            if (!p1) { porVoc[voc] = null; continue; }
-            const a = p1.av;
-            const alvosReais = Math.max(1, a.alvos * FATOR_ALVOS_REAIS);
-            const d = a.danoEfetivo * alvosReais;
-            danoTotal += d; custoTotal += a.custo;
-            porVoc[voc] = { magia: a.m.name, dano: Math.round(d), custo: Math.round(a.custo) };
+            if (!r || r.erro || !r.plano.length || !r.sim) { porVoc[voc] = null; continue; }
+            pocoes[voc] = !!r.bebe;
+            danoS += r.sim.danoS; ouroS += r.sim.ouroS; pocaoS += r.sim.ouroPocaoS; runaS += r.sim.ouroRunaS;
+            porVoc[voc] = { magia: r.plano[0].av.m.name, kit: r.plano.map(p => `${p.av.m.name} ≥${p.minimo} ×${p.disparos}`).join(' · '),
+                            dano: Math.round(r.sim.danoS), ouroH: Math.round(r.sim.ouroS * 3600), manaS: Math.round(r.sim.manaS * 10) / 10,
+                            runasH: Math.round(r.sim.runasS * 3600), pocao: !!r.bebe };
         }
-        if (!custoTotal) return null;
-        const dOuroParty = danoTotal / custoTotal;
-        const custoPorAbate = hp / dOuroParty * fatorDesperdicio(hp);   // curva calibrada
+        if (!danoS) return null;
+        const custoPorAbate = hp * (pocaoS * fatorDesperdicio(hp) + runaS) / danoS;   // curva calibrada só na poção
         const orcamento = loot * MARGEM_LUCRO;
-        const regen = partyEmRegen();
+        const regen = VOCS_PLANO.every(v => !pocoes[v]);
         return {
             loot, hp: Math.round(hp), orcamento: Math.round(orcamento * 10) / 10,
-            dOuroParty: Math.round(dOuroParty * 100) / 100,
-            custoPorAbate: Math.round(custoPorAbate),
+            dOuroParty: ouroS > 0 ? Math.round(danoS / ouroS * 100) / 100 : null,
+            custoPorAbate: Math.round(custoPorAbate), custoSemFator: Math.round(hp * ouroS / danoS * 10) / 10,
             exigidoParty: Math.round(hp / orcamento * 10) / 10,
-            regen,
-            cabe: regen ? true : custoPorAbate <= orcamento,
+            regen, pocoes,
+            cabe: custoPorAbate <= orcamento,
             lucroPorAbate: Math.round(loot - custoPorAbate),
+            danoS: Math.round(danoS), ouroH: Math.round(ouroS * 3600),
             porVoc
         };
+    }
+
+    /* =========================================================================
+     *  v2.10 — RELER O DANO DEPOIS DE EQUIPAR (plano 2.11, item 13). O dano
+     *  de /spell-numbers muda com a arma (Knight: skill × ataque; magos: ML da
+     *  wand/rod), e a tabela só era relida no F5 ou ao subir de nível — o plano
+     *  seguia com o dano da arma velha. Quem equipa chama isto (uma linha): o
+     *  plano em cache cai na hora e /spell-numbers é relido 2,5 s depois (o
+     *  servidor precisa aplicar a troca; várias trocas seguidas viram uma
+     *  leitura só). É LEITURA — nada é enviado ao jogo.
+     * ====================================================================== */
+    const RELEITURA_DANOS_MS = 2500;
+    let _releituraT = null;
+    function pedirReleituraDeDanos(motivo) {
+        invalidarPlanos();
+        if (_releituraT) clearTimeout(_releituraT);
+        _releituraT = setTimeout(() => {
+            _releituraT = null;
+            Promise.resolve().then(() => aprenderDanosPorRest(true)).then(r => {
+                invalidarPlanos();
+                if (r && r.erro) log('dano das magias não relido depois de ' + (motivo || 'equipar') + ': ' + r.erro, 'info');
+            }).catch(() => { });
+        }, RELEITURA_DANOS_MS);
+        return true;
     }
 
     /* @@MAGIA-FIM */
@@ -1630,7 +2276,7 @@
         try { await _aplicarEmTodos(modelo, hunt); } finally { _aplicando = false; renderizar(); }
     }
     async function _aplicarEmTodos(modelo, hunt) {
-        /* v1.8.2 — CONTA NOVA SEM DANO MEDIDO. Na conta u2tag (23/09) o
+        /* v1.8.2 — CONTA NOVA SEM DANO MEDIDO. Numa conta de teste (23/09) o
          * APLICAR saiu com 1 runa por mago e nada no Cavaleiro: o plano só
          * usa magia com dano conhecido, e ali nada tinha sido medido. Como o
          * clique em APLICAR é do dono, medir antes faz parte do pedido —
@@ -1646,8 +2292,10 @@
             }
         }
         /* v2.1.0 — PELO SOCKET. Sem trocar de aba, sem abrir janela: calcula o
-         * plano de cada vocação e manda os mesmos frames que a janela manda. */
-        if (socketAberto() && ESTADO_WS.profiles) {
+         * plano de cada vocação e manda os mesmos frames que a janela manda.
+         * v2.11 — só com os perfis que vieram INTEIROS do servidor
+         * (welcome/resume); perfil montado aos pedaços vai pelos diálogos. */
+        if (socketAberto() && ESTADO_WS.perfisDoServidor) {
             log(`aplicando ${nomeModelo(modelo)} nos 4 personagens em ${hunt.title} — pelo socket, sem abrir janela…`);
             let total = 0, semEco = 0;
             for (const voc of VOCS) {
@@ -1744,33 +2392,9 @@
         renderizar();
     }
 
-    /* LURE NO MAXIMO. Trocar de hunt reseta o lure para o tier 1 (medido em
-     * 19/09). No modal, a linha DESABILITADA e a ATIVA — as outras sao
-     * clicaveis. Sobe para o maior "Nivel N" habilitado e fecha. */
-    async function lureNoMaximo() {
-        if (socketAberto() && emHunt() && frameFresco()) {
-            try { const r = await lureNoMaximoSocket(); if (!r.erro) return r; log('lure pelo socket: ' + r.erro + ' — tentando pela janela', 'info'); } catch (e) { }
-        }
-        /* 23/09: o botão fica `disabled` enquanto o jogo está "Lurando
-         * Monstros" (e logo após trocar de hunt). Espera liberar até 40 s. */
-        const abrir = await esperarQue(() => { const b = tid('lure-toggle'); return b && !b.disabled ? b : null; }, 40000, 500);
-        if (!abrir) return { erro: tid('lure-toggle') ? 'botão de lure desabilitado (lurando monstros) — tente de novo em instantes' : 'sem botão de lure' };
-        abrir.click();
-        const radios = await esperarQue(() => { const r = $$('[role="radio"]'); return r.length ? r : null; }, 5000, 150);
-        const fechar = () => { const b = tid('lure-modal-close'); if (b) b.click(); };
-        if (!radios) { fechar(); return { erro: 'modal de lure não abriu' }; }
-        const nivel = r => parseInt(((r.textContent || '').match(/Nível\s*(\d+)/) || [])[1] || '0', 10);
-        const livres = radios.filter(r => !r.disabled && r.getAttribute('aria-disabled') !== 'true');
-        const ativo = radios.find(r => r.disabled || r.getAttribute('aria-disabled') === 'true');
-        const alvo = livres.sort((a, b) => nivel(b) - nivel(a))[0];
-        if (!alvo || (ativo && nivel(ativo) >= nivel(alvo))) { fechar(); await dorme(300); return { ja: true, nivel: ativo ? nivel(ativo) : null }; }
-        alvo.click();
-        await dorme(600);
-        fechar();
-        await dorme(400);
-        log(`lure subido para o nível ${nivel(alvo)}`, 'ok');
-        return { nivel: nivel(alvo) };
-    }
+    /* v2.11 — lureNoMaximo() (lure pela JANELA) saiu: só era chamado pelo
+     * window.__tbHelper, que agora é só leitura. O lure máximo do Scan é
+     * lureNoMaximoSocket() (set_lure), abaixo. */
 
     /* Os quatro de uma vez — o dano e por personagem, entao troca a aba,
      * aprende, e volta para quem estava selecionado. So leitura. */
@@ -1826,18 +2450,30 @@
      *  sem abrir a tela CAÇADAS, e mochila/ouro/lure saem do frame em vez
      *  de serem lidos do texto da tela. O DOM continua como reserva.
      *  ⚠ Nada é ENVIADO por aqui. Só leitura. */
+    /* v2.11 — perfisDoServidor: `profiles` veio INTEIRO de um welcome/resume.
+     * Sem isso, ESTADO_WS.profiles pode ter só a vocação que o cliente salvou
+     * (profiles_set dele) — ver perfilReal(). conta: `account` do welcome
+     * (gaveta sem /auth/me). ultimoEnded: o último `ended` {t, huntId, reason}. */
     const ESTADO_WS = { huntId: null, boss: null, ultimoStart: null, frame: null, hunt_t: 0,
-                        worldToken: null, profiles: null, battleConfigs: null, roster: [], party: [], eco: {},
-                        rosterFull: null, rosterFull_t: 0, depot: null, depot_t: 0 };
+                        worldToken: null, profiles: null, perfisDoServidor: false, battleConfigs: null, roster: [], party: [], eco: {},
+                        rosterFull: null, rosterFull_t: 0, depot: null, depot_t: 0, conta: null, ultimoEnded: null };
     const VOCS = ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'];
     const FRAME_FRESCO_MS = 5000;
     const frameFresco = () => !!(ESTADO_WS.frame && Date.now() - ESTADO_WS.frame.t < FRAME_FRESCO_MS);
+    /* v2.11 — o id 800 é o "slot" de boss no servidor (TIBIDLE.md, 27/09). */
+    const HUNT_ID_BOSS = 800;
+    /* true/false quando o catálogo já carregou; null quando ainda não dá para saber */
+    const huntNoCatalogo = (id) => CAT.hunts ? CAT.hunts.some(x => x.id === id) : null;
+    /* `who` do servidor é a POSIÇÃO em state.party: um buraco (null) não pode
+     * deslocar os outros — por isso map mantendo a posição, sem filter. */
+    const vocsPorPosicao = (lista) => lista.map(p => (p && typeof p.vocation === 'string') ? p.vocation : null);
     function estadoWS() {
         const f = ESTADO_WS.frame;
         return { huntId: ESTADO_WS.huntId, boss: ESTADO_WS.boss, cap: f && f.cap, balance: f && f.balance,
                  lureTier: f && f.lureTier, active: f && f.active, idadeMs: f ? Date.now() - f.t : null,
                  ultimoStart: ESTADO_WS.ultimoStart, party: ESTADO_WS.party, roster: ESTADO_WS.roster,
-                 temToken: !!ESTADO_WS.worldToken, temPerfis: !!ESTADO_WS.profiles, socketAberto: socketAberto(),
+                 temToken: !!ESTADO_WS.worldToken, temPerfis: !!ESTADO_WS.profiles, perfisDoServidor: ESTADO_WS.perfisDoServidor,
+                 perfisReais: VOCS.filter(perfilReal), socketAberto: socketAberto(), conta: ESTADO_WS.conta, ultimoEnded: ESTADO_WS.ultimoEnded,
                  configs: ESTADO_WS.profiles ? Object.fromEntries(VOCS.map(v => [v, configAtiva(v)])) : null };
     }
 
@@ -1868,6 +2504,7 @@
      *  O caminho pelos diálogos continua como reserva se o socket não deu
      *  os perfis (ex.: helper instalado com o jogo já aberto).
      * ====================================================================== */
+    /* @@PERFIS-INICIO — socket, perfis e aplicarPlanoSocket; testes/fumaca.test.js roda este trecho sozinho. */
     function socketAberto() { return !!(WS.socket && WS.socket.readyState === 1); }
     function enviarWS(obj) {
         if (!socketAberto()) throw new Error('socket do jogo não está aberto');
@@ -1877,6 +2514,16 @@
     const vocDoIndice = (i) => ordemParty()[i] || null;
     const indiceDaVoc = (v) => { const i = ordemParty().indexOf(v); return i >= 0 ? i : null; };
     const clonar = (x) => JSON.parse(JSON.stringify(x));
+    /* ⚠ v2.11 — PERFIL REAL. profiles_set SUBSTITUI os 4 presets da vocação
+     * inteiros. Montado em cima de um esqueleto (vocação que nunca chegou do
+     * servidor), ele apagava os outros 3 presets e a cura do jogador —
+     * CONFIRMADO na auditoria: helper instalado com o jogo aberto (welcome
+     * perdido) + o jogador salva UM slot do Knight na janela = ESTADO_WS
+     * .profiles passava a existir só com KNIGHT, e o APLICAR NOS 4 mandava
+     * profiles_set de esqueleto para os outros três. Real = a vocação veio
+     * num welcome/resume ou num profiles_set do próprio cliente (que manda o
+     * perfil inteiro). */
+    const perfilReal = (v) => !!(ESTADO_WS.profiles && ESTADO_WS.profiles[v] && typeof ESTADO_WS.profiles[v] === 'object' && Array.isArray(ESTADO_WS.profiles[v].list));
     function perfilDaVoc(v) {                          // mesmo preenchimento que o cliente faz (4 perfis)
         const p = ESTADO_WS.profiles && ESTADO_WS.profiles[v];
         const base = p ? clonar(p) : { active: 0, list: [] };
@@ -1920,21 +2567,37 @@
         if (typeof c.ammo === 'string' && c.ammo) t.ammo = c.ammo;
         return t;
     }
+    /* Eco do servidor / update_battle_config do cliente → estado local.
+     * v2.11 — NUNCA cria esqueleto: sem perfil real, a config vai para
+     * battleConfigs (a reserva de configAtiva), e ESTADO_WS.profiles fica
+     * sem a vocação — que é o que impede o profiles_set de esqueleto. */
     function aplicarConfigLocal(voc, cfg) {
-        if (!voc || !cfg) return;
-        if (!ESTADO_WS.profiles) ESTADO_WS.profiles = {};
-        const p = perfilDaVoc(voc);
-        p.list[p.active] = { name: p.list[p.active].name, config: normalizarConfig(cfg) };
-        ESTADO_WS.profiles[voc] = p;
+        if (!voc || !cfg || typeof cfg !== 'object') return;
+        const nova = normalizarConfig(cfg);
+        if (perfilReal(voc)) {
+            const p = ESTADO_WS.profiles[voc];
+            while (p.list.length < 4) p.list.push({ name: String(p.list.length + 1), config: null });   // o mesmo preenchimento de perfilDaVoc
+            const i = (p.active >= 0 && p.active < p.list.length) ? p.active : 0;
+            p.list[i] = Object.assign({ name: String(i + 1) }, p.list[i], { config: nova });
+            return;
+        }
+        if (!ESTADO_WS.battleConfigs || typeof ESTADO_WS.battleConfigs !== 'object') ESTADO_WS.battleConfigs = {};
+        ESTADO_WS.battleConfigs[voc] = nova;
     }
 
     /* Aplica o plano de UMA vocação pelo socket: mantém poções, suportes e
      * munição como estão, troca só skills + minCreatures. Manda os mesmos
-     * dois frames que a janela manda. */
+     * dois frames que a janela manda.
+     * v2.11 — sem a config atual (configAtiva null) NADA sai; sem perfil real
+     * o profiles_set NÃO sai (caçando: só update_battle_config, que vale para
+     * esta caçada e não mexe nos presets; na cidade: a vocação é pulada). O
+     * preset é montado com Object.assign — campos do preset que o helper não
+     * conhece seguem junto. */
     async function aplicarPlanoSocket(resultado, voc) {
-        if (!resultado || !resultado.plano) return 0;
-        if (!ESTADO_WS.profiles) throw new Error('perfis ainda não chegaram pelo socket (welcome/resume)');
-        const atual = normalizarConfig(configAtiva(voc));
+        if (!resultado || !resultado.plano) return { n: 0, who: null, eco: false, cacando: false };
+        const cfg = configAtiva(voc);
+        if (!cfg) throw new Error('sem a configuração atual de ' + voc + ' (perfis do servidor não chegaram) — nada enviado; dê F5 com o helper instalado');
+        const atual = normalizarConfig(cfg);
         const skills = [null, null, null, null], mc = {};
         resultado.plano.slice(0, 4).forEach((p, i) => { skills[i] = p.av.m.name; mc[p.av.m.name] = p.minimo; });
         const nova = Object.assign({}, atual, { skills, minCreatures: mc });
@@ -1945,28 +2608,49 @@
         }
         const cacando = emHunt();
         const who = cacando ? indiceDaVoc(voc) : null;
+        const real = perfilReal(voc);
+        if (!real && who == null) throw new Error(`o perfil de ${voc} não veio do servidor — profiles_set pulado para não apagar os presets e a cura dele (dê F5 com o helper instalado)`);
         const t0 = Date.now();
         if (cacando && who != null) enviarWS({ type: 'update_battle_config', data: payloadBattleConfig(nova, who) });
-        const perfil = perfilDaVoc(voc);
-        perfil.list[perfil.active] = { name: perfil.list[perfil.active].name, config: nova };
-        enviarWS({ type: 'profiles_set', data: { vocation: voc, profiles: perfil } });
+        if (real) {
+            const perfil = perfilDaVoc(voc);
+            perfil.list[perfil.active] = Object.assign({}, perfil.list[perfil.active], { config: nova });
+            enviarWS({ type: 'profiles_set', data: { vocation: voc, profiles: perfil } });
+        } else log(`  ${voc}: perfil não veio do servidor — só update_battle_config (vale nesta caçada, não fica salvo no preset)`, 'erro');
         let eco = null;
         if (cacando && who != null) eco = await esperarQue(() => ESTADO_WS.eco[who] && ESTADO_WS.eco[who] > t0, 4000, 150);
-        return { n: resultado.plano.length, who, eco: !!eco, cacando };
+        return { n: resultado.plano.length, who, eco: !!eco, cacando, soCacada: !real };
     }
+    /* @@PERFIS-FIM */
 
-    /* Dano real de TODAS as magias e runas numa chamada, com o worldToken. */
-    let _danosRestPendente = false;
+    /* Dano real de TODAS as magias e runas numa chamada, com o worldToken.
+     * v2.11 — a leitura automática (amostrar) só baixa a bandeira
+     * _danosRestPendente quando DÁ CERTO; com erro tenta de novo depois
+     * (1 min, dobrando até 16 min). Antes a bandeira caía antes da chamada e
+     * um 5xx no boot deixava a sessão inteira sem dano medido. */
+    let _danosRestPendente = false, _danosRestEmCurso = false, _danosRestProxima = 0, _danosRestEspera = 60000;
+    function lerDanosPendentes() {
+        if (!_danosRestPendente || _danosRestEmCurso || Date.now() < _danosRestProxima) return;
+        if (!(ESTADO_WS.worldToken && CAT.magias && (tid('rail-level-n') || (ESTADO_WS.frame && ESTADO_WS.frame.nivel)))) return;
+        _danosRestEmCurso = true;
+        aprenderDanosPorRest(true)
+            .then(r => { if (r && r.ok) { _danosRestPendente = false; _danosRestEspera = 60000; } else throw new Error((r && r.erro) || 'sem resposta'); })
+            .catch(e => { _danosRestProxima = Date.now() + _danosRestEspera; _danosRestEspera = Math.min(_danosRestEspera * 2, 16 * 60000); falhou('dano por /spell-numbers', e); })
+            .finally(() => { _danosRestEmCurso = false; });
+    }
     async function aprenderDanosPorRest(silencioso) {
         const tok = ESTADO_WS.worldToken;
         if (!tok) return { erro: 'sem worldToken — o welcome do socket ainda não chegou (recarregue com o helper instalado)' };
         if (!CAT.magias) return { erro: 'catálogo de magias ainda não carregou' };
         let nums;
         try {
-            const r = await fetch(API + '/spell-numbers', { headers: { authorization: 'Bearer ' + tok }, credentials: 'include' });
-            if (!r.ok) return { erro: '/spell-numbers respondeu HTTP ' + r.status };
-            nums = await r.json();
+            nums = await comPrazo(async (signal) => {
+                const r = await fetch(API + '/spell-numbers', Object.assign({ headers: { authorization: 'Bearer ' + tok }, credentials: 'include' }, signal ? { signal } : {}));
+                if (!r.ok) throw new Error('/spell-numbers respondeu HTTP ' + r.status);
+                return r.json();
+            }, PRAZO_REDE_MS);
         } catch (e) { return { erro: '/spell-numbers falhou: ' + e.message }; }
+        if (!nums || typeof nums !== 'object') return { erro: '/spell-numbers veio vazio' };
         let n = 0; const lvl = nivelAtual();
         for (const voc of VOCS) {
             const d = ler('danos_' + voc, {});
@@ -2077,8 +2761,9 @@
     function razaoHtml(rz, curto) {
         if (!rz || !rz.danoTotal) return '';
         const vocs = VOCS.filter(v => rz.porVoc[v]).map(v => { const x = rz.porVoc[v]; return `${VOC_CURTO[v]} <b>${x.pct}%</b>${x.manaMedia != null ? ` <span class="${x.manaMedia < 25 ? 'tb-ruim' : ''}">mana ${x.manaMedia}%</span>` : ''}${x.hpMin != null && x.hpMin < 50 ? ` <span class="tb-ruim">vida mín ${x.hpMin}%</span>` : ''}`; }).join(' · ');
-        const top = rz.magias.filter(m => m.danoPorMana != null).sort((a, b) => b.danoPorMana - a.danoPorMana).slice(0, curto ? 3 : 6).map(m => `${m.nome} ${m.danoPorMana}${m.overkillPct >= 15 ? ` <span class="tb-av">overkill ${m.overkillPct}%</span>` : ''}`).join(' · ');
-        const runas = rz.magias.filter(m => m.danoPorOuro != null).map(m => `${m.nome} ${m.danoPorOuro}/ouro`).join(' · ');
+        /* v2.11 (D2) — o nome vem do evento do socket: escapado (a Magia e o Scan mostram isto) */
+        const top = rz.magias.filter(m => m.danoPorMana != null).sort((a, b) => b.danoPorMana - a.danoPorMana).slice(0, curto ? 3 : 6).map(m => `${escHtml(m.nome)} ${m.danoPorMana}${m.overkillPct >= 15 ? ` <span class="tb-av">overkill ${m.overkillPct}%</span>` : ''}`).join(' · ');
+        const runas = rz.magias.filter(m => m.danoPorOuro != null).map(m => `${escHtml(m.nome)} ${m.danoPorOuro}/ouro`).join(' · ');
         const ondas = rz.ondas && rz.ondas.n ? `ondas de ${rz.ondas.tam}: mortas em ${rz.ondas.matar}s, espera ${rz.ondas.timer}s ${rz.ondas.spawnLimita ? '<span class="tb-av">(spawn limita)</span>' : '<span class="tb-ok">(dano limita)</span>'}` : '';
         return `<div class="tb-mut" style="font-size:10px">dano: ${vocs}${ondas ? ' · ' + ondas : ''}</div>` + (top ? `<div class="tb-mut" style="font-size:10px">dano/mana: ${top}${runas ? ' · ' + runas : ''}</div>` : '');
     }
@@ -2099,40 +2784,53 @@
     };
     let _skillsT = 0;
     function anotarSkills(party) {
-        if (!ESTADO_WS.sk) ESTADO_WS.sk = ler('skills_vistas', {});
+        if (!ESTADO_WS.sk) ESTADO_WS.sk = ler('skills_vistas', {}) || {};
         for (const p of party) {
             if (!p || !p.vocation || !p.skills) continue;
             const x = { dist: _skill(p, ['distance']), melee: _skill(p, ['melee', 'sword', 'axe', 'club', 'fist']), ml: _skill(p, ['magicLevel', 'magic', 'maglevel']) };
-            ESTADO_WS.sk[p.vocation] = Object.fromEntries(Object.entries(x).filter(([, v]) => v != null));
+            const bons = Object.fromEntries(Object.entries(x).filter(([, v]) => v != null));
+            /* v2.11 — frame sem as skills (ou com nome que o helper não conhece)
+             * dava {} e APAGAVA o que já tinha sido visto; agora só soma. */
+            if (!Object.keys(bons).length) continue;
+            ESTADO_WS.sk[p.vocation] = Object.assign({}, ESTADO_WS.sk[p.vocation], bons);
         }
         if (Date.now() - _skillsT > 60000) { _skillsT = Date.now(); guardar('skills_vistas', ESTADO_WS.sk); }
     }
     function observarEnviado(o) {
         if (!o || !o.type) return;
-        const d = o.data || {};
+        try { mkObservarEnviado(o); } catch (e) { falhou('mercado (enviado)', e); }   // v2.11 — conta as ações do mercado (limite 20/min por conta)
+        const d = (o.data && typeof o.data === 'object') ? o.data : {};
         if (o.type === 'start_hunt') { ESTADO_WS.ultimoStart = Object.assign({ t: Date.now() }, d); return; }
         /* v2.9.0 — kit novo = medição nova. A mana média de cada personagem é o
          * que decide o regime do Inteligente; misturar o kit velho com o novo
          * fazia o regime oscilar (pesado → mana cai → leve → mana sobe → …). */
-        if (o.type === 'profiles_set' && d.vocation && d.profiles) {
+        if (o.type === 'profiles_set' && d.vocation && d.profiles && typeof d.profiles === 'object') {
+            /* o cliente manda o perfil INTEIRO da vocação: vale como real (perfilReal),
+             * mas não marca perfisDoServidor — as outras três continuam sem */
             if (!ESTADO_WS.profiles) ESTADO_WS.profiles = {};
             ESTADO_WS.profiles[d.vocation] = clonar(d.profiles);
             delete RAZAO.vitais[d.vocation];
             return;
         }
-        if (o.type === 'update_battle_config' && d.who != null) { aplicarConfigLocal(vocDoIndice(d.who), d); const v = vocDoIndice(d.who); if (v) delete RAZAO.vitais[v]; }
+        if (o.type === 'update_battle_config' && d.who != null) { aplicarConfigLocal(vocDoIndice(d.who), d); const v = vocDoIndice(d.who); if (v) delete RAZAO.vitais[v]; return; }
+        /* v2.11 — analisador zerado (botão da janela ou o Scan): a sessão do
+         * Analisador fecha aqui — as contas dela partiam do zero antigo. */
+        if (o.type === 'analyzer_reset') { if (SESSAO) fecharSessao('analisador zerado'); }
     }
     function observarRecebido(o) {
+        try { observarProgresso(o); } catch { }       // v2.11 — aba Progresso: só leitura (chaves, bestiário, prey, plano offline)
+        try { diagObservar(o); } catch { }            // v2.11 — Diagnóstico: guarda só a FORMA das mensagens
+        try { observarMercado(o); } catch (e) { falhou('observarMercado', e); }   // v2.11 — aba Mercado: premium, mochila, protegidos, respostas do mercado
         if (!o || !o.type) return;
-        const d = o.data || {};
+        const d = (o.data && typeof o.data === 'object') ? o.data : {};
         if (o.type === 'depot_state' && Array.isArray(d.entries)) {
             ESTADO_WS.depot = { entries: clonar(d.entries), used: d.used, total: d.total }; ESTADO_WS.depot_t = Date.now();
             if (ABA === 'equip') renderizar();
             return;
         }
         if (o.type === 'frame') {
-            const st = d.state || {};
-            const an = d.analyzer || null;
+            const st = (d.state && typeof d.state === 'object') ? d.state : {};
+            const an = (d.analyzer && typeof d.analyzer === 'object') ? d.analyzer : null;
             ESTADO_WS.frame = {
                 t: Date.now(), cap: st.cap || null, balance: st.balance != null ? Number(st.balance) : null,
                 lureTier: st.lureTier != null ? st.lureTier : null,
@@ -2144,15 +2842,21 @@
                            lootGold: Number(an.lootGold) || 0, suppliesGold: Number(an.suppliesGold) || 0,
                            damageDealt: Number(an.damageDealt) || 0, damageTaken: Number(an.damageTaken) || 0, healingDone: Number(an.healingDone) || 0,
                            drops: (an.drops && typeof an.drops === 'object') ? an.drops : {} } : null,
-                /* v2.6.3 — por personagem: vida/mana e o que cada um bebeu (estudo de builds) */
+                /* v2.6.3 — por personagem: vida/mana e o que cada um bebeu (estudo de builds).
+                 * Esta lista é buscada por `voc`, então pode pular buracos; a
+                 * ORDEM (o `who`) mora em ESTADO_WS.party. */
                 party: Array.isArray(st.party) ? st.party.map(p => p && ({ voc: p.vocation, hp: p.hp, maxHp: p.maxHp, mana: p.mana, maxMana: p.maxMana,
                            suppliesGold: Number(p.suppliesGold) || 0, supplyUsed: p.supplyUsed || {},
                            dist: p.skills && p.skills.distance ? Number(p.skills.distance.value) + (Number(p.skills.distance.bonus) || 0) : null })).filter(Boolean) : []
             };
-            if (Array.isArray(st.party) && st.party.length) { ESTADO_WS.party = st.party.map(p => p && p.vocation).filter(Boolean); try { razaoVitais(RAZAO, st.party); } catch (e) { } try { anotarSkills(st.party); } catch (e) { } }
+            if (Array.isArray(st.party) && st.party.length) {
+                ESTADO_WS.party = vocsPorPosicao(st.party);
+                try { razaoVitais(RAZAO, st.party); } catch (e) { falhou('livro-razão (vitais)', e); }
+                try { anotarSkills(st.party); } catch (e) { falhou('anotarSkills', e); }
+            }
             if (Array.isArray(d.events)) { const agora = Date.now(); for (const ev of d.events) {
-                if (!ev) continue;
-                try { razaoEvento(RAZAO, ev, agora); } catch (e) { }
+                if (!ev || typeof ev !== 'object') continue;
+                try { razaoEvento(RAZAO, ev, agora); } catch (e) { falhou('livro-razão (eventos)', e); }
                 if (ev.kind === 'update_battle_config' && ev.who != null) {
                     ESTADO_WS.eco[ev.who] = Date.now();
                     aplicarConfigLocal(vocDoIndice(ev.who), ev.config);
@@ -2161,29 +2865,51 @@
             return;
         }
         if (o.type === 'welcome' || o.type === 'resume') {
-            if (d.worldToken) ESTADO_WS.worldToken = d.worldToken;
-            if (d.profiles && typeof d.profiles === 'object') ESTADO_WS.profiles = clonar(d.profiles);
+            /* v2.11 — RECONEXÃO. welcome = sessão NOVA no servidor: boss, hunt,
+             * party, start pendente e ecos da sessão anterior não valem mais
+             * (o boss "em andamento" ficava preso depois de uma queda). */
+            if (o.type === 'welcome') {
+                Object.assign(ESTADO_WS, { boss: null, huntId: null, party: [], ultimoStart: null, eco: {}, frame: null });
+                if (d.account && typeof d.account === 'object' && d.account.name) {
+                    ESTADO_WS.conta = { nome: String(d.account.name), main: d.account.mainVocation || null };
+                    if (_gavetaSemConta) gavetaPeloWelcome(ESTADO_WS.conta);
+                }
+            }
+            if (typeof d.worldToken === 'string' && d.worldToken) ESTADO_WS.worldToken = d.worldToken;
+            if (d.profiles && typeof d.profiles === 'object') { ESTADO_WS.profiles = clonar(d.profiles); ESTADO_WS.perfisDoServidor = true; }
             if (d.battleConfigs && typeof d.battleConfigs === 'object') ESTADO_WS.battleConfigs = clonar(d.battleConfigs);
-            if (Array.isArray(d.roster) && d.roster.length) ESTADO_WS.roster = d.roster.map(r => r && r.vocation).filter(Boolean);
+            if (Array.isArray(d.roster) && d.roster.length) ESTADO_WS.roster = vocsPorPosicao(d.roster);
             if (Array.isArray(d.roster) && d.roster.length && d.roster.some(r => r && r.equipment)) {
                 ESTADO_WS.rosterFull = clonar(d.roster); ESTADO_WS.rosterFull_t = Date.now();
             }
-            if (Array.isArray(d.state && d.state.party) && d.state.party.length) ESTADO_WS.party = d.state.party.map(p => p && p.vocation).filter(Boolean);
-            if (d.worldToken) _danosRestPendente = true;   // amostrar() lê /spell-numbers quando o catálogo estiver pronto
+            if (Array.isArray(d.state && d.state.party) && d.state.party.length) ESTADO_WS.party = vocsPorPosicao(d.state.party);
+            if (d.worldToken) { _danosRestPendente = true; _danosRestProxima = 0; }   // amostrar() lê /spell-numbers quando o catálogo estiver pronto
             if (o.type === 'welcome') { renderizar(); return; }
+            /* v2.11 — resume SEM huntId = retomada na cidade: não é caçada, e
+             * não pode criar frame "fresco" (emHunt() mentiria por 5 s) */
+            if (d.huntId == null) { ESTADO_WS.huntId = null; ESTADO_WS.boss = null; ESTADO_WS.frame = null; renderizar(); return; }
         }
         if (o.type === 'hunt_started' || o.type === 'resume') {
+            /* v2.11 — BOSS / TORRE. Boss é o que o cliente PEDIU com bossId, o
+             * id 800 (o "slot" de boss do servidor) ou um id fora do catálogo
+             * de hunts (Elite, torre, treino). O `autoBoss` NÃO decide: ele vem
+             * como boolean em hunt comum também, e a 2.10 marcava "boss em
+             * andamento" numa caçada normal — travando Scan e Auto Hunt. */
             const u = ESTADO_WS.ultimoStart;
-            const bossId = (u && Date.now() - u.t < 60000 && u.bossId) ? u.bossId : null;
-            const ehBoss = !!bossId || typeof d.autoBoss === 'boolean';
+            const recente = !!(u && Date.now() - u.t < 60000);
+            const bossId = recente && u.bossId ? String(u.bossId) : null;
+            const torre = (recente && !!u.tower) || !!(d.state && typeof d.state === 'object' && d.state.tower != null);
+            const noCat = huntNoCatalogo(d.huntId);
+            const ehBoss = !!bossId || torre || d.huntId === HUNT_ID_BOSS || noCat === false || d.training === true;
             ESTADO_WS.huntId = d.huntId != null ? d.huntId : null;
             ESTADO_WS.hunt_t = Date.now();
             RAZAO = razaoNovo();
-            ESTADO_WS.frame = ESTADO_WS.frame || { t: Date.now(), cap: null, balance: null, lureTier: null, active: [] };
+            if (Array.isArray(d.state && d.state.party) && d.state.party.length) ESTADO_WS.party = vocsPorPosicao(d.state.party);
+            ESTADO_WS.frame = ESTADO_WS.frame || { t: Date.now(), cap: null, balance: null, lureTier: null, active: [], party: [] };
             if (ehBoss) {
-                ESTADO_WS.boss = bossId || ESTADO_WS.boss || '?';
+                ESTADO_WS.boss = bossId || (torre ? 'torre' : d.training === true ? 'treino' : '?');
                 if (bossId) { guardar('boss_nome', bossId); }
-                log('boss em andamento (socket): ' + ESTADO_WS.boss, 'ok');
+                log('boss em andamento (socket): ' + ESTADO_WS.boss + (d.huntId != null ? ' · id ' + d.huntId : ''), 'ok');
             } else {
                 ESTADO_WS.boss = null;
                 const h = (CAT.hunts || []).find(x => x.id === d.huntId);
@@ -2198,20 +2924,29 @@
             return;
         }
         if (o.type === 'error') {
-            ESTADO_WS.ultimoErro = (d.code || d.key || JSON.stringify(d)).toString();
+            ESTADO_WS.ultimoErro = String(d.code || d.key || JSON.stringify(d));
             log('servidor respondeu erro: ' + ESTADO_WS.ultimoErro, 'erro');
             return;
         }
         if (o.type === 'ended' || o.type === 'exit_pending') {
             if (o.type === 'ended') {
-                ESTADO_WS.boss = null; ESTADO_WS.ultimoStart = null; ESTADO_WS.frame = null; ESTADO_WS.party = [];
-                const sm = d.summary || {};
-                if (sm.huntId != null && (CAT.hunts || []).some(x => x.id === sm.huntId)) { guardar('hunt_id', sm.huntId); guardar('hunt_manual', sm.huntId); }
+                const sm = (d.summary && typeof d.summary === 'object') ? d.summary : {};
+                /* v2.11 — `ended` = fora da caçada: huntId zera junto (o Scan e o
+                 * Auto Hunt viam "ainda na hunt X" depois de uma morte). O que
+                 * acabou fica em ultimoEnded para quem precisar do motivo. */
+                ESTADO_WS.ultimoEnded = { t: Date.now(), huntId: sm.huntId != null ? sm.huntId : ESTADO_WS.huntId, reason: sm.reason || null, boss: ESTADO_WS.boss };
+                ESTADO_WS.boss = null; ESTADO_WS.ultimoStart = null; ESTADO_WS.frame = null; ESTADO_WS.party = []; ESTADO_WS.huntId = null;
+                if (sm.huntId != null && sm.huntId !== HUNT_ID_BOSS && huntNoCatalogo(sm.huntId)) { guardar('hunt_id', sm.huntId); guardar('hunt_manual', sm.huntId); }
             }
             return;
         }
     }
 
+    /* v2.11 — O ANALISADOR DO PRÓPRIO JOGO PRIMEIRO. frame.analyzer (em
+     * ESTADO_WS.frame.an) traz abates, xp, xp raw, loot e tempo da caçada — o
+     * mesmo número da janela "Estatísticas da caça", sem depender dela aberta.
+     * O DOM fica de reserva (frame velho: helper sem socket), só LENDO. */
+    const anDoFrame = () => (frameFresco() && ESTADO_WS.frame.an) ? ESTADO_WS.frame.an : null;
     function lerExpTotal() {
         // "EXP 1.868.791 / 1.965.000" — aria-label ou texto
         const el = tid('rail-level-xp-pair');
@@ -2222,24 +2957,23 @@
     /* Acha UMA vez o elemento-folha que mostra "N abates" e guarda a
      * referência. innerText do body custa relayout completo; textContent de um
      * nó conhecido custa nada. Se o nó sair da árvore (troca de tela), procura
-     * de novo — no máximo uma varredura por troca, não uma por amostra. */
-    let _noAbates = null, _reabriuAnalyzerEm = 0;
+     * de novo — no máximo uma varredura por troca, não uma por amostra.
+     * ⚠ v2.11 — NUNCA CLICA. Até a 2.10, com a janela "Estatísticas da caça"
+     * fechada, isto clicava em hud-analyzer a cada 60 s — o jogador fechava a
+     * janela e ela voltava sozinha (CONFIRMADO). Com o frame não precisa: o
+     * contador vem de frame.analyzer.killsTotal. Sem frame e sem janela: null. */
+    let _noAbates = null;
     function lerAbates() {
+        const an = anDoFrame();
+        if (an && Number.isFinite(an.kills)) return an.kills;
         const bom = (el) => el && el.isConnected && /\d+\s*abates/i.test(el.textContent || '');
         if (!bom(_noAbates)) {
             _noAbates = null;
-            /* ⚠ O CONTADOR SO EXISTE COM A JANELA "ESTATISTICAS DA CACA" ABERTA.
-             * Fechada (o "x" dela e vizinho de outros fechar), toda sessao sai
-             * sem abates e sem ponto de calibracao. hud-analyzer reabre. */
-            if (!tid('analyzer-session') && tid('hud-analyzer') && Date.now() - _reabriuAnalyzerEm > 60000) {
-                _reabriuAnalyzerEm = Date.now();
-                try { tid('hud-analyzer').click(); } catch (e) { }
-                return null;   // a janela monta no proximo tick
-            }
             /* o contador vive na janela "Estatisticas da caca" (data-testid
              * analyzer-session, mapeado em 19/09). Procurar so dentro dela: e
              * barato e nao confunde com "abates" de outro texto da pagina. */
-            const raiz = tid('analyzer-session') || document;
+            const raiz = tid('analyzer-session');
+            if (!raiz) return null;
             const cands = raiz.querySelectorAll('div,span,p');
             for (let i = 0; i < cands.length; i++) {
                 const e = cands[i];
@@ -2277,8 +3011,154 @@
      *  sem confirmação; vende TUDO que o painel do NPC marcar; lure NÃO é
      *  restaurado ao voltar; magia não é tocada. Qualquer falha desliga a
      *  automação — nunca ficar em loop na cidade.
+     *
+     *  v2.11 — "vende tudo que o painel marcar" CAIU: o sell_loot do ciclo de
+     *  21:3x (TIBIDLE.md §13) levou elvish bow e leather boots. Agora há uma
+     *  lista "nunca vender" (equipamento + materiais de imbuement + a do dono)
+     *  que é desmarcada no painel ANTES de confirmar; se não der para
+     *  desmarcar, não vende.
      * ====================================================================== */
-    const AUTO_HUNT_PADRAO = { on: false, modo: 'pct', pct: 20, oz: 200, voltar: true, huntId: null };
+    /* @@AUTOHUNT-PURO-INICIO */
+    /* v2.11 — funções PURAS do Auto Hunt e do Scan: testes/autohunt.test.js roda
+     * este trecho no node. Nada aqui toca DOM, socket ou localStorage. */
+    const normNomeItem = s => String(s == null ? '' : s).toLowerCase().replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+    /* Equipamento = o que tem lugar no corpo em /item/info (slot, 2 mãos, tipo
+     * de arma). Munição fica de fora: é suprimento, o Paladino gasta. */
+    const TIPOS_EQUIP = /armou?rs?\b|boots|helmets?|\blegs\b|shields?|weapons?|wands?|\brods?\b|\baxes\b|swords?|clubs?|\brings?\b|amulets?|necklaces?|spellbooks?|quivers?/i;
+    function ehEquipamento(info) {
+        const a = (info && info.attrs) || {};
+        if (a.slot === 'ammo' || a.weaponType === 'ammunition' || /ammunition/i.test(a.primarytype || '')) return false;
+        return !!(a.slot || a.slotType || a.weaponType || TIPOS_EQUIP.test(a.primarytype || ''));
+    }
+    /* materiais de imbuement = todo item pedido em /assets/v167/imbuements.json */
+    const materiaisDoCatalogo = j => [...new Set(((j && j.imbuements) || []).flatMap(i => (i.items || []).map(x => normNomeItem(x && x.name))).filter(Boolean))];
+    /* O que DESMARCAR no painel de venda. linhas: [{nome, ...}] (nome = o que
+     * vem depois de "sell-check-"); o: {equip, imbu, lista, materiais,
+     * nomes: {nomeNormalizado: nomeReal} ou null, base: {nomeReal: {attrs}}}.
+     * Com a proteção de equipamento ligada, item que não se consegue
+     * classificar fica GUARDADO — vender arma por engano custa mais que
+     * levar um item a mais para o depot. */
+    function escolherDesmarcar(linhas, o) {
+        o = o || {};
+        const lista = new Set((o.lista || []).map(normNomeItem).filter(Boolean));
+        const mats = new Set((o.materiais || []).map(normNomeItem));
+        const guardar = [], vender = [];
+        for (const l of linhas || []) {
+            const n = normNomeItem(l.nome);
+            const real = o.nomes ? (o.nomes[n] || null) : null;
+            const nome = real || l.nome;
+            let motivo = null;
+            if (lista.has(n) || (real && lista.has(normNomeItem(real)))) motivo = 'sua lista';
+            else if (o.imbu && (mats.has(n) || (real && mats.has(normNomeItem(real))))) motivo = 'material de imbuement';
+            else if (o.equip) {
+                const b = real && o.base ? o.base[real] : null;
+                if (!real) motivo = 'nome não reconhecido — guardado por segurança';
+                else if (!b) motivo = 'sem dados do item — guardado por segurança';
+                else if (ehEquipamento(b)) motivo = 'equipamento' + (b.attrs && (b.attrs.slot || b.attrs.slotType) ? ' (' + (b.attrs.slot || b.attrs.slotType) + ')' : '');
+            }
+            if (motivo) guardar.push(Object.assign({}, l, { nome, motivo })); else vender.push(nome);
+        }
+        return { guardar, vender };
+    }
+    /* A caixa de marcar do painel: input, aria-checked/pressed, data-state,
+     * classe ou "✓". null = não dá para saber (aí quem decide é o total). */
+    function estadoMarcado(el) {
+        if (!el) return null;
+        const tag = String(el.tagName || '').toLowerCase();
+        if (tag === 'input' && typeof el.checked === 'boolean') return el.checked;
+        const inp = el.querySelector ? el.querySelector('input[type="checkbox"]') : null;
+        if (inp && typeof inp.checked === 'boolean') return inp.checked;
+        const at = n => (el.getAttribute ? el.getAttribute(n) : null);
+        const v = at('aria-checked') || at('aria-pressed') || at('data-checked') || at('data-state') || at('data-selected');
+        if (v != null) { if (/^(true|checked|on|1|selected)$/i.test(v)) return true; if (/^(false|unchecked|off|0)$/i.test(v)) return false; }
+        const cls = String(el.className || '');
+        if (/(^|[\s_-])(unchecked|desmarcad[oa]|off)($|[\s_-])/i.test(cls)) return false;
+        if (/(^|[\s_-])(checked|marcad[oa]|on|selected|ativo|is-checked)($|[\s_-])/i.test(cls)) return true;
+        if (/[✓✔]/.test(el.textContent || '')) return true;
+        return null;
+    }
+    /* Por que o gatilho não dispara ('' = dispara agora; null = tudo pronto,
+     * só esperando a mochila). s = fotografia do estado (motivoNaoDispara). */
+    function motivoNaoDisparaPuro(s) {
+        if (!s.on) return 'chave desligada';
+        if (s.huntId == null) return 'nenhuma hunt memorizada';
+        if (s.boss) return 'boss em andamento';                      // v2.11: nunca stop no meio de boss
+        if (s.scan) return s.scan;                                     // Scan rodando, terminando ou restaurando
+        if (s.ciclo) return 'ciclo em andamento';
+        if (s.trava) return s.trava + ' em andamento';
+        if (s.aprendendo) return 'medindo dano das magias';
+        if (s.outraAba) return 'outra aba do jogo está rodando o ciclo';
+        if (!s.emHunt) return 'party fora da caçada';
+        if (s.modal) return 'uma janela do jogo está aberta';
+        if (s.resta > 0) return `trava de 5 min após o último ciclo — libera em ${Math.ceil(s.resta / 1000)} s`;
+        if (!s.noLimite) return null;
+        return '';
+    }
+    /* F5 no meio do ciclo: só retoma se o ciclo AUTOMÁTICO deixou marca
+     * recente. Sem marca, o dono quis ficar na cidade. */
+    const CICLO_PENDENTE_MS = 10 * 60 * 1000;
+    function deveRetomarCiclo(a, pendente, agora) {
+        if (!a || !a.on || a.huntId == null) return false;
+        if (!pendente || !(pendente.t > 0)) return false;
+        const idade = agora - pendente.t;
+        return idade >= 0 && idade < CICLO_PENDENTE_MS;
+    }
+    const ciclosNaUltimaHora = (hist, agora) => (hist || []).filter(c => c && c.origem === 'auto' && agora - c.t < 3600000).length;
+    /* Scan: `ended` que o próprio Scan não pediu = falha (morte, auto exit…). */
+    function encerramentoNoScan(ctx) {
+        if (!ctx || !ctx.ativo || ctx.esperado) return null;
+        const r = String(ctx.reason == null ? '' : ctx.reason);
+        const morte = /death|dead|died|killed|wipe|defeat|morr|morte/i.test(r);
+        return { falha: true, morte, motivo: (morte ? 'morreu' : 'encerrou') + (r ? ' (' + r + ')' : '') };
+    }
+    /* Falha nunca apaga resultado bom anterior: fica o bom, com a nota. */
+    function mesclarResultadoScan(anterior, novo) {
+        const bom = r => !!(r && !r.erro && r.xpH != null);
+        if (bom(novo) || !bom(anterior)) return novo;
+        return Object.assign({}, anterior, { ultimaFalha: { t: novo.t, erro: novo.erro, xpH: novo.xpH != null ? novo.xpH : null, seg: novo.seg != null ? novo.seg : null } });
+    }
+    /* Janela medida pelo relógio do PRÓPRIO analisador (elapsedMs); o relógio
+     * da página só se o do jogo não andou (frame velho, aba dormindo). */
+    function segundosDaJanela(elAgora, elBase, segPagina) {
+        const d = (Number(elAgora) || 0) - (Number(elBase) || 0);
+        return d >= 5000 ? d / 1000 : Math.max(1, Number(segPagina) || 1);
+    }
+    const ouroBase = r => r.estavelH != null ? r.estavelH : r.ouroH;   // v2.3.0: ranking de ouro pelo estável
+    const xpBase = r => r.xpRawH != null ? r.xpRawH : r.xpH;          // v2.11: xp SEM boost/prey (resultado antigo sem raw usa xp)
+    /* Veredito relativo: quem chega a 90 % do melhor XP é "XP", 90 % do melhor
+     * ouro (e positivo) é "Ouro", os dois é "Os dois".
+     * v2.11 — JUSTO: XP pelo raw (boost e prey mudam de uma hora para outra);
+     * medição "suja" (mochila < 10 %) e de outro nível (±2) ficam FORA do
+     * ranking — aparecem, mas não competem. */
+    function vereditosScan(todos, nivelRef) {
+        const lista = (todos || []).filter(r => r && !r.erro && r.xpH != null);
+        const ref = nivelRef > 1 ? nivelRef : Math.max(0, ...lista.map(r => r.nivel || 0)) || null;
+        lista.forEach(r => { r.fora = r.suja ? 'suja' : (ref && r.nivel && Math.abs(r.nivel - ref) > 2) ? 'nivel' : null; });
+        const rank = lista.filter(r => !r.fora);
+        const melhorXp = Math.max(0, ...rank.map(xpBase)), melhorOuro = Math.max(0, ...rank.map(ouroBase));
+        rank.forEach(r => {
+            const pXp = melhorXp > 0 ? Math.round(xpBase(r) / melhorXp * 100) : 0;
+            const pOuro = melhorOuro > 0 && ouroBase(r) > 0 ? Math.round(ouroBase(r) / melhorOuro * 100) : 0;
+            const xp = pXp >= 90, ouro = pOuro >= 90;
+            r.pXp = pXp; r.pOuro = pOuro;
+            /* v2.2.4 — nunca "—": o dono leu como "sem veredito" (Barbarian
+             * Camp, 27/09). Quem não chega a 90 % mostra o quanto ficou atrás. */
+            r.veredito = xp && ouro ? 'Os dois' : xp ? 'XP' : ouro ? 'Ouro'
+                : ouroBase(r) < 0 ? 'dá prejuízo'
+                : rank.length === 1 ? 'único medido'
+                : `abaixo: ${pXp}% do xp · ${pOuro}% do ouro`;
+        });
+        lista.filter(r => r.fora).forEach(r => { r.pXp = null; r.pOuro = null; r.veredito = r.fora === 'suja' ? 'suja (mochila)' : `outro nível (${r.nivel})`; });
+        const porXp = (a, b) => xpBase(b) - xpBase(a);
+        return { lista: rank.slice().sort(porXp).concat(lista.filter(r => r.fora).sort(porXp)), rank, melhorXp, melhorOuro, nivelRef: ref,
+                 topXp: rank.slice().sort(porXp)[0] || null, topOuro: rank.slice().sort((a, b) => ouroBase(b) - ouroBase(a))[0] || null };
+    }
+    /* "ao terminar": 'ficar' só vale se o dono ESCOLHEU; o padrão antigo era
+     * 'ficar' e deixava a party no último mapa medido, com o kit do Scan. */
+    const fimDoScan = c => (!c || !c.fim || (c.fim === 'ficar' && !c.fimEscolhido)) ? 'voltar' : c.fim;
+    /* @@AUTOHUNT-PURO-FIM */
+    const AUTO_HUNT_PADRAO = { on: false, modo: 'pct', pct: 20, oz: 200, voltar: true, huntId: null,
+                               nvEquip: true, nvImbu: true, nuncaVender: [] };   // v2.11 — "nunca vender", ligado por padrão
     const autoHunt = () => Object.assign({}, AUTO_HUNT_PADRAO, ler('auto_hunt', {}));
     const guardarAutoHunt = (patch) => guardar('auto_hunt', Object.assign(autoHunt(), patch));
 
@@ -2298,6 +3178,10 @@
     /* Taxa XP = EXP/h ÷ EXP raw/h da janela "Estatísticas da caça". Os dois
      * números só existem com a janela aberta e a party caçando. */
     function lerTaxaXp() {
+        /* v2.11 — pelo frame: xp ÷ xp raw da caçada é a mesma razão (as duas
+         * por hora têm o mesmo tempo embaixo). A janela é só reserva. */
+        const an = anDoFrame();
+        if (an && an.xpRaw > 0 && an.xp > 0) return Math.round(an.xp / an.xpRaw * 100);
         const w = tid('analyzer-session');
         const raiz = w ? (w.closest('[data-testid^="window"]') || w.parentElement || w) : null;
         const t = raiz ? (raiz.innerText || '') : '';
@@ -2382,28 +3266,141 @@
     }
     const lerOuroNum = () => parseInt(((tid('hud-gold') || {}).textContent || '').replace(/\D/g, '')) || 0;
 
-    /* Passo 3 — VENDER NO NPC. Vende tudo que o painel marcar (dono, 27/09).
+    /* @@AUTOHUNT-VENDA-INICIO */
+    /* v2.11 — NUNCA VENDER. Materiais de imbuement: /assets/v167/imbuements.json
+     * (cache 7 dias). Equipamento: /item/info pelo nome (basePorNome/idsPorNome
+     * da área Equip, que já guardam cache). */
+    let _materiaisImbu = null;
+    async function materiaisImbuement() {
+        if (_materiaisImbu) return _materiaisImbu;
+        const c = ler('imbu_materiais', null);
+        if (c && c.t && Date.now() - c.t < 7 * 864e5 && Array.isArray(c.m) && c.m.length) return (_materiaisImbu = c.m);
+        const m = materiaisDoCatalogo(await buscarJSON('/assets/v167/imbuements.json'));
+        if (!m.length) throw new Error('imbuements.json veio sem materiais');
+        _materiaisImbu = m; guardar('imbu_materiais', { t: Date.now(), m });
+        return m;
+    }
+    let _nomesNorm = null, _nomesNormDe = null;
+    function nomesNormalizados(ids) {
+        /* nome normalizado E o id (se o painel usar sell-check-<id>) → nome real */
+        if (_nomesNormDe !== ids) { _nomesNorm = {}; for (const n of Object.keys(ids || {})) { _nomesNorm[normNomeItem(n)] = n; if (ids[n] != null && _nomesNorm[String(ids[n])] == null) _nomesNorm[String(ids[n])] = n; } _nomesNormDe = ids; }
+        return _nomesNorm;
+    }
+    /* Linhas do painel: cada sell-check-<item> (e sell-row-<item> de reserva).
+     * Guarda o ELEMENTO e o índice entre iguais — dois "elvish bow" (iids
+     * diferentes) teriam o mesmo data-testid e tid() só acha o primeiro. */
+    function linhasDaVenda() {
+        const p = tid('sell-panel'); if (!p) return { linhas: [], checks: 0, rows: 0 };
+        const checks = $$('[data-testid^="sell-check-"]', p), rows = $$('[data-testid^="sell-row-"]', p);
+        const vistos = {};
+        const linhas = checks.map(el => {
+            const testid = el.getAttribute('data-testid'), idx = vistos[testid] = (vistos[testid] == null ? 0 : vistos[testid] + 1);
+            return { nome: testid.slice('sell-check-'.length), testid, idx, el };
+        });
+        if (!checks.length) rows.forEach(el => { const t = el.getAttribute('data-testid'); linhas.push({ nome: t.slice('sell-row-'.length), testid: t, idx: 0, el: null }); });
+        return { linhas, checks: checks.length, rows: rows.length };
+    }
+    const totalVenda = () => { const t = tid('sell-total'); const n = t ? parseInt((t.textContent || '').replace(/\D/g, '')) : NaN; return Number.isFinite(n) ? n : null; };
+    const elDaLinha = l => (l.el && l.el.isConnected) ? l.el : ($$(`[data-testid="${l.testid}"]`)[l.idx] || null);
+    /* ponteiro SEM o click: segunda tentativa quando .click() foi ignorado —
+     * se o primeiro valeu e a tela só atrasou, não desfaz a marcação */
+    function ponteiroSemClique(el) {
+        const r = el.getBoundingClientRect();
+        const o = { bubbles: true, cancelable: true, button: 0, buttons: 1, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
+        try { el.dispatchEvent(new PointerEvent('pointerdown', Object.assign({ pointerType: 'mouse', isPrimary: true }, o))); } catch { /* PointerEvent pode faltar */ }
+        el.dispatchEvent(new MouseEvent('mousedown', o));
+        try { el.dispatchEvent(new PointerEvent('pointerup', Object.assign({ pointerType: 'mouse', isPrimary: true, buttons: 0 }, o))); } catch { /* PointerEvent pode faltar */ }
+        el.dispatchEvent(new MouseEvent('mouseup', Object.assign({}, o, { buttons: 0 })));
+    }
+    /* Desmarca cada item protegido e confere: a caixa diz "desmarcado" OU o
+     * total do painel baixou. Devolve os que não deu para desmarcar. */
+    async function desmarcarNaVenda(guardarLista) {
+        const falhas = [];
+        for (const g of guardarLista) {
+            const el = elDaLinha(g);
+            if (!el) { falhas.push(g.nome + ' (caixa sumiu)'); continue; }
+            if (estadoMarcado(el) === false) continue;
+            const t0 = totalVenda();
+            const saiu = () => estadoMarcado(elDaLinha(g)) === false || (t0 != null && totalVenda() != null && totalVenda() < t0);
+            el.click();
+            let ok = await esperarQue(saiu, 1500, 100);
+            if (!ok && estadoMarcado(elDaLinha(g)) !== false && totalVenda() === t0 && elDaLinha(g)) { ponteiroSemClique(elDaLinha(g)); ok = await esperarQue(saiu, 1500, 100); }
+            if (!ok) falhas.push(g.nome);
+        }
+        return falhas;
+    }
+    async function protecaoVenda() {
+        const a = autoHunt();
+        const o = { equip: a.nvEquip !== false, imbu: a.nvImbu !== false, lista: Array.isArray(a.nuncaVender) ? a.nuncaVender : [], materiais: [], nomes: null, base: {} };
+        if (o.imbu) o.materiais = await materiaisImbuement();
+        if (o.equip) o.nomes = nomesNormalizados(await idsPorNome());
+        return o;
+    }
+
+    /* Passo 3 — VENDER NO NPC. Vende o que o painel marcar, MENOS a lista
+     * "nunca vender" (v2.11 — antes era tudo; dono, 27/09).
      * Âncoras (27/09): sell-panel, sell-list, sell-row-<item>, sell-check-<item>,
      * sell-total, sell-confirm ("VENDER N ouro"), sell-cancel, panel-close.
      * ⚠ Em 27/09 o primeiro teste clicou em sell-confirm com .click() e NADA
      * aconteceu: painel aberto, ouro igual. Por isso: clique completo, espera
-     * por confirm-ok (se o jogo pedir), e o sucesso é medido pelo OURO. */
+     * por confirm-ok (se o jogo pedir), e o sucesso é medido pelo OURO.
+     * ⚠ v2.11 — o formato de sell-check-<item> (nome com espaço? slug?) e
+     * como a caixa mostra "marcado" NÃO foram vistos com conta logada: tudo
+     * é defensivo. Qualquer dúvida sobre o que ia ser vendido = não vende. */
     async function venderNoNpc() {
         const abrir = tid('actionbar-selling');
         if (!abrir) return { erro: 'botão VENDER (actionbar-selling) não está na tela — precisa estar na cidade' };
+        let prot;
+        try { prot = await protecaoVenda(); }
+        catch (e) { return { erro: 'não consegui montar a lista "nunca vender" (' + e.message + ') — nada vendido' }; }
         abrir.click();
         const painel = await esperarQue(() => tid('sell-panel'), 6000, 150);
         if (!painel) return { erro: 'painel de venda não abriu' };
-        await dorme(500);
+        const fecharPainel = () => { const c = tid('sell-cancel') || (tid('sell-panel') && tid('sell-panel').querySelector('[data-testid="panel-close"]')); if (c) c.click(); };
+        /* v2.11 — o total era lido após 500 ms fixos. Agora espera o painel
+         * MONTAR: total com número e igual em 3 leituras seguidas (~450 ms). */
+        let ultimo = null, iguais = 0;
+        const montado = await esperarQue(() => {
+            const t = tid('sell-total'), txt = t ? (t.textContent || '').trim() : '';
+            const n = $$('[data-testid^="sell-check-"],[data-testid^="sell-row-"]', tid('sell-panel') || document).length;
+            const assin = txt + '|' + n;
+            iguais = assin === ultimo ? iguais + 1 : 0; ultimo = assin;
+            const cf = tid('sell-confirm'), vazio = !n && (!cf || cf.disabled);   // painel vazio pode vir sem número no total
+            return (/\d/.test(txt) || vazio) && iguais >= 3;
+        }, 6000, 150);
+        if (!montado) { fecharPainel(); await dorme(400); return { erro: 'painel de venda abriu mas o total (sell-total) não assentou em 6 s — nada vendido' }; }
+        const totalAntes = totalVenda() || 0;
+        let guardados = [];
+        if (totalAntes > 0) {
+            const lv = linhasDaVenda();
+            if (!lv.linhas.length) { fecharPainel(); await dorme(400); return { erro: 'painel com total ' + totalAntes + ' mas sem linhas (sell-check-*/sell-row-*) — não sei o que ia vender, nada vendido' }; }
+            if (prot.equip) {
+                const reais = lv.linhas.map(l => prot.nomes[normNomeItem(l.nome)]).filter(Boolean);
+                try { prot.base = await basePorNome(reais); } catch (e) { prot.base = {}; }
+            }
+            const sel = escolherDesmarcar(lv.linhas, prot);
+            guardados = sel.guardar;
+            if (guardados.length) {
+                if (!lv.checks) { fecharPainel(); await dorme(400); return { erro: `achei ${guardados.length} item(ns) para NÃO vender (${guardados.map(g => g.nome).join(', ')}) mas o painel não tem as caixas sell-check-* — nada vendido` }; }
+                const falhas = await desmarcarNaVenda(guardados);
+                const ainda = guardados.filter(g => estadoMarcado(elDaLinha(g)) === true).map(g => g.nome);
+                const semEstado = guardados.some(g => estadoMarcado(elDaLinha(g)) == null);
+                const totalDepois = totalVenda();
+                const problema = falhas.length ? 'não consegui desmarcar ' + falhas.join(', ')
+                    : ainda.length ? 'continuam marcados: ' + ainda.join(', ')
+                    : (semEstado && !(totalDepois != null && totalDepois < totalAntes)) ? `desmarquei ${guardados.length} item(ns) e o total não baixou (${totalAntes} → ${totalDepois})` : null;
+                if (problema) { fecharPainel(); await dorme(400); return { erro: problema + ' — painel fechado, NADA vendido (lista "nunca vender")' }; }
+                log(`nunca vender: ${guardados.map(g => g.nome + ' (' + g.motivo + ')').join(', ')} — total ${totalAntes.toLocaleString('pt-BR')} → ${(totalDepois || 0).toLocaleString('pt-BR')}`, 'info');
+            }
+        }
         const total = ((tid('sell-total') || {}).textContent || '?').trim();
         const totalNum = parseInt(total.replace(/\D/g, '')) || 0;
-        const fecharPainel = () => { const c = tid('sell-cancel') || (tid('sell-panel') && tid('sell-panel').querySelector('[data-testid="panel-close"]')); if (c) c.click(); };
         const confirmar = tid('sell-confirm');
         if (!confirmar || confirmar.disabled || !totalNum) {
             fecharPainel();
             await dorme(400);
-            log('nada para vender (total ' + total + ')', 'info');
-            return { ok: true, vazio: true };
+            log('nada para vender (total ' + total + ')' + (guardados.length ? ' — tudo que havia está na lista "nunca vender"' : ''), 'info');
+            return { ok: true, vazio: true, guardados };
         }
         const ouroAntes = lerOuroNum();
         const vendeu = () => lerOuroNum() > ouroAntes;
@@ -2422,8 +3419,9 @@
         if (tid('sell-panel')) fecharPainel();
         await dorme(400);
         log(`vendido no NPC: ${total} ouro · ${ouroAntes.toLocaleString('pt-BR')} → ${lerOuroNum().toLocaleString('pt-BR')}`, 'ok');
-        return { ok: true, total: totalNum };
+        return { ok: true, total: totalNum, guardados };
     }
+    /* @@AUTOHUNT-VENDA-FIM */
 
     /* Passo 4 — DEPOT: guardar tudo. Âncoras (27/09): depot-panel (modal com
      * scrim), depot-guardar-tudo, depot-guardar-tudo-nota, depot-lugares
@@ -2449,7 +3447,10 @@
         await dorme(300);
         log(`depot: mochila ${antes ? antes.usado.toLocaleString('pt-BR') : '?'} → ${depois ? depois.usado.toLocaleString('pt-BR') : '?'} oz` + (lugares ? ` · depot ${lugares}` : ''), 'ok');
         if (tid('depot-panel')) return { erro: 'janela do depot não fechou' };
-        return { ok: true };
+        /* v2.11 — lugares "113 de 300" viram número: o histórico mostra o depot
+         * enchendo e o ciclo sabe quando ele lotou */
+        const ml = lugares.replace(/\./g, '').match(/(\d+)\s*(?:de|\/)\s*(\d+)/i);
+        return { ok: true, lugares, depUsado: ml ? +ml[1] : null, depTotal: ml ? +ml[2] : null };
     }
 
     /* Passo 5 — VOLTAR para a hunt memorizada. hunt-item-<id> + hunt-confirm
@@ -2504,26 +3505,68 @@
         return !!(l && l.aba !== ABA_ID && Date.now() - l.t < CICLO_LOCK_MS);
     }
 
+    /* v2.11 — TRAVA COMUM do jogo (item 4 da auditoria). Em 29/09 achado no
+     * código: scanTerminar punha SCAN.ativo=false ANTES de ir para o melhor
+     * mapa, e o gatilho do Auto Hunt (3 s) podia disparar o ciclo no meio da
+     * troca; o "ir ›" do Scan também não olhava o ciclo. Quem mexe no mapa
+     * (ciclo de venda, Scan, restauração do Scan, "ir ›") pergunta aqui antes
+     * e ocupa enquanto trabalha. Devolve o nome de quem ocupa, ou null. */
+    let _travaJogo = null;
+    const scanOcupado = () => SCAN.ativo || SCAN.ocupado || SCAN.restaurando;
+    function travaJogo() {
+        if (_cicloEmCurso) return 'ciclo de venda';
+        if (scanOcupado()) return SCAN.ativo ? 'Scan' : 'Scan (terminando/restaurando)';
+        return _travaJogo;
+    }
+
+    /* v2.11 — HISTÓRICO dos últimos 20 ciclos (hora, duração, ouro vendido,
+     * oz antes/depois, depot, erro) e alarme se passar de 3 por hora: mochila
+     * enchendo em < 20 min é limite mal posto ou depot que não esvazia. */
+    const MAX_HIST_CICLOS = 20;
+    const historicoCiclos = () => ler('ciclos_hist', []);
+    let _alarmeCiclosEm = 0;
+    function anotarCiclo(reg) {
+        const h = historicoCiclos(); h.push(reg);
+        while (h.length > MAX_HIST_CICLOS) h.shift();
+        guardar('ciclos_hist', h);
+        const n = ciclosNaUltimaHora(h, Date.now());
+        if (n > 3 && Date.now() - _alarmeCiclosEm > 3600000) {
+            _alarmeCiclosEm = Date.now();
+            log(`⚠ ${n} ciclos de venda na última hora — a mochila enche em menos de 20 min: limite alto demais, depot cheio ou venda falhando (veja o histórico na aba Auto Hunt)`, 'erro');
+        }
+    }
+
     /* origem: 'auto' (gatilho da mochila: passos 1-5), 'venda' (botão Venda
      * rápida: passos 1-4 — encerra se estiver caçando — e FICA na cidade) ou
      * 'finalizar' (botão Finalizar hunt: só o passo 1). Decisão do dono em
      * 27/09: "Venda rápida completa: um clique dentro da hunt encerra,
      * purifica, vende, guarda e fica na cidade". */
+    const NOME_ORIGEM = { auto: 'AUTO HUNT', venda: 'Venda rápida', finalizar: 'Finalizar hunt' };
     async function cicloDeVenda(origem) {
         if (_cicloEmCurso) { log('ciclo já em andamento', 'erro'); return false; }
         if (_aprendendo) { log('medindo dano — ciclo adiado', 'erro'); return false; }
         if (cicloTravadoPorOutraAba()) { log('outra aba do jogo está rodando o ciclo — esta aba fica quieta', 'erro'); return false; }
+        const ocup = travaJogo();
+        if (ocup) { log(`${NOME_ORIGEM[origem] || origem}: ${ocup} em andamento — espera terminar`, 'erro'); return false; }
         _cicloEmCurso = true;
         guardar('ciclo_lock', { aba: ABA_ID, t: Date.now() });
         renderizar();
         const a = autoHunt();
+        const c0 = capLivre();
+        const reg = { t: Date.now(), origem, dur: null, ouro: null, ozAntes: c0 ? c0.usado : null, ozDepois: null, depot: null, erro: null, guardados: 0 };
+        /* v2.11 — a mensagem dizia "AUTO HUNT parou" até na Venda rápida */
         const desligar = (passo, erro) => {
-            log(`AUTO HUNT parou no passo "${passo}": ${erro}` + (a.on ? ' — automação DESLIGADA' : ''), 'erro');
+            reg.erro = passo + ': ' + erro;
+            log(`${NOME_ORIGEM[origem] || origem} parou no passo "${passo}": ${erro}` + (a.on ? ' — automação DESLIGADA' : ''), 'erro');
             if (a.on) guardarAutoHunt({ on: false });
         };
         try {
-            const c = capLivre();
-            log(`ciclo de venda (${origem}) iniciado — mochila ${c ? c.pct + '% livre' : '?'}`, 'info');
+            log(`ciclo de venda (${origem}) iniciado — mochila ${c0 ? c0.pct + '% livre' : '?'}`, 'info');
+            /* v2.11 — marca de ciclo AUTOMÁTICO em curso: é só ela que autoriza
+             * o boot a retomar depois de um F5 (antes o boot retomava sempre
+             * que a chave estava ligada e a party na cidade — voltava a caçar
+             * mesmo quando o dono tinha ficado na cidade de propósito). */
+            if (origem === 'auto') guardar('ciclo_pendente', { t: Date.now(), huntId: a.huntId });
             /* Já na cidade (ciclo retomado depois de uma recarga, ou Venda
              * rápida fora da hunt): pula o encerrar em vez de falhar. */
             if (origem === 'finalizar' || emHunt()) {
@@ -2536,8 +3579,18 @@
             if (r2.pulou) log('purificar: ' + r2.pulou + ' (pulei)', 'info');
             const r3 = await venderNoNpc();
             if (r3.erro) { desligar('vender', r3.erro); return false; }
+            reg.ouro = r3.total || 0; reg.guardados = (r3.guardados || []).length;
             const r4 = await guardarNoDepot();
             if (r4.erro) { desligar('depot', r4.erro); return false; }
+            if (r4.depTotal) reg.depot = { usado: r4.depUsado, total: r4.depTotal };
+            /* v2.11 — DEPOT CHEIO: o "guardar tudo" manda só o que couber. Se a
+             * mochila continua no limite, voltar à caçada dispararia outro
+             * ciclo em 5 min, para sempre. Para aqui e desliga. */
+            if (mochilaNoLimite()) {
+                const c = capLivre();
+                desligar('depot', `a mochila continua no limite depois do depot (${c ? c.pct + '% livre' : '?'}${r4.lugares ? ' · depot ' + r4.lugares : ''}) — depot cheio?`);
+                return false;
+            }
             if (origem === 'auto' && a.voltar) {
                 if (a.huntId == null) { desligar('voltar', 'nenhuma hunt memorizada'); return false; }
                 const r5 = await voltarParaHunt(a.huntId);
@@ -2551,31 +3604,63 @@
         } finally {
             _cicloEmCurso = false; _ultimoCiclo = Date.now();
             guardar('ciclo_lock', null);
+            if (origem === 'auto') guardar('ciclo_pendente', null);
+            try {
+                const c1 = capLivre();
+                reg.dur = Math.round((Date.now() - reg.t) / 1000); reg.ozDepois = c1 ? c1.usado : null;
+                if (origem !== 'finalizar') anotarCiclo(reg);
+            } catch { /* histórico nunca derruba o ciclo */ }
             renderizar();
         }
     }
 
     /* v1.9.7 — POR QUE NÃO DISPAROU. Em 27/09 o dono ligou a chave com 97 %
      * e nada aconteceu: era a trava de 5 min (a Venda rápida de instantes
-     * antes contou como ciclo). A tela agora diz o motivo, com contagem. */
+     * antes contou como ciclo). A tela agora diz o motivo, com contagem.
+     * v2.11 — boss em andamento (nunca stop no meio de boss), Scan ainda
+     * ocupado depois de desligar (terminando/restaurando) e a trava comum. */
     function motivoNaoDispara() {
         const a = autoHunt();
-        if (!a.on) return 'chave desligada';
-        if (SCAN.ativo) return 'Scan em andamento';
-        if (a.huntId == null) return 'nenhuma hunt memorizada';
-        if (_cicloEmCurso) return 'ciclo em andamento';
-        if (_aprendendo) return 'medindo dano das magias';
-        if (cicloTravadoPorOutraAba()) return 'outra aba do jogo está rodando o ciclo';
-        if (!emHunt()) return 'party fora da caçada';
-        if (modalAberto()) return 'uma janela do jogo está aberta';
-        const resta = CICLO_INTERVALO_MIN_MS - (Date.now() - _ultimoCiclo);
-        if (resta > 0) return `trava de 5 min após o último ciclo — libera em ${Math.ceil(resta / 1000)} s`;
-        if (!mochilaNoLimite()) return null;            // tudo pronto, só esperando a mochila
-        return '';                                      // dispara agora
+        return motivoNaoDisparaPuro({
+            on: a.on, huntId: a.huntId, boss: !!ESTADO_WS.boss,
+            scan: SCAN.ativo ? 'Scan em andamento' : scanOcupado() ? 'Scan terminando/restaurando' : null,
+            ciclo: _cicloEmCurso, trava: _travaJogo, aprendendo: _aprendendo, outraAba: cicloTravadoPorOutraAba(),
+            emHunt: emHunt(), modal: modalAberto(), resta: CICLO_INTERVALO_MIN_MS - (Date.now() - _ultimoCiclo),
+            noLimite: mochilaNoLimite()
+        });
     }
     function gatilhoAutoHunt() {
+        ouvirEncerramentos();
+        /* v2.11 — marca de ciclo que ficou para trás (a party já está caçando
+         * de novo, ou passou do prazo) não pode autorizar retomada depois */
+        const p = ler('ciclo_pendente', null);
+        if (p && !_cicloEmCurso && (emHunt() || !(Date.now() - p.t < CICLO_PENDENTE_MS))) guardar('ciclo_pendente', null);
         if (motivoNaoDispara() !== '') return;
         cicloDeVenda('auto');
+    }
+
+    /* v2.11 — `ended` OUVIDO À PARTE. O observador do socket (outra área)
+     * zera o frame no `ended` mas não o huntId; o Scan em 'medindo' seguia
+     * achando que a party estava no mapa, gravava m=null (invisível na
+     * tabela) e ia para o próximo com lure máximo — depois de uma MORTE.
+     * Este ouvinte só lê: pega o `ended` com summary.reason e avisa o Scan. */
+    function ouvirEncerramentos() {
+        const ws = WS.socket;
+        if (!ws || ws.__tbEncerramentos || !ws.addEventListener) return;
+        ws.__tbEncerramentos = true;
+        ws.addEventListener('message', ev => {
+            try {
+                if (typeof ev.data !== 'string' || ev.data.indexOf('"ended"') < 0) return;
+                const o = JSON.parse(ev.data);
+                if (o && o.type === 'ended') aoEncerrarCacada((o.data && o.data.summary) || {});
+            } catch { /* frame que não é JSON: não é comigo */ }
+        });
+    }
+    function aoEncerrarCacada(sm) {
+        const f = encerramentoNoScan({ ativo: SCAN.ativo, esperado: Date.now() - (SCAN.stopEnviado || 0) < 40000, reason: sm.reason });
+        if (!f || SCAN.encerrou) return;
+        SCAN.encerrou = Object.assign({ t: Date.now(), huntId: sm.huntId != null ? sm.huntId : null }, f);
+        log(`Scan: a caçada ${f.morte ? 'terminou em MORTE' : 'foi encerrada por fora do Scan'}${sm.reason ? ' (motivo do servidor: ' + sm.reason + ')' : ''} — o Scan vai parar`, 'erro');
     }
 
     /* =========================================================================
@@ -2594,13 +3679,19 @@
      *  fecha esse resumo sozinho (summary-close) — é a única janela que pisca.
      *  Estado próprio (scan_cfg / scan_resultados): não mexe em hunt_id,
      *  modelo escolhido, Auto Hunt nem nas sessões do Analisador.
+     *
+     *  v2.11 — o Scan DEVOLVE o jogo como achou: foto do mapa, do lure e dos
+     *  perfis (kits) ao ligar; ao parar/terminar volta para o mapa de antes
+     *  (se "ficar" não foi escolhido de propósito) e reenvia os perfis que
+     *  existiam. Morte/`ended` por fora para o Scan e fica registrado.
      * ====================================================================== */
-    const SCAN_PADRAO = { mapas: [], minutos: 5, lureMax: true, fim: 'ficar', modelo: 'equilibrado', comparar: false,
+    const SCAN_PADRAO = { mapas: [], minutos: 5, lureMax: true, fim: 'voltar', modelo: 'equilibrado', comparar: false,
                           variantes: ['inteligente', 'equilibrado', 'economica'] };   // comparar: cada mapa × cada variante (estudo)
     const scanCfg = () => Object.assign({}, SCAN_PADRAO, ler('scan_cfg', {}));
     const guardarScanCfg = (patch) => guardar('scan_cfg', Object.assign(scanCfg(), patch));
     const scanResultados = () => ler('scan_resultados', {});
-    const SCAN = { ativo: false, fila: [], idx: -1, huntId: null, fase: 'parado', t0: 0, base: null, vivo: null, capMin: 100, erro: null, ocupado: false, iniciadoEm: 0 };
+    const SCAN = { ativo: false, fila: [], idx: -1, huntId: null, fase: 'parado', t0: 0, base: null, vivo: null, capMin: 100, erro: null, ocupado: false, iniciadoEm: 0,
+                   foto: null, rodada: 0, restaurando: false, encerrou: null, stopEnviado: 0, endedN: 0 };   // v2.11
     const CAP_MIN_SCAN = 10;                        // abaixo disso o loot se perde e a medição sai suja
 
     function scanIniciar() {
@@ -2610,19 +3701,89 @@
         const fila = [];
         for (const id of ids) for (const modelo of modelos) fila.push({ id, modelo });
         if (!fila.length) { log('Scan: marque pelo menos um mapa' + (c.comparar ? ' e uma variante' : ''), 'erro'); return false; }
-        if (!socketAberto() || !ESTADO_WS.profiles) { log('Scan: socket sem perfis — dá um F5 com o helper instalado', 'erro'); return false; }
-        if (_cicloEmCurso) { log('Scan: ciclo de venda em andamento — espera terminar', 'erro'); return false; }
+        if (!socketAberto() || !ESTADO_WS.perfisDoServidor) { log('Scan: socket sem perfis — dá um F5 com o helper instalado', 'erro'); return false; }
+        const ocup = travaJogo();
+        if (ocup) { log('Scan: ' + ocup + ' em andamento — espera terminar', 'erro'); return false; }
         if (ESTADO_WS.boss) { log('Scan: boss em andamento — termina o boss antes', 'erro'); return false; }
-        Object.assign(SCAN, { ativo: true, fila, idx: -1, huntId: null, fase: 'proximo', t0: 0, base: null, vivo: null, capMin: 100, erro: null, ocupado: false, iniciadoEm: Date.now() });
-        log(`Scan LIGADO — ${fila.length} medição(ões), ${c.minutos} min cada, lure ${c.lureMax ? 'máximo' : 'como está'}, ${c.comparar ? 'estudo: ' + modelos.map(nomeModelo).join(' · ') : nomeModelo(c.modelo || 'equilibrado')}`, 'ok');
+        ouvirEncerramentos();
+        /* v2.11 — FOTO do jogo antes de mexer: mapa, lure e perfis por vocação */
+        const cacando = frameFresco() && ESTADO_WS.huntId != null;
+        const foto = { t: Date.now(), huntId: cacando ? ESTADO_WS.huntId : null, lureTier: cacando ? ESTADO_WS.frame.lureTier : null,
+                       profiles: ESTADO_WS.profiles ? clonar(ESTADO_WS.profiles) : null };
+        Object.assign(SCAN, { ativo: true, fila, idx: -1, huntId: null, fase: 'proximo', t0: 0, base: null, vivo: null, capMin: 100, erro: null, ocupado: false, iniciadoEm: Date.now(),
+                              foto, rodada: Date.now(), restaurando: false, encerrou: null, stopEnviado: 0, endedN: WS.tipos.ended || 0 });
+        const hf = foto.huntId != null ? (CAT.hunts || []).find(h => h.id === foto.huntId) : null;
+        log(`Scan LIGADO — ${fila.length} medição(ões), ${c.minutos} min cada, lure ${c.lureMax ? 'máximo' : 'como está'}, ${c.comparar ? 'estudo: ' + modelos.map(nomeModelo).join(' · ') : nomeModelo(c.modelo || 'equilibrado')} · ao terminar: ${({ voltar: 'volta para ' + (hf ? hf.title : foto.huntId != null ? 'o mapa ' + foto.huntId : 'a cidade'), ficar: 'fica no último mapa', xp: 'vai para o melhor XP', ouro: 'vai para o melhor ouro' })[fimDoScan(c)]}`, 'ok');
         renderizar();
         return true;
     }
-    function scanParar(motivo, tipo) {
+    /* restaurar: 'tudo' (mapa + perfis — botão de parar), 'perfis' (morte ou
+     * party movida por fora: não reentra em caçada sozinho) ou 'nada' (boss
+     * ou ciclo de venda no meio: não mexer). */
+    function scanParar(motivo, tipo, restaurar) {
         if (!SCAN.ativo) return;
         SCAN.ativo = false; SCAN.fase = 'parado'; SCAN.huntId = null; SCAN.base = null; SCAN.vivo = null;
         log('Scan desligado' + (motivo ? ': ' + motivo : ''), tipo || 'info');
+        const modo = restaurar || 'tudo';
+        if (SCAN.foto && modo !== 'nada') {
+            SCAN.restaurando = true;                    // fecha a janela até a restauração pegar a vez
+            scanRestaurar(modo).catch(e => log('Scan: restaurar estourou — ' + e.message, 'erro'));
+        } else if (SCAN.foto) { SCAN.foto = null; log('Scan: jogo NÃO restaurado (' + (motivo || 'parado') + ') — mapa e kits ficaram como o Scan deixou', 'info'); }
         renderizar();
+    }
+    /* v2.11 — DEVOLVE O JOGO. Espera o passo em curso do Scan sair (ele vê
+     * SCAN.ativo=false depois de cada espera), ocupa a trava e restaura. */
+    async function scanRestaurar(modo) {
+        SCAN.restaurando = true;
+        try {
+            await esperarQue(() => !SCAN.ocupado, 60000, 250);
+            const foto = SCAN.foto; SCAN.foto = null;
+            if (!foto) return;
+            SCAN.ocupado = true; SCAN.fase = 'restaurando'; renderizar();
+            try { await _scanRestaurar(foto, modo); } finally { SCAN.ocupado = false; SCAN.fase = 'parado'; }
+        } finally { SCAN.restaurando = false; renderizar(); }
+    }
+    async function _scanRestaurar(foto, modo) {
+        if (_cicloEmCurso || ESTADO_WS.boss) { log('Scan: ' + (ESTADO_WS.boss ? 'boss' : 'ciclo de venda') + ' em andamento — jogo NÃO restaurado', 'erro'); return; }
+        if (!socketAberto()) { log('Scan: socket fechado — jogo NÃO restaurado (mapa e kits como o Scan deixou)', 'erro'); return; }
+        if (modo === 'tudo') {
+            try { await scanVoltarMapa(foto); } catch (e) { log('Scan: voltar ao mapa de antes falhou — ' + e.message, 'erro'); }
+        }
+        try { await scanRestaurarPerfis(foto); } catch (e) { log('Scan: restaurar os kits falhou — ' + e.message, 'erro'); }
+    }
+    async function scanVoltarMapa(foto) {
+        const cacando = () => frameFresco() && ESTADO_WS.huntId != null;
+        if (foto.huntId == null) {
+            if (!cacando()) return;
+            const r = await scanEncerrarCacada();
+            log(r.erro ? 'Scan: não voltei para a cidade — ' + r.erro : 'Scan: party de volta à cidade, como estava antes do Scan', r.erro ? 'erro' : 'ok');
+            return;
+        }
+        const h = (CAT.hunts || []).find(x => x.id === foto.huntId);
+        if (!h) { log('Scan: mapa de antes (id ' + foto.huntId + ') não está no catálogo — fiquei onde estou', 'erro'); return; }
+        const r = await scanEntrar(h, { lure: foto.lureTier != null ? foto.lureTier : 1 });   // lure desconhecido: o menor
+        log(r.erro ? 'Scan: não voltei para ' + h.title + ' — ' + r.erro : 'Scan: de volta a ' + h.title + ' (lure ' + lureTexto(h, r.lure) + '), como antes do Scan', r.erro ? 'erro' : 'ok');
+    }
+    /* Reenvia SÓ os perfis que existiam na foto e que mudaram — o objeto
+     * inteiro que o servidor mandou (presets, curas, poções), não um molde.
+     * Caçando, manda também o update_battle_config do perfil ativo, como a
+     * janela de atalhos faz. */
+    async function scanRestaurarPerfis(foto) {
+        if (!foto.profiles) return;
+        const cacando = emHunt();
+        let n = 0;
+        for (const voc of VOCS) {
+            const p = foto.profiles[voc];
+            if (!p || !Array.isArray(p.list) || !p.list.length) continue;
+            if (ESTADO_WS.profiles && JSON.stringify(ESTADO_WS.profiles[voc]) === JSON.stringify(p)) continue;
+            const who = cacando ? indiceDaVoc(voc) : null;
+            const ativo = p.list[p.active >= 0 && p.active < p.list.length ? p.active : 0];
+            if (cacando && who != null && ativo && ativo.config) enviarWS({ type: 'update_battle_config', data: payloadBattleConfig(normalizarConfig(ativo.config), who) });
+            enviarWS({ type: 'profiles_set', data: { vocation: voc, profiles: clonar(p) } });
+            n++;
+            await dorme(150);
+        }
+        log(n ? `Scan: kits de ${n} personagem(ns) devolvidos como estavam antes do Scan` : 'Scan: kits já estavam como antes do Scan', 'ok');
     }
     const scanHuntAtual = () => (SCAN.idx >= 0 && SCAN.idx < SCAN.fila.length) ? (CAT.hunts || []).find(h => h.id === SCAN.fila[SCAN.idx].id) : null;
     const scanModeloAtual = () => (SCAN.idx >= 0 && SCAN.idx < SCAN.fila.length) ? SCAN.fila[SCAN.idx].modelo : (scanCfg().modelo || 'equilibrado');
@@ -2661,7 +3822,9 @@
     function scanMedidaViva() {
         const a = anAgora(), b = SCAN.base;
         if (!a || !b) return null;
-        const seg = Math.max(1, (Date.now() - SCAN.t0) / 1000);
+        /* v2.11 — janela pelo elapsedMs do analisador do jogo (o relógio da
+         * página conta também o tempo de frame atrasado e de aba dormindo) */
+        const seg = segundosDaJanela(a.elapsedMs, b.elapsedMs, (Date.now() - SCAN.t0) / 1000);
         const d = { xp: a.xp - b.xp, kills: a.kills - b.kills, loot: a.lootGold - b.lootGold, sup: a.suppliesGold - b.suppliesGold, xpRaw: a.xpRaw - b.xpRaw,
                     tomado: (a.damageTaken || 0) - (b.damageTaken || 0), dado: (a.damageDealt || 0) - (b.damageDealt || 0), cura: (a.healingDone || 0) - (b.healingDone || 0) };
         /* poção por personagem: delta de supplyUsed entre a base e agora */
@@ -2671,26 +3834,37 @@
         const dDrops = {}; Object.keys(a.drops || {}).forEach(k => { const n = (a.drops[k] || 0) - ((b.drops || {})[k] || 0); if (n > 0) dDrops[k] = n; });
         const div = scanDividirLoot(SCAN.huntId, dDrops, d.kills);
         const porH = x => Math.round(x / seg * 3600);
-        return { seg, xpH: porH(d.xp), abatesH: porH(d.kills), lootH: porH(d.loot), supH: porH(d.sup), ouroH: porH(d.loot - d.sup),
+        return { seg, xpH: porH(d.xp), xpRawH: porH(d.xpRaw), abatesH: porH(d.kills), lootH: porH(d.loot), supH: porH(d.sup), ouroH: porH(d.loot - d.sup),
                  estavelH: div ? porH(div.estavel - d.sup) : null, sorte: div ? div.sorte : null, sorteH: div ? porH(div.sorte) : null, raros: div ? div.raros : [],
                  tomadoH: porH(d.tomado), dadoH: porH(d.dado), curaH: porH(d.cura), supVoc, razao: razaoResumo(RAZAO),
                  xp: d.xp, kills: d.kills, loot: d.loot, sup: d.sup, xpRaw: d.xpRaw };
     }
-    async function scanEntrar(h) {
+    /* stop pelo socket + espera o `ended` + fecha o resumo. v2.11: anota a
+     * hora do stop — o `ended` que chega por causa dele é do próprio Scan. */
+    async function scanEncerrarCacada() {
+        SCAN.stopEnviado = Date.now();
+        enviarWS({ type: 'stop', data: {} });
+        const saiu = await esperarQue(() => !frameFresco() || tid('summary-close'), 25000, 250);
+        const fecharR = await esperarQue(() => tid('summary-close'), 3000, 150);
+        if (fecharR) fecharR.click();
+        if (!saiu) return { erro: 'mandei stop e a caçada não encerrou em 25 s' };
+        await dorme(600);
+        return { ok: true };
+    }
+    /* opc.lure (v2.11): tier pedido — a restauração volta com o lure de antes */
+    async function scanEntrar(h, opc) {
         const c = scanCfg();
-        const lure = (c.lureMax && h.lureTiers && h.lureTiers.length) ? h.lureTiers.length : 1;
+        const nTiers = h.lureTiers && h.lureTiers.length ? h.lureTiers.length : 1;
+        const pedido = opc && opc.lure != null ? Math.max(1, Math.min(nTiers, Math.round(Number(opc.lure)) || 1)) : null;
+        const lure = pedido != null ? pedido : (c.lureMax && h.lureTiers && h.lureTiers.length) ? h.lureTiers.length : 1;
         const jaNele = ESTADO_WS.huntId === h.id && frameFresco() && !ESTADO_WS.boss;
         if (!jaNele) {
             /* v2.2.2 — de DENTRO de uma caçada o servidor recusa start_hunt
              * ("already_hunting"). O cliente faz: stop → espera ended →
              * start_hunt. O `ended` abre o resumo; fecha-se em seguida. */
             if (frameFresco() && ESTADO_WS.huntId != null) {
-                enviarWS({ type: 'stop', data: {} });
-                const saiu = await esperarQue(() => !frameFresco() || tid('summary-close'), 25000, 250);
-                const fecharR = await esperarQue(() => tid('summary-close'), 3000, 150);
-                if (fecharR) fecharR.click();
-                if (!saiu) return { erro: 'mandei stop e a caçada não encerrou em 25 s' };
-                await dorme(600);
+                const r0 = await scanEncerrarCacada();
+                if (r0.erro) return r0;
             }
             const t = Date.now();
             ESTADO_WS.ultimoErro = null;
@@ -2700,58 +3874,86 @@
             const fechar = await esperarQue(() => tid('summary-close'), 2500, 150);
             if (fechar) { fechar.click(); }
             if (!ok) return { erro: 'start_hunt enviado e o servidor não confirmou a entrada em 20 s' + (ESTADO_WS.ultimoErro ? ' (erro do servidor: ' + ESTADO_WS.ultimoErro + ')' : '') };
+        } else if (pedido != null) {
+            if (ESTADO_WS.frame.lureTier !== pedido) {
+                enviarWS({ type: 'set_lure', data: { tier: pedido } });
+                await esperarQue(() => frameFresco() && ESTADO_WS.frame.lureTier === pedido, 6000, 250);
+            }
         } else if (c.lureMax) {
-            try { await lureNoMaximoSocket(h); } catch (e) { }
+            try { await lureNoMaximoSocket(h); } catch (e) { falhou('lure do Scan', e); }
         }
         await esperarQue(() => frameFresco() && ESTADO_WS.frame.an, 8000, 250);
         return { ok: true, lure };
+    }
+    /* v2.11 — morte / `ended` por fora: grava a parcial (SCAN.vivo) como
+     * falha, sem apagar resultado bom anterior, e para o Scan devolvendo os
+     * kits (não reentra em caçada sozinho depois de uma morte). */
+    function scanFalhaEncerrou() {
+        const f = SCAN.encerrou, h = scanHuntAtual();
+        SCAN.encerrou = null;
+        const parcial = SCAN.fase === 'medindo' ? (SCAN.vivo || null) : null;
+        if (h) scanGravar(h, parcial, f.motivo + (parcial ? ` — parcial de ${Math.max(1, Math.round(parcial.seg / 60))} min` : ''));
+        scanParar((h ? h.title + ': ' : '') + f.motivo, 'erro', 'perfis');
     }
     async function scanPasso() {
         if (!SCAN.ativo || SCAN.ocupado) return;
         SCAN.ocupado = true;
         try {
+            /* reserva do ouvinte de `ended`: o contador do grampo subiu durante
+             * a medição e não foi stop do Scan → encerrou por fora */
+            if (!SCAN.encerrou && SCAN.fase === 'medindo' && (WS.tipos.ended || 0) > SCAN.endedN && Date.now() - (SCAN.stopEnviado || 0) > 40000)
+                SCAN.encerrou = { falha: true, morte: false, motivo: 'encerrou (ended sem motivo lido)', t: Date.now() };
+            if (SCAN.encerrou) { scanFalhaEncerrou(); return; }
             if (!socketAberto()) { SCAN.erro = 'socket fechado'; return; }
-            if (ESTADO_WS.boss) { scanParar('boss em andamento — retome quando terminar', 'erro'); return; }
-            if (_cicloEmCurso) { scanParar('ciclo de venda em andamento', 'erro'); return; }
+            if (ESTADO_WS.boss) { scanParar('boss em andamento — retome quando terminar', 'erro', 'nada'); return; }
+            if (_cicloEmCurso) { scanParar('ciclo de venda em andamento', 'erro', 'nada'); return; }
             if (SCAN.fase === 'proximo') {
                 SCAN.idx++;
                 if (SCAN.idx >= SCAN.fila.length) { await scanTerminar(); return; }
                 const h = scanHuntAtual();
-                SCAN.huntId = h.id; SCAN.fase = 'entrando'; SCAN.base = null; SCAN.capMin = 100; SCAN.erro = null;
+                SCAN.huntId = h.id; SCAN.fase = 'entrando'; SCAN.base = null; SCAN.vivo = null; SCAN.capMin = 100; SCAN.erro = null;
                 log(`Scan ${SCAN.idx + 1}/${SCAN.fila.length}: entrando em ${h.title}…`, 'info');
                 renderizar();
                 const r = await scanEntrar(h);
+                if (!SCAN.ativo) return;                // v2.11: desligaram no meio — a restauração cuida do resto
                 if (r.erro) { scanGravar(h, null, r.erro); SCAN.fase = 'proximo'; log(`Scan: ${h.title} pulado — ${r.erro}`, 'erro'); return; }
                 await dorme(1500);
                 try { await lootTabela(h.id); } catch (e) { }
                 try { await bestiarioHunt(h); } catch (e) { }
+                if (!SCAN.ativo || SCAN.encerrou) return;
                 try { await aplicarEmTodos(scanModeloAtual(), h); } catch (e) { log('Scan: aplicar falhou — ' + e.message, 'erro'); }
+                if (!SCAN.ativo || SCAN.encerrou) return;
                 /* v2.2.1 — zera o analisador do jogo antes de medir: é o mesmo
                  * frame que o botão "zerar" da janela Estatísticas manda. Assim
                  * o mapa em que a party já estava não entra com o passado. */
                 try { const an0 = anAgora(); enviarWS({ type: 'analyzer_reset', data: {} }); await esperarQue(() => { const a = anAgora(); return a && (!an0 || a.elapsedMs < an0.elapsedMs || a.kills < an0.kills); }, 5000, 200); } catch (e) { }
                 await esperarQue(() => frameFresco() && ESTADO_WS.frame.an, 6000, 250);
+                if (!SCAN.ativo || SCAN.encerrou) return;
                 const a = anAgora();
                 if (!a) { scanGravar(h, null, 'sem analisador no frame'); SCAN.fase = 'proximo'; return; }
                 SCAN.base = Object.assign({}, a); SCAN.baseParty = clonar((ESTADO_WS.frame && ESTADO_WS.frame.party) || []); SCAN.t0 = Date.now(); SCAN.fase = 'medindo'; RAZAO = razaoNovo();
+                SCAN.endedN = WS.tipos.ended || 0;
                 log(`Scan: medindo ${h.title} por ${scanCfg().minutos} min (lure ${lureTexto(h, r.lure)}, ${nomeModelo(scanModeloAtual())})`, 'ok');
                 renderizar();
                 return;
             }
             if (SCAN.fase === 'medindo') {
                 const h = scanHuntAtual();
-                if (ESTADO_WS.huntId !== h.id) { scanParar('a party saiu de ' + h.title + ' por fora do Scan', 'erro'); return; }
+                if (ESTADO_WS.huntId !== h.id) { scanParar('a party saiu de ' + h.title + ' por fora do Scan', 'erro', 'perfis'); return; }
                 const aAgora = anAgora();
                 if (aAgora && SCAN.base && (aAgora.kills < SCAN.base.kills || aAgora.elapsedMs < SCAN.base.elapsedMs)) {
                     SCAN.base = Object.assign({}, aAgora); SCAN.baseParty = clonar((ESTADO_WS.frame && ESTADO_WS.frame.party) || []); SCAN.t0 = Date.now(); SCAN.vivo = null; RAZAO = razaoNovo();
                     log('Scan: o analisador do jogo foi zerado no meio — recomeçando a medição de ' + h.title, 'info');
                 }
                 const cap = capLivre(); if (cap && cap.pct < SCAN.capMin) SCAN.capMin = cap.pct;
-                SCAN.vivo = scanMedidaViva();
-                if (Date.now() - SCAN.t0 >= scanCfg().minutos * 60000) {
-                    const m = scanMedidaViva();
-                    scanGravar(h, m, null);
-                    log(`Scan: ${h.title} [${nomeModelo(scanModeloAtual())}] — ${m ? (m.xpH / 1000).toFixed(1) + 'k xp/h · ' + (m.ouroH >= 0 ? '+' : '') + m.ouroH + ' ouro/h' + (m.estavelH != null ? ' (estável ' + (m.estavelH >= 0 ? '+' : '') + m.estavelH + (m.sorte ? ', sorte +' + m.sorte : '') + ')' : '') + ' · ' + m.abatesH + ' abates/h · tomou ' + m.tomadoH + '/h · poção ' + m.supH + '/h · ' + razaoTexto(m.razao) : 'sem medida'}`, 'ok');
+                SCAN.vivo = scanMedidaViva() || SCAN.vivo;
+                /* v2.11 — o fim da janela é pelo relógio do analisador; o da
+                 * página só como teto (+90 s), para não ficar preso se o frame parar */
+                const alvoSeg = scanCfg().minutos * 60;
+                if ((SCAN.vivo && SCAN.vivo.seg >= alvoSeg) || Date.now() - SCAN.t0 >= alvoSeg * 1000 + 90000) {
+                    const m = scanMedidaViva() || SCAN.vivo;
+                    scanGravar(h, m, m ? null : 'sem medida (frame parou)');
+                    log(`Scan: ${h.title} [${nomeModelo(scanModeloAtual())}] — ${m ? (m.xpH / 1000).toFixed(1) + 'k xp/h (raw ' + (m.xpRawH / 1000).toFixed(1) + 'k) · ' + (m.ouroH >= 0 ? '+' : '') + m.ouroH + ' ouro/h' + (m.estavelH != null ? ' (estável ' + (m.estavelH >= 0 ? '+' : '') + m.estavelH + (m.sorte ? ', sorte +' + m.sorte : '') + ')' : '') + ' · ' + m.abatesH + ' abates/h · tomou ' + m.tomadoH + '/h · poção ' + m.supH + '/h · ' + razaoTexto(m.razao) : 'sem medida'}`, m ? 'ok' : 'erro');
                     SCAN.fase = 'proximo';
                 }
             }
@@ -2765,52 +3967,62 @@
         const tier = (scanCfg().lureMax && h.lureTiers) ? h.lureTiers.length : 1;
         const modelo = scanModeloAtual();
         const chave = scanCfg().comparar ? h.id + '|' + modelo : h.id;
-        r[chave] = Object.assign({ id: h.id, title: h.title, levelMin: h.levelMin, t: Date.now(), lure: tier, lureTxt: lureTexto(h, tier), modelo,
-                                  nivel: nivelAtual(), minutos: scanCfg().minutos, capMin: Math.round(SCAN.capMin), suja: SCAN.capMin < CAP_MIN_SCAN, erro: erro || null }, m || {});
+        const novo = Object.assign({ id: h.id, title: h.title, levelMin: h.levelMin, t: Date.now(), lure: tier, lureTxt: lureTexto(h, tier), modelo, rodada: SCAN.rodada || null,
+                                     nivel: nivelAtual(), minutos: scanCfg().minutos, capMin: Math.round(SCAN.capMin), suja: SCAN.capMin < CAP_MIN_SCAN, erro: erro || null }, m || {});
+        r[chave] = mesclarResultadoScan(r[chave], novo);   // v2.11: falha não apaga resultado bom
         guardar('scan_resultados', r);
     }
-    /* veredito relativo: quem chega a 90 % do melhor XP é "XP", 90 % do melhor
-     * ouro (e positivo) é "Ouro", os dois é "Os dois". */
-    const ouroBase = r => r.estavelH != null ? r.estavelH : r.ouroH;   // v2.3.0: ranking de ouro pelo estável
+    /* veredito: vereditosScan (@@AUTOHUNT-PURO), com o nível de agora como
+     * referência do filtro ±2 */
     function scanVereditos() {
-        const lista = Object.values(scanResultados()).filter(r => !r.erro && r.xpH != null);
-        const melhorXp = Math.max(0, ...lista.map(r => r.xpH)), melhorOuro = Math.max(0, ...lista.map(ouroBase));
-        lista.forEach(r => {
-            const pXp = melhorXp > 0 ? Math.round(r.xpH / melhorXp * 100) : 0;
-            const pOuro = melhorOuro > 0 && ouroBase(r) > 0 ? Math.round(ouroBase(r) / melhorOuro * 100) : 0;
-            const xp = pXp >= 90, ouro = pOuro >= 90;
-            r.pXp = pXp; r.pOuro = pOuro;
-            /* v2.2.4 — nunca "—": o dono leu como "sem veredito" (Barbarian
-             * Camp, 27/09). Quem não chega a 90 % mostra o quanto ficou atrás. */
-            r.veredito = xp && ouro ? 'Os dois' : xp ? 'XP' : ouro ? 'Ouro'
-                : ouroBase(r) < 0 ? 'dá prejuízo'
-                : lista.length === 1 ? 'único medido'
-                : `abaixo: ${pXp}% do xp · ${pOuro}% do ouro`;
-        });
-        return { lista: lista.sort((a, b) => b.xpH - a.xpH), melhorXp, melhorOuro,
-                 topXp: lista.slice().sort((a, b) => b.xpH - a.xpH)[0] || null, topOuro: lista.slice().sort((a, b) => ouroBase(b) - ouroBase(a))[0] || null };
+        const nv = nivelAtual();
+        return vereditosScan(Object.values(scanResultados()), nv > 1 ? nv : null);
     }
+    /* v2.11 — SCAN.ativo cai aqui, mas SCAN.ocupado segue true até o fim
+     * (estamos dentro do scanPasso): o gatilho do Auto Hunt olha os dois e
+     * não dispara no meio da ida para o melhor mapa. */
     async function scanTerminar() {
         const v = scanVereditos();
         SCAN.ativo = false; SCAN.fase = 'parado'; SCAN.huntId = null;
-        log(`Scan TERMINADO — melhor XP: ${v.topXp ? v.topXp.title + ' (' + (v.topXp.xpH / 1000).toFixed(1) + 'k/h)' : '?'} · melhor ouro: ${v.topOuro ? v.topOuro.title + ' (' + (ouroBase(v.topOuro) >= 0 ? '+' : '') + ouroBase(v.topOuro) + '/h estável)' : '?'}`, 'ok');
-        const c = scanCfg();
-        const alvo = c.fim === 'xp' ? v.topXp : c.fim === 'ouro' ? v.topOuro : null;
-        if (alvo) {
-            const h = (CAT.hunts || []).find(x => x.id === alvo.id);
-            if (h) { log('Scan: indo para ' + h.title + ' (melhor ' + (c.fim === 'xp' ? 'XP' : 'ouro') + ')', 'info'); try { await scanEntrar(h); await dorme(1500); await aplicarEmTodos(alvo.modelo || c.modelo || 'equilibrado', h); } catch (e) { } }
+        log(`Scan TERMINADO — melhor XP: ${v.topXp ? v.topXp.title + ' (' + (xpBase(v.topXp) / 1000).toFixed(1) + 'k/h raw)' : '?'} · melhor ouro: ${v.topOuro ? v.topOuro.title + ' (' + (ouroBase(v.topOuro) >= 0 ? '+' : '') + ouroBase(v.topOuro) + '/h estável)' : '?'}`, 'ok');
+        const c = scanCfg(), fim = fimDoScan(c), foto = SCAN.foto;
+        SCAN.foto = null;
+        const alvo = fim === 'xp' ? v.topXp : fim === 'ouro' ? v.topOuro : null;
+        const h = alvo ? (CAT.hunts || []).find(x => x.id === alvo.id) : null;
+        if (h) {
+            log('Scan: indo para ' + h.title + ' (melhor ' + (fim === 'xp' ? 'XP' : 'ouro') + ')', 'info');
+            try {
+                const r = await scanEntrar(h);
+                if (r.erro) log('Scan: não entrei em ' + h.title + ' — ' + r.erro, 'erro');
+                else { await dorme(1500); await aplicarEmTodos(alvo.modelo || c.modelo || 'equilibrado', h); }
+            } catch (e) { log('Scan: ir para ' + h.title + ' falhou — ' + e.message, 'erro'); }
+        } else if (foto) {
+            if (fim === 'xp' || fim === 'ouro') log('Scan: nenhum resultado válido para escolher o melhor ' + (fim === 'xp' ? 'XP' : 'ouro') + ' — voltando como estava', 'info');
+            SCAN.fase = 'restaurando'; renderizar();
+            try { await _scanRestaurar(foto, fim === 'ficar' ? 'perfis' : 'tudo'); } catch (e) { log('Scan: restaurar falhou — ' + e.message, 'erro'); }
+            SCAN.fase = 'parado';
         }
         renderizar();
     }
+    /* "ir ›" dos resultados. v2.11: respeita a trava comum (antes não olhava
+     * o ciclo de venda) e ocupa a trava enquanto troca de mapa. */
     async function scanIrPara(id) {
         const h = (CAT.hunts || []).find(x => x.id === id);
         if (!h) return;
-        if (SCAN.ativo) { log('Scan em andamento — desliga antes de ir para outro mapa', 'erro'); return; }
-        log('indo para ' + h.title + ' pelo socket…', 'info');
-        const r = await scanEntrar(h);
-        if (r.erro) { log('não entrei em ' + h.title + ': ' + r.erro, 'erro'); return; }
-        await dorme(1500);
-        await aplicarEmTodos(scanCfg().modelo || 'equilibrado', h);
+        const ocup = travaJogo();
+        if (ocup) { log(ocup + ' em andamento — espera terminar antes de ir para outro mapa', 'erro'); return; }
+        if (ESTADO_WS.boss) { log('boss em andamento — termina o boss antes de trocar de mapa', 'erro'); return; }
+        if (!socketAberto()) { log('ir para ' + h.title + ': socket do jogo não está aberto — dá um F5 com o helper instalado', 'erro'); return; }
+        _travaJogo = 'troca de mapa';
+        renderizar();
+        try {
+            log('indo para ' + h.title + ' pelo socket…', 'info');
+            const r = await scanEntrar(h);
+            if (r.erro) { log('não entrei em ' + h.title + ': ' + r.erro, 'erro'); return; }
+            await dorme(1500);
+            await aplicarEmTodos(scanCfg().modelo || 'equilibrado', h);
+        } catch (e) { log('ir para ' + h.title + ' falhou — ' + e.message, 'erro'); }
+        finally { _travaJogo = null; renderizar(); }
     }
 
     const sessoes = () => ler('sessoes', []);
@@ -2821,16 +4033,23 @@
         guardar('sessoes', t);
     }
 
+    /* v2.11 — a0 À PARTE. A sessão guarda até 400 amostras e, passando disso,
+     * cortava as 100 MAIS ANTIGAS — inclusive a primeira: uma caçada de 25 min
+     * fechava medindo só os últimos 20 (CONFIRMADO). SESSAO.a0 é a amostra
+     * inicial, e o corte agora começa na 2ª (amostras[0] continua sendo a0).
+     * O pico da mochila é acumulado (pctMax), senão sumia no corte também.
+     * XP pelo analisador do jogo quando as duas pontas têm (anXp/anMs). */
     function fecharSessao(motivo) {
         if (!SESSAO || SESSAO.amostras.length < 2) { SESSAO = null; return; }
-        const a0 = SESSAO.amostras[0], aN = SESSAO.amostras[SESSAO.amostras.length - 1];
+        const a0 = SESSAO.a0 || SESSAO.amostras[0], aN = SESSAO.amostras[SESSAO.amostras.length - 1];
         const dur = (aN.t - a0.t) / 1000;
         if (dur < 60) { SESSAO = null; return; }        // amostra curta demais pra valer
 
         const dOuro = aN.ouro - a0.ouro;
-        const dExp = (aN.exp != null && a0.exp != null) ? aN.exp - a0.exp : null;
+        const anOk = a0.anXp != null && aN.anXp != null && aN.anMs >= a0.anMs && aN.anXp >= a0.anXp;
+        const dExp = anOk ? aN.anXp - a0.anXp : (aN.exp != null && a0.exp != null) ? aN.exp - a0.exp : null;
         const dAbates = (aN.abates != null && a0.abates != null) ? aN.abates - a0.abates : null;
-        const pctMax = Math.max(...SESSAO.amostras.map(x => x.mochilaPct || 0));
+        const pctMax = Math.max(SESSAO.pctMax || 0, ...SESSAO.amostras.map(x => x.mochilaPct || 0));
         const suja = pctMax > 0.85;
         /* Em regeneracao a magia nao custa ouro, entao o "custo real por abate"
          * medido aqui e so pocao de vida + munição — nao serve para calibrar a
@@ -2851,9 +4070,12 @@
                 ? Math.round((SESSAO.loot - dOuro / dAbates) * 10) / 10 : null,
             custoPrevisto: SESSAO.custoPrevisto != null ? SESSAO.custoPrevisto : null
         };
+        if (anOk && aN.anLoot != null && a0.anLoot != null) { s.lootH = Math.round((aN.anLoot - a0.anLoot) / dur * 3600); s.supH = Math.round((aN.anSup - a0.anSup) / dur * 3600); }
         // fator real = custo medido / custo previsto SEM o fator (o previsto já traz o fator)
         if (s.custoRealAbate != null && s.custoPrevisto && !regen) {
-            const semFator = s.custoPrevisto / fatorDesperdicio(SESSAO.hp || 1);
+            /* v2.11 — o previsto agora soma runa (que não leva a curva): usar o custo
+             * SEM a curva que viabilidadeParty devolve; a divisão só vale para sessão velha */
+            const semFator = SESSAO.custoSemFator != null ? SESSAO.custoSemFator : s.custoPrevisto / fatorDesperdicio(SESSAO.hp || 1);
             s.fatorReal = Math.round(s.custoRealAbate / Math.max(0.01, semFator) * 100) / 100;
         }
         guardarSessao(s);
@@ -2875,16 +4097,27 @@
      * confiavel e o CONTADOR DE ABATES VOLTAR A ZERO (a sessao do jogo
      * reinicia na troca). Qualquer queda no contador = hunt nova. */
     function amostrar() {
-        try { gatilhoAutoHunt(); } catch (e) { }
+        try { gatilhoAutoHunt(); deuCerto('gatilhoAutoHunt'); } catch (e) { falhou('gatilhoAutoHunt', e); }
         if (SCAN.ativo) scanPasso().catch(() => { });
         /* v2.1.0: assim que houver token + catálogo, lê o dano real de tudo (só leitura, sem janela) */
-        if (_danosRestPendente && ESTADO_WS.worldToken && CAT.magias && (tid('rail-level-n') || (ESTADO_WS.frame && ESTADO_WS.frame.nivel))) { _danosRestPendente = false; aprenderDanosPorRest(true).catch(() => { }); }
+        lerDanosPendentes();
         const dentro = emHunt();
         if (!dentro) { _estavaEmHunt = false; _ultimosAbates = null; if (SESSAO) fecharSessao('saiu da caçada'); return; }
+
+        /* v2.11 — id fora do catálogo = boss/torre/treino. No hunt_started o
+         * catálogo às vezes ainda não carregou (boot); aqui ele já está. */
+        if (!ESTADO_WS.boss && ESTADO_WS.huntId != null && huntNoCatalogo(ESTADO_WS.huntId) === false) ESTADO_WS.boss = '?';
+        /* v2.11 — BOSS NÃO É CAÇADA. Durante boss (huntId 800) o socket "não
+         * conhecia" a hunt: hunt_id era APAGADO e, 10 s depois, a tela CAÇADAS
+         * abria sozinha no meio da luta; a sessão do Analisador media o boss
+         * como se fosse a hunt. Agora: nada de sessão, nada de modal; quando o
+         * jogo devolve a party para a hunt anterior, a entrada roda de novo. */
+        if (ESTADO_WS.boss) { _estavaEmHunt = false; _ultimosAbates = null; if (SESSAO) fecharSessao('boss'); return; }
 
         const ab = lerAbates();
         const resetou = ab != null && _ultimosAbates != null && ab < _ultimosAbates;
         if (ab != null) _ultimosAbates = ab;
+        if (resetou && SESSAO) fecharSessao('analisador zerado');
         if (!_estavaEmHunt || resetou) {
             _estavaEmHunt = true;
             _entrouEmHuntEm = Date.now();
@@ -2894,9 +4127,9 @@
              * só o analisador do jogo sendo reiniciado (botão zerar, Scan,
              * boss): NÃO abre a tela CAÇADAS. A reserva pelo modal fica só
              * para quando o socket nunca falou. */
-            const socketSabe = ESTADO_WS.huntId != null && (CAT.hunts || []).some(x => x.id === ESTADO_WS.huntId);
+            const socketSabe = ESTADO_WS.huntId != null && huntNoCatalogo(ESTADO_WS.huntId) === true;
             if (!socketSabe) { guardar('hunt_id', null); guardar('hunt_manual', null); }
-            else if (ler('hunt_id', null) !== ESTADO_WS.huntId && !ESTADO_WS.boss) { guardar('hunt_id', ESTADO_WS.huntId); guardar('hunt_manual', ESTADO_WS.huntId); }
+            else if (ler('hunt_id', null) !== ESTADO_WS.huntId) { guardar('hunt_id', ESTADO_WS.huntId); guardar('hunt_manual', ESTADO_WS.huntId); }
             if (resetou) { _huntTrocou = !socketSabe; log(socketSabe ? 'contador de abates zerou (analisador reiniciado)' : 'contador de abates zerou — hunt nova, reconfirmando', 'info'); }
         }
         if (ler('hunt_id', null) == null && !_confirmandoHunt && Date.now() > _proximaTentativaHunt && CAT.hunts
@@ -2914,7 +4147,7 @@
                         log('hunt nova: ' + r.hunt.title + ' — confira o plano na aba Magia e use APLICAR NOS 4 se quiser', 'info');
                     }
                 })
-                .catch(() => { _proximaTentativaHunt = Date.now() + 30000; })
+                .catch(e => { _proximaTentativaHunt = Date.now() + 30000; falhou('confirmar hunt pela tela', e); })
                 .finally(() => { _confirmandoHunt = false; renderizar(); });
             return;   // sem hunt confirmada a amostra sairia com o nome errado
         }
@@ -2925,7 +4158,7 @@
         const lvl = nivelAtual();
         if (lvl && _nivelAprendido !== lvl) {
             if (_nivelAprendido != null) {
-                if (ESTADO_WS.worldToken) { log('nível ' + lvl + ': relendo o dano real de /spell-numbers', 'info'); aprenderDanosPorRest(true).catch(() => { }); }
+                if (ESTADO_WS.worldToken) { log('nível ' + lvl + ': relendo o dano real de /spell-numbers', 'info'); _danosRestPendente = true; _danosRestProxima = 0; lerDanosPendentes(); }
                 else log('nível ' + lvl + ': dano das magias escalado por nível÷5 (medir de novo só se quiser, botão Aprender dano)', 'info');
             }
             _nivelAprendido = lvl;
@@ -2938,22 +4171,24 @@
         if (!SESSAO) {
             const w = h && h.monsters ? (h.monsters.reduce((s, m) => s + (m.weight || 1), 0) || 1) : 1;
             const hp = h && h.monsters ? h.monsters.reduce((s, m) => s + m.health * (m.weight || 1), 0) / w : null;
-            let custoPrev = null;
-            try { const vp = viabilidadeParty(ler('modelo', 'equilibrado'), h); if (vp) custoPrev = vp.custoPorAbate; } catch (e) { }
+            let custoPrev = null, custoPrevSemFator = null;
+            try { const vp = viabilidadeParty(ler('modelo', 'equilibrado'), h); if (vp) { custoPrev = vp.custoPorAbate; custoPrevSemFator = vp.custoSemFator != null ? vp.custoSemFator : null; } } catch (e) { }
             SESSAO = {
                 huntId: idAgora, huntTitle: h ? h.title : 'desconhecida',
                 hp: hp ? Math.round(hp) : null, loot: h ? LOOT_CACHE[h.id] : null,
-                custoPrevisto: custoPrev, regen: partyEmRegen(), amostras: []
+                custoPrevisto: custoPrev, custoSemFator: custoPrevSemFator, regen: partyEmRegen(), amostras: [], a0: null, pctMax: 0
             };
         }
         const exp = lerExpTotal();
         const moch = lerMochilaOz();
-        SESSAO.amostras.push({
-            t: Date.now(), ouro: ouroAtual(), exp: exp ? exp.atual : null,
-            abates: lerAbates(), mochilaPct: moch ? moch.pct : 0
-        });
-        // não deixa a sessão crescer sem limite
-        if (SESSAO.amostras.length > 400) SESSAO.amostras.splice(0, 100);
+        const an = anDoFrame();
+        const amostra = { t: Date.now(), ouro: ouroAtual(), exp: exp ? exp.atual : null, abates: ab, mochilaPct: moch ? moch.pct : 0 };
+        if (an) Object.assign(amostra, { anMs: an.elapsedMs, anXp: an.xp, anLoot: an.lootGold, anSup: an.suppliesGold });
+        if (!SESSAO.a0) SESSAO.a0 = amostra;
+        SESSAO.pctMax = Math.max(SESSAO.pctMax || 0, amostra.mochilaPct);
+        SESSAO.amostras.push(amostra);
+        // não deixa a sessão crescer sem limite — mas a amostra 0 (o começo) fica
+        if (SESSAO.amostras.length > 400) SESSAO.amostras.splice(1, 100);
     }
 
     /* Agrega as sessões por hunt, ignorando as sujas no cálculo de custo */
@@ -2985,7 +4220,17 @@
      *  depósito (depot_get → depot_state) e atributos base por /item/info.
      *  Só leitura — depot_get não muda nada no servidor.
      * ====================================================================== */
+    /* v2.11 — CACHE DE 2 s. A varredura anda até 200 mil fibras; quando o
+     * shell não existe (lobby, campo renomeado) ela vai até o fim toda vez, e
+     * a aba Equip chama isto várias vezes por repintura. */
+    let _shellCache = { t: 0, v: null };
     function lerShellFibra() {
+        if (Date.now() - _shellCache.t < 2000) return _shellCache.v;
+        const v = _lerShellFibra();
+        _shellCache = { t: Date.now(), v };
+        return v;
+    }
+    function _lerShellFibra() {
         try {
             const raiz = tid('shell') || $('.s-ui-root'); if (!raiz) return null;
             const k = Object.keys(raiz).find(x => x.startsWith('__reactFiber$')); if (!k) return null;
@@ -3035,14 +4280,16 @@
         return { erro };
     }
     /* atributos base por nome. Cache em localStorage (equip_base) por 7 dias;
-     * id por nome vem de /assets/v167/items-by-name.json (cache equip_ids). */
+     * id por nome vem de /assets/v167/items-by-name.json.
+     * v2.11 — equip_ids (221 KB, todos os itens do jogo) só em MEMÓRIA: era a
+     * maior chave do localStorage, repetida por conta, e é rebaixada em
+     * milissegundos quando o Equip precisa. */
     let _idsPorNome = null;
     async function idsPorNome() {
         if (_idsPorNome) return _idsPorNome;
-        const c = ler('equip_ids', null);
-        if (c && c.t && Date.now() - c.t < 7 * 864e5 && c.m) { _idsPorNome = c.m; return c.m; }
         const m = await buscarJSON('/assets/v167/items-by-name.json');
-        _idsPorNome = m; guardar('equip_ids', { t: Date.now(), m });
+        if (!m || typeof m !== 'object') throw new Error('items-by-name.json veio vazio');
+        _idsPorNome = m;
         return m;
     }
     async function basePorNome(nomes) {
@@ -3395,89 +4642,136 @@
      * cobria atalhos, chat e ENCERRAR; Equip rolava 3.937 px. Agora: trilho de
      * 44 px na borda direita, gaveta de 300 px que abre ao clicar no ícone,
      * telas com botão principal no topo e explicação atrás de um "?". */
+    /* v2.10 — CASCA REVISTA (auditoria de UI com o CSS real do jogo, 29/09):
+     * cores em variáveis (--tb-mut #9aa4b8 dá ≥ 4,5:1 até sobre #2b3242; o
+     * #7d879b antigo dava 4,03 sobre #232936), fonte mínima 10,5 px (havia
+     * 8,75), alvos ≥ 28 px no desktop e ≥ 40 px no celular (✕ era 15×16, alça
+     * 26×12), gaveta em position:fixed própria (abre para o lado com espaço e
+     * cresce para cima perto do fundo) e, até 640 px, trilho horizontal com
+     * rótulo + gaveta como folha inferior. Classes das telas continuam as mesmas. */
     const CSS = `
-    #tb-caixa{position:fixed;z-index:99999;display:flex;align-items:flex-start;gap:4px}
+    #tb-caixa,#tb-mostrar{--tb-bg:#12151c;--tb-bg2:#171b24;--tb-cx:#1a1f29;--tb-campo:#232936;--tb-borda:#2b3242;--tb-borda2:#3a4356;--tb-texto:#dde3ee;--tb-mut:#9aa4b8;--tb-ouro:#ffd479;--tb-fmin:10.5px;--tb-alvo:28px}
+    #tb-caixa{position:fixed;z-index:99999;left:8px;top:84px}
     #tb-caixa.tb-oculto{display:none}
-    #tb-trilho{width:44px;background:#12151c;border:1px solid #2b3242;border-radius:10px;display:flex;flex-direction:column;align-items:center;padding:5px 0 4px;gap:1px;font:12px/1.4 ui-monospace,Consolas,monospace;color:#dde3ee;box-shadow:0 8px 30px #0009;transition:transform .15s}
-    #tb-alca{width:26px;height:12px;border-radius:6px;background:#2b3242;cursor:grab;margin-bottom:5px}
-    #tb-cab{cursor:grab}
-    #tb-alca:active{cursor:grabbing}
-    .tb-ico{position:relative;width:36px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#9fb0c9;font-size:17px;user-select:none}
-    .tb-ico:hover{background:#232936;color:#fff}
-    .tb-ico.on{background:#2c3550;color:#ffd479}
-    .tb-ico .tb-dot{position:absolute;right:5px;top:4px;width:7px;height:7px;border-radius:4px;display:none}
+    #tb-caixa button{font-family:inherit}
+    #tb-caixa :focus-visible,#tb-mostrar:focus-visible{outline:2px solid var(--tb-ouro);outline-offset:1px}
+    #tb-trilho{width:46px;box-sizing:border-box;background:var(--tb-bg);border:1px solid var(--tb-borda);border-radius:10px;display:flex;flex-direction:column;align-items:center;padding:3px 0;gap:1px;font:12px/1.4 ui-monospace,Consolas,monospace;color:var(--tb-texto);box-shadow:0 8px 30px #0009}
+    #tb-alca{width:40px;height:28px;flex:none;border:0;border-radius:8px;background:transparent;padding:0;cursor:grab;touch-action:none;display:flex;align-items:center;justify-content:center}
+    #tb-alca::before{content:"";width:24px;height:9px;background:repeating-linear-gradient(180deg,#56607a 0 2px,transparent 2px 4px)}
+    #tb-alca:hover{background:var(--tb-campo)}
+    #tb-caixa.tb-arrastando,#tb-caixa.tb-arrastando #tb-alca,#tb-caixa.tb-arrastando #tb-cab{cursor:grabbing;user-select:none}
+    .tb-ico{position:relative;width:38px;height:34px;flex:none;border:0;padding:0;margin:0;background:transparent;border-radius:9px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;color:#9fb0c9;font-size:17px;line-height:1;user-select:none}
+    .tb-ico .tb-rot{display:none}
+    .tb-ico:hover{background:var(--tb-campo);color:#fff}
+    .tb-ico.on{background:#2c3550;color:var(--tb-ouro)}
+    .tb-ico .tb-dot{position:absolute;right:4px;top:3px;width:8px;height:8px;border-radius:4px;display:none}
     .tb-ico .tb-dot.ok{display:block;background:#6ede8a}
     .tb-ico .tb-dot.av{display:block;background:#ffd479}
     .tb-ico .tb-dot.ruim{display:block;background:#ff7b72}
     .tb-ico .tb-dot.pulsa{animation:tbpulsa 1.2s infinite}
+    .tb-ico .tb-cont{position:absolute;right:0;top:0;min-width:16px;height:16px;box-sizing:border-box;padding:0 4px;border-radius:8px;background:#c93b33;color:#fff;font:bold var(--tb-fmin)/16px system-ui,sans-serif;text-align:center}
+    .tb-ico .tb-cont[hidden]{display:none}
     @keyframes tbpulsa{0%,100%{opacity:1}50%{opacity:.2}}
-    #tb-esconder{margin-top:3px;font-size:12px;color:#7d879b;cursor:pointer;padding:2px 8px}
-    #tb-esconder:hover{color:#fff}
-    #tb-mostrar{position:fixed;right:0;top:84px;width:12px;height:44px;background:#2b3242;border-radius:7px 0 0 7px;cursor:pointer;z-index:99999;display:none}
+    #tb-esconder{width:40px;height:28px;flex:none;border:0;border-radius:8px;background:transparent;padding:0;margin-top:2px;font-size:14px;color:var(--tb-mut);cursor:pointer}
+    #tb-esconder:hover{color:#fff;background:var(--tb-campo)}
+    #tb-mostrar{position:fixed;right:0;top:84px;width:28px;height:56px;box-sizing:border-box;padding:0;border:1px solid var(--tb-borda2);background:var(--tb-borda);color:var(--tb-texto);border-radius:8px 0 0 8px;cursor:pointer;z-index:99999;display:none;font:15px/1 ui-monospace,monospace}
+    #tb-mostrar.esq{border-radius:0 8px 8px 0}
     #tb-mostrar:hover{background:#3a4356}
-    #tb-gaveta{width:300px;max-height:62vh;background:#12151c;color:#dde3ee;border:1px solid #2b3242;border-radius:10px;font:11.5px/1.4 ui-monospace,Consolas,monospace;box-shadow:0 12px 40px #000a;display:none;flex-direction:column}
+    #tb-gaveta{position:fixed;left:0;top:0;width:300px;box-sizing:border-box;max-height:62vh;background:var(--tb-bg);color:var(--tb-texto);border:1px solid var(--tb-borda);border-radius:10px;font:11.5px/1.4 ui-monospace,Consolas,monospace;box-shadow:0 12px 40px #000a;display:none;flex-direction:column}
     #tb-gaveta.on{display:flex}
-    #tb-cab{display:flex;align-items:center;gap:6px;padding:6px 9px;border-bottom:1px solid #2b3242;background:#171b24;border-radius:10px 10px 0 0}
-    #tb-cab b{color:#ffd479;letter-spacing:.3px;font-size:11px;text-transform:uppercase}
-    .tb-x{margin-left:auto;cursor:pointer;color:#8b93a5;padding:0 4px}
-    .tb-x:hover{color:#fff}
-    #tb-corpo{padding:8px;overflow:auto;overflow-x:hidden;flex:1;overflow-wrap:anywhere}
-    .tb-lin{display:flex;justify-content:space-between;gap:6px;padding:1px 0;border-bottom:1px dotted #232936}
+    #tb-cab{display:flex;align-items:center;gap:6px;min-height:34px;box-sizing:border-box;padding:2px 3px 2px 10px;border-bottom:1px solid var(--tb-borda);background:var(--tb-bg2);border-radius:10px 10px 0 0;cursor:grab;touch-action:none;flex:none}
+    #tb-cab b{color:var(--tb-ouro);letter-spacing:.3px;font-size:11.5px;text-transform:uppercase}
+    .tb-x{margin-left:auto;width:32px;height:28px;flex:none;border:0;border-radius:7px;background:transparent;padding:0;cursor:pointer;color:var(--tb-mut);font-size:13px}
+    .tb-x:hover{color:#fff;background:var(--tb-campo)}
+    #tb-faixa{display:flex;gap:6px;align-items:flex-start;flex:none;padding:5px 10px;border-bottom:1px solid var(--tb-borda);background:#161a22;color:var(--tb-texto);font-size:11px;line-height:1.35}
+    #tb-faixa[hidden]{display:none}
+    #tb-faixa::before{content:attr(data-icone);flex:none;font-weight:bold}
+    #tb-faixa span{overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+    #tb-faixa.ok{color:#6ede8a;background:#14231a}
+    #tb-faixa.erro{color:#ff8a80;background:#241417}
+    #tb-corpo{padding:8px;overflow:auto;overflow-x:hidden;flex:1 1 auto;min-height:0;overflow-wrap:anywhere;overscroll-behavior:contain}
+    .tb-lin{display:flex;justify-content:space-between;gap:6px;padding:1px 0;border-bottom:1px dotted var(--tb-campo)}
     .tb-lin span:last-child{color:#fff;text-align:right}
     .tb-linha{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin:3px 0}
-    .tb-bt{background:#2a3142;border:1px solid #3a4356;color:#dde3ee;padding:4px 8px;border-radius:6px;cursor:pointer;margin:2px 2px 2px 0;font:inherit}
+    .tb-bt{background:#2a3142;border:1px solid var(--tb-borda2);color:var(--tb-texto);min-height:var(--tb-alvo);box-sizing:border-box;padding:4px 8px;border-radius:6px;cursor:pointer;margin:2px 2px 2px 0;font:inherit}
     .tb-bt:hover{background:#39415a}
     .tb-bt:disabled{opacity:.45;cursor:default}
     .tb-bt.pri{background:#8a6a1f;border-color:#c39a34;color:#fff}
     .tb-bt.on{background:#2c5c3a;border-color:#4a9a63;color:#fff}
-    .tb-bt.mini{padding:1px 6px;font-size:10.5px}
-    .tb-cx{background:#1a1f29;border:1px solid #262d3b;border-radius:7px;padding:6px 7px;margin:5px 0}
-    .tb-mut{color:#7d879b}
+    .tb-bt.mini{padding:1px 6px;min-width:var(--tb-alvo);font-size:var(--tb-fmin)}
+    .tb-cx{background:var(--tb-cx);border:1px solid #262d3b;border-radius:7px;padding:6px 7px;margin:5px 0}
+    .tb-mut{color:var(--tb-mut)}
     .tb-ok{color:#6ede8a}.tb-ruim{color:#ff7b72}.tb-av{color:#ffd479}
-    .tb-tag{font-size:10px;padding:0 5px;border-radius:9px;background:#2b3242;color:#9fb0c9;margin-left:3px;white-space:nowrap}
-    .tb-ficha{display:inline-block;padding:0 5px;border-radius:5px;background:#232936;border:1px solid #2b3242;margin:1px 2px 1px 0;font-size:10.5px;white-space:nowrap}
+    .tb-tag{font-size:var(--tb-fmin);padding:0 5px;border-radius:9px;background:var(--tb-borda);color:#9fb0c9;margin-left:3px;white-space:nowrap}
+    .tb-ficha{display:inline-block;padding:0 5px;border-radius:5px;background:var(--tb-campo);border:1px solid var(--tb-borda);margin:1px 2px 1px 0;font-size:var(--tb-fmin);white-space:nowrap}
     .tb-ficha.r{border-color:#4a3a8a}
-    .tb-ficha small{color:#7d879b}
-    table.tb-t{width:100%;border-collapse:collapse;font-size:10.5px;table-layout:fixed}
+    .tb-ficha small{color:var(--tb-mut);font-size:inherit}
+    table.tb-t{width:100%;border-collapse:collapse;font-size:var(--tb-fmin);table-layout:fixed}
     table.tb-t th.n{width:52px}
     table.tb-t td .tb-tag{white-space:normal}
-    table.tb-t th{text-align:left;color:#7d879b;font-weight:normal;border-bottom:1px solid #2b3242;padding:2px 3px}
+    table.tb-t th{text-align:left;color:var(--tb-mut);font-weight:normal;border-bottom:1px solid var(--tb-borda);padding:2px 3px}
     table.tb-t td{padding:2px 3px;border-bottom:1px dotted #1f2531;vertical-align:top}
-    #tb-hunt,#tb-boss,.tb-in{background:#232936;color:#dde3ee;border:1px solid #3a4356;border-radius:5px;padding:3px 5px;font:inherit}
+    #tb-hunt,#tb-boss,.tb-in{background:var(--tb-campo);color:var(--tb-texto);border:1px solid var(--tb-borda2);border-radius:5px;min-height:var(--tb-alvo);box-sizing:border-box;padding:3px 5px;font:inherit}
     #tb-hunt,#tb-boss{width:100%}
-    #tb-log{font-size:10px;max-height:52vh;overflow:auto}
-    #tb-log div{padding:1px 0;border-bottom:1px dotted #1f2531}
+    #tb-log{font-size:11px;line-height:1.45}
+    #tb-log div{padding:2px 0 2px 6px;border-bottom:1px dotted #1f2531;border-left:2px solid transparent}
+    #tb-log div.erro{border-left-color:#ff7b72;background:#1d1417}
+    #tb-log div.novo{border-left-color:var(--tb-ouro)}
+    #tb-log div.erro.novo{border-left-color:#ff7b72;background:#2a1517}
+    #tb-log .tb-log-h{color:var(--tb-mut);margin-right:4px}
     .tb-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin:5px 0}
-    .tb-card{background:#1a1f29;border:1px solid #262d3b;border-radius:7px;padding:4px 7px}
-    .tb-card small{display:block;color:#7d879b;font-size:9px;letter-spacing:.5px}
+    .tb-card{background:var(--tb-cx);border:1px solid #262d3b;border-radius:7px;padding:4px 7px}
+    .tb-card small{display:block;color:var(--tb-mut);font-size:var(--tb-fmin);letter-spacing:.5px}
     .tb-card b{font-size:14px;color:#fff}
-    .tb-sw{display:inline-block;width:34px;height:18px;border-radius:9px;background:#3a4356;position:relative;vertical-align:middle;cursor:pointer;flex:none}
-    .tb-sw.on{background:#4a9a63}
-    .tb-sw i{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:7px;background:#fff;transition:left .15s}
+    .tb-sw{display:inline-block;box-sizing:content-box;width:36px;height:20px;border:4px solid transparent;background:#3a4356;background-clip:padding-box;border-radius:14px;position:relative;vertical-align:middle;cursor:pointer;flex:none;padding:0;margin:0;appearance:none}
+    .tb-sw.on{background-color:#4a9a63}
+    .tb-sw i{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:8px;background:#fff;transition:left .15s}
     .tb-sw.on i{left:18px}
-    .tb-sub{display:flex;gap:3px;margin:3px 0 5px}
-    .tb-sub span{padding:2px 8px;border-radius:12px;background:#1a1f29;color:#8b93a5;cursor:pointer;border:1px solid #262d3b}
-    .tb-sub span.on{background:#2c5c3a;color:#fff;border-color:#4a9a63}
-    .tb-sub span b{color:#ffd479}
-    .tb-eq{display:grid;grid-template-columns:46px 1fr 12px 1fr;gap:2px 5px;align-items:center;padding:3px 0;border-bottom:1px dotted #262d3b;cursor:pointer}
-    .tb-eq .s{color:#7d879b;font-size:9px;letter-spacing:.3px;text-transform:uppercase}
+    .tb-sub{display:flex;flex-wrap:wrap;gap:3px;margin:3px 0 5px}
+    .tb-sub span,.tb-sub button{display:inline-flex;align-items:center;gap:3px;min-height:var(--tb-alvo);box-sizing:border-box;padding:2px 10px;border-radius:14px;background:var(--tb-cx);color:#9fb0c9;cursor:pointer;border:1px solid #262d3b;font:inherit}
+    .tb-sub span.on,.tb-sub button.on{background:#2c5c3a;color:#fff;border-color:#4a9a63}
+    .tb-sub span b,.tb-sub button b{color:#ffd479}
+    .tb-eq{display:grid;grid-template-columns:58px 1fr 12px 1fr;gap:2px 5px;align-items:center;padding:3px 0;border-bottom:1px dotted #262d3b;cursor:pointer}
+    .tb-eq .s{color:var(--tb-mut);font-size:var(--tb-fmin);letter-spacing:.2px;text-transform:uppercase}
     .tb-eq .g{color:#6ede8a;font-weight:bold}
-    .tb-eq small{display:block;color:#7d879b;font-size:9.5px}
-    .tb-rar{font-size:9px;padding:0 3px;border-radius:3px;margin-left:2px;background:#2b3242;color:#9fb0c9}
+    .tb-eq small{display:block;color:var(--tb-mut);font-size:var(--tb-fmin)}
+    .tb-rar{font-size:var(--tb-fmin);padding:0 3px;border-radius:3px;margin-left:2px;background:var(--tb-borda);color:#9fb0c9}
     .tb-rar.r1{color:#6ede8a}.tb-rar.r2{color:#5ab0ff}.tb-rar.r3{color:#c38bff}.tb-rar.r4{color:#ffb14a}.tb-rar.r5{color:#ff7b72}
-    .tb-det{grid-column:1/-1;background:#12151c;border-radius:6px;padding:5px 7px;font-size:10.5px;cursor:default}
+    .tb-det{grid-column:1/-1;background:var(--tb-bg);border-radius:6px;padding:5px 7px;font-size:var(--tb-fmin);cursor:default}
     .tb-det .m{color:#ff7b72;text-decoration:line-through;opacity:.8}
     .tb-det .neg{color:#ff7b72}
     details.tb-aj{margin:3px 0}
-    details.tb-aj>summary{cursor:pointer;color:#7d879b;font-size:10px;list-style:none;display:inline-block;padding:0 7px;border:1px solid #2b3242;border-radius:9px;user-select:none}
+    details.tb-aj>summary{cursor:pointer;color:var(--tb-mut);font-size:var(--tb-fmin);list-style:none;display:inline-flex;align-items:center;justify-content:center;min-width:var(--tb-alvo);min-height:var(--tb-alvo);box-sizing:border-box;padding:0 9px;border:1px solid var(--tb-borda);border-radius:14px;user-select:none}
     details.tb-aj>summary::-webkit-details-marker{display:none}
-    details.tb-aj[open]>summary{color:#ffd479;border-color:#3a4356}
+    details.tb-aj[open]>summary{color:var(--tb-ouro);border-color:var(--tb-borda2)}
     details.tb-aj>div{margin-top:4px}
-    label.tb-l{display:inline-flex;align-items:center;gap:3px;color:#9fb0c9}
+    label.tb-l{display:inline-flex;align-items:center;gap:4px;min-height:var(--tb-alvo);min-width:var(--tb-alvo);color:#9fb0c9}
+    label.tb-l input[type=checkbox],label.tb-l input[type=radio]{width:15px;height:15px;margin:0}
+    #tb-corpo [style*="font-size:8"],#tb-corpo [style*="font-size:9"],#tb-corpo [style*="font-size:10px"]{font-size:var(--tb-fmin)!important}
+    #tb-caixa.tb-cel{--tb-fmin:12px;--tb-alvo:40px;left:0;right:0}
+    .tb-cel #tb-trilho{width:auto;flex-direction:row;align-items:stretch;padding:2px;gap:0;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+    .tb-cel .tb-ico{flex:1 1 0;min-width:40px;height:52px;font-size:19px;gap:4px}
+    .tb-cel .tb-ico .tb-rot{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:9px/1 system-ui,-apple-system,sans-serif;letter-spacing:.2px}
+    .tb-cel .tb-ico .tb-dot{right:6px}
+    .tb-cel #tb-alca,.tb-cel #tb-esconder{width:40px;height:52px;margin:0}
+    .tb-cel #tb-alca::before{width:9px;height:24px;background:repeating-linear-gradient(90deg,#56607a 0 2px,transparent 2px 4px)}
+    .tb-cel #tb-gaveta{left:0!important;right:0!important;top:auto!important;bottom:0!important;width:auto;height:50vh;height:50dvh;max-height:none!important;border-radius:14px 14px 0 0;font-size:13px}
+    .tb-cel #tb-cab{cursor:default;touch-action:auto;min-height:46px}
+    .tb-cel #tb-corpo{padding-bottom:calc(8px + env(safe-area-inset-bottom, 0px))}
+    .tb-cel #tb-cab b{font-size:13px}
+    .tb-cel .tb-x{width:46px;height:42px;font-size:17px}
+    .tb-cel #tb-faixa{font-size:13px}
+    .tb-cel #tb-log{font-size:12px}
+    .tb-cel .tb-bt{padding:6px 12px}
+    .tb-cel #tb-hunt,.tb-cel #tb-boss,.tb-cel select{font-size:16px}
+    .tb-cel .tb-in{font-size:14px}
+    .tb-cel label.tb-l input[type=checkbox],.tb-cel label.tb-l input[type=radio]{width:20px;height:20px}
+    .tb-cel .tb-sw{border-width:10px 6px;border-radius:20px}
+    .tb-cel #tb-corpo [style*="font-size:10"],.tb-cel #tb-corpo [style*="font-size:11"]{font-size:var(--tb-fmin)!important}
+    #tb-mostrar.tb-cel{width:40px;height:56px}
     `;
 
     let ABA = 'magia';
-    let ULTIMO = null;
     /* v2.8.3 — AVISO DE VERSÃO NOVA (dono, 29/09: "quando alterar aqui, altera
      * no GitHub e só dá um refresh"). O Tampermonkey só confere o @updateURL no
      * intervalo dele, não a cada F5. Então o helper mesmo lê o cabeçalho do
@@ -3487,190 +4781,865 @@
     const RAW_URL = 'https://raw.githubusercontent.com/priscilaenorthon-dev/tibidle-helper/main/tibidle-helper.user.js';
     let NOVA_VERSAO = null;
     const versaoMaior = (a, b) => { const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number); for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d > 0; } return false; };
+    /* v2.11 — SÓ O CABEÇALHO, E SÓ VERSÃO DE VERDADE. Antes: baixava os
+     * ~300 KB do arquivo a cada 30 min para ler 1 linha, e o que viesse depois
+     * de "@version" ia cru para o Log (e o Log não escapava — CONFIRMADO).
+     * Agora: Range 0-4095 (e, se o servidor ignorar, a leitura para no
+     * primeiro ==/UserScript==), e a versão tem que casar /^\d+(\.\d+){1,3}$/. */
+    const VERSAO_VALIDA = /^\d+(\.\d+){1,3}$/;
+    async function lerCabecalhoRemoto() {
+        const pedir = (comRange) => comPrazo(signal => fetch(RAW_URL + '?t=' + Date.now(),
+            Object.assign({ cache: 'no-store' }, comRange ? { headers: { Range: 'bytes=0-4095' } } : {}, signal ? { signal } : {})), PRAZO_REDE_MS);
+        let r;
+        try { r = await pedir(true); } catch (e) { r = await pedir(false); }   // Range recusado no CORS: sem ele
+        if (!r || !r.ok) return null;
+        if (r.body && typeof r.body.getReader === 'function' && typeof TextDecoder === 'function') {
+            const leitor = r.body.getReader(), dec = new TextDecoder();
+            let txt = '';
+            while (txt.length < 8192) {
+                const { done, value } = await leitor.read();
+                if (done) break;
+                txt += dec.decode(value, { stream: true });
+                if (txt.includes('==/UserScript==')) break;
+            }
+            try { leitor.cancel().catch(() => { }); } catch (e) { }
+            return txt;
+        }
+        return (await r.text()).slice(0, 8192);
+    }
     async function verificarAtualizacao() {
         try {
-            const r = await fetch(RAW_URL + '?t=' + Date.now(), { cache: 'no-store' });
-            if (!r.ok) return null;
-            const cab = (await r.text()).slice(0, 2000);
-            const v = (cab.match(/@version\s+(\S+)/) || [])[1];
-            if (v && versaoMaior(v, VERSAO) && NOVA_VERSAO !== v) { NOVA_VERSAO = v; log('versão nova no GitHub: ' + v + ' (esta é ' + VERSAO + ') — clique em ↑ no trilho para atualizar', 'ok'); }
+            const cab = await lerCabecalhoRemoto();
+            if (!cab) return null;
+            const fimCab = cab.indexOf('==/UserScript==');
+            const v = ((fimCab > 0 ? cab.slice(0, fimCab) : cab).match(/@version\s+(\S+)/) || [])[1];
+            if (!v || !VERSAO_VALIDA.test(v)) return null;
+            if (versaoMaior(v, VERSAO) && NOVA_VERSAO !== v) { NOVA_VERSAO = v; log('versão nova no GitHub: ' + v + ' (esta é ' + VERSAO + ') — clique em ↑ no trilho para atualizar', 'ok'); }
             try { pintarTrilho(); } catch (e) { }
             return v;
         } catch (e) { return null; }
     }
     function abrirAtualizacao() { window.open(RAW_URL, '_blank'); }
     /* v2.8.0 — estado da interface por conta: qual gaveta, aberta ou não,
-     * posição vertical do trilho, trilho escondido. */
-    const UI_PADRAO = { aba: 'magia', aberta: false, top: 84, right: 8, oculto: false };
+     * posição vertical do trilho, trilho escondido.
+     * v2.10 — posição nova: livre=false → lugar automático (borda esquerda da
+     * cena, medido no jogo a cada repintura); livre=true → onde o dono soltou,
+     * guardado a partir da borda mais próxima (ancora 'esq'|'dir' + dx) para
+     * sobreviver a troca de resolução. yCel = altura do trilho no celular.
+     * logLido = hora em que o Log foi aberto pela última vez (contador). */
+    const UI_PADRAO = { aba: 'magia', aberta: false, oculto: false, livre: false, ancora: 'esq', dx: 8, y: 84, yCel: null, logLido: 0 };
     let UI = null;
-    const ui = () => UI || (UI = Object.assign({}, UI_PADRAO, ler('ui', {})));
+    const ui = () => {
+        if (UI) return UI;
+        const s = ler('ui', {}) || {};
+        UI = migrarUI(s, UI_PADRAO, Date.now());
+        if (s.logLido === undefined || s.livre === undefined) guardar('ui', UI);
+        return UI;
+    };
     const guardarUI = (patch) => { UI = Object.assign(ui(), patch); guardar('ui', UI); };
-    const ICONES = [['estado', '⌂', 'Status'], ['magia', '✦', 'Magia'], ['autohunt', '↻', 'Auto Hunt'], ['scan', '◎', 'Scan'], ['equip', '⛨', 'Equip'], ['analise', '▤', 'Analisador'], ['log', '≡', 'Log']];
+    const ICONES = [['estado', '⌂', 'Status'], ['magia', '✦', 'Magia'], ['autohunt', '↻', 'Auto Hunt'], ['scan', '◎', 'Scan'], ['equip', '⛨', 'Equip'], ['analise', '▤', 'Analisador'], ['progresso', '⚑', 'Progresso'], ['mercado', '⚖', 'Mercado'], ['log', '≡', 'Log']];
     /* "?" com a explicação escondida; data-k preserva aberto/fechado ao repintar */
     const aj = (k, html, rotulo) => `<details class="tb-aj" data-k="${k}"><summary>${rotulo || '?'}</summary><div class="tb-mut">${html}</div></details>`;
 
     /* v2.8.4 — o helper não fica mais preso na borda: trilho + gaveta vivem
      * numa caixa solta (#tb-caixa), arrastável pela alça ou pelo cabeçalho
-     * da gaveta para qualquer canto; posição (right/top) guardada por conta. */
-    let _caixa = null;
-    function posicionarCaixa() {
-        const cx = _caixa, m = $('#tb-mostrar'); if (!cx) return;
-        const u = ui(), w = cx.offsetWidth || 44, h = Math.min(cx.offsetHeight || 60, 120);
-        const right = Math.max(0, Math.min(window.innerWidth - w, +u.right || 0));
-        const top = Math.max(0, Math.min(window.innerHeight - h, +u.top || 84));
-        u.right = right; u.top = top;
-        cx.style.right = right + 'px'; cx.style.top = top + 'px';
-        if (m) m.style.top = top + 'px';
+     * da gaveta para qualquer canto; posição (right/top) guardada por conta.
+     * v2.10 — medido numa maquete com o CSS real do jogo (29/09): colado à
+     * direita, a gaveta cobria 74 % da barra de atalhos (slots de ataque 2–4
+     * inteiros), 88 % da mochila e 96 % do equipamento, e em 1366×768 entrava
+     * na barra de ação. Agora o lugar padrão é a borda ESQUERDA da cena
+     * (coluna esquerda + 8, topbar + 12), medido na hora; a gaveta abre para
+     * dentro da cena e para antes da barra de ação. Arrastar ao fundo tirava 6
+     * ícones da tela (o limite olhava só 120 px do trilho): agora o trilho
+     * inteiro fica na tela e a gaveta cresce para cima quando embaixo não cabe. */
+    /* @@CASCA-INICIO — geometria e contas puras da casca (sem DOM); testes/casca.test.js roda este trecho no node. */
+    const CEL_MAX = 640, MARGEM = 8;
+    const limitar = (v, a, b) => Math.max(a, Math.min(b, v));
+    /* 2.9 → 2.10: a 2.9 guardava {right, top} sempre, mesmo sem arrastar, e
+     * right 8/top 84 era o padrão (colado na barra de atalhos). Esse par vira
+     * o lugar automático novo; qualquer outro é arrasto do dono e continua
+     * valendo, ancorado à direita. logLido ausente = agora (a versão nova não
+     * herda erros velhos no contador do Log). */
+    function migrarUI(s, padrao, agora) {
+        s = s || {};
+        const u = Object.assign({}, padrao, s);
+        if (s.livre === undefined) {
+            const movida = s.right != null && s.top != null && (+s.right !== 8 || +s.top !== 84);
+            Object.assign(u, movida ? { livre: true, ancora: 'dir', dx: +s.right || 0, y: +s.top || 0 } : { livre: false });
+        }
+        delete u.right; delete u.top;
+        if (s.logLido === undefined) u.logLido = agora;
+        return u;
     }
+    /* canto de cima/esquerda do trilho no desktop. J = layout do jogo medido
+     * (medirJogo); sem shell (login, lobby) cai em 8/84. O trilho INTEIRO fica
+     * na tela — antes o limite olhava só 120 px dele. */
+    function lugarDoTrilho(W, H, tw, th, u, arrasto, J) {
+        let x, y;
+        if (arrasto) { x = arrasto.x; y = arrasto.y; }
+        else if (u.livre) { x = u.ancora === 'dir' ? W - (+u.dx || 0) - tw : +u.dx || 0; y = +u.y || 0; }
+        else { x = (J.esq ? J.esq.right : 0) + MARGEM; y = (J.topo ? J.topo.bottom : 72) + 12; }
+        return { x: limitar(Math.round(x), 4, Math.max(4, W - tw - 4)), y: limitar(Math.round(y), 4, Math.max(4, H - th - 4)) };
+    }
+    /* celular: só a altura; padrão logo acima de onde a folha (50 %) abre */
+    const alturaDoTrilhoCel = (H, th, u, arrasto) => limitar(Math.round(arrasto ? arrasto.y : u.yCel != null ? +u.yCel : H * 0.5 - th - 4), 0, Math.max(0, H - th));
+    /* gaveta: no lugar padrão, para dentro da cena (direita do trilho); solta,
+     * para o lado com mais espaço. chão = topo da barra de ação (o chat vem
+     * abaixo dela) quando ela está sob a gaveta; teto = fim da topbar. Desce a
+     * partir do topo do trilho (top) ou, se embaixo não cabe, sobe a partir da
+     * base do trilho sem passar do chão (bottom) — trilho arrastado ao fundo
+     * não joga a gaveta em cima do ENCERRAR. Altura ≤ 62 % da janela. */
+    function lugarDaGaveta(W, H, p, tw, th, gw, padrao, J) {
+        const { x, y } = p, esq = x + tw / 2 < W / 2;
+        const cabeDir = x + tw + 4 + gw <= W - 4, cabeEsq = x - 4 - gw >= 4;
+        const gx = limitar(((padrao || esq) && cabeDir) || !cabeEsq ? x + tw + 4 : x - 4 - gw, 4, Math.max(4, W - gw - 4));
+        const barra = J.acao || J.chat, teto = (J.topo ? J.topo.bottom : 0) + 4, alvo = Math.round(H * 0.62);
+        const chao = barra && gx < barra.right && gx + gw > barra.left && barra.top - MARGEM - teto >= 200 ? barra.top - MARGEM : H - MARGEM;
+        const hA = (y + 200 <= chao ? chao : H - MARGEM) - y, baseB = Math.min(y + th, chao), hB = baseB - teto;
+        if (hA >= Math.min(alvo, 320) || hA >= hB) return { gx, top: y, bottom: null, maxH: Math.min(alvo, hA), esq };
+        return { gx, top: null, bottom: H - baseB, maxH: Math.min(alvo, hB), esq };
+    }
+    /* erros do Log depois da última leitura (LOG está em ordem de chegada) */
+    function contarErrosNaoLidos(linhas, lido) {
+        let n = 0;
+        for (let i = linhas.length - 1; i >= 0 && linhas[i].t > lido; i--) if (linhas[i].tipo === 'erro') n++;
+        return n;
+    }
+    /* faixa de retorno: o aviso explícito da aba ou, enquanto as telas não
+     * chamam avisar(), a última linha do Log que chegou até 60 s depois de um
+     * clique num controle desta aba; some 10 s depois de chegar. */
+    const FAIXA_MS = 10000, FAIXA_JANELA_MS = 60000;
+    function escolherAviso(aviso, acao, ultima, aba, agora) {
+        let a = aviso || null;
+        if (acao && acao.aba === aba && ultima && ultima.t >= acao.t && ultima.t - acao.t <= FAIXA_JANELA_MS && (!a || ultima.t > a.t)) a = ultima;
+        return a && agora - a.t < FAIXA_MS ? a : null;
+    }
+    /* @@CASCA-FIM */
+    const ehCelular = () => (window.innerWidth || 1200) <= CEL_MAX;
+    let _caixa = null, _arrasto = null, _pos = null;
+    /* layout do jogo medido na hora (null = não está na tela: login, lobby) */
+    function medirJogo() {
+        const r = s => { const e = document.querySelector(s); if (!e || !e.getBoundingClientRect) return null; const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0 ? b : null; };
+        return { esq: r('.s-shell-col-left'), topo: r('.s-shell-topbar'), acao: r('.s-action-bar'), chat: r('.s-log-dock') };
+    }
+    function posicionarCaixa() {
+        const cx = _caixa, t = $('#tb-trilho'), g = $('#tb-gaveta'), m = $('#tb-mostrar'); if (!cx || !t || !g) return;
+        const W = window.innerWidth || 1200, H = window.innerHeight || 800, u = ui(), cel = ehCelular();
+        cx.classList.toggle('tb-cel', cel); if (m) m.classList.toggle('tb-cel', cel);
+        if (cel) {
+            /* celular (≤ 640 px): trilho horizontal de largura total que só sobe
+             * e desce; a gaveta é folha inferior (CSS). Com a folha aberta, o
+             * trilho fica logo acima dela em vez de sumir embaixo. */
+            const th = t.offsetHeight || 58;
+            let y = alturaDoTrilhoCel(H, th, u, _arrasto);
+            _pos = { x: 0, y };
+            if (g.classList.contains('on')) { const topo = g.getBoundingClientRect().top; if (y + th > topo) y = Math.max(0, topo - th); }
+            cx.style.left = ''; cx.style.top = y + 'px';
+            g.style.left = g.style.top = g.style.bottom = g.style.maxHeight = '';
+            if (m) { m.classList.remove('esq'); m.style.left = ''; m.style.right = '0px'; m.style.top = limitar(y, 0, H - 56) + 'px'; m.textContent = '‹'; }
+            const es = $('#tb-esconder', t); if (es) es.textContent = '›';
+            return;
+        }
+        const J = medirJogo(), tw = t.offsetWidth || 46, th = t.offsetHeight || 300;
+        const p = lugarDoTrilho(W, H, tw, th, u, _arrasto, J), { x, y } = p;
+        _pos = p;
+        cx.style.left = x + 'px'; cx.style.top = y + 'px';
+        const L = lugarDaGaveta(W, H, p, tw, th, g.offsetWidth || 300, !u.livre && !_arrasto, J), esq = L.esq;
+        g.style.left = L.gx + 'px'; g.style.maxHeight = L.maxH + 'px';
+        g.style.top = L.top != null ? L.top + 'px' : 'auto'; g.style.bottom = L.bottom != null ? L.bottom + 'px' : 'auto';
+        if (m) { m.classList.toggle('esq', esq); m.style.left = esq ? '0px' : ''; m.style.right = esq ? '' : '0px'; m.style.top = limitar(y, 0, H - 56) + 'px'; m.textContent = esq ? '›' : '‹'; }
+        const es = $('#tb-esconder', t); if (es) es.textContent = esq ? '‹' : '›';
+    }
+    /* soltou: guarda a partir da borda mais próxima (resolução nova não joga o
+     * trilho para fora) — no celular, só a altura */
+    function fixarPosicao() {
+        const p = _pos; _arrasto = null; if (!p) return;
+        if (ehCelular()) guardarUI({ yCel: p.y });
+        else {
+            const t = $('#tb-trilho'), tw = (t && t.offsetWidth) || 46, W = window.innerWidth || 1200, dir = p.x + tw / 2 > W / 2;
+            guardarUI({ livre: true, ancora: dir ? 'dir' : 'esq', dx: dir ? W - p.x - tw : p.x, y: p.y });
+        }
+        posicionarCaixa();
+    }
+    function voltarAoPadrao() { _arrasto = null; guardarUI({ livre: false, yCel: null }); posicionarCaixa(); avisar(ABA, 'helper de volta ao lugar padrão', 'ok'); }
+    /* rótulo de 9 px sob o ícone no celular; sem entrada aqui, usa o nome de ICONES */
+    const ROTULO_CURTO = { autohunt: 'Auto', analise: 'Análise' };
     function montarPainel() {
         if ($('#tb-trilho')) return;
         const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
         const u = ui(); ABA = ICONES.some(x => x[0] === u.aba) ? u.aba : 'magia';
         const cx = document.createElement('div'); cx.id = 'tb-caixa'; _caixa = cx;
+        /* v2.10 — ícones, alça, esconder e ✕ são <button> com aria-label (antes
+         * <div> sem tabindex: o Tab não chegava a nada); aria-pressed marca a
+         * aba aberta. O trilho vem antes da gaveta no DOM (ordem do Tab). */
+        const bt = (id, cls, rot, txt) => `<button type="button" id="${id}"${cls ? ` class="${cls}"` : ''} title="${rot}" aria-label="${rot}">${txt}</button>`;
         const t = document.createElement('div'); t.id = 'tb-trilho';
-        t.innerHTML = `<div id="tb-alca" title="arrastar"></div>` +
-            ICONES.map(([k, ic, nome]) => `<div class="tb-ico" data-aba="${k}" title="${nome}">${ic}<span class="tb-dot"></span></div>`).join('') +
-            `<div class="tb-ico" id="tb-atualizar" title="versão nova disponível" style="display:none;color:#6ede8a">↑</div>` +
-            `<div id="tb-esconder" title="esconder o helper">›</div>`;
+        t.setAttribute('role', 'group'); t.setAttribute('aria-label', 'Tibidle Helper');
+        t.innerHTML = bt('tb-alca', '', 'mover o helper (arraste ou use as setas; duplo clique volta ao lugar padrão)', '') +
+            ICONES.map(([k, ic, nome]) => `<button type="button" class="tb-ico" data-aba="${k}" title="${nome}" aria-label="${nome}" aria-pressed="false" aria-controls="tb-gaveta"><span aria-hidden="true">${ic}</span><span class="tb-rot" aria-hidden="true">${ROTULO_CURTO[k] || nome}</span><span class="tb-dot"></span>${k === 'log' ? '<span class="tb-cont" hidden></span>' : ''}</button>`).join('') +
+            `<button type="button" class="tb-ico" id="tb-atualizar" title="versão nova disponível" aria-label="atualizar o helper" style="display:none;color:#6ede8a"><span aria-hidden="true">↑</span><span class="tb-rot" aria-hidden="true">Atualizar</span></button>` +
+            bt('tb-esconder', '', 'esconder o helper', '‹');
         const g = document.createElement('div'); g.id = 'tb-gaveta';
-        g.innerHTML = `<div id="tb-cab" title="arrastar"><b id="tb-titulo"></b><span class="tb-mut">v${VERSAO}</span><span class="tb-x" id="tb-fechar" title="fechar">✕</span></div><div id="tb-corpo"></div>`;
-        const m = document.createElement('div'); m.id = 'tb-mostrar'; m.title = 'mostrar o helper';
-        cx.append(g, t);
+        g.setAttribute('role', 'region'); g.setAttribute('aria-labelledby', 'tb-titulo');
+        g.innerHTML = `<div id="tb-cab" title="arrastar"><b id="tb-titulo"></b><span class="tb-mut">v${VERSAO}</span>${bt('tb-fechar', 'tb-x', 'fechar a gaveta (Esc)', '✕')}</div>` +
+            `<div id="tb-faixa" role="status" aria-live="polite" hidden></div><div id="tb-corpo"></div>`;
+        const m = document.createElement('button'); m.type = 'button'; m.id = 'tb-mostrar'; m.title = 'mostrar o helper'; m.setAttribute('aria-label', 'mostrar o helper');
+        cx.append(t, g);
         document.body.append(cx, m);
-        posicionarCaixa();
-        const mostrar = (v) => { cx.classList.toggle('tb-oculto', !v); m.style.display = v ? 'none' : 'block'; if (!v) g.classList.remove('on'); };
+        const icone = k => $(`.tb-ico[data-aba="${k}"]`, t);
+        const mostrar = (v) => { cx.classList.toggle('tb-oculto', !v); m.style.display = v ? 'none' : 'block'; if (!v) g.classList.remove('on'); posicionarCaixa(); };
         $$('.tb-ico[data-aba]', t).forEach(i => i.onclick = () => { const k = i.dataset.aba; const aberta = !(ui().aberta && ABA === k); ABA = k; guardarUI({ aba: k, aberta }); renderizar(); });
-        $('#tb-fechar').onclick = () => { guardarUI({ aberta: false }); renderizar(); };
-        $('#tb-atualizar').onclick = abrirAtualizacao;
-        $('#tb-esconder').onclick = () => { guardarUI({ oculto: true }); mostrar(false); };
-        m.onclick = () => { guardarUI({ oculto: false }); mostrar(true); renderizar(); };
+        $('#tb-fechar', g).onclick = () => { guardarUI({ aberta: false }); renderizar(); const i = icone(ABA); if (i) i.focus(); };
+        $('#tb-atualizar', t).onclick = abrirAtualizacao;
+        $('#tb-esconder', t).onclick = () => { guardarUI({ oculto: true }); mostrar(false); m.focus(); };
+        m.onclick = () => { guardarUI({ oculto: false }); mostrar(true); renderizar(); const i = icone(ABA); if (i) i.focus(); };
+
+        /* v2.10 — arrasto com Pointer Events (mouse, dedo, caneta; antes só
+         * mousedown, e no celular não mexia). setPointerCapture segura o
+         * arrasto com o dedo fora da alça; touch-action:none no CSS impede a
+         * página de rolar junto. 4 px de folga separam clique de arrasto. */
         let arr = null;
-        const pegar = e => { if (e.button !== 0 || e.target.closest('.tb-x')) return; arr = { x: e.clientX, y: e.clientY, right: ui().right, top: ui().top }; e.preventDefault(); };
-        $('#tb-alca').addEventListener('mousedown', pegar);
-        $('#tb-cab').addEventListener('mousedown', pegar);
-        document.addEventListener('mousemove', e => { if (!arr) return; ui().right = arr.right - (e.clientX - arr.x); ui().top = arr.top + (e.clientY - arr.y); posicionarCaixa(); });
-        document.addEventListener('mouseup', () => { if (arr) { arr = null; guardarUI({ right: ui().right, top: ui().top }); } });
+        const pegar = e => {
+            if (e.pointerType === 'mouse' && e.button !== 0) return;
+            if (e.currentTarget.id === 'tb-cab' && (ehCelular() || e.target.closest('button'))) return;
+            const r = t.getBoundingClientRect();
+            arr = { id: e.pointerId, x: e.clientX, y: e.clientY, x0: r.left, y0: r.top, moveu: false };
+            try { e.currentTarget.setPointerCapture(e.pointerId); } catch { }
+            e.preventDefault();
+        };
+        const mover = e => {
+            if (!arr || e.pointerId !== arr.id) return;
+            const dx = e.clientX - arr.x, dy = e.clientY - arr.y;
+            if (!arr.moveu && Math.abs(dx) + Math.abs(dy) < 4) return;
+            arr.moveu = true; cx.classList.add('tb-arrastando');
+            _arrasto = { x: arr.x0 + dx, y: arr.y0 + dy }; posicionarCaixa();
+        };
+        const soltar = e => {
+            if (!arr || e.pointerId !== arr.id) return;
+            const moveu = arr.moveu; arr = null; cx.classList.remove('tb-arrastando');
+            if (moveu) fixarPosicao();
+        };
+        const alca = $('#tb-alca', t);
+        [alca, $('#tb-cab', g)].forEach(el => el.addEventListener('pointerdown', pegar));
+        document.addEventListener('pointermove', mover);
+        document.addEventListener('pointerup', soltar);
+        document.addEventListener('pointercancel', soltar);
+        alca.addEventListener('dblclick', voltarAoPadrao);
+        alca.addEventListener('keydown', e => {
+            if (e.key === 'Home') { e.preventDefault(); voltarAoPadrao(); return; }
+            const p = e.shiftKey ? 48 : 12, d = { ArrowUp: [0, -p], ArrowDown: [0, p], ArrowLeft: [-p, 0], ArrowRight: [p, 0] }[e.key];
+            if (!d || !_pos) return;
+            e.preventDefault(); _arrasto = { x: _pos.x + d[0], y: _pos.y + d[1] }; posicionarCaixa(); fixarPosicao();
+        });
+        /* Esc fecha a gaveta com o foco no helper (ou em lugar nenhum). Com o
+         * foco num diálogo do jogo, o Esc continua sendo do jogo. */
+        document.addEventListener('keydown', e => {
+            if (e.key !== 'Escape' || !ui().aberta || ui().oculto) return;
+            const at = document.activeElement, noHelper = !!at && cx.contains(at);
+            if (!noHelper && at && at !== document.body && at !== document.documentElement) return;
+            if (noHelper) { e.preventDefault(); e.stopPropagation(); }
+            guardarUI({ aberta: false }); renderizar();
+            if (noHelper) { const i = icone(ABA); if (i) i.focus(); }
+        });
+
+        /* v2.10 — acessibilidade do que as telas desenham, sem mexer no HTML
+         * delas: chave (.tb-sw) ganha role=switch + aria-checked, sub-aba e
+         * "ir ›" do Scan ganham role=button (+ aria-pressed na sub-aba), todos
+         * entram no Tab e respondem a Enter/Espaço. Quando as telas passarem a
+         * desenhar <button>, isto só completa o que faltar. O repinte troca o
+         * innerHTML e o foco caía no <body>: volta para o mesmo controle. */
+        const corpo = $('#tb-corpo', g);
+        let foco = null;
+        const chaveDoFoco = el => { if (!el || el === corpo || !corpo.contains(el)) return null; if (el.id) return { id: el.id }; for (const a of ['data-voc', 'data-modelo', 'data-scan-ir', 'data-scan-mapa', 'data-k']) if (el.hasAttribute(a)) return { a, v: el.getAttribute(a) }; return null; };
+        const acharFoco = k => k.id ? document.getElementById(k.id) : corpo.querySelector(`[${k.a}="${String(k.v).replace(/["\\]/g, '\\$&')}"]`);
+        const acessibilizar = () => {
+            $$('.tb-sw', corpo).forEach(s => {
+                s.setAttribute('role', 'switch'); s.setAttribute('aria-checked', s.classList.contains('on') ? 'true' : 'false');
+                if (s.tagName !== 'BUTTON' && !s.hasAttribute('tabindex')) s.tabIndex = 0;
+                if (!s.getAttribute('aria-label')) { const r = s.parentElement && $('b', s.parentElement); s.setAttribute('aria-label', r ? r.textContent.trim() : 'ligar/desligar'); }
+            });
+            $$('.tb-sub > span, .tb-sub > button, [data-scan-ir]', corpo).forEach(s => {
+                if (s.tagName !== 'BUTTON') { s.setAttribute('role', 'button'); if (!s.hasAttribute('tabindex')) s.tabIndex = 0; }
+                if (s.parentElement && s.parentElement.classList.contains('tb-sub') && !s.hasAttribute('aria-pressed')) s.setAttribute('aria-pressed', s.classList.contains('on') ? 'true' : 'false');
+            });
+        };
+        corpo.addEventListener('keydown', e => {
+            if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('[role=switch]:not(button),[role=button]:not(button)')) { e.preventDefault(); e.target.click(); }
+        });
+        corpo.addEventListener('focusin', e => { foco = chaveDoFoco(e.target); });
+        document.addEventListener('focusin', e => { if (!corpo.contains(e.target)) foco = null; }, true);
+        document.addEventListener('pointerdown', e => { if (!cx.contains(e.target)) foco = null; }, true);
+        if (typeof MutationObserver === 'function') new MutationObserver(() => {
+            acessibilizar();
+            const at = document.activeElement;
+            if (foco && (!at || at === document.body)) { const el = acharFoco(foco); if (el) { try { el.focus({ preventScroll: true }); } catch { } } }
+        }).observe(corpo, { childList: true });
+        // faixa de retorno: um clique num controle da aba marca "ação desta aba"
+        corpo.addEventListener('click', e => { if (e.target.closest && e.target.closest('button,[role=switch],[role=button],.tb-sw,[data-scan-ir],input[type=checkbox],input[type=radio]')) _acaoNaAba = { aba: ABA, t: Date.now() }; }, true);
+        corpo.addEventListener('change', () => { _acaoNaAba = { aba: ABA, t: Date.now() }; }, true);
+
         window.addEventListener('resize', posicionarCaixa);
         mostrar(!u.oculto);
         renderizar();
     }
-    function pintarLog() {
-        const c = $('#tb-log'); if (!c) return;
-        c.innerHTML = LOG.slice(-80).reverse().map(l => {
-            const cor = l.tipo === 'erro' ? 'tb-ruim' : l.tipo === 'ok' ? 'tb-ok' : 'tb-mut';
-            const h = new Date(l.t).toLocaleTimeString('pt-BR');
-            return `<div><span class="tb-mut">${h}</span> <span class="${cor}">${l.msg}</span></div>`;
-        }).join('');
+    /* v2.10 — contador de erros não lidos no ícone do Log (o ponto vermelho
+     * antigo olhava só a ÚLTIMA linha: um erro seguido de um info sumia).
+     * Integração 2.11: fica esta contagem pelo LOG (sobrevive ao F5, porque
+     * logLido é guardado); ERROS.naoLidos (área B, só em memória) é zerado
+     * junto em marcarLogLido para os dois nunca discordarem. */
+    function errosNaoLidos() { return contarErrosNaoLidos(LOG, +ui().logLido || 0); }
+    let _logAberto = false, _logLidoAntes = 0;
+    function marcarLogLido() {
+        const u = ui();
+        if (!_logAberto) { _logAberto = true; _logLidoAntes = +u.logLido || 0; }
+        if (errosNaoLidos() > 0 || Date.now() - (+u.logLido || 0) > 5000) guardarUI({ logLido: Date.now() });
+        ERROS.naoLidos = 0;
     }
+    function pintarContadorLog() {
+        const i = $('#tb-trilho .tb-ico[data-aba="log"]'); if (!i) return;
+        const n = errosNaoLidos(), b = $('.tb-cont', i), nome = (ICONES.find(x => x[0] === 'log') || [])[2] || 'Log';
+        if (b) { b.textContent = n > 9 ? '9+' : String(n); b.hidden = !n; }
+        const rot = n ? `${nome} — ${n} erro${n > 1 ? 's' : ''} não lido${n > 1 ? 's' : ''}` : nome;
+        if (i.getAttribute('aria-label') !== rot) { i.setAttribute('aria-label', rot); i.title = rot; }
+    }
+    /* faixa de retorno: último aviso DA ABA ABERTA por 10 s (escolherAviso) */
+    let _acaoNaAba = null, _faixaTimer = null;
+    function pintarFaixa() {
+        const f = $('#tb-faixa'); if (!f) return;
+        const u = ui(), a = u.aberta && !u.oculto && ABA !== 'log' ? escolherAviso(AVISOS[ABA], _acaoNaAba, LOG[LOG.length - 1], ABA, Date.now()) : null;
+        clearTimeout(_faixaTimer); _faixaTimer = null;
+        if (!a) { if (!f.hidden) { f.hidden = true; f.textContent = ''; delete f.dataset.t; } return; }
+        if (f.hidden || f.dataset.t !== String(a.t) || f.title !== a.msg) {
+            const tipo = a.tipo === 'erro' ? 'erro' : a.tipo === 'ok' ? 'ok' : 'info';
+            f.className = tipo; f.dataset.icone = tipo === 'erro' ? '✕' : tipo === 'ok' ? '✓' : '›'; f.dataset.t = String(a.t);
+            const s = document.createElement('span'); s.textContent = a.msg; f.replaceChildren(s); f.title = a.msg; f.hidden = false;
+        }
+        _faixaTimer = setTimeout(pintarFaixa, Math.max(250, FAIXA_MS - (Date.now() - a.t) + 50));
+    }
+    /* v2.10 — Log: 11 px (era 10), hora apagada à esquerda, erro com barra
+     * vermelha, linhas que chegaram desde a última leitura com barra dourada;
+     * sem rolagem própria (a gaveta já rola). Abrir o Log zera o contador. */
+    function pintarLog() {
+        const c = $('#tb-log');
+        if (c) marcarLogLido();
+        pintarContadorLog();
+        pintarFaixa();
+        if (!c) return;
+        const novo = _logLidoAntes;
+        const html = LOG.length ? LOG.slice(-80).reverse().map(l => {
+            const cor = l.tipo === 'erro' ? 'tb-ruim' : l.tipo === 'ok' ? 'tb-ok' : '';
+            const h = new Date(l.t).toLocaleTimeString('pt-BR');
+            /* v2.11 — escHtml: o Log guarda texto que vem de FORA (erro do servidor,
+             * nome de item, versão do GitHub) e é persistido; sem escapar, um
+             * "<img onerror>" rodava a cada vez que o Log abria (CONFIRMADO). */
+            return `<div class="${l.tipo === 'erro' ? 'erro' : ''}${l.t > novo ? ' novo' : ''}"><span class="tb-log-h">${h}</span> <span class="${cor}">${escHtml(l.msg)}</span></div>`;
+        }).join('') : '<div class="tb-mut">nada registrado ainda</div>';
+        /* v2.11 (D2) — mesma linha, mesmo DOM: log() chama isto a cada linha e o
+         * repinte de 4 s também; reescrever o Log igual apagava a seleção de
+         * quem estava copiando um erro. */
+        if (c._tbHtml === html) return;
+        c._tbHtml = html;
+        c.innerHTML = html;
+    }
+
+    /* =========================================================================
+     *  v2.11 (D2) — CONTEÚDO DAS TELAS Status, Magia, Equip, Analisador e Log
+     *
+     *  O que a revisão de UI de 29/09 achou nestas telas e como ficou:
+     *   • nome de hunt/boss/magia/item, erro do servidor e título de sessão
+     *     iam crus para o innerHTML (só o Equip escapava) → escHtml em tudo que
+     *     vem de fora, inclusive <option value="…"> (boss "Pesso&Vesso");
+     *   • "ocupado" morava no botão (btn.disabled pelo handler) e o repinte de
+     *     4 s reconstruía o botão habilitado: o Auto-sell aceitava o 2º clique
+     *     no meio do 1º (CONFIRMADO) → o estado mora em variável e o HTML o
+     *     desenha; o handler recusa o clique repetido;
+     *   • o repinte trocava o innerHTML mesmo sem mudança: o select da hunt
+     *     perdia o foco (e fechava) e a caixa do "copiar JSON" sumia → ver
+     *     _renderizar (só troca quando o HTML muda; com um select/caixa de
+     *     texto em uso, espera o blur);
+     *   • números em pt-BR (vírgula decimal), "2+ alvos" no lugar de "≥2",
+     *     "poção de mana ≤30%" no lugar de "mana Mana ≤30", slots e vocações
+     *     em português, "OURO —" quando o saldo não foi lido (era "0").
+     *  CSS com escopo nestas telas, com as variáveis --tb-* da casca (piso de
+     *  fonte --tb-fmin, alvo --tb-alvo: 10,5/28 px no desktop, 12/40 no celular).
+     * ====================================================================== */
+    const CSS_TELAS = `
+    #tb-corpo .tb-larga{display:block;width:100%;margin:3px 0}
+    #tb-corpo .tb-grande{font-size:13px;padding:8px}
+    .tb-st-topo{flex-wrap:nowrap}
+    .tb-st-hunt{margin-left:auto;text-align:right;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .tb-card .tb-oz{font-size:var(--tb-fmin);color:var(--tb-mut);font-weight:normal}
+    .tb-card b.tb-vazio{color:var(--tb-mut);font-weight:normal}
+    .tb-par{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin:3px 0}
+    #tb-corpo .tb-par .tb-bt{margin:0;width:100%;min-width:0}
+    .tb-nota{font-size:var(--tb-fmin);margin-top:4px}
+    .tb-seg{display:flex;margin:0 0 6px;border:1px solid var(--tb-borda2);border-radius:7px;overflow:hidden;background:#2a3142}
+    .tb-seg button{flex:1 1 0;min-width:0;min-height:var(--tb-alvo);box-sizing:border-box;margin:0;padding:2px 3px;border:0;border-left:1px solid var(--tb-borda2);background:transparent;color:var(--tb-texto);font:inherit;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .tb-seg button:first-child{border-left:0}
+    .tb-seg button:hover{background:#39415a}
+    .tb-seg button[aria-pressed="true"]{background:#2c5c3a;color:#fff;font-weight:bold}
+    .tb-palpite{font-size:var(--tb-fmin);flex-wrap:nowrap}
+    .tb-palpite>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .tb-resist{font-size:var(--tb-fmin);margin-top:2px}
+    .tb-ver{margin:5px 0;padding:5px 7px;border-radius:7px;border:1px solid var(--tb-borda);background:var(--tb-cx);font-size:var(--tb-fmin);line-height:1.45}
+    .tb-ver.ok{border-color:#2c5c3a}.tb-ver.ruim{border-color:#6b2b2b}
+    .tb-vsel{display:inline-block;padding:0 7px;margin-right:4px;border-radius:9px;font-weight:bold}
+    .tb-vsel.ok{background:#1f4a2c;color:#8ff0a8}.tb-vsel.ruim{background:#4a1f1f;color:#ff9b93}
+    .tb-mv{display:grid;grid-template-columns:2.8em minmax(0,1fr);gap:0 4px;padding:3px 0;border-bottom:1px dotted #262d3b}
+    .tb-mv:last-child{border-bottom:0}
+    .tb-mv>b{color:var(--tb-ouro);padding-top:1px}
+    .tb-mx{font-size:var(--tb-fmin);color:var(--tb-mut);margin-top:1px}
+    .tb-mx.tb-morto{font-style:italic}
+    .tb-eq-bts{display:flex;gap:4px;margin:0 0 4px}
+    #tb-corpo .tb-eq-bts .tb-bt{flex:1 1 auto;margin:0;padding:4px 5px;white-space:nowrap}
+    .tb-eq-info{font-size:var(--tb-fmin)}
+    #tb-corpo .tb-eq-vocs{margin:5px 0 0}
+    #tb-corpo .tb-eq-vocs button{flex:1 1 0;justify-content:center;min-width:0}
+    .tb-eq-sw{display:inline-flex;align-items:center;gap:6px;min-height:var(--tb-alvo);padding:0 4px 0 0;margin:0;border:0;background:none;color:#9fb0c9;font:inherit;cursor:pointer}
+    .tb-eq-sw[aria-checked="true"]{color:#fff}
+    #tb-corpo .tb-eq{grid-template-columns:5.6em minmax(0,1fr) 12px minmax(0,1fr)}
+    .tb-eq:focus-visible{outline:2px solid var(--tb-ouro);outline-offset:1px}
+    .tb-eq-nota{font-size:var(--tb-fmin)}
+    table.tb-an{width:100%;border-collapse:collapse;table-layout:fixed;font-size:var(--tb-fmin);margin:4px 0}
+    table.tb-an th,table.tb-an td{padding:3px 2px;border-bottom:1px dotted #1f2531;vertical-align:top;text-align:right;white-space:nowrap;overflow:hidden}
+    table.tb-an th{color:var(--tb-mut);font-weight:normal;border-bottom:1px solid var(--tb-borda)}
+    table.tb-an th:first-child,table.tb-an td:first-child{text-align:left;white-space:normal;word-break:normal;overflow-wrap:break-word;padding-left:0}
+    table.tb-an td:first-child .tb-tag{display:inline-block;margin:1px 3px 0 0}
+    table.tb-an col.c5{width:4.9em}table.tb-an col.c4{width:4.2em}table.tb-an col.c3{width:3.4em}
+    .tb-an-exp .tb-linha{flex-wrap:nowrap}
+    .tb-an-exp .tb-linha>span{flex:1 1 auto;min-width:0}
+    .tb-an-exp textarea{display:block;width:100%;height:120px;box-sizing:border-box;margin-top:3px;resize:vertical;font:var(--tb-fmin)/1.35 ui-monospace,Consolas,monospace;background:#0d1016;color:var(--tb-texto);border:1px solid var(--tb-borda);border-radius:5px}
+    `;
+    function garantirCssTelas() {
+        if (document.getElementById('tb-css-telas')) return;
+        const st = document.createElement('style'); st.id = 'tb-css-telas'; st.textContent = CSS_TELAS;
+        (document.head || document.documentElement).appendChild(st);
+    }
+    /* números como o jogo mostra: ponto de milhar, vírgula decimal */
+    const numBR = (n, casas) => n == null || n === '' || !isFinite(n) ? '—' : Number(n).toLocaleString('pt-BR', { maximumFractionDigits: casas || 0 });
+    const milBR = (n) => n == null || !isFinite(n) ? '—' : (n / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + 'k';
+    const alvosTxt = (n) => n + '+ alvo' + (n > 1 ? 's' : '');
+    /* textos da Magia (dica do modelo, motivo do slot cortado) falam "≥2": na tela, "2+" */
+    const maisAlvos = (s) => String(s == null ? '' : s).replace(/≥(\d+)/g, '$1+');
+    /* texto montado pela lógica com decimal em ponto ("59.4 pt"): vírgula na tela */
+    const decBR = (s) => String(s == null ? '' : s).replace(/(\d)\.(\d)/g, '$1,$2');
+
 
     /* v1.9.0 — STATUS no layout do Stonegy (print do dono, 27/09): cartões
      * LEVEL / OURO / CAP LIVRE / TAXA XP, linha da hunt e os dois botões
-     * grandes. Os botões antigos continuam embaixo. */
+     * grandes. Os botões antigos continuam embaixo.
+     * v2.11 (D2) — OURO "—" sem leitura (fora do jogo o card dizia "0", que
+     * parece saldo zerado); botões de "avançado" com estado de ocupado no
+     * estado (Auto-sell, Confirmar hunt, Aprender dano, Rebaixar catálogos);
+     * DIAGNÓSTICO ao lado de Finalizar hunt; resultado na faixa (avisar). */
+    let _autoSellEmCurso = false, _rebaixandoCat = false, _diagnosticando = false;
+    /* saldo do frame (fresco) ou do HUD; null = não lido (login, lobby, sem frame) */
+    function ouroNaTela() {
+        const f = ESTADO_WS.frame;
+        if (frameFresco() && f.balance != null && isFinite(f.balance)) return Number(f.balance);
+        const el = tid('hud-gold'), t = el ? (el.textContent || '').replace(/\D/g, '') : '';
+        return t ? parseInt(t, 10) : null;
+    }
     function telaEstado() {
-        const h = huntAtual(), dentro = emHunt(), c = capLivre(), taxa = dentro ? lerTaxaXp() : null, a = autoHunt();
-        const card = (r, v) => `<div class="tb-card"><small>${r}</small><b>${v}</b></div>`;
+        garantirCssTelas();
+        const h = huntAtual(), dentro = emHunt(), c = capLivre(), taxa = dentro ? lerTaxaXp() : null, a = autoHunt(), ouro = ouroNaTela();
+        const card = (r, v, vazio) => `<div class="tb-card"><small>${r}</small><b${vazio ? ' class="tb-vazio"' : ''}>${v}</b></div>`;
         const lin = (x, y) => `<div class="tb-lin"><span class="tb-mut">${x}</span><span>${y}</span></div>`;
-        const huntTxt = ESTADO_WS.boss && ESTADO_WS.boss !== '?' ? 'boss ' + ESTADO_WS.boss : h ? h.title : (dentro ? 'hunt ?' : '');
-        return `<div class="tb-linha"><span class="${dentro ? 'tb-ok' : 'tb-mut'}">${dentro ? '● caçando' : '○ cidade'}</span>${a.on ? '<span class="tb-tag tb-ok">Auto Hunt</span>' : ''}${_cicloEmCurso ? '<span class="tb-tag tb-av">vendendo…</span>' : ''}<span class="tb-mut" style="margin-left:auto;text-align:right">${huntTxt}</span></div>
+        const boss = ESTADO_WS.boss && ESTADO_WS.boss !== '?' ? ESTADO_WS.boss : null;
+        const huntTxt = boss ? 'boss ' + boss : h ? h.title : (dentro ? 'hunt ?' : '');
+        const voc = vocacaoAtual();
+        const danos = (() => { const n = danosMedidosNesteNivel(), v = Object.keys(danosConhecidos()).length - n; return n + ' neste nível' + (v ? ` <span class="tb-av">+${v} de outro</span>` : ''); })();
+        return `<div class="tb-linha tb-st-topo"><span class="${dentro ? 'tb-ok' : 'tb-mut'}">${dentro ? '● caçando' : '○ cidade'}</span>${a.on ? '<span class="tb-tag tb-ok">Auto Hunt</span>' : ''}${_cicloEmCurso ? '<span class="tb-tag tb-av">vendendo…</span>' : ''}<span class="tb-mut tb-st-hunt" title="${escHtml(huntTxt)}">${escHtml(huntTxt)}</span></div>
           <div class="tb-grid">
-            ${card('NÍVEL', nivelAtual())}
-            ${card('OURO', ouroAtual().toLocaleString('pt-BR'))}
-            ${card('CAP LIVRE', c ? `${c.pct}% <span class="tb-mut" style="font-size:10px">${c.ozTxt} oz</span>` : '—')}
-            ${card('TAXA XP', taxa != null ? taxa + '%' : '—')}
+            ${card('NÍVEL', numBR(nivelAtual()))}
+            ${ouro == null ? card('OURO', '—', true) : card('OURO', numBR(ouro))}
+            ${c ? card('CAP LIVRE', `${numBR(c.pct)}% <span class="tb-oz">${escHtml(c.ozTxt)} oz</span>`) : card('CAP LIVRE', '—', true)}
+            ${taxa != null ? card('TAXA XP', numBR(taxa) + '%') : card('TAXA XP', '—', true)}
           </div>
-          ${NOVA_VERSAO ? `<button class="tb-bt on" id="tb-bt-atualizar" style="width:100%">↑ atualizar para a ${NOVA_VERSAO}</button>` : ''}
-          <button class="tb-bt pri" id="tb-venda-rapida" style="width:100%;font-size:13px;padding:8px" ${_cicloEmCurso ? 'disabled' : ''}>Venda rápida</button>
-          <button class="tb-bt" id="tb-finalizar" style="width:100%" ${_cicloEmCurso || !dentro ? 'disabled' : ''}>Finalizar hunt</button>
-          ${aj('estado-ajuda', 'Venda rápida: encerra a caçada (se estiver nela) → purifica todos → vende no NPC → guarda no depot, e fica na cidade. Finalizar hunt: só encerra e fecha o resumo.')}
+          ${NOVA_VERSAO ? `<button type="button" class="tb-bt on tb-larga" id="tb-bt-atualizar">↑ atualizar para a ${escHtml(NOVA_VERSAO)}</button>` : ''}
+          <button type="button" class="tb-bt pri tb-larga tb-grande" id="tb-venda-rapida" ${_cicloEmCurso ? 'disabled' : ''}>${_cicloEmCurso ? 'vendendo…' : 'Venda rápida'}</button>
+          <div class="tb-par">
+            <button type="button" class="tb-bt" id="tb-finalizar" ${_cicloEmCurso || !dentro ? 'disabled' : ''} title="${dentro ? 'encerra a caçada e fecha o resumo' : 'só dentro de uma caçada'}">Finalizar hunt</button>
+            <button type="button" class="tb-bt" id="tb-diagnostico" ${_diagnosticando ? 'disabled' : ''} title="confere o socket, os catálogos, os perfis e o estado do helper e mostra o que falta">${_diagnosticando ? 'conferindo…' : 'DIAGNÓSTICO'}</button>
+          </div>
+          ${aj('estado-ajuda', 'Venda rápida: encerra a caçada (se estiver nela — pede confirmação) → purifica todos → vende no NPC → guarda no depot, e fica na cidade. Finalizar hunt: só encerra e fecha o resumo. DIAGNÓSTICO: confere o que o helper precisa (socket, catálogos, perfis) e diz o que falta.')}
           <details class="tb-aj" data-k="estado-av"><summary>avançado</summary><div>
             <div class="tb-cx">
-              ${lin('Vocação na tela', vocacaoAtual())}
-              ${lin('Lure máx', h ? lureMax(h) + ' criaturas' : '—')}
-              ${lin('Catálogos', CAT.hunts ? `<span class="tb-ok">${CAT.hunts.length} hunts · ${CAT.magias.length} magias</span>` : '<span class="tb-ruim">não carregados</span>')}
-              ${lin('Danos medidos', (() => { const n = danosMedidosNesteNivel(), v = Object.keys(danosConhecidos()).length - n; return n + ' neste nível' + (v ? ` <span class="tb-av">+${v} de outro</span>` : ''); })())}
+              ${lin('Vocação na tela', escHtml(VOC_ROTULO[voc] || voc))}
+              ${lin('Lure máx', h ? numBR(lureMax(h)) + ' criaturas' : '—')}
+              ${lin('Catálogos', CAT.hunts ? `<span class="tb-ok">${numBR(CAT.hunts.length)} hunts · ${numBR((CAT.magias || []).length)} magias</span>` : '<span class="tb-ruim">não carregados</span>')}
+              ${lin('Danos medidos', danos)}
             </div>
-            <button class="tb-bt mini" id="tb-recat">Rebaixar catálogos</button>
-            <button class="tb-bt mini" id="tb-aprender">Aprender dano (os 4)</button>
-            <button class="tb-bt mini" id="tb-confhunt">Confirmar hunt</button>
-            <button class="tb-bt mini" id="tb-autosell">Auto-sell: marcar tudo</button>
-            <div class="tb-mut" style="font-size:10px;margin-top:4px">F5 zera a marcação do Auto Selling — depois de recarregar, "Auto-sell: marcar tudo".</div>
+            <div class="tb-linha">
+              <button type="button" class="tb-bt mini" id="tb-recat" ${_rebaixandoCat ? 'disabled' : ''}>${_rebaixandoCat ? 'rebaixando…' : 'Rebaixar catálogos'}</button>
+              <button type="button" class="tb-bt mini" id="tb-aprender" ${_aprendendo || _aplicando ? 'disabled' : ''}>${_aprendendo ? 'medindo…' : 'Aprender dano (os 4)'}</button>
+              <button type="button" class="tb-bt mini" id="tb-confhunt" ${_confirmandoHunt ? 'disabled' : ''}>${_confirmandoHunt ? 'confirmando…' : 'Confirmar hunt'}</button>
+              <button type="button" class="tb-bt mini" id="tb-autosell" ${_autoSellEmCurso ? 'disabled' : ''}>${_autoSellEmCurso ? 'marcando…' : 'Auto-sell: marcar tudo'}</button>
+            </div>
+            <div class="tb-mut tb-nota">F5 zera a marcação do Auto Selling — depois de recarregar, "Auto-sell: marcar tudo".</div>
           </div></details>`;
     }
+    /* handlers do Status (antes dentro de _renderizar). Cada ação longa marca o
+     * estado ANTES do primeiro await e repinta; o clique repetido é recusado
+     * pelo estado, não pelo botão. */
+    function ligarEstado() {
+        const vr = $('#tb-venda-rapida'); if (vr) ligarDoisToques(vr, 'venda', 'confirmar: encerrar e vender?', () => { if (!_cicloEmCurso) cicloDeVenda('venda'); }, emHunt);
+        const bat = $('#tb-bt-atualizar'); if (bat) bat.onclick = abrirAtualizacao;
+        const fh = $('#tb-finalizar'); if (fh) fh.onclick = () => { if (!_cicloEmCurso) cicloDeVenda('finalizar'); };
+        const dg = $('#tb-diagnostico');
+        if (dg) dg.onclick = async () => {
+            if (_diagnosticando) return;
+            _diagnosticando = true; renderizar();
+            try { await rodarDiagnostico(); }
+            catch (e) { avisar('estado', 'diagnóstico estourou: ' + ((e && e.message) || e), 'erro'); }
+            finally { _diagnosticando = false; renderizar(); }
+        };
+        const rec = $('#tb-recat');
+        if (rec) rec.onclick = async () => {
+            if (_rebaixandoCat) return;
+            _rebaixandoCat = true; renderizar();
+            try { if (!await carregarCatalogos(true)) avisar('estado', 'catálogos não rebaixados — sem rede? (detalhe no Log)', 'erro'); }   // o sucesso já sai no Log (e na faixa)
+            catch (e) { avisar('estado', 'rebaixar catálogos estourou: ' + e.message, 'erro'); }
+            finally { _rebaixandoCat = false; renderizar(); }
+        };
+        const apr = $('#tb-aprender');
+        if (apr) apr.onclick = async () => {
+            if (_aprendendo || _aplicando) return;
+            _aprendendo = true; renderizar();
+            try {
+                const r = await aprenderDanosPorRest(false);
+                if (r.erro) { avisar('estado', 'sem /spell-numbers (' + r.erro + ') — medindo pelos diálogos', 'info'); await aprenderDanosTodos(); }
+            } catch (e) { avisar('estado', 'aprender dano estourou: ' + e.message, 'erro'); }
+            finally { _aprendendo = false; renderizar(); }
+        };
+        const cfh = $('#tb-confhunt');
+        if (cfh) cfh.onclick = async () => {
+            if (_confirmandoHunt) return;                  // a amostragem também abre esta tela: um de cada vez
+            _confirmandoHunt = true; renderizar();
+            const antes = ler('hunt_id', null);
+            try {
+                const r = await confirmarHuntPeloExplore();
+                if (r.erro) avisar('estado', 'não consegui confirmar a hunt: ' + r.erro, 'erro');
+                else if (r.hunt && r.hunt.id === antes) avisar('estado', 'hunt confirmada: ' + r.hunt.title + ' (já era esta)', 'ok');
+            } catch (e) { avisar('estado', 'confirmar hunt estourou: ' + e.message, 'erro'); }
+            finally { _confirmandoHunt = false; renderizar(); }
+        };
+        /* v1.8.0 — F5 zera a marcação do Auto Selling (o ciclo de venda não).
+         * Abre a janela de loot, aba Auto Selling, MARCAR TUDO, fecha. Só por
+         * botão, nunca sozinho. */
+        const ase = $('#tb-autosell');
+        if (ase) ase.onclick = async () => {
+            if (_autoSellEmCurso) return;
+            _autoSellEmCurso = true; renderizar();
+            try {
+                const bl = $$('button').find(b => /^LOOT$/.test((b.textContent || '').trim()));
+                if (!bl) throw new Error('botão LOOT não está na tela (fora de caçada?)');
+                bl.click();
+                const aba = await esperarQue(() => tid('loot-config-autosell'), 3000);
+                if (!aba) throw new Error('janela de loot não abriu');
+                aba.click(); await dorme(300);
+                const tudo = await esperarQue(() => tid('auto-sell-all') || $$('[data-testid="window-loot"] button').find(b => /MARCAR TUDO/i.test(b.textContent || '')), 2000);
+                if (!tudo) throw new Error('MARCAR TUDO não apareceu');
+                tudo.click(); await dorme(400);
+                const w = tid('window-loot');
+                const m = w && (w.innerText || '').match(/MARCADOS PARA VENDA\s*(\d+)/);
+                const fechar = tid('window-close-loot'); if (fechar) fechar.click();
+                avisar('estado', 'auto-sell: ' + (m ? m[1] : '?') + ' itens marcados para venda', 'ok');
+            } catch (e) {
+                const fechar = tid('window-close-loot'); if (fechar) fechar.click();
+                avisar('estado', 'auto-sell falhou: ' + e.message, 'erro');
+            } finally { _autoSellEmCurso = false; renderizar(); }
+        };
+    }
+    /* v2.11 — CSS das telas Auto Hunt e Scan, com escopo (.tb-ah / .tb-sc):
+     * a casca do painel é de outra área; aqui só o que estas telas pedem —
+     * alvos ≥ 28 px, letra ≥ 10,5 px, cartões de resultado, confirmação em
+     * 2 toques. Injetado uma vez, na primeira tela que precisar. */
+    const CSS_AH = `
+    .tb-ah,.tb-sc{font-size:11px}
+    .tb-ah .tb-bt,.tb-sc .tb-bt{min-height:28px;font-size:11px}
+    .tb-ah .tb-bt.mini,.tb-sc .tb-bt.mini{min-height:28px;padding:2px 9px;font-size:10.5px}
+    .tb-ah .tb-tag,.tb-sc .tb-tag{font-size:10.5px}
+    .tb-ah .tb-in,.tb-sc .tb-in{min-height:28px;box-sizing:border-box;font-size:11px}
+    .tb-sc select{background:#232936;color:#dde3ee;border:1px solid #3a4356;border-radius:5px;padding:3px 5px;font:inherit;font-size:11px;min-height:28px;flex:1;min-width:0}
+    .tb-ah label.tb-l,.tb-sc label.tb-l{min-height:28px;color:#b4bfd2}
+    .tb-ah input[type=checkbox],.tb-ah input[type=radio],.tb-sc input[type=checkbox]{width:16px;height:16px;margin:0 4px 0 0;flex:none}
+    .tb-ah details.tb-aj>summary,.tb-sc details.tb-aj>summary{display:inline-flex;align-items:center;min-height:28px;line-height:1.3;font-size:10.5px;padding:3px 10px;box-sizing:border-box;color:#9aa3b5}
+    .tb-ah-opc{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+    .tb-ah .tb-mut,.tb-sc .tb-mut{color:#9aa3b5}
+    .tb-chave{background:none;border:0;padding:5px 2px;margin:0;min-height:28px;cursor:pointer;display:inline-flex;align-items:center}
+    .tb-chave:disabled{opacity:.45;cursor:default}
+    .tb-chave:focus-visible,.tb-sc-mapa:focus-within{outline:2px solid #ffd479;outline-offset:1px;border-radius:6px}
+    .tb-sc-lista{max-height:200px;overflow:auto}
+    .tb-sc-mapa{display:flex;align-items:center;gap:4px;min-height:28px;padding:0 2px;border-bottom:1px dotted #232936;cursor:pointer}
+    .tb-sc-mapa.tb-escondido{display:none}
+    .tb-sc-mapa .tb-tag{margin-left:auto}
+    .tb-sc-caixa{background:#1a1f29;border:1px solid #2c5c3a;border-radius:7px;padding:6px 7px;margin:5px 0}
+    .tb-sc-card{background:#1a1f29;border:1px solid #262d3b;border-radius:7px;padding:6px 7px;margin:5px 0}
+    .tb-sc-card.fora{opacity:.75;border-style:dashed}
+    .tb-sc-card.falha{border-color:#6b2b2b}
+    .tb-sc-cab{display:flex;align-items:center;gap:6px}
+    .tb-sc-cab b{flex:1;min-width:0}
+    .tb-selo{font-size:10.5px;padding:1px 7px;border-radius:9px;background:#2b3242;color:#b4bfd2;white-space:nowrap;font-weight:bold}
+    .tb-selo.ok{background:#1f4a2c;color:#8ff0a8}.tb-selo.av{background:#4a3b14;color:#ffd479}.tb-selo.ruim{background:#4a1f1f;color:#ff9b93}.tb-selo.mut{font-weight:normal}
+    .tb-sc-num{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin:4px 0}
+    .tb-sc-num>div{background:#12151c;border-radius:6px;padding:3px 6px;min-width:0}
+    .tb-sc-num small{display:block;color:#9aa3b5;font-size:10.5px}
+    .tb-sc-num b{font-size:14px;color:#fff}
+    .tb-sc-num b.tb-ok{color:#6ede8a}.tb-sc-num b.tb-ruim{color:#ff7b72}
+    .tb-sc-pe{display:flex;align-items:flex-start;gap:6px}
+    .tb-sc-pe details{flex:1;min-width:0}
+    .tb-sc-det{font-size:10.5px;color:#b4bfd2}
+    .tb-conf{background:#8a2a1f !important;border-color:#e0685c !important;color:#fff !important}
+    .tb-ah-hist{width:100%;border-collapse:collapse;font-size:10.5px;table-layout:fixed}
+    .tb-ah-hist td,.tb-ah-hist th{padding:2px 3px;border-bottom:1px dotted #232936;text-align:left;vertical-align:top;overflow-wrap:anywhere}
+    .tb-ah-hist th{color:#9aa3b5;font-weight:normal}
+    .tb-ah-alarme{background:#3a1d1d;border:1px solid #6b2b2b;color:#ffb3ad;border-radius:7px;padding:5px 7px;margin:5px 0}
+    `;
+    function garantirCssAH() {
+        if (document.getElementById('tb-css-ah')) return;
+        const st = document.createElement('style'); st.id = 'tb-css-ah'; st.textContent = CSS_AH;
+        (document.head || document.documentElement).appendChild(st);
+    }
+    /* v2.11 — CONFIRMAÇÃO EM 2 TOQUES para o que troca de mapa ou encerra a
+     * caçada ("ir ›" do Scan, Venda rápida caçando). O 1º toque vira o botão
+     * em "confirmar…" por 4 s; o repinte de 4 s não perde o estado (fica em
+     * _doisToques, não no botão). precisa(): quando falso, 1 toque basta. */
+    const _doisToques = { chave: null, ate: 0 };
+    function ligarDoisToques(btn, chave, rotulo, acao, precisa) {
+        garantirCssAH();
+        btn.dataset.dt = chave;
+        if (!btn.dataset.rotulo) btn.dataset.rotulo = btn.textContent;
+        const pendente = () => _doisToques.chave === chave && Date.now() < _doisToques.ate;
+        const voltarRotulo = () => $$(`[data-dt="${chave}"]`).forEach(b => { b.textContent = b.dataset.rotulo; b.classList.remove('tb-conf'); });
+        if (pendente()) { btn.textContent = rotulo; btn.classList.add('tb-conf'); }
+        btn.onclick = () => {
+            if (pendente() || (precisa && !precisa())) { _doisToques.chave = null; voltarRotulo(); acao(); return; }
+            _doisToques.chave = chave; _doisToques.ate = Date.now() + 4000;
+            btn.textContent = rotulo; btn.classList.add('tb-conf');
+            setTimeout(() => { if (_doisToques.chave === chave && Date.now() >= _doisToques.ate) { _doisToques.chave = null; voltarRotulo(); } }, 4100);
+        };
+    }
+    /* v2.11 — o campo de texto da lista "nunca vender" sobrevive ao repinte
+     * de 4 s da aba (o repinte troca o innerHTML e o campo perderia o foco e
+     * o que foi digitado). Rascunho e cursor ficam aqui até o blur de
+     * verdade (o campo ainda na página). */
+    let _rascunhoAH = null, _repintandoAH = false;
+    function manterRascunho(el) {
+        if (!el) return;
+        if (_rascunhoAH && _rascunhoAH.id === el.id) { el.value = _rascunhoAH.valor; try { el.focus(); el.setSelectionRange(_rascunhoAH.ini, _rascunhoAH.fim); } catch { /* campo sem seleção */ } }
+        const salvar = () => { _rascunhoAH = { id: el.id, valor: el.value, ini: el.selectionStart, fim: el.selectionEnd }; };
+        ['focus', 'input', 'keyup', 'click'].forEach(ev => el.addEventListener(ev, salvar));
+        el.addEventListener('blur', () => setTimeout(() => { if (el.isConnected && _rascunhoAH && _rascunhoAH.id === el.id) _rascunhoAH = null; }, 0));
+    }
+
     /* v1.9.0 — AUTO HUNT (print do Stonegy). Chave desligada por padrão,
-     * guardada por conta e sobrevive a F5 (o boot avisa no log). */
+     * guardada por conta e sobrevive a F5 (o boot avisa no log).
+     * v2.11 — lista "nunca vender", histórico dos ciclos e alarme > 3/h. */
     function telaAutoHunt() {
+        garantirCssAH();
+        /* o innerHTML que vem a seguir tira o campo focado da página, e o
+         * Chrome dispara blur/change NESSA hora (visto ao vivo em 29/09: o
+         * change repintava por dentro do repinte e o innerHTML estourava).
+         * Até o fim desta pintura, change/blur não são do dono. */
+        _repintandoAH = true; Promise.resolve().then(() => { _repintandoAH = false; });
         const a = autoHunt(), c = capLivre(), dentro = emHunt();
         const h = a.huntId != null && CAT.hunts ? CAT.hunts.find(x => x.id === a.huntId) : null;
         const motivo = motivoNaoDispara();
-        const estado = motivo === '' ? '<span class="tb-ok">disparando…</span>' : motivo === null ? '<span class="tb-ok">vigiando a mochila</span>' : `<span class="tb-av">${motivo}</span>`;
-        return `<div class="tb-linha"><span class="tb-sw ${a.on ? 'on' : ''}" id="tb-ah-on"><i></i></span><b>Automação</b><span class="tb-mut" style="margin-left:auto">${estado}</span></div>
-          <div class="tb-linha"><span class="tb-mut">hunt</span><b>${h ? h.title : '—'}</b>
-            <button class="tb-bt mini" id="tb-ah-memorizar" ${dentro ? '' : 'disabled'} title="memorizar a hunt atual">📍 esta</button>
-            <button class="tb-bt mini" id="tb-ah-esquecer" ${a.huntId != null ? '' : 'disabled'}>esquecer</button></div>
-          <div class="tb-linha"><span class="tb-mut">vender quando</span>
-            <label class="tb-l"><input type="radio" name="tb-ah-modo" value="pct" ${a.modo === 'pct' ? 'checked' : ''}> ≤</label><input type="number" class="tb-in" id="tb-ah-pct" value="${a.pct}" min="1" max="99" style="width:44px">%
-            <label class="tb-l"><input type="radio" name="tb-ah-modo" value="oz" ${a.modo === 'oz' ? 'checked' : ''}> ≤</label><input type="number" class="tb-in" id="tb-ah-oz" value="${a.oz}" min="10" step="10" style="width:56px">oz</div>
+        const estado = motivo === '' ? '<span class="tb-ok">disparando…</span>' : motivo === null ? '<span class="tb-ok">vigiando a mochila</span>' : `<span class="tb-av">${escHtml(motivo)}</span>`;
+        const hist = historicoCiclos(), nHora = ciclosNaUltimaHora(hist, Date.now());
+        const lista = Array.isArray(a.nuncaVender) ? a.nuncaVender : [];
+        const prot = [a.nvEquip !== false ? 'equip.' : null, a.nvImbu !== false ? 'imbuement' : null, lista.length ? lista.length + ' seus' : null].filter(Boolean);
+        const hora = t => new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        const oz = x => x == null ? '?' : Math.round(x).toLocaleString('pt-BR');
+        const ORIG = { auto: 'auto', venda: 'venda' };
+        const linhasHist = hist.slice().reverse().map(r => `<tr><td>${hora(r.t)}<br><span class="tb-mut">${escHtml(ORIG[r.origem] || r.origem)}${r.dur != null ? ' · ' + (r.dur >= 60 ? Math.round(r.dur / 60) + ' min' : r.dur + ' s') : ''}</span></td>
+            <td>${r.ouro != null ? r.ouro.toLocaleString('pt-BR') : '—'}${r.guardados ? `<br><span class="tb-mut">${r.guardados} guardado(s)</span>` : ''}</td>
+            <td>${oz(r.ozAntes)} → ${oz(r.ozDepois)}</td>
+            <td>${r.depot ? r.depot.usado + '/' + r.depot.total : '—'}</td>
+            <td class="${r.erro ? 'tb-ruim' : 'tb-ok'}">${r.erro ? escHtml(r.erro) : 'ok'}</td></tr>`).join('');
+        return `<div class="tb-ah">
+          <div class="tb-linha"><button type="button" class="tb-chave" id="tb-ah-on" role="switch" aria-checked="${a.on ? 'true' : 'false'}" aria-label="Automação do Auto Hunt"><span class="tb-sw ${a.on ? 'on' : ''}"><i></i></span></button><b>Automação</b><span class="tb-mut" style="margin-left:auto;text-align:right">${estado}</span></div>
+          ${nHora > 3 ? `<div class="tb-ah-alarme">⚠ ${nHora} ciclos na última hora — a mochila enche em menos de 20 min. Confira o limite, o depot e o histórico abaixo.</div>` : ''}
+          <div class="tb-linha"><span class="tb-mut">hunt</span><b>${h ? escHtml(h.title) : '—'}</b>
+            <button type="button" class="tb-bt mini" id="tb-ah-memorizar" ${dentro ? '' : 'disabled'} title="memorizar a hunt atual">📍 esta</button>
+            <button type="button" class="tb-bt mini" id="tb-ah-esquecer" ${a.huntId != null ? '' : 'disabled'}>esquecer</button></div>
+          <div class="tb-mut" style="margin-top:4px">vender quando a mochila tiver</div>
+          <div class="tb-ah-opc"><label class="tb-l"><input type="radio" name="tb-ah-modo" value="pct" ${a.modo === 'pct' ? 'checked' : ''}> até</label><input type="number" class="tb-in" id="tb-ah-pct" value="${a.pct}" min="1" max="99" style="width:56px" aria-label="% livre"><span>% livre</span></div>
+          <div class="tb-ah-opc"><label class="tb-l"><input type="radio" name="tb-ah-modo" value="oz" ${a.modo === 'oz' ? 'checked' : ''}> até</label><input type="number" class="tb-in" id="tb-ah-oz" value="${a.oz}" min="10" step="10" style="width:68px" aria-label="oz livres"><span>oz livres</span></div>
           <div class="tb-linha"><span class="tb-mut">agora</span><span>${c ? `${c.pct}% · ${c.ozTxt} oz livres` : '—'}</span>${mochilaNoLimite() ? '<span class="tb-tag tb-ruim">no limite</span>' : ''}</div>
           <label class="tb-l"><input type="checkbox" id="tb-ah-voltar" ${a.voltar ? 'checked' : ''}> voltar para a hunt depois de vender</label>
-          ${aj('ah-ajuda', 'Ciclo: finalizar → purificar todos → vender no NPC → guardar no depot → voltar. Qualquer falha para o ciclo e desliga a chave (ver Log). Intervalo mínimo entre ciclos: 5 min. Se trocar de hunt na mão, clique "📍 esta" dentro dela. Lure e magia não são tocados ao voltar.')}`;
+          <details class="tb-aj" data-k="ah-nunca"><summary>nunca vender: ${prot.length ? escHtml(prot.join(' + ')) : '<span class="tb-ruim">NADA</span>'}</summary><div>
+            <div><label class="tb-l"><input type="checkbox" id="tb-ah-nv-equip" ${a.nvEquip !== false ? 'checked' : ''}> equipamento (tudo que veste ou empunha)</label></div>
+            <div><label class="tb-l"><input type="checkbox" id="tb-ah-nv-imbu" ${a.nvImbu !== false ? 'checked' : ''}> materiais de imbuement</label></div>
+            <div class="tb-linha"><input class="tb-in" id="tb-ah-lista" placeholder="sua lista: nomes separados por vírgula" value="${escHtml(lista.join(', '))}" style="flex:1" aria-label="sua lista de itens para nunca vender"></div>
+            <div class="tb-mut">Antes de confirmar a venda no NPC o helper desmarca estes itens no painel (vale também para a Venda rápida). Se não conseguir desmarcar algum, não vende nada e registra no Log — o ciclo para. O que não é vendido vai para o depot.</div>
+          </div></details>
+          <details class="tb-aj" data-k="ah-hist"><summary>histórico (${hist.length})${nHora ? ' · ' + nHora + ' na última hora' : ''}</summary><div>
+            ${hist.length ? `<table class="tb-ah-hist"><tr><th style="width:23%">hora</th><th style="width:19%">ouro</th><th style="width:22%">oz</th><th style="width:14%">depot</th><th>resultado</th></tr>${linhasHist}</table>` : '<div class="tb-mut">nenhum ciclo ainda</div>'}
+          </div></details>
+          ${aj('ah-ajuda', 'Ciclo: finalizar → purificar todos → vender no NPC (menos a lista "nunca vender") → guardar no depot → voltar. Qualquer falha para o ciclo e desliga a chave (ver Log); depot cheio (mochila ainda no limite depois do depot) também desliga. Intervalo mínimo entre ciclos: 5 min. Não dispara com boss, Scan ou troca de mapa em andamento. F5 no meio de um ciclo automático retoma em até 10 min; fora disso a party fica onde está. Se trocar de hunt na mão, clique "📍 esta" dentro dela. Lure e magia não são tocados ao voltar.')}
+        </div>`;
+    }
+    function ligarAutoHunt() {
+        const sw = $('#tb-ah-on');
+        if (sw) sw.onclick = () => {
+            const a = autoHunt();
+            if (!a.on && a.huntId == null) { log('memorize a hunt antes de ligar a automação', 'erro'); return; }
+            guardarAutoHunt({ on: !a.on });
+            log('Auto Hunt ' + (!a.on ? 'LIGADO' : 'desligado'), !a.on ? 'ok' : 'info');
+            renderizar();
+        };
+        const mem = $('#tb-ah-memorizar');
+        if (mem) mem.onclick = async () => {
+            mem.disabled = true;
+            try {
+                const hs = ESTADO_WS.huntId != null && !ESTADO_WS.boss ? (CAT.hunts || []).find(x => x.id === ESTADO_WS.huntId) : null;
+                const r = hs ? { hunt: hs } : await confirmarHuntPeloExplore();
+                if (r.erro) log('não consegui memorizar: ' + r.erro, 'erro');
+                else { guardarAutoHunt({ huntId: r.hunt.id }); log('hunt memorizada: ' + r.hunt.title, 'ok'); }
+            } catch (e) { log('memorizar estourou: ' + e.message, 'erro'); }
+            renderizar();
+        };
+        const esq = $('#tb-ah-esquecer');
+        if (esq) esq.onclick = () => { guardarAutoHunt({ huntId: null, on: false }); log('hunt esquecida; automação desligada', 'info'); renderizar(); };
+        $$('input[name="tb-ah-modo"]').forEach(r => r.onchange = () => { guardarAutoHunt({ modo: r.value }); renderizar(); });
+        const pct = $('#tb-ah-pct'); if (pct) pct.onchange = () => guardarAutoHunt({ pct: Math.max(1, Math.min(99, parseInt(pct.value) || 20)) });
+        const oz = $('#tb-ah-oz'); if (oz) oz.onchange = () => guardarAutoHunt({ oz: Math.max(10, parseInt(oz.value) || 200) });
+        const vol = $('#tb-ah-voltar'); if (vol) vol.onchange = () => guardarAutoHunt({ voltar: vol.checked });
+        const nvE = $('#tb-ah-nv-equip'); if (nvE) nvE.onchange = () => { guardarAutoHunt({ nvEquip: nvE.checked }); log('nunca vender equipamento: ' + (nvE.checked ? 'ligado' : 'DESLIGADO'), nvE.checked ? 'ok' : 'info'); renderizar(); };
+        const nvI = $('#tb-ah-nv-imbu'); if (nvI) nvI.onchange = () => { guardarAutoHunt({ nvImbu: nvI.checked }); log('nunca vender materiais de imbuement: ' + (nvI.checked ? 'ligado' : 'DESLIGADO'), nvI.checked ? 'ok' : 'info'); renderizar(); };
+        const lst = $('#tb-ah-lista');
+        if (lst) {
+            manterRascunho(lst);
+            /* grava no Enter e no blur de verdade — não só no change: depois de
+             * um repinte o valor volta por código e o Chrome não dispara change */
+            const gravar = () => {
+                if (_repintandoAH || !lst.isConnected) return;   // o repinte tirou o campo da página: o rascunho segue em _rascunhoAH
+                const vistos = new Set(), itens = [];
+                lst.value.split(/[,;\n]+/).map(x => x.trim().toLowerCase()).filter(Boolean).forEach(x => { if (!vistos.has(normNomeItem(x))) { vistos.add(normNomeItem(x)); itens.push(x); } });
+                if ((autoHunt().nuncaVender || []).join('|') === itens.join('|')) return;
+                _rascunhoAH = null;
+                guardarAutoHunt({ nuncaVender: itens });
+                log('nunca vender (sua lista): ' + (itens.length ? itens.join(', ') : 'vazia'), 'ok');
+                setTimeout(renderizar, 0);                  // nunca repintar de dentro de um evento do próprio campo
+            };
+            lst.onchange = gravar;
+            lst.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); gravar(); } });
+            lst.addEventListener('blur', () => setTimeout(gravar, 0));
+        }
     }
     /* v2.2.0 — SCAN. Lista de mapas do seu nível com caixinha; minutos por
-     * mapa; o que fazer ao terminar; progresso ao vivo; tabela de veredito. */
+     * mapa; o que fazer ao terminar; progresso ao vivo; veredito.
+     * v2.11 — como CONTROLE: 1ª linha chave + "Iniciar · N mapas · ~M min";
+     * 2ª linha dois <select> (modelo, ao terminar); resultados em cartões
+     * (xp/h raw, ouro/h, selo do veredito, detalhe atrás de "+"); "ir ›" com
+     * confirmação em 2 toques; lista de mapas com display por CLASSE (o
+     * filtro trocava display 'block' por '' e os rótulos viravam inline — a
+     * caixa ficava colada no mapa errado). */
+    const MODELOS_SCAN = ['equilibrado', 'inteligente', 'economica', 'area'];
+    const FIM_SCAN = [['voltar', 'fim: voltar'], ['ficar', 'fim: ficar'], ['xp', 'fim: melhor XP'], ['ouro', 'fim: melhor ouro']];
     function telaScan() {
-        const c = scanCfg(), nv = nivelAtual(), marc = new Set(c.mapas);
+        garantirCssAH();
+        const c = scanCfg(), nv = nivelAtual(), marc = new Set(c.mapas), fim = fimDoScan(c);
         const hunts = (CAT.hunts || []).filter(h => (h.levelMin || 1) <= nv).sort((a, b) => (b.levelMin || 0) - (a.levelMin || 0) || a.title.localeCompare(b.title));
         const res = scanResultados(), v = scanVereditos();
-        const fmtK = n => (n / 1000).toFixed(1) + 'k';
-        const fmtO = n => (n >= 0 ? '+' : '') + n.toLocaleString('pt-BR');
+        const fmtK = n => n == null || !isFinite(n) ? '—' : (n / 1000).toFixed(1) + 'k';
+        const fmtO = n => n == null || !isFinite(n) ? '—' : (n >= 0 ? '+' : '') + Math.round(n).toLocaleString('pt-BR');
+        const hora = t => t ? new Date(t).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '?';
         const falta = xpFaltando();
         const tNivel = xpH => falta != null && xpH > 0 ? fmtHoras(falta / xpH) : '—';
-        const dis = SCAN.ativo ? 'disabled' : '';
-        let corpo = `<div class="tb-linha"><span class="tb-sw ${SCAN.ativo ? 'on' : ''}" id="tb-scan-on"><i></i></span><b>Scan</b>
-            <span class="tb-mut" style="margin-left:auto">${SCAN.ativo ? `<span class="tb-ok">rodando</span> ${Math.max(1, SCAN.idx + 1)}/${SCAN.fila.length}` : marc.size + ' mapa(s)'}</span></div>`;
-        if (SCAN.ativo) {
-            const h = scanHuntAtual(), m = SCAN.vivo;
-            const resta = SCAN.fase === 'medindo' ? Math.max(0, c.minutos * 60 - (Date.now() - SCAN.t0) / 1000) : null;
-            corpo += `<div class="tb-cx" style="border-color:#2c5c3a"><b>${h ? h.title : '?'}</b> <span class="tb-tag">${SCAN.fase}</span>` +
+        const ocupado = scanOcupado() || !!travaJogo();
+        const dis = scanOcupado() ? 'disabled' : '';
+        const nMapas = c.mapas.filter(id => (CAT.hunts || []).some(h => h.id === id)).length;
+        const nVar = c.comparar ? (c.variantes || []).filter(m => MODELOS[m] || VARIANTES[m]).length : 1;
+        const nMed = nMapas * nVar, estMin = Math.max(1, Math.round(nMed * (c.minutos + 0.5)));
+        const btTxt = SCAN.ativo ? `Parar · ${Math.max(1, SCAN.idx + 1)}/${SCAN.fila.length}` : scanOcupado() ? (SCAN.fase === 'restaurando' || SCAN.restaurando ? 'devolvendo o jogo…' : 'terminando…')
+            : `Iniciar · ${nMapas} mapa${nMapas === 1 ? '' : 's'}${nVar > 1 ? ' × ' + nVar : ''} · ~${estMin} min`;
+        let corpo = `<div class="tb-sc"><div class="tb-linha">
+            <button type="button" class="tb-chave" id="tb-scan-on" role="switch" aria-checked="${SCAN.ativo ? 'true' : 'false'}" aria-label="Scan" ${!SCAN.ativo && scanOcupado() ? 'disabled' : ''}><span class="tb-sw ${SCAN.ativo ? 'on' : ''}"><i></i></span></button><b>Scan</b>
+            <button type="button" class="tb-bt ${SCAN.ativo ? '' : 'pri'}" id="tb-scan-go" style="margin-left:auto" ${!SCAN.ativo && (scanOcupado() || !nMed) ? 'disabled' : ''}>${btTxt}</button></div>`;
+        if (SCAN.ativo || SCAN.fase === 'restaurando') {
+            const h = SCAN.ativo ? scanHuntAtual() : null, m = SCAN.vivo;
+            const segJ = m ? m.seg : SCAN.fase === 'medindo' ? (Date.now() - SCAN.t0) / 1000 : 0;
+            const resta = SCAN.fase === 'medindo' ? Math.max(0, c.minutos * 60 - segJ) : null;
+            corpo += `<div class="tb-sc-caixa">` + (SCAN.fase === 'restaurando' ? '<b>devolvendo o jogo como estava…</b>' : `<b>${h ? escHtml(h.title) : '?'}</b> <span class="tb-tag">${escHtml(SCAN.fase)}</span>`) +
                 (resta != null ? ` <span class="tb-mut">${Math.floor(resta / 60)}:${String(Math.round(resta % 60)).padStart(2, '0')}</span>` : '') +
-                (m && m.seg >= 30 ? `<div>xp/h <b>${fmtK(m.xpH)}</b> · ouro/h <b class="${m.ouroH >= 0 ? 'tb-ok' : 'tb-ruim'}">${fmtO(m.ouroH)}</b> · estável <b class="${(m.estavelH || 0) >= 0 ? 'tb-ok' : 'tb-ruim'}">${m.estavelH != null ? fmtO(m.estavelH) : '—'}</b> · ${m.abatesH}/h</div>` + razaoHtml(m.razao, true) : (SCAN.fase === 'medindo' ? '<div class="tb-mut">aquecendo… (30 s)</div>' : '')) +
-                (SCAN.erro ? `<div class="tb-ruim">${SCAN.erro}</div>` : '') + `</div>`;
+                (m && m.seg >= 30 ? `<div>xp/h <b>${fmtK(xpBase(m))}</b> <span class="tb-mut">raw</span> · ouro/h <b class="${m.ouroH >= 0 ? 'tb-ok' : 'tb-ruim'}">${fmtO(m.ouroH)}</b> · estável <b class="${(m.estavelH || 0) >= 0 ? 'tb-ok' : 'tb-ruim'}">${m.estavelH != null ? fmtO(m.estavelH) : '—'}</b> · ${m.abatesH}/h</div>` + razaoHtml(m.razao, true) : (SCAN.fase === 'medindo' ? '<div class="tb-mut">aquecendo… (30 s)</div>' : '')) +
+                (SCAN.erro ? `<div class="tb-ruim">${escHtml(SCAN.erro)}</div>` : '') + `</div>`;
         }
-        corpo += `<div class="tb-linha"><input type="number" class="tb-in" id="tb-scan-min" value="${c.minutos}" min="1" max="60" style="width:40px" ${dis}><span class="tb-mut">min/mapa</span>
-            <label class="tb-l"><input type="checkbox" id="tb-scan-lure" ${c.lureMax ? 'checked' : ''} ${dis}> lure máx</label>
-            <label class="tb-l"><input type="radio" name="tb-scan-modelo" value="equilibrado" ${(c.modelo || 'equilibrado') === 'equilibrado' ? 'checked' : ''} ${dis}> Equil.</label>
-            <label class="tb-l"><input type="radio" name="tb-scan-modelo" value="inteligente" ${c.modelo === 'inteligente' ? 'checked' : ''} ${dis}> Intel.</label></div>
-          <div class="tb-linha"><span class="tb-mut">ao terminar</span>
-            <label class="tb-l"><input type="radio" name="tb-scan-fim" value="ficar" ${c.fim === 'ficar' ? 'checked' : ''}> ficar</label>
-            <label class="tb-l"><input type="radio" name="tb-scan-fim" value="xp" ${c.fim === 'xp' ? 'checked' : ''}> melhor xp</label>
-            <label class="tb-l"><input type="radio" name="tb-scan-fim" value="ouro" ${c.fim === 'ouro' ? 'checked' : ''}> melhor ouro</label></div>
-          <details class="tb-aj" data-k="scan-estudo"><summary>estudo de variantes</summary><div>
+        corpo += `<div class="tb-linha">
+            <select id="tb-scan-modelo" aria-label="modelo aplicado em cada mapa" title="modelo de magia aplicado nos 4 em cada mapa" ${dis || (c.comparar ? 'disabled' : '')}>${MODELOS_SCAN.filter(m => MODELOS[m]).map(m => `<option value="${m}" ${(c.modelo || 'equilibrado') === m ? 'selected' : ''}>${escHtml(nomeModelo(m))}</option>`).join('')}</select>
+            <select id="tb-scan-fim" aria-label="o que fazer ao terminar" title="ao terminar: voltar como estava (mapa, lure e kits) · ficar no último mapa (kits de antes) · ir para o melhor XP ou ouro (com o modelo)" ${dis}>${FIM_SCAN.map(([k, t]) => `<option value="${k}" ${fim === k ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
+          <div class="tb-linha"><input type="number" class="tb-in" id="tb-scan-min" value="${c.minutos}" min="1" max="60" style="width:52px" aria-label="minutos por mapa" ${dis}><span class="tb-mut">min por mapa</span>
+            <label class="tb-l" style="margin-left:auto"><input type="checkbox" id="tb-scan-lure" ${c.lureMax ? 'checked' : ''} ${dis}> lure máximo</label></div>
+          <details class="tb-aj" data-k="scan-estudo"><summary>estudo de variantes${c.comparar ? ' · ligado' : ''}</summary><div>
             <label class="tb-l"><input type="checkbox" id="tb-scan-comparar" ${c.comparar ? 'checked' : ''} ${dis}> em cada mapa, medir cada variante</label>
-            ${c.comparar ? '<div style="margin:2px 0 0 4px">' + ['inteligente', 'inteligente_seco', 'inteligente_semruna', 'inteligente_mana', 'equilibrado', 'economica', 'area'].map(m => `<label class="tb-l" style="margin-right:6px"><input type="checkbox" data-scan-var="${m}" ${(c.variantes || []).includes(m) ? 'checked' : ''} ${dis}> ${nomeModelo(m)}</label>`).join('') + '</div>' : ''}
+            ${c.comparar ? '<div style="margin:2px 0 0 4px">' + ['inteligente', 'inteligente_seco', 'inteligente_semruna', 'inteligente_mana', 'equilibrado', 'economica', 'area'].map(m => `<label class="tb-l" style="margin-right:6px"><input type="checkbox" data-scan-var="${m}" ${(c.variantes || []).includes(m) ? 'checked' : ''} ${dis}> ${escHtml(nomeModelo(m))}</label>`).join('') + '</div>' : ''}
           </div></details>
           <details class="tb-aj" data-k="scan-mapas"><summary>mapas (${marc.size} marcados)</summary><div>
-            <div class="tb-linha"><input class="tb-in" id="tb-scan-filtro" placeholder="filtrar…" style="flex:1"><button class="tb-bt mini" id="tb-scan-limpar-mapas">desmarcar</button></div>
-            <div id="tb-scan-lista" style="max-height:160px;overflow:auto">` +
-            hunts.map(h => `<label style="display:block;padding:0"><input type="checkbox" data-scan-mapa="${h.id}" ${marc.has(h.id) ? 'checked' : ''} ${dis}> <span class="tb-mut">[${h.levelMin || 1}]</span> ${h.title}${res[h.id] && !res[h.id].erro ? ` <span class="tb-tag tb-ok">${fmtK(res[h.id].xpH)} · ${fmtO(ouroBase(res[h.id]))}</span>` : ''}</label>`).join('') +
+            <div class="tb-linha"><input class="tb-in" id="tb-scan-filtro" placeholder="filtrar…" style="flex:1" aria-label="filtrar mapas"><button type="button" class="tb-bt mini" id="tb-scan-limpar-mapas" ${dis}>desmarcar</button></div>
+            <div id="tb-scan-lista" class="tb-sc-lista">` +
+            hunts.map(h => { const r = res[h.id]; return `<label class="tb-sc-mapa"><input type="checkbox" data-scan-mapa="${h.id}" ${marc.has(h.id) ? 'checked' : ''} ${dis}> <span class="tb-mut">[${h.levelMin || 1}]</span> ${escHtml(h.title)}${r && !r.erro && r.xpH != null ? ` <span class="tb-tag tb-ok">${fmtK(xpBase(r))} · ${fmtO(ouroBase(r))}</span>` : ''}</label>`; }).join('') +
             `</div></div></details>`;
-        if (v.lista.length || Object.keys(res).length) {
-            corpo += `<div class="tb-linha" style="margin-top:6px"><b>Resultados</b><span class="tb-mut">${c.minutos} min cada</span><button class="tb-bt mini" id="tb-scan-limpar" style="margin-left:auto">limpar</button></div>
-              <table class="tb-t"><tr><th>mapa</th><th class="n">xp/h</th><th class="n">ouro/h</th><th style="width:58px">veredito</th></tr>` +
-              v.lista.map(r => `<tr>
-                <td>${r.title}${r.suja ? ' <span class="tb-tag tb-ruim">mochila</span>' : ''}${r.modelo && r.modelo !== 'equilibrado' ? ` <span class="tb-tag tb-ok">${nomeModelo(r.modelo)}</span>` : ''}
-                  <div class="tb-mut" style="font-size:9.5px">lure ${r.lureTxt || r.lure} · ${r.abatesH}/h${r.tomadoH != null ? ` · tomou ${(r.tomadoH / 1000).toFixed(0)}k/h` : ''} · <span data-scan-ir="${r.id}" style="cursor:pointer;color:#ffd479" title="ir para este mapa">ir ›</span></div>
-                  ${razaoTexto(r.razao) ? `<details class="tb-aj" data-k="scan-r-${r.id}-${r.modelo}"><summary>+</summary><div style="font-size:10px">${razaoHtml(r.razao, true)}${r.supVoc ? `<div>poção: ${Object.entries(r.supVoc).map(([vv, x]) => (VOC_CURTO[vv] || vv) + ' ' + x.ouro + 'o').join(' · ')}</div>` : ''}${r.sorte ? `<div class="tb-av">sorte +${r.sorte.toLocaleString('pt-BR')}: ${(r.raros || []).join(', ')}</div>` : ''}</div></details>` : ''}</td>
-                <td class="${r.xpH >= v.melhorXp * 0.9 ? 'tb-ok' : ''}">${fmtK(r.xpH)}<div class="tb-mut" style="font-size:9.5px">${tNivel(r.xpH)}</div></td>
-                <td class="${ouroBase(r) < 0 ? 'tb-ruim' : ouroBase(r) >= v.melhorOuro * 0.9 ? 'tb-ok' : ''}">${fmtO(ouroBase(r))}<div class="tb-mut" style="font-size:9.5px">${r.estavelH != null ? 'estável' : 'bruto'}</div></td>
-                <td><b class="${r.veredito === 'Os dois' ? 'tb-ok' : r.veredito === 'dá prejuízo' ? 'tb-ruim' : /^abaixo/.test(r.veredito) ? 'tb-mut' : 'tb-av'}" style="${/^abaixo/.test(r.veredito) ? 'font-weight:normal;font-size:9.5px' : ''}">${r.veredito}</b></td>
-              </tr>`).join('') +
-              Object.values(res).filter(r => r.erro).map(r => `<tr><td colspan="4" class="tb-ruim">${r.title}: ${r.erro}</td></tr>`).join('') +
-              `</table>
-              <div class="tb-mut" style="font-size:10px;margin-top:4px">${v.topXp ? `upar: <b>${v.topXp.title}</b>${falta != null ? ' (nível em ' + tNivel(v.topXp.xpH) + ')' : ''}. ` : ''}${v.topOuro && ouroBase(v.topOuro) > 0 ? `ouro: <b>${v.topOuro.title}</b>.` : 'nenhum mapa deu ouro positivo.'}</div>
-              ${aj('scan-legenda', '<b>estável</b> = ouro/h só com moedas e itens que o catálogo espera cair 3+ vezes na janela; o resto é loteria e aparece como sorte. Veredito: "XP" = 90% do melhor XP; "Ouro" = 90% do melhor ouro estável; "Os dois" = ambos. ouro/h = loot − poção, pelo analisador do jogo. "mochila" = ficou abaixo de ' + CAP_MIN_SCAN + '% livre e perdeu loot.')}`;
+        const falhas = Object.values(res).filter(r => r && r.erro);
+        if (v.lista.length || falhas.length) {
+            const selo = r => r.fora ? 'mut' : r.veredito === 'Os dois' ? 'ok' : r.veredito === 'dá prejuízo' ? 'ruim' : /^abaixo|^único/.test(r.veredito) ? 'mut' : 'av';
+            const detalhe = r => [
+                `lure ${escHtml(r.lureTxt || r.lure)} · ${r.abatesH != null ? r.abatesH + ' abates/h' : ''}${r.tomadoH != null ? ` · tomou ${(r.tomadoH / 1000).toFixed(0)}k/h` : ''}`,
+                `medido ${hora(r.t)} · nível ${r.nivel || '?'} · ${r.seg ? Math.round(r.seg / 60) : r.minutos} min${r.capMin != null ? ` · mochila mín. ${r.capMin}% livre` : ''}`,
+                r.suja ? `<span class="tb-ruim">suja: a mochila passou de ${100 - CAP_MIN_SCAN}% e o loot se perdeu — fora do ranking</span>` : '',
+                r.fora === 'nivel' ? `<span class="tb-av">medido no nível ${r.nivel}; agora ${v.nivelRef} — fora do ranking (±2)</span>` : '',
+                r.supVoc ? `poção: ${Object.entries(r.supVoc).map(([vv, x]) => (VOC_CURTO[vv] || escHtml(vv)) + ' ' + x.ouro + 'o').join(' · ')}` : '',
+                r.sorte ? `<span class="tb-av">sorte +${r.sorte.toLocaleString('pt-BR')}: ${(r.raros || []).map(escHtml).join(', ')}</span>` : '',
+                r.ultimaFalha ? `<span class="tb-ruim">última tentativa (${hora(r.ultimaFalha.t)}): ${escHtml(r.ultimaFalha.erro)}</span>` : ''
+            ].filter(Boolean).map(x => `<div>${x}</div>`).join('') + (razaoTexto(r.razao) ? razaoHtml(r.razao, true) : '');
+            /* v2.11 — bestiário no resultado do Scan (aba Progresso): quanto falta para o próximo
+             * bônus permanente deste mapa, no ritmo de abates medido aqui. pgBestiarioTexto já escapa. */
+            const bestiarioDoCartao = r => { try { const t = pgBestiarioTexto(r.id, { [r.id]: { abatesH: r.abatesH } }); return t ? `<div class="tb-mut">${t}</div>` : ''; } catch (e) { return ''; } };
+            const cartao = r => `<div class="tb-sc-card ${r.fora ? 'fora' : ''}">
+                <div class="tb-sc-cab"><b>${escHtml(r.title)}</b>${r.modelo && r.modelo !== 'equilibrado' ? `<span class="tb-tag">${escHtml(nomeModelo(r.modelo))}</span>` : ''}<span class="tb-selo ${selo(r)}">${escHtml(r.veredito)}</span></div>
+                <div class="tb-sc-num"><div><small>xp/h sem boost</small><b class="${!r.fora && xpBase(r) >= v.melhorXp * 0.9 ? 'tb-ok' : ''}">${fmtK(xpBase(r))}</b><small>real ${fmtK(r.xpH)} · nível em ${tNivel(r.xpH)}</small></div>
+                  <div><small>ouro/h ${r.estavelH != null ? 'estável' : 'bruto'}</small><b class="${ouroBase(r) < 0 ? 'tb-ruim' : !r.fora && ouroBase(r) >= v.melhorOuro * 0.9 ? 'tb-ok' : ''}">${fmtO(ouroBase(r))}</b><small>loot − poção${r.ouroH != null && r.estavelH != null ? ' · bruto ' + fmtO(r.ouroH) : ''}</small></div></div>
+                ${bestiarioDoCartao(r)}
+                <div class="tb-sc-pe"><details class="tb-aj" data-k="scan-r-${r.id}-${escHtml(r.modelo || '')}"><summary>+</summary><div class="tb-sc-det">${detalhe(r)}</div></details>
+                  <button type="button" class="tb-bt mini" data-scan-ir="${r.id}" ${ocupado ? 'disabled' : ''} title="trocar a party para este mapa (pede confirmação)">ir ›</button></div>
+              </div>`;
+            const nFora = v.lista.filter(r => r.fora).length;
+            corpo += `<div class="tb-linha" style="margin-top:6px"><b>Resultados</b><span class="tb-mut">${v.nivelRef ? 'nível ' + v.nivelRef + ' ±2' : ''}</span><button type="button" class="tb-bt mini" id="tb-scan-limpar" style="margin-left:auto">limpar</button></div>
+              <div class="tb-mut" style="margin-bottom:2px">${v.topXp ? `upar: <b>${escHtml(v.topXp.title)}</b>${falta != null ? ' (nível em ' + tNivel(v.topXp.xpH) + ')' : ''}. ` : ''}${v.topOuro && ouroBase(v.topOuro) > 0 ? `ouro: <b>${escHtml(v.topOuro.title)}</b>.` : v.rank.length ? 'nenhum mapa deu ouro positivo.' : 'nenhum resultado válido no ranking.'}${nFora ? ` ${nFora} fora do ranking (suja ou outro nível).` : ''}</div>` +
+              v.lista.map(cartao).join('') +
+              falhas.map(r => `<div class="tb-sc-card falha"><div class="tb-sc-cab"><b>${escHtml(r.title)}</b><span class="tb-selo ruim">falhou</span></div><div class="tb-ruim">${escHtml(r.erro)}</div>${r.xpH != null ? `<div class="tb-mut">parcial: xp/h ${fmtK(xpBase(r))} · ouro/h ${fmtO(ouroBase(r))}${r.seg ? ' em ' + Math.max(1, Math.round(r.seg / 60)) + ' min' : ''}</div>` : ''}<div class="tb-mut">${hora(r.t)}</div></div>`).join('') +
+              aj('scan-legenda', '<b>xp/h sem boost</b> = EXP raw do analisador (sem boost nem prey) — é por ele que o ranking compara; "real" é o que sobe o nível. <b>estável</b> = ouro/h só com moedas e itens que o catálogo espera cair 3+ vezes na janela; o resto é loteria e aparece como sorte. Veredito: "XP" = 90% do melhor XP; "Ouro" = 90% do melhor ouro estável; "Os dois" = ambos. Fora do ranking: medição <b>suja</b> (mochila abaixo de ' + CAP_MIN_SCAN + '% livre, loot perdido) ou de outro nível (±2). Morte ou caçada encerrada por fora param o Scan e aparecem como falha, sem apagar a medição boa anterior.');
         } else {
-            corpo += aj('scan-ajuda', 'Marque os mapas, ajuste os minutos e ligue a chave. O Scan entra em cada mapa pelo socket, aplica o modelo nos 4, espera os minutos e anota xp/h, ouro/h e abates/h. O Auto Hunt fica quieto enquanto o Scan roda.');
+            corpo += aj('scan-ajuda', 'Marque os mapas, ajuste os minutos e clique Iniciar. O Scan entra em cada mapa pelo socket, aplica o modelo nos 4, espera os minutos e anota xp/h, ouro/h e abates/h. O Auto Hunt fica quieto enquanto o Scan roda. Ao terminar ou parar, devolve o jogo como estava (mapa, lure e kits), a não ser que "ao terminar" diga outra coisa.');
         }
-        return corpo;
+        return corpo + '</div>';
+    }
+    function ligarScan() {
+        const filtro = $('#tb-scan-filtro');
+        if (filtro) {
+            const aplicarFiltro = () => { const v = (_scanFiltro || '').toLowerCase(); $$('#tb-scan-lista .tb-sc-mapa').forEach(l => l.classList.toggle('tb-escondido', !!v && !(l.textContent || '').toLowerCase().includes(v))); };
+            filtro.value = _scanFiltro; aplicarFiltro();
+            filtro.oninput = () => { _scanFiltro = filtro.value; aplicarFiltro(); };
+        }
+        const alternar = () => { if (SCAN.ativo) scanParar('pelo botão'); else scanIniciar(); };
+        const scOn = $('#tb-scan-on'); if (scOn) scOn.onclick = alternar;
+        const go = $('#tb-scan-go'); if (go) go.onclick = alternar;
+        $$('[data-scan-mapa]').forEach(cb => cb.onchange = () => {
+            const id = parseInt(cb.dataset.scanMapa), c = scanCfg();
+            const m = c.mapas.filter(x => x !== id); if (cb.checked) m.push(id);
+            guardarScanCfg({ mapas: m }); renderizar();
+        });
+        const scMin = $('#tb-scan-min'); if (scMin) scMin.onchange = () => { guardarScanCfg({ minutos: Math.max(1, Math.min(60, parseInt(scMin.value) || 5)) }); setTimeout(renderizar, 0); };   // o change pode vir do campo saindo da página num repinte
+        const scLure = $('#tb-scan-lure'); if (scLure) scLure.onchange = () => guardarScanCfg({ lureMax: scLure.checked });
+        const scFim = $('#tb-scan-fim'); if (scFim) scFim.onchange = () => guardarScanCfg({ fim: scFim.value, fimEscolhido: true });
+        const scMod = $('#tb-scan-modelo'); if (scMod) scMod.onchange = () => guardarScanCfg({ modelo: scMod.value });
+        const scCmp = $('#tb-scan-comparar'); if (scCmp) scCmp.onchange = () => { guardarScanCfg({ comparar: scCmp.checked }); renderizar(); };
+        $$('[data-scan-var]').forEach(cb => cb.onchange = () => { const c = scanCfg(); const v = (c.variantes || []).filter(x => x !== cb.dataset.scanVar); if (cb.checked) v.push(cb.dataset.scanVar); guardarScanCfg({ variantes: v }); renderizar(); });
+        const scLm = $('#tb-scan-limpar-mapas'); if (scLm) scLm.onclick = () => { guardarScanCfg({ mapas: [] }); renderizar(); };
+        const scL = $('#tb-scan-limpar'); if (scL) ligarDoisToques(scL, 'scan-limpar', 'apagar todos?', () => { guardar('scan_resultados', {}); log('resultados do Scan apagados', 'info'); renderizar(); });
+        $$('[data-scan-ir]').forEach(b => { const id = parseInt(b.dataset.scanIr); ligarDoisToques(b, 'ir-' + id, 'confirmar ›', () => scanIrPara(id)); });
     }
     /* =========================================================================
      *  TELA DE MAGIA — enxuta de propósito
@@ -3682,54 +5651,144 @@
      *  ⚠ Mantive UMA linha de estado, e essa não é enfeite: ela mostra qual
      *  hunt foi detectada e se a caçada se paga. Sem ela, uma detecção errada
      *  aplicaria elemento errado em silêncio — e foi assim que Vampire hell
-     *  deu −138k/h. O detalhe todo continua na aba Analisador. */
+     *  deu −138k/h. O detalhe todo continua na aba Analisador.
+     *  v2.11 (D2) — modelo como controle segmentado numa linha (aria-pressed),
+     *  selo do veredito do grupo (fila simulada de viabilidadeParty: custo por
+     *  abate contra o teto, ouro/h de poção e runa, quem bebe mana), por
+     *  personagem o gasto/h e as runas/h, fichas com "2+ alvos", extras em
+     *  português ("poção de mana ≤30%" — saía "mana Mana ≤30") e os slots que a
+     *  Magia cortou por nunca dispararem (r.mortos) numa linha discreta. */
+    const MODELO_CURTO = { economica: 'Eco', equilibrado: 'Equil', area: 'Área', boss: 'Boss', inteligente: 'Intel' };
+    /* nome da poção como o painel fala: "Strong Mana Potion" → "poção de mana forte" */
+    function nomePocao(n) {
+        const s = String(n || '');
+        const tipo = /mana/i.test(s) ? 'poção de mana' : /spirit/i.test(s) ? 'poção espiritual' : 'poção de vida';
+        return tipo + (/ultimate/i.test(s) ? ' suprema' : /great/i.test(s) ? ' grande' : /strong/i.test(s) ? ' forte' : '');
+    }
+    /* cura, mana, suporte e munição que o Inteligente põe (planoExtras) */
+    function extrasTxt(x) {
+        const partes = x.heals.filter(Boolean).map(c => (/potion/i.test(c.name) ? nomePocao(c.name) : c.name) + ' ≤' + c.percent + '%');
+        partes.push(x.manaPotion && x.manaPotion.name && x.manaPotion.percent ? nomePocao(x.manaPotion.name) + ' ≤' + x.manaPotion.percent + '%' : 'sem poção de mana');
+        const sup = x.supports.filter(Boolean);
+        partes.push(sup.length ? sup.join(' + ') : 'sem suporte');
+        if (x.ammo) partes.push('munição: ' + x.ammo);
+        return escHtml(partes.join(' · '));
+    }
     function telaMagia() {
+        garantirCssTelas();
         const det = detectarHunt(), manual = ler('hunt_id', null), modelo = ler('modelo', 'equilibrado'), nv = nivelAtual();
         let h = huntAtual();
-        let corpo = `<div class="tb-linha">` + Object.keys(MODELOS).map(k => `<button class="tb-bt mini ${k === modelo ? 'on' : ''}" data-modelo="${k}" title="${MODELOS[k].dica}">${MODELOS[k].nome}</button>`).join('') + `</div>`;
-        const ordenadas = (CAT.hunts || []).slice().sort((a, b) => (a.levelMin || 0) - (b.levelMin || 0) || a.title.localeCompare(b.title));
-        corpo += `<select id="tb-hunt"><option value="">— escolhe a caçada —</option>` +
-            ordenadas.map(c => `<option value="${c.id}" ${c.id === manual ? 'selected' : ''}>[${c.levelMin || 1}] ${c.title}${(c.levelMin || 0) > nv ? ' ⚠' : ''}</option>`).join('') + `</select>` +
-            (det && det.hunt && det.hunt.id !== manual ? `<div class="tb-mut" style="font-size:10px">palpite: <b>${det.hunt.title}</b> <button class="tb-bt mini" data-usar-palpite="${det.hunt.id}">usar</button></div>` : '');
+        let corpo = `<div class="tb-seg" role="group" aria-label="modelo de magia">` + Object.keys(MODELOS).map(k =>
+            `<button type="button" data-modelo="${k}" aria-pressed="${k === modelo}" aria-label="${escHtml(MODELOS[k].nome)}" title="${escHtml(MODELOS[k].nome + ' — ' + maisAlvos(MODELOS[k].dica))}">${escHtml(MODELO_CURTO[k] || MODELOS[k].nome)}</button>`).join('') + `</div>`;
+        const ordenadas = (CAT.hunts || []).slice().sort((a, b) => (a.levelMin || 0) - (b.levelMin || 0) || String(a.title).localeCompare(String(b.title)));
+        corpo += `<select id="tb-hunt" aria-label="caçada"><option value="">— escolha a caçada —</option>` +
+            ordenadas.map(c => `<option value="${escHtml(c.id)}"${c.id === manual ? ' selected' : ''}>[${escHtml(c.levelMin || 1)}] ${escHtml(c.title)}${(c.levelMin || 0) > nv ? ' ⚠' : ''}</option>`).join('') + `</select>` +
+            (det && det.hunt && det.hunt.id !== manual ? `<div class="tb-linha tb-palpite"><span class="tb-mut">palpite: <b>${escHtml(det.hunt.title)}</b></span><button type="button" class="tb-bt mini" data-usar-palpite="${escHtml(det.hunt.id)}" aria-label="usar o palpite ${escHtml(det.hunt.title)}">usar</button></div>` : '');
         let alvo = h;
-        if (ESTADO_WS.boss && ESTADO_WS.boss !== '?') corpo += `<div class="tb-mut">boss em andamento: <b>${ESTADO_WS.boss}</b></div>`;
+        if (ESTADO_WS.boss && ESTADO_WS.boss !== '?') corpo += `<div class="tb-mut">boss em andamento: <b>${escHtml(ESTADO_WS.boss)}</b></div>`;
         if (modelo === 'boss') {
             const bn = (ESTADO_WS.boss && ESTADO_WS.boss !== '?') ? ESTADO_WS.boss : ler('boss_nome', null);
-            const bosses = (CAT.bosses || []).slice().sort((a, b) => (a.health || 0) - (b.health || 0) || a.name.localeCompare(b.name));
-            corpo += `<select id="tb-boss" style="margin-top:4px"><option value="">— escolhe o boss —</option>` + bosses.map(b => `<option value="${b.name}" ${b.name === bn ? 'selected' : ''}>${b.name} · ${b.health} HP</option>`).join('') + `</select>`;
+            const bosses = (CAT.bosses || []).slice().sort((a, b) => (a.health || 0) - (b.health || 0) || String(a.name).localeCompare(String(b.name)));
+            corpo += `<select id="tb-boss" aria-label="boss" style="margin-top:4px"><option value="">— escolha o boss —</option>` + bosses.map(b => `<option value="${escHtml(b.name)}"${b.name === bn ? ' selected' : ''}>${escHtml(b.name)} · ${numBR(b.health)} HP</option>`).join('') + `</select>`;
             alvo = huntDeBoss(bn);
-            if (alvo) corpo += `<div class="tb-mut" style="font-size:10px">${(alvo.monsters[0].elements || []).map(e => rotuloElem(e.type) + ' ' + (e.percent > 0 ? '−' : '+') + Math.abs(e.percent) + '%').join(' · ') || 'sem resistências'}</div>`;
+            if (alvo) corpo += `<div class="tb-mut tb-resist">${escHtml((alvo.monsters[0].elements || []).map(e => rotuloElem(e.type) + ' ' + (e.percent > 0 ? '−' : '+') + Math.abs(e.percent) + '%').join(' · ') || 'sem resistências')}</div>`;
         }
         if (!alvo) return corpo + `<div class="tb-mut" style="margin-top:6px">escolha a caçada para ver o plano</div>`;
         h = alvo;
-        if (!h.boss && LOOT_CACHE[h.id] == null) ouroPorAbate(h.id).then(v => { if (v != null) renderizar(); });
-        if (!h.boss && h.monsters && h.monsters.some(m => !BESTIARIO[m.name])) bestiarioHunt(h).then(() => renderizar()).catch(() => { });
         const r = montarPlano(modelo, h);
-        ULTIMO = r;
-        if (r.erro) return corpo + `<div class="tb-cx tb-ruim">${r.erro}</div>`;
+        if (r.erro) return corpo + `<div class="tb-cx tb-ruim">${escHtml(r.erro)}</div>`;
         const vp = r.viab ? viabilidadeParty(modelo, h) : null;
-        const cabe = vp ? vp.cabe : null;
-        corpo += `<button class="tb-bt pri" id="tb-aplicar-todos" ${_aplicando ? 'disabled' : ''} style="width:100%;font-size:13px;padding:8px;margin-top:6px">${_aplicando ? 'APLICANDO…' : 'APLICAR NOS 4'}</button>` +
-            (vp ? (vp.regen
-                ? `<div class="tb-mut" style="font-size:10px">mana OFF: magia sai da regeneração (0 ouro). Com poção seriam ${vp.custoPorAbate}o/abate contra ${vp.loot}o de loot.</div>`
-                : `<div style="font-size:10px" class="${cabe ? 'tb-ok' : 'tb-ruim'}">${cabe ? 'se paga' : 'NÃO se paga'}: ${vp.custoPorAbate}o/abate contra ${vp.loot}o de loot · mana: ${VOCS.map(v => VOC_CURTO[v] + (manaPotionLigada(v) ? ' on' : ' off')).join(' · ')}</div>`) : '');
-        const ficha = p => `<span class="tb-ficha${p.av.m.isRune ? ' r' : ''}" title="${p.av.m.name} · mínimo ${p.minimo} criatura(s)${p.av.medidoNoMapa ? ' · ' + p.av.porLancamento + ' de dano medido por lançamento neste mapa' : ''}">${p.av.m.name} <small>≥${p.minimo}${p.av.medidoNoMapa ? ' · ' + p.av.porLancamento : ''}</small></span>`;
+        const ocupado = _aplicando || _aprendendo;
+        corpo += `<button type="button" class="tb-bt pri tb-larga tb-grande" id="tb-aplicar-todos" ${ocupado ? 'disabled' : ''} style="margin-top:6px">${_aplicando ? 'APLICANDO…' : _aprendendo ? 'MEDINDO O DANO…' : 'APLICAR NOS 4'}</button>`;
+        /* v2.10 — o veredito é do kit inteiro pela fila simulada (runa incluída,
+         * mana só de quem bebe), com a poção que o PLANO usa. v2.11 (D2): selo
+         * "✓ se paga"/"✗ não se paga" + custo por abate contra o teto (80 % do
+         * loot) + ouro/h do grupo e quem bebe mana. */
+        if (vp) {
+            const bebem = VOCS.filter(v => vp.pocoes && vp.pocoes[v]);
+            const gasto = vp.ouroH > 0 ? `~${milBR(vp.ouroH)} de ouro/h (${vp.regen ? 'runa' : 'poção e runa'})` : 'sem gasto de ouro';
+            corpo += `<div class="tb-ver ${vp.cabe ? 'ok' : 'ruim'}"><span class="tb-vsel ${vp.cabe ? 'ok' : 'ruim'}">${vp.cabe ? '✓ se paga' : '✗ não se paga'}</span>custo <b>${numBR(vp.custoPorAbate)} o</b>/abate · teto ${numBR(vp.orcamento, 1)} o <span class="tb-mut">(${Math.round(MARGEM_LUCRO * 100)} % do loot de ${numBR(vp.loot, 1)} o)</span>` +
+                `<div class="tb-mut">${gasto} · poção de mana: ${bebem.length ? bebem.map(v => VOC_ROTULO[v]).join(', ') : 'ninguém (regeneração)'}</div></div>`;
+        } else if (h.boss) corpo += `<div class="tb-mx">boss: sem veredito de ouro — o kit é o de mais dano por segundo com a mana de cada um</div>`;
+        else if (LOOT_CACHE[h.id] == null) corpo += `<div class="tb-mx">veredito: ${_semLoot[h.id] ? 'a tabela de loot desta hunt não veio (rede?) — tento de novo em 1 min' : 'lendo a tabela de loot…'}</div>`;
+        const ficha = p => {
+            const med = p.av.medidoNoMapa ? ' · ' + numBR(p.av.porLancamento) : '';
+            const dica = `${p.av.m.name} · dispara com ${alvosTxt(p.minimo)} vivos${p.av.medidoNoMapa ? ' · ' + numBR(p.av.porLancamento) + ' de dano medido por lançamento neste mapa' : ''}`;
+            return `<span class="tb-ficha${p.av.m.isRune ? ' r' : ''}" title="${escHtml(dica)}">${escHtml(p.av.m.name)} <small>${alvosTxt(p.minimo)}${med}</small></span>`;
+        };
         corpo += `<div class="tb-cx">` + VOCS.map(v => {
             const rv = montarPlano(modelo, h, v);
-            if (rv.erro) return `<div><b>${VOC_CURTO[v]}</b> <span class="tb-ruim">${rv.erro}</span></div>`;
-            const x = rv.extras;
-            return `<div style="margin:2px 0"><b style="color:#ffd479">${VOC_CURTO[v]}</b> ${rv.plano.map(ficha).join('') || '<span class="tb-ruim">sem magia com dano conhecido</span>'}` +
-                (x ? `<div class="tb-mut" style="font-size:9.5px;margin-left:24px">${x.heals.filter(Boolean).map(c => c.name.replace(' Potion', '') + ' ≤' + c.percent).join(' · ')} · mana ${x.manaPotion.name ? x.manaPotion.name.replace(' Potion', '') + ' ≤' + x.manaPotion.percent : 'off'} · ${x.supports.filter(Boolean).join(' + ') || 'sem suporte'}${x.ammo ? ' · ' + x.ammo : ''}</div>` : '') + `</div>`;
+            const cab = `<b title="${VOC_ROTULO[v]}">${VOC_CURTO[v]}</b>`;
+            if (rv.erro) return `<div class="tb-mv">${cab}<div class="tb-ruim">${escHtml(rv.erro)}</div></div>`;
+            const x = rv.extras, pv = vp && vp.porVoc ? vp.porVoc[v] : null;
+            const gasto = pv ? (pv.ouroH > 0 ? `gasta ~${milBR(pv.ouroH)}/h` : 'sem gasto de ouro') + (pv.runasH ? ` · ${numBR(pv.runasH)} runas/h` : '') + (x ? '' : ` · poção de mana ${pv.pocao ? 'ligada' : 'desligada'}`) : '';
+            const mortos = (rv.mortos || []).map(m => `${m.nome} ${alvosTxt(m.minimo)}: ${maisAlvos(m.motivo)}`);
+            return `<div class="tb-mv">${cab}<div>${rv.plano.map(ficha).join('') || '<span class="tb-ruim">sem magia com dano conhecido</span>'}` +
+                (x ? `<div class="tb-mx">${extrasTxt(x)}</div>` : '') +
+                (gasto ? `<div class="tb-mx">${gasto}</div>` : '') +
+                (mortos.length ? `<div class="tb-mx tb-morto" title="slot que nunca dispararia: fica vazio (não gasta mana)">cortado: ${escHtml(mortos.join(' · '))}</div>` : '') + `</div></div>`;
         }).join('') + `</div>`;
         const linhas = [];
-        if (emHunt() && RAZAO.kills) { const rz = razaoResumo(RAZAO); if (rz.danoTotal) linhas.push(`<div><b>grupo ao vivo</b> — ${Math.round(rz.seg / 60)} min · ${rz.kills} abates · tomou ${(rz.tomadoH / 1000).toFixed(1)}k/h</div>${razaoHtml(rz, false)}`); }
-        if (h.bestiary && h.bestiary.stages && h.bestiary.stages.length) linhas.push(`<div><b>bestiário</b>: ${h.bestiary.bonus} <span class="tb-tag">${h.bestiary.stages.map(e => `${(e.kills / 1000).toFixed(e.kills % 1000 ? 1 : 0)}k → +${e.value}`).join(' · ')}</span></div>`);
-        linhas.push(`<div>${MODELOS[modelo] ? MODELOS[modelo].dica : ''} Nada é aplicado sozinho. ${socketAberto() && ESTADO_WS.profiles ? 'Aplica pelo socket, sem abrir janela.' : 'Aplica pelos diálogos do jogo.'}</div>`);
+        if (emHunt() && RAZAO.kills) { const rz = razaoResumo(RAZAO); if (rz.danoTotal) linhas.push(`<div><b>grupo ao vivo</b> — ${numBR(Math.round(rz.seg / 60))} min · ${numBR(rz.kills)} abates · tomou ${milBR(rz.tomadoH)}/h</div>${razaoHtml(rz, false)}`); }
+        if (h.bestiary && h.bestiary.stages && h.bestiary.stages.length) linhas.push(`<div><b>bestiário</b>: ${escHtml(h.bestiary.bonus)} <span class="tb-tag">${h.bestiary.stages.map(e => `${numBR(e.kills / 1000, 1)}k → +${escHtml(e.value)}`).join(' · ')}</span></div>`);
+        linhas.push(`<div>${MODELOS[modelo] ? escHtml(maisAlvos(MODELOS[modelo].dica)) : ''} Nada é aplicado sozinho. ${socketAberto() && ESTADO_WS.perfisDoServidor ? 'Aplica pelo socket, sem abrir janela.' : 'Aplica pelos diálogos do jogo (só os 4 ataques).'}</div>`);
         corpo += aj('magia-mais', linhas.join(''), 'detalhes');
         return corpo;
     }
+    /* handlers da Magia (antes dentro de _renderizar) + os dados que o plano
+     * ainda espera (loot, armadura do bestiário). v2.11 (D2): a busca saiu do
+     * DESENHO — telaMagia disparava fetch a cada repinte enquanto o anterior
+     * não voltava; agora uma por hunt de cada vez, e o repinte vem quando chega. */
+    const _buscandoMagia = new Set(), _semLoot = {};      // _semLoot[huntId] = hora da falha (tenta de novo depois de 1 min)
+    function buscarUmaVez(chave, fazer) {
+        if (_buscandoMagia.has(chave)) return;
+        _buscandoMagia.add(chave);
+        Promise.resolve().then(fazer).catch(() => { }).finally(() => _buscandoMagia.delete(chave));
+    }
+    function ligarMagia() {
+        const corpo = $('#tb-corpo');
+        $$('[data-modelo]', corpo).forEach(b => b.onclick = () => { if (ler('modelo', 'equilibrado') === b.dataset.modelo) return; guardar('modelo', b.dataset.modelo); renderizar(); });
+        const selHunt = $('#tb-hunt');
+        if (selHunt) selHunt.onchange = () => { const v = selHunt.value; guardar('hunt_id', v === '' ? null : parseInt(v)); renderizar(); };
+        $$('[data-usar-palpite]', corpo).forEach(b => { b.onclick = () => { guardar('hunt_id', parseInt(b.dataset.usarPalpite)); renderizar(); }; });
+        const selBoss = $('#tb-boss');
+        if (selBoss) selBoss.onchange = () => { guardar('boss_nome', selBoss.value || null); renderizar(); };
+        const ap4 = $('#tb-aplicar-todos');
+        if (ap4) ap4.onclick = () => {
+            if (_aplicando || _aprendendo) return;
+            const m = ler('modelo', 'equilibrado'), h = alvoDoModelo();
+            if (!h) { avisar('magia', m === 'boss' ? 'escolha o boss primeiro' : 'escolha a caçada primeiro', 'erro'); return; }
+            aplicarEmTodos(m, h);                           // marca _aplicando antes do 1º await
+            renderizar();
+        };
+        buscarDadosDaMagia();
+    }
+    /* loot (veredito) e armadura (bestiário) da hunt que a Magia mostra; é
+     * LEITURA de catálogo público. Loot que não veio: diz na tela e tenta de
+     * novo 1 min depois (só com a Magia aberta). */
+    function buscarDadosDaMagia() {
+        const h = alvoDoModelo();
+        if (!h || h.boss) return;
+        if (LOOT_CACHE[h.id] == null && !(Date.now() - (_semLoot[h.id] || 0) < 60000)) {
+            buscarUmaVez('loot:' + h.id, () => ouroPorAbate(h.id).then(v => {
+                if (v == null) { _semLoot[h.id] = Date.now(); setTimeout(() => { if (ABA === 'magia') buscarDadosDaMagia(); }, 60500); } else delete _semLoot[h.id];
+                renderizar();
+            }));
+        }
+        if (h.monsters && h.monsters.some(m => !BESTIARIO[m.name])) buscarUmaVez('best:' + h.id, () => bestiarioHunt(h).then(() => renderizar()));
+    }
+    /* v2.11 (D2) — ANALISADOR: nomes de hunt inteiros (a coluna tinha 1/5 da
+     * tabela e "Barbarian Camp" virava "Barbari an Camp"); agora a hunt leva o
+     * que sobra das colunas numéricas (largura em em, vale no celular) e só
+     * quebra palavra que sozinha não cabe. Título de sessão, hunt e tipo de
+     * frame do socket escapados. A caixa do "copiar JSON" é estado
+     * (_exportacao): com a área de transferência bloqueada ela era o único
+     * lugar dos dados e sumia no repinte seguinte (4 s). */
+    let _exportacao = null;           // { texto, copiado: null|true|false, selecionar }
     function telaAnalise() {
+        garantirCssTelas();
         const lin = (a, b) => `<div class="tb-lin"><span class="tb-mut">${a}</span><span>${b}</span></div>`;
+        const sinal = n => (n >= 0 ? '+' : '') + milBR(n);
         let corpo = '';
         if (SESSAO && SESSAO.amostras.length >= 2) {
             const a0 = SESSAO.amostras[0], aN = SESSAO.amostras[SESSAO.amostras.length - 1];
@@ -3738,34 +5797,71 @@
             const expH = (aN.exp != null && a0.exp != null) ? Math.round((aN.exp - a0.exp) / dur * 3600) : null;
             const ab = (aN.abates != null && a0.abates != null) ? aN.abates - a0.abates : null;
             const pct = Math.round((aN.mochilaPct || 0) * 100);
-            corpo += `<div class="tb-cx" style="border-color:#2c5c3a"><div class="tb-mut">medindo — ${SESSAO.huntTitle} · ${Math.floor(dur / 60)}m${String(Math.round(dur % 60)).padStart(2, '0')}</div>
-                ${lin('ouro/h', `<b class="${ouroH >= 0 ? 'tb-ok' : 'tb-ruim'}">${ouroH >= 0 ? '+' : ''}${ouroH.toLocaleString('pt-BR')}</b>`)}
-                ${lin('exp/h', expH != null ? expH.toLocaleString('pt-BR') : '—')}
-                ${lin('abates', ab != null ? `${ab} (${Math.round(ab / dur * 3600)}/h)` : '—')}
+            corpo += `<div class="tb-cx" style="border-color:#2c5c3a"><div class="tb-mut">medindo — ${escHtml(SESSAO.huntTitle)} · ${Math.floor(dur / 60)}m${String(Math.round(dur % 60)).padStart(2, '0')}</div>
+                ${lin('ouro/h', isFinite(ouroH) ? `<b class="${ouroH >= 0 ? 'tb-ok' : 'tb-ruim'}">${ouroH >= 0 ? '+' : ''}${numBR(ouroH)}</b>` : '—')}
+                ${lin('exp/h', numBR(expH))}
+                ${lin('abates', ab != null ? `${numBR(ab)} (${numBR(Math.round(ab / dur * 3600))}/h)` : '—')}
                 ${lin('mochila', `<span class="${pct > 85 ? 'tb-ruim' : pct > 60 ? 'tb-av' : ''}">${pct}%</span>`)}
-                ${pct > 85 ? '<div class="tb-ruim" style="font-size:10px">mochila acima de 85%: o loot se perde e a medição sai suja</div>' : ''}</div>`;
+                ${pct > 85 ? '<div class="tb-ruim tb-nota">mochila acima de 85%: o loot se perde e a medição sai suja</div>' : ''}</div>`;
         } else corpo += `<div class="tb-mut">sem medição: liga sozinho ao entrar numa caçada</div>`;
         const res = resumoPorHunt();
         if (res.length) {
-            corpo += `<table class="tb-t"><tr><th>hunt</th><th>ouro/h</th><th>exp/h</th><th>tempo</th><th>fator</th></tr>` +
-              res.map(p => `<tr><td>${p.hunt}${p.sujas ? ` <span class="tb-tag tb-ruim">${p.sujas} suja</span>` : ''}${p.regen ? ` <span class="tb-tag">regen</span>` : ''}</td>
-                <td class="${p.ouroH >= 0 ? 'tb-ok' : 'tb-ruim'}">${p.ouroH >= 0 ? '+' : ''}${(p.ouroH / 1000).toFixed(1)}k</td><td>${(p.expH / 1000).toFixed(1)}k</td><td class="tb-mut">${Math.round(p.dur / 60)}min</td><td class="tb-av">${p.fatorMedio != null ? p.fatorMedio : '—'}</td></tr>`).join('') + `</table>`;
+            corpo += `<table class="tb-an"><colgroup><col><col class="c5"><col class="c5"><col class="c4"><col class="c3"></colgroup>` +
+              `<thead><tr><th>hunt</th><th>ouro/h</th><th>exp/h</th><th>tempo</th><th>fator</th></tr></thead><tbody>` +
+              res.map(p => `<tr><td>${escHtml(p.hunt)}${p.sujas ? ` <span class="tb-tag tb-ruim">${numBR(p.sujas)} suja${p.sujas > 1 ? 's' : ''}</span>` : ''}${p.regen ? ` <span class="tb-tag">regen</span>` : ''}</td>` +
+                `<td class="${p.ouroH >= 0 ? 'tb-ok' : 'tb-ruim'}">${sinal(p.ouroH)}</td><td>${milBR(p.expH)}</td><td class="tb-mut">${fmtHoras(p.dur / 3600)}</td><td class="tb-av">${numBR(p.fatorMedio, 2)}</td></tr>`).join('') + `</tbody></table>`;
             const comFator = res.filter(p => p.fatorMedio != null && p.hp);
-            if (comFator.length) corpo += aj('an-curva', `<table class="tb-t"><tr><th>hunt</th><th>HP</th><th>curva</th><th>medido</th><th>erro</th></tr>` + comFator.map(p => { const prev = Math.round(fatorDesperdicio(p.hp) * 100) / 100; const erro = Math.round((p.fatorMedio / prev - 1) * 100); return `<tr><td>${p.hunt}</td><td>${p.hp}</td><td>${prev}</td><td class="tb-av">${p.fatorMedio}</td><td class="${Math.abs(erro) < 25 ? 'tb-ok' : 'tb-ruim'}">${erro > 0 ? '+' : ''}${erro}%</td></tr>`; }).join('') + `</table><div style="font-size:10px">fator = desperdício real por abate contra a curva 0,47 × HP^0,332 (2 pontos).</div>`, 'calibração');
+            if (comFator.length) corpo += aj('an-curva', `<table class="tb-an"><colgroup><col><col class="c4"><col class="c4"><col class="c4"><col class="c4"></colgroup><thead><tr><th>hunt</th><th>HP</th><th>curva</th><th>medido</th><th>erro</th></tr></thead><tbody>` + comFator.map(p => { const prev = Math.round(fatorDesperdicio(p.hp) * 100) / 100; const erro = Math.round((p.fatorMedio / prev - 1) * 100); return `<tr><td>${escHtml(p.hunt)}</td><td>${numBR(p.hp)}</td><td>${numBR(prev, 2)}</td><td class="tb-av">${numBR(p.fatorMedio, 2)}</td><td class="${Math.abs(erro) < 25 ? 'tb-ok' : 'tb-ruim'}">${erro > 0 ? '+' : ''}${numBR(erro)}%</td></tr>`; }).join('') + `</tbody></table><div class="tb-nota">fator = desperdício real por abate contra a curva 0,47 × HP^0,332 (2 pontos).</div>`, 'calibração');
         }
         const tipos = Object.keys(WS.tipos).sort((a, b) => WS.tipos[b] - WS.tipos[a]);
         const envs = Object.keys(WS.enviados).sort((a, b) => WS.enviados[b].n - WS.enviados[a].n);
-        corpo += aj('an-ws', `socket ${WS.socket ? '<span class="tb-ok">capturado</span>' : '<span class="tb-av">ainda não</span>'} · ${WS.frames} frames em ~${Math.max(1, Math.round((Date.now() - WS.desde) / 60000))} min<br>` +
-            (tipos.length ? 'recebidos: ' + tipos.slice(0, 10).map(t => `<span class="tb-tag">${t} ×${WS.tipos[t]}</span>`).join('') + '<br>' : '') +
-            (envs.length ? 'enviados: ' + envs.map(t => `<span class="tb-tag tb-ok">${t} ×${WS.enviados[t].n}</span>`).join('') : 'nenhum frame enviado ainda'), 'websocket');
-        corpo += `<div class="tb-linha" style="margin-top:4px"><button class="tb-bt mini" id="tb-exportar">copiar JSON</button><button class="tb-bt mini" id="tb-limpar-sessoes">limpar histórico</button></div>`;
+        corpo += aj('an-ws', `socket ${WS.socket ? '<span class="tb-ok">capturado</span>' : '<span class="tb-av">ainda não</span>'} · ${numBR(WS.frames)} frames em ~${Math.max(1, Math.round((Date.now() - WS.desde) / 60000))} min<br>` +
+            (tipos.length ? 'recebidos: ' + tipos.slice(0, 10).map(t => `<span class="tb-tag">${escHtml(t)} ×${numBR(WS.tipos[t])}</span>`).join('') + '<br>' : '') +
+            (envs.length ? 'enviados: ' + envs.map(t => `<span class="tb-tag tb-ok">${escHtml(t)} ×${numBR(WS.enviados[t].n)}</span>`).join('') : 'nenhum frame enviado ainda'), 'websocket');
+        corpo += `<div class="tb-linha" style="margin-top:4px"><button type="button" class="tb-bt mini" id="tb-exportar">copiar JSON</button><button type="button" class="tb-bt mini" id="tb-limpar-sessoes" title="apaga as sessões medidas (pede confirmação)">limpar histórico</button></div>`;
+        if (_exportacao) corpo += `<div class="tb-an-exp"><div class="tb-linha"><span class="${_exportacao.copiado === false ? 'tb-av' : 'tb-mut'}">${_exportacao.copiado === true ? 'copiado — e também aqui:' : _exportacao.copiado === false ? 'área de transferência bloqueada: selecione e copie daqui' : 'copiando…'}</span>` +
+            `<button type="button" class="tb-bt mini" id="tb-exportar-fechar" style="margin-left:auto" aria-label="fechar a caixa do JSON">fechar</button></div>` +
+            `<textarea id="tb-exportar-caixa" readonly spellcheck="false" aria-label="dados do Analisador em JSON"></textarea></div>`;
         return corpo;
+    }
+    /* handlers do Analisador (antes dentro de _renderizar). O texto do JSON
+     * vai para a caixa por .value (não entra no HTML: não pesa na comparação
+     * do repinte nem precisa de escape). */
+    function ligarAnalise() {
+        const exp = $('#tb-exportar');
+        if (exp) exp.onclick = () => {
+            const dados = JSON.stringify({
+                sessoes: sessoes(), resumo: resumoPorHunt(),
+                ws: { frames: WS.frames, tipos: WS.tipos, binarios: WS.bin,
+                      amostrasRecebidas: WS.amostras, ENVIADOS: WS.enviados }
+            }, null, 2);
+            const x = _exportacao = { texto: dados, copiado: null, selecionar: true };
+            renderizar();
+            /* writeText ainda dentro do clique (o navegador exige o gesto) */
+            let p;
+            try { p = navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(dados) : Promise.reject(new Error('sem clipboard')); } catch (e) { p = Promise.reject(e); }
+            p.then(() => { x.copiado = true; avisar('analise', 'JSON copiado para a área de transferência (e na caixa abaixo)', 'ok'); })
+             .catch(() => { x.copiado = false; x.selecionar = true; avisar('analise', 'área de transferência bloqueada — o JSON está na caixa abaixo do botão', 'erro'); })
+             .finally(renderizar);
+        };
+        const caixa = $('#tb-exportar-caixa');
+        if (caixa && _exportacao) {
+            caixa.value = _exportacao.texto;
+            if (_exportacao.selecionar) { _exportacao.selecionar = false; try { caixa.focus({ preventScroll: true }); caixa.select(); } catch { /* caixa fora da página */ } }
+        }
+        const fx = $('#tb-exportar-fechar'); if (fx) fx.onclick = () => { _exportacao = null; renderizar(); };
+        const lim = $('#tb-limpar-sessoes');
+        if (lim) ligarDoisToques(lim, 'limpar-sessoes', 'apagar o histórico?', () => { guardar('sessoes', []); avisar('analise', 'histórico de sessões apagado', 'ok'); renderizar(); });
     }
     /* v2.4.0 — EQUIP. 4 sub-abas; por slot: atual → melhor (+ganho) e 2
      * motivos; clique expande os atributos (mortos riscados). Seções
      * Dispensáveis e Reservas. NADA equipa nem descarta. */
     const RAR_NOME = ['comum', 'incomum', 'raro', 'épico', 'lendário', 'mítico'];
-    const VOC_ROTULO = { KNIGHT: 'Knight', PALADIN: 'Paladino', SORCERER: 'Feiticeiro', DRUID: 'Druida' };
+    /* v2.11 (D2) — vocações e slots em português em todas as telas (o Equip
+     * dizia "Knight" num botão, "Cav" na aba ao lado e WEAPON/LEGS nas linhas) */
+    const VOC_ROTULO = { KNIGHT: 'Cavaleiro', PALADIN: 'Paladino', SORCERER: 'Feiticeiro', DRUID: 'Druida' };
+    const SLOT_PT = { weapon: 'arma', hand: 'arma', shield: 'escudo', head: 'elmo', helmet: 'elmo', armor: 'armadura', legs: 'calça', boots: 'bota', feet: 'bota', necklace: 'colar', ring: 'anel', ammo: 'munição' };
+    const slotPt = (s) => SLOT_PT[s] || s;
     /* 28/09: com 0,5 ele sugeria trocar um bonelord shield por outro quase igual (+0,55). */
     const GANHO_MIN = 1;     // abaixo disso é empate técnico: não vale a troca
     const EQUIP = { voc: 'KNIGHT', abertos: new Set(), base: null, res: null, lendo: false, erro: null, aviso: null, t: 0, verReservas: false, verTudo: false, equipando: false, ctx: null };
@@ -3874,12 +5970,16 @@
         const arma = p && p.equipment && p.equipment.weapon;
         const b = arma && EQUIP.base && EQUIP.base[arma.name] ? EQUIP.base[arma.name].attrs : {};
         const tipo = arma && ((arma.attrs && arma.attrs.ammotype) || (b && b.ammotype));
-        if (!tipo || !MUNICAO[tipo] || !ESTADO_WS.profiles) return;
-        const atual = normalizarConfig(configAtiva('PALADIN'));
+        if (!tipo || !MUNICAO[tipo]) return;
+        /* v2.11 — mesmo cuidado de aplicarPlanoSocket: profiles_set só em cima
+         * do perfil REAL e da config atual (senão apaga presets e cura) */
+        const cfg = configAtiva('PALADIN');
+        if (!perfilReal('PALADIN') || !cfg) { log('equip: munição do Paladino não ajustada — o perfil dele não veio do servidor (dê F5 com o helper instalado)', 'erro'); return; }
+        const atual = normalizarConfig(cfg);
         if (atual.ammo && MUNICAO[tipo].some(a => a.n === atual.ammo)) return;
         const nova = Object.assign({}, atual, { ammo: MUNICAO[tipo][0].n });
         const perfil = perfilDaVoc('PALADIN');
-        perfil.list[perfil.active] = { name: perfil.list[perfil.active].name, config: nova };
+        perfil.list[perfil.active] = Object.assign({}, perfil.list[perfil.active], { config: nova });
         enviarWS({ type: 'profiles_set', data: { vocation: 'PALADIN', profiles: perfil } });
         log(`equip: Paladino agora usa ${arma.name} — munição trocada de ${atual.ammo || 'nenhuma'} para ${nova.ammo} (vale na próxima caçada)`, 'ok');
     }
@@ -3920,29 +6020,42 @@
                 if (g.erro) log('equip: guardar a mochila no depósito falhou — ' + g.erro, 'erro');
             }
             log(`equip: ${feitas} de ${fila.length} troca(s) feita(s)`, feitas ? 'ok' : 'erro');
+            if (feitas) pedirReleituraDeDanos('equipar');   // v2.11 — arma nova muda o dano de todas as magias
         } catch (e) { log('equip: estourou — ' + e.message, 'erro'); }
         EQUIP.equipando = false;
         await equipAtualizar();
     }
     function candidatoPorIid(iid) { const R = EQUIP.res; if (!R) return null; for (const v of Object.keys(R.porVoc)) for (const s of Object.keys(R.porVoc[v])) { const c = R.porVoc[v][s].candidatos.find(c => c.peca.iid === iid); if (c) return c.peca; } return null; }
+    /* v2.11 (D2) — botões numa linha (ATUALIZAR · EQUIPAR (n) · só Cav (n)),
+     * vocação como botões com aria-pressed e nome inteiro no rótulo, "8 slots"
+     * vira um interruptor à parte (misturado às abas parecia uma 5ª vocação),
+     * slots em português, slot vazio sem nada melhor diz isso (não "já é o
+     * melhor"), números em pt-BR, linha que abre é botão de teclado. */
     function telaEquip() {
+        garantirCssTelas();
         const dep = ESTADO_WS.depot, R = EQUIP.res, v = EQUIP.voc;
-        const dentro = emHunt();
+        const dentro = emHunt(), sock = socketAberto();
         const n4 = R ? slotsTrocas(VOCS).fila.length : 0, nv = R ? slotsTrocas([v]).fila.length : 0;
-        const podeEquipar = R && !dentro && !EQUIP.equipando && !EQUIP.lendo && socketAberto();
-        let h = `<div class="tb-linha">
-            <button class="tb-bt pri" id="tb-eq-atualizar" ${EQUIP.lendo ? 'disabled' : ''}>${EQUIP.lendo ? 'lendo…' : 'ATUALIZAR'}</button>
-            <button class="tb-bt" id="tb-eq-equipar4" ${podeEquipar && n4 ? '' : 'disabled'} title="${dentro ? 'só na cidade' : 'tira do depósito e equipa pelo socket'}">${EQUIP.equipando ? 'EQUIPANDO…' : `EQUIPAR (${n4})`}</button>
-            <button class="tb-bt" id="tb-eq-equipar1" ${podeEquipar && nv ? '' : 'disabled'}>só ${VOC_ROTULO[v]} (${nv})</button></div>
-          <div class="tb-mut" style="font-size:10px">${dep ? `depósito ${dep.used}/${dep.total}` : 'depósito —'}${EQUIP.t ? ` · lido ${new Date(EQUIP.t).toLocaleTimeString('pt-BR')}` : ''}${EQUIP.ctx && EQUIP.ctx.mapa ? ` · wand/rod pelo elemento de ${escHtml(EQUIP.ctx.mapa)}` : ''}${dentro ? ' · <span class="tb-av">equipar só na cidade</span>' : ''}</div>`;
+        const podeEquipar = R && !dentro && !EQUIP.equipando && !EQUIP.lendo && sock;
+        const porQue = !R ? 'clique ATUALIZAR antes' : dentro ? 'só na cidade' : !sock ? 'o socket do jogo não foi capturado — F5 com o helper instalado' : 'tira do depósito e equipa pelo socket';
+        const pt = n => numBR(n, 1) + ' pt';
+        let h = `<div class="tb-eq-bts">
+            <button type="button" class="tb-bt pri" id="tb-eq-atualizar" ${EQUIP.lendo || EQUIP.equipando ? 'disabled' : ''} title="lê o corpo dos 4, a mochila e o depósito">${EQUIP.lendo ? 'lendo…' : 'ATUALIZAR'}</button>
+            <button type="button" class="tb-bt" id="tb-eq-equipar4" ${podeEquipar && n4 ? '' : 'disabled'} title="${escHtml(porQue)}">${EQUIP.equipando ? 'EQUIPANDO…' : `EQUIPAR (${n4})`}</button>
+            <button type="button" class="tb-bt" id="tb-eq-equipar1" ${podeEquipar && nv ? '' : 'disabled'} title="só as trocas do ${VOC_ROTULO[v]} — ${escHtml(porQue)}" aria-label="equipar só o ${VOC_ROTULO[v]} (${nv})">só ${VOC_CURTO[v]} (${nv})</button></div>
+          <div class="tb-mut tb-eq-info">${dep ? `depósito ${numBR(dep.used)}/${numBR(dep.total)}` : 'depósito —'}${EQUIP.t ? ` · lido ${new Date(EQUIP.t).toLocaleTimeString('pt-BR')}` : ''}${EQUIP.ctx && EQUIP.ctx.mapa ? ` · wand/rod pelo elemento de ${escHtml(EQUIP.ctx.mapa)}` : ''}${dentro ? ' · <span class="tb-av">equipar só na cidade</span>' : ''}</div>`;
         if (EQUIP.erro) h += `<div class="tb-cx tb-ruim">${escHtml(EQUIP.erro)}</div>`;
         if (EQUIP.aviso) h += `<div class="tb-cx tb-av">${escHtml(EQUIP.aviso)}</div>`;
         if (!R) return h + aj('eq-ajuda', 'ATUALIZAR lê o corpo dos 4, a mochila e o depósito, busca os atributos base e ranqueia por vocação e slot. Nada é equipado nem descartado sem o botão EQUIPAR. Raridade não pontua: um épico com atributos que a vocação não usa perde para um incomum com o atributo certo.');
-        h += `<div class="tb-sub">${VOCS.map(x => { const n = Object.values(R.porVoc[x] || {}).filter(y => y.ganho >= GANHO_MIN).length; return `<span class="${x === v ? 'on' : ''}" data-voc="${x}">${VOC_CURTO[x]}${n ? ` <b>${n}</b>` : ''}</span>`; }).join('')}
-            <span id="tb-eq-tudo" class="${EQUIP.verTudo ? 'on' : ''}" style="margin-left:auto" title="mostrar os 8 slots, não só as trocas">8 slots</span></div>`;
-        const nomePeca = (p, voc) => p ? `${escHtml(p.nome)}${rarTag(p)}${p.origem === 'depósito' ? '<span class="tb-tag">dep.</span>' : p.origem === 'mochila' ? '<span class="tb-tag">mochila</span>' : p.dono && p.dono !== voc ? `<span class="tb-tag">no ${VOC_CURTO[p.dono] || p.dono}</span>` : ''}` : '<span class="tb-mut">vazio</span>';
+        h += `<div class="tb-sub tb-eq-vocs" role="group" aria-label="vocação">${VOCS.map(x => {
+            const n = Object.values(R.porVoc[x] || {}).filter(y => y.ganho >= GANHO_MIN).length;
+            const rot = VOC_ROTULO[x] + (n ? ` — ${n} troca${n > 1 ? 's' : ''}` : '');
+            return `<button type="button" class="${x === v ? 'on' : ''}" data-voc="${x}" aria-pressed="${x === v}" title="${rot}" aria-label="${rot}">${VOC_CURTO[x]}${n ? ` <b>${n}</b>` : ''}</button>`;
+        }).join('')}</div>
+          <button type="button" class="tb-eq-sw" id="tb-eq-tudo" role="switch" aria-checked="${!!EQUIP.verTudo}" title="mostrar os 8 slots, não só os que têm troca"><span class="tb-sw ${EQUIP.verTudo ? 'on' : ''}" tabindex="-1" aria-hidden="true"><i></i></span>mostrar os 8 slots</button>`;
+        const nomePeca = (p, voc) => p ? `${escHtml(p.nome)}${rarTag(p)}${p.origem === 'depósito' ? '<span class="tb-tag">dep.</span>' : p.origem === 'mochila' ? '<span class="tb-tag">mochila</span>' : p.dono && p.dono !== voc ? `<span class="tb-tag" title="${VOC_ROTULO[p.dono] || escHtml(p.dono)}">no ${VOC_CURTO[p.dono] || escHtml(p.dono)}</span>` : ''}` : '<span class="tb-mut">vazio</span>';
         const det = (p, voc) => { if (!p) return ''; const r = pontuarPeca(p, voc, EQUIP.ctx);
-            return r.detalhe.map(d => `<span class="${d.pt > 0 ? '' : d.pt < 0 ? 'neg' : 'm'}">${escHtml(rotulo(d.id))} ${d.valor}${d.pt !== 0 ? ` <span class="tb-mut">(${d.pt})</span>` : ''}</span>`).join(' · ') + (r.temporario ? ' <span class="tb-tag">temporário</span>' : '') + ` <span class="tb-mut">= ${r.pontos} pt</span>`; };
+            return r.detalhe.map(d => `<span class="${d.pt > 0 ? '' : d.pt < 0 ? 'neg' : 'm'}">${escHtml(rotulo(d.id))} ${escHtml(typeof d.valor === 'number' ? numBR(d.valor, 2) : d.valor)}${d.pt !== 0 ? ` <span class="tb-mut">(${numBR(d.pt, 1)})</span>` : ''}</span>`).join(' · ') + (r.temporario ? ' <span class="tb-tag">temporário</span>' : '') + ` <span class="tb-mut">= ${pt(r.pontos)}</span>`; };
         let linhas = 0;
         for (const s of SLOTS_EQUIP) {
             const x = R.porVoc[v][s]; if (!x) continue;
@@ -3952,39 +6065,1867 @@
             linhas++;
             const chave = v + '|' + s, aberto = EQUIP.abertos.has(chave);
             const mot = troca ? pontuarPeca(x.melhor, v, EQUIP.ctx).motivos.join(' · ') : '';
-            h += `<div class="tb-eq" data-k="${chave}">
-                <span class="s">${s}</span>
-                <span>${nomePeca(x.atual, v)}<small>${x.atualPt} pt</small></span>
-                <span class="tb-mut">${troca || tirar ? '→' : '='}</span>
-                <span>${troca ? nomePeca(x.melhor, v) + `<small><span class="g">+${x.ganho} pt</span> · ${escHtml(mot)}</small>` : tirar ? '<span class="tb-av">tirar (arma de 2 mãos)</span>' : '<span class="tb-mut">já é o melhor</span>'}</span>
+            const direita = troca ? nomePeca(x.melhor, v) + `<small><span class="g">+${pt(x.ganho)}</span> · ${escHtml(decBR(mot))}</small>`
+                : tirar ? '<span class="tb-av">tirar (arma de 2 mãos)</span>'
+                : !x.atual ? '<span class="tb-mut">nada melhor no estoque</span>' : '<span class="tb-mut">já é o melhor</span>';
+            h += `<div class="tb-eq" data-k="${chave}" role="button" tabindex="0" aria-expanded="${aberto}" aria-label="${slotPt(s)} do ${VOC_ROTULO[v]}: detalhes">
+                <span class="s">${slotPt(s)}</span>
+                <span>${nomePeca(x.atual, v)}${x.atual ? `<small>${pt(x.atualPt)}</small>` : ''}</span>
+                <span class="tb-mut" aria-hidden="true">${troca || tirar ? '→' : '='}</span>
+                <span>${direita}</span>
                 ${aberto ? `<div class="tb-det"><div><b>atual:</b> ${det(x.atual, v) || '—'}</div>${troca ? `<div style="margin-top:3px"><b>melhor:</b> ${det(x.melhor, v)}</div>` : ''}</div>` : ''}
               </div>`;
         }
         if (!linhas) h += `<div class="tb-ok" style="margin:4px 0">${VOC_ROTULO[v]}: nada a trocar — o que está no corpo já é o melhor que você tem.</div>`;
         const disp = R.dispensaveis, soma = disp.reduce((n, p) => n + (p.sell || 0), 0);
-        h += aj('eq-disp', `<div class="tb-mut" style="font-size:10px">não são a melhor nem a reserva de ninguém. Encaixes de imbuement não pontuam — confira antes de vender.</div>` +
-            disp.slice(0, 60).map(p => `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)}<span class="tb-tag">${p.origem}</span> <span class="tb-mut" style="font-size:9.5px">${escHtml(p.motivo)}</span></span><span>${(p.sell || 0).toLocaleString('pt-BR')}</span></div>`).join('') +
-            (disp.length > 60 ? `<div class="tb-mut">… e mais ${disp.length - 60}</div>` : ''), `dispensáveis (${disp.length} · ${soma.toLocaleString('pt-BR')}o)`);
-        h += aj('eq-res', [...R.reservas].map(iid => { const p = candidatoPorIid(iid); return p ? `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)} <span class="tb-mut">${p.slot} · ${p.origem}</span></span></div>` : ''; }).join(''), `reservas (${R.reservas.size})`);
+        h += aj('eq-disp', `<div class="tb-mut tb-eq-nota">não são a melhor nem a reserva de ninguém. Encaixes de imbuement não pontuam — confira antes de vender.</div>` +
+            disp.slice(0, 60).map(p => `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)}<span class="tb-tag">${escHtml(p.origem)}</span> <span class="tb-mut tb-eq-nota">${escHtml(p.motivo)}</span></span><span>${numBR(p.sell || 0)}</span></div>`).join('') +
+            (disp.length > 60 ? `<div class="tb-mut">… e mais ${disp.length - 60}</div>` : ''), `dispensáveis (${disp.length} · ${numBR(soma)} o)`);
+        h += aj('eq-res', [...R.reservas].map(iid => { const p = candidatoPorIid(iid); return p ? `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)} <span class="tb-mut">${escHtml(slotPt(p.slot))} · ${escHtml(p.origem)}</span></span></div>` : ''; }).join(''), `reservas (${R.reservas.size})`);
         const temp = R.temporarios || [];
-        if (temp.length) h += aj('eq-temp', `<div class="tb-mut" style="font-size:10px">acabam por carga ou por tempo de caçada (wiki): não entram nas trocas nem na lista de venda — use à mão (boss, mapa difícil).</div>` +
+        if (temp.length) h += aj('eq-temp', `<div class="tb-mut tb-eq-nota">acabam por carga ou por tempo de caçada (wiki): não entram nas trocas nem na lista de venda — use à mão (boss, mapa difícil).</div>` +
             temp.slice(0, 40).map(p => {
                 const m = VOCS.filter(x => vocacaoPode(p.attrs, x)).map(x => ({ x, r: pontuarPeca(p, x, EQUIP.ctx) })).sort((a, b) => b.r.pontos - a.r.pontos)[0];
                 if (!m) return '';
-                const dura = m.r.cargas ? m.r.cargas + ' cargas' : m.r.duracaoS ? Math.round(m.r.duracaoS / 60) + ' min' : 'temporário';
-                return `<div class="tb-lin"><span>${escHtml(p.nome)} <span class="tb-mut">${p.slot} · ${p.origem} · ${dura}</span></span><span class="tb-mut">${VOC_CURTO[m.x]} ${m.r.pontos} pt</span></div>`; }).join(''), `temporários (${temp.length})`);
-        h += aj('eq-opc', `<label class="tb-l"><input type="checkbox" id="tb-eq-guardar" ${ler('equip_guardar', true) ? 'checked' : ''}> depois de equipar, guardar a mochila inteira no depósito</label><div style="font-size:10px">pelo socket: tira do depósito e equipa; a peça que sai cai na mochila. O jogo só tem "guardar tudo": o loot da mochila vai junto. Peça de outro personagem só depois que ele trocar. Arco ↔ besta troca a munição do Paladino junto.</div>`, 'opções');
+                const dura = m.r.cargas ? numBR(m.r.cargas) + ' cargas' : m.r.duracaoS ? numBR(Math.round(m.r.duracaoS / 60)) + ' min' : 'temporário';
+                return `<div class="tb-lin"><span>${escHtml(p.nome)} <span class="tb-mut">${escHtml(slotPt(p.slot))} · ${escHtml(p.origem)} · ${dura}</span></span><span class="tb-mut" title="${VOC_ROTULO[m.x]}">${VOC_CURTO[m.x]} ${pt(m.r.pontos)}</span></div>`; }).join(''), `temporários (${temp.length})`);
+        h += aj('eq-opc', `<label class="tb-l"><input type="checkbox" id="tb-eq-guardar" ${ler('equip_guardar', true) ? 'checked' : ''}> depois de equipar, guardar a mochila inteira no depósito</label><div class="tb-eq-nota">pelo socket: tira do depósito e equipa; a peça que sai cai na mochila. O jogo só tem "guardar tudo": o loot da mochila vai junto. Peça de outro personagem só depois que ele trocar. Arco ↔ besta troca a munição do Paladino junto.</div>`, 'opções');
         return h;
     }
     function ligarEquip() {
-        const b = $('#tb-eq-atualizar'); if (b) b.onclick = equipAtualizar;
-        $$('.tb-sub span[data-voc]').forEach(s => s.onclick = () => { EQUIP.voc = s.dataset.voc; renderizar(); });
-        $$('.tb-eq').forEach(e => e.onclick = (ev) => { if (ev.target.closest('.tb-det')) return; const k = e.dataset.k; if (EQUIP.abertos.has(k)) EQUIP.abertos.delete(k); else EQUIP.abertos.add(k); renderizar(); });
+        const corpo = $('#tb-corpo');
+        const b = $('#tb-eq-atualizar'); if (b) b.onclick = () => { if (!EQUIP.lendo && !EQUIP.equipando) equipAtualizar(); };
+        $$('[data-voc]', corpo).forEach(s => s.onclick = () => { if (EQUIP.voc === s.dataset.voc) return; EQUIP.voc = s.dataset.voc; renderizar(); });
+        $$('.tb-eq', corpo).forEach(e => e.onclick = (ev) => { if (ev.target && ev.target.closest && ev.target.closest('.tb-det')) return; const k = e.dataset.k; if (EQUIP.abertos.has(k)) EQUIP.abertos.delete(k); else EQUIP.abertos.add(k); renderizar(); });
         const tudo = $('#tb-eq-tudo'); if (tudo) tudo.onclick = () => { EQUIP.verTudo = !EQUIP.verTudo; renderizar(); };
-        const e4 = $('#tb-eq-equipar4'); if (e4) e4.onclick = () => equiparTrocas(VOCS);
-        const e1 = $('#tb-eq-equipar1'); if (e1) e1.onclick = () => equiparTrocas([EQUIP.voc]);
+        const e4 = $('#tb-eq-equipar4'); if (e4) e4.onclick = () => { if (!EQUIP.equipando) equiparTrocas(VOCS); };
+        const e1 = $('#tb-eq-equipar1'); if (e1) e1.onclick = () => { if (!EQUIP.equipando) equiparTrocas([EQUIP.voc]); };
         const gd = $('#tb-eq-guardar'); if (gd) gd.onchange = () => guardar('equip_guardar', gd.checked);
     }
+
+    /* =========================================================================
+     *  ⭐ v2.11 — ABA PROGRESSO (só leitura): chaves e Elites, bestiário, plano
+     *  da caçada com o jogo fechado, prey e calculadoras de Forja/Imbuement.
+     *
+     *  Por que existe: o helper só olhava para a caçada da hora (magia, Scan,
+     *  venda). O que faz a conta crescer de verdade — marco de bestiário,
+     *  chave que cai e é PERDIDA com a mochila de chaves cheia, prey que
+     *  desliga quando as wildcards acabam, a caçada da noite que para por
+     *  ouro — ficava invisível. Aqui tudo só MOSTRA e RECOMENDA: nenhuma
+     *  linha deste bloco envia nada ao servidor (regra do dono).
+     *
+     *  ⚠ Formatos do socket lidos do validador (zod) do próprio cliente em
+     *  29/09 (chunk _next/static/chunks/8308-*.js) — NÃO vistos ao vivo com a
+     *  conta logada. Por isso todo parse aceita variações (objeto ou lista,
+     *  número em texto) e, sem dado, a tela diz "sem dado ainda":
+     *    welcome / resume / hunt_started.state / frame.state / meta_result /
+     *    depot_result…  keyBag {nome: n}, keyBagTierId, keyBagUsed, keyBagMax
+     *    frame           bestiaryKills (n da caçada ATUAL), analyzer, state
+     *                    {balance, balanceLocked, cap, autoSellInMs,
+     *                    character.levelProgress{xp, xpNext}}
+     *    meta (welcome/resume/meta_result/meta_state) {wildcards,
+     *                    huntBestiary {huntId: n}, preyHunt {huntId, title,
+     *                    msLeft, locked}, preyBuffs {VOC: {bonus {type,
+     *                    tier, percent}, msLeft, locked, tierFloor}},
+     *                    autoLeave {enabled, floor, onCap}, xpBoost,
+     *                    rules.keyBags [{id, name, maxKeys}]}
+     *    resume.offline  {elapsedMs, xp, killsTotal, lootGold}
+     *    ended.summary   {reason: stop|death|expired|no_gold|cap_full|…}
+     *  Regras: wiki oficial tibidle.com/wiki (29/09) — /chaves-e-caixas,
+     *  /elites, /bestiario, /a-cacada-com-o-jogo-fechado, /auto-exit, /prey,
+     *  /forja, /imbuements, /ouro-e-ouro-travado.
+     * ====================================================================== */
+    /* @@PROGRESSO-INICIO — funções puras; testes/progresso.test.js roda este trecho no node. */
+    const PG_WIKI = {
+        chaveMin: 0.00047, chaveMax: 0.00105,   // /elites: "entre 0,047% e 0,105% por abate" (a maioria)
+        mochilaT1: 5, mochilaT2: 10,            // /chaves-e-caixas: Key Backpack T1 grátis, T2 100 coins
+        tetoCacadaH: 12,                        // /a-cacada-com-o-jogo-fechado: sessão dura no máx. 12 h de caçada
+        preyH: 2                                // /prey: cada sorteio/renovação vale 2 h de caçada
+    };
+    const PG_VOCS = ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'];
+    const PG_VOC = { KNIGHT: 'Cavaleiro', PALADIN: 'Paladino', SORCERER: 'Feiticeiro', DRUID: 'Druida' };
+    /* /forja: a chance é a do nível que se quer alcançar; do +5 em diante a
+     * falha SEM Garantia derruba 1 nível; a Garantia é gasta em TODA tentativa. */
+    const PG_REFINO = [
+        { alvo: 1, p: 0.80 }, { alvo: 2, p: 0.70 }, { alvo: 3, p: 0.60 }, { alvo: 4, p: 0.50 },
+        { alvo: 5, p: 0.35, cai: true }, { alvo: 6, p: 0.25, cai: true }, { alvo: 7, p: 0.20, cai: true },
+        { alvo: 8, p: 0.15, cai: true }, { alvo: 9, p: 0.10, cai: true }, { alvo: 10, p: 0.05, cai: true }
+    ];
+    /* /forja, aba GEMAS: ouro + coins por gema (mais 100 fragmentos do tipo) */
+    const PG_GEMAS = { T1: { nome: 'Refine Gem T1', ouro: 10000, coins: 5 }, T2: { nome: 'Refine Gem T2', ouro: 35000, coins: 8 }, G: { nome: 'Guarantee Gem T1', ouro: 15000, coins: 5 } };
+    /* /imbuements (e /assets/v167/imbuements.json → bases): taxa, proteção, chance */
+    const PG_IMBU_BASES = [
+        { id: 1, nome: 'Basic', taxa: 5000, protecao: 10000, chance: 0.9 },
+        { id: 2, nome: 'Intricate', taxa: 30000, protecao: 30000, chance: 0.7 },
+        { id: 3, nome: 'Powerful', taxa: 200000, protecao: 50000, chance: 0.5 }
+    ];
+    const PG_BONUS = { maxHealth: 'vida máx', maxMana: 'mana máx', capacity: 'capacidade', hpRegen: 'regen. vida', manaRegen: 'regen. mana',
+                       armor: 'armadura', attack: 'ataque', melee: 'corpo a corpo', distance: 'distância', shielding: 'escudo', magicLevel: 'nível mágico' };
+    const PG_ELEM = { COMBAT_PHYSICALDAMAGE: 'físico', COMBAT_ENERGYDAMAGE: 'energia', COMBAT_FIREDAMAGE: 'fogo', COMBAT_ICEDAMAGE: 'gelo',
+                      COMBAT_EARTHDAMAGE: 'terra', COMBAT_HOLYDAMAGE: 'sagrado', COMBAT_DEATHDAMAGE: 'morte' };
+    const PG_FIM = { stop: 'você encerrou', death: 'morte na caçada', expired: 'teto de 12 h', victory: 'vitória', no_gold: 'ouro abaixo da margem (Auto Exit)',
+                     cap_full: 'mochila cheia (Auto Exit)', level_cap: 'limite de nível da caçada', tower_top: 'topo da torre', prey_resync_failed: 'prey fora de sincronia' };
+
+    const pgNum = (x) => { if (x == null || x === '' || typeof x === 'boolean') return null; const n = Number(x); return Number.isFinite(n) ? n : null; };
+    const pgNorm = (s) => String(s == null ? '' : s).trim().toLowerCase();
+    const pgInt = (n) => n == null || !Number.isFinite(n) ? '—' : Math.round(n).toLocaleString('pt-BR');
+    const pgDec = (n, c) => n == null || !Number.isFinite(n) ? '—' : n.toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
+    const pgPct = (x, c) => x == null || !Number.isFinite(x) ? '—' : pgDec(x * 100, c == null ? 1 : c) + '%';
+    /* horas → "45 min" · "2h05" · "3,5 dias"; Infinity → "não acaba" */
+    function pgHoras(h) {
+        if (h == null || Number.isNaN(h)) return '—';
+        if (!Number.isFinite(h)) return 'não acaba';
+        if (h <= 0) return 'agora';
+        const min = Math.round(h * 60);
+        if (min < 1) return '< 1 min';
+        if (min < 60) return min + ' min';
+        if (h < 48) return Math.floor(min / 60) + 'h' + String(min % 60).padStart(2, '0');
+        return pgDec(h / 24, 1) + ' dias';
+    }
+
+    /* ---- 1. CHAVES E ELITES ------------------------------------------------ */
+    /* keyBag: o cliente trata como {nome: n} (Object.entries, n > 0). Aceito
+     * também lista de {name,count}, pares [nome, n] e nomes soltos. Devolve
+     * null quando a mensagem não fala de chave (a maioria dos frames). Só
+     * keyBagMax (compra da T2 no meta_result) atualiza o limite e mantém o resto. */
+    function pgLerChaves(src, anterior, regras) {
+        if (!src || typeof src !== 'object') return null;
+        const temBag = src.keyBag != null && typeof src.keyBag === 'object';
+        const usadasCru = pgNum(src.keyBagUsed), maxCru = pgNum(src.keyBagMax);
+        if (!temBag && usadasCru == null && maxCru == null) return null;
+        const ant = anterior || {};
+        let chaves = ant.chaves || {};
+        if (temBag) {
+            chaves = {};
+            const somar = (nome, n) => { const k = String(nome == null ? '' : nome).trim(); const q = n == null ? 1 : pgNum(n); if (!k || !(q > 0)) return; chaves[k] = (chaves[k] || 0) + q; };
+            const qtd = (x) => x.count != null ? x.count : x.qty != null ? x.qty : x.quantity != null ? x.quantity : x.n != null ? x.n : x.amount;
+            if (Array.isArray(src.keyBag)) {
+                src.keyBag.forEach(x => {
+                    if (typeof x === 'string') somar(x, 1);
+                    else if (Array.isArray(x)) somar(x[0], x[1]);
+                    else if (x && typeof x === 'object') somar(x.name || x.nome || x.item || x.key, qtd(x));
+                });
+            } else Object.entries(src.keyBag).forEach(([k, v]) => somar(k, v && typeof v === 'object' ? qtd(v) : v));
+        }
+        const soma = Object.values(chaves).reduce((a, b) => a + b, 0);
+        const tierId = src.keyBagTierId != null ? String(src.keyBagTierId) : (ant.tierId || null);
+        const t = pgTierDaMochila({ tierId, max: maxCru > 0 ? maxCru : ant.max }, regras);
+        const usadas = usadasCru != null ? usadasCru : temBag ? soma : (ant.usadas != null ? ant.usadas : soma);
+        return { chaves, usadas, max: t.max, tierId, tierNome: t.nome || ant.tierNome || null };
+    }
+    /* limite da mochila: keyBagMax do jogo; senão o do tier em meta.rules.keyBags */
+    function pgTierDaMochila(kb, regras) {
+        const r = (Array.isArray(regras) ? regras : []).find(x => x && kb && kb.tierId != null && String(x.id) === String(kb.tierId)) || null;
+        const max = kb && pgNum(kb.max) > 0 ? pgNum(kb.max) : r && pgNum(r.maxKeys) > 0 ? pgNum(r.maxKeys) : null;
+        return { max, nome: r ? r.name || null : null };
+    }
+    /* /chaves-e-caixas: "Com a Key Backpack T1 cheia, a próxima chave que cair na caçada some." */
+    function pgAvisoChaves(kb) {
+        if (!kb) return null;
+        const max = pgNum(kb.max), u = pgNum(kb.usadas) || 0;
+        if (max > 0 && u >= max) return { nivel: 'cheia', texto: `mochila de chaves cheia (${u}/${max}) — a próxima chave que cair na caçada será PERDIDA. Guarde as extras no depósito${max < PG_WIKI.mochilaT2 ? ' ou compre a Key Backpack T2 (10 chaves, 100 coins)' : ''}.` };
+        if (max > 0 && max - u === 1) return { nivel: 'quase', texto: `só 1 vaga na mochila de chaves (${u}/${max}): a próxima chave cabe, a seguinte será perdida.` };
+        if (!(max > 0) && u >= PG_WIKI.mochilaT1) return { nivel: 'talvez', texto: `${u} chaves e o jogo não mandou o limite — se a mochila for a T1 (5), está cheia.` };
+        return { nivel: 'ok', texto: max > 0 ? `${u}/${max} chaves` : `${u} chave(s)` };
+    }
+    /* a chave de uma caçada: item do loot de /hunts/select que é keyItem de algum Elite */
+    function pgChaveDaHunt(h, bosses) {
+        if (!h || !Array.isArray(h.loot)) return null;
+        const chaves = new Set((bosses || []).map(b => b && pgNorm(b.keyItem)).filter(Boolean));
+        const it = h.loot.find(l => l && chaves.has(pgNorm(l.name))) || h.loot.find(l => l && / key$/i.test(String(l.name || '').trim()));
+        if (!it) return null;
+        const elite = (bosses || []).find(b => b && pgNorm(b.keyItem) === pgNorm(it.name)) || null;
+        return { nome: it.name, chance: pgNum(it.chance) != null ? pgNum(it.chance) / 100000 : null, elite };
+    }
+    /* chave → Elite (keyItem, sem diferenciar maiúscula: "gordzila key") e caçada que a larga */
+    function pgInfoChave(nome, bosses, hunts) {
+        const k = pgNorm(nome);
+        const elite = (bosses || []).find(b => b && pgNorm(b.keyItem) === k) || null;
+        let hunt = null, chance = null;
+        for (const h of (hunts || [])) {
+            const it = h && Array.isArray(h.loot) ? h.loot.find(l => l && pgNorm(l.name) === k) : null;
+            if (it) { hunt = h; chance = pgNum(it.chance) != null ? pgNum(it.chance) / 100000 : null; break; }
+        }
+        return { nome, elite, hunt, chance };
+    }
+    /* no catálogo `percent` é quanto o monstro ABSORVE: negativo = toma mais */
+    function pgResumoElite(b, materiais) {
+        if (!b) return null;
+        const els = (b.elements || []).filter(e => e && pgNum(e.percent)).map(e => ({ el: PG_ELEM[e.type] || String(e.type || '?').replace('COMBAT_', '').toLowerCase(), pct: pgNum(e.percent) }));
+        const loot = (b.loot || []).filter(l => l && l.name);
+        const mats = materiais instanceof Set ? materiais : new Set();
+        return {
+            nome: b.name, hp: pgNum(b.health), tipo: b.kind || null,
+            fraco: els.filter(e => e.pct < 0).sort((x, y) => x.pct - y.pct),
+            resiste: els.filter(e => e.pct > 0 && e.pct < 100).sort((x, y) => y.pct - x.pct),
+            imune: els.filter(e => e.pct >= 100).map(e => e.el),
+            top: loot.filter(l => pgNum(l.value) > 0).sort((x, y) => pgNum(y.value) - pgNum(x.value)).slice(0, 3).map(l => ({ nome: l.name, valor: pgNum(l.value), chance: pgNum(l.chance) != null ? pgNum(l.chance) / 100000 : null })),
+            fragmentos: loot.filter(l => /fragment/i.test(l.name)).map(l => l.name),
+            materiais: loot.filter(l => mats.has(pgNorm(l.name))).map(l => l.name)
+        };
+    }
+    /* /prey: LOOT multiplica a chance de cada item; as colunas SOMAM (4 × ★10 = +40 %) */
+    function pgFatorLootPrey(prey) {
+        if (!prey || !prey.buffs) return 1;
+        let s = 0;
+        for (const b of Object.values(prey.buffs)) if (b && b.tipo === 'loot' && b.pct > 0 && !(b.msLeft === 0)) s += b.pct;
+        return 1 + s / 100;
+    }
+    const pgChavesHora = (abatesH, chance, fator) => abatesH > 0 && chance > 0 ? abatesH * chance * (fator > 0 ? fator : 1) : null;
+    /* chaves/h por caçada MEDIDA (ao vivo, Scan, sessões) — a atual primeiro */
+    function pgLinhasChaves(hunts, bosses, medidos, fator, huntAtual) {
+        const out = [];
+        for (const [id, m] of Object.entries(medidos || {})) {
+            const h = (hunts || []).find(x => x && String(x.id) === String(id));
+            const c = h ? pgChaveDaHunt(h, bosses) : null;
+            if (!h || !c) continue;
+            const ch = pgChavesHora(m.abatesH, c.chance, fator);
+            out.push({ hunt: h, chave: c.nome, elite: c.elite ? c.elite.name : null, chance: c.chance, abatesH: m.abatesH, fonte: m.fonte, chavesH: ch, cadaH: ch ? 1 / ch : null, atual: String(id) === String(huntAtual) });
+        }
+        return out.sort((a, b) => (b.atual - a.atual) || ((b.chavesH || 0) - (a.chavesH || 0)));
+    }
+    /* abates/h por caçada: ao vivo (analisador do jogo) > Scan (o mais recente) > sessões (média por tempo) */
+    function pgAbatesPorHunt(vivo, scan, sess) {
+        const r = {};
+        const por = (id, h, fonte) => { const n = pgNum(id); if (n == null || !(h > 0) || r[n]) return; r[n] = { abatesH: h, fonte }; };
+        if (vivo) por(vivo.huntId, vivo.abatesH, 'agora');
+        (Array.isArray(scan) ? scan : []).filter(x => x && !x.erro && x.abatesH > 0).sort((x, y) => (y.t || 0) - (x.t || 0)).forEach(x => por(x.id, x.abatesH, 'Scan'));
+        const s = {};
+        (Array.isArray(sess) ? sess : []).forEach(x => { const id = x && pgNum(x.huntId); if (id == null || !(x.abatesH > 0) || !(x.dur > 0)) return; s[id] = s[id] || { n: 0, d: 0 }; s[id].n += x.abatesH * x.dur; s[id].d += x.dur; });
+        Object.entries(s).forEach(([k, v]) => por(k, v.n / v.d, 'sessões'));
+        return r;
+    }
+
+    /* ---- 2. BESTIÁRIO ------------------------------------------------------ */
+    /* contadores {huntId: abates}; o maior vence (o progresso nunca regride — wiki
+     * /bestiario; o cliente faz o mesmo: max(meta.huntBestiary, frame.bestiaryKills)) */
+    function pgMesclarBestiario(a, b) {
+        const r = Object.assign({}, a || {});
+        const por = (k, v) => { const n = pgNum(v); if (k == null || k === '' || !(n >= 0)) return; const c = String(k); if (!(r[c] >= n)) r[c] = n; };
+        if (Array.isArray(b)) b.forEach(x => { if (x && typeof x === 'object') por(x.huntId != null ? x.huntId : x.id, x.kills != null ? x.kills : x.count); });
+        else if (b && typeof b === 'object') Object.entries(b).forEach(([k, v]) => por(k, v && typeof v === 'object' ? (v.kills != null ? v.kills : v.count) : v));
+        return r;
+    }
+    /* 3 marcos por caçada; vale o MAIOR alcançado (não somam) */
+    function pgEstagio(best, kills) {
+        const st = (best && Array.isArray(best.stages) ? best.stages : []).map(s => ({ kills: pgNum(s && s.kills), value: pgNum(s && s.value) }))
+            .filter(s => s.kills > 0).sort((a, b) => a.kills - b.kills);
+        if (!st.length) return null;
+        const k = Math.max(0, pgNum(kills) || 0);
+        const feitos = st.filter(s => k >= s.kills), prox = st.find(s => k < s.kills) || null;
+        const valor = feitos.length ? feitos[feitos.length - 1].value || 0 : 0;
+        return { n: feitos.length, total: st.length, valor, prox, falta: prox ? prox.kills - k : 0, ganho: prox ? (prox.value || 0) - valor : 0,
+                 pct: prox ? k / prox.kills : 1, completo: !prox, kills: k, bonus: best.bonus || null };
+    }
+    /* soma dos marcos já fechados, por tipo — o painel BÔNUS DA CONTA do jogo */
+    function pgBonusConta(hunts, contadores) {
+        const soma = {};
+        for (const h of (hunts || [])) {
+            if (!h || !h.bestiary) continue;
+            const e = pgEstagio(h.bestiary, (contadores || {})[String(h.id)]);
+            if (e && e.valor > 0 && e.bonus) soma[e.bonus] = (soma[e.bonus] || 0) + e.valor;
+        }
+        return soma;
+    }
+    /* caçadas do seu nível com contador CONHECIDO e marco por fechar; horas até o
+     * próximo marco com abates/h medidos. Ordem: mais perto (em horas) primeiro. */
+    function pgLinhasBestiario(hunts, contadores, medidos, nivel) {
+        const out = [];
+        for (const h of (hunts || [])) {
+            if (!h || !h.bestiary || (nivel != null && (h.levelMin || 1) > nivel)) continue;
+            const c = (contadores || {})[String(h.id)];
+            if (c == null) continue;
+            const e = pgEstagio(h.bestiary, c);
+            if (!e || e.completo) continue;
+            const m = (medidos || {})[h.id];
+            out.push({ hunt: h, e, abatesH: m ? m.abatesH : null, fonte: m ? m.fonte : null, horas: m && m.abatesH > 0 ? e.falta / m.abatesH : null });
+        }
+        return out.sort((a, b) => (a.horas == null) - (b.horas == null) || (a.horas != null ? a.horas - b.horas : a.e.falta - b.e.falta));
+    }
+
+    /* ---- 3. CAÇADA COM O JOGO FECHADO --------------------------------------- */
+    /* amostras [{t, ouro, oz, tot}] a cada 30 s da caçada atual → taxas na janela.
+     * ozH = só as SUBIDAS (o que entra de loot, antes das vendas); ozLiqH = líquido. */
+    function pgTaxas(amostras, janelaMs) {
+        const a = (amostras || []).filter(x => x && x.t > 0);
+        if (a.length < 2) return null;
+        const fim = a[a.length - 1];
+        let i0 = a.findIndex(x => fim.t - x.t <= (janelaMs || Infinity));
+        if (i0 < 0 || i0 >= a.length - 1) i0 = Math.max(0, a.length - 2);
+        const ini = a[i0], h = (fim.t - ini.t) / 3600000;
+        if (!(h > 0)) return null;
+        let sobe = 0;
+        for (let i = i0 + 1; i < a.length; i++) { const d = (a[i].oz != null && a[i - 1].oz != null) ? a[i].oz - a[i - 1].oz : 0; if (d > 0) sobe += d; }
+        return { horas: h, ouroH: ini.ouro != null && fim.ouro != null ? (fim.ouro - ini.ouro) / h : null, ozH: sobe / h,
+                 ozLiqH: ini.oz != null && fim.oz != null ? (fim.oz - ini.oz) / h : null };
+    }
+    /* O que para a caçada primeiro se o jogo for fechado agora.
+     *  x = {ouro, margem, autoExit, autoExitCap, supH, taxas, ozLivre, autoSell, sessaoMs, xpH, xpFalta}
+     *  - ouro: saldo MEDIDO (moedas + Auto Selling − suprimento) com ≥ 10 min de
+     *    janela; senão só o gasto de suprimento do analisador (pior caso).
+     *  - sem Auto Exit o ouro zerado não encerra: "Sem ouro: suprimentos pagos
+     *    pausados" (wiki /pocoes) — a party segue só com magia/regeneração.
+     *  - mochila cheia sem "Encerrar com a mochila cheia" não encerra: o loot
+     *    que não cabe deixa de ser coletado (wiki /auto-exit). */
+    function pgPlanoOffline(x) {
+        x = x || {};
+        const r = {};
+        const sessaoH = pgNum(x.sessaoMs) != null ? x.sessaoMs / 3600000 : null;
+        r.tetoH = sessaoH != null ? Math.max(0, PG_WIKI.tetoCacadaH - sessaoH) : PG_WIKI.tetoCacadaH;
+        const tx = x.taxas || null;
+        const medido = !!(tx && tx.horas >= 1 / 6 && tx.ouroH != null);
+        r.ouroH = medido ? tx.ouroH : (x.supH > 0 ? -x.supH : null);
+        r.ouroFonte = medido ? 'medido' : r.ouroH != null ? 'suprimento' : null;
+        const margem = x.autoExit && x.margem > 0 ? x.margem : 0;
+        r.margem = margem;
+        r.horasOuro = r.ouroH == null || x.ouro == null ? null : r.ouroH < 0 ? Math.max(0, (x.ouro - margem) / -r.ouroH) : Infinity;
+        let oz = null;
+        if (x.autoSell) oz = tx && tx.horas >= 0.25 && tx.ozLiqH != null ? tx.ozLiqH : null;   // vende a cada 10 min: só o líquido de 15+ min diz algo
+        else if (tx && tx.horas >= 1 / 30) oz = tx.ozH;
+        r.ozH = oz;
+        r.horasMochila = x.ozLivre == null || oz == null ? null : oz > 0 ? Math.max(0, x.ozLivre / oz) : Infinity;
+        const ev = [{ k: 'teto', h: r.tetoH, encerra: true, texto: 'teto de 12 h: a caçada termina ("Tempo da caçada esgotado")' }];
+        if (r.horasOuro != null && Number.isFinite(r.horasOuro)) ev.push({ k: 'ouro', h: r.horasOuro, encerra: margem > 0,
+            texto: margem > 0 ? 'o ouro chega à margem do Auto Exit e a caçada encerra' : 'o ouro acaba: poções e runas pagas PAUSAM (só cura por magia e regeneração) — risco de morte' });
+        if (r.horasMochila != null && Number.isFinite(r.horasMochila)) ev.push({ k: 'mochila', h: r.horasMochila, encerra: !!x.autoExitCap,
+            texto: x.autoExitCap ? 'a mochila enche e o Auto Exit encerra a caçada' : 'a mochila enche: o loot que não couber deixa de ser coletado (a caçada continua)' });
+        ev.sort((a, b) => a.h - b.h);
+        r.eventos = ev;
+        r.primeiro = ev[0];
+        r.fim = ev.find(e => e.encerra);
+        r.xpAteFim = x.xpH > 0 ? x.xpH * r.fim.h : null;
+        r.horasNivel = x.xpH > 0 && x.xpFalta > 0 ? x.xpFalta / x.xpH : null;
+        return r;
+    }
+    /* levelProgress {xp, xpNext}: xpNext é o total do próximo nível (como "EXP a / b" do rail) */
+    function pgXpFalta(lp) {
+        if (!lp || typeof lp !== 'object') return null;
+        const xp = pgNum(lp.xp), prox = pgNum(lp.xpNext);
+        return xp != null && prox != null && prox > xp ? prox - xp : null;
+    }
+
+    /* ---- 4. PREY ----------------------------------------------------------- */
+    function pgTipoPrey(b) {
+        if (!b || typeof b !== 'object') return null;
+        const s = pgNorm([b.type, b.bonusType, b.label].filter(x => typeof x === 'string').join(' '));
+        if (/\bxp\b|\bexp|experi/.test(s)) return 'xp';
+        if (/loot/.test(s)) return 'loot';
+        if (/dano|damage|dmg/.test(s)) return 'dano';
+        if (/def/.test(s)) return 'defesa';
+        return null;
+    }
+    /* percentual pelo tier e pelo tipo (wiki /prey: EXP/LOOT ★N = +N %, DANO/DEFESA
+     * ★N = +4N %); o `percent` do jogo só entra quando o tipo não é reconhecido */
+    function pgLerPrey(meta) {
+        if (!meta || typeof meta !== 'object') return null;
+        if (!('preyHunt' in meta) && !('preyBuffs' in meta) && meta.wildcards == null) return null;
+        const ph = meta.preyHunt && typeof meta.preyHunt === 'object' ? meta.preyHunt : null;
+        const buffs = {};
+        const cada = (voc, x) => {
+            if (!voc || !x || typeof x !== 'object') return;
+            const b = x.bonus && typeof x.bonus === 'object' ? x.bonus : null;
+            const tipo = pgTipoPrey(b), tier = b ? pgNum(b.tier) : null;
+            let pct = tipo && tier ? tier * (tipo === 'dano' || tipo === 'defesa' ? 4 : 1) : null;
+            if (pct == null && b && pgNum(b.percent) != null) { pct = pgNum(b.percent); if (pct > 0 && pct <= 1) pct *= 100; }
+            buffs[String(voc).toUpperCase()] = { tipo, tier, pct, rotulo: b ? (b.label || b.type || null) : null, msLeft: pgNum(x.msLeft), locked: !!x.locked,
+                                                 piso: pgNum(x.tierFloor), gratis: !!x.rollFreeDay, huntId: pgNum(x.huntId) };
+        };
+        const f = meta.preyBuffs;
+        if (Array.isArray(f)) f.forEach(x => x && cada(x.vocation || x.voc, x));
+        else if (f && typeof f === 'object') Object.entries(f).forEach(([v, x]) => cada(v, x));
+        return {
+            wildcards: pgNum(meta.wildcards),
+            cacada: ph ? { huntId: pgNum(ph.huntId), titulo: ph.title || null, levelMin: pgNum(ph.levelMin), msLeft: pgNum(ph.msLeft), locked: !!ph.locked } : null,
+            buffs, sorteioGratis: !!meta.preyHuntRollFreeDay,
+            avisos: Array.isArray(meta.preyAvisos) ? meta.preyAvisos.filter(a => a && typeof a === 'object') : []
+        };
+    }
+    /* Travas: cada seção travada renova sozinha ao vencer (2 h) por 1 wildcard;
+     * vencendo juntas, a cobrança vai caçada → Cavaleiro → Paladino → Feiticeiro
+     * → Druida; ZEROU as wildcards → TODAS as travas desligam na hora (wiki /prey).
+     * Tempo em horas de CAÇADA (o relógio da prey só anda caçando). */
+    function pgTravasPrey(prey) {
+        if (!prey) return null;
+        const ordem = ['HUNT'].concat(PG_VOCS);
+        const secs = [];
+        if (prey.cacada && prey.cacada.locked && prey.cacada.msLeft != null) secs.push({ k: 'HUNT', ms: prey.cacada.msLeft });
+        for (const v of PG_VOCS) { const b = prey.buffs && prey.buffs[v]; if (b && b.locked && b.msLeft != null) secs.push({ k: v, ms: b.msLeft }); }
+        const w0 = prey.wildcards;
+        if (!secs.length || w0 == null) return { travadas: secs.length, wildcards: w0, renovacoes: 0, horasTravas: null, horasBonus: null };
+        const DUR = PG_WIKI.preyH * 3600000;
+        let w = w0, agora = 0, renov = 0, voltas = 0;
+        while (voltas++ < 5000) {
+            secs.sort((a, b) => a.ms - b.ms || ordem.indexOf(a.k) - ordem.indexOf(b.k));
+            const s = secs[0];
+            agora = s.ms;
+            if (w <= 0) break;                 // sem wildcard na renovação: expira e a trava desliga
+            w--; renov++; s.ms = agora + DUR;
+            if (w === 0) break;                // zerou: todas desligam agora
+        }
+        return { travadas: secs.length, wildcards: w0, renovacoes: renov, horasTravas: agora / 3600000,
+                 horasBonus: Math.max(...secs.map(s => s.ms)) / 3600000 };
+    }
+    /* Plano 2.11 (dono): DEFESA no Cavaleiro, DANO em quem faz mais dano no
+     * livro-razão. Ajustes pelos dados medidos: spawn limita → dano extra não
+     * vira xp (TIBIDLE.md, Stonerefiners 28/09) → EXP; Cavaleiro que quase não
+     * apanha (vida mínima ≥ 90 %) → EXP rende mais que DEFESA. rz = razaoResumo(). */
+    function pgSugestaoPrey(rz) {
+        const pv = (rz && rz.porVoc) || {};
+        const temDano = PG_VOCS.some(v => pv[v] && pv[v].pct > 0);
+        let top = null;
+        for (const v of PG_VOCS) if (v !== 'KNIGHT' && pv[v] && pv[v].pct > 0 && (!top || pv[v].pct > pv[top].pct)) top = v;
+        const spawn = !!(rz && rz.ondas && rz.ondas.spawnLimita);
+        const r = {};
+        for (const v of PG_VOCS) {
+            if (v === 'KNIGHT') {
+                const hp = pv.KNIGHT && pgNum(pv.KNIGHT.hpMin);
+                r[v] = hp != null && hp >= 90
+                    ? { tipo: 'xp', motivo: `quase não apanhou (vida mínima ${hp}%) — EXP rende mais que DEFESA` }
+                    : { tipo: 'defesa', motivo: hp != null ? `é quem apanha (vida mínima ${hp}%) — DEFESA corta o dano que ele toma` : 'é quem apanha corpo a corpo — DEFESA rende mais nele (wiki)' };
+            } else if (v === top) {
+                r[v] = spawn ? { tipo: 'xp', motivo: `faz ${pv[v].pct}% do dano, mas o spawn limita: dano extra não vira xp` }
+                             : { tipo: 'dano', motivo: `faz ${pv[v].pct}% do dano do grupo — DANO ★10 dá +40% nele` };
+            } else r[v] = { tipo: 'xp', motivo: temDano ? 'EXP soma para a conta (4 colunas ★10 = +40%); para ouro, LOOT' : 'sem dano medido ainda — EXP é o seguro (soma para a conta); para ouro, LOOT' };
+        }
+        return r;
+    }
+
+    /* ---- 5. FORJA E IMBUEMENT ----------------------------------------------- */
+    /* Refino esperado de `de` até `ate`. C[k] = custo esperado (em gemas) de k → k+1:
+     *   alvo ≤ +4: 1/p gemas T1 (falha não cai);
+     *   alvo ≥ +5 sem Garantia: (1 T2 + (1−p) × C[k−1]) / p — a falha cai 1 nível
+     *     e é preciso subir de novo;
+     *   alvo ≥ +5 com Garantia: 1/p × (T2 + Garantia) — Garantia gasta sempre.
+     * modo 'melhor' escolhe, degrau a degrau, o mais barato em ouro (o greedy é
+     * ótimo: o custo sem Garantia só cresce com C[k−1]). */
+    function pgRefino(de, ate, modo) {
+        de = Math.max(0, Math.min(10, Math.floor(pgNum(de) || 0)));
+        ate = Math.max(de, Math.min(10, Math.floor(pgNum(ate) || 0)));
+        const ouro = c => c.T1 * PG_GEMAS.T1.ouro + c.T2 * PG_GEMAS.T2.ouro + c.G * PG_GEMAS.G.ouro;
+        const C = [], passos = [];
+        for (let k = 0; k < 10; k++) {
+            const s = PG_REFINO[k];
+            let c, usaG = false;
+            if (!s.cai) c = { T1: 1 / s.p, T2: 0, G: 0 };
+            else {
+                const a = C[k - 1];
+                const semG = { T1: (1 - s.p) * a.T1 / s.p, T2: (1 + (1 - s.p) * a.T2) / s.p, G: (1 - s.p) * a.G / s.p };
+                const comG = { T1: 0, T2: 1 / s.p, G: 1 / s.p };
+                usaG = modo === 'com' || (modo === 'melhor' && ouro(comG) < ouro(semG));
+                c = usaG ? comG : semG;
+            }
+            C[k] = c;
+            if (k >= de && k < ate) passos.push({ alvo: s.alvo, p: s.p, cai: !!s.cai, usaG, c, ouro: ouro(c) });
+        }
+        const t = passos.reduce((a, x) => ({ T1: a.T1 + x.c.T1, T2: a.T2 + x.c.T2, G: a.G + x.c.G }), { T1: 0, T2: 0, G: 0 });
+        const g = passos.find(x => x.usaG);
+        return { de, ate, modo, passos, garantiaDesde: g ? g.alvo : null,
+                 total: { T1: t.T1, T2: t.T2, G: t.G, tentativas: t.T1 + t.T2, ouro: ouro(t),
+                          coins: t.T1 * PG_GEMAS.T1.coins + t.T2 * PG_GEMAS.T2.coins + t.G * PG_GEMAS.G.coins,
+                          fragmentos: (t.T1 + t.T2 + t.G) * 100 } };
+    }
+    /* bases do catálogo do jogo (imbuements.json) com a wiki como reserva */
+    function pgBasesImbu(cat) {
+        const b = cat && Array.isArray(cat.bases) ? cat.bases : null;
+        const lidas = (b || []).map(x => x && ({ id: pgNum(x.id), nome: x.name, taxa: pgNum(x.price), protecao: pgNum(x.protectionPrice), chance: pgNum(x.percent) != null ? pgNum(x.percent) / 100 : null }))
+            .filter(x => x && x.id && x.taxa != null && x.protecao != null && x.chance > 0 && x.chance <= 1);
+        return lidas.length ? lidas : PG_IMBU_BASES.slice();
+    }
+    const pgNomesImbu = (cat) => [...new Set(((cat && cat.imbuements) || []).map(x => x && x.name).filter(Boolean))];
+    /* materiais de UM tier (o catálogo já traz o tier anterior junto) × preço */
+    function pgMateriaisImbu(cat, nome, baseId, precos) {
+        const im = ((cat && cat.imbuements) || []).find(x => x && x.name === nome && pgNum(x.base) === pgNum(baseId));
+        if (!im) return null;
+        const itens = (im.items || []).filter(Boolean).map(it => {
+            const q = pgNum(it.count) || 0;
+            const p = precos ? pgNum(precos[it.name] != null ? precos[it.name] : precos[pgNorm(it.name)]) : null;
+            return { nome: it.name, qtd: q, preco: p, total: p != null ? p * q : null };
+        });
+        return { itens, total: itens.reduce((s, i) => s + (i.total || 0), 0), semPreco: itens.filter(i => i.preco == null).map(i => i.nome) };
+    }
+    /* Sem proteção a falha consome ouro E materiais: custo esperado = (taxa + M)/p.
+     * Com proteção: taxa + proteção + M, uma vez. Vale quando M > proteção·p/(1−p) − taxa. */
+    function pgProtecao(base, valorMat) {
+        if (!base || !(base.chance > 0)) return null;
+        const M = Math.max(0, pgNum(valorMat) || 0), p = Math.min(1, base.chance);
+        const sem = (base.taxa + M) / p, com = base.taxa + base.protecao + M;
+        const limite = p < 1 ? base.protecao * p / (1 - p) - base.taxa : Infinity;
+        return { sem, com, vale: com < sem, limite, diferenca: Math.abs(sem - com), tentativas: 1 / p, M };
+    }
+    /* @@PROGRESSO-FIM */
+    /* v2.11 — estado da aba Progresso, alimentado SÓ por observarProgresso()
+     * (uma linha no começo de observarRecebido). Em memória: o que o jogo
+     * manda de novo a cada conexão. Só os contadores do bestiário vão para o
+     * localStorage (prog_bestiario), e só quando a aba desenha — antes disso
+     * a gaveta da conta (LS) pode ainda não ter sido escolhida. */
+    const PROG = { chaves: null, avisoChaves: null, meta: null, prey: null, best: {}, huntId: null, treino: false, an: null, estado: null,
+                   amostras: [], autoSell: null, nivelProg: null, offline: null, fim: null, imbu: null, imbuErro: null, imbuPedido: false, timer: 0 };
+    const PG_AMOSTRA_MS = 30000;
+
+    function pgAnotarMeta(m) {
+        const x = PROG.meta || (PROG.meta = {});
+        ['wildcards', 'preyHunt', 'preyBuffs', 'preyAvisos', 'preyHuntRollFreeDay', 'autoLeave', 'xpBoost'].forEach(k => { if (k in m) x[k] = m[k]; });
+        if (m.rules && Array.isArray(m.rules.keyBags)) x.keyBags = m.rules.keyBags;
+        x.t = Date.now();
+        if (m.huntBestiary) PROG.best = pgMesclarBestiario(PROG.best, m.huntBestiary);
+        const p = pgLerPrey(x);
+        if (p) PROG.prey = Object.assign(p, { t: Date.now() });
+    }
+    function observarProgresso(o) {
+        if (!o || typeof o !== 'object' || !o.type || o.type === 'pong') return;
+        const d = o.data;
+        if (!d || typeof d !== 'object') return;
+        const tipo = o.type, st = d.state && typeof d.state === 'object' ? d.state : null;
+        if (d.meta && typeof d.meta === 'object') pgAnotarMeta(d.meta);
+        const regras = PROG.meta && PROG.meta.keyBags;
+        const kb = pgLerChaves(d, PROG.chaves, regras) || (st ? pgLerChaves(st, PROG.chaves, regras) : null);
+        if (kb) {
+            kb.t = Date.now(); PROG.chaves = kb;
+            /* cheia é o único caso que custa algo sem o dono olhar: avisa UMA vez no Log */
+            const av = pgAvisoChaves(kb), antes = PROG.avisoChaves;
+            PROG.avisoChaves = av ? av.nivel : null;
+            if (av && av.nivel === 'cheia' && antes !== 'cheia') log('⚠ ' + av.texto, 'erro');
+        }
+        if (tipo === 'hunt_started' || tipo === 'resume') {
+            const id = pgNum(d.huntId);
+            if (id !== PROG.huntId) PROG.amostras = [];
+            PROG.huntId = id; PROG.treino = d.training === true;
+            if (tipo === 'resume' && d.offline && typeof d.offline === 'object') PROG.offline = Object.assign({ t: Date.now() }, d.offline);
+        } else if (tipo === 'ended') {
+            const sm = d.summary && typeof d.summary === 'object' ? d.summary : {};
+            PROG.fim = { t: Date.now(), motivo: sm.reason || null, titulo: sm.title || null, seg: pgNum(sm.elapsedSec) };
+            PROG.huntId = null; PROG.amostras = []; PROG.an = null; PROG.estado = null; PROG.autoSell = null;
+            return;
+        }
+        if (tipo !== 'frame' && tipo !== 'resume' && tipo !== 'hunt_started') return;
+        const agora = Date.now();
+        const a = d.analyzer && typeof d.analyzer === 'object' ? d.analyzer : null;
+        if (a) PROG.an = { t: agora, ms: pgNum(a.elapsedMs), sessaoMs: pgNum(a.sessionElapsedMs), kills: pgNum(a.killsTotal), xp: pgNum(a.xp), xpH: pgNum(a.xpPerHour), sup: pgNum(a.suppliesGold), loot: pgNum(a.lootGold) };
+        if (d.bestiaryKills != null && PROG.huntId != null && !PROG.treino) {
+            if (typeof d.bestiaryKills === 'object') PROG.best = pgMesclarBestiario(PROG.best, d.bestiaryKills);
+            else { const n = pgNum(d.bestiaryKills), k = String(PROG.huntId); if (n != null && !(PROG.best[k] >= n)) PROG.best[k] = n; }
+        }
+        if (!st) return;
+        PROG.autoSell = st.autoSellInMs != null ? { ms: pgNum(st.autoSellInMs), t: agora } : null;
+        const ch = st.character && typeof st.character === 'object' ? st.character : null;
+        if (ch && ch.levelProgress) PROG.nivelProg = { xpFalta: pgXpFalta(ch.levelProgress), nivel: pgNum(ch.level), t: agora };
+        const ouro = pgNum(st.balance), trav = pgNum(st.balanceLocked);
+        const oz = st.cap ? pgNum(st.cap.used) : null, tot = st.cap ? pgNum(st.cap.total) : null;
+        /* ouro que paga suprimento = normal + travado (o gasto sai primeiro do travado — wiki /ouro-e-ouro-travado) */
+        PROG.estado = { t: agora, ouro: ouro != null ? ouro + (trav || 0) : null, trav, oz, tot };
+        const ult = PROG.amostras[PROG.amostras.length - 1];
+        if ((ouro != null || oz != null) && (!ult || agora - ult.t >= PG_AMOSTRA_MS)) {
+            PROG.amostras.push({ t: agora, ouro: PROG.estado.ouro, oz, tot });
+            if (PROG.amostras.length > 240) PROG.amostras.shift();          // 2 h de amostras
+        }
+    }
+
+    /* estilos só desta aba (a casca/CSS geral é de outra área): fonte ≥ 10,5 px,
+     * alvos ≥ 28 px, cinza com contraste ≥ 4,5:1 sobre o fundo da gaveta */
+    const PG_CSS = `
+    #tb-prog{font-size:11.5px}
+    #tb-prog .pg-sub{display:flex;flex-wrap:wrap;gap:3px;margin:0 0 6px}
+    #tb-prog .pg-aba{flex:1 1 auto;min-height:28px;padding:3px 4px;border-radius:14px;background:#1a1f29;color:#c3cad6;border:1px solid #2b3242;cursor:pointer;font:inherit;font-size:11px}
+    #tb-prog .pg-aba:hover{background:#232936;color:#fff}
+    #tb-prog .pg-aba.on{background:#2c5c3a;color:#fff;border-color:#4a9a63}
+    #tb-prog button:focus-visible,#tb-prog select:focus-visible,#tb-prog input:focus-visible,#tb-prog summary:focus-visible{outline:2px solid #ffd479;outline-offset:1px}
+    #tb-prog .pg-mut,#tb-prog .tb-mut{color:#9ba5b7}
+    #tb-prog .pg-peq{font-size:10.5px}
+    #tb-prog .pg-cx{background:#1a1f29;border:1px solid #262d3b;border-radius:7px;padding:6px 7px;margin:5px 0}
+    #tb-prog .pg-alerta{background:#3a1d1d;border:1px solid #8a3a3a;color:#ffc2bd;border-radius:7px;padding:6px 7px;margin:0 0 6px;font-weight:bold}
+    #tb-prog .pg-atencao{background:#33301c;border:1px solid #7a6a2a;color:#ffe3a3;border-radius:7px;padding:6px 7px;margin:5px 0}
+    #tb-prog .pg-tit{margin:9px 0 3px;color:#ffd479;font-size:11px;letter-spacing:.3px;text-transform:uppercase}
+    #tb-prog .pg-lin{display:flex;justify-content:space-between;gap:6px;padding:2px 0;border-bottom:1px dotted #2b3242}
+    #tb-prog .pg-lin>span:last-child{text-align:right;color:#fff}
+    #tb-prog table{width:100%;border-collapse:collapse;font-size:10.5px;table-layout:fixed}
+    #tb-prog th{text-align:left;color:#9ba5b7;font-weight:normal;border-bottom:1px solid #2b3242;padding:2px 3px}
+    #tb-prog td{padding:3px;border-bottom:1px dotted #232936;vertical-align:top}
+    #tb-prog .tb-tag{font-size:10.5px}
+    #tb-prog details.pg-det{margin:3px 0;border:1px solid #262d3b;border-radius:7px;background:#1a1f29}
+    #tb-prog details.pg-det>summary{list-style:none;cursor:pointer;min-height:28px;display:flex;align-items:center;justify-content:space-between;gap:6px;padding:3px 7px}
+    #tb-prog details>summary::-webkit-details-marker{display:none}
+    #tb-prog details.pg-det>div{padding:2px 7px 6px;font-size:10.5px}
+    #tb-prog details.pg-aj{margin:5px 0}
+    #tb-prog details.pg-aj>summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;min-height:28px;padding:0 11px;border:1px solid #2b3242;border-radius:14px;color:#b3bccb;font-size:10.5px}
+    #tb-prog details.pg-aj[open]>summary{color:#ffd479;border-color:#3a4356}
+    #tb-prog details.pg-aj>div{margin-top:4px;font-size:10.5px;color:#c3cad6}
+    #tb-prog select,#tb-prog input{min-height:28px;background:#232936;color:#dde3ee;border:1px solid #3a4356;border-radius:5px;padding:2px 5px;font:inherit;font-size:11px}
+    #tb-prog .pg-form{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin:4px 0}
+    #tb-prog .pg-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin:5px 0}
+    #tb-prog .pg-card{background:#1a1f29;border:1px solid #262d3b;border-radius:7px;padding:4px 7px}
+    #tb-prog .pg-card small{display:block;color:#9ba5b7;font-size:10.5px}
+    #tb-prog .pg-card b{font-size:14px;color:#fff}
+    #tb-prog .pg-barra{height:6px;border-radius:3px;background:#2b3242;overflow:hidden;margin-top:2px}
+    #tb-prog .pg-barra i{display:block;height:100%;background:#4a9a63}
+    #tb-prog .pg-rodape{margin-top:8px;color:#9ba5b7;font-size:10.5px}
+    `;
+    function pgGarantirCss() {
+        if (document.getElementById('tb-prog-css')) return;
+        const s = document.createElement('style'); s.id = 'tb-prog-css'; s.textContent = PG_CSS;
+        (document.head || document.documentElement).appendChild(s);
+    }
+    /* contadores do bestiário: junta memória + gaveta (o maior vence) e guarda se mudou */
+    function pgSincronizarBestiario() {
+        const salvo = ler('prog_bestiario', {}) || {};
+        const junto = pgMesclarBestiario(salvo, PROG.best);
+        PROG.best = junto;
+        if (Object.keys(junto).some(k => junto[k] !== salvo[k])) guardar('prog_bestiario', junto);
+    }
+    function pgMedidos() {
+        const a = PROG.an;
+        const vivo = a && PROG.huntId != null && a.ms >= 180000 && a.kills > 0 ? { huntId: PROG.huntId, abatesH: a.kills / a.ms * 3600000 } : null;
+        let scan = [], sess = [];
+        try { scan = Object.values(scanResultados() || {}); } catch { scan = []; }
+        try { sess = sessoes() || []; } catch { sess = []; }
+        return pgAbatesPorHunt(vivo, scan, sess);
+    }
+    const pgFresco = () => !!(PROG.estado && Date.now() - PROG.estado.t < 10000 && PROG.huntId != null);
+    const pgHuntCat = (id) => id == null ? null : (CAT.hunts || []).find(h => h && h.id === id) || null;
+    const pgBonusTxt = (b, v) => `+${pgInt(v)} ${escHtml(PG_BONUS[b] || b || '?')}`;
+    const pgMateriaisSet = () => new Set(((PROG.imbu && PROG.imbu.imbuements) || []).flatMap(x => (x && x.items || []).map(i => pgNorm(i && i.name))));
+    const pgSemDado = (o) => `<div class="pg-cx pg-mut">${o}: sem dado ainda — abra/entre numa caçada.</div>`;
+    /* 1 linha de bestiário de uma caçada ("3.412/5.000 → +6 vida máx · ~1h06"); serve ao Scan se o integrador quiser */
+    function pgBestiarioTexto(huntId, medidos) {
+        const h = pgHuntCat(huntId); if (!h || !h.bestiary) return '';
+        const c = PROG.best[String(huntId)];
+        if (c == null) return `bestiário ${escHtml(PG_BONUS[h.bestiary.bonus] || h.bestiary.bonus)}: contador ainda não lido`;
+        const e = pgEstagio(h.bestiary, c); if (!e) return '';
+        if (e.completo) return `bestiário completo (${pgBonusTxt(e.bonus, e.valor)})`;
+        const m = (medidos || {})[huntId];
+        return `bestiário ${pgInt(e.kills)}/${pgInt(e.prox.kills)} → ${pgBonusTxt(e.bonus, e.prox.value)}${m && m.abatesH > 0 ? ' · ~' + pgHoras(e.falta / m.abatesH) : ''}`;
+    }
+
+    function pgTelaChaves() {
+        const kb = PROG.chaves, regras = PROG.meta && PROG.meta.keyBags;
+        let h = '';
+        if (!kb) h += pgSemDado('Mochila de chaves');
+        else {
+            const t = pgTierDaMochila(kb, regras), av = pgAvisoChaves(Object.assign({}, kb, { max: t.max }));
+            const cls = av && av.nivel === 'cheia' ? 'tb-ruim' : av && (av.nivel === 'quase' || av.nivel === 'talvez') ? 'tb-av' : 'tb-ok';
+            h += `<div class="pg-lin"><b>Mochila de chaves</b><span class="${cls}">${pgInt(kb.usadas)}${t.max ? ' / ' + pgInt(t.max) : ''}</span></div>`;
+            h += `<div class="pg-mut pg-peq">${t.nome ? escHtml(t.nome) + ' · ' : ''}T1 guarda ${PG_WIKI.mochilaT1}, T2 guarda ${PG_WIKI.mochilaT2} (100 coins). Chave no depósito também vale para o Elite e o Sweep.</div>`;
+            if (av && (av.nivel === 'quase' || av.nivel === 'talvez')) h += `<div class="pg-atencao">${escHtml(av.texto)}</div>`;
+            const nomes = Object.keys(kb.chaves || {}).sort((a, b) => a.localeCompare(b));
+            if (!nomes.length) h += `<div class="pg-mut">nenhuma chave na mochila de chaves.</div>`;
+            const mats = pgMateriaisSet();
+            nomes.forEach((n, i) => {
+                const info = pgInfoChave(n, CAT.bosses, CAT.hunts), e = pgResumoElite(info.elite, mats);
+                const els = e ? [e.fraco.length ? 'fraco a ' + e.fraco.map(x => `${x.el} (+${-x.pct}% de dano)`).join(', ') : '',
+                                 e.resiste.length ? 'resiste ' + e.resiste.map(x => `${x.el} ${x.pct}%`).join(', ') : '',
+                                 e.imune.length ? 'imune a ' + e.imune.join(', ') : ''].filter(Boolean).join(' · ') : '';
+                h += `<details class="pg-det" data-k="pg-ch-${i}"><summary><span>${escHtml(n)} <b>×${pgInt(kb.chaves[n])}</b></span><span class="pg-mut">${e ? escHtml(e.nome) + ' · ' + pgInt(e.hp) + ' HP' : 'Elite ?'}</span></summary><div>` +
+                    (e ? `<div>${els ? escHtml(els) : 'sem fraqueza nem resistência'}</div>` +
+                         (e.top.length ? `<div>loot de valor: ${e.top.map(l => `${escHtml(l.nome)} ${pgInt(l.valor)}${l.chance != null ? ' <span class="pg-mut">(' + pgPct(l.chance, 1) + ')</span>' : ''}`).join(' · ')}</div>` : '') +
+                         (e.materiais.length ? `<div>materiais de imbuement: ${e.materiais.map(escHtml).join(', ')}</div>` : '') +
+                         (e.fragmentos.length ? `<div class="pg-mut">fragmentos de forja: ${e.fragmentos.map(escHtml).join(', ')}</div>` : '')
+                       : `<div class="pg-mut">Elite não encontrado no catálogo /bosses/select${CAT.bosses ? '' : ' (catálogo ainda não carregou)'}.</div>`) +
+                    (info.hunt ? `<div class="pg-mut">cai em ${escHtml(info.hunt.title)}${info.chance != null ? ' · ' + pgPct(info.chance, 3) + ' por abate' : ''}</div>` : '') +
+                    `</div></details>`;
+            });
+        }
+        h += `<div class="pg-tit">Chaves por hora</div>`;
+        const med = pgMedidos(), fator = pgFatorLootPrey(PROG.prey);
+        const linhas = pgLinhasChaves(CAT.hunts, CAT.bosses, med, fator, PROG.huntId);
+        if (!linhas.length) h += `<div class="pg-mut">sem abates por hora medidos — cace alguns minutos nesta aba aberta, ou rode o Scan.</div>`;
+        else {
+            h += `<table><tr><th>caçada · chave</th><th style="width:58px">abates/h</th><th style="width:84px">chaves/h</th></tr>` +
+                linhas.slice(0, 8).map(l => `<tr><td>${l.atual ? '<b>' : ''}${escHtml(l.hunt.title)}${l.atual ? '</b>' : ''}<div class="pg-mut">${escHtml(l.chave)} · ${pgPct(l.chance, 3)}</div></td>` +
+                    `<td>${pgInt(l.abatesH)}<div class="pg-mut">${escHtml(l.fonte)}</div></td><td>${pgDec(l.chavesH, 2)}<div class="pg-mut">cada ${pgHoras(l.cadaH)}</div></td></tr>`).join('') + `</table>`;
+            const at = linhas.find(l => l.atual);
+            if (at && kb) {
+                const t = pgTierDaMochila(kb, regras);
+                if (t.max > 0) {
+                    const livre = t.max - (kb.usadas || 0);
+                    h += `<div class="${livre <= 0 ? 'tb-ruim' : 'pg-mut'}" style="margin-top:3px">${livre <= 0 ? `mochila de chaves cheia: nesse ritmo, ~${pgDec(at.chavesH, 2)} chave(s) por hora serão perdidas.` : `nesse ritmo a mochila de chaves enche em ~${pgHoras(livre / at.chavesH)}.`}</div>`;
+                }
+            }
+            if (fator > 1) h += `<div class="pg-mut pg-peq">inclui o LOOT da prey (+${pgDec((fator - 1) * 100, 0)}% na chance).</div>`;
+        }
+        h += `<details class="pg-aj" data-k="pg-ch-aj"><summary>? como é a conta</summary><div>A chance vem do catálogo do jogo (é a que o card do item mostra); a wiki diz que a maioria das chaves fica entre 0,047% e 0,105% por abate (uma a cada ~950 a 2.100 abates). LOOT da prey e Chance de loot da Forja aumentam a chance. Com a mochila de chaves cheia, a chave que cai na caçada é perdida; a que vem de caixa ou prêmio vai para o depósito. Sweep: cada chave extra vira um loot do Elite (custa o suprimento da última vitória; sem xp e sem bestiário).</div></details>`;
+        return h;
+    }
+
+    function pgTelaBestiario() {
+        const hs = CAT.hunts || [];
+        if (!hs.length) return `<div class="pg-mut">catálogo de caçadas ainda não carregou.</div>`;
+        const cont = PROG.best, med = pgMedidos(), nv = nivelAtual();
+        let h = '';
+        const atual = pgHuntCat(PROG.huntId);
+        if (atual && atual.bestiary) {
+            const e = pgEstagio(atual.bestiary, cont[String(atual.id)]);
+            h += `<div class="pg-cx"><b>${escHtml(atual.title)}</b>${PROG.treino ? ' <span class="tb-tag">treino não conta</span>' : ''}<div>${pgBestiarioTexto(atual.id, med)}</div>` +
+                (e && !e.completo && cont[String(atual.id)] != null ? `<div class="pg-barra"><i style="width:${Math.round(e.pct * 100)}%"></i></div>` : '') + `</div>`;
+        }
+        if (!Object.keys(cont).length) return h + pgSemDado('Contadores do bestiário') + pgAjudaBestiario();
+        const bon = pgBonusConta(hs, cont);
+        const bl = Object.keys(bon).sort((a, b) => bon[b] - bon[a]).map(b => pgBonusTxt(b, bon[b]));
+        h += `<div class="pg-cx"><div class="pg-mut pg-peq">Bônus da conta (marcos fechados)</div>${bl.length ? bl.join(' · ') : 'nenhum ainda'}</div>`;
+        const rows = pgLinhasBestiario(hs, cont, med, nv);
+        const linha = r => `<tr><td>${escHtml(r.hunt.title)} <span class="pg-mut">[${pgInt(pgNum(r.hunt.levelMin) || 1)}]</span><div class="pg-barra"><i style="width:${Math.round(r.e.pct * 100)}%"></i></div>` +
+            `<div class="pg-mut">${pgInt(r.e.kills)}/${pgInt(r.e.prox.kills)} · faltam ${pgInt(r.e.falta)}</div></td>` +
+            `<td>${pgBonusTxt(r.e.bonus, r.e.prox.value)}<div class="pg-mut">${r.horas != null ? '~' + pgHoras(r.horas) : 'sem abates/h'}</div></td></tr>`;
+        const cab = `<table><tr><th>caçada · abates</th><th style="width:96px">próximo marco</th></tr>`;
+        if (!rows.length) h += `<div class="pg-mut">nenhuma caçada do seu nível com marco por fechar e contador conhecido.</div>`;
+        else {
+            h += `<div class="pg-tit">Mais perto do próximo marco</div>` + cab + rows.slice(0, 8).map(linha).join('') + `</table>`;
+            if (rows.length > 8) h += `<details class="pg-aj" data-k="pg-best-todas"><summary>todas (${rows.length})</summary><div>${cab}${rows.slice(8).map(linha).join('')}</table></div></details>`;
+        }
+        const semCont = hs.filter(x => x && x.bestiary && (x.levelMin || 1) <= nv && cont[String(x.id)] == null).length;
+        if (semCont) h += `<div class="pg-mut pg-peq">${semCont} caçada(s) do seu nível sem contador conhecido — o jogo manda todos ao conectar (meta) e o da caçada atual a cada segundo.</div>`;
+        return h + pgAjudaBestiario();
+    }
+    const pgAjudaBestiario = () => `<details class="pg-aj" data-k="pg-best-aj"><summary>? regras</summary><div>Cada caçada tem 3 marcos; vale o MAIOR (não somam). Caçadas diferentes somam. Conta qualquer criatura do elenco, inclusive com o jogo fechado; treino e Elite/Boss não contam; o Reset das estatísticas não apaga. Tempo = abates que faltam ÷ abates/h medidos (ao vivo, Scan ou sessões do Analisador).</div></details>`;
+
+    function pgTelaOffline() {
+        const al = PROG.meta && PROG.meta.autoLeave && typeof PROG.meta.autoLeave === 'object' ? PROG.meta.autoLeave : null;
+        let h = `<div class="pg-lin"><span>Auto Exit</span><span>${al ? (al.enabled ? '<span class="tb-ok">ligado</span>' : '<span class="tb-av">desligado</span>') : '<span class="pg-mut">sem dado ainda</span>'}</span></div>` +
+            (al && al.enabled ? `<div class="pg-mut pg-peq">margem de ouro ${pgInt(pgNum(al.floor))}${pgNum(al.floor) > 0 ? '' : ' (0 = nunca sai por ouro)'} · mochila cheia ${al.onCap ? 'encerra' : 'NÃO encerra'}</div>` : '');
+        const atual = pgHuntCat(PROG.huntId);
+        if (PROG.huntId != null && !atual) h += `<div class="pg-cx pg-mut">luta de Elite/Boss em andamento — o plano é para caçada comum.</div>`;
+        else if (!pgFresco()) h += `<div class="pg-cx pg-mut">Plano da caçada com o jogo fechado: sem dado ainda — abra/entre numa caçada (precisa do ouro, da mochila e do analisador que o jogo manda a cada segundo).</div>`;
+        else {
+            const u = PROG.estado, a = PROG.an || {};
+            const tx = pgTaxas(PROG.amostras, 3600000);
+            const sessaoMs = a.sessaoMs != null ? a.sessaoMs : a.ms;
+            const xpH = a.xpH > 0 ? a.xpH : a.ms > 60000 && a.xp > 0 ? a.xp / a.ms * 3600000 : null;
+            let xpFalta = PROG.nivelProg && PROG.nivelProg.xpFalta;
+            if (xpFalta == null) { try { xpFalta = xpFaltando(); } catch { xpFalta = null; } }
+            const autoSell = !!(PROG.autoSell && PROG.autoSell.ms != null);
+            const p = pgPlanoOffline({ ouro: u.ouro, margem: al && pgNum(al.floor), autoExit: !!(al && al.enabled), autoExitCap: !!(al && al.enabled && al.onCap),
+                                       supH: a.ms > 60000 && a.sup != null ? a.sup / a.ms * 3600000 : null, taxas: tx,
+                                       ozLivre: u.tot != null && u.oz != null ? u.tot - u.oz : null, autoSell, sessaoMs, xpH, xpFalta });
+            const card = (r, v) => `<div class="pg-card"><small>${r}</small><b>${v}</b></div>`;
+            h += `<div class="pg-grid">${card('OURO (com travado)', pgInt(u.ouro))}${card(p.ouroFonte === 'medido' ? 'SALDO/H MEDIDO' : 'SUPRIMENTO/H', p.ouroH != null ? (p.ouroH > 0 ? '+' : '') + pgInt(p.ouroH) : '—')}` +
+                 `${card('MOCHILA LIVRE', u.tot != null && u.oz != null ? pgInt(u.tot - u.oz) + ' oz' : '—')}${card('SESSÃO', sessaoMs != null ? pgHoras(sessaoMs / 3600000) + ' de 12h' : '—')}</div>`;
+            const lin = (x, y) => `<div class="pg-lin"><span>${x}</span><span>${y}</span></div>`;
+            h += lin('ouro dura', p.horasOuro == null ? '—' : pgHoras(p.horasOuro) + (p.ouroFonte === 'suprimento' && Number.isFinite(p.horasOuro) ? ' <span class="pg-mut">(pior caso)</span>' : ''));
+            h += lin('mochila enche em', p.horasMochila == null ? (autoSell ? '<span class="pg-mut">medindo (Auto Selling)</span>' : '<span class="pg-mut">medindo…</span>') : pgHoras(p.horasMochila));
+            h += lin('teto de 12 h em', pgHoras(p.tetoH) + (a.sessaoMs == null ? ' <span class="pg-mut">(aprox.)</span>' : ''));
+            if (p.horasNivel != null) h += lin('próximo nível em', pgHoras(p.horasNivel));
+            const pr = p.primeiro, fim = p.fim;
+            h += `<div class="${pr.k === 'ouro' && !pr.encerra ? 'pg-alerta' : 'pg-atencao'}" style="margin-top:6px">Se fechar o jogo agora: em ~${pgHoras(pr.h)} ${escHtml(pr.texto)}.` +
+                 (fim !== pr ? ` A caçada termina em ~${pgHoras(fim.h)} (${escHtml(fim.k === 'teto' ? 'teto de 12 h' : fim.k === 'ouro' ? 'Auto Exit por ouro' : 'Auto Exit por mochila')}).` : '') +
+                 (p.xpAteFim ? ` Até lá: ~${pgInt(p.xpAteFim)} de xp.` : '') + `</div>`;
+            h += `<div class="pg-mut pg-peq">${p.ouroFonte === 'medido' ? `saldo medido em ${pgHoras(tx.horas)} (moedas + Auto Selling − suprimento)` : 'saldo ainda não medido (precisa de 10 min): usei só o gasto de suprimento, sem contar moedas e vendas'}${autoSell ? ' · Auto Selling ligado: a mochila esvazia a cada 10 min' : ''}.</div>`;
+        }
+        if (PROG.fim) h += `<div class="pg-lin" style="margin-top:4px"><span>Última caçada</span><span>${PROG.fim.titulo ? escHtml(PROG.fim.titulo) + ' · ' : ''}${escHtml(PG_FIM[PROG.fim.motivo] || PROG.fim.motivo || '?')}${PROG.fim.seg != null ? ' · ' + pgHoras(PROG.fim.seg / 3600) : ''}</span></div>`;
+        const of = PROG.offline;
+        if (of && pgNum(of.elapsedMs) > 0) h += `<div class="pg-lin"><span>Da última vez fora</span><span>${pgHoras(pgNum(of.elapsedMs) / 3600000)} · ${pgInt(pgNum(of.xp))} xp · ${pgInt(pgNum(of.killsTotal))} abates · ${pgInt(pgNum(of.lootGold))} de loot</span></div>`;
+        h += `<details class="pg-aj" data-k="pg-off-aj"><summary>? antes de fechar o jogo</summary><div>A caçada segue no servidor por até 12 h de caçada (aberto + fechado). O que encerra antes: ENCERRAR, morte de qualquer personagem, Auto Exit por ouro abaixo da margem ou por mochila cheia (só com as duas chaves ligadas em Configurações → JOGO → Auto Leaving). Sem Auto Exit, sem ouro as poções e runas pagas pausam, e com a mochila cheia o loot deixa de ser coletado. Antes de dormir: margem que pague a próxima caçada e bênçãos compradas.</div></details>`;
+        return h;
+    }
+
+    function pgTelaPrey() {
+        const p = PROG.prey;
+        let h = '';
+        const tipoTxt = { xp: 'EXP', loot: 'LOOT', dano: 'DANO', defesa: 'DEFESA' };
+        if (!p) h += `<div class="pg-cx pg-mut">Estado da prey não disponível — o jogo manda ao conectar ou ao mexer na Prey. A sugestão abaixo vale do mesmo jeito.</div>`;
+        else {
+            h += `<div class="pg-lin"><span>Wildcards</span><span>${p.wildcards != null ? pgInt(p.wildcards) : '—'}</span></div>`;
+            const c = p.cacada;
+            h += `<div class="pg-lin"><span>Caçada da conta</span><span>${c ? `${escHtml(c.titulo || ('#' + c.huntId))}${c.locked ? ' 🔒' : ''}${c.msLeft != null ? ' · ' + pgHoras(c.msLeft / 3600000) : ''}` : '<span class="tb-av">nenhuma</span>'}</span></div>`;
+            h += PG_VOCS.map(v => {
+                const b = p.buffs[v];
+                const txt = !b ? '<span class="pg-mut">—</span>' : b.tipo || b.tier
+                    ? `${escHtml(tipoTxt[b.tipo] || b.rotulo || '?')}${b.tier ? ' ★' + pgInt(b.tier) : ''}${b.pct != null ? ' +' + pgDec(b.pct, 0) + '%' : ''}${b.msLeft != null ? ' · ' + pgHoras(b.msLeft / 3600000) : ''}${b.locked ? ' 🔒' : ''}`
+                    : `<span class="pg-mut">sem bônus${b.piso ? ' (piso ★' + pgInt(b.piso) + ')' : ''}</span>`;
+                return `<div class="pg-lin"><span>${PG_VOC[v]}</span><span>${txt}${b && b.gratis ? '<div class="tb-ok pg-peq">sorteio grátis hoje</div>' : ''}</span></div>`;
+            }).join('');
+            const tv = pgTravasPrey(p);
+            if (tv && tv.travadas) {
+                h += `<div class="${tv.horasTravas != null && tv.horasTravas < 4 ? 'pg-atencao' : 'pg-cx'}">${tv.travadas} seção(ões) travada(s) gastam ${tv.travadas} wildcard(s) a cada 2 h de caçada.` +
+                     (tv.horasTravas != null ? ` Com ${pgInt(tv.wildcards)}, as travas desligam em ~${pgHoras(tv.horasTravas)} de caçada (zerou → TODAS desligam) e o último bônus acaba em ~${pgHoras(tv.horasBonus)}.` : '') + `</div>`;
+            }
+            if (p.avisos.length) h += `<div class="pg-mut pg-peq">avisos do jogo: ${p.avisos.slice(0, 4).map(a => escHtml((a.target === 'hunt' ? 'caçada' : PG_VOC[a.target] || a.target || '?') + ' ' + String(a.kind || '').replace(/_/g, ' ') + (a.vezes > 1 ? ' (' + a.vezes + '×)' : ''))).join(' · ')}</div>`;
+        }
+        const xb = PROG.meta && PROG.meta.xpBoost;
+        if (xb && typeof xb === 'object' && pgNum(xb.percent)) h += `<div class="pg-lin"><span>XP Boost</span><span>+${pgInt(pgNum(xb.percent))}% · ${pgHoras(pgNum(xb.msLeft) / 3600000)}</span></div>`;
+        let rz = null;
+        try { rz = razaoResumo(RAZAO); if (!rz || !rz.danoTotal) rz = null; } catch { rz = null; }
+        const sg = pgSugestaoPrey(rz);
+        h += `<div class="pg-tit">Sugestão por coluna</div>` + PG_VOCS.map(v => `<div class="pg-lin"><span>${PG_VOC[v]}</span><span><b>${tipoTxt[sg[v].tipo]}</b></span></div><div class="pg-mut pg-peq">${escHtml(sg[v].motivo)}</div>`).join('');
+        if (!rz) h += `<div class="pg-mut pg-peq">sem livro-razão desta caçada ainda (dano por personagem): cace alguns minutos para a sugestão de DANO usar o dano medido.</div>`;
+        h += `<details class="pg-aj" data-k="pg-prey-aj"><summary>? regras da prey</summary><div>Uma caçada para a conta + 4 colunas (uma por vocação). EXP e LOOT ★1–10 = +1 a +10% e SOMAM para a conta; DANO e DEFESA ★1–10 = +4 a +40% só no personagem da coluna. Cada sorteio vale 2 h de caçada (em qualquer caçada; treino e Elite/Boss não gastam nem recebem). O tier nunca cai. Primeiro sorteio do dia de cada coluna é grátis, depois 1 wildcard; ESCOLHER CAÇADA custa 5. Trava: renova sozinha por 1 wildcard por seção a cada renovação; zerou as wildcards → todas as travas desligam na hora.</div></details>`;
+        return h;
+    }
+
+    const pgCalc = () => Object.assign({ de: 4, ate: 7, modo: 'melhor', imbu: 'Vampirism', tier: 3, mat: null }, ler('prog_calc', {}) || {});
+    function pgImbuValores(c) {
+        const bases = pgBasesImbu(PROG.imbu), base = bases.find(b => b.id === pgNum(c.tier)) || bases[0];
+        const mats = PROG.imbu ? pgMateriaisImbu(PROG.imbu, c.imbu, base.id, CAT.precos) : null;
+        return { bases, base, mats };
+    }
+    function pgImbuHtml(c, matDigitado) {
+        const v = pgImbuValores(c);
+        const M = matDigitado != null && matDigitado !== '' ? pgNum(matDigitado) : v.mats ? v.mats.total : null;
+        const r = pgProtecao(v.base, M);
+        if (!r) return '';
+        let h = `<div class="pg-lin"><span>sem proteção (${pgPct(v.base.chance, 0)})</span><span>~${pgInt(r.sem)} <span class="pg-mut">(${pgDec(r.tentativas, 2)} tentativas)</span></span></div>` +
+                `<div class="pg-lin"><span>com proteção (100%)</span><span>${pgInt(r.com)}</span></div>` +
+                `<div class="${r.vale ? 'tb-ok' : 'tb-av'}" style="margin-top:3px"><b>proteção ${r.vale ? 'VALE' : 'NÃO vale'}</b> — ${r.vale ? 'economiza' : 'custa'} ~${pgInt(r.diferenca)} de ouro em média. ${Number.isFinite(r.limite) && r.limite > 0 ? `Vale quando os materiais valem mais de ${pgInt(r.limite)}.` : 'Neste tier vale sempre: a taxa perdida numa falha passa da proteção.'}</div>`;
+        if (M == null) h += `<div class="pg-mut pg-peq">sem preço dos materiais: conta feita com materiais = 0 (digite o valor).</div>`;
+        return h;
+    }
+    function pgTelaForja() {
+        const c = pgCalc();
+        const opt = (v, t, sel) => `<option value="${v}"${String(v) === String(sel) ? ' selected' : ''}>${t}</option>`;
+        let h = `<div class="pg-tit">Refino esperado</div><div class="pg-form"><label for="pg-de">de</label><select id="pg-de">` +
+            Array.from({ length: 10 }, (_, i) => opt(i, '+' + i, c.de)).join('') + `</select><label for="pg-ate">até</label><select id="pg-ate">` +
+            Array.from({ length: 10 }, (_, i) => opt(i + 1, '+' + (i + 1), c.ate)).join('') + `</select><select id="pg-modo" aria-label="Garantia">` +
+            opt('melhor', 'Garantia onde compensa', c.modo) + opt('com', 'sempre com Garantia', c.modo) + opt('sem', 'sem Garantia', c.modo) + `</select></div>`;
+        const r = pgRefino(c.de, c.ate, c.modo);
+        if (!r.passos.length) h += `<div class="pg-mut">escolha um alvo acima do nível atual.</div>`;
+        else {
+            const t = r.total;
+            h += `<table><tr><th style="width:34px">alvo</th><th style="width:48px">chance</th><th>gemas esperadas</th><th style="width:66px">ouro</th></tr>` +
+                r.passos.map(x => `<tr><td>+${x.alvo}</td><td>${pgPct(x.p, 0)}</td><td>${x.c.T1 > 0.005 ? pgDec(x.c.T1, 1) + ' T1 ' : ''}${x.c.T2 > 0.005 ? pgDec(x.c.T2, 1) + ' T2 ' : ''}${x.c.G > 0.005 ? pgDec(x.c.G, 1) + ' Gar.' : ''}${x.cai ? `<div class="pg-mut">${x.usaG ? 'com Garantia' : 'falha cai 1 nível'}</div>` : ''}</td><td>${pgInt(x.ouro)}</td></tr>`).join('') + `</table>`;
+            h += `<div class="pg-cx">Total esperado: <b>${pgDec(t.tentativas, 1)}</b> tentativas · <b>${pgInt(t.ouro)}</b> de ouro · ${pgInt(t.coins)} coins · ${pgInt(t.fragmentos)} fragmentos` +
+                 `<div class="pg-mut pg-peq">${pgDec(t.T1, 1)} Refine T1 · ${pgDec(t.T2, 1)} Refine T2 · ${pgDec(t.G, 1)} Guarantee T1${c.modo === 'melhor' ? (r.garantiaDesde ? ` · Garantia compensa a partir do +${r.garantiaDesde}` : ' · Garantia não compensa nesta faixa') : ''}</div></div>`;
+        }
+        h += `<div class="pg-tit">Imbuement: proteção vale a pena?</div>`;
+        if (!PROG.imbu) h += `<div class="pg-mut pg-peq">${PROG.imbuErro ? 'catálogo de imbuements não carregou (' + escHtml(PROG.imbuErro) + ') — digite o valor dos materiais.' : 'carregando o catálogo de imbuements…'}</div>`;
+        const nomes = pgNomesImbu(PROG.imbu), v = pgImbuValores(c);
+        h += `<div class="pg-form">` + (nomes.length ? `<select id="pg-imbu" aria-label="imbuement">${nomes.map(n => opt(escHtml(n), escHtml(n) + (/swiftness/i.test(n) ? ' (sem efeito hoje)' : ''), escHtml(c.imbu))).join('')}</select>` : '') +
+             `<select id="pg-tier" aria-label="tier">${v.bases.map(b => opt(b.id, escHtml(b.nome), c.tier)).join('')}</select>` +
+             `<input id="pg-mat" type="number" min="0" step="100" style="width:96px" aria-label="valor dos materiais" placeholder="${v.mats ? pgInt(v.mats.total).replace(/\D/g, '') : 'materiais'}" value="${c.mat != null ? pgInt(c.mat).replace(/\D/g, '') : ''}"></div>`;
+        if (v.mats) h += `<div class="pg-mut pg-peq">materiais (preço de NPC): ${v.mats.itens.map(i => `${pgInt(i.qtd)} ${escHtml(i.nome)}${i.preco != null ? ' × ' + pgInt(i.preco) : ' (sem preço)'}`).join(' + ')} = ${pgInt(v.mats.total)}. No Mercado podem valer mais — digite outro valor se quiser.</div>`;
+        h += `<div id="pg-imbu-res">${pgImbuHtml(c, c.mat)}</div>`;
+        h += `<details class="pg-aj" data-k="pg-forja-aj"><summary>? regras</summary><div>Forja: +1 a +4 = 80/70/60/50% (falha não cai); +5 a +10 = 35/25/20/15/10/5% e a falha SEM Garantia derruba 1 nível. A Garantia não muda a chance e é gasta em toda tentativa. Gemas: Refine T1 10.000 + 5 coins, Refine T2 35.000 + 8 coins, Guarantee T1 15.000 + 5 coins, cada uma com 100 fragmentos. Imbuement: Basic 5.000 (90%, proteção +10.000), Intricate 30.000 (70%, +30.000), Powerful 200.000 (50%, +50.000); sem proteção a falha consome ouro e materiais.</div></details>`;
+        return h;
+    }
+    async function pgCarregarImbu() {
+        if (PROG.imbu || PROG.imbuPedido) return;
+        PROG.imbuPedido = true;
+        /* a versão dos assets muda com o patch (v100 já dá 404): pega a do catálogo de bosses */
+        const cena = (CAT.bosses || []).map(b => b && b.scene).find(s => /\/assets\/v\d+\//.test(s || ''));
+        const vers = [...new Set([cena ? cena.match(/\/assets\/(v\d+)\//)[1] : null, 'v167'].filter(Boolean))];
+        for (const v of vers) {
+            try { const j = await buscarJSON('/assets/' + v + '/imbuements.json'); if (j && Array.isArray(j.imbuements)) { PROG.imbu = j; PROG.imbuErro = null; break; } }
+            catch (e) { PROG.imbuErro = e.message; }
+        }
+        if (!PROG.imbu && !PROG.imbuErro) PROG.imbuErro = 'formato inesperado';
+        if (ABA === 'progresso') renderizar();
+    }
+
+    /* v2.11 — ABA PROGRESSO. Sub-abas para caber nos 300 px da gaveta; o
+     * aviso de mochila de chaves cheia aparece em todas. */
+    function telaProgresso() {
+        pgGarantirCss();
+        pgSincronizarBestiario();
+        const sub = ler('prog_sub', 'chaves');
+        const abas = [['chaves', 'Chaves'], ['bestiario', 'Bestiário'], ['offline', 'Offline'], ['prey', 'Prey'], ['forja', 'Forja']];
+        const kb = PROG.chaves;
+        const maxKb = kb ? pgTierDaMochila(kb, PROG.meta && PROG.meta.keyBags).max : null;
+        const av = kb ? pgAvisoChaves(Object.assign({}, kb, { max: maxKb })) : null;
+        let h = `<div id="tb-prog"><div class="pg-sub" role="tablist">` + abas.map(([k, n]) =>
+            `<button class="pg-aba${k === sub ? ' on' : ''}" data-pg-sub="${k}" role="tab" aria-selected="${k === sub}">${n}${k === 'chaves' && av && av.nivel === 'cheia' ? ' <b class="tb-ruim">!</b>' : ''}</button>`).join('') + `</div>`;
+        /* texto inteiro na sub-aba Chaves; nas outras, uma linha (não empurra o conteúdo para baixo) */
+        if (av && av.nivel === 'cheia') h += `<div class="pg-alerta" role="alert">⚠ ${sub === 'chaves' ? escHtml(av.texto) : `mochila de chaves cheia (${pgInt(kb.usadas)}/${pgInt(maxKb)}): chave nova será PERDIDA`}</div>`;
+        h += sub === 'bestiario' ? pgTelaBestiario() : sub === 'offline' ? pgTelaOffline() : sub === 'prey' ? pgTelaPrey() : sub === 'forja' ? pgTelaForja() : pgTelaChaves();
+        return h + `<div class="pg-rodape">Só leitura: nada nesta aba envia comando ao jogo.</div></div>`;
+    }
+    function ligarProgresso() {
+        $$('[data-pg-sub]').forEach(b => b.onclick = () => { guardar('prog_sub', b.dataset.pgSub); renderizar(); });
+        const muda = (patch) => { guardar('prog_calc', Object.assign(pgCalc(), patch)); renderizar(); };
+        const de = $('#pg-de'); if (de) de.onchange = () => { const x = parseInt(de.value) || 0; muda({ de: x, ate: Math.max(x + 1, pgCalc().ate) }); };
+        const ate = $('#pg-ate'); if (ate) ate.onchange = () => muda({ ate: parseInt(ate.value) || 1 });
+        const md = $('#pg-modo'); if (md) md.onchange = () => muda({ modo: md.value });
+        const im = $('#pg-imbu'); if (im) im.onchange = () => muda({ imbu: im.value, mat: null });
+        const tr = $('#pg-tier'); if (tr) tr.onchange = () => muda({ tier: parseInt(tr.value) || 1, mat: null });
+        const mat = $('#pg-mat');
+        if (mat) {
+            /* digitar não repinta a aba (perderia o foco): só o resultado */
+            mat.oninput = () => { const r = $('#pg-imbu-res'); if (r) r.innerHTML = pgImbuHtml(pgCalc(), mat.value); };
+            mat.onchange = () => guardar('prog_calc', Object.assign(pgCalc(), { mat: mat.value === '' ? null : Math.max(0, parseInt(mat.value) || 0) }));
+        }
+        /* o catálogo de imbuements (13 KB, público) serve à calculadora e marca materiais no loot dos Elites */
+        { const sub = ler('prog_sub', 'chaves'); if (sub === 'forja' || sub === 'chaves') pgCarregarImbu().catch(() => { }); }
+        /* repinta sozinha a cada 5 s só com a aba aberta e a party caçando (é
+         * leitura: ouro, mochila e abates mudam a cada frame); nunca no meio de
+         * um campo em edição */
+        if (!PROG.timer) PROG.timer = setInterval(() => {
+            try {
+                const g = $('#tb-gaveta');
+                if (ABA !== 'progresso' || !g || !g.classList.contains('on') || !$('#tb-prog') || PROG.huntId == null) return;
+                const f = document.activeElement;
+                if (f && f.closest && f.closest('#tb-prog') && /^(INPUT|SELECT)$/.test(f.tagName)) return;
+                renderizar();
+            } catch { }
+        }, 5000);
+    }
+
+    /* =========================================================================
+     *  ⭐ v2.11 — ABA MERCADO (pedido do dono, 29/09: vender no mercado dos
+     *  jogadores o que está parado na mochila e no depósito, pelo menor preço,
+     *  sem abrir item por item na janela do jogo).
+     *
+     *  Protocolo lido do código público do cliente em 29/09 (chunks 8308-* e
+     *  page-*, validador zod) — NÃO visto ao vivo com a conta logada:
+     *    market_catalog {}           → market_catalog_result {items:[{name,
+     *        sellOrders, minSell, maxBuy, trades30d, copyOrders?, minCopySell?}]}
+     *        (UM pedido traz o menor preço de venda de TODOS os itens)
+     *    market_list {asset:'ITEM', itemName} → market_list_result {orders:
+     *        [{id, side, unitPrice, quantityRemaining}]}   (livro anônimo)
+     *    market_stats {itemName}     → {stats:{avg,min,max,samples}|null, …}
+     *    market_copies {category|itemName} → {copies:[{orderId, unitPrice,
+     *        sellerName, instance:{iid,name,forja}}]} — equipamento forjado é
+     *        anunciado por CÓPIA (quantity 1 + iid); a resposta não diz a qual
+     *        pedido responde, por isso a fila manda UM pedido de cada vez
+     *    market_my_orders {} · market_inbox {} · market_claim {entryId, requestId}
+     *    market_create {side:'SELL', asset:'ITEM', itemName, unitPrice, quantity,
+     *        requestId, iid?} → market_create_result {requestId, order, bag…}
+     *    market_cancel {orderId, requestId} → market_cancel_result
+     *    depot_withdraw {items:[{name,count,iid?}], requestId} → depot_result
+     *    falha: error {code, key} SEM requestId → casada pela janela de tempo do
+     *    pedido pendente; se o resultado de verdade chegar logo depois, o erro
+     *    era de outra coisa e o resultado vale.
+     *  Regras (wiki /mercado, 29/09): taxa de criação 5 % (GET /market/fees),
+     *  mínimo 1, paga na hora e NUNCA volta (nem cancelando); ordem vale 3 dias;
+     *  até 20 ações por minuto; o mercado NÃO cruza ordens; o ouro da venda cai
+     *  na Caixa de entrada e só entra na carteira com "retirar"; só Premium;
+     *  item empilhável precisa estar na MOCHILA para anunciar.
+     *
+     *  Regras do DONO: mesmo item = mesmo nome (forjado: mesma raridade e mesmo
+     *  refino); preço = menor anúncio de OUTRO vendedor − 1 (se o menor já é
+     *  seu, fica o seu); sem concorrente, a média dos últimos 30 dias; sem
+     *  histórico, o dono digita (sem preço não anuncia).
+     *  PROTEÇÕES: nunca abaixo do NPC (líquido da venda ≤ o que o NPC paga pelo
+     *  lote → "vender no NPC", não anuncia); nada de re-anúncio automático (a
+     *  revisão só mostra e oferece cancelar); fora da lista o que é selado,
+     *  imbuído, protegido, usado, o melhor e a reserva do Equip e a lista
+     *  pessoal "nunca vender" do Auto Hunt (as categorias automáticas de lá NÃO
+     *  valem aqui: vender equipamento é justamente o objetivo desta aba).
+     *  NADA dispara sozinho: ATUALIZAR e REVISAR só leem; ANUNCIAR e cancelar
+     *  pedem 2 toques; RESGATAR TUDO é um botão explícito.
+     * ====================================================================== */
+    /* @@MERCADO-INICIO — funções puras do Mercado; testes/mercado.test.js roda este trecho no node. */
+    const MK_TAXA_WIKI = 0.05;                 // wiki /mercado: 5 % do total, arredondado para baixo, mínimo 1
+    const MK_VALOR_MAX = 2e9;                  // teto de uma ordem (quantidade × preço)
+    const MK_ESPACO_MS = 3500;                 // 1 pedido ao mercado a cada 3,5 s (limite 20 ações/min, com folga)
+    const MK_ACOES_FOLGA = 16;                 // no máximo 16 ações (criar/cancelar/retirar) por minuto — o jogo aceita 20
+    const MK_TIPOS_ACAO = ['market_create', 'market_cancel', 'market_execute', 'market_claim'];
+    const MK_CATS = { armas: 'Armas', armaduras: 'Armaduras', escudos: 'Escudos', elmos: 'Elmos', pernas: 'Pernas', botas: 'Botas',
+                      amuletos: 'Amuletos', aneis: 'Anéis', bolsas: 'Bolsas', pocoes: 'Poções', runas: 'Runas', comida: 'Comida',
+                      valiosos: 'Valiosos', despojos: 'Despojos', ferramentas: 'Ferramentas', decoracao: 'Decoração', diversos: 'Diversos' };
+    const MK_ORDEM_CAT = Object.keys(MK_CATS);
+    /* chave dos catálogos do jogo (/tradeable, /prices e o do mercado vêm em minúsculas) */
+    const mkMin = (s) => String(s == null ? '' : s).toLowerCase().trim();
+    /* o mesmo normalizador da lista "nunca vender" do Auto Hunt (normNomeItem) */
+    const mkNorm = (s) => mkMin(s).replace(/[-_]+/g, ' ').replace(/\s+/g, ' ');
+    const mkNum = (x) => { const n = Number(x); return Number.isFinite(n) ? n : null; };
+    const mkIndexar = (j) => Object.fromEntries(Object.entries(j || {}).map(([k, v]) => [mkMin(k), v]));
+    /* = cliente: fee = max(1, floor(preço × qtd × alíquota)) */
+    function mkTaxa(preco, qtd, aliquota) {
+        const v = Math.floor(Number(preco)) * Math.floor(Number(qtd));
+        if (!(v > 0)) return null;
+        const r = Number.isFinite(aliquota) && aliquota >= 0 ? aliquota : MK_TAXA_WIKI;
+        return Math.max(1, Math.floor(v * r));
+    }
+    const mkPrecoValido = (p, q) => Number.isInteger(p) && p >= 1 && Number.isInteger(q) && q >= 1 && p * q <= MK_VALOR_MAX;
+    /* piso do NPC: o que sobra da venda no mercado (depois da taxa) tem que ser
+     * MAIOR que o que o NPC paga pelo mesmo lote; empate vai para o NPC (é na
+     * hora, sem taxa e sem esperar comprador). npc = preço unitário de /prices. */
+    function mkAbaixoDoNpc(preco, qtd, npc, aliquota) {
+        const t = mkTaxa(preco, qtd, aliquota);
+        if (t == null) return true;
+        if (npc == null) return null;
+        return preco * qtd - t <= (Number(npc) || 0) * qtd;
+    }
+    /* Regra do dono. ref = {outros:[preços de OUTROS vendedores], meus:[meus
+     * preços do mesmo item], media: média 30 d}. Empate com o meu menor não é
+     * "o menor é meu": o comprador escolhe qualquer um — vai −1. */
+    function mkSugerir(ref) {
+        ref = ref || {};
+        const nums = (a) => (a || []).map(Number).filter(x => Number.isFinite(x) && x > 0);
+        const outros = nums(ref.outros), meus = nums(ref.meus);
+        const minO = outros.length ? Math.min(...outros) : null, minM = meus.length ? Math.min(...meus) : null;
+        if (minO != null && (minM == null || minM >= minO)) return { preco: Math.max(1, minO - 1), origem: 'menor', ref: minO };
+        if (minM != null) return { preco: minM, origem: 'meu', ref: minM };
+        const med = mkNum(ref.media);
+        if (med != null && med > 0) return { preco: Math.max(1, Math.round(med)), origem: 'media', ref: med };
+        return { preco: null, origem: 'vazio', ref: null };
+    }
+    const mkImbuido = (im) => Array.isArray(im) && im.some(x => x != null && x !== false);
+    const mkUsado = (w) => !!(w && (typeof w.chargesLeft === 'number' || typeof w.durationLeftMs === 'number'));
+    /* "mesmo corte" = mesma raridade e mesmo refino, como o cliente compara as
+     * cópias (vy): na peça que eu anuncio, ausente = 0; na anunciada, ausente = −1 */
+    const mkRar = (f, pad) => (f && f.raridade != null ? Number(f.raridade) : pad);
+    const mkRef = (f, pad) => (f && f.refino != null ? Number(f.refino) : pad);
+    const mkMesmoCorte = (minha, outra) => mkRar(outra, -1) === mkRar(minha, 0) && mkRef(outra, -1) === mkRef(minha, 0);
+    const mkAbertaVenda = (o) => !!(o && o.status === 'OPEN' && o.side === 'SELL' && (o.asset == null || o.asset === 'ITEM') && Number(o.quantityRemaining) > 0);
+    const mkChaveCopias = (d) => (d && d.category ? 'cat:' + d.category : 'item:' + mkMin(d && d.itemName));
+    const mkPremium = (ate, agora) => (ate === undefined ? null : !ate ? false : (Number.isFinite(Date.parse(ate)) && Date.parse(ate) > agora));
+    const mkAcoesNoMinuto = (envios, agora) => (envios || []).filter(x => x && x.acao && agora - x.t < 60000).length;
+    /* quanto esperar antes do próximo pedido: 3,5 s desde o último, a pausa
+     * depois de um rate_limited e — se for AÇÃO — no máximo 16 no minuto */
+    function mkEsperaNecessaria(s) {
+        const agora = s.agora;
+        let w = Math.max(0, (s.ultimo || 0) + MK_ESPACO_MS - agora, (s.pausaAte || 0) - agora);
+        if (s.acao) {
+            const ac = (s.envios || []).filter(x => x && x.acao && agora - x.t < 60000).map(x => x.t).sort((a, b) => a - b);
+            if (ac.length >= MK_ACOES_FOLGA) w = Math.max(w, ac[ac.length - MK_ACOES_FOLGA] + 60000 - agora);
+        }
+        return w;
+    }
+    /* depósito → mochila: empilhável sai por nome e quantidade (um pedido por
+     * nome), peça com iid sai uma a uma com o iid */
+    function mkRetirar(p) {
+        const r = p.depSolto ? [{ name: p.nomeDep || p.nome, count: p.depSolto }] : [];
+        return r.concat(p.depInst);
+    }
+    const mkPendMedia = (nome, n, c, e) => {
+        const s = e.stats && e.stats[n];
+        if (s && !s.erro) return { media: s.stats && s.stats.avg != null ? s.stats.avg : null, pendente: null };
+        /* sem linha no catálogo ou sem negócio em 30 dias: não há média para pedir */
+        if (!c || !(Number(c.trades30d) > 0)) return { media: null, pendente: null };
+        return { media: null, pendente: { tipo: 'market_stats', data: { itemName: nome }, chave: 'stats:' + n, cache: 'stats', alvo: n, rotulo: 'média de ' + nome, erro: s ? s.erro : null } };
+    };
+    /* Referência de um item EMPILHÁVEL. O catálogo dá o menor preço de venda
+     * de todos (incluindo os meus): só é preciso abrir o livro quando o menor
+     * pode ser meu E há ordens de outros vendedores. */
+    function mkRefPilha(p, e, minhas, meusIds) {
+        const n = p.n;
+        if (!e.catalogo) return { ref: {}, pendente: { tipo: null, chave: 'catalogo', rotulo: 'catálogo do mercado' } };
+        const c = e.catalogo[n] || null;
+        const mine = minhas.filter(o => mkMin(o.itemName) === n && !o.forja);
+        const meus = mine.map(o => o.unitPrice);
+        const nVenda = c ? Number(c.sellOrders) || 0 : 0;
+        let outros = [], pendente = null;
+        if (c && nVenda > 0 && c.minSell != null) {
+            if (!mine.length || c.minSell < Math.min(...meus)) outros = [c.minSell];
+            else if (nVenda > mine.length) {
+                const l = e.livros && e.livros[n];
+                if (l && !l.erro) outros = (l.orders || []).filter(o => o && o.side === 'SELL' && !meusIds.has(o.id)).map(o => o.unitPrice);
+                else pendente = { tipo: 'market_list', data: { asset: 'ITEM', itemName: p.nome }, chave: 'livro:' + n, cache: 'livros', alvo: n, rotulo: 'livro de ' + p.nome, erro: l ? l.erro : null };
+            }
+        }
+        let media = null;
+        if (!pendente && !outros.length && !meus.length) ({ media, pendente } = mkPendMedia(p.nome, n, c, e));
+        /* o mercado não cruza ordens: anunciar a ≤ uma COMPRA aberta só deixa a
+         * ordem parada — aceitar a compra no jogo é na hora e sem taxa (wiki) */
+        return { ref: { outros, meus, media }, pendente, compra: c && c.maxBuy != null ? mkNum(c.maxBuy) : null };
+    }
+    /* Referência de uma CÓPIA forjada: só cópias do mesmo corte (raridade e
+     * refino), tirando as minhas (orderId nas minhas ordens). Um pedido
+     * market_copies por CATEGORIA serve todas as peças dela. */
+    function mkRefCopia(x, e, minhas, meusIds, cat) {
+        const n = x.n;
+        if (!e.catalogo) return { ref: {}, pendente: { tipo: null, chave: 'catalogo', rotulo: 'catálogo do mercado' } };
+        const c = e.catalogo[n] || null;
+        const minhasDoItem = minhas.filter(o => mkMin(o.itemName) === n && o.forja);
+        const meus = minhasDoItem.filter(o => mkMesmoCorte(x.forja, o.forja)).map(o => o.unitPrice);
+        let outros = [], pendente = null;
+        if (c && (Number(c.copyOrders) || 0) > minhasDoItem.length) {
+            const data = cat ? { category: cat } : { itemName: x.nome }, k = mkChaveCopias(data);
+            const cp = e.copias && e.copias[k];
+            if (cp && !cp.erro) {
+                outros = (cp.copies || []).filter(y => y && (mkMin(y.itemName) === n || mkMin(y.instance && y.instance.name) === n)
+                    && !meusIds.has(y.orderId) && mkMesmoCorte(x.forja, y.instance && y.instance.forja)).map(y => y.unitPrice);
+            } else pendente = { tipo: 'market_copies', data, chave: k, cache: 'copias', alvo: k, rotulo: 'cópias de ' + (cat ? (MK_CATS[cat] || cat) : x.nome), erro: cp ? cp.erro : null };
+        }
+        let media = null, nota = null;
+        if (!pendente && !outros.length && !meus.length) {
+            ({ media, pendente } = mkPendMedia(x.nome, n, c, e));
+            if (media != null) nota = 'média do item inteiro (todas as raridades e refinos) — confira';
+        }
+        return { ref: { outros, meus, media }, pendente, nota };
+    }
+    function mkLinha(b, r, e, marcados) {
+        const dig = e.digitados ? e.digitados[b.chave] : undefined;
+        const temDig = dig != null && String(dig).trim() !== '';
+        const sug = r.pendente ? { preco: null, origem: 'pendente', ref: null } : mkSugerir(r.ref);
+        const bruto = temDig ? Math.floor(Number(dig)) : sug.preco;
+        const preco = Number.isFinite(bruto) ? bruto : null;
+        const origem = temDig ? 'digitado' : sug.origem;
+        const npc = e.npc ? (mkNum(e.npc[b.n]) || 0) : null;
+        const ok = preco != null && mkPrecoValido(preco, b.qtd);
+        const taxa = ok ? mkTaxa(preco, b.qtd, e.taxa) : null;
+        const liquido = ok ? preco * b.qtd - taxa : null;
+        const abaixo = ok && npc != null ? liquido <= npc * b.qtd : null;
+        const bloqueio = !e.tradeable ? 'a lista de negociáveis (/tradeable) não carregou — ATUALIZAR'
+            : npc == null ? 'o preço do NPC (/prices) não carregou — ATUALIZAR'
+            : b.bloq ? b.bloq
+            : origem === 'pendente' ? (r.pendente.erro ? 'não consegui ler o preço — digite um' : 'falta ler o preço — ATUALIZAR')
+            : preco == null ? (temDig ? 'preço inválido (inteiro ≥ 1)' : 'sem referência de preço — digite um')
+            : !ok ? 'preço inválido (inteiro ≥ 1, total até 2 bilhões)'
+            : abaixo ? 'vender no NPC' : null;
+        const nota = [r.nota, r.compra != null && preco != null && r.compra >= preco ? `há COMPRA aberta a ${r.compra} — aceitar no mercado do jogo é na hora e sem taxa` : null].filter(Boolean).join(' · ') || null;
+        return Object.assign(b, { sug, preco, origem, nota, compra: r.compra != null ? r.compra : null, taxa, liquido, npc, npcTotal: npc != null ? npc * b.qtd : null,
+                                  abaixoNpc: abaixo, bloqueio, marcado: !bloqueio && marcados.has(b.chave) });
+    }
+    /* A LISTA. e = {bag {nome: qtd}, bagInst [{iid,name,forja,wear,imbuements}],
+     * depot [{itemName,count,iid?,forja?,wear?,imbuements?}], tradeable, npc,
+     * taxa, catalogo {nome: item}, minhas [ordens], livros, copias, stats,
+     * prot {nomes, iids}, nunca [nomes], equip {usadas, reservas} | null,
+     * naCidade, digitados {chave: preço}, marcados [chave]}.
+     * → {linhas, fora, plano {itens, n, taxa, bruto, liquido, assinatura}, pendencias} */
+    function mkMontar(e) {
+        e = e || {};
+        const trad = e.tradeable || null;
+        const cat = (n) => (trad && trad[n] && trad[n].cat) || null;
+        const protN = new Set(((e.prot && e.prot.nomes) || []).map(mkMin)), protI = new Set((e.prot && e.prot.iids) || []);
+        const nunca = new Set((e.nunca || []).map(mkNorm).filter(Boolean));
+        const eq = e.equip ? new Set([...(e.equip.usadas || []), ...(e.equip.reservas || [])]) : null;
+        const naCidade = e.naCidade !== false, marcados = new Set(e.marcados || []);
+        const fora = [], pilhas = new Map(), copias = [];
+        const barrar = (nome, qtd, motivo, iid) => fora.push({ nome: String(nome), n: mkMin(nome), qtd: qtd || 1, motivo, iid: iid || null });
+        const motivoNome = (n) => (trad && !trad[n] ? 'não é negociável no mercado'
+            : protN.has(n) ? 'protegido (cadeado)'
+            : nunca.has(mkNorm(n)) ? 'sua lista "nunca vender" (Auto Hunt)' : null);
+        const motivoPeca = (x) => (x.iid && protI.has(x.iid) ? 'protegido (cadeado)'
+            : x.forja && x.forja.selado === true ? 'selado — purifique antes'
+            : mkImbuido(x.imbuements) ? 'imbuído'
+            : mkUsado(x.wear) ? 'usado (cargas ou tempo gastos)'
+            : eq && x.iid && eq.has(x.iid) ? 'melhor ou reserva no Equip' : null);
+        const pilha = (nome) => {
+            const n = mkMin(nome);
+            let p = pilhas.get(n);
+            if (!p) pilhas.set(n, p = { nome: String(nome), n, mochila: 0, deposito: 0, depSolto: 0, nomeDep: null, depInst: [] });
+            return p;
+        };
+        /* peças com iid (mochila e depósito) vêm à parte; a contagem da mochila
+         * por nome inclui as peças, então elas saem dela */
+        const pecas = [], naMochila = {};
+        for (const x of (e.bagInst || [])) {
+            if (!x || !x.iid || !x.name) continue;
+            pecas.push({ iid: x.iid, nome: String(x.name), n: mkMin(x.name), forja: x.forja, wear: x.wear, imbuements: x.imbuements, lugar: 'mochila', count: 1 });
+            naMochila[mkMin(x.name)] = (naMochila[mkMin(x.name)] || 0) + 1;
+        }
+        for (const d of (e.depot || [])) {
+            if (!d || !d.itemName || !(Number(d.count) > 0)) continue;
+            if (d.iid) { pecas.push({ iid: d.iid, nome: String(d.itemName), n: mkMin(d.itemName), forja: d.forja, wear: d.wear, imbuements: d.imbuements, lugar: 'depósito', count: Number(d.count) || 1 }); continue; }
+            const n = mkMin(d.itemName), m = motivoNome(n);
+            if (m) { barrar(d.itemName, d.count, m); continue; }
+            if (trad && trad[n] && trad[n].forjavel) { barrar(d.itemName, d.count, 'equipamento sem cópia identificada (sem iid) — o jogo só anuncia cópia'); continue; }
+            const p = pilha(d.itemName); p.deposito += Number(d.count); p.depSolto += Number(d.count); if (!p.nomeDep) p.nomeDep = String(d.itemName);
+        }
+        for (const [nome, qtd] of Object.entries(e.bag || {})) {
+            const n = mkMin(nome), solto = Math.max(0, (Number(qtd) || 0) - (naMochila[n] || 0));
+            if (!solto) continue;
+            const m = motivoNome(n);
+            if (m) { barrar(nome, solto, m); continue; }
+            if (trad && trad[n] && trad[n].forjavel) { barrar(nome, solto, 'equipamento sem cópia identificada (sem iid) — o jogo só anuncia cópia'); continue; }
+            const p = pilha(nome); p.mochila += solto; p.nome = String(nome);        // o nome da mochila é o que vai no anúncio
+        }
+        for (const x of pecas) {
+            const m = motivoNome(x.n) || motivoPeca(x);
+            if (m) { barrar(x.nome, x.count, m, x.iid); continue; }
+            if (trad && trad[x.n] && trad[x.n].forjavel) {
+                if (!x.forja) { barrar(x.nome, 1, 'sem forja — o jogo não anuncia esta peça', x.iid); continue; }
+                copias.push(x);
+            } else {
+                const p = pilha(x.nome);
+                if (x.lugar === 'mochila') p.mochila += x.count;
+                else { p.deposito += x.count; p.depInst.push({ name: x.nome, count: x.count, iid: x.iid }); }
+            }
+        }
+        const minhas = (e.minhas || []).filter(mkAbertaVenda);
+        const meusIds = new Set(minhas.map(o => o.id));
+        const linhas = [], pend = new Map();
+        const somar = (r) => { const p = r.pendente; if (p && p.tipo && !p.erro && !pend.has(p.chave)) pend.set(p.chave, p); };
+        for (const p of pilhas.values()) {
+            const qtd = p.mochila + (naCidade ? p.deposito : 0);
+            const r = mkRefPilha(p, e, minhas, meusIds); somar(r);
+            linhas.push(mkLinha({ chave: 'n:' + p.n, tipo: 'pilha', nome: p.nome, n: p.n, cat: cat(p.n), qtd, mochila: p.mochila, deposito: p.deposito,
+                retirar: naCidade ? mkRetirar(p) : [], iid: null, forja: null, pendente: r.pendente,
+                bloq: qtd ? null : 'está no depósito — retirar só na cidade' }, r, e, marcados));
+        }
+        for (const x of copias) {
+            const r = mkRefCopia(x, e, minhas, meusIds, cat(x.n)); somar(r);
+            const noDep = x.lugar === 'depósito';
+            linhas.push(mkLinha({ chave: 'i:' + x.iid, tipo: 'copia', nome: x.nome, n: x.n, cat: cat(x.n), qtd: 1, mochila: noDep ? 0 : 1, deposito: noDep ? 1 : 0,
+                retirar: noDep && naCidade ? [{ name: x.nome, count: 1, iid: x.iid }] : [], iid: x.iid, forja: x.forja, pendente: r.pendente,
+                bloq: !e.equip ? 'rode ATUALIZAR no Equip antes (protege o melhor e a reserva de cada um)' : noDep && !naCidade ? 'está no depósito — retirar só na cidade' : null }, r, e, marcados));
+        }
+        const ordCat = (c) => { const i = MK_ORDEM_CAT.indexOf(c); return i < 0 ? 99 : i; };
+        linhas.sort((a, b) => ordCat(a.cat) - ordCat(b.cat) || a.n.localeCompare(b.n) || mkRar(b.forja, 0) - mkRar(a.forja, 0) || mkRef(b.forja, 0) - mkRef(a.forja, 0) || String(a.iid).localeCompare(String(b.iid)));
+        const itens = linhas.filter(l => l.marcado).map(l => ({ chave: l.chave, tipo: l.tipo, nome: l.nome, n: l.n, qtd: l.qtd, preco: l.preco, iid: l.iid,
+                                                             retirar: l.retirar, npc: l.npc, taxa: l.taxa, liquido: l.liquido }));
+        const soma = (k) => itens.reduce((s, i) => s + (i[k] || 0), 0);
+        const plano = { itens, n: itens.length, taxa: soma('taxa'), liquido: soma('liquido'), bruto: itens.reduce((s, i) => s + i.preco * i.qtd, 0),
+                        assinatura: itens.map(i => i.chave + '|' + i.qtd + '|' + i.preco).join(';') };
+        /* livro e cópias primeiro: são eles que dizem se ainda falta a média */
+        const pendencias = [...pend.values()].sort((a, b) => (a.tipo === 'market_stats') - (b.tipo === 'market_stats'));
+        return { linhas, fora, plano, pendencias };
+    }
+    /* REVISAR MEUS ANÚNCIOS: para cada ordem aberta minha, o menor preço de
+     * OUTRO vendedor e o custo de refazer (a taxa já paga não volta + a taxa
+     * nova a menor−1). Nada é refeito: só mostra. */
+    function mkRevisao(e) {
+        e = e || {};
+        const abertas = (e.minhas || []).filter(o => o && o.status === 'OPEN');
+        const vendas = abertas.filter(mkAbertaVenda), meusIds = new Set(abertas.map(o => o.id));
+        const pend = new Map();
+        const linhas = abertas.map(o => {
+            const n = mkMin(o.itemName);
+            const b = { id: o.id, nome: o.itemName || '?', n, lado: o.side, preco: o.unitPrice, qtd: Number(o.quantityRemaining) || 0, total: o.quantityTotal,
+                        taxaPaga: o.creationFeePaid != null ? o.creationFeePaid : null, expira: o.expiresAt || null, forja: o.forja || null };
+            if (!mkAbertaVenda(o)) return Object.assign(b, { situacao: o.side === 'BUY' ? 'compra' : 'vazia', menor: null, novo: null, taxaNova: null });
+            let outros = null, pendente = null;
+            const c = e.catalogo ? e.catalogo[n] || null : undefined;
+            if (c === undefined) pendente = { tipo: null, chave: 'catalogo' };
+            else if (o.forja) {
+                const cat = e.tradeable && e.tradeable[n] && e.tradeable[n].cat;
+                const minhasCop = vendas.filter(x => mkMin(x.itemName) === n && x.forja).length;
+                if (!c || (Number(c.copyOrders) || 0) <= minhasCop) outros = [];
+                else {
+                    const data = cat ? { category: cat } : { itemName: o.itemName }, k = mkChaveCopias(data), cp = e.copias && e.copias[k];
+                    if (cp && !cp.erro) outros = (cp.copies || []).filter(y => y && (mkMin(y.itemName) === n || mkMin(y.instance && y.instance.name) === n)
+                        && !meusIds.has(y.orderId) && mkMesmoCorte(o.forja, y.instance && y.instance.forja)).map(y => y.unitPrice);
+                    else pendente = { tipo: 'market_copies', data, chave: k, cache: 'copias', alvo: k, rotulo: 'cópias de ' + (cat ? (MK_CATS[cat] || cat) : o.itemName), erro: cp ? cp.erro : null };
+                }
+            } else {
+                const mine = vendas.filter(x => mkMin(x.itemName) === n && !x.forja), nV = c ? Number(c.sellOrders) || 0 : 0;
+                if (!c || c.minSell == null || nV <= mine.length) outros = [];
+                else if (c.minSell < Math.min(...mine.map(x => x.unitPrice))) outros = [c.minSell];
+                else {
+                    const l = e.livros && e.livros[n];
+                    if (l && !l.erro) outros = (l.orders || []).filter(y => y && y.side === 'SELL' && !meusIds.has(y.id)).map(y => y.unitPrice);
+                    else pendente = { tipo: 'market_list', data: { asset: 'ITEM', itemName: o.itemName }, chave: 'livro:' + n, cache: 'livros', alvo: n, rotulo: 'livro de ' + o.itemName, erro: l ? l.erro : null };
+                }
+            }
+            if (pendente && pendente.tipo && !pendente.erro && !pend.has(pendente.chave)) pend.set(pendente.chave, pendente);
+            const menor = outros && outros.length ? Math.min(...outros) : null;
+            const situacao = pendente ? (pendente.erro ? 'erro' : 'pendente') : menor == null ? 'sozinho' : o.unitPrice < menor ? 'menor' : o.unitPrice === menor ? 'empate' : 'barato';
+            const novo = menor != null && situacao !== 'menor' ? Math.max(1, menor - 1) : null;
+            return Object.assign(b, { situacao, menor, novo, taxaNova: novo != null ? mkTaxa(novo, b.qtd, e.taxa) : null });
+        });
+        return { linhas, pendencias: [...pend.values()] };
+    }
+    /* @@MERCADO-PURO-FIM */
+
+    /* ---- estado, socket e fila do Mercado (em memória: o jogo manda de novo a cada conexão) ---- */
+    const MK_RESPOSTA = { market_catalog: 'market_catalog_result', market_my_orders: 'market_my_orders_result', market_inbox: 'market_inbox_result',
+                          market_list: 'market_list_result', market_stats: 'market_stats_result', market_copies: 'market_copies_result',
+                          market_create: 'market_create_result', market_cancel: 'market_cancel_result', market_claim: 'market_claim_result',
+                          depot_withdraw: 'depot_result' };
+    const MK_PRAZO_MS = 8000;                  // sem resposta nisso = para (um anúncio pode ter passado: conferir antes de repetir)
+    const MK_GRACA_ERRO_MS = 1200;             // erro sem requestId: espera o resultado de verdade chegar antes de acreditar
+    const MK_PAUSA_LIMITE_MS = 20000;          // rate_limited: pausa e tenta de novo UMA vez
+    const MK_CONF_MS = 4000;                   // janela do 2º toque
+    /* o que faz parar a fila inteira (os próximos falhariam igual) */
+    const MK_PARA_TUDO = new Set(['premium_required', 'unauthorized', 'forbidden', 'invalid_message', 'rate_limited', 'sem_resposta', 'sem_socket']);
+    const MK_ERROS = {
+        premium_required: 'o mercado é só Premium (o servidor recusou)', insufficient_item: 'o item não está na mochila nessa quantidade',
+        invalid_price: 'preço inválido', invalid_quantity: 'quantidade inválida', order_value_too_large: 'valor total acima de 2 bilhões',
+        item_not_tradeable: 'não é negociável no mercado', item_protected: 'item protegido (cadeado)', rate_limited: 'limite de 20 ações por minuto',
+        insufficient_gold: 'ouro normal insuficiente para a taxa', selo: 'item selado', lacre: 'item lacrado', instancia_usada: 'item usado',
+        trade_reserved: 'item oferecido numa troca aberta', vinculo: 'item vinculado', order_unavailable: 'a ordem não está mais aberta',
+        own_order: 'é a sua própria ordem', entry_unavailable: 'entrega não disponível', sem_espaco: 'sem espaço na mochila',
+        bag_capacity_exceeded: 'sem capacidade na mochila', insufficient_capacity: 'sem capacidade na mochila', depot_full: 'depósito cheio',
+        not_in_city: 'só na cidade', gold_overflow: 'passaria do limite de ouro da conta', invalid_message: 'o servidor não entendeu o pedido',
+        internal: 'erro interno do servidor', sem_resposta: 'o servidor não respondeu em 8 s — confira em "Meus anúncios" antes de repetir',
+        sem_socket: 'socket do jogo não está aberto', sem_dado: 'a resposta não trouxe o dado esperado'
+    };
+    const mkErroTexto = (c) => MK_ERROS[c] ? MK_ERROS[c] + ' (' + c + ')' : String(c);
+    const MK_ORIGEM = { menor: 'menor −1', meu: 'seu anúncio', media: 'média 30 d', vazio: 'sem referência', digitado: 'digitado', pendente: 'falta ler' };
+    const MK_MOTIVO_CAIXA = { trade_proceeds: 'venda', order_cancelled: 'ordem cancelada', order_expired: 'ordem expirada', capacity: 'não coube', offline: 'offline' };
+    const MK = { premiumAte: undefined, bag: null, bagInst: null, bag_t: 0, protMeta: { nomes: [], iids: [] }, protInv: { nomes: [], iids: [] },
+                 taxa: null, taxaWiki: false, tradeable: null, npc: null, restErro: null,
+                 catalogo: null, catalogo_t: 0, minhas: null, minhas_t: 0, inbox: null, inbox_t: 0, livros: {}, copias: {}, stats: {},
+                 envios: [], ultimoEnvio: 0, pausaAte: 0, pend: null, ocupado: null, progresso: null, parar: false, erro: null, t: 0,
+                 digitados: {}, marcados: new Set(), conf: null, foco: null, pintadas: [], ordPintadas: [], revisao: null };
+    const mkRid = () => ((window.crypto && typeof crypto.randomUUID === 'function') ? crypto.randomUUID() : 'tb-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10));
+    const mkFmt = (n) => (n == null || !Number.isFinite(Number(n)) ? '—' : Math.round(Number(n)).toLocaleString('pt-BR'));
+    function mkAnotarProt(alvo, nomes, iids) {
+        if (Array.isArray(nomes)) alvo.nomes = nomes.filter(x => typeof x === 'string');
+        if (Array.isArray(iids)) alvo.iids = iids.filter(x => typeof x === 'string');
+    }
+    const mkProtegidos = () => ({ nomes: MK.protMeta.nomes.concat(MK.protInv.nomes), iids: MK.protMeta.iids.concat(MK.protInv.iids) });
+
+    /* Uma linha em observarEnviado: conta TODO market_* que sai (do helper ou
+     * da janela do jogo) — o limite de 20 ações/min é por conta. */
+    function mkObservarEnviado(o) {
+        if (!o || typeof o.type !== 'string' || !/^market_/.test(o.type)) return;
+        const agora = Date.now();
+        MK.envios = MK.envios.filter(x => agora - x.t < 120000);
+        MK.envios.push({ t: agora, tipo: o.type, acao: MK_TIPOS_ACAO.includes(o.type) });
+    }
+    /* Uma linha em observarRecebido: premium, mochila, protegidos e as
+     * respostas do mercado (só guarda; quem decide é a fila). */
+    function observarMercado(o) {
+        if (!o || typeof o.type !== 'string') return;
+        const d = o.data && typeof o.data === 'object' ? o.data : null;
+        if (!d) return;
+        const t = o.type, agora = Date.now();
+        if (t === 'welcome' && d.account && typeof d.account === 'object' && 'premiumUntil' in d.account) MK.premiumAte = d.account.premiumUntil || null;
+        if (t === 'meta_result' && typeof d.premiumUntil === 'string') MK.premiumAte = d.premiumUntil;
+        const meta = d.meta && typeof d.meta === 'object' ? d.meta : t === 'meta_state' ? d : null;
+        if (meta && (Array.isArray(meta.protected) || Array.isArray(meta.protectedIids))) mkAnotarProt(MK.protMeta, meta.protected, meta.protectedIids);
+        const inv = Array.isArray(d.inventory) ? d.inventory : (d.state && Array.isArray(d.state.inventory) ? d.state.inventory : null);
+        if (inv) {
+            const nomes = [], iids = [];
+            for (const x of inv) if (x && x.protected === true && x.name) { if (x.iid) iids.push(x.iid); else nomes.push(x.name); }
+            mkAnotarProt(MK.protInv, nomes, iids);
+        }
+        if (d.bag && typeof d.bag === 'object' && !Array.isArray(d.bag)) {
+            MK.bag = Object.assign({}, d.bag); MK.bag_t = agora;
+            if (Array.isArray(d.bagInstances)) MK.bagInst = clonar(d.bagInstances);
+        }
+        /* depot_result traz o depósito novo (depois do depot_withdraw): o Equip também lê ESTADO_WS.depot */
+        if (t === 'depot_result' && Array.isArray(d.entries)) { ESTADO_WS.depot = { entries: clonar(d.entries), used: d.used, total: d.total }; ESTADO_WS.depot_t = agora; }
+        if (t === 'market_catalog_result' && Array.isArray(d.items)) { MK.catalogo = Object.fromEntries(d.items.filter(x => x && x.name).map(x => [mkMin(x.name), x])); MK.catalogo_t = agora; }
+        else if (t === 'market_my_orders_result' && Array.isArray(d.orders)) { MK.minhas = clonar(d.orders); MK.minhas_t = agora; }
+        else if (t === 'market_inbox_result' && Array.isArray(d.entries)) { MK.inbox = clonar(d.entries); MK.inbox_t = agora; }
+        else if (t === 'market_list_result' && d.asset !== 'COIN' && d.itemName) MK.livros[mkMin(d.itemName)] = { orders: clonar(d.orders || []), t: agora };
+        else if (t === 'market_stats_result' && d.itemName) MK.stats[mkMin(d.itemName)] = { stats: d.stats || null, t: agora };
+        else if (t === 'market_copies_result' && Array.isArray(d.copies) && MK.pend && MK.pend.tipo === 'market_copies') MK.copias[mkChaveCopias(MK.pend.data)] = { copies: clonar(d.copies), t: agora };
+        else if (t === 'market_create_result' && d.order && Array.isArray(MK.minhas)) { if (!MK.minhas.some(x => x.id === d.order.id)) MK.minhas.push(clonar(d.order)); }
+        else if (t === 'market_cancel_result' && d.order && Array.isArray(MK.minhas)) MK.minhas = MK.minhas.filter(x => x.id !== d.order.id);
+        else if (t === 'market_claim_result' && d.entry && Array.isArray(MK.inbox)) MK.inbox = MK.inbox.filter(x => x.id !== d.entry.id);
+        const p = MK.pend;
+        if (p && !p.res) {
+            if (t === p.espera && p.casa(d)) p.res = { ok: true, data: d };
+            else if (t === 'error' && !p.erro && agora - p.t0 <= MK_PRAZO_MS) p.erro = { code: String(d.code || d.key || '?'), key: d.key || null, t: agora };
+        }
+        if (ABA === 'mercado' && !MK.ocupado && (/^market_/.test(t) || t === 'depot_result')) {
+            const f = document.activeElement;
+            if (!(f && f.closest && f.closest('#tb-mk') && f.tagName === 'INPUT')) renderizar();     // não tira o foco de quem digita
+        }
+    }
+    const mkCasador = (tipo, data) => (data && data.requestId ? (d) => d.requestId === data.requestId
+        : tipo === 'market_list' || tipo === 'market_stats' ? (d) => mkMin(d.itemName) === mkMin(data.itemName) : () => true);
+    async function mkEsperarVez(acao) {
+        for (let g = 0; g < 600; g++) {
+            const w = mkEsperaNecessaria({ agora: Date.now(), ultimo: MK.ultimoEnvio, pausaAte: MK.pausaAte, envios: MK.envios, acao });
+            if (w <= 0) return;
+            await dorme(Math.min(w, 1000));
+        }
+    }
+    /* UM pedido de cada vez, no ritmo; devolve {ok, data} ou {erro: code}.
+     * rate_limited: pausa 20 s e repete UMA vez com o MESMO requestId (se o
+     * primeiro tivesse passado, o servidor reconhece a repetição). */
+    async function mkPedir(tipo, data) {
+        for (let tentativa = 0; tentativa < 2; tentativa++) {
+            await mkEsperarVez(MK_TIPOS_ACAO.includes(tipo));
+            if (!socketAberto()) return { erro: 'sem_socket' };
+            const p = MK.pend = { tipo, data, espera: MK_RESPOSTA[tipo], casa: mkCasador(tipo, data), t0: Date.now(), res: null, erro: null };
+            try { enviarWS({ type: tipo, data }); } catch { MK.pend = null; return { erro: 'sem_socket' }; }
+            MK.ultimoEnvio = Date.now();                   // depois do envio: o intervalo medido no servidor nunca fica abaixo de 3,5 s
+            await esperarQue(() => p.res || (p.erro && Date.now() - p.erro.t >= MK_GRACA_ERRO_MS), MK_PRAZO_MS, 100);
+            if (MK.pend === p) MK.pend = null;
+            if (p.res) return p.res;
+            if (p.erro && p.erro.code === 'rate_limited' && tentativa === 0) {
+                MK.pausaAte = Date.now() + MK_PAUSA_LIMITE_MS;
+                log(`mercado: limite de ações do mercado (rate_limited) — pausa de ${MK_PAUSA_LIMITE_MS / 1000} s e tento de novo`, 'info');
+                continue;
+            }
+            if (p.erro) return { erro: p.erro.code, key: p.erro.key };
+            return { erro: 'sem_resposta' };
+        }
+        return { erro: 'rate_limited' };
+    }
+    /* /tradeable, /market/fees e /prices (públicos, 1× por sessão, só em memória: /prices tem 188 KB) */
+    async function mkCarregarRest() {
+        const faltam = [], tarefas = [];
+        if (!MK.tradeable) tarefas.push(buscarJSON('/tradeable').then(j => { if (!j || typeof j !== 'object' || Array.isArray(j)) throw new Error('formato inesperado'); MK.tradeable = mkIndexar(j); })
+            .catch(e => faltam.push('/tradeable (' + e.message + ')')));
+        if (MK.taxa == null || MK.taxaWiki) tarefas.push(buscarJSON('/market/fees').then(j => { const r = Number(j && j.creationFeeRate); if (!(r >= 0 && r < 1)) throw new Error('formato inesperado'); MK.taxa = r; MK.taxaWiki = false; })
+            .catch(e => { if (MK.taxa == null) { MK.taxa = MK_TAXA_WIKI; MK.taxaWiki = true; } faltam.push('/market/fees (' + e.message + ' — uso os 5 % da wiki)'); }));
+        if (!MK.npc) tarefas.push(buscarJSON('/prices').then(j => { if (!j || typeof j !== 'object' || Array.isArray(j)) throw new Error('formato inesperado'); MK.npc = mkIndexar(j); })
+            .catch(e => faltam.push('/prices (' + e.message + ')')));
+        await Promise.all(tarefas);
+        MK.restErro = faltam.length ? faltam.join(' · ') : null;
+        if (faltam.length) log('mercado: não carregou ' + MK.restErro, 'erro');
+    }
+    /* mochila: a tela do jogo (fibra) é o estado corrente; o `bag` do socket
+     * vale quando é mais novo que 3 s (resposta de um depot_withdraw) ou
+     * quando a fibra não está à mão. ⚠ Visto no teste ao vivo (29/09): antes
+     * do login a fibra já tem o estado INICIAL do jogo (roster [], bag {}) —
+     * só vale a fibra com o roster preenchido. */
+    function mkBagAtual() {
+        const sh = lerShellFibra();
+        const daTela = sh && sh.bag && typeof sh.bag === 'object' && Array.isArray(sh.roster) && sh.roster.length
+            ? { bag: sh.bag, inst: Array.isArray(sh.bagInstances) ? sh.bagInstances : [] } : null;
+        if (MK.bag && (!daTela || Date.now() - MK.bag_t < 3000)) return { bag: MK.bag, inst: MK.bagInst || [] };
+        return daTela || (MK.bag ? { bag: MK.bag, inst: MK.bagInst || [] } : null);
+    }
+    function mkEntrada() {
+        const b = mkBagAtual(), R = EQUIP.res;
+        return { bag: b ? b.bag : null, bagInst: b ? b.inst : null, depot: ESTADO_WS.depot ? ESTADO_WS.depot.entries : null,
+                 tradeable: MK.tradeable, npc: MK.npc, taxa: MK.taxa, catalogo: MK.catalogo, minhas: MK.minhas, livros: MK.livros, copias: MK.copias, stats: MK.stats,
+                 prot: mkProtegidos(), nunca: autoHunt().nuncaVender || [], equip: R ? { usadas: [...(R.usadas || [])], reservas: [...(R.reservas || [])] } : null,
+                 naCidade: !emHunt(), digitados: MK.digitados, marcados: [...MK.marcados] };
+    }
+    const mkVista = () => mkMontar(mkEntrada());
+    /* premium sem o welcome (helper instalado com o jogo aberto): o estado do
+     * próprio jogo na fibra, se for um estado de verdade (roster preenchido) */
+    function mkPremiumAgora() {
+        if (MK.premiumAte === undefined) {
+            const sh = lerShellFibra();
+            if (sh && Array.isArray(sh.roster) && sh.roster.length && sh.account && typeof sh.account === 'object' && 'premiumUntil' in sh.account) MK.premiumAte = sh.account.premiumUntil || null;
+        }
+        return mkPremium(MK.premiumAte, Date.now());
+    }
+    const mkRevisaoAtual = () => mkRevisao({ minhas: MK.minhas, catalogo: MK.catalogo, livros: MK.livros, copias: MK.copias, tradeable: MK.tradeable, taxa: MK.taxa });
+    /* o que impede QUALQUER ação de escrita (anunciar, cancelar, resgatar) */
+    function mkImpedimento() {
+        if (!socketAberto()) return 'socket do jogo não está à mão — dê F5 com o helper instalado';
+        if (mkPremiumAgora() === false) return 'a conta está sem Premium — o mercado é só Premium';
+        const ocup = travaJogo();
+        if (ocup) return ocup + ' em andamento — espera terminar';
+        return null;
+    }
+    /* lê o que falta (livro, cópias, média) no ritmo, um pedido por vez */
+    async function mkBuscarPendencias(obter, rotulo) {
+        const tentados = new Set();
+        for (let g = 0; g < 80 && !MK.parar; g++) {
+            const pend = obter().filter(x => !tentados.has(x.chave));
+            if (!pend.length) return;
+            const p = pend[0]; tentados.add(p.chave);
+            MK.progresso = `${rotulo}: ${p.rotulo} (${tentados.size}/${tentados.size + pend.length - 1})`; renderizar();
+            const r = await mkPedir(p.tipo, p.data);
+            if (r.erro) {
+                MK[p.cache][p.alvo] = { erro: r.erro, t: Date.now() };
+                log(`mercado: ${p.rotulo} não veio — ${mkErroTexto(r.erro)}`, 'erro');
+                if (MK_PARA_TUDO.has(r.erro)) return;
+            }
+        }
+        /* pedida, respondida e ainda pendente (resposta noutro formato): não
+         * pede de novo — a linha passa a pedir o preço digitado */
+        if (!MK.parar) for (const p of obter()) if (tentados.has(p.chave) && MK[p.cache] && !MK[p.cache][p.alvo]) MK[p.cache][p.alvo] = { erro: 'sem_dado', t: Date.now() };
+    }
+    async function mkLerBase(tipos) {
+        for (const [tipo, rot] of tipos) {
+            if (MK.parar) return false;
+            MK.progresso = rot + '…'; renderizar();
+            const r = await mkPedir(tipo, {});
+            if (r.erro) throw new Error(rot + ': ' + mkErroTexto(r.erro));
+        }
+        return true;
+    }
+    /* ATUALIZAR: só LÊ — REST públicos, depósito, mochila, catálogo do
+     * mercado, minhas ordens, caixa; depois o que faltar item a item. */
+    async function mkAtualizar() {
+        if (MK.ocupado) return;
+        if (!socketAberto()) { avisar('mercado', 'mercado: socket do jogo não está à mão — dê F5 com o helper instalado', 'erro'); return; }
+        MK.ocupado = 'lendo'; MK.parar = false; MK.erro = null; MK.conf = null; renderizar();
+        try {
+            MK.progresso = 'tabelas do jogo (negociáveis, taxa, NPC)…'; renderizar();
+            await mkCarregarRest();
+            MK.progresso = 'depósito…'; renderizar();
+            const dp = await lerDepot();
+            if (dp.erro) log('mercado: depósito não lido (' + dp.erro + ') — a lista fica só com a mochila', 'erro');
+            MK.livros = {}; MK.copias = {}; MK.stats = {};
+            if (await mkLerBase([['market_catalog', 'preços do mercado'], ['market_my_orders', 'suas ordens'], ['market_inbox', 'caixa de entrada']])) {
+                await mkBuscarPendencias(() => mkVista().pendencias, 'preços');
+            }
+            MK.t = Date.now();
+            const v = mkVista(), prontos = v.linhas.filter(l => !l.bloqueio).length;
+            avisar('mercado', `mercado: ${v.linhas.length} itens na lista (${prontos} prontos para anunciar) · ${v.fora.length} fora` + (MK.parar ? ' — leitura interrompida' : ''), 'ok');
+        } catch (e) { MK.erro = e.message; avisar('mercado', 'mercado: ' + e.message, 'erro'); }
+        finally { MK.ocupado = null; MK.progresso = null; MK.parar = false; renderizar(); }
+    }
+    /* quantas unidades estão na mochila agora (cópia: a peça pelo iid) */
+    function mkNaMochila(it, bag) {
+        if (!bag) return 0;
+        if (it.tipo === 'copia') return (bag.inst || []).some(x => x && x.iid === it.iid) ? 1 : 0;
+        let n = 0;
+        for (const [k, v] of Object.entries(bag.bag || {})) if (mkMin(k) === it.n) n += Number(v) || 0;
+        return n;
+    }
+    async function mkAnunciarUm(it) {
+        /* 1) depósito → mochila (item empilhável só é anunciado da mochila) */
+        let bag = null;
+        if (it.retirar && it.retirar.length) {
+            const r = await mkPedir('depot_withdraw', { items: it.retirar, requestId: mkRid() });
+            if (r.erro) {
+                log(`mercado: ${it.nome}: retirar do depósito falhou — ${mkErroTexto(r.erro)}; anuncio só o que já está na mochila`, 'erro');
+                if (MK_PARA_TUDO.has(r.erro)) return { ok: false, pararTudo: r.erro };
+            } else if (r.data && r.data.bag) bag = { bag: r.data.bag, inst: Array.isArray(r.data.bagInstances) ? r.data.bagInstances : [] };
+        }
+        /* 2) conferir a mochila */
+        const naMochila = mkNaMochila(it, bag || mkBagAtual());
+        const qtd = Math.min(it.qtd, naMochila);
+        if (!qtd) { log(`mercado: ${it.nome} não está na mochila — não anunciei`, 'erro'); return { ok: false }; }
+        if (qtd < it.qtd) log(`mercado: ${it.nome}: só ${qtd} de ${it.qtd} na mochila — anuncio ${qtd}`, 'info');
+        /* o piso do NPC de novo: a quantidade pode ter mudado */
+        if (mkAbaixoDoNpc(it.preco, qtd, it.npc, MK.taxa) !== false) { log(`mercado: ${it.nome} a ${mkFmt(it.preco)} não passa do NPC — não anunciei`, 'erro'); return { ok: false }; }
+        /* 3) a ordem */
+        const data = { side: 'SELL', asset: 'ITEM', itemName: it.nome, unitPrice: it.preco, quantity: qtd, requestId: mkRid() };
+        if (it.iid) data.iid = it.iid;
+        const r = await mkPedir('market_create', data);
+        if (r.erro) {
+            log(`mercado: ${qtd}× ${it.nome} NÃO anunciado — ${mkErroTexto(r.erro)}`, 'erro');
+            return { ok: false, pararTudo: MK_PARA_TUDO.has(r.erro) ? r.erro : null };
+        }
+        const ord = (r.data && r.data.order) || {};
+        const taxa = ord.creationFeePaid != null ? ord.creationFeePaid : mkTaxa(it.preco, qtd, MK.taxa);
+        log(`mercado: anunciado ${qtd}× ${it.nome} a ${mkFmt(it.preco)} (taxa ${mkFmt(taxa)}, não volta)`, 'ok');
+        return { ok: true, taxa };
+    }
+    /* ANUNCIAR — só depois do 2º toque (mkToque). Fila: retirar → conferir →
+     * criar → esperar → próximo. Ocupa a trava comum: o Auto Hunt não pode
+     * guardar a mochila no depósito no meio (desfaria a retirada). */
+    async function mkAnunciar() {
+        if (MK.ocupado) return;
+        const plano = mkVista().plano;
+        if (!plano.n) { avisar('mercado', 'mercado: marque ao menos um item com preço', 'erro'); return; }
+        const imp = mkImpedimento();
+        if (imp) { avisar('mercado', 'mercado: ' + imp, 'erro'); return; }
+        MK.ocupado = 'anunciando'; MK.parar = false; MK.conf = null; _travaJogo = 'Mercado';
+        renderizar();
+        const res = { ok: 0, falha: 0, taxa: 0, parou: null };
+        log(`mercado: anunciando ${plano.n} item(ns) · taxa prevista ${mkFmt(plano.taxa)}`, 'info');
+        try {
+            for (let i = 0; i < plano.itens.length; i++) {
+                if (MK.parar) { res.parou = 'parado por você'; break; }
+                const it = plano.itens[i];
+                MK.progresso = `anunciando ${i + 1}/${plano.n}: ${it.nome}`; renderizar();
+                const r = await mkAnunciarUm(it);
+                if (r.ok) { res.ok++; res.taxa += r.taxa || 0; MK.marcados.delete(it.chave); delete MK.digitados[it.chave]; }
+                else res.falha++;
+                if (r.pararTudo) { res.parou = mkErroTexto(r.pararTudo); break; }
+            }
+            if (res.ok && !res.parou) { MK.progresso = 'relendo suas ordens…'; renderizar(); await mkPedir('market_my_orders', {}); }
+        } catch (e) { falhou('mercado (anunciar)', e); res.parou = e.message; }
+        finally { MK.ocupado = null; MK.progresso = null; MK.parar = false; _travaJogo = null; renderizar(); }
+        avisar('mercado', `mercado: ${res.ok} anunciado(s) · taxa paga ${mkFmt(res.taxa)}` + (res.falha ? ` · ${res.falha} não anunciado(s) (ver Log)` : '') + (res.parou ? ` · fila parada: ${res.parou}` : ''),
+               res.falha || res.parou ? 'erro' : 'ok');
+    }
+    async function mkRevisar() {
+        if (MK.ocupado) return;
+        if (!socketAberto()) { avisar('mercado', 'mercado: socket do jogo não está à mão — dê F5 com o helper instalado', 'erro'); return; }
+        MK.ocupado = 'revisando'; MK.parar = false; MK.erro = null; renderizar();
+        try {
+            await mkCarregarRest();
+            MK.livros = {}; MK.copias = {};
+            if (await mkLerBase([['market_my_orders', 'suas ordens'], ['market_catalog', 'preços do mercado']])) await mkBuscarPendencias(() => mkRevisaoAtual().pendencias, 'revisão');
+            MK.revisao = { t: Date.now() };
+            const rv = mkRevisaoAtual().linhas, baratos = rv.filter(l => l.situacao === 'barato' || l.situacao === 'empate').length;
+            avisar('mercado', `mercado: ${rv.length} ordem(ns) aberta(s) · ${baratos ? baratos + ' com alguém mais barato ou empatado' : 'nenhuma com concorrente mais barato'}`, 'ok');
+        } catch (e) { MK.erro = e.message; avisar('mercado', 'mercado: ' + e.message, 'erro'); }
+        finally { MK.ocupado = null; MK.progresso = null; MK.parar = false; renderizar(); }
+    }
+    async function mkCancelar(l) {
+        if (MK.ocupado || !l) return;
+        const imp = mkImpedimento();
+        if (imp) { avisar('mercado', 'mercado: ' + imp, 'erro'); return; }
+        MK.ocupado = 'cancelando'; MK.conf = null; MK.progresso = 'cancelando ' + l.nome + '…'; renderizar();
+        let r;
+        try { r = await mkPedir('market_cancel', { orderId: l.id, requestId: mkRid() }); }
+        catch (e) { r = { erro: e.message }; }
+        finally { MK.ocupado = null; MK.progresso = null; renderizar(); }
+        if (r.erro) avisar('mercado', `mercado: cancelar ${l.qtd}× ${l.nome} falhou — ${mkErroTexto(r.erro)}`, 'erro');
+        else avisar('mercado', `mercado: ordem de ${l.qtd}× ${l.nome} cancelada — os itens voltam para a mochila (ou depósito); a taxa de ${mkFmt(l.taxaPaga)} não volta`, 'ok');
+    }
+    async function mkLerCaixa() {
+        if (MK.ocupado) return;
+        if (!socketAberto()) { avisar('mercado', 'mercado: socket do jogo não está à mão — dê F5 com o helper instalado', 'erro'); return; }
+        MK.ocupado = 'lendo'; MK.erro = null; renderizar();
+        try { await mkLerBase([['market_inbox', 'caixa de entrada']]); avisar('mercado', `mercado: caixa de entrada com ${(MK.inbox || []).length} entrega(s)`, 'ok'); }
+        catch (e) { MK.erro = e.message; avisar('mercado', 'mercado: ' + e.message, 'erro'); }
+        finally { MK.ocupado = null; MK.progresso = null; renderizar(); }
+    }
+    const mkDescEntrega = (x) => (x.currency === 'gold' ? mkFmt(x.amount) + ' ouro' : x.currency === 'coins' ? mkFmt(x.amount) + ' TC' : mkFmt(x.amount) + '× ' + (x.itemName || '?'));
+    async function mkResgatarTudo() {
+        if (MK.ocupado) return;
+        const lista = (MK.inbox || []).slice();
+        if (!lista.length) { avisar('mercado', 'mercado: caixa vazia — clique LER CAIXA', 'info'); return; }
+        const imp = mkImpedimento();
+        if (imp) { avisar('mercado', 'mercado: ' + imp, 'erro'); return; }
+        MK.ocupado = 'resgatando'; MK.parar = false; renderizar();
+        const res = { ok: 0, falha: 0, ouro: 0, parou: null };
+        try {
+            for (let i = 0; i < lista.length; i++) {
+                if (MK.parar) { res.parou = 'parado por você'; break; }
+                const x = lista[i];
+                MK.progresso = `resgatando ${i + 1}/${lista.length}: ${mkDescEntrega(x)}`; renderizar();
+                const r = await mkPedir('market_claim', { entryId: x.id, requestId: mkRid() });
+                if (r.erro) { res.falha++; log(`mercado: resgatar ${mkDescEntrega(x)} falhou — ${mkErroTexto(r.erro)}`, 'erro'); if (MK_PARA_TUDO.has(r.erro)) { res.parou = mkErroTexto(r.erro); break; } continue; }
+                res.ok++; if (x.currency === 'gold') res.ouro += Number(x.amount) || 0;
+                log(`mercado: resgatado ${mkDescEntrega(x)} (${MK_MOTIVO_CAIXA[x.reason] || x.reason || '?'})`, 'ok');
+            }
+            if (!res.parou) { MK.progresso = 'relendo a caixa…'; renderizar(); await mkPedir('market_inbox', {}); }
+        } catch (e) { falhou('mercado (resgatar)', e); res.parou = e.message; }
+        finally { MK.ocupado = null; MK.progresso = null; MK.parar = false; renderizar(); }
+        avisar('mercado', `mercado: ${res.ok} entrega(s) resgatada(s)` + (res.ouro ? ` · +${mkFmt(res.ouro)} ouro na carteira` : '') + (res.falha ? ` · ${res.falha} falharam (ver Log)` : '') + (res.parou ? ` · parou: ${res.parou}` : ''),
+               res.falha || res.parou ? 'erro' : 'ok');
+    }
+    /* 2 TOQUES amarrados ao que estava na tela: se a lista mudou entre o 1º e o
+     * 2º toque (preço lido, item marcado), o 2º vira um novo 1º. O estado vive
+     * em MK.conf, não no botão (o repinte troca o botão). */
+    function mkToque(chave, assinatura, acao) {
+        const c = MK.conf, agora = Date.now();
+        if (c && c.chave === chave && c.ass === assinatura && agora < c.ate) { MK.conf = null; renderizar(); acao(); return; }
+        MK.conf = { chave, ass: assinatura, ate: agora + MK_CONF_MS };
+        renderizar();
+        setTimeout(() => { if (MK.conf && MK.conf.chave === chave && Date.now() >= MK.conf.ate) { MK.conf = null; renderizar(); } }, MK_CONF_MS + 100);
+    }
+    const mkConfAtiva = (chave, ass) => !!(MK.conf && MK.conf.chave === chave && (ass == null || MK.conf.ass === ass) && Date.now() < MK.conf.ate);
+
+    /* estilos só desta aba: fonte ≥ 10,5 px e alvos ≥ 28 px — pelas variáveis
+     * da casca, que no celular (≤ 640 px) sobem para 12 px e 40 px */
+    const MK_CSS = `
+    #tb-mk{font-size:11px}
+    #tb-mk .mk-st{display:flex;flex-wrap:wrap;gap:2px 7px;align-items:center;font-size:var(--tb-fmin,10.5px);color:var(--tb-mut,#9aa4b8);flex:1;min-width:0}
+    #tb-mk .mk-prog{font-size:var(--tb-fmin,10.5px);color:#ffd479;margin:2px 0 4px}
+    #tb-mk .mk-cat{margin:8px 0 1px;color:#ffd479;font-size:var(--tb-fmin,10.5px);letter-spacing:.3px;text-transform:uppercase}
+    #tb-mk .mk-it{display:grid;grid-template-columns:var(--tb-alvo,28px) minmax(0,1fr) 86px;gap:0 4px;align-items:center;padding:2px 0;border-bottom:1px dotted #262d3b}
+    #tb-mk .mk-it label{display:flex;align-items:center;justify-content:center;min-width:var(--tb-alvo,28px);min-height:var(--tb-alvo,28px);cursor:pointer}
+    #tb-mk .mk-it input[type=checkbox]{width:16px;height:16px;margin:0}
+    #tb-mk .mk-it.bloq label{cursor:default}
+    #tb-mk .mk-nome{min-width:0;overflow-wrap:anywhere;line-height:1.3}
+    #tb-mk .mk-preco{width:100%;min-height:var(--tb-alvo,28px);box-sizing:border-box;text-align:right;font-size:11px}
+    #tb-mk .mk-info{grid-column:2/-1;font-size:var(--tb-fmin,10.5px);color:#9aa4b8;line-height:1.35;padding-bottom:2px}
+    #tb-mk .mk-org{font-size:var(--tb-fmin,10.5px);padding:0 5px;border-radius:9px;background:#2b3242;color:#c3cad6;white-space:nowrap}
+    #tb-mk .mk-org.menor{background:#1f4a2c;color:#8ff0a8}#tb-mk .mk-org.media{background:#4a3b14;color:#ffd479}
+    #tb-mk .mk-org.digitado{background:#1d3550;color:#9fd0ff}#tb-mk .mk-org.vazio,#tb-mk .mk-org.pendente{background:#4a1f1f;color:#ff9b93}
+    #tb-mk .mk-rodape{position:sticky;bottom:-8px;background:#12151c;padding:6px 0 4px;margin-top:6px;border-top:1px solid #2b3242}
+    #tb-mk .mk-rodape .tb-bt.pri{width:100%;font-size:12px;padding:6px}
+    #tb-mk .mk-ord{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 6px;align-items:center;padding:4px 0;border-bottom:1px dotted #262d3b}
+    #tb-mk .mk-ord .mk-info{grid-column:1/-1}
+    #tb-mk .tb-bt.mini{min-height:var(--tb-alvo,28px);padding:2px 9px;font-size:var(--tb-fmin,10.5px)}
+    #tb-mk .mk-av{background:#33301c;border:1px solid #7a6a2a;color:#ffe3a3;border-radius:7px;padding:5px 7px;margin:5px 0;font-size:var(--tb-fmin,10.5px)}
+    #tb-mk .mk-ruim{background:#3a1d1d;border:1px solid #8a3a3a;color:#ffc2bd;border-radius:7px;padding:5px 7px;margin:5px 0;font-size:var(--tb-fmin,10.5px)}
+    #tb-mk .tb-sub button{font-size:11px}
+    `;
+    function mkGarantirCss() {
+        garantirCssAH();                                   // .tb-conf (botão em "confirmar…") vem de lá
+        if (document.getElementById('tb-mk-css')) return;
+        const s = document.createElement('style'); s.id = 'tb-mk-css'; s.textContent = MK_CSS;
+        (document.head || document.documentElement).appendChild(s);
+    }
+    const mkHora = (t) => (t ? new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '—');
+    function mkExpira(t) {
+        if (!t) return '';
+        const ms = Number(t) - Date.now();
+        if (ms <= 0) return 'expirada';
+        return 'expira em ' + (ms < 3600000 ? Math.max(1, Math.round(ms / 60000)) + ' min' : ms < 86400000 ? Math.round(ms / 3600000) + ' h' : Math.round(ms / 86400000) + ' d');
+    }
+    const mkCorte = (f) => (f ? `<span class="tb-rar r${mkRar(f, 0)}">${RAR_NOME[mkRar(f, 0)] || mkRar(f, 0)}${mkRef(f, 0) ? ' +' + mkRef(f, 0) : ''}</span>` : '');
+    function mkTelaAnunciar(v) {
+        const ocup = !!MK.ocupado;
+        let h = '';
+        if (!MK.t) return h + `<div class="tb-cx tb-mut">ATUALIZAR lê a mochila, o depósito e os preços do mercado e monta a lista com o preço sugerido (menor anúncio de outro vendedor −1; sem concorrente, a média de 30 dias). Nada é anunciado sem você marcar e confirmar com 2 toques.</div>`;
+        if (MK.restErro) h += `<div class="mk-ruim">não carregou: ${escHtml(MK.restErro)}</div>`;
+        if (emHunt()) h += `<div class="mk-av">caçando: o depósito só é lido — dá para anunciar só o que está na mochila (o resto, na cidade).</div>`;
+        if (!EQUIP.res && v.linhas.some(l => l.tipo === 'copia')) h += `<div class="mk-av">Equipamento travado: rode ATUALIZAR na aba Equip para o helper saber o melhor e a reserva de cada personagem (esses nunca entram aqui). <button type="button" class="tb-bt mini" id="tb-mk-equip" ${ocup || EQUIP.lendo ? 'disabled' : ''}>${EQUIP.lendo ? 'lendo o Equip…' : 'ATUALIZAR o Equip agora'}</button></div>`;
+        if (!v.linhas.length) h += `<div class="tb-mut" style="margin:6px 0">nada para anunciar na mochila nem no depósito${v.fora.length ? ' (veja "fora da lista")' : ''}.</div>`;
+        MK.pintadas = v.linhas;
+        let catAtual = '';
+        v.linhas.forEach((l, i) => {
+            const c = l.cat || 'outros';
+            if (c !== catAtual) { catAtual = c; const n = v.linhas.filter(x => (x.cat || 'outros') === c).length; h += `<div class="mk-cat">${escHtml(MK_CATS[c] || 'Outros')} (${n})</div>`; }
+            const onde = l.deposito && l.mochila ? `${l.mochila} mochila + ${l.deposito} dep.` : l.deposito ? 'no depósito' : 'na mochila';
+            const org = l.origem === 'menor' ? `menor −1 (outro a ${mkFmt(l.sug.ref)})` : MK_ORIGEM[l.origem] || l.origem;
+            const npcTxt = l.npc == null ? 'NPC ?' : l.npc > 0 ? 'NPC ' + mkFmt(l.npcTotal) : 'NPC não compra';
+            const blq = l.bloqueio ? (l.bloqueio === 'vender no NPC' ? `<b class="tb-av">vender no NPC</b> (o mercado daria ${mkFmt(l.liquido)} líquido)` : `<span class="tb-ruim">${escHtml(l.bloqueio)}</span>`) : '';
+            const valor = l.origem === 'digitado' ? MK.digitados[l.chave] : l.preco;
+            h += `<div class="mk-it${l.bloqueio ? ' bloq' : ''}">
+                <label title="${escHtml(l.bloqueio || 'marcar para anunciar')}"><input type="checkbox" id="tb-mk-c-${i}" ${l.marcado ? 'checked' : ''} ${l.bloqueio || ocup ? 'disabled' : ''} aria-label="anunciar ${escHtml(l.nome)}"></label>
+                <div class="mk-nome"><b>${escHtml(l.nome)}</b> <span class="tb-mut">×${mkFmt(l.qtd)}</span>${mkCorte(l.forja)}</div>
+                <input class="tb-in mk-preco" id="tb-mk-p-${i}" type="number" min="1" step="1" inputmode="numeric" placeholder="preço" value="${escHtml(valor == null ? '' : valor)}" aria-label="preço unitário de ${escHtml(l.nome)}" ${ocup ? 'disabled' : ''}>
+                <div class="mk-info"><span class="mk-org ${escHtml(l.origem)}">${escHtml(org)}</span> · ${escHtml(onde)}${l.liquido != null ? ' · líq. ' + mkFmt(l.liquido) : ''} · ${npcTxt}${l.nota ? ` · <span class="tb-av">${escHtml(l.nota)}</span>` : ''}${blq ? '<br>' + blq : ''}</div>
+              </div>`;
+        });
+        if (v.fora.length) {
+            const porMotivo = {};
+            v.fora.forEach(f => { (porMotivo[f.motivo] = porMotivo[f.motivo] || []).push(f); });
+            h += aj('mk-fora', Object.entries(porMotivo).map(([m, fs]) => `<div style="margin:3px 0"><b>${escHtml(m)}</b>: ${fs.map(f => escHtml(f.nome) + (f.qtd > 1 ? ' ×' + mkFmt(f.qtd) : '')).join(', ')}</div>`).join(''), `fora da lista (${v.fora.length})`);
+        }
+        const p = v.plano, conf = mkConfAtiva('anunciar', p.assinatura);
+        const podeMarcar = v.linhas.filter(l => !l.bloqueio).length;
+        h += `<div class="mk-rodape">
+            <div class="tb-linha"><button type="button" class="tb-bt mini" id="tb-mk-todos" ${ocup || !podeMarcar ? 'disabled' : ''}>marcar todos (${podeMarcar})</button><button type="button" class="tb-bt mini" id="tb-mk-nenhum" ${ocup || !p.n ? 'disabled' : ''}>desmarcar</button>
+              <span class="tb-mut" style="margin-left:auto;font-size:10.5px">${p.n ? 'líquido ~' + mkFmt(p.liquido) : ''}</span></div>
+            <button type="button" class="tb-bt pri${conf ? ' tb-conf' : ''}" id="tb-mk-anunciar" ${ocup || !p.n ? 'disabled' : ''}>${conf ? `CONFIRMAR: anunciar ${p.n} · taxa ${mkFmt(p.taxa)} (não volta)` : `ANUNCIAR (${p.n}) · taxa total ${mkFmt(p.taxa)}`}</button>
+          </div>`;
+        return h;
+    }
+    function mkTelaMeus() {
+        const ocup = !!MK.ocupado;
+        const rv = MK.minhas ? mkRevisaoAtual().linhas : [];
+        MK.ordPintadas = rv;
+        let h = `<div class="tb-linha"><button type="button" class="tb-bt" id="tb-mk-revisar" ${ocup ? 'disabled' : ''}>REVISAR MEUS ANÚNCIOS</button>
+            <span class="tb-mut" style="font-size:10.5px">${MK.minhas ? rv.length + ' aberta(s)' + (MK.revisao ? ' · revisado ' + mkHora(MK.revisao.t) : '') : 'ainda não lido'}</span></div>`;
+        if (!MK.minhas) return h + `<div class="tb-cx tb-mut">REVISAR lê suas ordens abertas e, para cada uma, o menor preço de outro vendedor (mesmo item; forjado, mesma raridade e refino) e quanto custaria refazer. Nada é refeito sozinho: cancelar pede 2 toques, e anunciar de novo é pela lista.</div>`;
+        const SIT = { menor: '<span class="tb-ok">você é o menor</span>', sozinho: '<span class="tb-ok">sem concorrente</span>', empate: '<span class="tb-av">empatado com outro</span>',
+                      barato: '<span class="tb-ruim">alguém está mais barato</span>', pendente: '<span class="tb-mut">não revisado — REVISAR</span>', erro: '<span class="tb-ruim">não consegui ler o livro</span>',
+                      compra: '<span class="tb-mut">ordem de compra</span>', vazia: '<span class="tb-mut">—</span>' };
+        rv.forEach((l, i) => {
+            const conf = mkConfAtiva('cancelar:' + l.id);
+            const refazer = l.novo != null ? `<br>refazer a ${mkFmt(l.novo)}: taxa nova ${mkFmt(l.taxaNova)}${l.taxaPaga != null ? ` + a taxa já paga (${mkFmt(l.taxaPaga)}) não volta` : ''}` : '';
+            h += `<div class="mk-ord"><div><b>${escHtml(l.nome)}</b>${mkCorte(l.forja)} <span class="tb-mut">×${mkFmt(l.qtd)} @ ${mkFmt(l.preco)}</span></div>
+                <button type="button" class="tb-bt mini${conf ? ' tb-conf' : ''}" id="tb-mk-x-${i}" ${ocup ? 'disabled' : ''} aria-label="cancelar a ordem de ${escHtml(l.nome)}">${conf ? 'confirmar?' : 'cancelar'}</button>
+                <div class="mk-info">${SIT[l.situacao] || escHtml(l.situacao)}${l.menor != null ? ` · menor de outro: ${mkFmt(l.menor)}` + (l.preco > l.menor ? ` (o seu está ${mkFmt(l.preco - l.menor)} acima)` : '') : ''} · ${escHtml(mkExpira(l.expira))}${refazer}</div></div>`;
+        });
+        if (!rv.length) h += `<div class="tb-mut" style="margin:6px 0">nenhuma ordem aberta.</div>`;
+        return h;
+    }
+    function mkTelaCaixa() {
+        const ocup = !!MK.ocupado, cx = MK.inbox || [];
+        const ouro = cx.filter(x => x.currency === 'gold').reduce((s, x) => s + (Number(x.amount) || 0), 0);
+        let h = `<div class="tb-linha"><button type="button" class="tb-bt" id="tb-mk-caixa" ${ocup ? 'disabled' : ''}>LER CAIXA</button>
+            <button type="button" class="tb-bt pri" id="tb-mk-resgatar" ${ocup || !cx.length ? 'disabled' : ''}>RESGATAR TUDO (${cx.length})</button></div>
+            <div class="tb-mut" style="font-size:10.5px">${MK.inbox ? `${cx.length} entrega(s)${ouro ? ' · ' + mkFmt(ouro) + ' ouro' : ''} · lida ${mkHora(MK.inbox_t)}` : 'ainda não lida'} — o ouro das vendas só entra na carteira depois de resgatar; item resgatado vai para a mochila (sem espaço: depósito → Resgatar).</div>`;
+        cx.slice(0, 50).forEach(x => { h += `<div class="tb-lin"><span>${escHtml(mkDescEntrega(x))}</span><span class="tb-mut">${escHtml(MK_MOTIVO_CAIXA[x.reason] || x.reason || '')}</span></div>`; });
+        if (cx.length >= 50) h += `<div class="tb-mut">a caixa mostra 50 por vez — resgate e leia de novo.</div>`;
+        return h;
+    }
+    /* v2.11 — ABA MERCADO: status + ATUALIZAR no topo; sub-abas Anunciar /
+     * Meus anúncios / Caixa. Estado "ocupado" em MK (o repinte não reabilita
+     * botão nenhum no meio da fila). */
+    function telaMercado() {
+        mkGarantirCss();
+        MK.pintadas = []; MK.ordPintadas = [];
+        const sub = ler('mercado_sub', 'anunciar');
+        const prem = mkPremiumAgora();
+        const premTxt = prem === true ? `<span class="tb-ok">Premium ✓ até ${escHtml(new Date(Date.parse(MK.premiumAte)).toLocaleDateString('pt-BR'))}</span>`
+            : prem === false ? '<span class="tb-ruim">sem Premium</span>' : '<span title="o welcome do socket não passou pelo helper (F5 com ele instalado)">Premium ?</span>';
+        const acoes = mkAcoesNoMinuto(MK.envios, Date.now());
+        const v = MK.t ? mkVista() : null;
+        const nMinhas = MK.minhas ? MK.minhas.filter(o => o && o.status === 'OPEN').length : null, nCaixa = MK.inbox ? MK.inbox.length : null;
+        let h = `<div id="tb-mk"><div class="tb-linha">
+            <button type="button" class="tb-bt ${MK.ocupado ? '' : 'pri'}" id="tb-mk-atualizar">${MK.ocupado ? 'PARAR' : 'ATUALIZAR'}</button>
+            <span class="mk-st">${premTxt}<span>taxa ${escHtml(String(Math.round((MK.taxa != null ? MK.taxa : MK_TAXA_WIKI) * 1000) / 10).replace('.', ','))}%${MK.taxaWiki || MK.taxa == null ? ' (wiki)' : ''}</span><span class="${acoes >= MK_ACOES_FOLGA ? 'tb-av' : ''}">ações ${acoes}/20 no último min</span>${MK.t ? `<span>lido ${mkHora(MK.t)}</span>` : ''}</span></div>`;
+        if (MK.ocupado) h += `<div class="mk-prog" role="status">${escHtml(MK.progresso || MK.ocupado + '…')}</div>`;
+        if (MK.erro) h += `<div class="mk-ruim">${escHtml(MK.erro)}</div>`;
+        const abas = [['anunciar', 'Anunciar', v ? v.plano.n : null], ['meus', 'Meus anúncios', nMinhas], ['caixa', 'Caixa', nCaixa]];
+        h += `<div class="tb-sub" role="tablist">${abas.map(([k, n, c]) => `<button type="button" id="tb-mk-sub-${k}" class="${k === sub ? 'on' : ''}" role="tab" aria-selected="${k === sub}">${n}${c ? ` <b>${c}</b>` : ''}</button>`).join('')}</div>`;
+        h += sub === 'meus' ? mkTelaMeus() : sub === 'caixa' ? mkTelaCaixa() : mkTelaAnunciar(v || { linhas: [], fora: [], plano: { n: 0, itens: [], taxa: 0, liquido: 0 } });
+        h += aj('mk-ajuda', 'Preço sugerido: menor anúncio de OUTRO vendedor −1 (as suas ordens não contam; se o menor já é seu, fica o seu); sem concorrente, a média dos últimos 30 dias; sem histórico, digite. Forjado: só cópias da mesma raridade e do mesmo refino. Nunca abaixo do NPC: se o que sobra depois da taxa não passa do que o NPC paga, a linha vira "vender no NPC". Fora da lista: selado, imbuído, protegido, usado, o melhor e a reserva de cada personagem (aba Equip) e a sua lista "nunca vender" do Auto Hunt. Taxa de 5 % paga ao anunciar e que NUNCA volta; ordem vale 3 dias; o mercado não cruza ordens; o ouro da venda cai na Caixa. Ritmo: 1 pedido a cada 3,5 s (limite do jogo: 20 ações/min). Anunciar: retira do depósito → confere a mochila → cria a ordem → próximo.');
+        return h + '</div>';
+    }
+    function ligarMercado() {
+        const at = $('#tb-mk-atualizar');
+        if (at) at.onclick = () => { if (MK.ocupado) { MK.parar = true; avisar('mercado', 'mercado: paro depois do pedido atual', 'info'); } else mkAtualizar(); };
+        ['anunciar', 'meus', 'caixa'].forEach(k => { const b = $('#tb-mk-sub-' + k); if (b) b.onclick = () => { guardar('mercado_sub', k); MK.conf = null; renderizar(); }; });
+        const eqb = $('#tb-mk-equip'); if (eqb) eqb.onclick = () => { if (!EQUIP.lendo && !MK.ocupado) equipAtualizar().then(() => renderizar()); };
+        (MK.pintadas || []).forEach((l, i) => {
+            const c = $('#tb-mk-c-' + i);
+            if (c) c.onchange = () => { if (MK.ocupado || l.bloqueio) return; if (c.checked) MK.marcados.add(l.chave); else MK.marcados.delete(l.chave); MK.conf = null; renderizar(); };
+            const p = $('#tb-mk-p-' + i);
+            if (!p) return;
+            /* digitar não repinta (perderia o foco); o total do rodapé muda no change */
+            p.oninput = () => { const s = String(p.value == null ? '' : p.value).trim(); if (s === '') delete MK.digitados[l.chave]; else MK.digitados[l.chave] = s; MK.foco = p.id; };
+            p.onchange = () => { MK.conf = null; renderizar(); };
+            p.onfocus = () => { MK.foco = p.id; };
+            p.onblur = () => { setTimeout(() => { if (MK.foco === p.id && p.isConnected && document.activeElement !== p) MK.foco = null; }, 0); };   // repinte (campo fora da página) não conta
+        });
+        const todos = $('#tb-mk-todos'); if (todos) todos.onclick = () => { if (MK.ocupado) return; (MK.pintadas || []).forEach(l => { if (!l.bloqueio) MK.marcados.add(l.chave); }); MK.conf = null; renderizar(); };
+        const nenhum = $('#tb-mk-nenhum'); if (nenhum) nenhum.onclick = () => { MK.marcados.clear(); MK.conf = null; renderizar(); };
+        const an = $('#tb-mk-anunciar'); if (an) an.onclick = () => { if (MK.ocupado) return; const p = mkVista().plano; if (!p.n) return; mkToque('anunciar', p.assinatura, mkAnunciar); };
+        const rev = $('#tb-mk-revisar'); if (rev) rev.onclick = () => mkRevisar();
+        (MK.ordPintadas || []).forEach((l, i) => { const b = $('#tb-mk-x-' + i); if (b) b.onclick = () => { if (!MK.ocupado) mkToque('cancelar:' + l.id, l.id + '|' + l.qtd, () => mkCancelar(l)); }; });
+        const cx = $('#tb-mk-caixa'); if (cx) cx.onclick = () => mkLerCaixa();
+        const rg = $('#tb-mk-resgatar'); if (rg) rg.onclick = () => mkResgatarTudo();
+        /* o repinte (resposta do socket) volta o foco para o campo de preço em edição */
+        if (MK.foco) { const f = $('#' + MK.foco); if (f && document.activeElement !== f) { try { f.focus(); } catch { /* campo sem foco */ } } }
+    }
+    /* @@MERCADO-FIM */
+
+    /* @@DIAGNOSTICO-INICIO */
+    /* =========================================================================
+     *  ⭐ v2.11 — DIAGNÓSTICO (só leitura; nada é enviado ao jogo)
+     *
+     *  Várias peças da 2.11 leem dados que ninguém viu ao vivo com a conta
+     *  logada (chaves, bestiário, prey, meta, skills, inventário, painel de
+     *  venda). O diagnóstico confere, num clique, se cada um está chegando no
+     *  formato que o código espera e monta um relatório para colar na conversa.
+     *  Guarda só a FORMA das mensagens (nomes de campo e tipos) — nunca
+     *  valores —, então não há token, ticket nem id de conta no relatório.
+     * ====================================================================== */
+    const DIAG = { formas: {}, vistos: {} };
+    function diagForma(x, prof) {
+        if (x === null) return 'null';
+        if (Array.isArray(x)) return x.length ? `[${x.length}× ${prof < 3 ? diagForma(x[0], prof + 1) : '…'}]` : '[]';
+        if (typeof x !== 'object') return typeof x;
+        if (prof >= 3) return '{…}';
+        const k = Object.keys(x).slice(0, 40);
+        return '{' + k.map(c => c + ':' + diagForma(x[c], prof + 1)).join(', ') + (Object.keys(x).length > 40 ? ', …' : '') + '}';
+    }
+    function diagObservar(o) {
+        if (!o || !o.type) return;
+        DIAG.vistos[o.type] = (DIAG.vistos[o.type] || 0) + 1;
+        const d = o.data && typeof o.data === 'object' ? o.data : null; if (!d) return;
+        const guardarForma = (k, v) => { if (v !== undefined) DIAG.formas[k] = { forma: diagForma(v, 0), t: Date.now() }; };
+        if (o.type === 'frame') {
+            const st = d.state || {};
+            guardarForma('frame.state (campos)', Object.fromEntries(Object.keys(st).map(k => [k, typeof st[k]])));
+            guardarForma('frame.state.keyBag', st.keyBag);
+            guardarForma('frame.state.inventory[0]', Array.isArray(st.inventory) ? st.inventory[0] : st.inventory);
+            const p0 = Array.isArray(st.party) ? st.party.find(Boolean) : null;
+            if (p0) guardarForma('frame.state.party[].skills', p0.skills);
+            guardarForma('frame.analyzer', d.analyzer);
+            guardarForma('frame.bestiaryKills', d.bestiaryKills);
+            if (Array.isArray(d.events)) for (const e of d.events) if (e && e.kind && !DIAG.formas['evento ' + e.kind]) guardarForma('evento ' + e.kind, e);
+        } else if (o.type === 'welcome' || o.type === 'resume') {
+            guardarForma(o.type + ' (campos)', Object.fromEntries(Object.keys(d).map(k => [k, typeof d[k]])));
+            guardarForma(o.type + '.meta', d.meta);
+        } else if (/^meta|prey|market|depot_state|sell_result|ended$/.test(o.type)) {
+            guardarForma(o.type, d);
+        }
+    }
+    const DIAG_ANCORAS = ['rail-level-n', 'hud-gold', 'actionbar-explore', 'actionbar-selling', 'actionbar-depot', 'rail-backpack-toggle',
+                          'lure-toggle', 'stop', 'hud-analyzer', 'scene-slot-attack-0', 'scene-slot-mana-0', 'party-member-KNIGHT'];
+    function montarDiagnostico() {
+        const L = [], ok = (s) => L.push('OK       ' + s), falta = (s) => L.push('FALTA    ' + s), ver = (s) => L.push('CONFERIR ' + s);
+        const idade = (t) => t ? Math.round((Date.now() - t) / 1000) + ' s' : '—';
+        L.push(`Tibidle Helper ${VERSAO} · diagnóstico ${new Date().toLocaleString('pt-BR')} · tela ${window.innerWidth}×${window.innerHeight}`);
+        L.push('Só leitura: forma dos dados (campos e tipos), sem valores, token ou id.');
+        L.push('');
+        L.push('— Conexão');
+        (CONTA ? ok : ver)('conta identificada: ' + (CONTA ? 'sim' : 'não (sem /auth/me)'));
+        (socketAberto() ? ok : falta)('socket do jogo aberto');
+        (ESTADO_WS.perfisDoServidor ? ok : falta)('perfis vieram do servidor (welcome/resume) — sem isto o APLICAR vai pelas janelas');
+        for (const v of VOCS) (perfilReal(v) ? ok : falta)(`perfil real de ${v}`);
+        (ESTADO_WS.worldToken ? ok : falta)('worldToken presente (dano real via /spell-numbers)');
+        const fr = ESTADO_WS.frame;
+        (fr && frameFresco() ? ok : ver)('frame do jogo: último há ' + idade(fr && fr.t) + (fr && frameFresco() ? '' : ' (entre numa caçada para ver)'));
+        L.push('');
+        L.push('— Catálogos');
+        (CAT.hunts && CAT.hunts.length ? ok : falta)(`hunts: ${(CAT.hunts || []).length}`);
+        (CAT.magias && CAT.magias.length ? ok : falta)(`magias: ${(CAT.magias || []).length}`);
+        (CAT.bosses && CAT.bosses.length ? ok : ver)(`bosses: ${(CAT.bosses || []).length}`);
+        (CAT.pocoes ? ok : ver)('poções: ' + (CAT.pocoes ? 'sim' : 'não'));
+        for (const v of VOCS) { const n = danosMedidosNesteNivel(v); (n ? ok : ver)(`dano medido no nível atual — ${v}: ${n} magias`); }
+        L.push('');
+        L.push('— Dados que a 2.11 lê e ninguém viu ao vivo');
+        const sk = ESTADO_WS.sk || {};
+        for (const v of VOCS) { const x = sk[v] || {}; const ch = Object.keys(x); (ch.length ? ok : ver)(`skills lidas de ${v}: ${ch.length ? ch.map(k => k + '=' + x[k]).join(' ') : 'nenhuma'}`); }
+        if (!sk.KNIGHT || sk.KNIGHT.melee == null) ver('corpo a corpo do Knight não lido — confira os nomes em "frame.state.party[].skills" abaixo');
+        if (!sk.SORCERER || sk.SORCERER.ml == null) ver('nível mágico não lido — confira os nomes em "frame.state.party[].skills" abaixo');
+        (PROG.chaves ? ok : ver)('mochila de chaves: ' + (PROG.chaves ? 'lida' : 'sem dado (entre numa caçada)'));
+        (Object.keys(PROG.best || {}).length ? ok : ver)(`bestiário: ${Object.keys(PROG.best || {}).length} hunts com contador`);
+        (PROG.meta ? ok : ver)('meta (prey, wildcards, auto leave): ' + (PROG.meta ? Object.keys(PROG.meta).join(', ') : 'não chegou — abra a Prey no jogo'));
+        (fr && fr.an ? ok : ver)('analisador do jogo no frame: ' + (fr && fr.an ? 'sim' : 'não'));
+        L.push('');
+        L.push('— Tela do jogo (âncoras que o helper usa; muda conforme cidade/caçada)');
+        const achou = DIAG_ANCORAS.filter(a => tid(a)), naoAchou = DIAG_ANCORAS.filter(a => !tid(a));
+        (achou.length ? ok : ver)('visíveis agora: ' + (achou.join(', ') || 'nenhuma — abra o jogo logado'));
+        if (naoAchou.length) ver('não visíveis agora: ' + naoAchou.join(', '));
+        const sp = tid('sell-panel');
+        if (sp) {
+            const linha = sp.querySelector('[data-testid^="sell-row-"]'), caixa = sp.querySelector('[data-testid^="sell-check-"]');
+            ok('painel de venda ABERTO — linha: ' + (linha ? linha.getAttribute('data-testid') : 'nenhuma') + ' · caixa: ' + (caixa ? caixa.getAttribute('data-testid') : 'nenhuma'));
+            if (caixa) L.push('         caixa (HTML): ' + caixa.outerHTML.replace(/\s+/g, ' ').slice(0, 300));
+        } else ver('painel de venda fechado — para conferir o "nunca vender", abra VENDER na cidade e rode de novo (não confirme a venda)');
+        L.push('');
+        L.push('— Erros desde que a página abriu');
+        const lug = Object.entries(ERROS.porLugar || {});
+        if (!lug.length) ok('nenhuma falha registrada');
+        for (const [onde, x] of lug) ver(`${onde}: ${x.n}× (última: ${String(x.msg || '').slice(0, 120)})`);
+        try { let tot = 0, nosso = 0; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i), n = (localStorage.getItem(k) || '').length + k.length; tot += n; if (k.startsWith('tb_helper_')) nosso += n; } ok(`localStorage: ${Math.round(tot / 1024)} KB no total, ${Math.round(nosso / 1024)} KB do helper`); } catch (e) { ver('localStorage ilegível'); }
+        L.push('');
+        L.push('— Mensagens vistas (tipo: quantas)');
+        L.push('         ' + (Object.entries(DIAG.vistos).map(([k, n]) => k + ':' + n).join(' · ') || 'nenhuma'));
+        L.push('');
+        L.push('— Forma dos dados (campos e tipos)');
+        for (const [k, x] of Object.entries(DIAG.formas)) L.push(`  ${k} (há ${idade(x.t)}): ${x.forma.slice(0, 900)}`);
+        return L.join('\n');
+    }
+    function rodarDiagnostico() {
+        let txt;
+        try { txt = montarDiagnostico(); } catch (e) { falhou('diagnóstico', e); return; }
+        DIAG.ultimo = txt;
+        const n = (re) => (txt.match(re) || []).length;
+        const resumo = `diagnóstico: ${n(/^OK /gm)} ok · ${n(/^FALTA /gm)} faltando · ${n(/^CONFERIR /gm)} a conferir — relatório copiado/aberto numa aba nova`;
+        try { navigator.clipboard.writeText(txt).catch(() => { }); } catch (e) { }
+        try { const u = URL.createObjectURL(new Blob([txt], { type: 'text/plain;charset=utf-8' })); window.open(u, '_blank'); setTimeout(() => URL.revokeObjectURL(u), 60000); } catch (e) { }
+        if (typeof avisar === 'function') avisar('estado', resumo, n(/^FALTA /gm) ? 'erro' : 'ok'); else log(resumo, 'ok');
+    }
+    /* @@DIAGNOSTICO-FIM */
 
     /* ⚠ O CORPO INTEIRO VAI NUM try. Motivo real (30/08): eu escrevi
      * `$('[data-usar-palpite]').forEach` — um cifrão em vez de dois. `$` é
@@ -3993,28 +7934,73 @@
      * iniciar(), abortando a linha seguinte — `await carregarCatalogos()`.
      * Resultado: catálogos "não carregados" e lista de hunts VAZIA, um sintoma
      * a três passos da causa. Uma tela quebrada nunca mais derruba o boot. */
+    /* v2.11 — RENDER AGENDADO. renderizar() era síncrono e era chamado de
+     * dentro do evento do socket (welcome, hunt_started, depot_state) e em
+     * rajada (um log + um render por passo): cada chamada refazia a tela
+     * inteira — montarPlano 9× na aba Magia — no meio do frame do jogo.
+     * Agora renderizar() só MARCA; o desenho sai uma vez, fora do evento, no
+     * próximo giro (setTimeout 0 — requestAnimationFrame pararia com a aba em
+     * segundo plano). Todas as chamadas do mesmo giro viram um desenho só. */
+    let _renderAgendado = false;
     function renderizar() {
-        try { _renderizar(); }
-        catch (e) { console.error('[TB] erro ao desenhar a tela', e); }
+        if (_renderAgendado) return;
+        _renderAgendado = true;
+        try {
+            setTimeout(() => {
+                _renderAgendado = false;
+                try { _renderizar(); } catch (e) { falhou('desenhar a tela', e); }
+            }, 0);
+        } catch (e) { _renderAgendado = false; }
     }
 
     let _abaPintada = null, _scanFiltro = '';
     /* pontos de estado nos ícones: verde = ligado/caçando, âmbar pulsando =
-     * trabalhando, vermelho = erro no Log nos últimos 60 s */
+     * trabalhando. v2.10: o Log mostra um contador de erros não lidos (ver
+     * errosNaoLidos) no lugar do ponto vermelho de "erro nos últimos 60 s";
+     * aria-pressed acompanha a aba aberta; a faixa de retorno e a posição
+     * (o jogo pode ter montado/mudado o layout) são refeitas aqui também. */
     function pintarTrilho() {
         const t = $('#tb-trilho'); if (!t) return;
         const u = ui();
-        let erroRecente = false; try { const l = LOG[LOG.length - 1]; erroRecente = !!(l && l.tipo === 'erro' && Date.now() - l.t < 60000); } catch (e) { }
         const estado = {
             estado: _cicloEmCurso ? 'av pulsa' : (emHunt() ? 'ok' : ''),
             magia: _aplicando || _aprendendo ? 'av pulsa' : '',
             autohunt: autoHunt().on ? (_cicloEmCurso ? 'av pulsa' : 'ok') : '',
             scan: SCAN.ativo ? 'ok pulsa' : '',
             equip: EQUIP.equipando || EQUIP.lendo ? 'av pulsa' : '',
-            log: erroRecente ? 'ruim' : ''
+            mercado: MK.ocupado ? 'av pulsa' : ''
         };
-        $$('.tb-ico[data-aba]', t).forEach(i => { i.classList.toggle('on', !!u.aberta && i.dataset.aba === ABA); const d = $('.tb-dot', i); if (d) d.className = 'tb-dot ' + (estado[i.dataset.aba] || ''); });
+        $$('.tb-ico[data-aba]', t).forEach(i => { const on = !!u.aberta && !u.oculto && i.dataset.aba === ABA; i.classList.toggle('on', on); i.setAttribute('aria-pressed', on ? 'true' : 'false'); const d = $('.tb-dot', i); if (d) d.className = 'tb-dot ' + (estado[i.dataset.aba] || ''); });
         const at = $('#tb-atualizar', t); if (at) { at.style.display = NOVA_VERSAO ? 'flex' : 'none'; at.title = NOVA_VERSAO ? 'versão ' + NOVA_VERSAO + ' disponível — clique para atualizar no Tampermonkey' : ''; }
+        if (u.aberta && !u.oculto && ABA === 'log') marcarLogLido(); else _logAberto = false;
+        pintarContadorLog();
+        pintarFaixa();
+        posicionarCaixa();
+    }
+    /* v2.11 (D2) — REPINTE SEM EFEITO COLATERAL. O corpo era refeito inteiro a
+     * cada chamada (o repinte de 4 s do Status/Analisador/Auto Hunt, cada log,
+     * cada frame que pede renderizar): o select da hunt perdia o foco e fechava
+     * na mão do dono, a seleção de texto sumia, a caixa do "copiar JSON" ia
+     * embora. Agora:
+     *   1. HTML igual ao já pintado → não toca no DOM (nem religa handlers);
+     *   2. HTML diferente com um select ou caixa de texto da gaveta em uso (foco
+     *      nele e nenhum clique/mudança do dono no último 1,5 s) → espera o blur;
+     *      a mudança que o PRÓPRIO dono fez (change no select) repinta na hora
+     *      e a casca devolve o foco ao mesmo controle;
+     *   3. senão, troca o innerHTML, devolve "?" abertos e rolagem e liga os
+     *      handlers da aba (uma linha por tela). */
+    let _htmlPintado = null, _repinteAdiado = null;
+    const REPINTE_DO_DONO_MS = 1500;
+    function campoEmUso(c) {
+        const f = document.activeElement;
+        if (!f || f === c || typeof c.contains !== 'function' || !c.contains(f) || !/^(SELECT|TEXTAREA)$/.test(f.tagName || '')) return null;
+        if (_acaoNaAba && Date.now() - _acaoNaAba.t < REPINTE_DO_DONO_MS) return null;
+        return f;
+    }
+    function adiarRepinte(f) {
+        if (_repinteAdiado === f) return;
+        _repinteAdiado = f;
+        f.addEventListener('blur', () => { if (_repinteAdiado === f) _repinteAdiado = null; renderizar(); }, { once: true });
     }
     function _renderizar() {
         pintarTrilho();
@@ -4022,168 +8008,34 @@
         const u = ui();
         g.classList.toggle('on', !!u.aberta && !u.oculto);
         posicionarCaixa();
-        if (!u.aberta || u.oculto) { _abaPintada = null; return; }
+        if (!u.aberta || u.oculto) { _abaPintada = null; _htmlPintado = null; return; }
         const tit = $('#tb-titulo'); if (tit) tit.textContent = (ICONES.find(x => x[0] === ABA) || [])[2] || ABA;
+        const mesmaAba = _abaPintada === ABA;
+        const html = ABA === 'estado' ? telaEstado() : ABA === 'autohunt' ? telaAutoHunt() : ABA === 'scan' ? telaScan()
+            : ABA === 'magia' ? telaMagia() : ABA === 'analise' ? telaAnalise() : ABA === 'equip' ? telaEquip()
+            : ABA === 'progresso' ? telaProgresso() : ABA === 'mercado' ? telaMercado() : `<div id="tb-log"></div>`;
+        if (mesmaAba && html === _htmlPintado) { if (ABA === 'log') pintarLog(); return; }
+        if (mesmaAba) { const f = campoEmUso(c); if (f) { adiarRepinte(f); return; } }
         /* v2.3.0 — trocar o innerHTML zera a rolagem: marcar um mapa no Scan
          * jogava a lista de volta ao topo (dono, 27/09). Guarda a posição do
          * corpo e da lista e devolve quando a aba é a mesma. v2.8.0: idem
          * para os "?" abertos (details[data-k]). */
-        const mesmaAba = _abaPintada === ABA;
         const rol = { corpo: mesmaAba ? c.scrollTop : 0, lista: mesmaAba && $('#tb-scan-lista') ? $('#tb-scan-lista').scrollTop : 0 };
         const abertos = new Set(mesmaAba ? $$('details[data-k]', c).filter(d => d.open).map(d => d.dataset.k) : []);
-        if (ABA === 'estado') c.innerHTML = telaEstado();
-        else if (ABA === 'autohunt') c.innerHTML = telaAutoHunt();
-        else if (ABA === 'scan') c.innerHTML = telaScan();
-        else if (ABA === 'magia') c.innerHTML = telaMagia();
-        else if (ABA === 'analise') c.innerHTML = telaAnalise();
-        else if (ABA === 'equip') c.innerHTML = telaEquip();
-        else c.innerHTML = `<div id="tb-log"></div>`;
-
+        c.innerHTML = html;
+        _htmlPintado = html; _repinteAdiado = null;
         if (ABA === 'log') pintarLog();
         $$('details[data-k]', c).forEach(d => { if (abertos.has(d.dataset.k)) d.open = true; });
         if (mesmaAba) { c.scrollTop = rol.corpo; const l = $('#tb-scan-lista'); if (l) l.scrollTop = rol.lista; }
         _abaPintada = ABA;
+        if (ABA === 'estado') ligarEstado();       // v2.11 (D2) — handlers ao lado de cada tela
+        if (ABA === 'magia') ligarMagia();
+        if (ABA === 'analise') ligarAnalise();
         if (ABA === 'equip') ligarEquip();
-        const filtro = $('#tb-scan-filtro');
-        if (filtro) {
-            const aplicarFiltro = () => { const v = (_scanFiltro || '').toLowerCase(); $$('#tb-scan-lista label').forEach(l => { l.style.display = !v || (l.textContent || '').toLowerCase().includes(v) ? '' : 'none'; }); };
-            filtro.value = _scanFiltro; aplicarFiltro();
-            filtro.oninput = () => { _scanFiltro = filtro.value; aplicarFiltro(); };
-        }
-
-        const exp = $('#tb-exportar');
-        if (exp) exp.onclick = () => {
-            const dados = JSON.stringify({
-                sessoes: sessoes(), resumo: resumoPorHunt(),
-                ws: { frames: WS.frames, tipos: WS.tipos, binarios: WS.bin,
-                      amostrasRecebidas: WS.amostras, ENVIADOS: WS.enviados }
-            }, null, 2);
-            const caixa = document.createElement('textarea');
-            caixa.value = dados; caixa.style.cssText = 'width:100%;height:120px;margin-top:6px;background:#0d1016;color:#dde3ee;border:1px solid #2b3242;font:11px ui-monospace,monospace';
-            exp.insertAdjacentElement('afterend', caixa); caixa.select();
-            (navigator.clipboard ? navigator.clipboard.writeText(dados) : Promise.reject())
-                .then(() => log('dados copiados pra área de transferência (e na caixa abaixo)', 'ok'))
-                .catch(() => log('clipboard bloqueado — os dados estão na caixa abaixo do botão', 'erro'));
-        };
-        const lim = $('#tb-limpar-sessoes');
-        if (lim) lim.onclick = () => {
-            guardar('sessoes', []); log('histórico de sessões apagado', 'ok'); renderizar();
-        };
-        const rec = $('#tb-recat'); if (rec) rec.onclick = async () => { await carregarCatalogos(true); renderizar(); };
-        // v2.2.0 — Scan
-        const scOn = $('#tb-scan-on');
-        if (scOn) scOn.onclick = () => { if (SCAN.ativo) scanParar('pelo botão'); else scanIniciar(); };
-        $$('[data-scan-mapa]').forEach(cb => cb.onchange = () => {
-            const id = parseInt(cb.dataset.scanMapa), c = scanCfg();
-            const m = c.mapas.filter(x => x !== id); if (cb.checked) m.push(id);
-            guardarScanCfg({ mapas: m }); renderizar();
-        });
-        const scMin = $('#tb-scan-min'); if (scMin) scMin.onchange = () => guardarScanCfg({ minutos: Math.max(1, Math.min(60, parseInt(scMin.value) || 5)) });
-        const scLure = $('#tb-scan-lure'); if (scLure) scLure.onchange = () => guardarScanCfg({ lureMax: scLure.checked });
-        $$('input[name="tb-scan-fim"]').forEach(r => r.onchange = () => guardarScanCfg({ fim: r.value }));
-        $$('input[name="tb-scan-modelo"]').forEach(r => r.onchange = () => guardarScanCfg({ modelo: r.value }));
-        const scCmp = $('#tb-scan-comparar'); if (scCmp) scCmp.onchange = () => { guardarScanCfg({ comparar: scCmp.checked }); renderizar(); };
-        $$('[data-scan-var]').forEach(cb => cb.onchange = () => { const c = scanCfg(); const v = (c.variantes || []).filter(x => x !== cb.dataset.scanVar); if (cb.checked) v.push(cb.dataset.scanVar); guardarScanCfg({ variantes: v }); });
-        const scLm = $('#tb-scan-limpar-mapas'); if (scLm) scLm.onclick = () => { guardarScanCfg({ mapas: [] }); renderizar(); };
-        const scL = $('#tb-scan-limpar'); if (scL) scL.onclick = () => { guardar('scan_resultados', {}); renderizar(); };
-        $$('[data-scan-ir]').forEach(b => b.onclick = () => scanIrPara(parseInt(b.dataset.scanIr)));
-        // v1.9.0 — Status e Auto Hunt
-        const vr = $('#tb-venda-rapida'); if (vr) vr.onclick = () => cicloDeVenda('venda');
-        const bat = $('#tb-bt-atualizar'); if (bat) bat.onclick = abrirAtualizacao;
-        const fh = $('#tb-finalizar'); if (fh) fh.onclick = () => cicloDeVenda('finalizar');
-        const sw = $('#tb-ah-on');
-        if (sw) sw.onclick = () => {
-            const a = autoHunt();
-            if (!a.on && a.huntId == null) { log('memorize a hunt antes de ligar a automação', 'erro'); return; }
-            guardarAutoHunt({ on: !a.on });
-            log('Auto Hunt ' + (!a.on ? 'LIGADO' : 'desligado'), !a.on ? 'ok' : 'info');
-            renderizar();
-        };
-        const mem = $('#tb-ah-memorizar');
-        if (mem) mem.onclick = async () => {
-            mem.disabled = true;
-            try {
-                const hs = ESTADO_WS.huntId != null && !ESTADO_WS.boss ? (CAT.hunts || []).find(x => x.id === ESTADO_WS.huntId) : null;
-                const r = hs ? { hunt: hs } : await confirmarHuntPeloExplore();
-                if (r.erro) log('não consegui memorizar: ' + r.erro, 'erro');
-                else { guardarAutoHunt({ huntId: r.hunt.id }); log('hunt memorizada: ' + r.hunt.title, 'ok'); }
-            } catch (e) { log('memorizar estourou: ' + e.message, 'erro'); }
-            renderizar();
-        };
-        const esq = $('#tb-ah-esquecer');
-        if (esq) esq.onclick = () => { guardarAutoHunt({ huntId: null, on: false }); log('hunt esquecida; automação desligada', 'info'); renderizar(); };
-        $$('input[name="tb-ah-modo"]').forEach(r => r.onchange = () => { guardarAutoHunt({ modo: r.value }); renderizar(); });
-        const pct = $('#tb-ah-pct'); if (pct) pct.onchange = () => guardarAutoHunt({ pct: Math.max(1, Math.min(99, parseInt(pct.value) || 20)) });
-        const oz = $('#tb-ah-oz'); if (oz) oz.onchange = () => guardarAutoHunt({ oz: Math.max(10, parseInt(oz.value) || 200) });
-        const vol = $('#tb-ah-voltar'); if (vol) vol.onchange = () => guardarAutoHunt({ voltar: vol.checked });
-        const apr = $('#tb-aprender');
-        if (apr) apr.onclick = async () => {
-            if (_aprendendo) return;
-            _aprendendo = true; apr.disabled = true;
-            try {
-                const r = await aprenderDanosPorRest(false);
-                if (r.erro) { log('sem /spell-numbers (' + r.erro + ') — medindo pelos diálogos', 'info'); await aprenderDanosTodos(); }
-            } finally { _aprendendo = false; renderizar(); }
-        };
-        const cfh = $('#tb-confhunt');
-        if (cfh) cfh.onclick = async () => {
-            cfh.disabled = true;
-            try {
-                const r = await confirmarHuntPeloExplore();
-                if (r.erro) log('não consegui confirmar a hunt: ' + r.erro, 'erro');
-            } catch (e) { log('confirmar hunt estourou: ' + e.message, 'erro'); }
-            cfh.disabled = false;
-            renderizar();
-        };
-        /* v1.8.0 — F5 zera a marcação do Auto Selling (o ciclo de venda não).
-         * Abre a janela de loot, aba Auto Selling, MARCAR TUDO, fecha. Só por
-         * botão, nunca sozinho. */
-        const ase = $('#tb-autosell');
-        if (ase) ase.onclick = async () => {
-            ase.disabled = true;
-            try {
-                const bl = $$('button').find(b => /^LOOT$/.test((b.textContent || '').trim()));
-                if (!bl) throw new Error('botão LOOT não está na tela (fora de caçada?)');
-                bl.click();
-                const aba = await esperarQue(() => tid('loot-config-autosell'), 3000);
-                if (!aba) throw new Error('janela de loot não abriu');
-                aba.click(); await dorme(300);
-                const tudo = await esperarQue(() => tid('auto-sell-all') || $$('[data-testid="window-loot"] button').find(b => /MARCAR TUDO/i.test(b.textContent || '')), 2000);
-                if (!tudo) throw new Error('MARCAR TUDO não apareceu');
-                tudo.click(); await dorme(400);
-                const w = tid('window-loot');
-                const m = w && (w.innerText || '').match(/MARCADOS PARA VENDA\s*(\d+)/);
-                const fechar = tid('window-close-loot'); if (fechar) fechar.click();
-                log('auto-sell: ' + (m ? m[1] : '?') + ' itens marcados para venda', 'ok');
-            } catch (e) {
-                const fechar = tid('window-close-loot'); if (fechar) fechar.click();
-                log('auto-sell falhou: ' + e.message, 'erro');
-            }
-            ase.disabled = false;
-        };
-        $$('[data-modelo]').forEach(b => b.onclick = () => { guardar('modelo', b.dataset.modelo); renderizar(); });
-        const selHunt = $('#tb-hunt');
-        if (selHunt) {
-            selHunt.onchange = () => {
-                const v = selHunt.value;
-                guardar('hunt_id', v === '' ? null : parseInt(v));
-                renderizar();
-            };
-        }
-        $$('[data-usar-palpite]').forEach(b => {
-            b.onclick = () => {
-                guardar('hunt_id', parseInt(b.dataset.usarPalpite));
-                renderizar();
-            };
-        });
-        const selBoss = $('#tb-boss');
-        if (selBoss) selBoss.onchange = () => { guardar('boss_nome', selBoss.value || null); renderizar(); };
-        const ap4 = $('#tb-aplicar-todos');
-        if (ap4) ap4.onclick = () => {
-            const h = alvoDoModelo();
-            if (h) aplicarEmTodos(ler('modelo', 'equilibrado'), h);
-            else log(ler('modelo', 'equilibrado') === 'boss' ? 'escolha o boss primeiro' : 'sem hunt confirmada', 'erro');
-        };
+        if (ABA === 'progresso') ligarProgresso();
+        if (ABA === 'mercado') ligarMercado();
+        if (ABA === 'scan') ligarScan();           // v2.11 — handlers do Scan ao lado da tela
+        if (ABA === 'autohunt') ligarAutoHunt();   // v2.11 — handlers do Auto Hunt ao lado da tela
     }
 
     /* =========================================================================
@@ -4217,10 +8069,12 @@
                 await dorme(1500);
                 const a = autoHunt();
                 if (!a.on || a.huntId == null || emHunt() || !tid('actionbar-hunt')) return;
+                /* v2.11 — só retoma o ciclo AUTOMÁTICO interrompido há < 10 min (marca ciclo_pendente); sem ela o dono quis ficar na cidade */
+                if (!deveRetomarCiclo(a, ler('ciclo_pendente', null), Date.now())) { log('Auto Hunt ligado e party na cidade, sem ciclo automático interrompido — fica na cidade', 'info'); return; }
                 if (cicloTravadoPorOutraAba()) { log('party na cidade, mas outra aba está no ciclo — aguardando', 'info'); return; }
                 log('Auto Hunt ligado e party na cidade: retomando o ciclo (purificar → vender → depot → voltar)', 'info');
                 await cicloDeVenda('auto');
-            } catch (e) { }
+            } catch (e) { falhou('retomada do Auto Hunt (F5)', e); }
         })();
 
         /* a purga vem ANTES dos catalogos: ela apaga cat_* justamente para
@@ -4228,7 +8082,7 @@
         try { const n = limparChavesLegadas(); if (n) log(`${n} chaves de dano no formato antigo removidas`, 'info'); } catch (e) { }
         try {
             const pg = purgarSeEraVelha();
-            if (pg) log(`era ${pg.de || '(nenhuma)'} -> ${pg.para}: ${pg.apagadas} chaves medidas apagadas. Dano e curva precisam ser remedidos.`, 'erro');
+            if (pg) log(pg.de ? `era ${pg.de} -> ${pg.para}: ${pg.apagadas} chaves medidas apagadas. Dano e curva precisam ser remedidos.` : `primeira vez nesta era (${pg.para}) — nada a apagar`, pg.de ? 'erro' : 'info');
         } catch (e) { console.error('[TB] purga', e); }
         // os catálogos vêm SEMPRE, mesmo que o painel tenha falhado em desenhar
         const okCat = await carregarCatalogos(false);
@@ -4244,7 +8098,7 @@
         /* o analisador roda SEMPRE, mesmo com a aba fechada — é o que garante
          * que nenhuma caçada passe sem virar dado. Fecha a sessão ao sair da
          * página pra não perder o que já foi medido. */
-        setInterval(() => { try { amostrar(); } catch (e) { } }, AMOSTRA_MS);
+        setInterval(() => { try { amostrar(); deuCerto('amostrar'); } catch (e) { falhou('amostrar', e); } }, AMOSTRA_MS);
         setTimeout(() => verificarAtualizacao().catch(() => { }), 15000);
         setInterval(() => verificarAtualizacao().catch(() => { }), 30 * 60 * 1000);
         window.addEventListener('beforeunload', () => { try { fecharSessao('página fechada'); } catch (e) { } });
@@ -4252,34 +8106,38 @@
 
     /* GANCHO DE DEPURACAO — so leitura. Deixa simular o plano de fora
      * (console ou Playwright) ANTES de clicar em aplicar. Nasceu em 19/09:
-     * sem isso a unica forma de ver o que "APLICAR NOS 4" faria era aplicar. */
-    window.__tbHelper = {
-        // v1.9.0 — Auto Hunt. Os cinco passos ESCREVEM no jogo; cicloDeVenda também.
-        autoHunt, guardarAutoHunt, capLivre, lerTaxaXp, itemSelado, modalAberto, mochilaNoLimite, estadoWS,
-        finalizarHunt, purificarTodos, venderNoNpc, guardarNoDepot, voltarParaHunt, cicloDeVenda, cliqueCompleto,
+     * sem isso a unica forma de ver o que "APLICAR NOS 4" faria era aplicar.
+     * ⚠ v2.11 — SÓ COM DEBUG LIGADO E SÓ LEITURA. window.__tbHelper é global:
+     * qualquer script da página (ou extensão) chamava cicloDeVenda, enviarWS,
+     * equiparTrocas… e lia o ticket em WS. Agora ele só existe com
+     *     localStorage.setItem('tb_helper_debug', 'true')   (e F5)
+     * e só expõe o que LÊ: nada que clique no jogo ou mande frame pelo socket
+     * (lerDepot/equipAtualizar mandam depot_get e ficaram de fora também).
+     * WS sai como cópia, sem o socket. */
+    if (lerChave('tb_helper_debug', false)) window.__tbHelper = {
+        // v1.9.0 — Auto Hunt (leituras)
+        autoHunt, capLivre, lerTaxaXp, itemSelado, modalAberto, mochilaNoLimite, estadoWS, motivoNaoDispara,
         versao: VERSAO, montarPlano, viabilidadeParty, huntAtual, magiasDaVocacao, danosConhecidos, ouroPorAbate, planoExtras, melhorMunicao, melhorPocao, bestiarioHunt, armaduraMedia, reducaoFisicaMedia, nomeModelo,
         get BESTIARIO() { return BESTIARIO; },
         get CAT() { return CAT; },
-        // v2.4.0 — Equip (lerDepot ENVIA depot_get: leitura)
-        lerShellFibra, lerRosterFibra, rosterEquip, lerDepot, basePorNome, idsPorNome,
-        equipAtualizar, pontuarPeca, candidatosEquip, distribuirEquip, vocacaoPode, mochilaEquip,
-        // v2.5.0 — ESCREVEM no servidor: depot_withdraw + equip
-        equiparTrocas, retirarDoDepot, equiparPeca, ondeEsta, slotsTrocas,
+        // v2.4.0 — Equip (leituras e modelo puro)
+        lerShellFibra, lerRosterFibra, rosterEquip, basePorNome, idsPorNome,
+        pontuarPeca, candidatosEquip, distribuirEquip, vocacaoPode, mochilaEquip, ondeEsta, slotsTrocas,
         get EQUIP() { return EQUIP; }, get PESOS_EQUIP() { return PESOS_EQUIP; },
-        // estes dois ESCREVEM no jogo — existem aqui so para teste de ida-e-volta
-        aplicarSlot, esvaziarSlot, aprenderDanosTodos, lureNoMaximo,
-        // v2.1.0 — socket/REST. aplicarPlanoSocket, enviarWS e lureNoMaximoSocket ESCREVEM no servidor.
-        socketAberto, enviarWS, configAtiva, perfilDaVoc, normalizarConfig, payloadBattleConfig,
-        aplicarPlanoSocket, aprenderDanosPorRest, lureNoMaximoSocket,
-        // v2.2.0 — Scan (scanIniciar/scanIrPara ESCREVEM: trocam de mapa e aplicam plano)
-        scanCfg, guardarScanCfg, scanResultados, scanVereditos, scanIniciar, scanParar, scanIrPara, scanMedidaViva,
-        scanDividirLoot, lootTabela, xpFaltando, fmtHoras,
+        // v2.1.0 — socket/REST (leituras; /spell-numbers só LÊ do servidor)
+        socketAberto, configAtiva, perfilDaVoc, perfilReal, normalizarConfig, payloadBattleConfig, aprenderDanosPorRest,
+        // v2.2.0 — Scan (leituras)
+        scanCfg, scanResultados, scanVereditos, scanMedidaViva, scanDividirLoot, lootTabela, xpFaltando, fmtHoras,
         // v2.6.4 — livro-razão de combate (só leitura dos eventos do frame)
         razaoResumo, razaoHtml, razaoTexto, manaMedidaMedia, spawnLimitaMedido, get RAZAO() { return RAZAO; },
         get SCAN() { return SCAN; },
-        get WS() { return WS; },
+        get WS() { return { tipos: WS.tipos, amostras: WS.amostras, bin: WS.bin, enviados: WS.enviados, frames: WS.frames, desde: WS.desde, socket: !!WS.socket, aberto: socketAberto() }; },
         get aprendendo() { return _aprendendo; },
-        verificarAtualizacao, get NOVA_VERSAO() { return NOVA_VERSAO; }
+        // v2.11 — erros por lugar, a sessão do Analisador e as leituras do analisador
+        get ERROS() { return ERROS; }, get SESSAO() { return SESSAO; }, lerAbates, lerExpTotal,
+        verificarAtualizacao, get NOVA_VERSAO() { return NOVA_VERSAO; },
+        // v2.11 — Mercado (modelo puro e o estado lido)
+        mkMontar, mkSugerir, mkTaxa, mkRevisao, get MERCADO() { return MK; }
     };
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar);

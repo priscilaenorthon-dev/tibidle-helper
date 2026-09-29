@@ -1,7 +1,10 @@
 # Tibidle — Base de Conhecimento
 
 > Documento vivo. Atualizado conforme aprendemos coisas novas sobre o jogo.
-> Última atualização: **2026-09-22** · nível 39 · ver §10, §11 e §12 antes de qualquer seção anterior
+> Última atualização: **2026-09-29** (helper 2.11). ⚠ As §1–9 descrevem o jogo de ANTES do lançamento
+> e do wipe (18–19/09). Os scripts Python citados nelas (`analyze_hunts.py`, `analyze_build.py`,
+> `melhor_zona.py`, `modelo_v2.py`) foram apagados na 2.11 — estavam presos ao catálogo velho e a
+> `data/` (fora do git); ficam no histórico do git. Regras atuais: **§15** (wiki, 29/09) e §10 em diante.
 
 ---
 
@@ -22,10 +25,10 @@ HP/mana e equipamento próprios (9 slots), e skills próprias.
 
 | Campo | Valor |
 |---|---|
-| Nome | `ShamanBr` |
-| accountId | `cmt7uvnac016k4vgit3jm8n4c` |
+| Nome | (retirado do repositório público) |
+| accountId | (retirado do repositório público) |
 | Mundo | `alfa` |
-| Provedor | Google OAuth ((e-mail do dono)) |
+| Provedor | Google OAuth |
 | Criada em | 2026-08-24 |
 | Premium | não-founder (`founderTier: null`) |
 
@@ -573,7 +576,7 @@ xp_total(n) = (50/3) · (n³ − 6n² + 17n − 12)
 Instantâneo de 2026-08-29: topo no nível 72 (5,9M de EXP), mediana 45,
 corte de entrada no nível 39. 57 contas acima de 50, 12 acima de 60.
 
-**Descoberta central:** as skills do ShamanBr (melee 54 · dist 59 · mágico
+**Descoberta central:** as skills da conta (melee 54 · dist 59 · mágico
 42/42) estão no **percentil ~40 do top 200** — ou seja, no mesmo patamar de
 contas 25 a 35 níveis acima. O #1 do servidor tem melee 51 e mágico 40/40,
 *abaixo* das nossas.
@@ -2686,7 +2689,7 @@ painel, `prey-hunt-escolher` abre a busca, `prey-opcao-<huntId>` seleciona e
 
 A conta é a mesma (`accountId` idêntico, criada 24/08), mas voltou ao **nível
 18**. Não foi só ela: o topo do ranking caiu de 72 para **40**, o 200º está em
-29, e há 8 guildas nível 1. Todo o servidor recomeçou. ShamanBr está fora do
+29, e há 8 guildas nível 1. Todo o servidor recomeçou. A conta está fora do
 top 200 (a 11 níveis dele).
 
 **F5 derruba para o lobby "SEU GRUPO"** — é preciso clicar ENTRAR NO JOGO. A
@@ -3152,7 +3155,7 @@ próprio; a gaveta da dona ficou intacta. O log de boot mostra a conta.
 
 ## 13. ⭐ SESSÃO DE 27/09 — nível 61, Mintwallin, helper 1.8.2 conferido
 
-### Estado lido às 20:35 (ShamanBr, mundo alfa)
+### Estado lido às 20:35 (conta do dono, mundo alfa)
 
 | item | valor |
 |---|---|
@@ -3688,7 +3691,7 @@ quiser". Protocolo capturado arrastando na tela do jogo (`WS.enviados`):
   `slotsTrocas` agora puxa a troca de quem doa (marcada `dependencia`),
   recursivamente, mesmo com ganho pequeno.
 
-### Logbook da comunidade (Discord "guias-da-comunidade", Toxic Butter Maximalist, 26–27/09) — prints do dono em 28/09
+### Logbook da comunidade (Discord "guias-da-comunidade", um jogador da comunidade, 26–27/09) — prints do dono em 28/09
 Skills dele: ML 31–32, EK 39, RP 43 (acima dos nossos: ML 20–21, melee 30, distance 33).
 Poção de mana 30 % em todos (Knight 40 % às vezes), Sio (Heal Friend) 65 %, Knight com **Utamo Tempo (Protector)**.
 Padrão dos slots: mago = onda (≥2) + runa de área (≥2) + strike de alvo único no elemento certo (≥1);
@@ -3874,3 +3877,77 @@ Revisão do código com os catálogos públicos (`/spells`, `/item/info`, `/ammo
   Skills vêm do frame (`distance` confirmado; `melee`/`magicLevel` pelos nomes do
   bestiário — se não baterem, cai na referência de 28/09).
 - A opção "guardar" diz a verdade: o jogo só tem "guardar tudo" (loot vai junto).
+
+---
+
+## 15. Regras atuais do jogo (wiki oficial, 29/09) — o que mudou desde as §1–9
+
+Fonte: `https://tibidle.com/wiki/*` e patch notes 1.0.1–1.0.12 (`tibidle.com/novidades`), lidos em 29/09.
+Lançamento oficial em **18/09/2026**; o progresso do beta não passou para o lançamento.
+
+- **Combate**: o jogo "confere os slots de ataque de 1 a 4 e lança o primeiro que estiver pronto"
+  (recarga livre, mana suficiente, mínimo de criaturas vivas — conta as vivas na luta, não as da área).
+  Recarga de grupo: ataque 2 s, cura 1 s, suporte 2 s; poção de vida, poção de mana e runa dividem 1 s.
+  Travas secundárias (`secondaryGroup` em `/spells`): focus 40 s (ultimates), ultimatestrikes 30 s,
+  special 8 s (Lightning, Strong Strikes), greatbeams 6 s — duas do mesmo grupo no kit se bloqueiam.
+  Mana gasta na ordem ataque → suporte → cura; cura dispara "na ordem, o primeiro cujo gatilho foi atingido".
+- **Suportes**: Protector 200 de mana, escudo ×2,2, dano recebido −15 % e **dano causado −35 %**; Blood Rage e
+  Protector não convivem; buffs de grupo custam ~3× com 4 personagens (Enchant Party 120 → 350, Heal Party
+  120 → 350, Protect Party 90 → 263, Train Party 60 → 175). Magic Shield: dano vai para a mana.
+- **Dano**: golpe do Knight máx. `0,085 × ataque × Corpo a Corpo + nível/5` (mín. nível/5); tiro do Paladino
+  máx. `0,09 × ataque da munição × Distância + nível/5`; o ataque do arco/besta é 0 (o dano vem da munição);
+  wand/rod dano fixo. Defesa da criatura: bloqueio tira entre metade da defesa e a defesa, armadura entre metade
+  e quase toda — só na parte física; magia ignora armadura.
+- **Equipamento**: 8 slots (sem slot de munição — ela fica na barra de combate); sem requisito de nível, só
+  vocação; Paladino usa arco ou besta; durabilidade por cargas (cada golpe reduzido gasta 1) ou por tempo
+  (o relógio só corre na caçada). Item que cai vem **selado** (não veste, não vende); purificar é grátis.
+- **Forja**: raridade = nº de atributos (comum 0 … mítico 5); ofensivos só em arma e colar (Dano Mágico "vale para
+  qualquer magia de ataque, runa e wand"); defensivos em escudo/elmo/armadura/calça/bota/anel; teto por personagem.
+- **Poções**: cobradas em ouro por gole, sem estoque; Mana Potion 56 por ~100 (0,56/ponto) é a mais barata por ponto.
+- **Munição**: arrow 25 e **bolt 30** grátis; as pagas custam o que `/buy-prices` diz (mudou: sniper 5, burst 15,
+  crystalline 20, diamond 130).
+- **Auto Selling** sem limite diário; **Auto Exit** nativo; caçada com o jogo fechado até 12 h.
+- **Prey (reformulada 29/09)**: 1 caçada por conta, 4 colunas (uma por vocação); EXP/LOOT +1–10 % (conta),
+  DANO/DEFESA +4–40 % (só o personagem); 2 h de caçada (não corre em treino nem Elite/Boss); cada seção
+  travada gasta 1 wildcard por renovação — se as wildcards zeram, todas as travas desligam.
+- **Elites/Bosses**: 78 Elites sem cooldown (a chave é o limite) + 3 bosses de ilha; chave cai a 0,047–0,105 %
+  por abate; a mochila de chaves T1 guarda 5 — chave que cai com ela cheia é **perdida**.
+- **Bestiário**: bônus fixo e permanente para os 4, por estágios de abates por hunt; abates offline contam.
+- **Premium hoje**: +10 % de EXP; loot igual para todos; nenhuma hunt exclusiva. Guilda não dá bônus. Torre "em breve".
+- **Termos (15/09, seção 4)**: proíbe "bots, scripts, exploits, macros ou qualquer forma de automação não
+  prevista pelo próprio jogo", com possível banimento. Decisão do dono (29/09): manter o Auto Hunt.
+
+### 2.11.0 — auditoria completa, correções e três abas novas (29/09)
+
+Auditoria com 6 revisores (Auto Hunt/Scan, socket, layout, Magia, código, produto) e implementação por
+agentes em paralelo, cada um numa área, juntados com testes. **Testes: 161 em 9 arquivos** (`testes/*.test.js`,
+rodam em qualquer clone; o CI em `.github/workflows/testes.yml` roda tudo a cada push). Roteiro de teste com a
+conta logada: `docs/teste-ao-vivo-2.11.md`.
+
+- **Auto Hunt / Scan**: lista "nunca vender" (equipamento, material de imbuement e lista do dono são
+  desmarcados antes de confirmar; se não conseguir desmarcar, não vende); Scan para em morte/`ended` e devolve
+  mapa, lure e presets; trava comum entre ciclo, Scan e Mercado; depot cheio desliga em vez de ciclar; F5 só
+  retoma ciclo pendente recente; não encerra boss; veredito por xp sem boost, sujas e outro nível fora do
+  ranking; histórico de ciclos; telas refeitas.
+- **Socket e robustez**: `profiles_set` só com perfil real do servidor (antes podia apagar presets e cura);
+  boss/torre (huntId 800) reconhecidos; ticket/token redigidos em tudo que se copia; grampo do WebSocket com
+  `Reflect.construct` e adoção só do socket do welcome; `falhou()` central (Auto Hunt desliga após 5 falhas);
+  catálogos numa gaveta comum, timeout de 10 s, cache velho quando a rede cai; render agendado; abates/xp do
+  analisador do próprio jogo (não clica mais em `hud-analyzer`); reconexão limpa o estado.
+- **Magia**: simulador puro da fila (`simularFila`) para o veredito do kit inteiro (poção só de quem bebe +
+  runa por carga); uma magia por grupo secundário; Boss com runa e ML; "mana sobrando" só para quem não bebe;
+  curas por gatilho crescente; veto de imunidade ponderado em área; slots mortos cortados; munição por `/ammo`;
+  cache do plano; releitura do dano depois de EQUIPAR.
+- **Painel**: não cobre barra de atalhos, mochila nem barra de ação (lugar padrão à esquerda da cena, altura
+  limitada); arrasto por toque; folha inferior no celular; fonte ≥ 10,5 px, alvos ≥ 28 px, contraste 5:1;
+  botões acessíveis e Esc; faixa de retorno por aba (`avisar`); contador de erros no Log.
+- **Telas**: escape de todo texto externo; repinte só quando o HTML muda (fim do botão reabilitado e do foco
+  perdido); Magia segmentada com selo de veredito; Equip em português; "OURO —" sem leitura.
+- **Progresso (nova, só leitura)**: mochila de chaves (aviso de chave perdida), chave → Elite, bestiário com
+  horas até o próximo marco (também nos cartões do Scan), plano offline, Prey, calculadoras de refino e imbuement.
+- **Mercado (nova)**: lista o baú negociável com preço = menor anúncio de outro vendedor − 1 (mesmo item;
+  forjado = mesma raridade e refino), sem concorrente = média de 30 dias, nunca abaixo do NPC após a taxa de 5 %;
+  anunciar por 2 toques em fila (retirar → `market_create`), 1 pedido a cada 3,5 s; revisar meus anúncios e
+  resgatar a caixa de entrada por botão; nada re-anuncia sozinho.
+- **Diagnóstico (Status)**: relatório só de leitura com a FORMA das mensagens (sem valores) e o que falta.
+- **Repositório**: dados da conta fora; scripts Python pré-wipe apagados; §15 com as regras atuais da wiki.
