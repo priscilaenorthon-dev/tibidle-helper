@@ -417,7 +417,10 @@ t('log escapado (erro do servidor com HTML) e versão do GitHub validada', async
 });
 
 t('render agendado: rajada de eventos = um desenho só', async () => {
-    const W = criarMundo({ ls: Object.assign({}, DEBUG, { tb_helper_ui: JSON.stringify({ aba: 'log', aberta: true, top: 84, right: 8, oculto: false }) }) });
+    /* v2.11 (D2) — o corpo só é redesenhado quando o HTML da aba MUDA; o Log
+     * não muda com estes eventos (0 desenhos), então a rajada vai no Status,
+     * que muda (○ cidade/OURO — → ● caçando/OURO 5.000) — exatamente 1. */
+    const W = criarMundo({ ls: Object.assign({}, DEBUG, { tb_helper_ui: JSON.stringify({ aba: 'estado', aberta: true, top: 84, right: 8, oculto: false }) }) });
     await W.avancar(0);
     const corpo = W.porId.get('tb-corpo');
     const antes = corpo.sets;
@@ -426,9 +429,12 @@ t('render agendado: rajada de eventos = um desenho só', async () => {
     ws.emitir({ type: 'hunt_started', data: { huntId: 34 } });
     ws.emitir({ type: 'hunt_started', data: { huntId: 32 } });
     ws.emitir({ type: 'depot_state', data: { entries: [] } });
+    ws.emitir(frame());
     assert.strictEqual(corpo.sets, antes, 'desenhou dentro do evento do socket');
     await W.avancar(0);
     assert.strictEqual(corpo.sets, antes + 1, 'rajada virou ' + (corpo.sets - antes) + ' desenhos');
+    await W.avancar(0);
+    assert.strictEqual(corpo.sets, antes + 1, 'repintou sem mudança');
 });
 
 t('perfis incompletos → nenhum profiles_set (APLICAR NOS 4 de ponta a ponta)', async () => {
