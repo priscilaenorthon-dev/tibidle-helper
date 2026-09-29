@@ -1,0 +1,142 @@
+{
+ "fonte": "GET https://play.tibidle.com/item/info?ids=3552,11539,9685,10196,3723,3358,3462,7438,11492,9633,3447,3031 (público, sem login, 29/09/2026) — itens que caem nas hunts da party; elvish bow e leather boots foram VENDIDOS pelo ciclo de 21:3x (TIBIDLE.md §13)",
+ "itens": {
+  "leather boots": {
+   "id": 3552,
+   "attrs": {
+    "primarytype": "boots",
+    "armor": 1,
+    "weight": 900,
+    "imbuementslot": 1,
+    "paralysis deflection": 3,
+    "increase speed": 3,
+    "script": "moveevent",
+    "slot": "feet"
+   },
+   "sell": 2
+  },
+  "goblin ear": {
+   "id": 11539,
+   "attrs": {
+    "primarytype": "creature products",
+    "weight": 75
+   },
+   "sell": 20
+  },
+  "vampire teeth": {
+   "id": 9685,
+   "attrs": {
+    "primarytype": "creature products",
+    "showCount": 0,
+    "weight": 50
+   },
+   "sell": 275
+  },
+  "orc tooth": {
+   "id": 10196,
+   "attrs": {
+    "primarytype": "creature products",
+    "weight": 100
+   },
+   "sell": 150
+  },
+  "white mushroom": {
+   "id": 3723,
+   "attrs": {
+    "primarytype": "food",
+    "weight": 40
+   },
+   "sell": 1
+  },
+  "chain armor": {
+   "id": 3358,
+   "attrs": {
+    "primarytype": "armors",
+    "armor": 6,
+    "weight": 10000,
+    "imbuementslot": 2,
+    "life leech": 3,
+    "elemental protection death": 3,
+    "elemental protection earth": 3,
+    "elemental protection fire": 3,
+    "elemental protection ice": 3,
+    "elemental protection energy": 3,
+    "elemental protection holy": 3,
+    "script": "moveevent",
+    "slot": "armor"
+   },
+   "sell": 70
+  },
+  "small axe": {
+   "id": 3462,
+   "attrs": {
+    "primarytype": "tools",
+    "weight": 2000
+   },
+   "sell": 5
+  },
+  "elvish bow": {
+   "id": 7438,
+   "attrs": {
+    "primarytype": "distance weapons",
+    "description": "This beautifully ornamented bow was made by a skilled elvish bowmaker",
+    "weaponType": "distance",
+    "slotType": "two-handed",
+    "ammotype": "arrow",
+    "hitchance": 5,
+    "range": 6,
+    "weight": 3900,
+    "imbuementslot": 3,
+    "elemental damage": 3,
+    "life leech": 3,
+    "mana leech": 3,
+    "critical hit": 3,
+    "skillboost distance": 3,
+    "script": "moveevent;weapon"
+   },
+   "sell": 200
+  },
+  "rope belt": {
+   "id": 11492,
+   "attrs": {
+    "primarytype": "creature products",
+    "description": "Though the name implies it, this simple and thin belt is not suited to be used as rope",
+    "weight": 97
+   },
+   "sell": 66
+  },
+  "bloody pincers": {
+   "id": 9633,
+   "attrs": {
+    "primarytype": "creature products",
+    "showCount": 0,
+    "weight": 120
+   },
+   "sell": 100
+  },
+  "arrow": {
+   "id": 3447,
+   "attrs": {
+    "primarytype": "ammunition",
+    "weaponType": "ammunition",
+    "ammotype": "arrow",
+    "shootType": "arrow",
+    "maxhitchance": 91,
+    "attack": 25,
+    "weight": 70,
+    "script": "moveevent;weapon",
+    "action": "removecount",
+    "slot": "ammo"
+   },
+   "sell": 1
+  },
+  "gold coin": {
+   "id": 3031,
+   "attrs": {
+    "primarytype": "valuables",
+    "weight": 10
+   },
+   "sell": 1
+  }
+ }
+}
