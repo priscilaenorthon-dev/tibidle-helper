@@ -3020,8 +3020,154 @@
      *  sem confirmação; vende TUDO que o painel do NPC marcar; lure NÃO é
      *  restaurado ao voltar; magia não é tocada. Qualquer falha desliga a
      *  automação — nunca ficar em loop na cidade.
+     *
+     *  v2.11 — "vende tudo que o painel marcar" CAIU: o sell_loot do ciclo de
+     *  21:3x (TIBIDLE.md §13) levou elvish bow e leather boots. Agora há uma
+     *  lista "nunca vender" (equipamento + materiais de imbuement + a do dono)
+     *  que é desmarcada no painel ANTES de confirmar; se não der para
+     *  desmarcar, não vende.
      * ====================================================================== */
-    const AUTO_HUNT_PADRAO = { on: false, modo: 'pct', pct: 20, oz: 200, voltar: true, huntId: null };
+    /* @@AUTOHUNT-PURO-INICIO */
+    /* v2.11 — funções PURAS do Auto Hunt e do Scan: testes/autohunt.test.js roda
+     * este trecho no node. Nada aqui toca DOM, socket ou localStorage. */
+    const normNomeItem = s => String(s == null ? '' : s).toLowerCase().replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+    /* Equipamento = o que tem lugar no corpo em /item/info (slot, 2 mãos, tipo
+     * de arma). Munição fica de fora: é suprimento, o Paladino gasta. */
+    const TIPOS_EQUIP = /armou?rs?\b|boots|helmets?|\blegs\b|shields?|weapons?|wands?|\brods?\b|\baxes\b|swords?|clubs?|\brings?\b|amulets?|necklaces?|spellbooks?|quivers?/i;
+    function ehEquipamento(info) {
+        const a = (info && info.attrs) || {};
+        if (a.slot === 'ammo' || a.weaponType === 'ammunition' || /ammunition/i.test(a.primarytype || '')) return false;
+        return !!(a.slot || a.slotType || a.weaponType || TIPOS_EQUIP.test(a.primarytype || ''));
+    }
+    /* materiais de imbuement = todo item pedido em /assets/v167/imbuements.json */
+    const materiaisDoCatalogo = j => [...new Set(((j && j.imbuements) || []).flatMap(i => (i.items || []).map(x => normNomeItem(x && x.name))).filter(Boolean))];
+    /* O que DESMARCAR no painel de venda. linhas: [{nome, ...}] (nome = o que
+     * vem depois de "sell-check-"); o: {equip, imbu, lista, materiais,
+     * nomes: {nomeNormalizado: nomeReal} ou null, base: {nomeReal: {attrs}}}.
+     * Com a proteção de equipamento ligada, item que não se consegue
+     * classificar fica GUARDADO — vender arma por engano custa mais que
+     * levar um item a mais para o depot. */
+    function escolherDesmarcar(linhas, o) {
+        o = o || {};
+        const lista = new Set((o.lista || []).map(normNomeItem).filter(Boolean));
+        const mats = new Set((o.materiais || []).map(normNomeItem));
+        const guardar = [], vender = [];
+        for (const l of linhas || []) {
+            const n = normNomeItem(l.nome);
+            const real = o.nomes ? (o.nomes[n] || null) : null;
+            const nome = real || l.nome;
+            let motivo = null;
+            if (lista.has(n) || (real && lista.has(normNomeItem(real)))) motivo = 'sua lista';
+            else if (o.imbu && (mats.has(n) || (real && mats.has(normNomeItem(real))))) motivo = 'material de imbuement';
+            else if (o.equip) {
+                const b = real && o.base ? o.base[real] : null;
+                if (!real) motivo = 'nome não reconhecido — guardado por segurança';
+                else if (!b) motivo = 'sem dados do item — guardado por segurança';
+                else if (ehEquipamento(b)) motivo = 'equipamento' + (b.attrs && (b.attrs.slot || b.attrs.slotType) ? ' (' + (b.attrs.slot || b.attrs.slotType) + ')' : '');
+            }
+            if (motivo) guardar.push(Object.assign({}, l, { nome, motivo })); else vender.push(nome);
+        }
+        return { guardar, vender };
+    }
+    /* A caixa de marcar do painel: input, aria-checked/pressed, data-state,
+     * classe ou "✓". null = não dá para saber (aí quem decide é o total). */
+    function estadoMarcado(el) {
+        if (!el) return null;
+        const tag = String(el.tagName || '').toLowerCase();
+        if (tag === 'input' && typeof el.checked === 'boolean') return el.checked;
+        const inp = el.querySelector ? el.querySelector('input[type="checkbox"]') : null;
+        if (inp && typeof inp.checked === 'boolean') return inp.checked;
+        const at = n => (el.getAttribute ? el.getAttribute(n) : null);
+        const v = at('aria-checked') || at('aria-pressed') || at('data-checked') || at('data-state') || at('data-selected');
+        if (v != null) { if (/^(true|checked|on|1|selected)$/i.test(v)) return true; if (/^(false|unchecked|off|0)$/i.test(v)) return false; }
+        const cls = String(el.className || '');
+        if (/(^|[\s_-])(unchecked|desmarcad[oa]|off)($|[\s_-])/i.test(cls)) return false;
+        if (/(^|[\s_-])(checked|marcad[oa]|on|selected|ativo|is-checked)($|[\s_-])/i.test(cls)) return true;
+        if (/[✓✔]/.test(el.textContent || '')) return true;
+        return null;
+    }
+    /* Por que o gatilho não dispara ('' = dispara agora; null = tudo pronto,
+     * só esperando a mochila). s = fotografia do estado (motivoNaoDispara). */
+    function motivoNaoDisparaPuro(s) {
+        if (!s.on) return 'chave desligada';
+        if (s.huntId == null) return 'nenhuma hunt memorizada';
+        if (s.boss) return 'boss em andamento';                      // v2.11: nunca stop no meio de boss
+        if (s.scan) return s.scan;                                     // Scan rodando, terminando ou restaurando
+        if (s.ciclo) return 'ciclo em andamento';
+        if (s.trava) return s.trava + ' em andamento';
+        if (s.aprendendo) return 'medindo dano das magias';
+        if (s.outraAba) return 'outra aba do jogo está rodando o ciclo';
+        if (!s.emHunt) return 'party fora da caçada';
+        if (s.modal) return 'uma janela do jogo está aberta';
+        if (s.resta > 0) return `trava de 5 min após o último ciclo — libera em ${Math.ceil(s.resta / 1000)} s`;
+        if (!s.noLimite) return null;
+        return '';
+    }
+    /* F5 no meio do ciclo: só retoma se o ciclo AUTOMÁTICO deixou marca
+     * recente. Sem marca, o dono quis ficar na cidade. */
+    const CICLO_PENDENTE_MS = 10 * 60 * 1000;
+    function deveRetomarCiclo(a, pendente, agora) {
+        if (!a || !a.on || a.huntId == null) return false;
+        if (!pendente || !(pendente.t > 0)) return false;
+        const idade = agora - pendente.t;
+        return idade >= 0 && idade < CICLO_PENDENTE_MS;
+    }
+    const ciclosNaUltimaHora = (hist, agora) => (hist || []).filter(c => c && c.origem === 'auto' && agora - c.t < 3600000).length;
+    /* Scan: `ended` que o próprio Scan não pediu = falha (morte, auto exit…). */
+    function encerramentoNoScan(ctx) {
+        if (!ctx || !ctx.ativo || ctx.esperado) return null;
+        const r = String(ctx.reason == null ? '' : ctx.reason);
+        const morte = /death|dead|died|killed|wipe|defeat|morr|morte/i.test(r);
+        return { falha: true, morte, motivo: (morte ? 'morreu' : 'encerrou') + (r ? ' (' + r + ')' : '') };
+    }
+    /* Falha nunca apaga resultado bom anterior: fica o bom, com a nota. */
+    function mesclarResultadoScan(anterior, novo) {
+        const bom = r => !!(r && !r.erro && r.xpH != null);
+        if (bom(novo) || !bom(anterior)) return novo;
+        return Object.assign({}, anterior, { ultimaFalha: { t: novo.t, erro: novo.erro, xpH: novo.xpH != null ? novo.xpH : null, seg: novo.seg != null ? novo.seg : null } });
+    }
+    /* Janela medida pelo relógio do PRÓPRIO analisador (elapsedMs); o relógio
+     * da página só se o do jogo não andou (frame velho, aba dormindo). */
+    function segundosDaJanela(elAgora, elBase, segPagina) {
+        const d = (Number(elAgora) || 0) - (Number(elBase) || 0);
+        return d >= 5000 ? d / 1000 : Math.max(1, Number(segPagina) || 1);
+    }
+    const ouroBase = r => r.estavelH != null ? r.estavelH : r.ouroH;   // v2.3.0: ranking de ouro pelo estável
+    const xpBase = r => r.xpRawH != null ? r.xpRawH : r.xpH;          // v2.11: xp SEM boost/prey (resultado antigo sem raw usa xp)
+    /* Veredito relativo: quem chega a 90 % do melhor XP é "XP", 90 % do melhor
+     * ouro (e positivo) é "Ouro", os dois é "Os dois".
+     * v2.11 — JUSTO: XP pelo raw (boost e prey mudam de uma hora para outra);
+     * medição "suja" (mochila < 10 %) e de outro nível (±2) ficam FORA do
+     * ranking — aparecem, mas não competem. */
+    function vereditosScan(todos, nivelRef) {
+        const lista = (todos || []).filter(r => r && !r.erro && r.xpH != null);
+        const ref = nivelRef > 1 ? nivelRef : Math.max(0, ...lista.map(r => r.nivel || 0)) || null;
+        lista.forEach(r => { r.fora = r.suja ? 'suja' : (ref && r.nivel && Math.abs(r.nivel - ref) > 2) ? 'nivel' : null; });
+        const rank = lista.filter(r => !r.fora);
+        const melhorXp = Math.max(0, ...rank.map(xpBase)), melhorOuro = Math.max(0, ...rank.map(ouroBase));
+        rank.forEach(r => {
+            const pXp = melhorXp > 0 ? Math.round(xpBase(r) / melhorXp * 100) : 0;
+            const pOuro = melhorOuro > 0 && ouroBase(r) > 0 ? Math.round(ouroBase(r) / melhorOuro * 100) : 0;
+            const xp = pXp >= 90, ouro = pOuro >= 90;
+            r.pXp = pXp; r.pOuro = pOuro;
+            /* v2.2.4 — nunca "—": o dono leu como "sem veredito" (Barbarian
+             * Camp, 27/09). Quem não chega a 90 % mostra o quanto ficou atrás. */
+            r.veredito = xp && ouro ? 'Os dois' : xp ? 'XP' : ouro ? 'Ouro'
+                : ouroBase(r) < 0 ? 'dá prejuízo'
+                : rank.length === 1 ? 'único medido'
+                : `abaixo: ${pXp}% do xp · ${pOuro}% do ouro`;
+        });
+        lista.filter(r => r.fora).forEach(r => { r.pXp = null; r.pOuro = null; r.veredito = r.fora === 'suja' ? 'suja (mochila)' : `outro nível (${r.nivel})`; });
+        const porXp = (a, b) => xpBase(b) - xpBase(a);
+        return { lista: rank.slice().sort(porXp).concat(lista.filter(r => r.fora).sort(porXp)), rank, melhorXp, melhorOuro, nivelRef: ref,
+                 topXp: rank.slice().sort(porXp)[0] || null, topOuro: rank.slice().sort((a, b) => ouroBase(b) - ouroBase(a))[0] || null };
+    }
+    /* "ao terminar": 'ficar' só vale se o dono ESCOLHEU; o padrão antigo era
+     * 'ficar' e deixava a party no último mapa medido, com o kit do Scan. */
+    const fimDoScan = c => (!c || !c.fim || (c.fim === 'ficar' && !c.fimEscolhido)) ? 'voltar' : c.fim;
+    /* @@AUTOHUNT-PURO-FIM */
+    const AUTO_HUNT_PADRAO = { on: false, modo: 'pct', pct: 20, oz: 200, voltar: true, huntId: null,
+                               nvEquip: true, nvImbu: true, nuncaVender: [] };   // v2.11 — "nunca vender", ligado por padrão
     const autoHunt = () => Object.assign({}, AUTO_HUNT_PADRAO, ler('auto_hunt', {}));
     const guardarAutoHunt = (patch) => guardar('auto_hunt', Object.assign(autoHunt(), patch));
 
@@ -3129,28 +3275,141 @@
     }
     const lerOuroNum = () => parseInt(((tid('hud-gold') || {}).textContent || '').replace(/\D/g, '')) || 0;
 
-    /* Passo 3 — VENDER NO NPC. Vende tudo que o painel marcar (dono, 27/09).
+    /* @@AUTOHUNT-VENDA-INICIO */
+    /* v2.11 — NUNCA VENDER. Materiais de imbuement: /assets/v167/imbuements.json
+     * (cache 7 dias). Equipamento: /item/info pelo nome (basePorNome/idsPorNome
+     * da área Equip, que já guardam cache). */
+    let _materiaisImbu = null;
+    async function materiaisImbuement() {
+        if (_materiaisImbu) return _materiaisImbu;
+        const c = ler('imbu_materiais', null);
+        if (c && c.t && Date.now() - c.t < 7 * 864e5 && Array.isArray(c.m) && c.m.length) return (_materiaisImbu = c.m);
+        const m = materiaisDoCatalogo(await buscarJSON('/assets/v167/imbuements.json'));
+        if (!m.length) throw new Error('imbuements.json veio sem materiais');
+        _materiaisImbu = m; guardar('imbu_materiais', { t: Date.now(), m });
+        return m;
+    }
+    let _nomesNorm = null, _nomesNormDe = null;
+    function nomesNormalizados(ids) {
+        /* nome normalizado E o id (se o painel usar sell-check-<id>) → nome real */
+        if (_nomesNormDe !== ids) { _nomesNorm = {}; for (const n of Object.keys(ids || {})) { _nomesNorm[normNomeItem(n)] = n; if (ids[n] != null && _nomesNorm[String(ids[n])] == null) _nomesNorm[String(ids[n])] = n; } _nomesNormDe = ids; }
+        return _nomesNorm;
+    }
+    /* Linhas do painel: cada sell-check-<item> (e sell-row-<item> de reserva).
+     * Guarda o ELEMENTO e o índice entre iguais — dois "elvish bow" (iids
+     * diferentes) teriam o mesmo data-testid e tid() só acha o primeiro. */
+    function linhasDaVenda() {
+        const p = tid('sell-panel'); if (!p) return { linhas: [], checks: 0, rows: 0 };
+        const checks = $$('[data-testid^="sell-check-"]', p), rows = $$('[data-testid^="sell-row-"]', p);
+        const vistos = {};
+        const linhas = checks.map(el => {
+            const testid = el.getAttribute('data-testid'), idx = vistos[testid] = (vistos[testid] == null ? 0 : vistos[testid] + 1);
+            return { nome: testid.slice('sell-check-'.length), testid, idx, el };
+        });
+        if (!checks.length) rows.forEach(el => { const t = el.getAttribute('data-testid'); linhas.push({ nome: t.slice('sell-row-'.length), testid: t, idx: 0, el: null }); });
+        return { linhas, checks: checks.length, rows: rows.length };
+    }
+    const totalVenda = () => { const t = tid('sell-total'); const n = t ? parseInt((t.textContent || '').replace(/\D/g, '')) : NaN; return Number.isFinite(n) ? n : null; };
+    const elDaLinha = l => (l.el && l.el.isConnected) ? l.el : ($$(`[data-testid="${l.testid}"]`)[l.idx] || null);
+    /* ponteiro SEM o click: segunda tentativa quando .click() foi ignorado —
+     * se o primeiro valeu e a tela só atrasou, não desfaz a marcação */
+    function ponteiroSemClique(el) {
+        const r = el.getBoundingClientRect();
+        const o = { bubbles: true, cancelable: true, button: 0, buttons: 1, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
+        try { el.dispatchEvent(new PointerEvent('pointerdown', Object.assign({ pointerType: 'mouse', isPrimary: true }, o))); } catch { /* PointerEvent pode faltar */ }
+        el.dispatchEvent(new MouseEvent('mousedown', o));
+        try { el.dispatchEvent(new PointerEvent('pointerup', Object.assign({ pointerType: 'mouse', isPrimary: true, buttons: 0 }, o))); } catch { /* PointerEvent pode faltar */ }
+        el.dispatchEvent(new MouseEvent('mouseup', Object.assign({}, o, { buttons: 0 })));
+    }
+    /* Desmarca cada item protegido e confere: a caixa diz "desmarcado" OU o
+     * total do painel baixou. Devolve os que não deu para desmarcar. */
+    async function desmarcarNaVenda(guardarLista) {
+        const falhas = [];
+        for (const g of guardarLista) {
+            const el = elDaLinha(g);
+            if (!el) { falhas.push(g.nome + ' (caixa sumiu)'); continue; }
+            if (estadoMarcado(el) === false) continue;
+            const t0 = totalVenda();
+            const saiu = () => estadoMarcado(elDaLinha(g)) === false || (t0 != null && totalVenda() != null && totalVenda() < t0);
+            el.click();
+            let ok = await esperarQue(saiu, 1500, 100);
+            if (!ok && estadoMarcado(elDaLinha(g)) !== false && totalVenda() === t0 && elDaLinha(g)) { ponteiroSemClique(elDaLinha(g)); ok = await esperarQue(saiu, 1500, 100); }
+            if (!ok) falhas.push(g.nome);
+        }
+        return falhas;
+    }
+    async function protecaoVenda() {
+        const a = autoHunt();
+        const o = { equip: a.nvEquip !== false, imbu: a.nvImbu !== false, lista: Array.isArray(a.nuncaVender) ? a.nuncaVender : [], materiais: [], nomes: null, base: {} };
+        if (o.imbu) o.materiais = await materiaisImbuement();
+        if (o.equip) o.nomes = nomesNormalizados(await idsPorNome());
+        return o;
+    }
+
+    /* Passo 3 — VENDER NO NPC. Vende o que o painel marcar, MENOS a lista
+     * "nunca vender" (v2.11 — antes era tudo; dono, 27/09).
      * Âncoras (27/09): sell-panel, sell-list, sell-row-<item>, sell-check-<item>,
      * sell-total, sell-confirm ("VENDER N ouro"), sell-cancel, panel-close.
      * ⚠ Em 27/09 o primeiro teste clicou em sell-confirm com .click() e NADA
      * aconteceu: painel aberto, ouro igual. Por isso: clique completo, espera
-     * por confirm-ok (se o jogo pedir), e o sucesso é medido pelo OURO. */
+     * por confirm-ok (se o jogo pedir), e o sucesso é medido pelo OURO.
+     * ⚠ v2.11 — o formato de sell-check-<item> (nome com espaço? slug?) e
+     * como a caixa mostra "marcado" NÃO foram vistos com conta logada: tudo
+     * é defensivo. Qualquer dúvida sobre o que ia ser vendido = não vende. */
     async function venderNoNpc() {
         const abrir = tid('actionbar-selling');
         if (!abrir) return { erro: 'botão VENDER (actionbar-selling) não está na tela — precisa estar na cidade' };
+        let prot;
+        try { prot = await protecaoVenda(); }
+        catch (e) { return { erro: 'não consegui montar a lista "nunca vender" (' + e.message + ') — nada vendido' }; }
         abrir.click();
         const painel = await esperarQue(() => tid('sell-panel'), 6000, 150);
         if (!painel) return { erro: 'painel de venda não abriu' };
-        await dorme(500);
+        const fecharPainel = () => { const c = tid('sell-cancel') || (tid('sell-panel') && tid('sell-panel').querySelector('[data-testid="panel-close"]')); if (c) c.click(); };
+        /* v2.11 — o total era lido após 500 ms fixos. Agora espera o painel
+         * MONTAR: total com número e igual em 3 leituras seguidas (~450 ms). */
+        let ultimo = null, iguais = 0;
+        const montado = await esperarQue(() => {
+            const t = tid('sell-total'), txt = t ? (t.textContent || '').trim() : '';
+            const n = $$('[data-testid^="sell-check-"],[data-testid^="sell-row-"]', tid('sell-panel') || document).length;
+            const assin = txt + '|' + n;
+            iguais = assin === ultimo ? iguais + 1 : 0; ultimo = assin;
+            const cf = tid('sell-confirm'), vazio = !n && (!cf || cf.disabled);   // painel vazio pode vir sem número no total
+            return (/\d/.test(txt) || vazio) && iguais >= 3;
+        }, 6000, 150);
+        if (!montado) { fecharPainel(); await dorme(400); return { erro: 'painel de venda abriu mas o total (sell-total) não assentou em 6 s — nada vendido' }; }
+        const totalAntes = totalVenda() || 0;
+        let guardados = [];
+        if (totalAntes > 0) {
+            const lv = linhasDaVenda();
+            if (!lv.linhas.length) { fecharPainel(); await dorme(400); return { erro: 'painel com total ' + totalAntes + ' mas sem linhas (sell-check-*/sell-row-*) — não sei o que ia vender, nada vendido' }; }
+            if (prot.equip) {
+                const reais = lv.linhas.map(l => prot.nomes[normNomeItem(l.nome)]).filter(Boolean);
+                try { prot.base = await basePorNome(reais); } catch (e) { prot.base = {}; }
+            }
+            const sel = escolherDesmarcar(lv.linhas, prot);
+            guardados = sel.guardar;
+            if (guardados.length) {
+                if (!lv.checks) { fecharPainel(); await dorme(400); return { erro: `achei ${guardados.length} item(ns) para NÃO vender (${guardados.map(g => g.nome).join(', ')}) mas o painel não tem as caixas sell-check-* — nada vendido` }; }
+                const falhas = await desmarcarNaVenda(guardados);
+                const ainda = guardados.filter(g => estadoMarcado(elDaLinha(g)) === true).map(g => g.nome);
+                const semEstado = guardados.some(g => estadoMarcado(elDaLinha(g)) == null);
+                const totalDepois = totalVenda();
+                const problema = falhas.length ? 'não consegui desmarcar ' + falhas.join(', ')
+                    : ainda.length ? 'continuam marcados: ' + ainda.join(', ')
+                    : (semEstado && !(totalDepois != null && totalDepois < totalAntes)) ? `desmarquei ${guardados.length} item(ns) e o total não baixou (${totalAntes} → ${totalDepois})` : null;
+                if (problema) { fecharPainel(); await dorme(400); return { erro: problema + ' — painel fechado, NADA vendido (lista "nunca vender")' }; }
+                log(`nunca vender: ${guardados.map(g => g.nome + ' (' + g.motivo + ')').join(', ')} — total ${totalAntes.toLocaleString('pt-BR')} → ${(totalDepois || 0).toLocaleString('pt-BR')}`, 'info');
+            }
+        }
         const total = ((tid('sell-total') || {}).textContent || '?').trim();
         const totalNum = parseInt(total.replace(/\D/g, '')) || 0;
-        const fecharPainel = () => { const c = tid('sell-cancel') || (tid('sell-panel') && tid('sell-panel').querySelector('[data-testid="panel-close"]')); if (c) c.click(); };
         const confirmar = tid('sell-confirm');
         if (!confirmar || confirmar.disabled || !totalNum) {
             fecharPainel();
             await dorme(400);
-            log('nada para vender (total ' + total + ')', 'info');
-            return { ok: true, vazio: true };
+            log('nada para vender (total ' + total + ')' + (guardados.length ? ' — tudo que havia está na lista "nunca vender"' : ''), 'info');
+            return { ok: true, vazio: true, guardados };
         }
         const ouroAntes = lerOuroNum();
         const vendeu = () => lerOuroNum() > ouroAntes;
@@ -3169,8 +3428,9 @@
         if (tid('sell-panel')) fecharPainel();
         await dorme(400);
         log(`vendido no NPC: ${total} ouro · ${ouroAntes.toLocaleString('pt-BR')} → ${lerOuroNum().toLocaleString('pt-BR')}`, 'ok');
-        return { ok: true, total: totalNum };
+        return { ok: true, total: totalNum, guardados };
     }
+    /* @@AUTOHUNT-VENDA-FIM */
 
     /* Passo 4 — DEPOT: guardar tudo. Âncoras (27/09): depot-panel (modal com
      * scrim), depot-guardar-tudo, depot-guardar-tudo-nota, depot-lugares
@@ -3196,7 +3456,10 @@
         await dorme(300);
         log(`depot: mochila ${antes ? antes.usado.toLocaleString('pt-BR') : '?'} → ${depois ? depois.usado.toLocaleString('pt-BR') : '?'} oz` + (lugares ? ` · depot ${lugares}` : ''), 'ok');
         if (tid('depot-panel')) return { erro: 'janela do depot não fechou' };
-        return { ok: true };
+        /* v2.11 — lugares "113 de 300" viram número: o histórico mostra o depot
+         * enchendo e o ciclo sabe quando ele lotou */
+        const ml = lugares.replace(/\./g, '').match(/(\d+)\s*(?:de|\/)\s*(\d+)/i);
+        return { ok: true, lugares, depUsado: ml ? +ml[1] : null, depTotal: ml ? +ml[2] : null };
     }
 
     /* Passo 5 — VOLTAR para a hunt memorizada. hunt-item-<id> + hunt-confirm
@@ -3251,26 +3514,68 @@
         return !!(l && l.aba !== ABA_ID && Date.now() - l.t < CICLO_LOCK_MS);
     }
 
+    /* v2.11 — TRAVA COMUM do jogo (item 4 da auditoria). Em 29/09 achado no
+     * código: scanTerminar punha SCAN.ativo=false ANTES de ir para o melhor
+     * mapa, e o gatilho do Auto Hunt (3 s) podia disparar o ciclo no meio da
+     * troca; o "ir ›" do Scan também não olhava o ciclo. Quem mexe no mapa
+     * (ciclo de venda, Scan, restauração do Scan, "ir ›") pergunta aqui antes
+     * e ocupa enquanto trabalha. Devolve o nome de quem ocupa, ou null. */
+    let _travaJogo = null;
+    const scanOcupado = () => SCAN.ativo || SCAN.ocupado || SCAN.restaurando;
+    function travaJogo() {
+        if (_cicloEmCurso) return 'ciclo de venda';
+        if (scanOcupado()) return SCAN.ativo ? 'Scan' : 'Scan (terminando/restaurando)';
+        return _travaJogo;
+    }
+
+    /* v2.11 — HISTÓRICO dos últimos 20 ciclos (hora, duração, ouro vendido,
+     * oz antes/depois, depot, erro) e alarme se passar de 3 por hora: mochila
+     * enchendo em < 20 min é limite mal posto ou depot que não esvazia. */
+    const MAX_HIST_CICLOS = 20;
+    const historicoCiclos = () => ler('ciclos_hist', []);
+    let _alarmeCiclosEm = 0;
+    function anotarCiclo(reg) {
+        const h = historicoCiclos(); h.push(reg);
+        while (h.length > MAX_HIST_CICLOS) h.shift();
+        guardar('ciclos_hist', h);
+        const n = ciclosNaUltimaHora(h, Date.now());
+        if (n > 3 && Date.now() - _alarmeCiclosEm > 3600000) {
+            _alarmeCiclosEm = Date.now();
+            log(`⚠ ${n} ciclos de venda na última hora — a mochila enche em menos de 20 min: limite alto demais, depot cheio ou venda falhando (veja o histórico na aba Auto Hunt)`, 'erro');
+        }
+    }
+
     /* origem: 'auto' (gatilho da mochila: passos 1-5), 'venda' (botão Venda
      * rápida: passos 1-4 — encerra se estiver caçando — e FICA na cidade) ou
      * 'finalizar' (botão Finalizar hunt: só o passo 1). Decisão do dono em
      * 27/09: "Venda rápida completa: um clique dentro da hunt encerra,
      * purifica, vende, guarda e fica na cidade". */
+    const NOME_ORIGEM = { auto: 'AUTO HUNT', venda: 'Venda rápida', finalizar: 'Finalizar hunt' };
     async function cicloDeVenda(origem) {
         if (_cicloEmCurso) { log('ciclo já em andamento', 'erro'); return false; }
         if (_aprendendo) { log('medindo dano — ciclo adiado', 'erro'); return false; }
         if (cicloTravadoPorOutraAba()) { log('outra aba do jogo está rodando o ciclo — esta aba fica quieta', 'erro'); return false; }
+        const ocup = travaJogo();
+        if (ocup) { log(`${NOME_ORIGEM[origem] || origem}: ${ocup} em andamento — espera terminar`, 'erro'); return false; }
         _cicloEmCurso = true;
         guardar('ciclo_lock', { aba: ABA_ID, t: Date.now() });
         renderizar();
         const a = autoHunt();
+        const c0 = capLivre();
+        const reg = { t: Date.now(), origem, dur: null, ouro: null, ozAntes: c0 ? c0.usado : null, ozDepois: null, depot: null, erro: null, guardados: 0 };
+        /* v2.11 — a mensagem dizia "AUTO HUNT parou" até na Venda rápida */
         const desligar = (passo, erro) => {
-            log(`AUTO HUNT parou no passo "${passo}": ${erro}` + (a.on ? ' — automação DESLIGADA' : ''), 'erro');
+            reg.erro = passo + ': ' + erro;
+            log(`${NOME_ORIGEM[origem] || origem} parou no passo "${passo}": ${erro}` + (a.on ? ' — automação DESLIGADA' : ''), 'erro');
             if (a.on) guardarAutoHunt({ on: false });
         };
         try {
-            const c = capLivre();
-            log(`ciclo de venda (${origem}) iniciado — mochila ${c ? c.pct + '% livre' : '?'}`, 'info');
+            log(`ciclo de venda (${origem}) iniciado — mochila ${c0 ? c0.pct + '% livre' : '?'}`, 'info');
+            /* v2.11 — marca de ciclo AUTOMÁTICO em curso: é só ela que autoriza
+             * o boot a retomar depois de um F5 (antes o boot retomava sempre
+             * que a chave estava ligada e a party na cidade — voltava a caçar
+             * mesmo quando o dono tinha ficado na cidade de propósito). */
+            if (origem === 'auto') guardar('ciclo_pendente', { t: Date.now(), huntId: a.huntId });
             /* Já na cidade (ciclo retomado depois de uma recarga, ou Venda
              * rápida fora da hunt): pula o encerrar em vez de falhar. */
             if (origem === 'finalizar' || emHunt()) {
@@ -3283,8 +3588,18 @@
             if (r2.pulou) log('purificar: ' + r2.pulou + ' (pulei)', 'info');
             const r3 = await venderNoNpc();
             if (r3.erro) { desligar('vender', r3.erro); return false; }
+            reg.ouro = r3.total || 0; reg.guardados = (r3.guardados || []).length;
             const r4 = await guardarNoDepot();
             if (r4.erro) { desligar('depot', r4.erro); return false; }
+            if (r4.depTotal) reg.depot = { usado: r4.depUsado, total: r4.depTotal };
+            /* v2.11 — DEPOT CHEIO: o "guardar tudo" manda só o que couber. Se a
+             * mochila continua no limite, voltar à caçada dispararia outro
+             * ciclo em 5 min, para sempre. Para aqui e desliga. */
+            if (mochilaNoLimite()) {
+                const c = capLivre();
+                desligar('depot', `a mochila continua no limite depois do depot (${c ? c.pct + '% livre' : '?'}${r4.lugares ? ' · depot ' + r4.lugares : ''}) — depot cheio?`);
+                return false;
+            }
             if (origem === 'auto' && a.voltar) {
                 if (a.huntId == null) { desligar('voltar', 'nenhuma hunt memorizada'); return false; }
                 const r5 = await voltarParaHunt(a.huntId);
@@ -3298,31 +3613,63 @@
         } finally {
             _cicloEmCurso = false; _ultimoCiclo = Date.now();
             guardar('ciclo_lock', null);
+            if (origem === 'auto') guardar('ciclo_pendente', null);
+            try {
+                const c1 = capLivre();
+                reg.dur = Math.round((Date.now() - reg.t) / 1000); reg.ozDepois = c1 ? c1.usado : null;
+                if (origem !== 'finalizar') anotarCiclo(reg);
+            } catch { /* histórico nunca derruba o ciclo */ }
             renderizar();
         }
     }
 
     /* v1.9.7 — POR QUE NÃO DISPAROU. Em 27/09 o dono ligou a chave com 97 %
      * e nada aconteceu: era a trava de 5 min (a Venda rápida de instantes
-     * antes contou como ciclo). A tela agora diz o motivo, com contagem. */
+     * antes contou como ciclo). A tela agora diz o motivo, com contagem.
+     * v2.11 — boss em andamento (nunca stop no meio de boss), Scan ainda
+     * ocupado depois de desligar (terminando/restaurando) e a trava comum. */
     function motivoNaoDispara() {
         const a = autoHunt();
-        if (!a.on) return 'chave desligada';
-        if (SCAN.ativo) return 'Scan em andamento';
-        if (a.huntId == null) return 'nenhuma hunt memorizada';
-        if (_cicloEmCurso) return 'ciclo em andamento';
-        if (_aprendendo) return 'medindo dano das magias';
-        if (cicloTravadoPorOutraAba()) return 'outra aba do jogo está rodando o ciclo';
-        if (!emHunt()) return 'party fora da caçada';
-        if (modalAberto()) return 'uma janela do jogo está aberta';
-        const resta = CICLO_INTERVALO_MIN_MS - (Date.now() - _ultimoCiclo);
-        if (resta > 0) return `trava de 5 min após o último ciclo — libera em ${Math.ceil(resta / 1000)} s`;
-        if (!mochilaNoLimite()) return null;            // tudo pronto, só esperando a mochila
-        return '';                                      // dispara agora
+        return motivoNaoDisparaPuro({
+            on: a.on, huntId: a.huntId, boss: !!ESTADO_WS.boss,
+            scan: SCAN.ativo ? 'Scan em andamento' : scanOcupado() ? 'Scan terminando/restaurando' : null,
+            ciclo: _cicloEmCurso, trava: _travaJogo, aprendendo: _aprendendo, outraAba: cicloTravadoPorOutraAba(),
+            emHunt: emHunt(), modal: modalAberto(), resta: CICLO_INTERVALO_MIN_MS - (Date.now() - _ultimoCiclo),
+            noLimite: mochilaNoLimite()
+        });
     }
     function gatilhoAutoHunt() {
+        ouvirEncerramentos();
+        /* v2.11 — marca de ciclo que ficou para trás (a party já está caçando
+         * de novo, ou passou do prazo) não pode autorizar retomada depois */
+        const p = ler('ciclo_pendente', null);
+        if (p && !_cicloEmCurso && (emHunt() || !(Date.now() - p.t < CICLO_PENDENTE_MS))) guardar('ciclo_pendente', null);
         if (motivoNaoDispara() !== '') return;
         cicloDeVenda('auto');
+    }
+
+    /* v2.11 — `ended` OUVIDO À PARTE. O observador do socket (outra área)
+     * zera o frame no `ended` mas não o huntId; o Scan em 'medindo' seguia
+     * achando que a party estava no mapa, gravava m=null (invisível na
+     * tabela) e ia para o próximo com lure máximo — depois de uma MORTE.
+     * Este ouvinte só lê: pega o `ended` com summary.reason e avisa o Scan. */
+    function ouvirEncerramentos() {
+        const ws = WS.socket;
+        if (!ws || ws.__tbEncerramentos || !ws.addEventListener) return;
+        ws.__tbEncerramentos = true;
+        ws.addEventListener('message', ev => {
+            try {
+                if (typeof ev.data !== 'string' || ev.data.indexOf('"ended"') < 0) return;
+                const o = JSON.parse(ev.data);
+                if (o && o.type === 'ended') aoEncerrarCacada((o.data && o.data.summary) || {});
+            } catch { /* frame que não é JSON: não é comigo */ }
+        });
+    }
+    function aoEncerrarCacada(sm) {
+        const f = encerramentoNoScan({ ativo: SCAN.ativo, esperado: Date.now() - (SCAN.stopEnviado || 0) < 40000, reason: sm.reason });
+        if (!f || SCAN.encerrou) return;
+        SCAN.encerrou = Object.assign({ t: Date.now(), huntId: sm.huntId != null ? sm.huntId : null }, f);
+        log(`Scan: a caçada ${f.morte ? 'terminou em MORTE' : 'foi encerrada por fora do Scan'}${sm.reason ? ' (motivo do servidor: ' + sm.reason + ')' : ''} — o Scan vai parar`, 'erro');
     }
 
     /* =========================================================================
@@ -3341,13 +3688,19 @@
      *  fecha esse resumo sozinho (summary-close) — é a única janela que pisca.
      *  Estado próprio (scan_cfg / scan_resultados): não mexe em hunt_id,
      *  modelo escolhido, Auto Hunt nem nas sessões do Analisador.
+     *
+     *  v2.11 — o Scan DEVOLVE o jogo como achou: foto do mapa, do lure e dos
+     *  perfis (kits) ao ligar; ao parar/terminar volta para o mapa de antes
+     *  (se "ficar" não foi escolhido de propósito) e reenvia os perfis que
+     *  existiam. Morte/`ended` por fora para o Scan e fica registrado.
      * ====================================================================== */
-    const SCAN_PADRAO = { mapas: [], minutos: 5, lureMax: true, fim: 'ficar', modelo: 'equilibrado', comparar: false,
+    const SCAN_PADRAO = { mapas: [], minutos: 5, lureMax: true, fim: 'voltar', modelo: 'equilibrado', comparar: false,
                           variantes: ['inteligente', 'equilibrado', 'economica'] };   // comparar: cada mapa × cada variante (estudo)
     const scanCfg = () => Object.assign({}, SCAN_PADRAO, ler('scan_cfg', {}));
     const guardarScanCfg = (patch) => guardar('scan_cfg', Object.assign(scanCfg(), patch));
     const scanResultados = () => ler('scan_resultados', {});
-    const SCAN = { ativo: false, fila: [], idx: -1, huntId: null, fase: 'parado', t0: 0, base: null, vivo: null, capMin: 100, erro: null, ocupado: false, iniciadoEm: 0 };
+    const SCAN = { ativo: false, fila: [], idx: -1, huntId: null, fase: 'parado', t0: 0, base: null, vivo: null, capMin: 100, erro: null, ocupado: false, iniciadoEm: 0,
+                   foto: null, rodada: 0, restaurando: false, encerrou: null, stopEnviado: 0, endedN: 0 };   // v2.11
     const CAP_MIN_SCAN = 10;                        // abaixo disso o loot se perde e a medição sai suja
 
     function scanIniciar() {
@@ -3358,18 +3711,88 @@
         for (const id of ids) for (const modelo of modelos) fila.push({ id, modelo });
         if (!fila.length) { log('Scan: marque pelo menos um mapa' + (c.comparar ? ' e uma variante' : ''), 'erro'); return false; }
         if (!socketAberto() || !ESTADO_WS.profiles) { log('Scan: socket sem perfis — dá um F5 com o helper instalado', 'erro'); return false; }
-        if (_cicloEmCurso) { log('Scan: ciclo de venda em andamento — espera terminar', 'erro'); return false; }
+        const ocup = travaJogo();
+        if (ocup) { log('Scan: ' + ocup + ' em andamento — espera terminar', 'erro'); return false; }
         if (ESTADO_WS.boss) { log('Scan: boss em andamento — termina o boss antes', 'erro'); return false; }
-        Object.assign(SCAN, { ativo: true, fila, idx: -1, huntId: null, fase: 'proximo', t0: 0, base: null, vivo: null, capMin: 100, erro: null, ocupado: false, iniciadoEm: Date.now() });
-        log(`Scan LIGADO — ${fila.length} medição(ões), ${c.minutos} min cada, lure ${c.lureMax ? 'máximo' : 'como está'}, ${c.comparar ? 'estudo: ' + modelos.map(nomeModelo).join(' · ') : nomeModelo(c.modelo || 'equilibrado')}`, 'ok');
+        ouvirEncerramentos();
+        /* v2.11 — FOTO do jogo antes de mexer: mapa, lure e perfis por vocação */
+        const cacando = frameFresco() && ESTADO_WS.huntId != null;
+        const foto = { t: Date.now(), huntId: cacando ? ESTADO_WS.huntId : null, lureTier: cacando ? ESTADO_WS.frame.lureTier : null,
+                       profiles: ESTADO_WS.profiles ? clonar(ESTADO_WS.profiles) : null };
+        Object.assign(SCAN, { ativo: true, fila, idx: -1, huntId: null, fase: 'proximo', t0: 0, base: null, vivo: null, capMin: 100, erro: null, ocupado: false, iniciadoEm: Date.now(),
+                              foto, rodada: Date.now(), restaurando: false, encerrou: null, stopEnviado: 0, endedN: WS.tipos.ended || 0 });
+        const hf = foto.huntId != null ? (CAT.hunts || []).find(h => h.id === foto.huntId) : null;
+        log(`Scan LIGADO — ${fila.length} medição(ões), ${c.minutos} min cada, lure ${c.lureMax ? 'máximo' : 'como está'}, ${c.comparar ? 'estudo: ' + modelos.map(nomeModelo).join(' · ') : nomeModelo(c.modelo || 'equilibrado')} · ao terminar: ${({ voltar: 'volta para ' + (hf ? hf.title : foto.huntId != null ? 'o mapa ' + foto.huntId : 'a cidade'), ficar: 'fica no último mapa', xp: 'vai para o melhor XP', ouro: 'vai para o melhor ouro' })[fimDoScan(c)]}`, 'ok');
         renderizar();
         return true;
     }
-    function scanParar(motivo, tipo) {
+    /* restaurar: 'tudo' (mapa + perfis — botão de parar), 'perfis' (morte ou
+     * party movida por fora: não reentra em caçada sozinho) ou 'nada' (boss
+     * ou ciclo de venda no meio: não mexer). */
+    function scanParar(motivo, tipo, restaurar) {
         if (!SCAN.ativo) return;
         SCAN.ativo = false; SCAN.fase = 'parado'; SCAN.huntId = null; SCAN.base = null; SCAN.vivo = null;
         log('Scan desligado' + (motivo ? ': ' + motivo : ''), tipo || 'info');
+        const modo = restaurar || 'tudo';
+        if (SCAN.foto && modo !== 'nada') {
+            SCAN.restaurando = true;                    // fecha a janela até a restauração pegar a vez
+            scanRestaurar(modo).catch(e => log('Scan: restaurar estourou — ' + e.message, 'erro'));
+        } else if (SCAN.foto) { SCAN.foto = null; log('Scan: jogo NÃO restaurado (' + (motivo || 'parado') + ') — mapa e kits ficaram como o Scan deixou', 'info'); }
         renderizar();
+    }
+    /* v2.11 — DEVOLVE O JOGO. Espera o passo em curso do Scan sair (ele vê
+     * SCAN.ativo=false depois de cada espera), ocupa a trava e restaura. */
+    async function scanRestaurar(modo) {
+        SCAN.restaurando = true;
+        try {
+            await esperarQue(() => !SCAN.ocupado, 60000, 250);
+            const foto = SCAN.foto; SCAN.foto = null;
+            if (!foto) return;
+            SCAN.ocupado = true; SCAN.fase = 'restaurando'; renderizar();
+            try { await _scanRestaurar(foto, modo); } finally { SCAN.ocupado = false; SCAN.fase = 'parado'; }
+        } finally { SCAN.restaurando = false; renderizar(); }
+    }
+    async function _scanRestaurar(foto, modo) {
+        if (_cicloEmCurso || ESTADO_WS.boss) { log('Scan: ' + (ESTADO_WS.boss ? 'boss' : 'ciclo de venda') + ' em andamento — jogo NÃO restaurado', 'erro'); return; }
+        if (!socketAberto()) { log('Scan: socket fechado — jogo NÃO restaurado (mapa e kits como o Scan deixou)', 'erro'); return; }
+        if (modo === 'tudo') {
+            try { await scanVoltarMapa(foto); } catch (e) { log('Scan: voltar ao mapa de antes falhou — ' + e.message, 'erro'); }
+        }
+        try { await scanRestaurarPerfis(foto); } catch (e) { log('Scan: restaurar os kits falhou — ' + e.message, 'erro'); }
+    }
+    async function scanVoltarMapa(foto) {
+        const cacando = () => frameFresco() && ESTADO_WS.huntId != null;
+        if (foto.huntId == null) {
+            if (!cacando()) return;
+            const r = await scanEncerrarCacada();
+            log(r.erro ? 'Scan: não voltei para a cidade — ' + r.erro : 'Scan: party de volta à cidade, como estava antes do Scan', r.erro ? 'erro' : 'ok');
+            return;
+        }
+        const h = (CAT.hunts || []).find(x => x.id === foto.huntId);
+        if (!h) { log('Scan: mapa de antes (id ' + foto.huntId + ') não está no catálogo — fiquei onde estou', 'erro'); return; }
+        const r = await scanEntrar(h, { lure: foto.lureTier != null ? foto.lureTier : 1 });   // lure desconhecido: o menor
+        log(r.erro ? 'Scan: não voltei para ' + h.title + ' — ' + r.erro : 'Scan: de volta a ' + h.title + ' (lure ' + lureTexto(h, r.lure) + '), como antes do Scan', r.erro ? 'erro' : 'ok');
+    }
+    /* Reenvia SÓ os perfis que existiam na foto e que mudaram — o objeto
+     * inteiro que o servidor mandou (presets, curas, poções), não um molde.
+     * Caçando, manda também o update_battle_config do perfil ativo, como a
+     * janela de atalhos faz. */
+    async function scanRestaurarPerfis(foto) {
+        if (!foto.profiles) return;
+        const cacando = emHunt();
+        let n = 0;
+        for (const voc of VOCS) {
+            const p = foto.profiles[voc];
+            if (!p || !Array.isArray(p.list) || !p.list.length) continue;
+            if (ESTADO_WS.profiles && JSON.stringify(ESTADO_WS.profiles[voc]) === JSON.stringify(p)) continue;
+            const who = cacando ? indiceDaVoc(voc) : null;
+            const ativo = p.list[p.active >= 0 && p.active < p.list.length ? p.active : 0];
+            if (cacando && who != null && ativo && ativo.config) enviarWS({ type: 'update_battle_config', data: payloadBattleConfig(normalizarConfig(ativo.config), who) });
+            enviarWS({ type: 'profiles_set', data: { vocation: voc, profiles: clonar(p) } });
+            n++;
+            await dorme(150);
+        }
+        log(n ? `Scan: kits de ${n} personagem(ns) devolvidos como estavam antes do Scan` : 'Scan: kits já estavam como antes do Scan', 'ok');
     }
     const scanHuntAtual = () => (SCAN.idx >= 0 && SCAN.idx < SCAN.fila.length) ? (CAT.hunts || []).find(h => h.id === SCAN.fila[SCAN.idx].id) : null;
     const scanModeloAtual = () => (SCAN.idx >= 0 && SCAN.idx < SCAN.fila.length) ? SCAN.fila[SCAN.idx].modelo : (scanCfg().modelo || 'equilibrado');
@@ -3408,7 +3831,9 @@
     function scanMedidaViva() {
         const a = anAgora(), b = SCAN.base;
         if (!a || !b) return null;
-        const seg = Math.max(1, (Date.now() - SCAN.t0) / 1000);
+        /* v2.11 — janela pelo elapsedMs do analisador do jogo (o relógio da
+         * página conta também o tempo de frame atrasado e de aba dormindo) */
+        const seg = segundosDaJanela(a.elapsedMs, b.elapsedMs, (Date.now() - SCAN.t0) / 1000);
         const d = { xp: a.xp - b.xp, kills: a.kills - b.kills, loot: a.lootGold - b.lootGold, sup: a.suppliesGold - b.suppliesGold, xpRaw: a.xpRaw - b.xpRaw,
                     tomado: (a.damageTaken || 0) - (b.damageTaken || 0), dado: (a.damageDealt || 0) - (b.damageDealt || 0), cura: (a.healingDone || 0) - (b.healingDone || 0) };
         /* poção por personagem: delta de supplyUsed entre a base e agora */
@@ -3418,26 +3843,37 @@
         const dDrops = {}; Object.keys(a.drops || {}).forEach(k => { const n = (a.drops[k] || 0) - ((b.drops || {})[k] || 0); if (n > 0) dDrops[k] = n; });
         const div = scanDividirLoot(SCAN.huntId, dDrops, d.kills);
         const porH = x => Math.round(x / seg * 3600);
-        return { seg, xpH: porH(d.xp), abatesH: porH(d.kills), lootH: porH(d.loot), supH: porH(d.sup), ouroH: porH(d.loot - d.sup),
+        return { seg, xpH: porH(d.xp), xpRawH: porH(d.xpRaw), abatesH: porH(d.kills), lootH: porH(d.loot), supH: porH(d.sup), ouroH: porH(d.loot - d.sup),
                  estavelH: div ? porH(div.estavel - d.sup) : null, sorte: div ? div.sorte : null, sorteH: div ? porH(div.sorte) : null, raros: div ? div.raros : [],
                  tomadoH: porH(d.tomado), dadoH: porH(d.dado), curaH: porH(d.cura), supVoc, razao: razaoResumo(RAZAO),
                  xp: d.xp, kills: d.kills, loot: d.loot, sup: d.sup, xpRaw: d.xpRaw };
     }
-    async function scanEntrar(h) {
+    /* stop pelo socket + espera o `ended` + fecha o resumo. v2.11: anota a
+     * hora do stop — o `ended` que chega por causa dele é do próprio Scan. */
+    async function scanEncerrarCacada() {
+        SCAN.stopEnviado = Date.now();
+        enviarWS({ type: 'stop', data: {} });
+        const saiu = await esperarQue(() => !frameFresco() || tid('summary-close'), 25000, 250);
+        const fecharR = await esperarQue(() => tid('summary-close'), 3000, 150);
+        if (fecharR) fecharR.click();
+        if (!saiu) return { erro: 'mandei stop e a caçada não encerrou em 25 s' };
+        await dorme(600);
+        return { ok: true };
+    }
+    /* opc.lure (v2.11): tier pedido — a restauração volta com o lure de antes */
+    async function scanEntrar(h, opc) {
         const c = scanCfg();
-        const lure = (c.lureMax && h.lureTiers && h.lureTiers.length) ? h.lureTiers.length : 1;
+        const nTiers = h.lureTiers && h.lureTiers.length ? h.lureTiers.length : 1;
+        const pedido = opc && opc.lure != null ? Math.max(1, Math.min(nTiers, Math.round(Number(opc.lure)) || 1)) : null;
+        const lure = pedido != null ? pedido : (c.lureMax && h.lureTiers && h.lureTiers.length) ? h.lureTiers.length : 1;
         const jaNele = ESTADO_WS.huntId === h.id && frameFresco() && !ESTADO_WS.boss;
         if (!jaNele) {
             /* v2.2.2 — de DENTRO de uma caçada o servidor recusa start_hunt
              * ("already_hunting"). O cliente faz: stop → espera ended →
              * start_hunt. O `ended` abre o resumo; fecha-se em seguida. */
             if (frameFresco() && ESTADO_WS.huntId != null) {
-                enviarWS({ type: 'stop', data: {} });
-                const saiu = await esperarQue(() => !frameFresco() || tid('summary-close'), 25000, 250);
-                const fecharR = await esperarQue(() => tid('summary-close'), 3000, 150);
-                if (fecharR) fecharR.click();
-                if (!saiu) return { erro: 'mandei stop e a caçada não encerrou em 25 s' };
-                await dorme(600);
+                const r0 = await scanEncerrarCacada();
+                if (r0.erro) return r0;
             }
             const t = Date.now();
             ESTADO_WS.ultimoErro = null;
@@ -3447,58 +3883,86 @@
             const fechar = await esperarQue(() => tid('summary-close'), 2500, 150);
             if (fechar) { fechar.click(); }
             if (!ok) return { erro: 'start_hunt enviado e o servidor não confirmou a entrada em 20 s' + (ESTADO_WS.ultimoErro ? ' (erro do servidor: ' + ESTADO_WS.ultimoErro + ')' : '') };
+        } else if (pedido != null) {
+            if (ESTADO_WS.frame.lureTier !== pedido) {
+                enviarWS({ type: 'set_lure', data: { tier: pedido } });
+                await esperarQue(() => frameFresco() && ESTADO_WS.frame.lureTier === pedido, 6000, 250);
+            }
         } else if (c.lureMax) {
             try { await lureNoMaximoSocket(h); } catch (e) { falhou('lure do Scan', e); }
         }
         await esperarQue(() => frameFresco() && ESTADO_WS.frame.an, 8000, 250);
         return { ok: true, lure };
     }
+    /* v2.11 — morte / `ended` por fora: grava a parcial (SCAN.vivo) como
+     * falha, sem apagar resultado bom anterior, e para o Scan devolvendo os
+     * kits (não reentra em caçada sozinho depois de uma morte). */
+    function scanFalhaEncerrou() {
+        const f = SCAN.encerrou, h = scanHuntAtual();
+        SCAN.encerrou = null;
+        const parcial = SCAN.fase === 'medindo' ? (SCAN.vivo || null) : null;
+        if (h) scanGravar(h, parcial, f.motivo + (parcial ? ` — parcial de ${Math.max(1, Math.round(parcial.seg / 60))} min` : ''));
+        scanParar((h ? h.title + ': ' : '') + f.motivo, 'erro', 'perfis');
+    }
     async function scanPasso() {
         if (!SCAN.ativo || SCAN.ocupado) return;
         SCAN.ocupado = true;
         try {
+            /* reserva do ouvinte de `ended`: o contador do grampo subiu durante
+             * a medição e não foi stop do Scan → encerrou por fora */
+            if (!SCAN.encerrou && SCAN.fase === 'medindo' && (WS.tipos.ended || 0) > SCAN.endedN && Date.now() - (SCAN.stopEnviado || 0) > 40000)
+                SCAN.encerrou = { falha: true, morte: false, motivo: 'encerrou (ended sem motivo lido)', t: Date.now() };
+            if (SCAN.encerrou) { scanFalhaEncerrou(); return; }
             if (!socketAberto()) { SCAN.erro = 'socket fechado'; return; }
-            if (ESTADO_WS.boss) { scanParar('boss em andamento — retome quando terminar', 'erro'); return; }
-            if (_cicloEmCurso) { scanParar('ciclo de venda em andamento', 'erro'); return; }
+            if (ESTADO_WS.boss) { scanParar('boss em andamento — retome quando terminar', 'erro', 'nada'); return; }
+            if (_cicloEmCurso) { scanParar('ciclo de venda em andamento', 'erro', 'nada'); return; }
             if (SCAN.fase === 'proximo') {
                 SCAN.idx++;
                 if (SCAN.idx >= SCAN.fila.length) { await scanTerminar(); return; }
                 const h = scanHuntAtual();
-                SCAN.huntId = h.id; SCAN.fase = 'entrando'; SCAN.base = null; SCAN.capMin = 100; SCAN.erro = null;
+                SCAN.huntId = h.id; SCAN.fase = 'entrando'; SCAN.base = null; SCAN.vivo = null; SCAN.capMin = 100; SCAN.erro = null;
                 log(`Scan ${SCAN.idx + 1}/${SCAN.fila.length}: entrando em ${h.title}…`, 'info');
                 renderizar();
                 const r = await scanEntrar(h);
+                if (!SCAN.ativo) return;                // v2.11: desligaram no meio — a restauração cuida do resto
                 if (r.erro) { scanGravar(h, null, r.erro); SCAN.fase = 'proximo'; log(`Scan: ${h.title} pulado — ${r.erro}`, 'erro'); return; }
                 await dorme(1500);
                 try { await lootTabela(h.id); } catch (e) { }
                 try { await bestiarioHunt(h); } catch (e) { }
+                if (!SCAN.ativo || SCAN.encerrou) return;
                 try { await aplicarEmTodos(scanModeloAtual(), h); } catch (e) { log('Scan: aplicar falhou — ' + e.message, 'erro'); }
+                if (!SCAN.ativo || SCAN.encerrou) return;
                 /* v2.2.1 — zera o analisador do jogo antes de medir: é o mesmo
                  * frame que o botão "zerar" da janela Estatísticas manda. Assim
                  * o mapa em que a party já estava não entra com o passado. */
                 try { const an0 = anAgora(); enviarWS({ type: 'analyzer_reset', data: {} }); await esperarQue(() => { const a = anAgora(); return a && (!an0 || a.elapsedMs < an0.elapsedMs || a.kills < an0.kills); }, 5000, 200); } catch (e) { }
                 await esperarQue(() => frameFresco() && ESTADO_WS.frame.an, 6000, 250);
+                if (!SCAN.ativo || SCAN.encerrou) return;
                 const a = anAgora();
                 if (!a) { scanGravar(h, null, 'sem analisador no frame'); SCAN.fase = 'proximo'; return; }
                 SCAN.base = Object.assign({}, a); SCAN.baseParty = clonar((ESTADO_WS.frame && ESTADO_WS.frame.party) || []); SCAN.t0 = Date.now(); SCAN.fase = 'medindo'; RAZAO = razaoNovo();
+                SCAN.endedN = WS.tipos.ended || 0;
                 log(`Scan: medindo ${h.title} por ${scanCfg().minutos} min (lure ${lureTexto(h, r.lure)}, ${nomeModelo(scanModeloAtual())})`, 'ok');
                 renderizar();
                 return;
             }
             if (SCAN.fase === 'medindo') {
                 const h = scanHuntAtual();
-                if (ESTADO_WS.huntId !== h.id) { scanParar('a party saiu de ' + h.title + ' por fora do Scan', 'erro'); return; }
+                if (ESTADO_WS.huntId !== h.id) { scanParar('a party saiu de ' + h.title + ' por fora do Scan', 'erro', 'perfis'); return; }
                 const aAgora = anAgora();
                 if (aAgora && SCAN.base && (aAgora.kills < SCAN.base.kills || aAgora.elapsedMs < SCAN.base.elapsedMs)) {
                     SCAN.base = Object.assign({}, aAgora); SCAN.baseParty = clonar((ESTADO_WS.frame && ESTADO_WS.frame.party) || []); SCAN.t0 = Date.now(); SCAN.vivo = null; RAZAO = razaoNovo();
                     log('Scan: o analisador do jogo foi zerado no meio — recomeçando a medição de ' + h.title, 'info');
                 }
                 const cap = capLivre(); if (cap && cap.pct < SCAN.capMin) SCAN.capMin = cap.pct;
-                SCAN.vivo = scanMedidaViva();
-                if (Date.now() - SCAN.t0 >= scanCfg().minutos * 60000) {
-                    const m = scanMedidaViva();
-                    scanGravar(h, m, null);
-                    log(`Scan: ${h.title} [${nomeModelo(scanModeloAtual())}] — ${m ? (m.xpH / 1000).toFixed(1) + 'k xp/h · ' + (m.ouroH >= 0 ? '+' : '') + m.ouroH + ' ouro/h' + (m.estavelH != null ? ' (estável ' + (m.estavelH >= 0 ? '+' : '') + m.estavelH + (m.sorte ? ', sorte +' + m.sorte : '') + ')' : '') + ' · ' + m.abatesH + ' abates/h · tomou ' + m.tomadoH + '/h · poção ' + m.supH + '/h · ' + razaoTexto(m.razao) : 'sem medida'}`, 'ok');
+                SCAN.vivo = scanMedidaViva() || SCAN.vivo;
+                /* v2.11 — o fim da janela é pelo relógio do analisador; o da
+                 * página só como teto (+90 s), para não ficar preso se o frame parar */
+                const alvoSeg = scanCfg().minutos * 60;
+                if ((SCAN.vivo && SCAN.vivo.seg >= alvoSeg) || Date.now() - SCAN.t0 >= alvoSeg * 1000 + 90000) {
+                    const m = scanMedidaViva() || SCAN.vivo;
+                    scanGravar(h, m, m ? null : 'sem medida (frame parou)');
+                    log(`Scan: ${h.title} [${nomeModelo(scanModeloAtual())}] — ${m ? (m.xpH / 1000).toFixed(1) + 'k xp/h (raw ' + (m.xpRawH / 1000).toFixed(1) + 'k) · ' + (m.ouroH >= 0 ? '+' : '') + m.ouroH + ' ouro/h' + (m.estavelH != null ? ' (estável ' + (m.estavelH >= 0 ? '+' : '') + m.estavelH + (m.sorte ? ', sorte +' + m.sorte : '') + ')' : '') + ' · ' + m.abatesH + ' abates/h · tomou ' + m.tomadoH + '/h · poção ' + m.supH + '/h · ' + razaoTexto(m.razao) : 'sem medida'}`, m ? 'ok' : 'erro');
                     SCAN.fase = 'proximo';
                 }
             }
@@ -3512,52 +3976,62 @@
         const tier = (scanCfg().lureMax && h.lureTiers) ? h.lureTiers.length : 1;
         const modelo = scanModeloAtual();
         const chave = scanCfg().comparar ? h.id + '|' + modelo : h.id;
-        r[chave] = Object.assign({ id: h.id, title: h.title, levelMin: h.levelMin, t: Date.now(), lure: tier, lureTxt: lureTexto(h, tier), modelo,
-                                  nivel: nivelAtual(), minutos: scanCfg().minutos, capMin: Math.round(SCAN.capMin), suja: SCAN.capMin < CAP_MIN_SCAN, erro: erro || null }, m || {});
+        const novo = Object.assign({ id: h.id, title: h.title, levelMin: h.levelMin, t: Date.now(), lure: tier, lureTxt: lureTexto(h, tier), modelo, rodada: SCAN.rodada || null,
+                                     nivel: nivelAtual(), minutos: scanCfg().minutos, capMin: Math.round(SCAN.capMin), suja: SCAN.capMin < CAP_MIN_SCAN, erro: erro || null }, m || {});
+        r[chave] = mesclarResultadoScan(r[chave], novo);   // v2.11: falha não apaga resultado bom
         guardar('scan_resultados', r);
     }
-    /* veredito relativo: quem chega a 90 % do melhor XP é "XP", 90 % do melhor
-     * ouro (e positivo) é "Ouro", os dois é "Os dois". */
-    const ouroBase = r => r.estavelH != null ? r.estavelH : r.ouroH;   // v2.3.0: ranking de ouro pelo estável
+    /* veredito: vereditosScan (@@AUTOHUNT-PURO), com o nível de agora como
+     * referência do filtro ±2 */
     function scanVereditos() {
-        const lista = Object.values(scanResultados()).filter(r => !r.erro && r.xpH != null);
-        const melhorXp = Math.max(0, ...lista.map(r => r.xpH)), melhorOuro = Math.max(0, ...lista.map(ouroBase));
-        lista.forEach(r => {
-            const pXp = melhorXp > 0 ? Math.round(r.xpH / melhorXp * 100) : 0;
-            const pOuro = melhorOuro > 0 && ouroBase(r) > 0 ? Math.round(ouroBase(r) / melhorOuro * 100) : 0;
-            const xp = pXp >= 90, ouro = pOuro >= 90;
-            r.pXp = pXp; r.pOuro = pOuro;
-            /* v2.2.4 — nunca "—": o dono leu como "sem veredito" (Barbarian
-             * Camp, 27/09). Quem não chega a 90 % mostra o quanto ficou atrás. */
-            r.veredito = xp && ouro ? 'Os dois' : xp ? 'XP' : ouro ? 'Ouro'
-                : ouroBase(r) < 0 ? 'dá prejuízo'
-                : lista.length === 1 ? 'único medido'
-                : `abaixo: ${pXp}% do xp · ${pOuro}% do ouro`;
-        });
-        return { lista: lista.sort((a, b) => b.xpH - a.xpH), melhorXp, melhorOuro,
-                 topXp: lista.slice().sort((a, b) => b.xpH - a.xpH)[0] || null, topOuro: lista.slice().sort((a, b) => ouroBase(b) - ouroBase(a))[0] || null };
+        const nv = nivelAtual();
+        return vereditosScan(Object.values(scanResultados()), nv > 1 ? nv : null);
     }
+    /* v2.11 — SCAN.ativo cai aqui, mas SCAN.ocupado segue true até o fim
+     * (estamos dentro do scanPasso): o gatilho do Auto Hunt olha os dois e
+     * não dispara no meio da ida para o melhor mapa. */
     async function scanTerminar() {
         const v = scanVereditos();
         SCAN.ativo = false; SCAN.fase = 'parado'; SCAN.huntId = null;
-        log(`Scan TERMINADO — melhor XP: ${v.topXp ? v.topXp.title + ' (' + (v.topXp.xpH / 1000).toFixed(1) + 'k/h)' : '?'} · melhor ouro: ${v.topOuro ? v.topOuro.title + ' (' + (ouroBase(v.topOuro) >= 0 ? '+' : '') + ouroBase(v.topOuro) + '/h estável)' : '?'}`, 'ok');
-        const c = scanCfg();
-        const alvo = c.fim === 'xp' ? v.topXp : c.fim === 'ouro' ? v.topOuro : null;
-        if (alvo) {
-            const h = (CAT.hunts || []).find(x => x.id === alvo.id);
-            if (h) { log('Scan: indo para ' + h.title + ' (melhor ' + (c.fim === 'xp' ? 'XP' : 'ouro') + ')', 'info'); try { await scanEntrar(h); await dorme(1500); await aplicarEmTodos(alvo.modelo || c.modelo || 'equilibrado', h); } catch (e) { } }
+        log(`Scan TERMINADO — melhor XP: ${v.topXp ? v.topXp.title + ' (' + (xpBase(v.topXp) / 1000).toFixed(1) + 'k/h raw)' : '?'} · melhor ouro: ${v.topOuro ? v.topOuro.title + ' (' + (ouroBase(v.topOuro) >= 0 ? '+' : '') + ouroBase(v.topOuro) + '/h estável)' : '?'}`, 'ok');
+        const c = scanCfg(), fim = fimDoScan(c), foto = SCAN.foto;
+        SCAN.foto = null;
+        const alvo = fim === 'xp' ? v.topXp : fim === 'ouro' ? v.topOuro : null;
+        const h = alvo ? (CAT.hunts || []).find(x => x.id === alvo.id) : null;
+        if (h) {
+            log('Scan: indo para ' + h.title + ' (melhor ' + (fim === 'xp' ? 'XP' : 'ouro') + ')', 'info');
+            try {
+                const r = await scanEntrar(h);
+                if (r.erro) log('Scan: não entrei em ' + h.title + ' — ' + r.erro, 'erro');
+                else { await dorme(1500); await aplicarEmTodos(alvo.modelo || c.modelo || 'equilibrado', h); }
+            } catch (e) { log('Scan: ir para ' + h.title + ' falhou — ' + e.message, 'erro'); }
+        } else if (foto) {
+            if (fim === 'xp' || fim === 'ouro') log('Scan: nenhum resultado válido para escolher o melhor ' + (fim === 'xp' ? 'XP' : 'ouro') + ' — voltando como estava', 'info');
+            SCAN.fase = 'restaurando'; renderizar();
+            try { await _scanRestaurar(foto, fim === 'ficar' ? 'perfis' : 'tudo'); } catch (e) { log('Scan: restaurar falhou — ' + e.message, 'erro'); }
+            SCAN.fase = 'parado';
         }
         renderizar();
     }
+    /* "ir ›" dos resultados. v2.11: respeita a trava comum (antes não olhava
+     * o ciclo de venda) e ocupa a trava enquanto troca de mapa. */
     async function scanIrPara(id) {
         const h = (CAT.hunts || []).find(x => x.id === id);
         if (!h) return;
-        if (SCAN.ativo) { log('Scan em andamento — desliga antes de ir para outro mapa', 'erro'); return; }
-        log('indo para ' + h.title + ' pelo socket…', 'info');
-        const r = await scanEntrar(h);
-        if (r.erro) { log('não entrei em ' + h.title + ': ' + r.erro, 'erro'); return; }
-        await dorme(1500);
-        await aplicarEmTodos(scanCfg().modelo || 'equilibrado', h);
+        const ocup = travaJogo();
+        if (ocup) { log(ocup + ' em andamento — espera terminar antes de ir para outro mapa', 'erro'); return; }
+        if (ESTADO_WS.boss) { log('boss em andamento — termina o boss antes de trocar de mapa', 'erro'); return; }
+        if (!socketAberto()) { log('ir para ' + h.title + ': socket do jogo não está aberto — dá um F5 com o helper instalado', 'erro'); return; }
+        _travaJogo = 'troca de mapa';
+        renderizar();
+        try {
+            log('indo para ' + h.title + ' pelo socket…', 'info');
+            const r = await scanEntrar(h);
+            if (r.erro) { log('não entrei em ' + h.title + ': ' + r.erro, 'erro'); return; }
+            await dorme(1500);
+            await aplicarEmTodos(scanCfg().modelo || 'equilibrado', h);
+        } catch (e) { log('ir para ' + h.title + ' falhou — ' + e.message, 'erro'); }
+        finally { _travaJogo = null; renderizar(); }
     }
 
     const sessoes = () => ler('sessoes', []);
@@ -4702,81 +5176,291 @@
             <div class="tb-mut" style="font-size:10px;margin-top:4px">F5 zera a marcação do Auto Selling — depois de recarregar, "Auto-sell: marcar tudo".</div>
           </div></details>`;
     }
+    /* v2.11 — CSS das telas Auto Hunt e Scan, com escopo (.tb-ah / .tb-sc):
+     * a casca do painel é de outra área; aqui só o que estas telas pedem —
+     * alvos ≥ 28 px, letra ≥ 10,5 px, cartões de resultado, confirmação em
+     * 2 toques. Injetado uma vez, na primeira tela que precisar. */
+    const CSS_AH = `
+    .tb-ah,.tb-sc{font-size:11px}
+    .tb-ah .tb-bt,.tb-sc .tb-bt{min-height:28px;font-size:11px}
+    .tb-ah .tb-bt.mini,.tb-sc .tb-bt.mini{min-height:28px;padding:2px 9px;font-size:10.5px}
+    .tb-ah .tb-tag,.tb-sc .tb-tag{font-size:10.5px}
+    .tb-ah .tb-in,.tb-sc .tb-in{min-height:28px;box-sizing:border-box;font-size:11px}
+    .tb-sc select{background:#232936;color:#dde3ee;border:1px solid #3a4356;border-radius:5px;padding:3px 5px;font:inherit;font-size:11px;min-height:28px;flex:1;min-width:0}
+    .tb-ah label.tb-l,.tb-sc label.tb-l{min-height:28px;color:#b4bfd2}
+    .tb-ah input[type=checkbox],.tb-ah input[type=radio],.tb-sc input[type=checkbox]{width:16px;height:16px;margin:0 4px 0 0;flex:none}
+    .tb-ah details.tb-aj>summary,.tb-sc details.tb-aj>summary{display:inline-flex;align-items:center;min-height:28px;line-height:1.3;font-size:10.5px;padding:3px 10px;box-sizing:border-box;color:#9aa3b5}
+    .tb-ah-opc{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+    .tb-ah .tb-mut,.tb-sc .tb-mut{color:#9aa3b5}
+    .tb-chave{background:none;border:0;padding:5px 2px;margin:0;min-height:28px;cursor:pointer;display:inline-flex;align-items:center}
+    .tb-chave:disabled{opacity:.45;cursor:default}
+    .tb-chave:focus-visible,.tb-sc-mapa:focus-within{outline:2px solid #ffd479;outline-offset:1px;border-radius:6px}
+    .tb-sc-lista{max-height:200px;overflow:auto}
+    .tb-sc-mapa{display:flex;align-items:center;gap:4px;min-height:28px;padding:0 2px;border-bottom:1px dotted #232936;cursor:pointer}
+    .tb-sc-mapa.tb-escondido{display:none}
+    .tb-sc-mapa .tb-tag{margin-left:auto}
+    .tb-sc-caixa{background:#1a1f29;border:1px solid #2c5c3a;border-radius:7px;padding:6px 7px;margin:5px 0}
+    .tb-sc-card{background:#1a1f29;border:1px solid #262d3b;border-radius:7px;padding:6px 7px;margin:5px 0}
+    .tb-sc-card.fora{opacity:.75;border-style:dashed}
+    .tb-sc-card.falha{border-color:#6b2b2b}
+    .tb-sc-cab{display:flex;align-items:center;gap:6px}
+    .tb-sc-cab b{flex:1;min-width:0}
+    .tb-selo{font-size:10.5px;padding:1px 7px;border-radius:9px;background:#2b3242;color:#b4bfd2;white-space:nowrap;font-weight:bold}
+    .tb-selo.ok{background:#1f4a2c;color:#8ff0a8}.tb-selo.av{background:#4a3b14;color:#ffd479}.tb-selo.ruim{background:#4a1f1f;color:#ff9b93}.tb-selo.mut{font-weight:normal}
+    .tb-sc-num{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin:4px 0}
+    .tb-sc-num>div{background:#12151c;border-radius:6px;padding:3px 6px;min-width:0}
+    .tb-sc-num small{display:block;color:#9aa3b5;font-size:10.5px}
+    .tb-sc-num b{font-size:14px;color:#fff}
+    .tb-sc-num b.tb-ok{color:#6ede8a}.tb-sc-num b.tb-ruim{color:#ff7b72}
+    .tb-sc-pe{display:flex;align-items:flex-start;gap:6px}
+    .tb-sc-pe details{flex:1;min-width:0}
+    .tb-sc-det{font-size:10.5px;color:#b4bfd2}
+    .tb-conf{background:#8a2a1f !important;border-color:#e0685c !important;color:#fff !important}
+    .tb-ah-hist{width:100%;border-collapse:collapse;font-size:10.5px;table-layout:fixed}
+    .tb-ah-hist td,.tb-ah-hist th{padding:2px 3px;border-bottom:1px dotted #232936;text-align:left;vertical-align:top;overflow-wrap:anywhere}
+    .tb-ah-hist th{color:#9aa3b5;font-weight:normal}
+    .tb-ah-alarme{background:#3a1d1d;border:1px solid #6b2b2b;color:#ffb3ad;border-radius:7px;padding:5px 7px;margin:5px 0}
+    `;
+    function garantirCssAH() {
+        if (document.getElementById('tb-css-ah')) return;
+        const st = document.createElement('style'); st.id = 'tb-css-ah'; st.textContent = CSS_AH;
+        (document.head || document.documentElement).appendChild(st);
+    }
+    /* v2.11 — CONFIRMAÇÃO EM 2 TOQUES para o que troca de mapa ou encerra a
+     * caçada ("ir ›" do Scan, Venda rápida caçando). O 1º toque vira o botão
+     * em "confirmar…" por 4 s; o repinte de 4 s não perde o estado (fica em
+     * _doisToques, não no botão). precisa(): quando falso, 1 toque basta. */
+    const _doisToques = { chave: null, ate: 0 };
+    function ligarDoisToques(btn, chave, rotulo, acao, precisa) {
+        garantirCssAH();
+        btn.dataset.dt = chave;
+        if (!btn.dataset.rotulo) btn.dataset.rotulo = btn.textContent;
+        const pendente = () => _doisToques.chave === chave && Date.now() < _doisToques.ate;
+        const voltarRotulo = () => $$(`[data-dt="${chave}"]`).forEach(b => { b.textContent = b.dataset.rotulo; b.classList.remove('tb-conf'); });
+        if (pendente()) { btn.textContent = rotulo; btn.classList.add('tb-conf'); }
+        btn.onclick = () => {
+            if (pendente() || (precisa && !precisa())) { _doisToques.chave = null; voltarRotulo(); acao(); return; }
+            _doisToques.chave = chave; _doisToques.ate = Date.now() + 4000;
+            btn.textContent = rotulo; btn.classList.add('tb-conf');
+            setTimeout(() => { if (_doisToques.chave === chave && Date.now() >= _doisToques.ate) { _doisToques.chave = null; voltarRotulo(); } }, 4100);
+        };
+    }
+    /* v2.11 — o campo de texto da lista "nunca vender" sobrevive ao repinte
+     * de 4 s da aba (o repinte troca o innerHTML e o campo perderia o foco e
+     * o que foi digitado). Rascunho e cursor ficam aqui até o blur de
+     * verdade (o campo ainda na página). */
+    let _rascunhoAH = null, _repintandoAH = false;
+    function manterRascunho(el) {
+        if (!el) return;
+        if (_rascunhoAH && _rascunhoAH.id === el.id) { el.value = _rascunhoAH.valor; try { el.focus(); el.setSelectionRange(_rascunhoAH.ini, _rascunhoAH.fim); } catch { /* campo sem seleção */ } }
+        const salvar = () => { _rascunhoAH = { id: el.id, valor: el.value, ini: el.selectionStart, fim: el.selectionEnd }; };
+        ['focus', 'input', 'keyup', 'click'].forEach(ev => el.addEventListener(ev, salvar));
+        el.addEventListener('blur', () => setTimeout(() => { if (el.isConnected && _rascunhoAH && _rascunhoAH.id === el.id) _rascunhoAH = null; }, 0));
+    }
+
     /* v1.9.0 — AUTO HUNT (print do Stonegy). Chave desligada por padrão,
-     * guardada por conta e sobrevive a F5 (o boot avisa no log). */
+     * guardada por conta e sobrevive a F5 (o boot avisa no log).
+     * v2.11 — lista "nunca vender", histórico dos ciclos e alarme > 3/h. */
     function telaAutoHunt() {
+        garantirCssAH();
+        /* o innerHTML que vem a seguir tira o campo focado da página, e o
+         * Chrome dispara blur/change NESSA hora (visto ao vivo em 29/09: o
+         * change repintava por dentro do repinte e o innerHTML estourava).
+         * Até o fim desta pintura, change/blur não são do dono. */
+        _repintandoAH = true; Promise.resolve().then(() => { _repintandoAH = false; });
         const a = autoHunt(), c = capLivre(), dentro = emHunt();
         const h = a.huntId != null && CAT.hunts ? CAT.hunts.find(x => x.id === a.huntId) : null;
         const motivo = motivoNaoDispara();
-        const estado = motivo === '' ? '<span class="tb-ok">disparando…</span>' : motivo === null ? '<span class="tb-ok">vigiando a mochila</span>' : `<span class="tb-av">${motivo}</span>`;
-        return `<div class="tb-linha"><span class="tb-sw ${a.on ? 'on' : ''}" id="tb-ah-on"><i></i></span><b>Automação</b><span class="tb-mut" style="margin-left:auto">${estado}</span></div>
-          <div class="tb-linha"><span class="tb-mut">hunt</span><b>${h ? h.title : '—'}</b>
-            <button class="tb-bt mini" id="tb-ah-memorizar" ${dentro ? '' : 'disabled'} title="memorizar a hunt atual">📍 esta</button>
-            <button class="tb-bt mini" id="tb-ah-esquecer" ${a.huntId != null ? '' : 'disabled'}>esquecer</button></div>
-          <div class="tb-linha"><span class="tb-mut">vender quando</span>
-            <label class="tb-l"><input type="radio" name="tb-ah-modo" value="pct" ${a.modo === 'pct' ? 'checked' : ''}> ≤</label><input type="number" class="tb-in" id="tb-ah-pct" value="${a.pct}" min="1" max="99" style="width:44px">%
-            <label class="tb-l"><input type="radio" name="tb-ah-modo" value="oz" ${a.modo === 'oz' ? 'checked' : ''}> ≤</label><input type="number" class="tb-in" id="tb-ah-oz" value="${a.oz}" min="10" step="10" style="width:56px">oz</div>
+        const estado = motivo === '' ? '<span class="tb-ok">disparando…</span>' : motivo === null ? '<span class="tb-ok">vigiando a mochila</span>' : `<span class="tb-av">${escHtml(motivo)}</span>`;
+        const hist = historicoCiclos(), nHora = ciclosNaUltimaHora(hist, Date.now());
+        const lista = Array.isArray(a.nuncaVender) ? a.nuncaVender : [];
+        const prot = [a.nvEquip !== false ? 'equip.' : null, a.nvImbu !== false ? 'imbuement' : null, lista.length ? lista.length + ' seus' : null].filter(Boolean);
+        const hora = t => new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        const oz = x => x == null ? '?' : Math.round(x).toLocaleString('pt-BR');
+        const ORIG = { auto: 'auto', venda: 'venda' };
+        const linhasHist = hist.slice().reverse().map(r => `<tr><td>${hora(r.t)}<br><span class="tb-mut">${escHtml(ORIG[r.origem] || r.origem)}${r.dur != null ? ' · ' + (r.dur >= 60 ? Math.round(r.dur / 60) + ' min' : r.dur + ' s') : ''}</span></td>
+            <td>${r.ouro != null ? r.ouro.toLocaleString('pt-BR') : '—'}${r.guardados ? `<br><span class="tb-mut">${r.guardados} guardado(s)</span>` : ''}</td>
+            <td>${oz(r.ozAntes)} → ${oz(r.ozDepois)}</td>
+            <td>${r.depot ? r.depot.usado + '/' + r.depot.total : '—'}</td>
+            <td class="${r.erro ? 'tb-ruim' : 'tb-ok'}">${r.erro ? escHtml(r.erro) : 'ok'}</td></tr>`).join('');
+        return `<div class="tb-ah">
+          <div class="tb-linha"><button type="button" class="tb-chave" id="tb-ah-on" role="switch" aria-checked="${a.on ? 'true' : 'false'}" aria-label="Automação do Auto Hunt"><span class="tb-sw ${a.on ? 'on' : ''}"><i></i></span></button><b>Automação</b><span class="tb-mut" style="margin-left:auto;text-align:right">${estado}</span></div>
+          ${nHora > 3 ? `<div class="tb-ah-alarme">⚠ ${nHora} ciclos na última hora — a mochila enche em menos de 20 min. Confira o limite, o depot e o histórico abaixo.</div>` : ''}
+          <div class="tb-linha"><span class="tb-mut">hunt</span><b>${h ? escHtml(h.title) : '—'}</b>
+            <button type="button" class="tb-bt mini" id="tb-ah-memorizar" ${dentro ? '' : 'disabled'} title="memorizar a hunt atual">📍 esta</button>
+            <button type="button" class="tb-bt mini" id="tb-ah-esquecer" ${a.huntId != null ? '' : 'disabled'}>esquecer</button></div>
+          <div class="tb-mut" style="margin-top:4px">vender quando a mochila tiver</div>
+          <div class="tb-ah-opc"><label class="tb-l"><input type="radio" name="tb-ah-modo" value="pct" ${a.modo === 'pct' ? 'checked' : ''}> até</label><input type="number" class="tb-in" id="tb-ah-pct" value="${a.pct}" min="1" max="99" style="width:56px" aria-label="% livre"><span>% livre</span></div>
+          <div class="tb-ah-opc"><label class="tb-l"><input type="radio" name="tb-ah-modo" value="oz" ${a.modo === 'oz' ? 'checked' : ''}> até</label><input type="number" class="tb-in" id="tb-ah-oz" value="${a.oz}" min="10" step="10" style="width:68px" aria-label="oz livres"><span>oz livres</span></div>
           <div class="tb-linha"><span class="tb-mut">agora</span><span>${c ? `${c.pct}% · ${c.ozTxt} oz livres` : '—'}</span>${mochilaNoLimite() ? '<span class="tb-tag tb-ruim">no limite</span>' : ''}</div>
           <label class="tb-l"><input type="checkbox" id="tb-ah-voltar" ${a.voltar ? 'checked' : ''}> voltar para a hunt depois de vender</label>
-          ${aj('ah-ajuda', 'Ciclo: finalizar → purificar todos → vender no NPC → guardar no depot → voltar. Qualquer falha para o ciclo e desliga a chave (ver Log). Intervalo mínimo entre ciclos: 5 min. Se trocar de hunt na mão, clique "📍 esta" dentro dela. Lure e magia não são tocados ao voltar.')}`;
+          <details class="tb-aj" data-k="ah-nunca"><summary>nunca vender: ${prot.length ? escHtml(prot.join(' + ')) : '<span class="tb-ruim">NADA</span>'}</summary><div>
+            <div><label class="tb-l"><input type="checkbox" id="tb-ah-nv-equip" ${a.nvEquip !== false ? 'checked' : ''}> equipamento (tudo que veste ou empunha)</label></div>
+            <div><label class="tb-l"><input type="checkbox" id="tb-ah-nv-imbu" ${a.nvImbu !== false ? 'checked' : ''}> materiais de imbuement</label></div>
+            <div class="tb-linha"><input class="tb-in" id="tb-ah-lista" placeholder="sua lista: nomes separados por vírgula" value="${escHtml(lista.join(', '))}" style="flex:1" aria-label="sua lista de itens para nunca vender"></div>
+            <div class="tb-mut">Antes de confirmar a venda no NPC o helper desmarca estes itens no painel (vale também para a Venda rápida). Se não conseguir desmarcar algum, não vende nada e registra no Log — o ciclo para. O que não é vendido vai para o depot.</div>
+          </div></details>
+          <details class="tb-aj" data-k="ah-hist"><summary>histórico (${hist.length})${nHora ? ' · ' + nHora + ' na última hora' : ''}</summary><div>
+            ${hist.length ? `<table class="tb-ah-hist"><tr><th style="width:23%">hora</th><th style="width:19%">ouro</th><th style="width:22%">oz</th><th style="width:14%">depot</th><th>resultado</th></tr>${linhasHist}</table>` : '<div class="tb-mut">nenhum ciclo ainda</div>'}
+          </div></details>
+          ${aj('ah-ajuda', 'Ciclo: finalizar → purificar todos → vender no NPC (menos a lista "nunca vender") → guardar no depot → voltar. Qualquer falha para o ciclo e desliga a chave (ver Log); depot cheio (mochila ainda no limite depois do depot) também desliga. Intervalo mínimo entre ciclos: 5 min. Não dispara com boss, Scan ou troca de mapa em andamento. F5 no meio de um ciclo automático retoma em até 10 min; fora disso a party fica onde está. Se trocar de hunt na mão, clique "📍 esta" dentro dela. Lure e magia não são tocados ao voltar.')}
+        </div>`;
+    }
+    function ligarAutoHunt() {
+        const sw = $('#tb-ah-on');
+        if (sw) sw.onclick = () => {
+            const a = autoHunt();
+            if (!a.on && a.huntId == null) { log('memorize a hunt antes de ligar a automação', 'erro'); return; }
+            guardarAutoHunt({ on: !a.on });
+            log('Auto Hunt ' + (!a.on ? 'LIGADO' : 'desligado'), !a.on ? 'ok' : 'info');
+            renderizar();
+        };
+        const mem = $('#tb-ah-memorizar');
+        if (mem) mem.onclick = async () => {
+            mem.disabled = true;
+            try {
+                const hs = ESTADO_WS.huntId != null && !ESTADO_WS.boss ? (CAT.hunts || []).find(x => x.id === ESTADO_WS.huntId) : null;
+                const r = hs ? { hunt: hs } : await confirmarHuntPeloExplore();
+                if (r.erro) log('não consegui memorizar: ' + r.erro, 'erro');
+                else { guardarAutoHunt({ huntId: r.hunt.id }); log('hunt memorizada: ' + r.hunt.title, 'ok'); }
+            } catch (e) { log('memorizar estourou: ' + e.message, 'erro'); }
+            renderizar();
+        };
+        const esq = $('#tb-ah-esquecer');
+        if (esq) esq.onclick = () => { guardarAutoHunt({ huntId: null, on: false }); log('hunt esquecida; automação desligada', 'info'); renderizar(); };
+        $$('input[name="tb-ah-modo"]').forEach(r => r.onchange = () => { guardarAutoHunt({ modo: r.value }); renderizar(); });
+        const pct = $('#tb-ah-pct'); if (pct) pct.onchange = () => guardarAutoHunt({ pct: Math.max(1, Math.min(99, parseInt(pct.value) || 20)) });
+        const oz = $('#tb-ah-oz'); if (oz) oz.onchange = () => guardarAutoHunt({ oz: Math.max(10, parseInt(oz.value) || 200) });
+        const vol = $('#tb-ah-voltar'); if (vol) vol.onchange = () => guardarAutoHunt({ voltar: vol.checked });
+        const nvE = $('#tb-ah-nv-equip'); if (nvE) nvE.onchange = () => { guardarAutoHunt({ nvEquip: nvE.checked }); log('nunca vender equipamento: ' + (nvE.checked ? 'ligado' : 'DESLIGADO'), nvE.checked ? 'ok' : 'info'); renderizar(); };
+        const nvI = $('#tb-ah-nv-imbu'); if (nvI) nvI.onchange = () => { guardarAutoHunt({ nvImbu: nvI.checked }); log('nunca vender materiais de imbuement: ' + (nvI.checked ? 'ligado' : 'DESLIGADO'), nvI.checked ? 'ok' : 'info'); renderizar(); };
+        const lst = $('#tb-ah-lista');
+        if (lst) {
+            manterRascunho(lst);
+            /* grava no Enter e no blur de verdade — não só no change: depois de
+             * um repinte o valor volta por código e o Chrome não dispara change */
+            const gravar = () => {
+                if (_repintandoAH || !lst.isConnected) return;   // o repinte tirou o campo da página: o rascunho segue em _rascunhoAH
+                const vistos = new Set(), itens = [];
+                lst.value.split(/[,;\n]+/).map(x => x.trim().toLowerCase()).filter(Boolean).forEach(x => { if (!vistos.has(normNomeItem(x))) { vistos.add(normNomeItem(x)); itens.push(x); } });
+                if ((autoHunt().nuncaVender || []).join('|') === itens.join('|')) return;
+                _rascunhoAH = null;
+                guardarAutoHunt({ nuncaVender: itens });
+                log('nunca vender (sua lista): ' + (itens.length ? itens.join(', ') : 'vazia'), 'ok');
+                setTimeout(renderizar, 0);                  // nunca repintar de dentro de um evento do próprio campo
+            };
+            lst.onchange = gravar;
+            lst.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); gravar(); } });
+            lst.addEventListener('blur', () => setTimeout(gravar, 0));
+        }
     }
     /* v2.2.0 — SCAN. Lista de mapas do seu nível com caixinha; minutos por
-     * mapa; o que fazer ao terminar; progresso ao vivo; tabela de veredito. */
+     * mapa; o que fazer ao terminar; progresso ao vivo; veredito.
+     * v2.11 — como CONTROLE: 1ª linha chave + "Iniciar · N mapas · ~M min";
+     * 2ª linha dois <select> (modelo, ao terminar); resultados em cartões
+     * (xp/h raw, ouro/h, selo do veredito, detalhe atrás de "+"); "ir ›" com
+     * confirmação em 2 toques; lista de mapas com display por CLASSE (o
+     * filtro trocava display 'block' por '' e os rótulos viravam inline — a
+     * caixa ficava colada no mapa errado). */
+    const MODELOS_SCAN = ['equilibrado', 'inteligente', 'economica', 'area'];
+    const FIM_SCAN = [['voltar', 'fim: voltar'], ['ficar', 'fim: ficar'], ['xp', 'fim: melhor XP'], ['ouro', 'fim: melhor ouro']];
     function telaScan() {
-        const c = scanCfg(), nv = nivelAtual(), marc = new Set(c.mapas);
+        garantirCssAH();
+        const c = scanCfg(), nv = nivelAtual(), marc = new Set(c.mapas), fim = fimDoScan(c);
         const hunts = (CAT.hunts || []).filter(h => (h.levelMin || 1) <= nv).sort((a, b) => (b.levelMin || 0) - (a.levelMin || 0) || a.title.localeCompare(b.title));
         const res = scanResultados(), v = scanVereditos();
-        const fmtK = n => (n / 1000).toFixed(1) + 'k';
-        const fmtO = n => (n >= 0 ? '+' : '') + n.toLocaleString('pt-BR');
+        const fmtK = n => n == null || !isFinite(n) ? '—' : (n / 1000).toFixed(1) + 'k';
+        const fmtO = n => n == null || !isFinite(n) ? '—' : (n >= 0 ? '+' : '') + Math.round(n).toLocaleString('pt-BR');
+        const hora = t => t ? new Date(t).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '?';
         const falta = xpFaltando();
         const tNivel = xpH => falta != null && xpH > 0 ? fmtHoras(falta / xpH) : '—';
-        const dis = SCAN.ativo ? 'disabled' : '';
-        let corpo = `<div class="tb-linha"><span class="tb-sw ${SCAN.ativo ? 'on' : ''}" id="tb-scan-on"><i></i></span><b>Scan</b>
-            <span class="tb-mut" style="margin-left:auto">${SCAN.ativo ? `<span class="tb-ok">rodando</span> ${Math.max(1, SCAN.idx + 1)}/${SCAN.fila.length}` : marc.size + ' mapa(s)'}</span></div>`;
-        if (SCAN.ativo) {
-            const h = scanHuntAtual(), m = SCAN.vivo;
-            const resta = SCAN.fase === 'medindo' ? Math.max(0, c.minutos * 60 - (Date.now() - SCAN.t0) / 1000) : null;
-            corpo += `<div class="tb-cx" style="border-color:#2c5c3a"><b>${h ? h.title : '?'}</b> <span class="tb-tag">${SCAN.fase}</span>` +
+        const ocupado = scanOcupado() || !!travaJogo();
+        const dis = scanOcupado() ? 'disabled' : '';
+        const nMapas = c.mapas.filter(id => (CAT.hunts || []).some(h => h.id === id)).length;
+        const nVar = c.comparar ? (c.variantes || []).filter(m => MODELOS[m] || VARIANTES[m]).length : 1;
+        const nMed = nMapas * nVar, estMin = Math.max(1, Math.round(nMed * (c.minutos + 0.5)));
+        const btTxt = SCAN.ativo ? `Parar · ${Math.max(1, SCAN.idx + 1)}/${SCAN.fila.length}` : scanOcupado() ? (SCAN.fase === 'restaurando' || SCAN.restaurando ? 'devolvendo o jogo…' : 'terminando…')
+            : `Iniciar · ${nMapas} mapa${nMapas === 1 ? '' : 's'}${nVar > 1 ? ' × ' + nVar : ''} · ~${estMin} min`;
+        let corpo = `<div class="tb-sc"><div class="tb-linha">
+            <button type="button" class="tb-chave" id="tb-scan-on" role="switch" aria-checked="${SCAN.ativo ? 'true' : 'false'}" aria-label="Scan" ${!SCAN.ativo && scanOcupado() ? 'disabled' : ''}><span class="tb-sw ${SCAN.ativo ? 'on' : ''}"><i></i></span></button><b>Scan</b>
+            <button type="button" class="tb-bt ${SCAN.ativo ? '' : 'pri'}" id="tb-scan-go" style="margin-left:auto" ${!SCAN.ativo && (scanOcupado() || !nMed) ? 'disabled' : ''}>${btTxt}</button></div>`;
+        if (SCAN.ativo || SCAN.fase === 'restaurando') {
+            const h = SCAN.ativo ? scanHuntAtual() : null, m = SCAN.vivo;
+            const segJ = m ? m.seg : SCAN.fase === 'medindo' ? (Date.now() - SCAN.t0) / 1000 : 0;
+            const resta = SCAN.fase === 'medindo' ? Math.max(0, c.minutos * 60 - segJ) : null;
+            corpo += `<div class="tb-sc-caixa">` + (SCAN.fase === 'restaurando' ? '<b>devolvendo o jogo como estava…</b>' : `<b>${h ? escHtml(h.title) : '?'}</b> <span class="tb-tag">${escHtml(SCAN.fase)}</span>`) +
                 (resta != null ? ` <span class="tb-mut">${Math.floor(resta / 60)}:${String(Math.round(resta % 60)).padStart(2, '0')}</span>` : '') +
-                (m && m.seg >= 30 ? `<div>xp/h <b>${fmtK(m.xpH)}</b> · ouro/h <b class="${m.ouroH >= 0 ? 'tb-ok' : 'tb-ruim'}">${fmtO(m.ouroH)}</b> · estável <b class="${(m.estavelH || 0) >= 0 ? 'tb-ok' : 'tb-ruim'}">${m.estavelH != null ? fmtO(m.estavelH) : '—'}</b> · ${m.abatesH}/h</div>` + razaoHtml(m.razao, true) : (SCAN.fase === 'medindo' ? '<div class="tb-mut">aquecendo… (30 s)</div>' : '')) +
-                (SCAN.erro ? `<div class="tb-ruim">${SCAN.erro}</div>` : '') + `</div>`;
+                (m && m.seg >= 30 ? `<div>xp/h <b>${fmtK(xpBase(m))}</b> <span class="tb-mut">raw</span> · ouro/h <b class="${m.ouroH >= 0 ? 'tb-ok' : 'tb-ruim'}">${fmtO(m.ouroH)}</b> · estável <b class="${(m.estavelH || 0) >= 0 ? 'tb-ok' : 'tb-ruim'}">${m.estavelH != null ? fmtO(m.estavelH) : '—'}</b> · ${m.abatesH}/h</div>` + razaoHtml(m.razao, true) : (SCAN.fase === 'medindo' ? '<div class="tb-mut">aquecendo… (30 s)</div>' : '')) +
+                (SCAN.erro ? `<div class="tb-ruim">${escHtml(SCAN.erro)}</div>` : '') + `</div>`;
         }
-        corpo += `<div class="tb-linha"><input type="number" class="tb-in" id="tb-scan-min" value="${c.minutos}" min="1" max="60" style="width:40px" ${dis}><span class="tb-mut">min/mapa</span>
-            <label class="tb-l"><input type="checkbox" id="tb-scan-lure" ${c.lureMax ? 'checked' : ''} ${dis}> lure máx</label>
-            <label class="tb-l"><input type="radio" name="tb-scan-modelo" value="equilibrado" ${(c.modelo || 'equilibrado') === 'equilibrado' ? 'checked' : ''} ${dis}> Equil.</label>
-            <label class="tb-l"><input type="radio" name="tb-scan-modelo" value="inteligente" ${c.modelo === 'inteligente' ? 'checked' : ''} ${dis}> Intel.</label></div>
-          <div class="tb-linha"><span class="tb-mut">ao terminar</span>
-            <label class="tb-l"><input type="radio" name="tb-scan-fim" value="ficar" ${c.fim === 'ficar' ? 'checked' : ''}> ficar</label>
-            <label class="tb-l"><input type="radio" name="tb-scan-fim" value="xp" ${c.fim === 'xp' ? 'checked' : ''}> melhor xp</label>
-            <label class="tb-l"><input type="radio" name="tb-scan-fim" value="ouro" ${c.fim === 'ouro' ? 'checked' : ''}> melhor ouro</label></div>
-          <details class="tb-aj" data-k="scan-estudo"><summary>estudo de variantes</summary><div>
+        corpo += `<div class="tb-linha">
+            <select id="tb-scan-modelo" aria-label="modelo aplicado em cada mapa" title="modelo de magia aplicado nos 4 em cada mapa" ${dis || (c.comparar ? 'disabled' : '')}>${MODELOS_SCAN.filter(m => MODELOS[m]).map(m => `<option value="${m}" ${(c.modelo || 'equilibrado') === m ? 'selected' : ''}>${escHtml(nomeModelo(m))}</option>`).join('')}</select>
+            <select id="tb-scan-fim" aria-label="o que fazer ao terminar" title="ao terminar: voltar como estava (mapa, lure e kits) · ficar no último mapa (kits de antes) · ir para o melhor XP ou ouro (com o modelo)" ${dis}>${FIM_SCAN.map(([k, t]) => `<option value="${k}" ${fim === k ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
+          <div class="tb-linha"><input type="number" class="tb-in" id="tb-scan-min" value="${c.minutos}" min="1" max="60" style="width:52px" aria-label="minutos por mapa" ${dis}><span class="tb-mut">min por mapa</span>
+            <label class="tb-l" style="margin-left:auto"><input type="checkbox" id="tb-scan-lure" ${c.lureMax ? 'checked' : ''} ${dis}> lure máximo</label></div>
+          <details class="tb-aj" data-k="scan-estudo"><summary>estudo de variantes${c.comparar ? ' · ligado' : ''}</summary><div>
             <label class="tb-l"><input type="checkbox" id="tb-scan-comparar" ${c.comparar ? 'checked' : ''} ${dis}> em cada mapa, medir cada variante</label>
-            ${c.comparar ? '<div style="margin:2px 0 0 4px">' + ['inteligente', 'inteligente_seco', 'inteligente_semruna', 'inteligente_mana', 'equilibrado', 'economica', 'area'].map(m => `<label class="tb-l" style="margin-right:6px"><input type="checkbox" data-scan-var="${m}" ${(c.variantes || []).includes(m) ? 'checked' : ''} ${dis}> ${nomeModelo(m)}</label>`).join('') + '</div>' : ''}
+            ${c.comparar ? '<div style="margin:2px 0 0 4px">' + ['inteligente', 'inteligente_seco', 'inteligente_semruna', 'inteligente_mana', 'equilibrado', 'economica', 'area'].map(m => `<label class="tb-l" style="margin-right:6px"><input type="checkbox" data-scan-var="${m}" ${(c.variantes || []).includes(m) ? 'checked' : ''} ${dis}> ${escHtml(nomeModelo(m))}</label>`).join('') + '</div>' : ''}
           </div></details>
           <details class="tb-aj" data-k="scan-mapas"><summary>mapas (${marc.size} marcados)</summary><div>
-            <div class="tb-linha"><input class="tb-in" id="tb-scan-filtro" placeholder="filtrar…" style="flex:1"><button class="tb-bt mini" id="tb-scan-limpar-mapas">desmarcar</button></div>
-            <div id="tb-scan-lista" style="max-height:160px;overflow:auto">` +
-            hunts.map(h => `<label style="display:block;padding:0"><input type="checkbox" data-scan-mapa="${h.id}" ${marc.has(h.id) ? 'checked' : ''} ${dis}> <span class="tb-mut">[${h.levelMin || 1}]</span> ${h.title}${res[h.id] && !res[h.id].erro ? ` <span class="tb-tag tb-ok">${fmtK(res[h.id].xpH)} · ${fmtO(ouroBase(res[h.id]))}</span>` : ''}</label>`).join('') +
+            <div class="tb-linha"><input class="tb-in" id="tb-scan-filtro" placeholder="filtrar…" style="flex:1" aria-label="filtrar mapas"><button type="button" class="tb-bt mini" id="tb-scan-limpar-mapas" ${dis}>desmarcar</button></div>
+            <div id="tb-scan-lista" class="tb-sc-lista">` +
+            hunts.map(h => { const r = res[h.id]; return `<label class="tb-sc-mapa"><input type="checkbox" data-scan-mapa="${h.id}" ${marc.has(h.id) ? 'checked' : ''} ${dis}> <span class="tb-mut">[${h.levelMin || 1}]</span> ${escHtml(h.title)}${r && !r.erro && r.xpH != null ? ` <span class="tb-tag tb-ok">${fmtK(xpBase(r))} · ${fmtO(ouroBase(r))}</span>` : ''}</label>`; }).join('') +
             `</div></div></details>`;
-        if (v.lista.length || Object.keys(res).length) {
-            corpo += `<div class="tb-linha" style="margin-top:6px"><b>Resultados</b><span class="tb-mut">${c.minutos} min cada</span><button class="tb-bt mini" id="tb-scan-limpar" style="margin-left:auto">limpar</button></div>
-              <table class="tb-t"><tr><th>mapa</th><th class="n">xp/h</th><th class="n">ouro/h</th><th style="width:58px">veredito</th></tr>` +
-              v.lista.map(r => `<tr>
-                <td>${r.title}${r.suja ? ' <span class="tb-tag tb-ruim">mochila</span>' : ''}${r.modelo && r.modelo !== 'equilibrado' ? ` <span class="tb-tag tb-ok">${nomeModelo(r.modelo)}</span>` : ''}
-                  <div class="tb-mut" style="font-size:9.5px">lure ${r.lureTxt || r.lure} · ${r.abatesH}/h${r.tomadoH != null ? ` · tomou ${(r.tomadoH / 1000).toFixed(0)}k/h` : ''} · <span data-scan-ir="${r.id}" style="cursor:pointer;color:#ffd479" title="ir para este mapa">ir ›</span></div>
-                  ${razaoTexto(r.razao) ? `<details class="tb-aj" data-k="scan-r-${r.id}-${r.modelo}"><summary>+</summary><div style="font-size:10px">${razaoHtml(r.razao, true)}${r.supVoc ? `<div>poção: ${Object.entries(r.supVoc).map(([vv, x]) => (VOC_CURTO[vv] || vv) + ' ' + x.ouro + 'o').join(' · ')}</div>` : ''}${r.sorte ? `<div class="tb-av">sorte +${r.sorte.toLocaleString('pt-BR')}: ${(r.raros || []).join(', ')}</div>` : ''}</div></details>` : ''}</td>
-                <td class="${r.xpH >= v.melhorXp * 0.9 ? 'tb-ok' : ''}">${fmtK(r.xpH)}<div class="tb-mut" style="font-size:9.5px">${tNivel(r.xpH)}</div></td>
-                <td class="${ouroBase(r) < 0 ? 'tb-ruim' : ouroBase(r) >= v.melhorOuro * 0.9 ? 'tb-ok' : ''}">${fmtO(ouroBase(r))}<div class="tb-mut" style="font-size:9.5px">${r.estavelH != null ? 'estável' : 'bruto'}</div></td>
-                <td><b class="${r.veredito === 'Os dois' ? 'tb-ok' : r.veredito === 'dá prejuízo' ? 'tb-ruim' : /^abaixo/.test(r.veredito) ? 'tb-mut' : 'tb-av'}" style="${/^abaixo/.test(r.veredito) ? 'font-weight:normal;font-size:9.5px' : ''}">${r.veredito}</b></td>
-              </tr>`).join('') +
-              Object.values(res).filter(r => r.erro).map(r => `<tr><td colspan="4" class="tb-ruim">${r.title}: ${r.erro}</td></tr>`).join('') +
-              `</table>
-              <div class="tb-mut" style="font-size:10px;margin-top:4px">${v.topXp ? `upar: <b>${v.topXp.title}</b>${falta != null ? ' (nível em ' + tNivel(v.topXp.xpH) + ')' : ''}. ` : ''}${v.topOuro && ouroBase(v.topOuro) > 0 ? `ouro: <b>${v.topOuro.title}</b>.` : 'nenhum mapa deu ouro positivo.'}</div>
-              ${aj('scan-legenda', '<b>estável</b> = ouro/h só com moedas e itens que o catálogo espera cair 3+ vezes na janela; o resto é loteria e aparece como sorte. Veredito: "XP" = 90% do melhor XP; "Ouro" = 90% do melhor ouro estável; "Os dois" = ambos. ouro/h = loot − poção, pelo analisador do jogo. "mochila" = ficou abaixo de ' + CAP_MIN_SCAN + '% livre e perdeu loot.')}`;
+        const falhas = Object.values(res).filter(r => r && r.erro);
+        if (v.lista.length || falhas.length) {
+            const selo = r => r.fora ? 'mut' : r.veredito === 'Os dois' ? 'ok' : r.veredito === 'dá prejuízo' ? 'ruim' : /^abaixo|^único/.test(r.veredito) ? 'mut' : 'av';
+            const detalhe = r => [
+                `lure ${escHtml(r.lureTxt || r.lure)} · ${r.abatesH != null ? r.abatesH + ' abates/h' : ''}${r.tomadoH != null ? ` · tomou ${(r.tomadoH / 1000).toFixed(0)}k/h` : ''}`,
+                `medido ${hora(r.t)} · nível ${r.nivel || '?'} · ${r.seg ? Math.round(r.seg / 60) : r.minutos} min${r.capMin != null ? ` · mochila mín. ${r.capMin}% livre` : ''}`,
+                r.suja ? `<span class="tb-ruim">suja: a mochila passou de ${100 - CAP_MIN_SCAN}% e o loot se perdeu — fora do ranking</span>` : '',
+                r.fora === 'nivel' ? `<span class="tb-av">medido no nível ${r.nivel}; agora ${v.nivelRef} — fora do ranking (±2)</span>` : '',
+                r.supVoc ? `poção: ${Object.entries(r.supVoc).map(([vv, x]) => (VOC_CURTO[vv] || escHtml(vv)) + ' ' + x.ouro + 'o').join(' · ')}` : '',
+                r.sorte ? `<span class="tb-av">sorte +${r.sorte.toLocaleString('pt-BR')}: ${(r.raros || []).map(escHtml).join(', ')}</span>` : '',
+                r.ultimaFalha ? `<span class="tb-ruim">última tentativa (${hora(r.ultimaFalha.t)}): ${escHtml(r.ultimaFalha.erro)}</span>` : ''
+            ].filter(Boolean).map(x => `<div>${x}</div>`).join('') + (razaoTexto(r.razao) ? razaoHtml(r.razao, true) : '');
+            const cartao = r => `<div class="tb-sc-card ${r.fora ? 'fora' : ''}">
+                <div class="tb-sc-cab"><b>${escHtml(r.title)}</b>${r.modelo && r.modelo !== 'equilibrado' ? `<span class="tb-tag">${escHtml(nomeModelo(r.modelo))}</span>` : ''}<span class="tb-selo ${selo(r)}">${escHtml(r.veredito)}</span></div>
+                <div class="tb-sc-num"><div><small>xp/h sem boost</small><b class="${!r.fora && xpBase(r) >= v.melhorXp * 0.9 ? 'tb-ok' : ''}">${fmtK(xpBase(r))}</b><small>real ${fmtK(r.xpH)} · nível em ${tNivel(r.xpH)}</small></div>
+                  <div><small>ouro/h ${r.estavelH != null ? 'estável' : 'bruto'}</small><b class="${ouroBase(r) < 0 ? 'tb-ruim' : !r.fora && ouroBase(r) >= v.melhorOuro * 0.9 ? 'tb-ok' : ''}">${fmtO(ouroBase(r))}</b><small>loot − poção${r.ouroH != null && r.estavelH != null ? ' · bruto ' + fmtO(r.ouroH) : ''}</small></div></div>
+                <div class="tb-sc-pe"><details class="tb-aj" data-k="scan-r-${r.id}-${escHtml(r.modelo || '')}"><summary>+</summary><div class="tb-sc-det">${detalhe(r)}</div></details>
+                  <button type="button" class="tb-bt mini" data-scan-ir="${r.id}" ${ocupado ? 'disabled' : ''} title="trocar a party para este mapa (pede confirmação)">ir ›</button></div>
+              </div>`;
+            const nFora = v.lista.filter(r => r.fora).length;
+            corpo += `<div class="tb-linha" style="margin-top:6px"><b>Resultados</b><span class="tb-mut">${v.nivelRef ? 'nível ' + v.nivelRef + ' ±2' : ''}</span><button type="button" class="tb-bt mini" id="tb-scan-limpar" style="margin-left:auto">limpar</button></div>
+              <div class="tb-mut" style="margin-bottom:2px">${v.topXp ? `upar: <b>${escHtml(v.topXp.title)}</b>${falta != null ? ' (nível em ' + tNivel(v.topXp.xpH) + ')' : ''}. ` : ''}${v.topOuro && ouroBase(v.topOuro) > 0 ? `ouro: <b>${escHtml(v.topOuro.title)}</b>.` : v.rank.length ? 'nenhum mapa deu ouro positivo.' : 'nenhum resultado válido no ranking.'}${nFora ? ` ${nFora} fora do ranking (suja ou outro nível).` : ''}</div>` +
+              v.lista.map(cartao).join('') +
+              falhas.map(r => `<div class="tb-sc-card falha"><div class="tb-sc-cab"><b>${escHtml(r.title)}</b><span class="tb-selo ruim">falhou</span></div><div class="tb-ruim">${escHtml(r.erro)}</div>${r.xpH != null ? `<div class="tb-mut">parcial: xp/h ${fmtK(xpBase(r))} · ouro/h ${fmtO(ouroBase(r))}${r.seg ? ' em ' + Math.max(1, Math.round(r.seg / 60)) + ' min' : ''}</div>` : ''}<div class="tb-mut">${hora(r.t)}</div></div>`).join('') +
+              aj('scan-legenda', '<b>xp/h sem boost</b> = EXP raw do analisador (sem boost nem prey) — é por ele que o ranking compara; "real" é o que sobe o nível. <b>estável</b> = ouro/h só com moedas e itens que o catálogo espera cair 3+ vezes na janela; o resto é loteria e aparece como sorte. Veredito: "XP" = 90% do melhor XP; "Ouro" = 90% do melhor ouro estável; "Os dois" = ambos. Fora do ranking: medição <b>suja</b> (mochila abaixo de ' + CAP_MIN_SCAN + '% livre, loot perdido) ou de outro nível (±2). Morte ou caçada encerrada por fora param o Scan e aparecem como falha, sem apagar a medição boa anterior.');
         } else {
-            corpo += aj('scan-ajuda', 'Marque os mapas, ajuste os minutos e ligue a chave. O Scan entra em cada mapa pelo socket, aplica o modelo nos 4, espera os minutos e anota xp/h, ouro/h e abates/h. O Auto Hunt fica quieto enquanto o Scan roda.');
+            corpo += aj('scan-ajuda', 'Marque os mapas, ajuste os minutos e clique Iniciar. O Scan entra em cada mapa pelo socket, aplica o modelo nos 4, espera os minutos e anota xp/h, ouro/h e abates/h. O Auto Hunt fica quieto enquanto o Scan roda. Ao terminar ou parar, devolve o jogo como estava (mapa, lure e kits), a não ser que "ao terminar" diga outra coisa.');
         }
-        return corpo;
+        return corpo + '</div>';
+    }
+    function ligarScan() {
+        const filtro = $('#tb-scan-filtro');
+        if (filtro) {
+            const aplicarFiltro = () => { const v = (_scanFiltro || '').toLowerCase(); $$('#tb-scan-lista .tb-sc-mapa').forEach(l => l.classList.toggle('tb-escondido', !!v && !(l.textContent || '').toLowerCase().includes(v))); };
+            filtro.value = _scanFiltro; aplicarFiltro();
+            filtro.oninput = () => { _scanFiltro = filtro.value; aplicarFiltro(); };
+        }
+        const alternar = () => { if (SCAN.ativo) scanParar('pelo botão'); else scanIniciar(); };
+        const scOn = $('#tb-scan-on'); if (scOn) scOn.onclick = alternar;
+        const go = $('#tb-scan-go'); if (go) go.onclick = alternar;
+        $$('[data-scan-mapa]').forEach(cb => cb.onchange = () => {
+            const id = parseInt(cb.dataset.scanMapa), c = scanCfg();
+            const m = c.mapas.filter(x => x !== id); if (cb.checked) m.push(id);
+            guardarScanCfg({ mapas: m }); renderizar();
+        });
+        const scMin = $('#tb-scan-min'); if (scMin) scMin.onchange = () => { guardarScanCfg({ minutos: Math.max(1, Math.min(60, parseInt(scMin.value) || 5)) }); setTimeout(renderizar, 0); };   // o change pode vir do campo saindo da página num repinte
+        const scLure = $('#tb-scan-lure'); if (scLure) scLure.onchange = () => guardarScanCfg({ lureMax: scLure.checked });
+        const scFim = $('#tb-scan-fim'); if (scFim) scFim.onchange = () => guardarScanCfg({ fim: scFim.value, fimEscolhido: true });
+        const scMod = $('#tb-scan-modelo'); if (scMod) scMod.onchange = () => guardarScanCfg({ modelo: scMod.value });
+        const scCmp = $('#tb-scan-comparar'); if (scCmp) scCmp.onchange = () => { guardarScanCfg({ comparar: scCmp.checked }); renderizar(); };
+        $$('[data-scan-var]').forEach(cb => cb.onchange = () => { const c = scanCfg(); const v = (c.variantes || []).filter(x => x !== cb.dataset.scanVar); if (cb.checked) v.push(cb.dataset.scanVar); guardarScanCfg({ variantes: v }); renderizar(); });
+        const scLm = $('#tb-scan-limpar-mapas'); if (scLm) scLm.onclick = () => { guardarScanCfg({ mapas: [] }); renderizar(); };
+        const scL = $('#tb-scan-limpar'); if (scL) ligarDoisToques(scL, 'scan-limpar', 'apagar todos?', () => { guardar('scan_resultados', {}); log('resultados do Scan apagados', 'info'); renderizar(); });
+        $$('[data-scan-ir]').forEach(b => { const id = parseInt(b.dataset.scanIr); ligarDoisToques(b, 'ir-' + id, 'confirmar ›', () => scanIrPara(id)); });
     }
     /* =========================================================================
      *  TELA DE MAGIA — enxuta de propósito
@@ -6026,12 +6710,6 @@
         _abaPintada = ABA;
         if (ABA === 'equip') ligarEquip();
         if (ABA === 'progresso') ligarProgresso();
-        const filtro = $('#tb-scan-filtro');
-        if (filtro) {
-            const aplicarFiltro = () => { const v = (_scanFiltro || '').toLowerCase(); $$('#tb-scan-lista label').forEach(l => { l.style.display = !v || (l.textContent || '').toLowerCase().includes(v) ? '' : 'none'; }); };
-            filtro.value = _scanFiltro; aplicarFiltro();
-            filtro.oninput = () => { _scanFiltro = filtro.value; aplicarFiltro(); };
-        }
 
         const exp = $('#tb-exportar');
         if (exp) exp.onclick = () => {
@@ -6052,52 +6730,12 @@
             guardar('sessoes', []); log('histórico de sessões apagado', 'ok'); renderizar();
         };
         const rec = $('#tb-recat'); if (rec) rec.onclick = async () => { await carregarCatalogos(true); renderizar(); };
-        // v2.2.0 — Scan
-        const scOn = $('#tb-scan-on');
-        if (scOn) scOn.onclick = () => { if (SCAN.ativo) scanParar('pelo botão'); else scanIniciar(); };
-        $$('[data-scan-mapa]').forEach(cb => cb.onchange = () => {
-            const id = parseInt(cb.dataset.scanMapa), c = scanCfg();
-            const m = c.mapas.filter(x => x !== id); if (cb.checked) m.push(id);
-            guardarScanCfg({ mapas: m }); renderizar();
-        });
-        const scMin = $('#tb-scan-min'); if (scMin) scMin.onchange = () => guardarScanCfg({ minutos: Math.max(1, Math.min(60, parseInt(scMin.value) || 5)) });
-        const scLure = $('#tb-scan-lure'); if (scLure) scLure.onchange = () => guardarScanCfg({ lureMax: scLure.checked });
-        $$('input[name="tb-scan-fim"]').forEach(r => r.onchange = () => guardarScanCfg({ fim: r.value }));
-        $$('input[name="tb-scan-modelo"]').forEach(r => r.onchange = () => guardarScanCfg({ modelo: r.value }));
-        const scCmp = $('#tb-scan-comparar'); if (scCmp) scCmp.onchange = () => { guardarScanCfg({ comparar: scCmp.checked }); renderizar(); };
-        $$('[data-scan-var]').forEach(cb => cb.onchange = () => { const c = scanCfg(); const v = (c.variantes || []).filter(x => x !== cb.dataset.scanVar); if (cb.checked) v.push(cb.dataset.scanVar); guardarScanCfg({ variantes: v }); });
-        const scLm = $('#tb-scan-limpar-mapas'); if (scLm) scLm.onclick = () => { guardarScanCfg({ mapas: [] }); renderizar(); };
-        const scL = $('#tb-scan-limpar'); if (scL) scL.onclick = () => { guardar('scan_resultados', {}); renderizar(); };
-        $$('[data-scan-ir]').forEach(b => b.onclick = () => scanIrPara(parseInt(b.dataset.scanIr)));
+        if (ABA === 'scan') ligarScan();           // v2.11 — handlers do Scan ao lado da tela
         // v1.9.0 — Status e Auto Hunt
-        const vr = $('#tb-venda-rapida'); if (vr) vr.onclick = () => cicloDeVenda('venda');
+        const vr = $('#tb-venda-rapida'); if (vr) ligarDoisToques(vr, 'venda', 'confirmar: encerrar e vender?', () => cicloDeVenda('venda'), emHunt);
         const bat = $('#tb-bt-atualizar'); if (bat) bat.onclick = abrirAtualizacao;
         const fh = $('#tb-finalizar'); if (fh) fh.onclick = () => cicloDeVenda('finalizar');
-        const sw = $('#tb-ah-on');
-        if (sw) sw.onclick = () => {
-            const a = autoHunt();
-            if (!a.on && a.huntId == null) { log('memorize a hunt antes de ligar a automação', 'erro'); return; }
-            guardarAutoHunt({ on: !a.on });
-            log('Auto Hunt ' + (!a.on ? 'LIGADO' : 'desligado'), !a.on ? 'ok' : 'info');
-            renderizar();
-        };
-        const mem = $('#tb-ah-memorizar');
-        if (mem) mem.onclick = async () => {
-            mem.disabled = true;
-            try {
-                const hs = ESTADO_WS.huntId != null && !ESTADO_WS.boss ? (CAT.hunts || []).find(x => x.id === ESTADO_WS.huntId) : null;
-                const r = hs ? { hunt: hs } : await confirmarHuntPeloExplore();
-                if (r.erro) log('não consegui memorizar: ' + r.erro, 'erro');
-                else { guardarAutoHunt({ huntId: r.hunt.id }); log('hunt memorizada: ' + r.hunt.title, 'ok'); }
-            } catch (e) { log('memorizar estourou: ' + e.message, 'erro'); }
-            renderizar();
-        };
-        const esq = $('#tb-ah-esquecer');
-        if (esq) esq.onclick = () => { guardarAutoHunt({ huntId: null, on: false }); log('hunt esquecida; automação desligada', 'info'); renderizar(); };
-        $$('input[name="tb-ah-modo"]').forEach(r => r.onchange = () => { guardarAutoHunt({ modo: r.value }); renderizar(); });
-        const pct = $('#tb-ah-pct'); if (pct) pct.onchange = () => guardarAutoHunt({ pct: Math.max(1, Math.min(99, parseInt(pct.value) || 20)) });
-        const oz = $('#tb-ah-oz'); if (oz) oz.onchange = () => guardarAutoHunt({ oz: Math.max(10, parseInt(oz.value) || 200) });
-        const vol = $('#tb-ah-voltar'); if (vol) vol.onchange = () => guardarAutoHunt({ voltar: vol.checked });
+        if (ABA === 'autohunt') ligarAutoHunt();   // v2.11 — handlers do Auto Hunt ao lado da tela
         const apr = $('#tb-aprender');
         if (apr) apr.onclick = async () => {
             if (_aprendendo) return;
@@ -6199,6 +6837,8 @@
                 await dorme(1500);
                 const a = autoHunt();
                 if (!a.on || a.huntId == null || emHunt() || !tid('actionbar-hunt')) return;
+                /* v2.11 — só retoma o ciclo AUTOMÁTICO interrompido há < 10 min (marca ciclo_pendente); sem ela o dono quis ficar na cidade */
+                if (!deveRetomarCiclo(a, ler('ciclo_pendente', null), Date.now())) { log('Auto Hunt ligado e party na cidade, sem ciclo automático interrompido — fica na cidade', 'info'); return; }
                 if (cicloTravadoPorOutraAba()) { log('party na cidade, mas outra aba está no ciclo — aguardando', 'info'); return; }
                 log('Auto Hunt ligado e party na cidade: retomando o ciclo (purificar → vender → depot → voltar)', 'info');
                 await cicloDeVenda('auto');
