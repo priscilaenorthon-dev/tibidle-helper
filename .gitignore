@@ -1,0 +1,11 @@
+# dados da conta e capturas ao vivo — nunca publicar
+data/
+estado-*.json
+snap-*.md
+*.log
+__pycache__/
+.playwright-mcp/
+.claude/
+.agents/
+skills-lock.json
+Automação Outro TibiaIdle/
