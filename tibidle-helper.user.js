@@ -2123,6 +2123,7 @@
         if (o.type === 'update_battle_config' && d.who != null) { aplicarConfigLocal(vocDoIndice(d.who), d); const v = vocDoIndice(d.who); if (v) delete RAZAO.vitais[v]; }
     }
     function observarRecebido(o) {
+        try { observarProgresso(o); } catch { }       // v2.11 — aba Progresso: só leitura (chaves, bestiário, prey, plano offline)
         if (!o || !o.type) return;
         const d = o.data || {};
         if (o.type === 'depot_state' && Array.isArray(d.entries)) {
@@ -3505,7 +3506,7 @@
     let UI = null;
     const ui = () => UI || (UI = Object.assign({}, UI_PADRAO, ler('ui', {})));
     const guardarUI = (patch) => { UI = Object.assign(ui(), patch); guardar('ui', UI); };
-    const ICONES = [['estado', '⌂', 'Status'], ['magia', '✦', 'Magia'], ['autohunt', '↻', 'Auto Hunt'], ['scan', '◎', 'Scan'], ['equip', '⛨', 'Equip'], ['analise', '▤', 'Analisador'], ['log', '≡', 'Log']];
+    const ICONES = [['estado', '⌂', 'Status'], ['magia', '✦', 'Magia'], ['autohunt', '↻', 'Auto Hunt'], ['scan', '◎', 'Scan'], ['equip', '⛨', 'Equip'], ['analise', '▤', 'Analisador'], ['progresso', '⚑', 'Progresso'], ['log', '≡', 'Log']];
     /* "?" com a explicação escondida; data-k preserva aberto/fechado ao repintar */
     const aj = (k, html, rotulo) => `<details class="tb-aj" data-k="${k}"><summary>${rotulo || '?'}</summary><div class="tb-mut">${html}</div></details>`;
 
@@ -3986,6 +3987,857 @@
         const gd = $('#tb-eq-guardar'); if (gd) gd.onchange = () => guardar('equip_guardar', gd.checked);
     }
 
+    /* =========================================================================
+     *  ⭐ v2.11 — ABA PROGRESSO (só leitura): chaves e Elites, bestiário, plano
+     *  da caçada com o jogo fechado, prey e calculadoras de Forja/Imbuement.
+     *
+     *  Por que existe: o helper só olhava para a caçada da hora (magia, Scan,
+     *  venda). O que faz a conta crescer de verdade — marco de bestiário,
+     *  chave que cai e é PERDIDA com a mochila de chaves cheia, prey que
+     *  desliga quando as wildcards acabam, a caçada da noite que para por
+     *  ouro — ficava invisível. Aqui tudo só MOSTRA e RECOMENDA: nenhuma
+     *  linha deste bloco envia nada ao servidor (regra do dono).
+     *
+     *  ⚠ Formatos do socket lidos do validador (zod) do próprio cliente em
+     *  29/09 (chunk _next/static/chunks/8308-*.js) — NÃO vistos ao vivo com a
+     *  conta logada. Por isso todo parse aceita variações (objeto ou lista,
+     *  número em texto) e, sem dado, a tela diz "sem dado ainda":
+     *    welcome / resume / hunt_started.state / frame.state / meta_result /
+     *    depot_result…  keyBag {nome: n}, keyBagTierId, keyBagUsed, keyBagMax
+     *    frame           bestiaryKills (n da caçada ATUAL), analyzer, state
+     *                    {balance, balanceLocked, cap, autoSellInMs,
+     *                    character.levelProgress{xp, xpNext}}
+     *    meta (welcome/resume/meta_result/meta_state) {wildcards,
+     *                    huntBestiary {huntId: n}, preyHunt {huntId, title,
+     *                    msLeft, locked}, preyBuffs {VOC: {bonus {type,
+     *                    tier, percent}, msLeft, locked, tierFloor}},
+     *                    autoLeave {enabled, floor, onCap}, xpBoost,
+     *                    rules.keyBags [{id, name, maxKeys}]}
+     *    resume.offline  {elapsedMs, xp, killsTotal, lootGold}
+     *    ended.summary   {reason: stop|death|expired|no_gold|cap_full|…}
+     *  Regras: wiki oficial tibidle.com/wiki (29/09) — /chaves-e-caixas,
+     *  /elites, /bestiario, /a-cacada-com-o-jogo-fechado, /auto-exit, /prey,
+     *  /forja, /imbuements, /ouro-e-ouro-travado.
+     * ====================================================================== */
+    /* @@PROGRESSO-INICIO — funções puras; testes/progresso.test.js roda este trecho no node. */
+    const PG_WIKI = {
+        chaveMin: 0.00047, chaveMax: 0.00105,   // /elites: "entre 0,047% e 0,105% por abate" (a maioria)
+        mochilaT1: 5, mochilaT2: 10,            // /chaves-e-caixas: Key Backpack T1 grátis, T2 100 coins
+        tetoCacadaH: 12,                        // /a-cacada-com-o-jogo-fechado: sessão dura no máx. 12 h de caçada
+        preyH: 2                                // /prey: cada sorteio/renovação vale 2 h de caçada
+    };
+    const PG_VOCS = ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'];
+    const PG_VOC = { KNIGHT: 'Cavaleiro', PALADIN: 'Paladino', SORCERER: 'Feiticeiro', DRUID: 'Druida' };
+    /* /forja: a chance é a do nível que se quer alcançar; do +5 em diante a
+     * falha SEM Garantia derruba 1 nível; a Garantia é gasta em TODA tentativa. */
+    const PG_REFINO = [
+        { alvo: 1, p: 0.80 }, { alvo: 2, p: 0.70 }, { alvo: 3, p: 0.60 }, { alvo: 4, p: 0.50 },
+        { alvo: 5, p: 0.35, cai: true }, { alvo: 6, p: 0.25, cai: true }, { alvo: 7, p: 0.20, cai: true },
+        { alvo: 8, p: 0.15, cai: true }, { alvo: 9, p: 0.10, cai: true }, { alvo: 10, p: 0.05, cai: true }
+    ];
+    /* /forja, aba GEMAS: ouro + coins por gema (mais 100 fragmentos do tipo) */
+    const PG_GEMAS = { T1: { nome: 'Refine Gem T1', ouro: 10000, coins: 5 }, T2: { nome: 'Refine Gem T2', ouro: 35000, coins: 8 }, G: { nome: 'Guarantee Gem T1', ouro: 15000, coins: 5 } };
+    /* /imbuements (e /assets/v167/imbuements.json → bases): taxa, proteção, chance */
+    const PG_IMBU_BASES = [
+        { id: 1, nome: 'Basic', taxa: 5000, protecao: 10000, chance: 0.9 },
+        { id: 2, nome: 'Intricate', taxa: 30000, protecao: 30000, chance: 0.7 },
+        { id: 3, nome: 'Powerful', taxa: 200000, protecao: 50000, chance: 0.5 }
+    ];
+    const PG_BONUS = { maxHealth: 'vida máx', maxMana: 'mana máx', capacity: 'capacidade', hpRegen: 'regen. vida', manaRegen: 'regen. mana',
+                       armor: 'armadura', attack: 'ataque', melee: 'corpo a corpo', distance: 'distância', shielding: 'escudo', magicLevel: 'nível mágico' };
+    const PG_ELEM = { COMBAT_PHYSICALDAMAGE: 'físico', COMBAT_ENERGYDAMAGE: 'energia', COMBAT_FIREDAMAGE: 'fogo', COMBAT_ICEDAMAGE: 'gelo',
+                      COMBAT_EARTHDAMAGE: 'terra', COMBAT_HOLYDAMAGE: 'sagrado', COMBAT_DEATHDAMAGE: 'morte' };
+    const PG_FIM = { stop: 'você encerrou', death: 'morte na caçada', expired: 'teto de 12 h', victory: 'vitória', no_gold: 'ouro abaixo da margem (Auto Exit)',
+                     cap_full: 'mochila cheia (Auto Exit)', level_cap: 'limite de nível da caçada', tower_top: 'topo da torre', prey_resync_failed: 'prey fora de sincronia' };
+
+    const pgNum = (x) => { if (x == null || x === '' || typeof x === 'boolean') return null; const n = Number(x); return Number.isFinite(n) ? n : null; };
+    const pgNorm = (s) => String(s == null ? '' : s).trim().toLowerCase();
+    const pgInt = (n) => n == null || !Number.isFinite(n) ? '—' : Math.round(n).toLocaleString('pt-BR');
+    const pgDec = (n, c) => n == null || !Number.isFinite(n) ? '—' : n.toLocaleString('pt-BR', { minimumFractionDigits: c, maximumFractionDigits: c });
+    const pgPct = (x, c) => x == null || !Number.isFinite(x) ? '—' : pgDec(x * 100, c == null ? 1 : c) + '%';
+    /* horas → "45 min" · "2h05" · "3,5 dias"; Infinity → "não acaba" */
+    function pgHoras(h) {
+        if (h == null || Number.isNaN(h)) return '—';
+        if (!Number.isFinite(h)) return 'não acaba';
+        if (h <= 0) return 'agora';
+        const min = Math.round(h * 60);
+        if (min < 1) return '< 1 min';
+        if (min < 60) return min + ' min';
+        if (h < 48) return Math.floor(min / 60) + 'h' + String(min % 60).padStart(2, '0');
+        return pgDec(h / 24, 1) + ' dias';
+    }
+
+    /* ---- 1. CHAVES E ELITES ------------------------------------------------ */
+    /* keyBag: o cliente trata como {nome: n} (Object.entries, n > 0). Aceito
+     * também lista de {name,count}, pares [nome, n] e nomes soltos. Devolve
+     * null quando a mensagem não fala de chave (a maioria dos frames). Só
+     * keyBagMax (compra da T2 no meta_result) atualiza o limite e mantém o resto. */
+    function pgLerChaves(src, anterior, regras) {
+        if (!src || typeof src !== 'object') return null;
+        const temBag = src.keyBag != null && typeof src.keyBag === 'object';
+        const usadasCru = pgNum(src.keyBagUsed), maxCru = pgNum(src.keyBagMax);
+        if (!temBag && usadasCru == null && maxCru == null) return null;
+        const ant = anterior || {};
+        let chaves = ant.chaves || {};
+        if (temBag) {
+            chaves = {};
+            const somar = (nome, n) => { const k = String(nome == null ? '' : nome).trim(); const q = n == null ? 1 : pgNum(n); if (!k || !(q > 0)) return; chaves[k] = (chaves[k] || 0) + q; };
+            const qtd = (x) => x.count != null ? x.count : x.qty != null ? x.qty : x.quantity != null ? x.quantity : x.n != null ? x.n : x.amount;
+            if (Array.isArray(src.keyBag)) {
+                src.keyBag.forEach(x => {
+                    if (typeof x === 'string') somar(x, 1);
+                    else if (Array.isArray(x)) somar(x[0], x[1]);
+                    else if (x && typeof x === 'object') somar(x.name || x.nome || x.item || x.key, qtd(x));
+                });
+            } else Object.entries(src.keyBag).forEach(([k, v]) => somar(k, v && typeof v === 'object' ? qtd(v) : v));
+        }
+        const soma = Object.values(chaves).reduce((a, b) => a + b, 0);
+        const tierId = src.keyBagTierId != null ? String(src.keyBagTierId) : (ant.tierId || null);
+        const t = pgTierDaMochila({ tierId, max: maxCru > 0 ? maxCru : ant.max }, regras);
+        const usadas = usadasCru != null ? usadasCru : temBag ? soma : (ant.usadas != null ? ant.usadas : soma);
+        return { chaves, usadas, max: t.max, tierId, tierNome: t.nome || ant.tierNome || null };
+    }
+    /* limite da mochila: keyBagMax do jogo; senão o do tier em meta.rules.keyBags */
+    function pgTierDaMochila(kb, regras) {
+        const r = (Array.isArray(regras) ? regras : []).find(x => x && kb && kb.tierId != null && String(x.id) === String(kb.tierId)) || null;
+        const max = kb && pgNum(kb.max) > 0 ? pgNum(kb.max) : r && pgNum(r.maxKeys) > 0 ? pgNum(r.maxKeys) : null;
+        return { max, nome: r ? r.name || null : null };
+    }
+    /* /chaves-e-caixas: "Com a Key Backpack T1 cheia, a próxima chave que cair na caçada some." */
+    function pgAvisoChaves(kb) {
+        if (!kb) return null;
+        const max = pgNum(kb.max), u = pgNum(kb.usadas) || 0;
+        if (max > 0 && u >= max) return { nivel: 'cheia', texto: `mochila de chaves cheia (${u}/${max}) — a próxima chave que cair na caçada será PERDIDA. Guarde as extras no depósito${max < PG_WIKI.mochilaT2 ? ' ou compre a Key Backpack T2 (10 chaves, 100 coins)' : ''}.` };
+        if (max > 0 && max - u === 1) return { nivel: 'quase', texto: `só 1 vaga na mochila de chaves (${u}/${max}): a próxima chave cabe, a seguinte será perdida.` };
+        if (!(max > 0) && u >= PG_WIKI.mochilaT1) return { nivel: 'talvez', texto: `${u} chaves e o jogo não mandou o limite — se a mochila for a T1 (5), está cheia.` };
+        return { nivel: 'ok', texto: max > 0 ? `${u}/${max} chaves` : `${u} chave(s)` };
+    }
+    /* a chave de uma caçada: item do loot de /hunts/select que é keyItem de algum Elite */
+    function pgChaveDaHunt(h, bosses) {
+        if (!h || !Array.isArray(h.loot)) return null;
+        const chaves = new Set((bosses || []).map(b => b && pgNorm(b.keyItem)).filter(Boolean));
+        const it = h.loot.find(l => l && chaves.has(pgNorm(l.name))) || h.loot.find(l => l && / key$/i.test(String(l.name || '').trim()));
+        if (!it) return null;
+        const elite = (bosses || []).find(b => b && pgNorm(b.keyItem) === pgNorm(it.name)) || null;
+        return { nome: it.name, chance: pgNum(it.chance) != null ? pgNum(it.chance) / 100000 : null, elite };
+    }
+    /* chave → Elite (keyItem, sem diferenciar maiúscula: "gordzila key") e caçada que a larga */
+    function pgInfoChave(nome, bosses, hunts) {
+        const k = pgNorm(nome);
+        const elite = (bosses || []).find(b => b && pgNorm(b.keyItem) === k) || null;
+        let hunt = null, chance = null;
+        for (const h of (hunts || [])) {
+            const it = h && Array.isArray(h.loot) ? h.loot.find(l => l && pgNorm(l.name) === k) : null;
+            if (it) { hunt = h; chance = pgNum(it.chance) != null ? pgNum(it.chance) / 100000 : null; break; }
+        }
+        return { nome, elite, hunt, chance };
+    }
+    /* no catálogo `percent` é quanto o monstro ABSORVE: negativo = toma mais */
+    function pgResumoElite(b, materiais) {
+        if (!b) return null;
+        const els = (b.elements || []).filter(e => e && pgNum(e.percent)).map(e => ({ el: PG_ELEM[e.type] || String(e.type || '?').replace('COMBAT_', '').toLowerCase(), pct: pgNum(e.percent) }));
+        const loot = (b.loot || []).filter(l => l && l.name);
+        const mats = materiais instanceof Set ? materiais : new Set();
+        return {
+            nome: b.name, hp: pgNum(b.health), tipo: b.kind || null,
+            fraco: els.filter(e => e.pct < 0).sort((x, y) => x.pct - y.pct),
+            resiste: els.filter(e => e.pct > 0 && e.pct < 100).sort((x, y) => y.pct - x.pct),
+            imune: els.filter(e => e.pct >= 100).map(e => e.el),
+            top: loot.filter(l => pgNum(l.value) > 0).sort((x, y) => pgNum(y.value) - pgNum(x.value)).slice(0, 3).map(l => ({ nome: l.name, valor: pgNum(l.value), chance: pgNum(l.chance) != null ? pgNum(l.chance) / 100000 : null })),
+            fragmentos: loot.filter(l => /fragment/i.test(l.name)).map(l => l.name),
+            materiais: loot.filter(l => mats.has(pgNorm(l.name))).map(l => l.name)
+        };
+    }
+    /* /prey: LOOT multiplica a chance de cada item; as colunas SOMAM (4 × ★10 = +40 %) */
+    function pgFatorLootPrey(prey) {
+        if (!prey || !prey.buffs) return 1;
+        let s = 0;
+        for (const b of Object.values(prey.buffs)) if (b && b.tipo === 'loot' && b.pct > 0 && !(b.msLeft === 0)) s += b.pct;
+        return 1 + s / 100;
+    }
+    const pgChavesHora = (abatesH, chance, fator) => abatesH > 0 && chance > 0 ? abatesH * chance * (fator > 0 ? fator : 1) : null;
+    /* chaves/h por caçada MEDIDA (ao vivo, Scan, sessões) — a atual primeiro */
+    function pgLinhasChaves(hunts, bosses, medidos, fator, huntAtual) {
+        const out = [];
+        for (const [id, m] of Object.entries(medidos || {})) {
+            const h = (hunts || []).find(x => x && String(x.id) === String(id));
+            const c = h ? pgChaveDaHunt(h, bosses) : null;
+            if (!h || !c) continue;
+            const ch = pgChavesHora(m.abatesH, c.chance, fator);
+            out.push({ hunt: h, chave: c.nome, elite: c.elite ? c.elite.name : null, chance: c.chance, abatesH: m.abatesH, fonte: m.fonte, chavesH: ch, cadaH: ch ? 1 / ch : null, atual: String(id) === String(huntAtual) });
+        }
+        return out.sort((a, b) => (b.atual - a.atual) || ((b.chavesH || 0) - (a.chavesH || 0)));
+    }
+    /* abates/h por caçada: ao vivo (analisador do jogo) > Scan (o mais recente) > sessões (média por tempo) */
+    function pgAbatesPorHunt(vivo, scan, sess) {
+        const r = {};
+        const por = (id, h, fonte) => { const n = pgNum(id); if (n == null || !(h > 0) || r[n]) return; r[n] = { abatesH: h, fonte }; };
+        if (vivo) por(vivo.huntId, vivo.abatesH, 'agora');
+        (Array.isArray(scan) ? scan : []).filter(x => x && !x.erro && x.abatesH > 0).sort((x, y) => (y.t || 0) - (x.t || 0)).forEach(x => por(x.id, x.abatesH, 'Scan'));
+        const s = {};
+        (Array.isArray(sess) ? sess : []).forEach(x => { const id = x && pgNum(x.huntId); if (id == null || !(x.abatesH > 0) || !(x.dur > 0)) return; s[id] = s[id] || { n: 0, d: 0 }; s[id].n += x.abatesH * x.dur; s[id].d += x.dur; });
+        Object.entries(s).forEach(([k, v]) => por(k, v.n / v.d, 'sessões'));
+        return r;
+    }
+
+    /* ---- 2. BESTIÁRIO ------------------------------------------------------ */
+    /* contadores {huntId: abates}; o maior vence (o progresso nunca regride — wiki
+     * /bestiario; o cliente faz o mesmo: max(meta.huntBestiary, frame.bestiaryKills)) */
+    function pgMesclarBestiario(a, b) {
+        const r = Object.assign({}, a || {});
+        const por = (k, v) => { const n = pgNum(v); if (k == null || k === '' || !(n >= 0)) return; const c = String(k); if (!(r[c] >= n)) r[c] = n; };
+        if (Array.isArray(b)) b.forEach(x => { if (x && typeof x === 'object') por(x.huntId != null ? x.huntId : x.id, x.kills != null ? x.kills : x.count); });
+        else if (b && typeof b === 'object') Object.entries(b).forEach(([k, v]) => por(k, v && typeof v === 'object' ? (v.kills != null ? v.kills : v.count) : v));
+        return r;
+    }
+    /* 3 marcos por caçada; vale o MAIOR alcançado (não somam) */
+    function pgEstagio(best, kills) {
+        const st = (best && Array.isArray(best.stages) ? best.stages : []).map(s => ({ kills: pgNum(s && s.kills), value: pgNum(s && s.value) }))
+            .filter(s => s.kills > 0).sort((a, b) => a.kills - b.kills);
+        if (!st.length) return null;
+        const k = Math.max(0, pgNum(kills) || 0);
+        const feitos = st.filter(s => k >= s.kills), prox = st.find(s => k < s.kills) || null;
+        const valor = feitos.length ? feitos[feitos.length - 1].value || 0 : 0;
+        return { n: feitos.length, total: st.length, valor, prox, falta: prox ? prox.kills - k : 0, ganho: prox ? (prox.value || 0) - valor : 0,
+                 pct: prox ? k / prox.kills : 1, completo: !prox, kills: k, bonus: best.bonus || null };
+    }
+    /* soma dos marcos já fechados, por tipo — o painel BÔNUS DA CONTA do jogo */
+    function pgBonusConta(hunts, contadores) {
+        const soma = {};
+        for (const h of (hunts || [])) {
+            if (!h || !h.bestiary) continue;
+            const e = pgEstagio(h.bestiary, (contadores || {})[String(h.id)]);
+            if (e && e.valor > 0 && e.bonus) soma[e.bonus] = (soma[e.bonus] || 0) + e.valor;
+        }
+        return soma;
+    }
+    /* caçadas do seu nível com contador CONHECIDO e marco por fechar; horas até o
+     * próximo marco com abates/h medidos. Ordem: mais perto (em horas) primeiro. */
+    function pgLinhasBestiario(hunts, contadores, medidos, nivel) {
+        const out = [];
+        for (const h of (hunts || [])) {
+            if (!h || !h.bestiary || (nivel != null && (h.levelMin || 1) > nivel)) continue;
+            const c = (contadores || {})[String(h.id)];
+            if (c == null) continue;
+            const e = pgEstagio(h.bestiary, c);
+            if (!e || e.completo) continue;
+            const m = (medidos || {})[h.id];
+            out.push({ hunt: h, e, abatesH: m ? m.abatesH : null, fonte: m ? m.fonte : null, horas: m && m.abatesH > 0 ? e.falta / m.abatesH : null });
+        }
+        return out.sort((a, b) => (a.horas == null) - (b.horas == null) || (a.horas != null ? a.horas - b.horas : a.e.falta - b.e.falta));
+    }
+
+    /* ---- 3. CAÇADA COM O JOGO FECHADO --------------------------------------- */
+    /* amostras [{t, ouro, oz, tot}] a cada 30 s da caçada atual → taxas na janela.
+     * ozH = só as SUBIDAS (o que entra de loot, antes das vendas); ozLiqH = líquido. */
+    function pgTaxas(amostras, janelaMs) {
+        const a = (amostras || []).filter(x => x && x.t > 0);
+        if (a.length < 2) return null;
+        const fim = a[a.length - 1];
+        let i0 = a.findIndex(x => fim.t - x.t <= (janelaMs || Infinity));
+        if (i0 < 0 || i0 >= a.length - 1) i0 = Math.max(0, a.length - 2);
+        const ini = a[i0], h = (fim.t - ini.t) / 3600000;
+        if (!(h > 0)) return null;
+        let sobe = 0;
+        for (let i = i0 + 1; i < a.length; i++) { const d = (a[i].oz != null && a[i - 1].oz != null) ? a[i].oz - a[i - 1].oz : 0; if (d > 0) sobe += d; }
+        return { horas: h, ouroH: ini.ouro != null && fim.ouro != null ? (fim.ouro - ini.ouro) / h : null, ozH: sobe / h,
+                 ozLiqH: ini.oz != null && fim.oz != null ? (fim.oz - ini.oz) / h : null };
+    }
+    /* O que para a caçada primeiro se o jogo for fechado agora.
+     *  x = {ouro, margem, autoExit, autoExitCap, supH, taxas, ozLivre, autoSell, sessaoMs, xpH, xpFalta}
+     *  - ouro: saldo MEDIDO (moedas + Auto Selling − suprimento) com ≥ 10 min de
+     *    janela; senão só o gasto de suprimento do analisador (pior caso).
+     *  - sem Auto Exit o ouro zerado não encerra: "Sem ouro: suprimentos pagos
+     *    pausados" (wiki /pocoes) — a party segue só com magia/regeneração.
+     *  - mochila cheia sem "Encerrar com a mochila cheia" não encerra: o loot
+     *    que não cabe deixa de ser coletado (wiki /auto-exit). */
+    function pgPlanoOffline(x) {
+        x = x || {};
+        const r = {};
+        const sessaoH = pgNum(x.sessaoMs) != null ? x.sessaoMs / 3600000 : null;
+        r.tetoH = sessaoH != null ? Math.max(0, PG_WIKI.tetoCacadaH - sessaoH) : PG_WIKI.tetoCacadaH;
+        const tx = x.taxas || null;
+        const medido = !!(tx && tx.horas >= 1 / 6 && tx.ouroH != null);
+        r.ouroH = medido ? tx.ouroH : (x.supH > 0 ? -x.supH : null);
+        r.ouroFonte = medido ? 'medido' : r.ouroH != null ? 'suprimento' : null;
+        const margem = x.autoExit && x.margem > 0 ? x.margem : 0;
+        r.margem = margem;
+        r.horasOuro = r.ouroH == null || x.ouro == null ? null : r.ouroH < 0 ? Math.max(0, (x.ouro - margem) / -r.ouroH) : Infinity;
+        let oz = null;
+        if (x.autoSell) oz = tx && tx.horas >= 0.25 && tx.ozLiqH != null ? tx.ozLiqH : null;   // vende a cada 10 min: só o líquido de 15+ min diz algo
+        else if (tx && tx.horas >= 1 / 30) oz = tx.ozH;
+        r.ozH = oz;
+        r.horasMochila = x.ozLivre == null || oz == null ? null : oz > 0 ? Math.max(0, x.ozLivre / oz) : Infinity;
+        const ev = [{ k: 'teto', h: r.tetoH, encerra: true, texto: 'teto de 12 h: a caçada termina ("Tempo da caçada esgotado")' }];
+        if (r.horasOuro != null && Number.isFinite(r.horasOuro)) ev.push({ k: 'ouro', h: r.horasOuro, encerra: margem > 0,
+            texto: margem > 0 ? 'o ouro chega à margem do Auto Exit e a caçada encerra' : 'o ouro acaba: poções e runas pagas PAUSAM (só cura por magia e regeneração) — risco de morte' });
+        if (r.horasMochila != null && Number.isFinite(r.horasMochila)) ev.push({ k: 'mochila', h: r.horasMochila, encerra: !!x.autoExitCap,
+            texto: x.autoExitCap ? 'a mochila enche e o Auto Exit encerra a caçada' : 'a mochila enche: o loot que não couber deixa de ser coletado (a caçada continua)' });
+        ev.sort((a, b) => a.h - b.h);
+        r.eventos = ev;
+        r.primeiro = ev[0];
+        r.fim = ev.find(e => e.encerra);
+        r.xpAteFim = x.xpH > 0 ? x.xpH * r.fim.h : null;
+        r.horasNivel = x.xpH > 0 && x.xpFalta > 0 ? x.xpFalta / x.xpH : null;
+        return r;
+    }
+    /* levelProgress {xp, xpNext}: xpNext é o total do próximo nível (como "EXP a / b" do rail) */
+    function pgXpFalta(lp) {
+        if (!lp || typeof lp !== 'object') return null;
+        const xp = pgNum(lp.xp), prox = pgNum(lp.xpNext);
+        return xp != null && prox != null && prox > xp ? prox - xp : null;
+    }
+
+    /* ---- 4. PREY ----------------------------------------------------------- */
+    function pgTipoPrey(b) {
+        if (!b || typeof b !== 'object') return null;
+        const s = pgNorm([b.type, b.bonusType, b.label].filter(x => typeof x === 'string').join(' '));
+        if (/\bxp\b|\bexp|experi/.test(s)) return 'xp';
+        if (/loot/.test(s)) return 'loot';
+        if (/dano|damage|dmg/.test(s)) return 'dano';
+        if (/def/.test(s)) return 'defesa';
+        return null;
+    }
+    /* percentual pelo tier e pelo tipo (wiki /prey: EXP/LOOT ★N = +N %, DANO/DEFESA
+     * ★N = +4N %); o `percent` do jogo só entra quando o tipo não é reconhecido */
+    function pgLerPrey(meta) {
+        if (!meta || typeof meta !== 'object') return null;
+        if (!('preyHunt' in meta) && !('preyBuffs' in meta) && meta.wildcards == null) return null;
+        const ph = meta.preyHunt && typeof meta.preyHunt === 'object' ? meta.preyHunt : null;
+        const buffs = {};
+        const cada = (voc, x) => {
+            if (!voc || !x || typeof x !== 'object') return;
+            const b = x.bonus && typeof x.bonus === 'object' ? x.bonus : null;
+            const tipo = pgTipoPrey(b), tier = b ? pgNum(b.tier) : null;
+            let pct = tipo && tier ? tier * (tipo === 'dano' || tipo === 'defesa' ? 4 : 1) : null;
+            if (pct == null && b && pgNum(b.percent) != null) { pct = pgNum(b.percent); if (pct > 0 && pct <= 1) pct *= 100; }
+            buffs[String(voc).toUpperCase()] = { tipo, tier, pct, rotulo: b ? (b.label || b.type || null) : null, msLeft: pgNum(x.msLeft), locked: !!x.locked,
+                                                 piso: pgNum(x.tierFloor), gratis: !!x.rollFreeDay, huntId: pgNum(x.huntId) };
+        };
+        const f = meta.preyBuffs;
+        if (Array.isArray(f)) f.forEach(x => x && cada(x.vocation || x.voc, x));
+        else if (f && typeof f === 'object') Object.entries(f).forEach(([v, x]) => cada(v, x));
+        return {
+            wildcards: pgNum(meta.wildcards),
+            cacada: ph ? { huntId: pgNum(ph.huntId), titulo: ph.title || null, levelMin: pgNum(ph.levelMin), msLeft: pgNum(ph.msLeft), locked: !!ph.locked } : null,
+            buffs, sorteioGratis: !!meta.preyHuntRollFreeDay,
+            avisos: Array.isArray(meta.preyAvisos) ? meta.preyAvisos.filter(a => a && typeof a === 'object') : []
+        };
+    }
+    /* Travas: cada seção travada renova sozinha ao vencer (2 h) por 1 wildcard;
+     * vencendo juntas, a cobrança vai caçada → Cavaleiro → Paladino → Feiticeiro
+     * → Druida; ZEROU as wildcards → TODAS as travas desligam na hora (wiki /prey).
+     * Tempo em horas de CAÇADA (o relógio da prey só anda caçando). */
+    function pgTravasPrey(prey) {
+        if (!prey) return null;
+        const ordem = ['HUNT'].concat(PG_VOCS);
+        const secs = [];
+        if (prey.cacada && prey.cacada.locked && prey.cacada.msLeft != null) secs.push({ k: 'HUNT', ms: prey.cacada.msLeft });
+        for (const v of PG_VOCS) { const b = prey.buffs && prey.buffs[v]; if (b && b.locked && b.msLeft != null) secs.push({ k: v, ms: b.msLeft }); }
+        const w0 = prey.wildcards;
+        if (!secs.length || w0 == null) return { travadas: secs.length, wildcards: w0, renovacoes: 0, horasTravas: null, horasBonus: null };
+        const DUR = PG_WIKI.preyH * 3600000;
+        let w = w0, agora = 0, renov = 0, voltas = 0;
+        while (voltas++ < 5000) {
+            secs.sort((a, b) => a.ms - b.ms || ordem.indexOf(a.k) - ordem.indexOf(b.k));
+            const s = secs[0];
+            agora = s.ms;
+            if (w <= 0) break;                 // sem wildcard na renovação: expira e a trava desliga
+            w--; renov++; s.ms = agora + DUR;
+            if (w === 0) break;                // zerou: todas desligam agora
+        }
+        return { travadas: secs.length, wildcards: w0, renovacoes: renov, horasTravas: agora / 3600000,
+                 horasBonus: Math.max(...secs.map(s => s.ms)) / 3600000 };
+    }
+    /* Plano 2.11 (dono): DEFESA no Cavaleiro, DANO em quem faz mais dano no
+     * livro-razão. Ajustes pelos dados medidos: spawn limita → dano extra não
+     * vira xp (TIBIDLE.md, Stonerefiners 28/09) → EXP; Cavaleiro que quase não
+     * apanha (vida mínima ≥ 90 %) → EXP rende mais que DEFESA. rz = razaoResumo(). */
+    function pgSugestaoPrey(rz) {
+        const pv = (rz && rz.porVoc) || {};
+        const temDano = PG_VOCS.some(v => pv[v] && pv[v].pct > 0);
+        let top = null;
+        for (const v of PG_VOCS) if (v !== 'KNIGHT' && pv[v] && pv[v].pct > 0 && (!top || pv[v].pct > pv[top].pct)) top = v;
+        const spawn = !!(rz && rz.ondas && rz.ondas.spawnLimita);
+        const r = {};
+        for (const v of PG_VOCS) {
+            if (v === 'KNIGHT') {
+                const hp = pv.KNIGHT && pgNum(pv.KNIGHT.hpMin);
+                r[v] = hp != null && hp >= 90
+                    ? { tipo: 'xp', motivo: `quase não apanhou (vida mínima ${hp}%) — EXP rende mais que DEFESA` }
+                    : { tipo: 'defesa', motivo: hp != null ? `é quem apanha (vida mínima ${hp}%) — DEFESA corta o dano que ele toma` : 'é quem apanha corpo a corpo — DEFESA rende mais nele (wiki)' };
+            } else if (v === top) {
+                r[v] = spawn ? { tipo: 'xp', motivo: `faz ${pv[v].pct}% do dano, mas o spawn limita: dano extra não vira xp` }
+                             : { tipo: 'dano', motivo: `faz ${pv[v].pct}% do dano do grupo — DANO ★10 dá +40% nele` };
+            } else r[v] = { tipo: 'xp', motivo: temDano ? 'EXP soma para a conta (4 colunas ★10 = +40%); para ouro, LOOT' : 'sem dano medido ainda — EXP é o seguro (soma para a conta); para ouro, LOOT' };
+        }
+        return r;
+    }
+
+    /* ---- 5. FORJA E IMBUEMENT ----------------------------------------------- */
+    /* Refino esperado de `de` até `ate`. C[k] = custo esperado (em gemas) de k → k+1:
+     *   alvo ≤ +4: 1/p gemas T1 (falha não cai);
+     *   alvo ≥ +5 sem Garantia: (1 T2 + (1−p) × C[k−1]) / p — a falha cai 1 nível
+     *     e é preciso subir de novo;
+     *   alvo ≥ +5 com Garantia: 1/p × (T2 + Garantia) — Garantia gasta sempre.
+     * modo 'melhor' escolhe, degrau a degrau, o mais barato em ouro (o greedy é
+     * ótimo: o custo sem Garantia só cresce com C[k−1]). */
+    function pgRefino(de, ate, modo) {
+        de = Math.max(0, Math.min(10, Math.floor(pgNum(de) || 0)));
+        ate = Math.max(de, Math.min(10, Math.floor(pgNum(ate) || 0)));
+        const ouro = c => c.T1 * PG_GEMAS.T1.ouro + c.T2 * PG_GEMAS.T2.ouro + c.G * PG_GEMAS.G.ouro;
+        const C = [], passos = [];
+        for (let k = 0; k < 10; k++) {
+            const s = PG_REFINO[k];
+            let c, usaG = false;
+            if (!s.cai) c = { T1: 1 / s.p, T2: 0, G: 0 };
+            else {
+                const a = C[k - 1];
+                const semG = { T1: (1 - s.p) * a.T1 / s.p, T2: (1 + (1 - s.p) * a.T2) / s.p, G: (1 - s.p) * a.G / s.p };
+                const comG = { T1: 0, T2: 1 / s.p, G: 1 / s.p };
+                usaG = modo === 'com' || (modo === 'melhor' && ouro(comG) < ouro(semG));
+                c = usaG ? comG : semG;
+            }
+            C[k] = c;
+            if (k >= de && k < ate) passos.push({ alvo: s.alvo, p: s.p, cai: !!s.cai, usaG, c, ouro: ouro(c) });
+        }
+        const t = passos.reduce((a, x) => ({ T1: a.T1 + x.c.T1, T2: a.T2 + x.c.T2, G: a.G + x.c.G }), { T1: 0, T2: 0, G: 0 });
+        const g = passos.find(x => x.usaG);
+        return { de, ate, modo, passos, garantiaDesde: g ? g.alvo : null,
+                 total: { T1: t.T1, T2: t.T2, G: t.G, tentativas: t.T1 + t.T2, ouro: ouro(t),
+                          coins: t.T1 * PG_GEMAS.T1.coins + t.T2 * PG_GEMAS.T2.coins + t.G * PG_GEMAS.G.coins,
+                          fragmentos: (t.T1 + t.T2 + t.G) * 100 } };
+    }
+    /* bases do catálogo do jogo (imbuements.json) com a wiki como reserva */
+    function pgBasesImbu(cat) {
+        const b = cat && Array.isArray(cat.bases) ? cat.bases : null;
+        const lidas = (b || []).map(x => x && ({ id: pgNum(x.id), nome: x.name, taxa: pgNum(x.price), protecao: pgNum(x.protectionPrice), chance: pgNum(x.percent) != null ? pgNum(x.percent) / 100 : null }))
+            .filter(x => x && x.id && x.taxa != null && x.protecao != null && x.chance > 0 && x.chance <= 1);
+        return lidas.length ? lidas : PG_IMBU_BASES.slice();
+    }
+    const pgNomesImbu = (cat) => [...new Set(((cat && cat.imbuements) || []).map(x => x && x.name).filter(Boolean))];
+    /* materiais de UM tier (o catálogo já traz o tier anterior junto) × preço */
+    function pgMateriaisImbu(cat, nome, baseId, precos) {
+        const im = ((cat && cat.imbuements) || []).find(x => x && x.name === nome && pgNum(x.base) === pgNum(baseId));
+        if (!im) return null;
+        const itens = (im.items || []).filter(Boolean).map(it => {
+            const q = pgNum(it.count) || 0;
+            const p = precos ? pgNum(precos[it.name] != null ? precos[it.name] : precos[pgNorm(it.name)]) : null;
+            return { nome: it.name, qtd: q, preco: p, total: p != null ? p * q : null };
+        });
+        return { itens, total: itens.reduce((s, i) => s + (i.total || 0), 0), semPreco: itens.filter(i => i.preco == null).map(i => i.nome) };
+    }
+    /* Sem proteção a falha consome ouro E materiais: custo esperado = (taxa + M)/p.
+     * Com proteção: taxa + proteção + M, uma vez. Vale quando M > proteção·p/(1−p) − taxa. */
+    function pgProtecao(base, valorMat) {
+        if (!base || !(base.chance > 0)) return null;
+        const M = Math.max(0, pgNum(valorMat) || 0), p = Math.min(1, base.chance);
+        const sem = (base.taxa + M) / p, com = base.taxa + base.protecao + M;
+        const limite = p < 1 ? base.protecao * p / (1 - p) - base.taxa : Infinity;
+        return { sem, com, vale: com < sem, limite, diferenca: Math.abs(sem - com), tentativas: 1 / p, M };
+    }
+    /* @@PROGRESSO-FIM */
+    /* v2.11 — estado da aba Progresso, alimentado SÓ por observarProgresso()
+     * (uma linha no começo de observarRecebido). Em memória: o que o jogo
+     * manda de novo a cada conexão. Só os contadores do bestiário vão para o
+     * localStorage (prog_bestiario), e só quando a aba desenha — antes disso
+     * a gaveta da conta (LS) pode ainda não ter sido escolhida. */
+    const PROG = { chaves: null, avisoChaves: null, meta: null, prey: null, best: {}, huntId: null, treino: false, an: null, estado: null,
+                   amostras: [], autoSell: null, nivelProg: null, offline: null, fim: null, imbu: null, imbuErro: null, imbuPedido: false, timer: 0 };
+    const PG_AMOSTRA_MS = 30000;
+
+    function pgAnotarMeta(m) {
+        const x = PROG.meta || (PROG.meta = {});
+        ['wildcards', 'preyHunt', 'preyBuffs', 'preyAvisos', 'preyHuntRollFreeDay', 'autoLeave', 'xpBoost'].forEach(k => { if (k in m) x[k] = m[k]; });
+        if (m.rules && Array.isArray(m.rules.keyBags)) x.keyBags = m.rules.keyBags;
+        x.t = Date.now();
+        if (m.huntBestiary) PROG.best = pgMesclarBestiario(PROG.best, m.huntBestiary);
+        const p = pgLerPrey(x);
+        if (p) PROG.prey = Object.assign(p, { t: Date.now() });
+    }
+    function observarProgresso(o) {
+        if (!o || typeof o !== 'object' || !o.type || o.type === 'pong') return;
+        const d = o.data;
+        if (!d || typeof d !== 'object') return;
+        const tipo = o.type, st = d.state && typeof d.state === 'object' ? d.state : null;
+        if (d.meta && typeof d.meta === 'object') pgAnotarMeta(d.meta);
+        const regras = PROG.meta && PROG.meta.keyBags;
+        const kb = pgLerChaves(d, PROG.chaves, regras) || (st ? pgLerChaves(st, PROG.chaves, regras) : null);
+        if (kb) {
+            kb.t = Date.now(); PROG.chaves = kb;
+            /* cheia é o único caso que custa algo sem o dono olhar: avisa UMA vez no Log */
+            const av = pgAvisoChaves(kb), antes = PROG.avisoChaves;
+            PROG.avisoChaves = av ? av.nivel : null;
+            if (av && av.nivel === 'cheia' && antes !== 'cheia') log('⚠ ' + av.texto, 'erro');
+        }
+        if (tipo === 'hunt_started' || tipo === 'resume') {
+            const id = pgNum(d.huntId);
+            if (id !== PROG.huntId) PROG.amostras = [];
+            PROG.huntId = id; PROG.treino = d.training === true;
+            if (tipo === 'resume' && d.offline && typeof d.offline === 'object') PROG.offline = Object.assign({ t: Date.now() }, d.offline);
+        } else if (tipo === 'ended') {
+            const sm = d.summary && typeof d.summary === 'object' ? d.summary : {};
+            PROG.fim = { t: Date.now(), motivo: sm.reason || null, titulo: sm.title || null, seg: pgNum(sm.elapsedSec) };
+            PROG.huntId = null; PROG.amostras = []; PROG.an = null; PROG.estado = null; PROG.autoSell = null;
+            return;
+        }
+        if (tipo !== 'frame' && tipo !== 'resume' && tipo !== 'hunt_started') return;
+        const agora = Date.now();
+        const a = d.analyzer && typeof d.analyzer === 'object' ? d.analyzer : null;
+        if (a) PROG.an = { t: agora, ms: pgNum(a.elapsedMs), sessaoMs: pgNum(a.sessionElapsedMs), kills: pgNum(a.killsTotal), xp: pgNum(a.xp), xpH: pgNum(a.xpPerHour), sup: pgNum(a.suppliesGold), loot: pgNum(a.lootGold) };
+        if (d.bestiaryKills != null && PROG.huntId != null && !PROG.treino) {
+            if (typeof d.bestiaryKills === 'object') PROG.best = pgMesclarBestiario(PROG.best, d.bestiaryKills);
+            else { const n = pgNum(d.bestiaryKills), k = String(PROG.huntId); if (n != null && !(PROG.best[k] >= n)) PROG.best[k] = n; }
+        }
+        if (!st) return;
+        PROG.autoSell = st.autoSellInMs != null ? { ms: pgNum(st.autoSellInMs), t: agora } : null;
+        const ch = st.character && typeof st.character === 'object' ? st.character : null;
+        if (ch && ch.levelProgress) PROG.nivelProg = { xpFalta: pgXpFalta(ch.levelProgress), nivel: pgNum(ch.level), t: agora };
+        const ouro = pgNum(st.balance), trav = pgNum(st.balanceLocked);
+        const oz = st.cap ? pgNum(st.cap.used) : null, tot = st.cap ? pgNum(st.cap.total) : null;
+        /* ouro que paga suprimento = normal + travado (o gasto sai primeiro do travado — wiki /ouro-e-ouro-travado) */
+        PROG.estado = { t: agora, ouro: ouro != null ? ouro + (trav || 0) : null, trav, oz, tot };
+        const ult = PROG.amostras[PROG.amostras.length - 1];
+        if ((ouro != null || oz != null) && (!ult || agora - ult.t >= PG_AMOSTRA_MS)) {
+            PROG.amostras.push({ t: agora, ouro: PROG.estado.ouro, oz, tot });
+            if (PROG.amostras.length > 240) PROG.amostras.shift();          // 2 h de amostras
+        }
+    }
+
+    /* estilos só desta aba (a casca/CSS geral é de outra área): fonte ≥ 10,5 px,
+     * alvos ≥ 28 px, cinza com contraste ≥ 4,5:1 sobre o fundo da gaveta */
+    const PG_CSS = `
+    #tb-prog{font-size:11.5px}
+    #tb-prog .pg-sub{display:flex;flex-wrap:wrap;gap:3px;margin:0 0 6px}
+    #tb-prog .pg-aba{flex:1 1 auto;min-height:28px;padding:3px 4px;border-radius:14px;background:#1a1f29;color:#c3cad6;border:1px solid #2b3242;cursor:pointer;font:inherit;font-size:11px}
+    #tb-prog .pg-aba:hover{background:#232936;color:#fff}
+    #tb-prog .pg-aba.on{background:#2c5c3a;color:#fff;border-color:#4a9a63}
+    #tb-prog button:focus-visible,#tb-prog select:focus-visible,#tb-prog input:focus-visible,#tb-prog summary:focus-visible{outline:2px solid #ffd479;outline-offset:1px}
+    #tb-prog .pg-mut,#tb-prog .tb-mut{color:#9ba5b7}
+    #tb-prog .pg-peq{font-size:10.5px}
+    #tb-prog .pg-cx{background:#1a1f29;border:1px solid #262d3b;border-radius:7px;padding:6px 7px;margin:5px 0}
+    #tb-prog .pg-alerta{background:#3a1d1d;border:1px solid #8a3a3a;color:#ffc2bd;border-radius:7px;padding:6px 7px;margin:0 0 6px;font-weight:bold}
+    #tb-prog .pg-atencao{background:#33301c;border:1px solid #7a6a2a;color:#ffe3a3;border-radius:7px;padding:6px 7px;margin:5px 0}
+    #tb-prog .pg-tit{margin:9px 0 3px;color:#ffd479;font-size:11px;letter-spacing:.3px;text-transform:uppercase}
+    #tb-prog .pg-lin{display:flex;justify-content:space-between;gap:6px;padding:2px 0;border-bottom:1px dotted #2b3242}
+    #tb-prog .pg-lin>span:last-child{text-align:right;color:#fff}
+    #tb-prog table{width:100%;border-collapse:collapse;font-size:10.5px;table-layout:fixed}
+    #tb-prog th{text-align:left;color:#9ba5b7;font-weight:normal;border-bottom:1px solid #2b3242;padding:2px 3px}
+    #tb-prog td{padding:3px;border-bottom:1px dotted #232936;vertical-align:top}
+    #tb-prog .tb-tag{font-size:10.5px}
+    #tb-prog details.pg-det{margin:3px 0;border:1px solid #262d3b;border-radius:7px;background:#1a1f29}
+    #tb-prog details.pg-det>summary{list-style:none;cursor:pointer;min-height:28px;display:flex;align-items:center;justify-content:space-between;gap:6px;padding:3px 7px}
+    #tb-prog details>summary::-webkit-details-marker{display:none}
+    #tb-prog details.pg-det>div{padding:2px 7px 6px;font-size:10.5px}
+    #tb-prog details.pg-aj{margin:5px 0}
+    #tb-prog details.pg-aj>summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;min-height:28px;padding:0 11px;border:1px solid #2b3242;border-radius:14px;color:#b3bccb;font-size:10.5px}
+    #tb-prog details.pg-aj[open]>summary{color:#ffd479;border-color:#3a4356}
+    #tb-prog details.pg-aj>div{margin-top:4px;font-size:10.5px;color:#c3cad6}
+    #tb-prog select,#tb-prog input{min-height:28px;background:#232936;color:#dde3ee;border:1px solid #3a4356;border-radius:5px;padding:2px 5px;font:inherit;font-size:11px}
+    #tb-prog .pg-form{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin:4px 0}
+    #tb-prog .pg-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin:5px 0}
+    #tb-prog .pg-card{background:#1a1f29;border:1px solid #262d3b;border-radius:7px;padding:4px 7px}
+    #tb-prog .pg-card small{display:block;color:#9ba5b7;font-size:10.5px}
+    #tb-prog .pg-card b{font-size:14px;color:#fff}
+    #tb-prog .pg-barra{height:6px;border-radius:3px;background:#2b3242;overflow:hidden;margin-top:2px}
+    #tb-prog .pg-barra i{display:block;height:100%;background:#4a9a63}
+    #tb-prog .pg-rodape{margin-top:8px;color:#9ba5b7;font-size:10.5px}
+    `;
+    function pgGarantirCss() {
+        if (document.getElementById('tb-prog-css')) return;
+        const s = document.createElement('style'); s.id = 'tb-prog-css'; s.textContent = PG_CSS;
+        (document.head || document.documentElement).appendChild(s);
+    }
+    /* contadores do bestiário: junta memória + gaveta (o maior vence) e guarda se mudou */
+    function pgSincronizarBestiario() {
+        const salvo = ler('prog_bestiario', {}) || {};
+        const junto = pgMesclarBestiario(salvo, PROG.best);
+        PROG.best = junto;
+        if (Object.keys(junto).some(k => junto[k] !== salvo[k])) guardar('prog_bestiario', junto);
+    }
+    function pgMedidos() {
+        const a = PROG.an;
+        const vivo = a && PROG.huntId != null && a.ms >= 180000 && a.kills > 0 ? { huntId: PROG.huntId, abatesH: a.kills / a.ms * 3600000 } : null;
+        let scan = [], sess = [];
+        try { scan = Object.values(scanResultados() || {}); } catch { scan = []; }
+        try { sess = sessoes() || []; } catch { sess = []; }
+        return pgAbatesPorHunt(vivo, scan, sess);
+    }
+    const pgFresco = () => !!(PROG.estado && Date.now() - PROG.estado.t < 10000 && PROG.huntId != null);
+    const pgHuntCat = (id) => id == null ? null : (CAT.hunts || []).find(h => h && h.id === id) || null;
+    const pgBonusTxt = (b, v) => `+${pgInt(v)} ${escHtml(PG_BONUS[b] || b || '?')}`;
+    const pgMateriaisSet = () => new Set(((PROG.imbu && PROG.imbu.imbuements) || []).flatMap(x => (x && x.items || []).map(i => pgNorm(i && i.name))));
+    const pgSemDado = (o) => `<div class="pg-cx pg-mut">${o}: sem dado ainda — abra/entre numa caçada.</div>`;
+    /* 1 linha de bestiário de uma caçada ("3.412/5.000 → +6 vida máx · ~1h06"); serve ao Scan se o integrador quiser */
+    function pgBestiarioTexto(huntId, medidos) {
+        const h = pgHuntCat(huntId); if (!h || !h.bestiary) return '';
+        const c = PROG.best[String(huntId)];
+        if (c == null) return `bestiário ${escHtml(PG_BONUS[h.bestiary.bonus] || h.bestiary.bonus)}: contador ainda não lido`;
+        const e = pgEstagio(h.bestiary, c); if (!e) return '';
+        if (e.completo) return `bestiário completo (${pgBonusTxt(e.bonus, e.valor)})`;
+        const m = (medidos || {})[huntId];
+        return `bestiário ${pgInt(e.kills)}/${pgInt(e.prox.kills)} → ${pgBonusTxt(e.bonus, e.prox.value)}${m && m.abatesH > 0 ? ' · ~' + pgHoras(e.falta / m.abatesH) : ''}`;
+    }
+
+    function pgTelaChaves() {
+        const kb = PROG.chaves, regras = PROG.meta && PROG.meta.keyBags;
+        let h = '';
+        if (!kb) h += pgSemDado('Mochila de chaves');
+        else {
+            const t = pgTierDaMochila(kb, regras), av = pgAvisoChaves(Object.assign({}, kb, { max: t.max }));
+            const cls = av && av.nivel === 'cheia' ? 'tb-ruim' : av && (av.nivel === 'quase' || av.nivel === 'talvez') ? 'tb-av' : 'tb-ok';
+            h += `<div class="pg-lin"><b>Mochila de chaves</b><span class="${cls}">${pgInt(kb.usadas)}${t.max ? ' / ' + pgInt(t.max) : ''}</span></div>`;
+            h += `<div class="pg-mut pg-peq">${t.nome ? escHtml(t.nome) + ' · ' : ''}T1 guarda ${PG_WIKI.mochilaT1}, T2 guarda ${PG_WIKI.mochilaT2} (100 coins). Chave no depósito também vale para o Elite e o Sweep.</div>`;
+            if (av && (av.nivel === 'quase' || av.nivel === 'talvez')) h += `<div class="pg-atencao">${escHtml(av.texto)}</div>`;
+            const nomes = Object.keys(kb.chaves || {}).sort((a, b) => a.localeCompare(b));
+            if (!nomes.length) h += `<div class="pg-mut">nenhuma chave na mochila de chaves.</div>`;
+            const mats = pgMateriaisSet();
+            nomes.forEach((n, i) => {
+                const info = pgInfoChave(n, CAT.bosses, CAT.hunts), e = pgResumoElite(info.elite, mats);
+                const els = e ? [e.fraco.length ? 'fraco a ' + e.fraco.map(x => `${x.el} (+${-x.pct}% de dano)`).join(', ') : '',
+                                 e.resiste.length ? 'resiste ' + e.resiste.map(x => `${x.el} ${x.pct}%`).join(', ') : '',
+                                 e.imune.length ? 'imune a ' + e.imune.join(', ') : ''].filter(Boolean).join(' · ') : '';
+                h += `<details class="pg-det" data-k="pg-ch-${i}"><summary><span>${escHtml(n)} <b>×${pgInt(kb.chaves[n])}</b></span><span class="pg-mut">${e ? escHtml(e.nome) + ' · ' + pgInt(e.hp) + ' HP' : 'Elite ?'}</span></summary><div>` +
+                    (e ? `<div>${els ? escHtml(els) : 'sem fraqueza nem resistência'}</div>` +
+                         (e.top.length ? `<div>loot de valor: ${e.top.map(l => `${escHtml(l.nome)} ${pgInt(l.valor)}${l.chance != null ? ' <span class="pg-mut">(' + pgPct(l.chance, 1) + ')</span>' : ''}`).join(' · ')}</div>` : '') +
+                         (e.materiais.length ? `<div>materiais de imbuement: ${e.materiais.map(escHtml).join(', ')}</div>` : '') +
+                         (e.fragmentos.length ? `<div class="pg-mut">fragmentos de forja: ${e.fragmentos.map(escHtml).join(', ')}</div>` : '')
+                       : `<div class="pg-mut">Elite não encontrado no catálogo /bosses/select${CAT.bosses ? '' : ' (catálogo ainda não carregou)'}.</div>`) +
+                    (info.hunt ? `<div class="pg-mut">cai em ${escHtml(info.hunt.title)}${info.chance != null ? ' · ' + pgPct(info.chance, 3) + ' por abate' : ''}</div>` : '') +
+                    `</div></details>`;
+            });
+        }
+        h += `<div class="pg-tit">Chaves por hora</div>`;
+        const med = pgMedidos(), fator = pgFatorLootPrey(PROG.prey);
+        const linhas = pgLinhasChaves(CAT.hunts, CAT.bosses, med, fator, PROG.huntId);
+        if (!linhas.length) h += `<div class="pg-mut">sem abates por hora medidos — cace alguns minutos nesta aba aberta, ou rode o Scan.</div>`;
+        else {
+            h += `<table><tr><th>caçada · chave</th><th style="width:58px">abates/h</th><th style="width:84px">chaves/h</th></tr>` +
+                linhas.slice(0, 8).map(l => `<tr><td>${l.atual ? '<b>' : ''}${escHtml(l.hunt.title)}${l.atual ? '</b>' : ''}<div class="pg-mut">${escHtml(l.chave)} · ${pgPct(l.chance, 3)}</div></td>` +
+                    `<td>${pgInt(l.abatesH)}<div class="pg-mut">${escHtml(l.fonte)}</div></td><td>${pgDec(l.chavesH, 2)}<div class="pg-mut">cada ${pgHoras(l.cadaH)}</div></td></tr>`).join('') + `</table>`;
+            const at = linhas.find(l => l.atual);
+            if (at && kb) {
+                const t = pgTierDaMochila(kb, regras);
+                if (t.max > 0) {
+                    const livre = t.max - (kb.usadas || 0);
+                    h += `<div class="${livre <= 0 ? 'tb-ruim' : 'pg-mut'}" style="margin-top:3px">${livre <= 0 ? `mochila de chaves cheia: nesse ritmo, ~${pgDec(at.chavesH, 2)} chave(s) por hora serão perdidas.` : `nesse ritmo a mochila de chaves enche em ~${pgHoras(livre / at.chavesH)}.`}</div>`;
+                }
+            }
+            if (fator > 1) h += `<div class="pg-mut pg-peq">inclui o LOOT da prey (+${pgDec((fator - 1) * 100, 0)}% na chance).</div>`;
+        }
+        h += `<details class="pg-aj" data-k="pg-ch-aj"><summary>? como é a conta</summary><div>A chance vem do catálogo do jogo (é a que o card do item mostra); a wiki diz que a maioria das chaves fica entre 0,047% e 0,105% por abate (uma a cada ~950 a 2.100 abates). LOOT da prey e Chance de loot da Forja aumentam a chance. Com a mochila de chaves cheia, a chave que cai na caçada é perdida; a que vem de caixa ou prêmio vai para o depósito. Sweep: cada chave extra vira um loot do Elite (custa o suprimento da última vitória; sem xp e sem bestiário).</div></details>`;
+        return h;
+    }
+
+    function pgTelaBestiario() {
+        const hs = CAT.hunts || [];
+        if (!hs.length) return `<div class="pg-mut">catálogo de caçadas ainda não carregou.</div>`;
+        const cont = PROG.best, med = pgMedidos(), nv = nivelAtual();
+        let h = '';
+        const atual = pgHuntCat(PROG.huntId);
+        if (atual && atual.bestiary) {
+            const e = pgEstagio(atual.bestiary, cont[String(atual.id)]);
+            h += `<div class="pg-cx"><b>${escHtml(atual.title)}</b>${PROG.treino ? ' <span class="tb-tag">treino não conta</span>' : ''}<div>${pgBestiarioTexto(atual.id, med)}</div>` +
+                (e && !e.completo && cont[String(atual.id)] != null ? `<div class="pg-barra"><i style="width:${Math.round(e.pct * 100)}%"></i></div>` : '') + `</div>`;
+        }
+        if (!Object.keys(cont).length) return h + pgSemDado('Contadores do bestiário') + pgAjudaBestiario();
+        const bon = pgBonusConta(hs, cont);
+        const bl = Object.keys(bon).sort((a, b) => bon[b] - bon[a]).map(b => pgBonusTxt(b, bon[b]));
+        h += `<div class="pg-cx"><div class="pg-mut pg-peq">Bônus da conta (marcos fechados)</div>${bl.length ? bl.join(' · ') : 'nenhum ainda'}</div>`;
+        const rows = pgLinhasBestiario(hs, cont, med, nv);
+        const linha = r => `<tr><td>${escHtml(r.hunt.title)} <span class="pg-mut">[${pgInt(pgNum(r.hunt.levelMin) || 1)}]</span><div class="pg-barra"><i style="width:${Math.round(r.e.pct * 100)}%"></i></div>` +
+            `<div class="pg-mut">${pgInt(r.e.kills)}/${pgInt(r.e.prox.kills)} · faltam ${pgInt(r.e.falta)}</div></td>` +
+            `<td>${pgBonusTxt(r.e.bonus, r.e.prox.value)}<div class="pg-mut">${r.horas != null ? '~' + pgHoras(r.horas) : 'sem abates/h'}</div></td></tr>`;
+        const cab = `<table><tr><th>caçada · abates</th><th style="width:96px">próximo marco</th></tr>`;
+        if (!rows.length) h += `<div class="pg-mut">nenhuma caçada do seu nível com marco por fechar e contador conhecido.</div>`;
+        else {
+            h += `<div class="pg-tit">Mais perto do próximo marco</div>` + cab + rows.slice(0, 8).map(linha).join('') + `</table>`;
+            if (rows.length > 8) h += `<details class="pg-aj" data-k="pg-best-todas"><summary>todas (${rows.length})</summary><div>${cab}${rows.slice(8).map(linha).join('')}</table></div></details>`;
+        }
+        const semCont = hs.filter(x => x && x.bestiary && (x.levelMin || 1) <= nv && cont[String(x.id)] == null).length;
+        if (semCont) h += `<div class="pg-mut pg-peq">${semCont} caçada(s) do seu nível sem contador conhecido — o jogo manda todos ao conectar (meta) e o da caçada atual a cada segundo.</div>`;
+        return h + pgAjudaBestiario();
+    }
+    const pgAjudaBestiario = () => `<details class="pg-aj" data-k="pg-best-aj"><summary>? regras</summary><div>Cada caçada tem 3 marcos; vale o MAIOR (não somam). Caçadas diferentes somam. Conta qualquer criatura do elenco, inclusive com o jogo fechado; treino e Elite/Boss não contam; o Reset das estatísticas não apaga. Tempo = abates que faltam ÷ abates/h medidos (ao vivo, Scan ou sessões do Analisador).</div></details>`;
+
+    function pgTelaOffline() {
+        const al = PROG.meta && PROG.meta.autoLeave && typeof PROG.meta.autoLeave === 'object' ? PROG.meta.autoLeave : null;
+        let h = `<div class="pg-lin"><span>Auto Exit</span><span>${al ? (al.enabled ? '<span class="tb-ok">ligado</span>' : '<span class="tb-av">desligado</span>') : '<span class="pg-mut">sem dado ainda</span>'}</span></div>` +
+            (al && al.enabled ? `<div class="pg-mut pg-peq">margem de ouro ${pgInt(pgNum(al.floor))}${pgNum(al.floor) > 0 ? '' : ' (0 = nunca sai por ouro)'} · mochila cheia ${al.onCap ? 'encerra' : 'NÃO encerra'}</div>` : '');
+        const atual = pgHuntCat(PROG.huntId);
+        if (PROG.huntId != null && !atual) h += `<div class="pg-cx pg-mut">luta de Elite/Boss em andamento — o plano é para caçada comum.</div>`;
+        else if (!pgFresco()) h += `<div class="pg-cx pg-mut">Plano da caçada com o jogo fechado: sem dado ainda — abra/entre numa caçada (precisa do ouro, da mochila e do analisador que o jogo manda a cada segundo).</div>`;
+        else {
+            const u = PROG.estado, a = PROG.an || {};
+            const tx = pgTaxas(PROG.amostras, 3600000);
+            const sessaoMs = a.sessaoMs != null ? a.sessaoMs : a.ms;
+            const xpH = a.xpH > 0 ? a.xpH : a.ms > 60000 && a.xp > 0 ? a.xp / a.ms * 3600000 : null;
+            let xpFalta = PROG.nivelProg && PROG.nivelProg.xpFalta;
+            if (xpFalta == null) { try { xpFalta = xpFaltando(); } catch { xpFalta = null; } }
+            const autoSell = !!(PROG.autoSell && PROG.autoSell.ms != null);
+            const p = pgPlanoOffline({ ouro: u.ouro, margem: al && pgNum(al.floor), autoExit: !!(al && al.enabled), autoExitCap: !!(al && al.enabled && al.onCap),
+                                       supH: a.ms > 60000 && a.sup != null ? a.sup / a.ms * 3600000 : null, taxas: tx,
+                                       ozLivre: u.tot != null && u.oz != null ? u.tot - u.oz : null, autoSell, sessaoMs, xpH, xpFalta });
+            const card = (r, v) => `<div class="pg-card"><small>${r}</small><b>${v}</b></div>`;
+            h += `<div class="pg-grid">${card('OURO (com travado)', pgInt(u.ouro))}${card(p.ouroFonte === 'medido' ? 'SALDO/H MEDIDO' : 'SUPRIMENTO/H', p.ouroH != null ? (p.ouroH > 0 ? '+' : '') + pgInt(p.ouroH) : '—')}` +
+                 `${card('MOCHILA LIVRE', u.tot != null && u.oz != null ? pgInt(u.tot - u.oz) + ' oz' : '—')}${card('SESSÃO', sessaoMs != null ? pgHoras(sessaoMs / 3600000) + ' de 12h' : '—')}</div>`;
+            const lin = (x, y) => `<div class="pg-lin"><span>${x}</span><span>${y}</span></div>`;
+            h += lin('ouro dura', p.horasOuro == null ? '—' : pgHoras(p.horasOuro) + (p.ouroFonte === 'suprimento' && Number.isFinite(p.horasOuro) ? ' <span class="pg-mut">(pior caso)</span>' : ''));
+            h += lin('mochila enche em', p.horasMochila == null ? (autoSell ? '<span class="pg-mut">medindo (Auto Selling)</span>' : '<span class="pg-mut">medindo…</span>') : pgHoras(p.horasMochila));
+            h += lin('teto de 12 h em', pgHoras(p.tetoH) + (a.sessaoMs == null ? ' <span class="pg-mut">(aprox.)</span>' : ''));
+            if (p.horasNivel != null) h += lin('próximo nível em', pgHoras(p.horasNivel));
+            const pr = p.primeiro, fim = p.fim;
+            h += `<div class="${pr.k === 'ouro' && !pr.encerra ? 'pg-alerta' : 'pg-atencao'}" style="margin-top:6px">Se fechar o jogo agora: em ~${pgHoras(pr.h)} ${escHtml(pr.texto)}.` +
+                 (fim !== pr ? ` A caçada termina em ~${pgHoras(fim.h)} (${escHtml(fim.k === 'teto' ? 'teto de 12 h' : fim.k === 'ouro' ? 'Auto Exit por ouro' : 'Auto Exit por mochila')}).` : '') +
+                 (p.xpAteFim ? ` Até lá: ~${pgInt(p.xpAteFim)} de xp.` : '') + `</div>`;
+            h += `<div class="pg-mut pg-peq">${p.ouroFonte === 'medido' ? `saldo medido em ${pgHoras(tx.horas)} (moedas + Auto Selling − suprimento)` : 'saldo ainda não medido (precisa de 10 min): usei só o gasto de suprimento, sem contar moedas e vendas'}${autoSell ? ' · Auto Selling ligado: a mochila esvazia a cada 10 min' : ''}.</div>`;
+        }
+        if (PROG.fim) h += `<div class="pg-lin" style="margin-top:4px"><span>Última caçada</span><span>${PROG.fim.titulo ? escHtml(PROG.fim.titulo) + ' · ' : ''}${escHtml(PG_FIM[PROG.fim.motivo] || PROG.fim.motivo || '?')}${PROG.fim.seg != null ? ' · ' + pgHoras(PROG.fim.seg / 3600) : ''}</span></div>`;
+        const of = PROG.offline;
+        if (of && pgNum(of.elapsedMs) > 0) h += `<div class="pg-lin"><span>Da última vez fora</span><span>${pgHoras(pgNum(of.elapsedMs) / 3600000)} · ${pgInt(pgNum(of.xp))} xp · ${pgInt(pgNum(of.killsTotal))} abates · ${pgInt(pgNum(of.lootGold))} de loot</span></div>`;
+        h += `<details class="pg-aj" data-k="pg-off-aj"><summary>? antes de fechar o jogo</summary><div>A caçada segue no servidor por até 12 h de caçada (aberto + fechado). O que encerra antes: ENCERRAR, morte de qualquer personagem, Auto Exit por ouro abaixo da margem ou por mochila cheia (só com as duas chaves ligadas em Configurações → JOGO → Auto Leaving). Sem Auto Exit, sem ouro as poções e runas pagas pausam, e com a mochila cheia o loot deixa de ser coletado. Antes de dormir: margem que pague a próxima caçada e bênçãos compradas.</div></details>`;
+        return h;
+    }
+
+    function pgTelaPrey() {
+        const p = PROG.prey;
+        let h = '';
+        const tipoTxt = { xp: 'EXP', loot: 'LOOT', dano: 'DANO', defesa: 'DEFESA' };
+        if (!p) h += `<div class="pg-cx pg-mut">Estado da prey não disponível — o jogo manda ao conectar ou ao mexer na Prey. A sugestão abaixo vale do mesmo jeito.</div>`;
+        else {
+            h += `<div class="pg-lin"><span>Wildcards</span><span>${p.wildcards != null ? pgInt(p.wildcards) : '—'}</span></div>`;
+            const c = p.cacada;
+            h += `<div class="pg-lin"><span>Caçada da conta</span><span>${c ? `${escHtml(c.titulo || ('#' + c.huntId))}${c.locked ? ' 🔒' : ''}${c.msLeft != null ? ' · ' + pgHoras(c.msLeft / 3600000) : ''}` : '<span class="tb-av">nenhuma</span>'}</span></div>`;
+            h += PG_VOCS.map(v => {
+                const b = p.buffs[v];
+                const txt = !b ? '<span class="pg-mut">—</span>' : b.tipo || b.tier
+                    ? `${escHtml(tipoTxt[b.tipo] || b.rotulo || '?')}${b.tier ? ' ★' + pgInt(b.tier) : ''}${b.pct != null ? ' +' + pgDec(b.pct, 0) + '%' : ''}${b.msLeft != null ? ' · ' + pgHoras(b.msLeft / 3600000) : ''}${b.locked ? ' 🔒' : ''}`
+                    : `<span class="pg-mut">sem bônus${b.piso ? ' (piso ★' + pgInt(b.piso) + ')' : ''}</span>`;
+                return `<div class="pg-lin"><span>${PG_VOC[v]}</span><span>${txt}${b && b.gratis ? '<div class="tb-ok pg-peq">sorteio grátis hoje</div>' : ''}</span></div>`;
+            }).join('');
+            const tv = pgTravasPrey(p);
+            if (tv && tv.travadas) {
+                h += `<div class="${tv.horasTravas != null && tv.horasTravas < 4 ? 'pg-atencao' : 'pg-cx'}">${tv.travadas} seção(ões) travada(s) gastam ${tv.travadas} wildcard(s) a cada 2 h de caçada.` +
+                     (tv.horasTravas != null ? ` Com ${pgInt(tv.wildcards)}, as travas desligam em ~${pgHoras(tv.horasTravas)} de caçada (zerou → TODAS desligam) e o último bônus acaba em ~${pgHoras(tv.horasBonus)}.` : '') + `</div>`;
+            }
+            if (p.avisos.length) h += `<div class="pg-mut pg-peq">avisos do jogo: ${p.avisos.slice(0, 4).map(a => escHtml((a.target === 'hunt' ? 'caçada' : PG_VOC[a.target] || a.target || '?') + ' ' + String(a.kind || '').replace(/_/g, ' ') + (a.vezes > 1 ? ' (' + a.vezes + '×)' : ''))).join(' · ')}</div>`;
+        }
+        const xb = PROG.meta && PROG.meta.xpBoost;
+        if (xb && typeof xb === 'object' && pgNum(xb.percent)) h += `<div class="pg-lin"><span>XP Boost</span><span>+${pgInt(pgNum(xb.percent))}% · ${pgHoras(pgNum(xb.msLeft) / 3600000)}</span></div>`;
+        let rz = null;
+        try { rz = razaoResumo(RAZAO); if (!rz || !rz.danoTotal) rz = null; } catch { rz = null; }
+        const sg = pgSugestaoPrey(rz);
+        h += `<div class="pg-tit">Sugestão por coluna</div>` + PG_VOCS.map(v => `<div class="pg-lin"><span>${PG_VOC[v]}</span><span><b>${tipoTxt[sg[v].tipo]}</b></span></div><div class="pg-mut pg-peq">${escHtml(sg[v].motivo)}</div>`).join('');
+        if (!rz) h += `<div class="pg-mut pg-peq">sem livro-razão desta caçada ainda (dano por personagem): cace alguns minutos para a sugestão de DANO usar o dano medido.</div>`;
+        h += `<details class="pg-aj" data-k="pg-prey-aj"><summary>? regras da prey</summary><div>Uma caçada para a conta + 4 colunas (uma por vocação). EXP e LOOT ★1–10 = +1 a +10% e SOMAM para a conta; DANO e DEFESA ★1–10 = +4 a +40% só no personagem da coluna. Cada sorteio vale 2 h de caçada (em qualquer caçada; treino e Elite/Boss não gastam nem recebem). O tier nunca cai. Primeiro sorteio do dia de cada coluna é grátis, depois 1 wildcard; ESCOLHER CAÇADA custa 5. Trava: renova sozinha por 1 wildcard por seção a cada renovação; zerou as wildcards → todas as travas desligam na hora.</div></details>`;
+        return h;
+    }
+
+    const pgCalc = () => Object.assign({ de: 4, ate: 7, modo: 'melhor', imbu: 'Vampirism', tier: 3, mat: null }, ler('prog_calc', {}) || {});
+    function pgImbuValores(c) {
+        const bases = pgBasesImbu(PROG.imbu), base = bases.find(b => b.id === pgNum(c.tier)) || bases[0];
+        const mats = PROG.imbu ? pgMateriaisImbu(PROG.imbu, c.imbu, base.id, CAT.precos) : null;
+        return { bases, base, mats };
+    }
+    function pgImbuHtml(c, matDigitado) {
+        const v = pgImbuValores(c);
+        const M = matDigitado != null && matDigitado !== '' ? pgNum(matDigitado) : v.mats ? v.mats.total : null;
+        const r = pgProtecao(v.base, M);
+        if (!r) return '';
+        let h = `<div class="pg-lin"><span>sem proteção (${pgPct(v.base.chance, 0)})</span><span>~${pgInt(r.sem)} <span class="pg-mut">(${pgDec(r.tentativas, 2)} tentativas)</span></span></div>` +
+                `<div class="pg-lin"><span>com proteção (100%)</span><span>${pgInt(r.com)}</span></div>` +
+                `<div class="${r.vale ? 'tb-ok' : 'tb-av'}" style="margin-top:3px"><b>proteção ${r.vale ? 'VALE' : 'NÃO vale'}</b> — ${r.vale ? 'economiza' : 'custa'} ~${pgInt(r.diferenca)} de ouro em média. ${Number.isFinite(r.limite) && r.limite > 0 ? `Vale quando os materiais valem mais de ${pgInt(r.limite)}.` : 'Neste tier vale sempre: a taxa perdida numa falha passa da proteção.'}</div>`;
+        if (M == null) h += `<div class="pg-mut pg-peq">sem preço dos materiais: conta feita com materiais = 0 (digite o valor).</div>`;
+        return h;
+    }
+    function pgTelaForja() {
+        const c = pgCalc();
+        const opt = (v, t, sel) => `<option value="${v}"${String(v) === String(sel) ? ' selected' : ''}>${t}</option>`;
+        let h = `<div class="pg-tit">Refino esperado</div><div class="pg-form"><label for="pg-de">de</label><select id="pg-de">` +
+            Array.from({ length: 10 }, (_, i) => opt(i, '+' + i, c.de)).join('') + `</select><label for="pg-ate">até</label><select id="pg-ate">` +
+            Array.from({ length: 10 }, (_, i) => opt(i + 1, '+' + (i + 1), c.ate)).join('') + `</select><select id="pg-modo" aria-label="Garantia">` +
+            opt('melhor', 'Garantia onde compensa', c.modo) + opt('com', 'sempre com Garantia', c.modo) + opt('sem', 'sem Garantia', c.modo) + `</select></div>`;
+        const r = pgRefino(c.de, c.ate, c.modo);
+        if (!r.passos.length) h += `<div class="pg-mut">escolha um alvo acima do nível atual.</div>`;
+        else {
+            const t = r.total;
+            h += `<table><tr><th style="width:34px">alvo</th><th style="width:48px">chance</th><th>gemas esperadas</th><th style="width:66px">ouro</th></tr>` +
+                r.passos.map(x => `<tr><td>+${x.alvo}</td><td>${pgPct(x.p, 0)}</td><td>${x.c.T1 > 0.005 ? pgDec(x.c.T1, 1) + ' T1 ' : ''}${x.c.T2 > 0.005 ? pgDec(x.c.T2, 1) + ' T2 ' : ''}${x.c.G > 0.005 ? pgDec(x.c.G, 1) + ' Gar.' : ''}${x.cai ? `<div class="pg-mut">${x.usaG ? 'com Garantia' : 'falha cai 1 nível'}</div>` : ''}</td><td>${pgInt(x.ouro)}</td></tr>`).join('') + `</table>`;
+            h += `<div class="pg-cx">Total esperado: <b>${pgDec(t.tentativas, 1)}</b> tentativas · <b>${pgInt(t.ouro)}</b> de ouro · ${pgInt(t.coins)} coins · ${pgInt(t.fragmentos)} fragmentos` +
+                 `<div class="pg-mut pg-peq">${pgDec(t.T1, 1)} Refine T1 · ${pgDec(t.T2, 1)} Refine T2 · ${pgDec(t.G, 1)} Guarantee T1${c.modo === 'melhor' ? (r.garantiaDesde ? ` · Garantia compensa a partir do +${r.garantiaDesde}` : ' · Garantia não compensa nesta faixa') : ''}</div></div>`;
+        }
+        h += `<div class="pg-tit">Imbuement: proteção vale a pena?</div>`;
+        if (!PROG.imbu) h += `<div class="pg-mut pg-peq">${PROG.imbuErro ? 'catálogo de imbuements não carregou (' + escHtml(PROG.imbuErro) + ') — digite o valor dos materiais.' : 'carregando o catálogo de imbuements…'}</div>`;
+        const nomes = pgNomesImbu(PROG.imbu), v = pgImbuValores(c);
+        h += `<div class="pg-form">` + (nomes.length ? `<select id="pg-imbu" aria-label="imbuement">${nomes.map(n => opt(escHtml(n), escHtml(n) + (/swiftness/i.test(n) ? ' (sem efeito hoje)' : ''), escHtml(c.imbu))).join('')}</select>` : '') +
+             `<select id="pg-tier" aria-label="tier">${v.bases.map(b => opt(b.id, escHtml(b.nome), c.tier)).join('')}</select>` +
+             `<input id="pg-mat" type="number" min="0" step="100" style="width:96px" aria-label="valor dos materiais" placeholder="${v.mats ? pgInt(v.mats.total).replace(/\D/g, '') : 'materiais'}" value="${c.mat != null ? pgInt(c.mat).replace(/\D/g, '') : ''}"></div>`;
+        if (v.mats) h += `<div class="pg-mut pg-peq">materiais (preço de NPC): ${v.mats.itens.map(i => `${pgInt(i.qtd)} ${escHtml(i.nome)}${i.preco != null ? ' × ' + pgInt(i.preco) : ' (sem preço)'}`).join(' + ')} = ${pgInt(v.mats.total)}. No Mercado podem valer mais — digite outro valor se quiser.</div>`;
+        h += `<div id="pg-imbu-res">${pgImbuHtml(c, c.mat)}</div>`;
+        h += `<details class="pg-aj" data-k="pg-forja-aj"><summary>? regras</summary><div>Forja: +1 a +4 = 80/70/60/50% (falha não cai); +5 a +10 = 35/25/20/15/10/5% e a falha SEM Garantia derruba 1 nível. A Garantia não muda a chance e é gasta em toda tentativa. Gemas: Refine T1 10.000 + 5 coins, Refine T2 35.000 + 8 coins, Guarantee T1 15.000 + 5 coins, cada uma com 100 fragmentos. Imbuement: Basic 5.000 (90%, proteção +10.000), Intricate 30.000 (70%, +30.000), Powerful 200.000 (50%, +50.000); sem proteção a falha consome ouro e materiais.</div></details>`;
+        return h;
+    }
+    async function pgCarregarImbu() {
+        if (PROG.imbu || PROG.imbuPedido) return;
+        PROG.imbuPedido = true;
+        /* a versão dos assets muda com o patch (v100 já dá 404): pega a do catálogo de bosses */
+        const cena = (CAT.bosses || []).map(b => b && b.scene).find(s => /\/assets\/v\d+\//.test(s || ''));
+        const vers = [...new Set([cena ? cena.match(/\/assets\/(v\d+)\//)[1] : null, 'v167'].filter(Boolean))];
+        for (const v of vers) {
+            try { const j = await buscarJSON('/assets/' + v + '/imbuements.json'); if (j && Array.isArray(j.imbuements)) { PROG.imbu = j; PROG.imbuErro = null; break; } }
+            catch (e) { PROG.imbuErro = e.message; }
+        }
+        if (!PROG.imbu && !PROG.imbuErro) PROG.imbuErro = 'formato inesperado';
+        if (ABA === 'progresso') renderizar();
+    }
+
+    /* v2.11 — ABA PROGRESSO. Sub-abas para caber nos 300 px da gaveta; o
+     * aviso de mochila de chaves cheia aparece em todas. */
+    function telaProgresso() {
+        pgGarantirCss();
+        pgSincronizarBestiario();
+        const sub = ler('prog_sub', 'chaves');
+        const abas = [['chaves', 'Chaves'], ['bestiario', 'Bestiário'], ['offline', 'Offline'], ['prey', 'Prey'], ['forja', 'Forja']];
+        const kb = PROG.chaves;
+        const maxKb = kb ? pgTierDaMochila(kb, PROG.meta && PROG.meta.keyBags).max : null;
+        const av = kb ? pgAvisoChaves(Object.assign({}, kb, { max: maxKb })) : null;
+        let h = `<div id="tb-prog"><div class="pg-sub" role="tablist">` + abas.map(([k, n]) =>
+            `<button class="pg-aba${k === sub ? ' on' : ''}" data-pg-sub="${k}" role="tab" aria-selected="${k === sub}">${n}${k === 'chaves' && av && av.nivel === 'cheia' ? ' <b class="tb-ruim">!</b>' : ''}</button>`).join('') + `</div>`;
+        /* texto inteiro na sub-aba Chaves; nas outras, uma linha (não empurra o conteúdo para baixo) */
+        if (av && av.nivel === 'cheia') h += `<div class="pg-alerta" role="alert">⚠ ${sub === 'chaves' ? escHtml(av.texto) : `mochila de chaves cheia (${pgInt(kb.usadas)}/${pgInt(maxKb)}): chave nova será PERDIDA`}</div>`;
+        h += sub === 'bestiario' ? pgTelaBestiario() : sub === 'offline' ? pgTelaOffline() : sub === 'prey' ? pgTelaPrey() : sub === 'forja' ? pgTelaForja() : pgTelaChaves();
+        return h + `<div class="pg-rodape">Só leitura: nada nesta aba envia comando ao jogo.</div></div>`;
+    }
+    function ligarProgresso() {
+        $$('[data-pg-sub]').forEach(b => b.onclick = () => { guardar('prog_sub', b.dataset.pgSub); renderizar(); });
+        const muda = (patch) => { guardar('prog_calc', Object.assign(pgCalc(), patch)); renderizar(); };
+        const de = $('#pg-de'); if (de) de.onchange = () => { const x = parseInt(de.value) || 0; muda({ de: x, ate: Math.max(x + 1, pgCalc().ate) }); };
+        const ate = $('#pg-ate'); if (ate) ate.onchange = () => muda({ ate: parseInt(ate.value) || 1 });
+        const md = $('#pg-modo'); if (md) md.onchange = () => muda({ modo: md.value });
+        const im = $('#pg-imbu'); if (im) im.onchange = () => muda({ imbu: im.value, mat: null });
+        const tr = $('#pg-tier'); if (tr) tr.onchange = () => muda({ tier: parseInt(tr.value) || 1, mat: null });
+        const mat = $('#pg-mat');
+        if (mat) {
+            /* digitar não repinta a aba (perderia o foco): só o resultado */
+            mat.oninput = () => { const r = $('#pg-imbu-res'); if (r) r.innerHTML = pgImbuHtml(pgCalc(), mat.value); };
+            mat.onchange = () => guardar('prog_calc', Object.assign(pgCalc(), { mat: mat.value === '' ? null : Math.max(0, parseInt(mat.value) || 0) }));
+        }
+        /* o catálogo de imbuements (13 KB, público) serve à calculadora e marca materiais no loot dos Elites */
+        { const sub = ler('prog_sub', 'chaves'); if (sub === 'forja' || sub === 'chaves') pgCarregarImbu().catch(() => { }); }
+        /* repinta sozinha a cada 5 s só com a aba aberta e a party caçando (é
+         * leitura: ouro, mochila e abates mudam a cada frame); nunca no meio de
+         * um campo em edição */
+        if (!PROG.timer) PROG.timer = setInterval(() => {
+            try {
+                const g = $('#tb-gaveta');
+                if (ABA !== 'progresso' || !g || !g.classList.contains('on') || !$('#tb-prog') || PROG.huntId == null) return;
+                const f = document.activeElement;
+                if (f && f.closest && f.closest('#tb-prog') && /^(INPUT|SELECT)$/.test(f.tagName)) return;
+                renderizar();
+            } catch { }
+        }, 5000);
+    }
+
     /* ⚠ O CORPO INTEIRO VAI NUM try. Motivo real (30/08): eu escrevi
      * `$('[data-usar-palpite]').forEach` — um cifrão em vez de dois. `$` é
      * querySelector e devolve UM nó, então `.forEach` estourou TypeError. Só
@@ -4037,6 +4889,7 @@
         else if (ABA === 'magia') c.innerHTML = telaMagia();
         else if (ABA === 'analise') c.innerHTML = telaAnalise();
         else if (ABA === 'equip') c.innerHTML = telaEquip();
+        else if (ABA === 'progresso') c.innerHTML = telaProgresso();
         else c.innerHTML = `<div id="tb-log"></div>`;
 
         if (ABA === 'log') pintarLog();
@@ -4044,6 +4897,7 @@
         if (mesmaAba) { c.scrollTop = rol.corpo; const l = $('#tb-scan-lista'); if (l) l.scrollTop = rol.lista; }
         _abaPintada = ABA;
         if (ABA === 'equip') ligarEquip();
+        if (ABA === 'progresso') ligarProgresso();
         const filtro = $('#tb-scan-filtro');
         if (filtro) {
             const aplicarFiltro = () => { const v = (_scanFiltro || '').toLowerCase(); $$('#tb-scan-lista label').forEach(l => { l.style.display = !v || (l.textContent || '').toLowerCase().includes(v) ? '' : 'none'; }); };
