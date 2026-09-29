@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.8.2
+// @version      2.8.3
 // @description  Magia Inteligente (Econômica / Equilibrado / Área / Boss) + Analisador + Auto Hunt (mochila cheia → finalizar, purificar, vender, depot, voltar). Hunt, boss, mochila e ouro lidos do WebSocket; APLICAR NOS 4 e dano real pelo socket/REST, sem abrir janela. Scan: mede N mapas por 5 min cada (lure máximo, Equilibrado) e diz qual vale para XP, ouro ou os dois. Inteligente: 4 slots por DPS + poções, cura, suporte e munição. Nada automático nos slots. Equip: ranqueia corpo + depósito + mochila por vocação e slot e equipa pelo socket só por botão.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -28,7 +28,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.8.2';
+    const VERSAO = '2.8.3';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -3294,6 +3294,27 @@
 
     let ABA = 'magia';
     let ULTIMO = null;
+    /* v2.8.3 — AVISO DE VERSÃO NOVA (dono, 29/09: "quando alterar aqui, altera
+     * no GitHub e só dá um refresh"). O Tampermonkey só confere o @updateURL no
+     * intervalo dele, não a cada F5. Então o helper mesmo lê o cabeçalho do
+     * arquivo no GitHub (raw tem CORS aberto), compara o @version e, se houver
+     * versão maior, acende ↑ no trilho. Clicar abre o link: o Tampermonkey
+     * mostra a tela de atualizar, o dono confirma e dá F5. */
+    const RAW_URL = 'https://raw.githubusercontent.com/priscilaenorthon-dev/tibidle-helper/main/tibidle-helper.user.js';
+    let NOVA_VERSAO = null;
+    const versaoMaior = (a, b) => { const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number); for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d > 0; } return false; };
+    async function verificarAtualizacao() {
+        try {
+            const r = await fetch(RAW_URL + '?t=' + Date.now(), { cache: 'no-store' });
+            if (!r.ok) return null;
+            const cab = (await r.text()).slice(0, 2000);
+            const v = (cab.match(/@version\s+(\S+)/) || [])[1];
+            if (v && versaoMaior(v, VERSAO) && NOVA_VERSAO !== v) { NOVA_VERSAO = v; log('versão nova no GitHub: ' + v + ' (esta é ' + VERSAO + ') — clique em ↑ no trilho para atualizar', 'ok'); }
+            try { pintarTrilho(); } catch (e) { }
+            return v;
+        } catch (e) { return null; }
+    }
+    function abrirAtualizacao() { window.open(RAW_URL, '_blank'); }
     /* v2.8.0 — estado da interface por conta: qual gaveta, aberta ou não,
      * posição vertical do trilho, trilho escondido. */
     const UI_PADRAO = { aba: 'magia', aberta: false, top: 84, oculto: false };
@@ -3311,6 +3332,7 @@
         const t = document.createElement('div'); t.id = 'tb-trilho';
         t.innerHTML = `<div id="tb-alca" title="arrastar"></div>` +
             ICONES.map(([k, ic, nome]) => `<div class="tb-ico" data-aba="${k}" title="${nome}">${ic}<span class="tb-dot"></span></div>`).join('') +
+            `<div class="tb-ico" id="tb-atualizar" title="versão nova disponível" style="display:none;color:#6ede8a">↑</div>` +
             `<div id="tb-esconder" title="esconder o helper">›</div>`;
         const g = document.createElement('div'); g.id = 'tb-gaveta';
         g.innerHTML = `<div id="tb-cab"><b id="tb-titulo"></b><span class="tb-mut">v${VERSAO}</span><span class="tb-x" id="tb-fechar" title="fechar">✕</span></div><div id="tb-corpo"></div>`;
@@ -3319,8 +3341,9 @@
         const posicionar = () => { const top = Math.max(40, Math.min(window.innerHeight - 220, ui().top || 84)); t.style.top = top + 'px'; g.style.top = top + 'px'; m.style.top = top + 'px'; };
         posicionar();
         const mostrar = (v) => { t.classList.toggle('tb-oculto', !v); m.style.display = v ? 'none' : 'block'; if (!v) g.classList.remove('on'); };
-        $$('.tb-ico', t).forEach(i => i.onclick = () => { const k = i.dataset.aba; const aberta = !(ui().aberta && ABA === k); ABA = k; guardarUI({ aba: k, aberta }); renderizar(); });
+        $$('.tb-ico[data-aba]', t).forEach(i => i.onclick = () => { const k = i.dataset.aba; const aberta = !(ui().aberta && ABA === k); ABA = k; guardarUI({ aba: k, aberta }); renderizar(); });
         $('#tb-fechar').onclick = () => { guardarUI({ aberta: false }); renderizar(); };
+        $('#tb-atualizar').onclick = abrirAtualizacao;
         $('#tb-esconder').onclick = () => { guardarUI({ oculto: true }); mostrar(false); };
         m.onclick = () => { guardarUI({ oculto: false }); mostrar(true); renderizar(); };
         let arr = null;
@@ -3355,6 +3378,7 @@
             ${card('CAP LIVRE', c ? `${c.pct}% <span class="tb-mut" style="font-size:10px">${c.ozTxt} oz</span>` : '—')}
             ${card('TAXA XP', taxa != null ? taxa + '%' : '—')}
           </div>
+          ${NOVA_VERSAO ? `<button class="tb-bt on" id="tb-bt-atualizar" style="width:100%">↑ atualizar para a ${NOVA_VERSAO}</button>` : ''}
           <button class="tb-bt pri" id="tb-venda-rapida" style="width:100%;font-size:13px;padding:8px" ${_cicloEmCurso ? 'disabled' : ''}>Venda rápida</button>
           <button class="tb-bt" id="tb-finalizar" style="width:100%" ${_cicloEmCurso || !dentro ? 'disabled' : ''}>Finalizar hunt</button>
           ${aj('estado-ajuda', 'Venda rápida: encerra a caçada (se estiver nela) → purifica todos → vende no NPC → guarda no depot, e fica na cidade. Finalizar hunt: só encerra e fecha o resumo.')}
@@ -3739,7 +3763,8 @@
             equip: EQUIP.equipando || EQUIP.lendo ? 'av pulsa' : '',
             log: erroRecente ? 'ruim' : ''
         };
-        $$('.tb-ico', t).forEach(i => { i.classList.toggle('on', !!u.aberta && i.dataset.aba === ABA); const d = $('.tb-dot', i); if (d) d.className = 'tb-dot ' + (estado[i.dataset.aba] || ''); });
+        $$('.tb-ico[data-aba]', t).forEach(i => { i.classList.toggle('on', !!u.aberta && i.dataset.aba === ABA); const d = $('.tb-dot', i); if (d) d.className = 'tb-dot ' + (estado[i.dataset.aba] || ''); });
+        const at = $('#tb-atualizar', t); if (at) { at.style.display = NOVA_VERSAO ? 'flex' : 'none'; at.title = NOVA_VERSAO ? 'versão ' + NOVA_VERSAO + ' disponível — clique para atualizar no Tampermonkey' : ''; }
     }
     function _renderizar() {
         pintarTrilho();
@@ -3813,6 +3838,7 @@
         $$('[data-scan-ir]').forEach(b => b.onclick = () => scanIrPara(parseInt(b.dataset.scanIr)));
         // v1.9.0 — Status e Auto Hunt
         const vr = $('#tb-venda-rapida'); if (vr) vr.onclick = () => cicloDeVenda('venda');
+        const bat = $('#tb-bt-atualizar'); if (bat) bat.onclick = abrirAtualizacao;
         const fh = $('#tb-finalizar'); if (fh) fh.onclick = () => cicloDeVenda('finalizar');
         const sw = $('#tb-ah-on');
         if (sw) sw.onclick = () => {
@@ -3968,6 +3994,8 @@
          * que nenhuma caçada passe sem virar dado. Fecha a sessão ao sair da
          * página pra não perder o que já foi medido. */
         setInterval(() => { try { amostrar(); } catch (e) { } }, AMOSTRA_MS);
+        setTimeout(() => verificarAtualizacao().catch(() => { }), 15000);
+        setInterval(() => verificarAtualizacao().catch(() => { }), 30 * 60 * 1000);
         window.addEventListener('beforeunload', () => { try { fecharSessao('página fechada'); } catch (e) { } });
     }
 
@@ -3999,7 +4027,8 @@
         razaoResumo, razaoHtml, razaoTexto, manaMedidaMedia, spawnLimitaMedido, get RAZAO() { return RAZAO; },
         get SCAN() { return SCAN; },
         get WS() { return WS; },
-        get aprendendo() { return _aprendendo; }
+        get aprendendo() { return _aprendendo; },
+        verificarAtualizacao, get NOVA_VERSAO() { return NOVA_VERSAO; }
     };
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar);
