@@ -70,6 +70,10 @@ await t('estado da caixa de marcar do painel', () => {
     assert.strictEqual(P.estadoMarcado(el({ className: 's-sell-check s-sell-check--off' })), false);
     assert.strictEqual(P.estadoMarcado(el({ textContent: '✓' })), true);
     assert.strictEqual(P.estadoMarcado(el({ className: 's-sell-check' })), null, 'sem pista → null (quem decide é o total)');
+    // formato real do jogo (Diagnóstico ao vivo, 29/09): <span class="s-sellp-check" data-testid="sell-check-<nome>">✓</span>
+    const real = (txt) => el({ tagName: 'SPAN', className: 's-sellp-check', textContent: txt, getAttribute: k => k === 'data-testid' ? 'sell-check-silver brooch' : null });
+    assert.strictEqual(P.estadoMarcado(real('✓')), true, 'caixa real marcada');
+    assert.strictEqual(P.estadoMarcado(real('')), false, 'caixa real sem ✓ = desmarcada');
 });
 const pronto = { on: true, huntId: 5, boss: false, scan: null, ciclo: false, trava: null, aprendendo: false, outraAba: false, emHunt: true, modal: false, resta: 0, noLimite: true };
 await t('motivoNaoDispara: pronto dispara; boss, Scan ocupado, ciclo e trava seguram', () => {

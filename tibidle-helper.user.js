@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.11.0
+// @version      2.11.1
 // @description  Magia (Econômica / Equilibrado / Área / Boss / Inteligente, com simulador da fila) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -23,7 +23,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.11.0';
+    const VERSAO = '2.11.1';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -3075,6 +3075,10 @@
         if (/(^|[\s_-])(unchecked|desmarcad[oa]|off)($|[\s_-])/i.test(cls)) return false;
         if (/(^|[\s_-])(checked|marcad[oa]|on|selected|ativo|is-checked)($|[\s_-])/i.test(cls)) return true;
         if (/[✓✔]/.test(el.textContent || '')) return true;
+        /* 2.11.1 — confirmado ao vivo (29/09): a caixa do jogo é
+         * <span class="s-sellp-check" data-testid="sell-check-<nome>">✓</span>, sem input
+         * nem aria. Marcada = tem o ✓; sem o ✓ = desmarcada. */
+        if (/(^|\s)s-sellp-check(\s|$)/.test(cls)) return false;
         return null;
     }
     /* Por que o gatilho não dispara ('' = dispara agora; null = tudo pronto,
@@ -6312,8 +6316,12 @@
             .filter(s => s.kills > 0).sort((a, b) => a.kills - b.kills);
         if (!st.length) return null;
         const k = Math.max(0, pgNum(kills) || 0);
-        const feitos = st.filter(s => k >= s.kills), prox = st.find(s => k < s.kills) || null;
+        /* 2.11.1 — ao vivo (29/09): em várias caçadas os primeiros marcos valem 0 no
+         * catálogo (Vampire hell: 2k → 0, 5k → 0, 10k → +1 nível mágico). O "próximo
+         * marco" é o próximo que DÁ algo — senão a lista mandava caçar por +0. */
+        const feitos = st.filter(s => k >= s.kills);
         const valor = feitos.length ? feitos[feitos.length - 1].value || 0 : 0;
+        const prox = st.find(s => k < s.kills && (s.value || 0) > valor) || null;
         return { n: feitos.length, total: st.length, valor, prox, falta: prox ? prox.kills - k : 0, ganho: prox ? (prox.value || 0) - valor : 0,
                  pct: prox ? k / prox.kills : 1, completo: !prox, kills: k, bonus: best.bonus || null };
     }
@@ -6593,7 +6601,10 @@
             if (tipo === 'resume' && d.offline && typeof d.offline === 'object') PROG.offline = Object.assign({ t: Date.now() }, d.offline);
         } else if (tipo === 'ended') {
             const sm = d.summary && typeof d.summary === 'object' ? d.summary : {};
-            PROG.fim = { t: Date.now(), motivo: sm.reason || null, titulo: sm.title || null, seg: pgNum(sm.elapsedSec) };
+            /* 2.11.1 — ao vivo: summary.title vem como {key, params} (texto traduzível), não string;
+             * aparecia "[object Object]". O nome sai do catálogo pelo huntId. */
+            const tituloFim = typeof sm.title === 'string' ? sm.title : ((CAT.hunts || []).find(x => x && x.id === pgNum(sm.huntId)) || {}).title || (sm.title && sm.title.params && (sm.title.params.title || sm.title.params.name)) || null;
+            PROG.fim = { t: Date.now(), motivo: sm.reason || null, titulo: tituloFim, seg: pgNum(sm.elapsedSec) };
             PROG.huntId = null; PROG.amostras = []; PROG.an = null; PROG.estado = null; PROG.autoSell = null;
             return;
         }
