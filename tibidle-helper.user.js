@@ -2774,8 +2774,9 @@
     function razaoHtml(rz, curto) {
         if (!rz || !rz.danoTotal) return '';
         const vocs = VOCS.filter(v => rz.porVoc[v]).map(v => { const x = rz.porVoc[v]; return `${VOC_CURTO[v]} <b>${x.pct}%</b>${x.manaMedia != null ? ` <span class="${x.manaMedia < 25 ? 'tb-ruim' : ''}">mana ${x.manaMedia}%</span>` : ''}${x.hpMin != null && x.hpMin < 50 ? ` <span class="tb-ruim">vida mín ${x.hpMin}%</span>` : ''}`; }).join(' · ');
-        const top = rz.magias.filter(m => m.danoPorMana != null).sort((a, b) => b.danoPorMana - a.danoPorMana).slice(0, curto ? 3 : 6).map(m => `${m.nome} ${m.danoPorMana}${m.overkillPct >= 15 ? ` <span class="tb-av">overkill ${m.overkillPct}%</span>` : ''}`).join(' · ');
-        const runas = rz.magias.filter(m => m.danoPorOuro != null).map(m => `${m.nome} ${m.danoPorOuro}/ouro`).join(' · ');
+        /* v2.11 (D2) — o nome vem do evento do socket: escapado (a Magia e o Scan mostram isto) */
+        const top = rz.magias.filter(m => m.danoPorMana != null).sort((a, b) => b.danoPorMana - a.danoPorMana).slice(0, curto ? 3 : 6).map(m => `${escHtml(m.nome)} ${m.danoPorMana}${m.overkillPct >= 15 ? ` <span class="tb-av">overkill ${m.overkillPct}%</span>` : ''}`).join(' · ');
+        const runas = rz.magias.filter(m => m.danoPorOuro != null).map(m => `${escHtml(m.nome)} ${m.danoPorOuro}/ouro`).join(' · ');
         const ondas = rz.ondas && rz.ondas.n ? `ondas de ${rz.ondas.tam}: mortas em ${rz.ondas.matar}s, espera ${rz.ondas.timer}s ${rz.ondas.spawnLimita ? '<span class="tb-av">(spawn limita)</span>' : '<span class="tb-ok">(dano limita)</span>'}` : '';
         return `<div class="tb-mut" style="font-size:10px">dano: ${vocs}${ondas ? ' · ' + ondas : ''}</div>` + (top ? `<div class="tb-mut" style="font-size:10px">dano/mana: ${top}${runas ? ' · ' + runas : ''}</div>` : '');
     }
@@ -5133,48 +5134,231 @@
         pintarFaixa();
         if (!c) return;
         const novo = _logLidoAntes;
-        c.innerHTML = LOG.slice(-80).reverse().map(l => {
+        const html = LOG.length ? LOG.slice(-80).reverse().map(l => {
             const cor = l.tipo === 'erro' ? 'tb-ruim' : l.tipo === 'ok' ? 'tb-ok' : '';
             const h = new Date(l.t).toLocaleTimeString('pt-BR');
             /* v2.11 — escHtml: o Log guarda texto que vem de FORA (erro do servidor,
              * nome de item, versão do GitHub) e é persistido; sem escapar, um
              * "<img onerror>" rodava a cada vez que o Log abria (CONFIRMADO). */
             return `<div class="${l.tipo === 'erro' ? 'erro' : ''}${l.t > novo ? ' novo' : ''}"><span class="tb-log-h">${h}</span> <span class="${cor}">${escHtml(l.msg)}</span></div>`;
-        }).join('');
+        }).join('') : '<div class="tb-mut">nada registrado ainda</div>';
+        /* v2.11 (D2) — mesma linha, mesmo DOM: log() chama isto a cada linha e o
+         * repinte de 4 s também; reescrever o Log igual apagava a seleção de
+         * quem estava copiando um erro. */
+        if (c._tbHtml === html) return;
+        c._tbHtml = html;
+        c.innerHTML = html;
     }
+
+    /* =========================================================================
+     *  v2.11 (D2) — CONTEÚDO DAS TELAS Status, Magia, Equip, Analisador e Log
+     *
+     *  O que a revisão de UI de 29/09 achou nestas telas e como ficou:
+     *   • nome de hunt/boss/magia/item, erro do servidor e título de sessão
+     *     iam crus para o innerHTML (só o Equip escapava) → escHtml em tudo que
+     *     vem de fora, inclusive <option value="…"> (boss "Pesso&Vesso");
+     *   • "ocupado" morava no botão (btn.disabled pelo handler) e o repinte de
+     *     4 s reconstruía o botão habilitado: o Auto-sell aceitava o 2º clique
+     *     no meio do 1º (CONFIRMADO) → o estado mora em variável e o HTML o
+     *     desenha; o handler recusa o clique repetido;
+     *   • o repinte trocava o innerHTML mesmo sem mudança: o select da hunt
+     *     perdia o foco (e fechava) e a caixa do "copiar JSON" sumia → ver
+     *     _renderizar (só troca quando o HTML muda; com um select/caixa de
+     *     texto em uso, espera o blur);
+     *   • números em pt-BR (vírgula decimal), "2+ alvos" no lugar de "≥2",
+     *     "poção de mana ≤30%" no lugar de "mana Mana ≤30", slots e vocações
+     *     em português, "OURO —" quando o saldo não foi lido (era "0").
+     *  CSS com escopo nestas telas, com as variáveis --tb-* da casca (piso de
+     *  fonte --tb-fmin, alvo --tb-alvo: 10,5/28 px no desktop, 12/40 no celular).
+     * ====================================================================== */
+    const CSS_TELAS = `
+    #tb-corpo .tb-larga{display:block;width:100%;margin:3px 0}
+    #tb-corpo .tb-grande{font-size:13px;padding:8px}
+    .tb-st-topo{flex-wrap:nowrap}
+    .tb-st-hunt{margin-left:auto;text-align:right;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .tb-card .tb-oz{font-size:var(--tb-fmin);color:var(--tb-mut);font-weight:normal}
+    .tb-card b.tb-vazio{color:var(--tb-mut);font-weight:normal}
+    .tb-par{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin:3px 0}
+    #tb-corpo .tb-par .tb-bt{margin:0;width:100%;min-width:0}
+    .tb-nota{font-size:var(--tb-fmin);margin-top:4px}
+    .tb-seg{display:flex;margin:0 0 6px;border:1px solid var(--tb-borda2);border-radius:7px;overflow:hidden;background:#2a3142}
+    .tb-seg button{flex:1 1 0;min-width:0;min-height:var(--tb-alvo);box-sizing:border-box;margin:0;padding:2px 3px;border:0;border-left:1px solid var(--tb-borda2);background:transparent;color:var(--tb-texto);font:inherit;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .tb-seg button:first-child{border-left:0}
+    .tb-seg button:hover{background:#39415a}
+    .tb-seg button[aria-pressed="true"]{background:#2c5c3a;color:#fff;font-weight:bold}
+    .tb-palpite{font-size:var(--tb-fmin);flex-wrap:nowrap}
+    .tb-palpite>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .tb-resist{font-size:var(--tb-fmin);margin-top:2px}
+    .tb-ver{margin:5px 0;padding:5px 7px;border-radius:7px;border:1px solid var(--tb-borda);background:var(--tb-cx);font-size:var(--tb-fmin);line-height:1.45}
+    .tb-ver.ok{border-color:#2c5c3a}.tb-ver.ruim{border-color:#6b2b2b}
+    .tb-vsel{display:inline-block;padding:0 7px;margin-right:4px;border-radius:9px;font-weight:bold}
+    .tb-vsel.ok{background:#1f4a2c;color:#8ff0a8}.tb-vsel.ruim{background:#4a1f1f;color:#ff9b93}
+    .tb-mv{display:grid;grid-template-columns:2.8em minmax(0,1fr);gap:0 4px;padding:3px 0;border-bottom:1px dotted #262d3b}
+    .tb-mv:last-child{border-bottom:0}
+    .tb-mv>b{color:var(--tb-ouro);padding-top:1px}
+    .tb-mx{font-size:var(--tb-fmin);color:var(--tb-mut);margin-top:1px}
+    .tb-mx.tb-morto{font-style:italic}
+    .tb-eq-bts{display:flex;gap:4px;margin:0 0 4px}
+    #tb-corpo .tb-eq-bts .tb-bt{flex:1 1 auto;margin:0;padding:4px 5px;white-space:nowrap}
+    .tb-eq-info{font-size:var(--tb-fmin)}
+    #tb-corpo .tb-eq-vocs{margin:5px 0 0}
+    #tb-corpo .tb-eq-vocs button{flex:1 1 0;justify-content:center;min-width:0}
+    .tb-eq-sw{display:inline-flex;align-items:center;gap:6px;min-height:var(--tb-alvo);padding:0 4px 0 0;margin:0;border:0;background:none;color:#9fb0c9;font:inherit;cursor:pointer}
+    .tb-eq-sw[aria-checked="true"]{color:#fff}
+    #tb-corpo .tb-eq{grid-template-columns:5.6em minmax(0,1fr) 12px minmax(0,1fr)}
+    .tb-eq:focus-visible{outline:2px solid var(--tb-ouro);outline-offset:1px}
+    .tb-eq-nota{font-size:var(--tb-fmin)}
+    table.tb-an{width:100%;border-collapse:collapse;table-layout:fixed;font-size:var(--tb-fmin);margin:4px 0}
+    table.tb-an th,table.tb-an td{padding:3px 2px;border-bottom:1px dotted #1f2531;vertical-align:top;text-align:right;white-space:nowrap;overflow:hidden}
+    table.tb-an th{color:var(--tb-mut);font-weight:normal;border-bottom:1px solid var(--tb-borda)}
+    table.tb-an th:first-child,table.tb-an td:first-child{text-align:left;white-space:normal;word-break:normal;overflow-wrap:break-word;padding-left:0}
+    table.tb-an td:first-child .tb-tag{display:inline-block;margin:1px 3px 0 0}
+    table.tb-an col.c5{width:4.9em}table.tb-an col.c4{width:4.2em}table.tb-an col.c3{width:3.4em}
+    .tb-an-exp .tb-linha{flex-wrap:nowrap}
+    .tb-an-exp .tb-linha>span{flex:1 1 auto;min-width:0}
+    .tb-an-exp textarea{display:block;width:100%;height:120px;box-sizing:border-box;margin-top:3px;resize:vertical;font:var(--tb-fmin)/1.35 ui-monospace,Consolas,monospace;background:#0d1016;color:var(--tb-texto);border:1px solid var(--tb-borda);border-radius:5px}
+    `;
+    function garantirCssTelas() {
+        if (document.getElementById('tb-css-telas')) return;
+        const st = document.createElement('style'); st.id = 'tb-css-telas'; st.textContent = CSS_TELAS;
+        (document.head || document.documentElement).appendChild(st);
+    }
+    /* números como o jogo mostra: ponto de milhar, vírgula decimal */
+    const numBR = (n, casas) => n == null || n === '' || !isFinite(n) ? '—' : Number(n).toLocaleString('pt-BR', { maximumFractionDigits: casas || 0 });
+    const milBR = (n) => n == null || !isFinite(n) ? '—' : (n / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + 'k';
+    const alvosTxt = (n) => n + '+ alvo' + (n > 1 ? 's' : '');
+    /* textos da Magia (dica do modelo, motivo do slot cortado) falam "≥2": na tela, "2+" */
+    const maisAlvos = (s) => String(s == null ? '' : s).replace(/≥(\d+)/g, '$1+');
+    /* texto montado pela lógica com decimal em ponto ("59.4 pt"): vírgula na tela */
+    const decBR = (s) => String(s == null ? '' : s).replace(/(\d)\.(\d)/g, '$1,$2');
+
+    /* @@DIAGNOSTICO-INICIO */ function rodarDiagnostico() { avisar('estado', 'diagnóstico ainda não disponível', 'info'); } /* @@DIAGNOSTICO-FIM */
 
     /* v1.9.0 — STATUS no layout do Stonegy (print do dono, 27/09): cartões
      * LEVEL / OURO / CAP LIVRE / TAXA XP, linha da hunt e os dois botões
-     * grandes. Os botões antigos continuam embaixo. */
+     * grandes. Os botões antigos continuam embaixo.
+     * v2.11 (D2) — OURO "—" sem leitura (fora do jogo o card dizia "0", que
+     * parece saldo zerado); botões de "avançado" com estado de ocupado no
+     * estado (Auto-sell, Confirmar hunt, Aprender dano, Rebaixar catálogos);
+     * DIAGNÓSTICO ao lado de Finalizar hunt; resultado na faixa (avisar). */
+    let _autoSellEmCurso = false, _rebaixandoCat = false, _diagnosticando = false;
+    /* saldo do frame (fresco) ou do HUD; null = não lido (login, lobby, sem frame) */
+    function ouroNaTela() {
+        const f = ESTADO_WS.frame;
+        if (frameFresco() && f.balance != null && isFinite(f.balance)) return Number(f.balance);
+        const el = tid('hud-gold'), t = el ? (el.textContent || '').replace(/\D/g, '') : '';
+        return t ? parseInt(t, 10) : null;
+    }
     function telaEstado() {
-        const h = huntAtual(), dentro = emHunt(), c = capLivre(), taxa = dentro ? lerTaxaXp() : null, a = autoHunt();
-        const card = (r, v) => `<div class="tb-card"><small>${r}</small><b>${v}</b></div>`;
+        garantirCssTelas();
+        const h = huntAtual(), dentro = emHunt(), c = capLivre(), taxa = dentro ? lerTaxaXp() : null, a = autoHunt(), ouro = ouroNaTela();
+        const card = (r, v, vazio) => `<div class="tb-card"><small>${r}</small><b${vazio ? ' class="tb-vazio"' : ''}>${v}</b></div>`;
         const lin = (x, y) => `<div class="tb-lin"><span class="tb-mut">${x}</span><span>${y}</span></div>`;
-        const huntTxt = ESTADO_WS.boss && ESTADO_WS.boss !== '?' ? 'boss ' + ESTADO_WS.boss : h ? h.title : (dentro ? 'hunt ?' : '');
-        return `<div class="tb-linha"><span class="${dentro ? 'tb-ok' : 'tb-mut'}">${dentro ? '● caçando' : '○ cidade'}</span>${a.on ? '<span class="tb-tag tb-ok">Auto Hunt</span>' : ''}${_cicloEmCurso ? '<span class="tb-tag tb-av">vendendo…</span>' : ''}<span class="tb-mut" style="margin-left:auto;text-align:right">${huntTxt}</span></div>
+        const boss = ESTADO_WS.boss && ESTADO_WS.boss !== '?' ? ESTADO_WS.boss : null;
+        const huntTxt = boss ? 'boss ' + boss : h ? h.title : (dentro ? 'hunt ?' : '');
+        const voc = vocacaoAtual();
+        const danos = (() => { const n = danosMedidosNesteNivel(), v = Object.keys(danosConhecidos()).length - n; return n + ' neste nível' + (v ? ` <span class="tb-av">+${v} de outro</span>` : ''); })();
+        return `<div class="tb-linha tb-st-topo"><span class="${dentro ? 'tb-ok' : 'tb-mut'}">${dentro ? '● caçando' : '○ cidade'}</span>${a.on ? '<span class="tb-tag tb-ok">Auto Hunt</span>' : ''}${_cicloEmCurso ? '<span class="tb-tag tb-av">vendendo…</span>' : ''}<span class="tb-mut tb-st-hunt" title="${escHtml(huntTxt)}">${escHtml(huntTxt)}</span></div>
           <div class="tb-grid">
-            ${card('NÍVEL', nivelAtual())}
-            ${card('OURO', ouroAtual().toLocaleString('pt-BR'))}
-            ${card('CAP LIVRE', c ? `${c.pct}% <span class="tb-mut" style="font-size:10px">${c.ozTxt} oz</span>` : '—')}
-            ${card('TAXA XP', taxa != null ? taxa + '%' : '—')}
+            ${card('NÍVEL', numBR(nivelAtual()))}
+            ${ouro == null ? card('OURO', '—', true) : card('OURO', numBR(ouro))}
+            ${c ? card('CAP LIVRE', `${numBR(c.pct)}% <span class="tb-oz">${escHtml(c.ozTxt)} oz</span>`) : card('CAP LIVRE', '—', true)}
+            ${taxa != null ? card('TAXA XP', numBR(taxa) + '%') : card('TAXA XP', '—', true)}
           </div>
-          ${NOVA_VERSAO ? `<button class="tb-bt on" id="tb-bt-atualizar" style="width:100%">↑ atualizar para a ${NOVA_VERSAO}</button>` : ''}
-          <button class="tb-bt pri" id="tb-venda-rapida" style="width:100%;font-size:13px;padding:8px" ${_cicloEmCurso ? 'disabled' : ''}>Venda rápida</button>
-          <button class="tb-bt" id="tb-finalizar" style="width:100%" ${_cicloEmCurso || !dentro ? 'disabled' : ''}>Finalizar hunt</button>
-          ${aj('estado-ajuda', 'Venda rápida: encerra a caçada (se estiver nela) → purifica todos → vende no NPC → guarda no depot, e fica na cidade. Finalizar hunt: só encerra e fecha o resumo.')}
+          ${NOVA_VERSAO ? `<button type="button" class="tb-bt on tb-larga" id="tb-bt-atualizar">↑ atualizar para a ${escHtml(NOVA_VERSAO)}</button>` : ''}
+          <button type="button" class="tb-bt pri tb-larga tb-grande" id="tb-venda-rapida" ${_cicloEmCurso ? 'disabled' : ''}>${_cicloEmCurso ? 'vendendo…' : 'Venda rápida'}</button>
+          <div class="tb-par">
+            <button type="button" class="tb-bt" id="tb-finalizar" ${_cicloEmCurso || !dentro ? 'disabled' : ''} title="${dentro ? 'encerra a caçada e fecha o resumo' : 'só dentro de uma caçada'}">Finalizar hunt</button>
+            <button type="button" class="tb-bt" id="tb-diagnostico" ${_diagnosticando ? 'disabled' : ''} title="confere o socket, os catálogos, os perfis e o estado do helper e mostra o que falta">${_diagnosticando ? 'conferindo…' : 'DIAGNÓSTICO'}</button>
+          </div>
+          ${aj('estado-ajuda', 'Venda rápida: encerra a caçada (se estiver nela — pede confirmação) → purifica todos → vende no NPC → guarda no depot, e fica na cidade. Finalizar hunt: só encerra e fecha o resumo. DIAGNÓSTICO: confere o que o helper precisa (socket, catálogos, perfis) e diz o que falta.')}
           <details class="tb-aj" data-k="estado-av"><summary>avançado</summary><div>
             <div class="tb-cx">
-              ${lin('Vocação na tela', vocacaoAtual())}
-              ${lin('Lure máx', h ? lureMax(h) + ' criaturas' : '—')}
-              ${lin('Catálogos', CAT.hunts ? `<span class="tb-ok">${CAT.hunts.length} hunts · ${CAT.magias.length} magias</span>` : '<span class="tb-ruim">não carregados</span>')}
-              ${lin('Danos medidos', (() => { const n = danosMedidosNesteNivel(), v = Object.keys(danosConhecidos()).length - n; return n + ' neste nível' + (v ? ` <span class="tb-av">+${v} de outro</span>` : ''); })())}
+              ${lin('Vocação na tela', escHtml(VOC_ROTULO[voc] || voc))}
+              ${lin('Lure máx', h ? numBR(lureMax(h)) + ' criaturas' : '—')}
+              ${lin('Catálogos', CAT.hunts ? `<span class="tb-ok">${numBR(CAT.hunts.length)} hunts · ${numBR((CAT.magias || []).length)} magias</span>` : '<span class="tb-ruim">não carregados</span>')}
+              ${lin('Danos medidos', danos)}
             </div>
-            <button class="tb-bt mini" id="tb-recat">Rebaixar catálogos</button>
-            <button class="tb-bt mini" id="tb-aprender">Aprender dano (os 4)</button>
-            <button class="tb-bt mini" id="tb-confhunt">Confirmar hunt</button>
-            <button class="tb-bt mini" id="tb-autosell">Auto-sell: marcar tudo</button>
-            <div class="tb-mut" style="font-size:10px;margin-top:4px">F5 zera a marcação do Auto Selling — depois de recarregar, "Auto-sell: marcar tudo".</div>
+            <div class="tb-linha">
+              <button type="button" class="tb-bt mini" id="tb-recat" ${_rebaixandoCat ? 'disabled' : ''}>${_rebaixandoCat ? 'rebaixando…' : 'Rebaixar catálogos'}</button>
+              <button type="button" class="tb-bt mini" id="tb-aprender" ${_aprendendo || _aplicando ? 'disabled' : ''}>${_aprendendo ? 'medindo…' : 'Aprender dano (os 4)'}</button>
+              <button type="button" class="tb-bt mini" id="tb-confhunt" ${_confirmandoHunt ? 'disabled' : ''}>${_confirmandoHunt ? 'confirmando…' : 'Confirmar hunt'}</button>
+              <button type="button" class="tb-bt mini" id="tb-autosell" ${_autoSellEmCurso ? 'disabled' : ''}>${_autoSellEmCurso ? 'marcando…' : 'Auto-sell: marcar tudo'}</button>
+            </div>
+            <div class="tb-mut tb-nota">F5 zera a marcação do Auto Selling — depois de recarregar, "Auto-sell: marcar tudo".</div>
           </div></details>`;
+    }
+    /* handlers do Status (antes dentro de _renderizar). Cada ação longa marca o
+     * estado ANTES do primeiro await e repinta; o clique repetido é recusado
+     * pelo estado, não pelo botão. */
+    function ligarEstado() {
+        const vr = $('#tb-venda-rapida'); if (vr) ligarDoisToques(vr, 'venda', 'confirmar: encerrar e vender?', () => { if (!_cicloEmCurso) cicloDeVenda('venda'); }, emHunt);
+        const bat = $('#tb-bt-atualizar'); if (bat) bat.onclick = abrirAtualizacao;
+        const fh = $('#tb-finalizar'); if (fh) fh.onclick = () => { if (!_cicloEmCurso) cicloDeVenda('finalizar'); };
+        const dg = $('#tb-diagnostico');
+        if (dg) dg.onclick = async () => {
+            if (_diagnosticando) return;
+            _diagnosticando = true; renderizar();
+            try { await rodarDiagnostico(); }
+            catch (e) { avisar('estado', 'diagnóstico estourou: ' + ((e && e.message) || e), 'erro'); }
+            finally { _diagnosticando = false; renderizar(); }
+        };
+        const rec = $('#tb-recat');
+        if (rec) rec.onclick = async () => {
+            if (_rebaixandoCat) return;
+            _rebaixandoCat = true; renderizar();
+            try { if (!await carregarCatalogos(true)) avisar('estado', 'catálogos não rebaixados — sem rede? (detalhe no Log)', 'erro'); }   // o sucesso já sai no Log (e na faixa)
+            catch (e) { avisar('estado', 'rebaixar catálogos estourou: ' + e.message, 'erro'); }
+            finally { _rebaixandoCat = false; renderizar(); }
+        };
+        const apr = $('#tb-aprender');
+        if (apr) apr.onclick = async () => {
+            if (_aprendendo || _aplicando) return;
+            _aprendendo = true; renderizar();
+            try {
+                const r = await aprenderDanosPorRest(false);
+                if (r.erro) { avisar('estado', 'sem /spell-numbers (' + r.erro + ') — medindo pelos diálogos', 'info'); await aprenderDanosTodos(); }
+            } catch (e) { avisar('estado', 'aprender dano estourou: ' + e.message, 'erro'); }
+            finally { _aprendendo = false; renderizar(); }
+        };
+        const cfh = $('#tb-confhunt');
+        if (cfh) cfh.onclick = async () => {
+            if (_confirmandoHunt) return;                  // a amostragem também abre esta tela: um de cada vez
+            _confirmandoHunt = true; renderizar();
+            const antes = ler('hunt_id', null);
+            try {
+                const r = await confirmarHuntPeloExplore();
+                if (r.erro) avisar('estado', 'não consegui confirmar a hunt: ' + r.erro, 'erro');
+                else if (r.hunt && r.hunt.id === antes) avisar('estado', 'hunt confirmada: ' + r.hunt.title + ' (já era esta)', 'ok');
+            } catch (e) { avisar('estado', 'confirmar hunt estourou: ' + e.message, 'erro'); }
+            finally { _confirmandoHunt = false; renderizar(); }
+        };
+        /* v1.8.0 — F5 zera a marcação do Auto Selling (o ciclo de venda não).
+         * Abre a janela de loot, aba Auto Selling, MARCAR TUDO, fecha. Só por
+         * botão, nunca sozinho. */
+        const ase = $('#tb-autosell');
+        if (ase) ase.onclick = async () => {
+            if (_autoSellEmCurso) return;
+            _autoSellEmCurso = true; renderizar();
+            try {
+                const bl = $$('button').find(b => /^LOOT$/.test((b.textContent || '').trim()));
+                if (!bl) throw new Error('botão LOOT não está na tela (fora de caçada?)');
+                bl.click();
+                const aba = await esperarQue(() => tid('loot-config-autosell'), 3000);
+                if (!aba) throw new Error('janela de loot não abriu');
+                aba.click(); await dorme(300);
+                const tudo = await esperarQue(() => tid('auto-sell-all') || $$('[data-testid="window-loot"] button').find(b => /MARCAR TUDO/i.test(b.textContent || '')), 2000);
+                if (!tudo) throw new Error('MARCAR TUDO não apareceu');
+                tudo.click(); await dorme(400);
+                const w = tid('window-loot');
+                const m = w && (w.innerText || '').match(/MARCADOS PARA VENDA\s*(\d+)/);
+                const fechar = tid('window-close-loot'); if (fechar) fechar.click();
+                avisar('estado', 'auto-sell: ' + (m ? m[1] : '?') + ' itens marcados para venda', 'ok');
+            } catch (e) {
+                const fechar = tid('window-close-loot'); if (fechar) fechar.click();
+                avisar('estado', 'auto-sell falhou: ' + e.message, 'erro');
+            } finally { _autoSellEmCurso = false; renderizar(); }
+        };
     }
     /* v2.11 — CSS das telas Auto Hunt e Scan, com escopo (.tb-ah / .tb-sc):
      * a casca do painel é de outra área; aqui só o que estas telas pedem —
@@ -5472,54 +5656,144 @@
      *  ⚠ Mantive UMA linha de estado, e essa não é enfeite: ela mostra qual
      *  hunt foi detectada e se a caçada se paga. Sem ela, uma detecção errada
      *  aplicaria elemento errado em silêncio — e foi assim que Vampire hell
-     *  deu −138k/h. O detalhe todo continua na aba Analisador. */
+     *  deu −138k/h. O detalhe todo continua na aba Analisador.
+     *  v2.11 (D2) — modelo como controle segmentado numa linha (aria-pressed),
+     *  selo do veredito do grupo (fila simulada de viabilidadeParty: custo por
+     *  abate contra o teto, ouro/h de poção e runa, quem bebe mana), por
+     *  personagem o gasto/h e as runas/h, fichas com "2+ alvos", extras em
+     *  português ("poção de mana ≤30%" — saía "mana Mana ≤30") e os slots que a
+     *  Magia cortou por nunca dispararem (r.mortos) numa linha discreta. */
+    const MODELO_CURTO = { economica: 'Eco', equilibrado: 'Equil', area: 'Área', boss: 'Boss', inteligente: 'Intel' };
+    /* nome da poção como o painel fala: "Strong Mana Potion" → "poção de mana forte" */
+    function nomePocao(n) {
+        const s = String(n || '');
+        const tipo = /mana/i.test(s) ? 'poção de mana' : /spirit/i.test(s) ? 'poção espiritual' : 'poção de vida';
+        return tipo + (/ultimate/i.test(s) ? ' suprema' : /great/i.test(s) ? ' grande' : /strong/i.test(s) ? ' forte' : '');
+    }
+    /* cura, mana, suporte e munição que o Inteligente põe (planoExtras) */
+    function extrasTxt(x) {
+        const partes = x.heals.filter(Boolean).map(c => (/potion/i.test(c.name) ? nomePocao(c.name) : c.name) + ' ≤' + c.percent + '%');
+        partes.push(x.manaPotion && x.manaPotion.name && x.manaPotion.percent ? nomePocao(x.manaPotion.name) + ' ≤' + x.manaPotion.percent + '%' : 'sem poção de mana');
+        const sup = x.supports.filter(Boolean);
+        partes.push(sup.length ? sup.join(' + ') : 'sem suporte');
+        if (x.ammo) partes.push('munição: ' + x.ammo);
+        return escHtml(partes.join(' · '));
+    }
     function telaMagia() {
+        garantirCssTelas();
         const det = detectarHunt(), manual = ler('hunt_id', null), modelo = ler('modelo', 'equilibrado'), nv = nivelAtual();
         let h = huntAtual();
-        let corpo = `<div class="tb-linha">` + Object.keys(MODELOS).map(k => `<button class="tb-bt mini ${k === modelo ? 'on' : ''}" data-modelo="${k}" title="${MODELOS[k].dica}">${MODELOS[k].nome}</button>`).join('') + `</div>`;
-        const ordenadas = (CAT.hunts || []).slice().sort((a, b) => (a.levelMin || 0) - (b.levelMin || 0) || a.title.localeCompare(b.title));
-        corpo += `<select id="tb-hunt"><option value="">— escolhe a caçada —</option>` +
-            ordenadas.map(c => `<option value="${c.id}" ${c.id === manual ? 'selected' : ''}>[${c.levelMin || 1}] ${c.title}${(c.levelMin || 0) > nv ? ' ⚠' : ''}</option>`).join('') + `</select>` +
-            (det && det.hunt && det.hunt.id !== manual ? `<div class="tb-mut" style="font-size:10px">palpite: <b>${det.hunt.title}</b> <button class="tb-bt mini" data-usar-palpite="${det.hunt.id}">usar</button></div>` : '');
+        let corpo = `<div class="tb-seg" role="group" aria-label="modelo de magia">` + Object.keys(MODELOS).map(k =>
+            `<button type="button" data-modelo="${k}" aria-pressed="${k === modelo}" aria-label="${escHtml(MODELOS[k].nome)}" title="${escHtml(MODELOS[k].nome + ' — ' + maisAlvos(MODELOS[k].dica))}">${escHtml(MODELO_CURTO[k] || MODELOS[k].nome)}</button>`).join('') + `</div>`;
+        const ordenadas = (CAT.hunts || []).slice().sort((a, b) => (a.levelMin || 0) - (b.levelMin || 0) || String(a.title).localeCompare(String(b.title)));
+        corpo += `<select id="tb-hunt" aria-label="caçada"><option value="">— escolha a caçada —</option>` +
+            ordenadas.map(c => `<option value="${escHtml(c.id)}"${c.id === manual ? ' selected' : ''}>[${escHtml(c.levelMin || 1)}] ${escHtml(c.title)}${(c.levelMin || 0) > nv ? ' ⚠' : ''}</option>`).join('') + `</select>` +
+            (det && det.hunt && det.hunt.id !== manual ? `<div class="tb-linha tb-palpite"><span class="tb-mut">palpite: <b>${escHtml(det.hunt.title)}</b></span><button type="button" class="tb-bt mini" data-usar-palpite="${escHtml(det.hunt.id)}" aria-label="usar o palpite ${escHtml(det.hunt.title)}">usar</button></div>` : '');
         let alvo = h;
-        if (ESTADO_WS.boss && ESTADO_WS.boss !== '?') corpo += `<div class="tb-mut">boss em andamento: <b>${ESTADO_WS.boss}</b></div>`;
+        if (ESTADO_WS.boss && ESTADO_WS.boss !== '?') corpo += `<div class="tb-mut">boss em andamento: <b>${escHtml(ESTADO_WS.boss)}</b></div>`;
         if (modelo === 'boss') {
             const bn = (ESTADO_WS.boss && ESTADO_WS.boss !== '?') ? ESTADO_WS.boss : ler('boss_nome', null);
-            const bosses = (CAT.bosses || []).slice().sort((a, b) => (a.health || 0) - (b.health || 0) || a.name.localeCompare(b.name));
-            corpo += `<select id="tb-boss" style="margin-top:4px"><option value="">— escolhe o boss —</option>` + bosses.map(b => `<option value="${b.name}" ${b.name === bn ? 'selected' : ''}>${b.name} · ${b.health} HP</option>`).join('') + `</select>`;
+            const bosses = (CAT.bosses || []).slice().sort((a, b) => (a.health || 0) - (b.health || 0) || String(a.name).localeCompare(String(b.name)));
+            corpo += `<select id="tb-boss" aria-label="boss" style="margin-top:4px"><option value="">— escolha o boss —</option>` + bosses.map(b => `<option value="${escHtml(b.name)}"${b.name === bn ? ' selected' : ''}>${escHtml(b.name)} · ${numBR(b.health)} HP</option>`).join('') + `</select>`;
             alvo = huntDeBoss(bn);
-            if (alvo) corpo += `<div class="tb-mut" style="font-size:10px">${(alvo.monsters[0].elements || []).map(e => rotuloElem(e.type) + ' ' + (e.percent > 0 ? '−' : '+') + Math.abs(e.percent) + '%').join(' · ') || 'sem resistências'}</div>`;
+            if (alvo) corpo += `<div class="tb-mut tb-resist">${escHtml((alvo.monsters[0].elements || []).map(e => rotuloElem(e.type) + ' ' + (e.percent > 0 ? '−' : '+') + Math.abs(e.percent) + '%').join(' · ') || 'sem resistências')}</div>`;
         }
         if (!alvo) return corpo + `<div class="tb-mut" style="margin-top:6px">escolha a caçada para ver o plano</div>`;
         h = alvo;
-        if (!h.boss && LOOT_CACHE[h.id] == null) ouroPorAbate(h.id).then(v => { if (v != null) renderizar(); });
-        if (!h.boss && h.monsters && h.monsters.some(m => !BESTIARIO[m.name])) bestiarioHunt(h).then(() => renderizar()).catch(() => { });
         const r = montarPlano(modelo, h);
-        if (r.erro) return corpo + `<div class="tb-cx tb-ruim">${r.erro}</div>`;
+        if (r.erro) return corpo + `<div class="tb-cx tb-ruim">${escHtml(r.erro)}</div>`;
         const vp = r.viab ? viabilidadeParty(modelo, h) : null;
-        const cabe = vp ? vp.cabe : null;
-        corpo += `<button class="tb-bt pri" id="tb-aplicar-todos" ${_aplicando ? 'disabled' : ''} style="width:100%;font-size:13px;padding:8px;margin-top:6px">${_aplicando ? 'APLICANDO…' : 'APLICAR NOS 4'}</button>` +
-            /* v2.10 — o veredito agora é do kit inteiro pela fila simulada (runa
-             * incluída, mana só de quem bebe): um texto só, com a poção que o
-             * PLANO usa (o Inteligente liga a do Druida). */
-            (vp ? `<div style="font-size:10px" class="${cabe ? 'tb-ok' : 'tb-ruim'}">${cabe ? 'se paga' : 'NÃO se paga'}: ${vp.custoPorAbate}o/abate contra ${vp.loot}o de loot (~${(vp.ouroH / 1000).toFixed(1)}k/h de ${vp.regen ? 'runa' : 'poção e runa'}) · mana: ${VOCS.map(v => VOC_CURTO[v] + ((vp.pocoes && v in vp.pocoes ? vp.pocoes[v] : manaPotionLigada(v)) ? ' on' : ' off')).join(' · ')}</div>` : '');
-        const ficha = p => `<span class="tb-ficha${p.av.m.isRune ? ' r' : ''}" title="${p.av.m.name} · mínimo ${p.minimo} criatura(s)${p.av.medidoNoMapa ? ' · ' + p.av.porLancamento + ' de dano medido por lançamento neste mapa' : ''}">${p.av.m.name} <small>≥${p.minimo}${p.av.medidoNoMapa ? ' · ' + p.av.porLancamento : ''}</small></span>`;
+        const ocupado = _aplicando || _aprendendo;
+        corpo += `<button type="button" class="tb-bt pri tb-larga tb-grande" id="tb-aplicar-todos" ${ocupado ? 'disabled' : ''} style="margin-top:6px">${_aplicando ? 'APLICANDO…' : _aprendendo ? 'MEDINDO O DANO…' : 'APLICAR NOS 4'}</button>`;
+        /* v2.10 — o veredito é do kit inteiro pela fila simulada (runa incluída,
+         * mana só de quem bebe), com a poção que o PLANO usa. v2.11 (D2): selo
+         * "✓ se paga"/"✗ não se paga" + custo por abate contra o teto (80 % do
+         * loot) + ouro/h do grupo e quem bebe mana. */
+        if (vp) {
+            const bebem = VOCS.filter(v => vp.pocoes && vp.pocoes[v]);
+            const gasto = vp.ouroH > 0 ? `~${milBR(vp.ouroH)} de ouro/h (${vp.regen ? 'runa' : 'poção e runa'})` : 'sem gasto de ouro';
+            corpo += `<div class="tb-ver ${vp.cabe ? 'ok' : 'ruim'}"><span class="tb-vsel ${vp.cabe ? 'ok' : 'ruim'}">${vp.cabe ? '✓ se paga' : '✗ não se paga'}</span>custo <b>${numBR(vp.custoPorAbate)} o</b>/abate · teto ${numBR(vp.orcamento, 1)} o <span class="tb-mut">(${Math.round(MARGEM_LUCRO * 100)} % do loot de ${numBR(vp.loot, 1)} o)</span>` +
+                `<div class="tb-mut">${gasto} · poção de mana: ${bebem.length ? bebem.map(v => VOC_ROTULO[v]).join(', ') : 'ninguém (regeneração)'}</div></div>`;
+        } else if (h.boss) corpo += `<div class="tb-mx">boss: sem veredito de ouro — o kit é o de mais dano por segundo com a mana de cada um</div>`;
+        else if (LOOT_CACHE[h.id] == null) corpo += `<div class="tb-mx">veredito: ${_semLoot[h.id] ? 'a tabela de loot desta hunt não veio (rede?) — tento de novo em 1 min' : 'lendo a tabela de loot…'}</div>`;
+        const ficha = p => {
+            const med = p.av.medidoNoMapa ? ' · ' + numBR(p.av.porLancamento) : '';
+            const dica = `${p.av.m.name} · dispara com ${alvosTxt(p.minimo)} vivos${p.av.medidoNoMapa ? ' · ' + numBR(p.av.porLancamento) + ' de dano medido por lançamento neste mapa' : ''}`;
+            return `<span class="tb-ficha${p.av.m.isRune ? ' r' : ''}" title="${escHtml(dica)}">${escHtml(p.av.m.name)} <small>${alvosTxt(p.minimo)}${med}</small></span>`;
+        };
         corpo += `<div class="tb-cx">` + VOCS.map(v => {
             const rv = montarPlano(modelo, h, v);
-            if (rv.erro) return `<div><b>${VOC_CURTO[v]}</b> <span class="tb-ruim">${rv.erro}</span></div>`;
-            const x = rv.extras;
-            return `<div style="margin:2px 0"><b style="color:#ffd479">${VOC_CURTO[v]}</b> ${rv.plano.map(ficha).join('') || '<span class="tb-ruim">sem magia com dano conhecido</span>'}` +
-                (x ? `<div class="tb-mut" style="font-size:9.5px;margin-left:24px">${x.heals.filter(Boolean).map(c => c.name.replace(' Potion', '') + ' ≤' + c.percent).join(' · ')} · mana ${x.manaPotion.name ? x.manaPotion.name.replace(' Potion', '') + ' ≤' + x.manaPotion.percent : 'off'} · ${x.supports.filter(Boolean).join(' + ') || 'sem suporte'}${x.ammo ? ' · ' + x.ammo : ''}</div>` : '') + `</div>`;
+            const cab = `<b title="${VOC_ROTULO[v]}">${VOC_CURTO[v]}</b>`;
+            if (rv.erro) return `<div class="tb-mv">${cab}<div class="tb-ruim">${escHtml(rv.erro)}</div></div>`;
+            const x = rv.extras, pv = vp && vp.porVoc ? vp.porVoc[v] : null;
+            const gasto = pv ? (pv.ouroH > 0 ? `gasta ~${milBR(pv.ouroH)}/h` : 'sem gasto de ouro') + (pv.runasH ? ` · ${numBR(pv.runasH)} runas/h` : '') + (x ? '' : ` · poção de mana ${pv.pocao ? 'ligada' : 'desligada'}`) : '';
+            const mortos = (rv.mortos || []).map(m => `${m.nome} ${alvosTxt(m.minimo)}: ${maisAlvos(m.motivo)}`);
+            return `<div class="tb-mv">${cab}<div>${rv.plano.map(ficha).join('') || '<span class="tb-ruim">sem magia com dano conhecido</span>'}` +
+                (x ? `<div class="tb-mx">${extrasTxt(x)}</div>` : '') +
+                (gasto ? `<div class="tb-mx">${gasto}</div>` : '') +
+                (mortos.length ? `<div class="tb-mx tb-morto" title="slot que nunca dispararia: fica vazio (não gasta mana)">cortado: ${escHtml(mortos.join(' · '))}</div>` : '') + `</div></div>`;
         }).join('') + `</div>`;
         const linhas = [];
-        if (emHunt() && RAZAO.kills) { const rz = razaoResumo(RAZAO); if (rz.danoTotal) linhas.push(`<div><b>grupo ao vivo</b> — ${Math.round(rz.seg / 60)} min · ${rz.kills} abates · tomou ${(rz.tomadoH / 1000).toFixed(1)}k/h</div>${razaoHtml(rz, false)}`); }
-        if (h.bestiary && h.bestiary.stages && h.bestiary.stages.length) linhas.push(`<div><b>bestiário</b>: ${h.bestiary.bonus} <span class="tb-tag">${h.bestiary.stages.map(e => `${(e.kills / 1000).toFixed(e.kills % 1000 ? 1 : 0)}k → +${e.value}`).join(' · ')}</span></div>`);
-        linhas.push(`<div>${MODELOS[modelo] ? MODELOS[modelo].dica : ''} Nada é aplicado sozinho. ${socketAberto() && ESTADO_WS.profiles ? 'Aplica pelo socket, sem abrir janela.' : 'Aplica pelos diálogos do jogo.'}</div>`);
+        if (emHunt() && RAZAO.kills) { const rz = razaoResumo(RAZAO); if (rz.danoTotal) linhas.push(`<div><b>grupo ao vivo</b> — ${numBR(Math.round(rz.seg / 60))} min · ${numBR(rz.kills)} abates · tomou ${milBR(rz.tomadoH)}/h</div>${razaoHtml(rz, false)}`); }
+        if (h.bestiary && h.bestiary.stages && h.bestiary.stages.length) linhas.push(`<div><b>bestiário</b>: ${escHtml(h.bestiary.bonus)} <span class="tb-tag">${h.bestiary.stages.map(e => `${numBR(e.kills / 1000, 1)}k → +${escHtml(e.value)}`).join(' · ')}</span></div>`);
+        linhas.push(`<div>${MODELOS[modelo] ? escHtml(maisAlvos(MODELOS[modelo].dica)) : ''} Nada é aplicado sozinho. ${socketAberto() && ESTADO_WS.perfisDoServidor ? 'Aplica pelo socket, sem abrir janela.' : 'Aplica pelos diálogos do jogo (só os 4 ataques).'}</div>`);
         corpo += aj('magia-mais', linhas.join(''), 'detalhes');
         return corpo;
     }
+    /* handlers da Magia (antes dentro de _renderizar) + os dados que o plano
+     * ainda espera (loot, armadura do bestiário). v2.11 (D2): a busca saiu do
+     * DESENHO — telaMagia disparava fetch a cada repinte enquanto o anterior
+     * não voltava; agora uma por hunt de cada vez, e o repinte vem quando chega. */
+    const _buscandoMagia = new Set(), _semLoot = {};      // _semLoot[huntId] = hora da falha (tenta de novo depois de 1 min)
+    function buscarUmaVez(chave, fazer) {
+        if (_buscandoMagia.has(chave)) return;
+        _buscandoMagia.add(chave);
+        Promise.resolve().then(fazer).catch(() => { }).finally(() => _buscandoMagia.delete(chave));
+    }
+    function ligarMagia() {
+        const corpo = $('#tb-corpo');
+        $$('[data-modelo]', corpo).forEach(b => b.onclick = () => { if (ler('modelo', 'equilibrado') === b.dataset.modelo) return; guardar('modelo', b.dataset.modelo); renderizar(); });
+        const selHunt = $('#tb-hunt');
+        if (selHunt) selHunt.onchange = () => { const v = selHunt.value; guardar('hunt_id', v === '' ? null : parseInt(v)); renderizar(); };
+        $$('[data-usar-palpite]', corpo).forEach(b => { b.onclick = () => { guardar('hunt_id', parseInt(b.dataset.usarPalpite)); renderizar(); }; });
+        const selBoss = $('#tb-boss');
+        if (selBoss) selBoss.onchange = () => { guardar('boss_nome', selBoss.value || null); renderizar(); };
+        const ap4 = $('#tb-aplicar-todos');
+        if (ap4) ap4.onclick = () => {
+            if (_aplicando || _aprendendo) return;
+            const m = ler('modelo', 'equilibrado'), h = alvoDoModelo();
+            if (!h) { avisar('magia', m === 'boss' ? 'escolha o boss primeiro' : 'escolha a caçada primeiro', 'erro'); return; }
+            aplicarEmTodos(m, h);                           // marca _aplicando antes do 1º await
+            renderizar();
+        };
+        buscarDadosDaMagia();
+    }
+    /* loot (veredito) e armadura (bestiário) da hunt que a Magia mostra; é
+     * LEITURA de catálogo público. Loot que não veio: diz na tela e tenta de
+     * novo 1 min depois (só com a Magia aberta). */
+    function buscarDadosDaMagia() {
+        const h = alvoDoModelo();
+        if (!h || h.boss) return;
+        if (LOOT_CACHE[h.id] == null && !(Date.now() - (_semLoot[h.id] || 0) < 60000)) {
+            buscarUmaVez('loot:' + h.id, () => ouroPorAbate(h.id).then(v => {
+                if (v == null) { _semLoot[h.id] = Date.now(); setTimeout(() => { if (ABA === 'magia') buscarDadosDaMagia(); }, 60500); } else delete _semLoot[h.id];
+                renderizar();
+            }));
+        }
+        if (h.monsters && h.monsters.some(m => !BESTIARIO[m.name])) buscarUmaVez('best:' + h.id, () => bestiarioHunt(h).then(() => renderizar()));
+    }
+    /* v2.11 (D2) — ANALISADOR: nomes de hunt inteiros (a coluna tinha 1/5 da
+     * tabela e "Barbarian Camp" virava "Barbari an Camp"); agora a hunt leva o
+     * que sobra das colunas numéricas (largura em em, vale no celular) e só
+     * quebra palavra que sozinha não cabe. Título de sessão, hunt e tipo de
+     * frame do socket escapados. A caixa do "copiar JSON" é estado
+     * (_exportacao): com a área de transferência bloqueada ela era o único
+     * lugar dos dados e sumia no repinte seguinte (4 s). */
+    let _exportacao = null;           // { texto, copiado: null|true|false, selecionar }
     function telaAnalise() {
+        garantirCssTelas();
         const lin = (a, b) => `<div class="tb-lin"><span class="tb-mut">${a}</span><span>${b}</span></div>`;
+        const sinal = n => (n >= 0 ? '+' : '') + milBR(n);
         let corpo = '';
         if (SESSAO && SESSAO.amostras.length >= 2) {
             const a0 = SESSAO.amostras[0], aN = SESSAO.amostras[SESSAO.amostras.length - 1];
@@ -5528,34 +5802,71 @@
             const expH = (aN.exp != null && a0.exp != null) ? Math.round((aN.exp - a0.exp) / dur * 3600) : null;
             const ab = (aN.abates != null && a0.abates != null) ? aN.abates - a0.abates : null;
             const pct = Math.round((aN.mochilaPct || 0) * 100);
-            corpo += `<div class="tb-cx" style="border-color:#2c5c3a"><div class="tb-mut">medindo — ${SESSAO.huntTitle} · ${Math.floor(dur / 60)}m${String(Math.round(dur % 60)).padStart(2, '0')}</div>
-                ${lin('ouro/h', `<b class="${ouroH >= 0 ? 'tb-ok' : 'tb-ruim'}">${ouroH >= 0 ? '+' : ''}${ouroH.toLocaleString('pt-BR')}</b>`)}
-                ${lin('exp/h', expH != null ? expH.toLocaleString('pt-BR') : '—')}
-                ${lin('abates', ab != null ? `${ab} (${Math.round(ab / dur * 3600)}/h)` : '—')}
+            corpo += `<div class="tb-cx" style="border-color:#2c5c3a"><div class="tb-mut">medindo — ${escHtml(SESSAO.huntTitle)} · ${Math.floor(dur / 60)}m${String(Math.round(dur % 60)).padStart(2, '0')}</div>
+                ${lin('ouro/h', isFinite(ouroH) ? `<b class="${ouroH >= 0 ? 'tb-ok' : 'tb-ruim'}">${ouroH >= 0 ? '+' : ''}${numBR(ouroH)}</b>` : '—')}
+                ${lin('exp/h', numBR(expH))}
+                ${lin('abates', ab != null ? `${numBR(ab)} (${numBR(Math.round(ab / dur * 3600))}/h)` : '—')}
                 ${lin('mochila', `<span class="${pct > 85 ? 'tb-ruim' : pct > 60 ? 'tb-av' : ''}">${pct}%</span>`)}
-                ${pct > 85 ? '<div class="tb-ruim" style="font-size:10px">mochila acima de 85%: o loot se perde e a medição sai suja</div>' : ''}</div>`;
+                ${pct > 85 ? '<div class="tb-ruim tb-nota">mochila acima de 85%: o loot se perde e a medição sai suja</div>' : ''}</div>`;
         } else corpo += `<div class="tb-mut">sem medição: liga sozinho ao entrar numa caçada</div>`;
         const res = resumoPorHunt();
         if (res.length) {
-            corpo += `<table class="tb-t"><tr><th>hunt</th><th>ouro/h</th><th>exp/h</th><th>tempo</th><th>fator</th></tr>` +
-              res.map(p => `<tr><td>${p.hunt}${p.sujas ? ` <span class="tb-tag tb-ruim">${p.sujas} suja</span>` : ''}${p.regen ? ` <span class="tb-tag">regen</span>` : ''}</td>
-                <td class="${p.ouroH >= 0 ? 'tb-ok' : 'tb-ruim'}">${p.ouroH >= 0 ? '+' : ''}${(p.ouroH / 1000).toFixed(1)}k</td><td>${(p.expH / 1000).toFixed(1)}k</td><td class="tb-mut">${Math.round(p.dur / 60)}min</td><td class="tb-av">${p.fatorMedio != null ? p.fatorMedio : '—'}</td></tr>`).join('') + `</table>`;
+            corpo += `<table class="tb-an"><colgroup><col><col class="c5"><col class="c5"><col class="c4"><col class="c3"></colgroup>` +
+              `<thead><tr><th>hunt</th><th>ouro/h</th><th>exp/h</th><th>tempo</th><th>fator</th></tr></thead><tbody>` +
+              res.map(p => `<tr><td>${escHtml(p.hunt)}${p.sujas ? ` <span class="tb-tag tb-ruim">${numBR(p.sujas)} suja${p.sujas > 1 ? 's' : ''}</span>` : ''}${p.regen ? ` <span class="tb-tag">regen</span>` : ''}</td>` +
+                `<td class="${p.ouroH >= 0 ? 'tb-ok' : 'tb-ruim'}">${sinal(p.ouroH)}</td><td>${milBR(p.expH)}</td><td class="tb-mut">${fmtHoras(p.dur / 3600)}</td><td class="tb-av">${numBR(p.fatorMedio, 2)}</td></tr>`).join('') + `</tbody></table>`;
             const comFator = res.filter(p => p.fatorMedio != null && p.hp);
-            if (comFator.length) corpo += aj('an-curva', `<table class="tb-t"><tr><th>hunt</th><th>HP</th><th>curva</th><th>medido</th><th>erro</th></tr>` + comFator.map(p => { const prev = Math.round(fatorDesperdicio(p.hp) * 100) / 100; const erro = Math.round((p.fatorMedio / prev - 1) * 100); return `<tr><td>${p.hunt}</td><td>${p.hp}</td><td>${prev}</td><td class="tb-av">${p.fatorMedio}</td><td class="${Math.abs(erro) < 25 ? 'tb-ok' : 'tb-ruim'}">${erro > 0 ? '+' : ''}${erro}%</td></tr>`; }).join('') + `</table><div style="font-size:10px">fator = desperdício real por abate contra a curva 0,47 × HP^0,332 (2 pontos).</div>`, 'calibração');
+            if (comFator.length) corpo += aj('an-curva', `<table class="tb-an"><colgroup><col><col class="c4"><col class="c4"><col class="c4"><col class="c4"></colgroup><thead><tr><th>hunt</th><th>HP</th><th>curva</th><th>medido</th><th>erro</th></tr></thead><tbody>` + comFator.map(p => { const prev = Math.round(fatorDesperdicio(p.hp) * 100) / 100; const erro = Math.round((p.fatorMedio / prev - 1) * 100); return `<tr><td>${escHtml(p.hunt)}</td><td>${numBR(p.hp)}</td><td>${numBR(prev, 2)}</td><td class="tb-av">${numBR(p.fatorMedio, 2)}</td><td class="${Math.abs(erro) < 25 ? 'tb-ok' : 'tb-ruim'}">${erro > 0 ? '+' : ''}${numBR(erro)}%</td></tr>`; }).join('') + `</tbody></table><div class="tb-nota">fator = desperdício real por abate contra a curva 0,47 × HP^0,332 (2 pontos).</div>`, 'calibração');
         }
         const tipos = Object.keys(WS.tipos).sort((a, b) => WS.tipos[b] - WS.tipos[a]);
         const envs = Object.keys(WS.enviados).sort((a, b) => WS.enviados[b].n - WS.enviados[a].n);
-        corpo += aj('an-ws', `socket ${WS.socket ? '<span class="tb-ok">capturado</span>' : '<span class="tb-av">ainda não</span>'} · ${WS.frames} frames em ~${Math.max(1, Math.round((Date.now() - WS.desde) / 60000))} min<br>` +
-            (tipos.length ? 'recebidos: ' + tipos.slice(0, 10).map(t => `<span class="tb-tag">${t} ×${WS.tipos[t]}</span>`).join('') + '<br>' : '') +
-            (envs.length ? 'enviados: ' + envs.map(t => `<span class="tb-tag tb-ok">${t} ×${WS.enviados[t].n}</span>`).join('') : 'nenhum frame enviado ainda'), 'websocket');
-        corpo += `<div class="tb-linha" style="margin-top:4px"><button class="tb-bt mini" id="tb-exportar">copiar JSON</button><button class="tb-bt mini" id="tb-limpar-sessoes">limpar histórico</button></div>`;
+        corpo += aj('an-ws', `socket ${WS.socket ? '<span class="tb-ok">capturado</span>' : '<span class="tb-av">ainda não</span>'} · ${numBR(WS.frames)} frames em ~${Math.max(1, Math.round((Date.now() - WS.desde) / 60000))} min<br>` +
+            (tipos.length ? 'recebidos: ' + tipos.slice(0, 10).map(t => `<span class="tb-tag">${escHtml(t)} ×${numBR(WS.tipos[t])}</span>`).join('') + '<br>' : '') +
+            (envs.length ? 'enviados: ' + envs.map(t => `<span class="tb-tag tb-ok">${escHtml(t)} ×${numBR(WS.enviados[t].n)}</span>`).join('') : 'nenhum frame enviado ainda'), 'websocket');
+        corpo += `<div class="tb-linha" style="margin-top:4px"><button type="button" class="tb-bt mini" id="tb-exportar">copiar JSON</button><button type="button" class="tb-bt mini" id="tb-limpar-sessoes" title="apaga as sessões medidas (pede confirmação)">limpar histórico</button></div>`;
+        if (_exportacao) corpo += `<div class="tb-an-exp"><div class="tb-linha"><span class="${_exportacao.copiado === false ? 'tb-av' : 'tb-mut'}">${_exportacao.copiado === true ? 'copiado — e também aqui:' : _exportacao.copiado === false ? 'área de transferência bloqueada: selecione e copie daqui' : 'copiando…'}</span>` +
+            `<button type="button" class="tb-bt mini" id="tb-exportar-fechar" style="margin-left:auto" aria-label="fechar a caixa do JSON">fechar</button></div>` +
+            `<textarea id="tb-exportar-caixa" readonly spellcheck="false" aria-label="dados do Analisador em JSON"></textarea></div>`;
         return corpo;
+    }
+    /* handlers do Analisador (antes dentro de _renderizar). O texto do JSON
+     * vai para a caixa por .value (não entra no HTML: não pesa na comparação
+     * do repinte nem precisa de escape). */
+    function ligarAnalise() {
+        const exp = $('#tb-exportar');
+        if (exp) exp.onclick = () => {
+            const dados = JSON.stringify({
+                sessoes: sessoes(), resumo: resumoPorHunt(),
+                ws: { frames: WS.frames, tipos: WS.tipos, binarios: WS.bin,
+                      amostrasRecebidas: WS.amostras, ENVIADOS: WS.enviados }
+            }, null, 2);
+            const x = _exportacao = { texto: dados, copiado: null, selecionar: true };
+            renderizar();
+            /* writeText ainda dentro do clique (o navegador exige o gesto) */
+            let p;
+            try { p = navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(dados) : Promise.reject(new Error('sem clipboard')); } catch (e) { p = Promise.reject(e); }
+            p.then(() => { x.copiado = true; avisar('analise', 'JSON copiado para a área de transferência (e na caixa abaixo)', 'ok'); })
+             .catch(() => { x.copiado = false; x.selecionar = true; avisar('analise', 'área de transferência bloqueada — o JSON está na caixa abaixo do botão', 'erro'); })
+             .finally(renderizar);
+        };
+        const caixa = $('#tb-exportar-caixa');
+        if (caixa && _exportacao) {
+            caixa.value = _exportacao.texto;
+            if (_exportacao.selecionar) { _exportacao.selecionar = false; try { caixa.focus({ preventScroll: true }); caixa.select(); } catch { /* caixa fora da página */ } }
+        }
+        const fx = $('#tb-exportar-fechar'); if (fx) fx.onclick = () => { _exportacao = null; renderizar(); };
+        const lim = $('#tb-limpar-sessoes');
+        if (lim) ligarDoisToques(lim, 'limpar-sessoes', 'apagar o histórico?', () => { guardar('sessoes', []); avisar('analise', 'histórico de sessões apagado', 'ok'); renderizar(); });
     }
     /* v2.4.0 — EQUIP. 4 sub-abas; por slot: atual → melhor (+ganho) e 2
      * motivos; clique expande os atributos (mortos riscados). Seções
      * Dispensáveis e Reservas. NADA equipa nem descarta. */
     const RAR_NOME = ['comum', 'incomum', 'raro', 'épico', 'lendário', 'mítico'];
-    const VOC_ROTULO = { KNIGHT: 'Knight', PALADIN: 'Paladino', SORCERER: 'Feiticeiro', DRUID: 'Druida' };
+    /* v2.11 (D2) — vocações e slots em português em todas as telas (o Equip
+     * dizia "Knight" num botão, "Cav" na aba ao lado e WEAPON/LEGS nas linhas) */
+    const VOC_ROTULO = { KNIGHT: 'Cavaleiro', PALADIN: 'Paladino', SORCERER: 'Feiticeiro', DRUID: 'Druida' };
+    const SLOT_PT = { weapon: 'arma', hand: 'arma', shield: 'escudo', head: 'elmo', helmet: 'elmo', armor: 'armadura', legs: 'calça', boots: 'bota', feet: 'bota', necklace: 'colar', ring: 'anel', ammo: 'munição' };
+    const slotPt = (s) => SLOT_PT[s] || s;
     /* 28/09: com 0,5 ele sugeria trocar um bonelord shield por outro quase igual (+0,55). */
     const GANHO_MIN = 1;     // abaixo disso é empate técnico: não vale a troca
     const EQUIP = { voc: 'KNIGHT', abertos: new Set(), base: null, res: null, lendo: false, erro: null, aviso: null, t: 0, verReservas: false, verTudo: false, equipando: false, ctx: null };
@@ -5719,24 +6030,36 @@
         await equipAtualizar();
     }
     function candidatoPorIid(iid) { const R = EQUIP.res; if (!R) return null; for (const v of Object.keys(R.porVoc)) for (const s of Object.keys(R.porVoc[v])) { const c = R.porVoc[v][s].candidatos.find(c => c.peca.iid === iid); if (c) return c.peca; } return null; }
+    /* v2.11 (D2) — botões numa linha (ATUALIZAR · EQUIPAR (n) · só Cav (n)),
+     * vocação como botões com aria-pressed e nome inteiro no rótulo, "8 slots"
+     * vira um interruptor à parte (misturado às abas parecia uma 5ª vocação),
+     * slots em português, slot vazio sem nada melhor diz isso (não "já é o
+     * melhor"), números em pt-BR, linha que abre é botão de teclado. */
     function telaEquip() {
+        garantirCssTelas();
         const dep = ESTADO_WS.depot, R = EQUIP.res, v = EQUIP.voc;
-        const dentro = emHunt();
+        const dentro = emHunt(), sock = socketAberto();
         const n4 = R ? slotsTrocas(VOCS).fila.length : 0, nv = R ? slotsTrocas([v]).fila.length : 0;
-        const podeEquipar = R && !dentro && !EQUIP.equipando && !EQUIP.lendo && socketAberto();
-        let h = `<div class="tb-linha">
-            <button class="tb-bt pri" id="tb-eq-atualizar" ${EQUIP.lendo ? 'disabled' : ''}>${EQUIP.lendo ? 'lendo…' : 'ATUALIZAR'}</button>
-            <button class="tb-bt" id="tb-eq-equipar4" ${podeEquipar && n4 ? '' : 'disabled'} title="${dentro ? 'só na cidade' : 'tira do depósito e equipa pelo socket'}">${EQUIP.equipando ? 'EQUIPANDO…' : `EQUIPAR (${n4})`}</button>
-            <button class="tb-bt" id="tb-eq-equipar1" ${podeEquipar && nv ? '' : 'disabled'}>só ${VOC_ROTULO[v]} (${nv})</button></div>
-          <div class="tb-mut" style="font-size:10px">${dep ? `depósito ${dep.used}/${dep.total}` : 'depósito —'}${EQUIP.t ? ` · lido ${new Date(EQUIP.t).toLocaleTimeString('pt-BR')}` : ''}${EQUIP.ctx && EQUIP.ctx.mapa ? ` · wand/rod pelo elemento de ${escHtml(EQUIP.ctx.mapa)}` : ''}${dentro ? ' · <span class="tb-av">equipar só na cidade</span>' : ''}</div>`;
+        const podeEquipar = R && !dentro && !EQUIP.equipando && !EQUIP.lendo && sock;
+        const porQue = !R ? 'clique ATUALIZAR antes' : dentro ? 'só na cidade' : !sock ? 'o socket do jogo não foi capturado — F5 com o helper instalado' : 'tira do depósito e equipa pelo socket';
+        const pt = n => numBR(n, 1) + ' pt';
+        let h = `<div class="tb-eq-bts">
+            <button type="button" class="tb-bt pri" id="tb-eq-atualizar" ${EQUIP.lendo || EQUIP.equipando ? 'disabled' : ''} title="lê o corpo dos 4, a mochila e o depósito">${EQUIP.lendo ? 'lendo…' : 'ATUALIZAR'}</button>
+            <button type="button" class="tb-bt" id="tb-eq-equipar4" ${podeEquipar && n4 ? '' : 'disabled'} title="${escHtml(porQue)}">${EQUIP.equipando ? 'EQUIPANDO…' : `EQUIPAR (${n4})`}</button>
+            <button type="button" class="tb-bt" id="tb-eq-equipar1" ${podeEquipar && nv ? '' : 'disabled'} title="só as trocas do ${VOC_ROTULO[v]} — ${escHtml(porQue)}" aria-label="equipar só o ${VOC_ROTULO[v]} (${nv})">só ${VOC_CURTO[v]} (${nv})</button></div>
+          <div class="tb-mut tb-eq-info">${dep ? `depósito ${numBR(dep.used)}/${numBR(dep.total)}` : 'depósito —'}${EQUIP.t ? ` · lido ${new Date(EQUIP.t).toLocaleTimeString('pt-BR')}` : ''}${EQUIP.ctx && EQUIP.ctx.mapa ? ` · wand/rod pelo elemento de ${escHtml(EQUIP.ctx.mapa)}` : ''}${dentro ? ' · <span class="tb-av">equipar só na cidade</span>' : ''}</div>`;
         if (EQUIP.erro) h += `<div class="tb-cx tb-ruim">${escHtml(EQUIP.erro)}</div>`;
         if (EQUIP.aviso) h += `<div class="tb-cx tb-av">${escHtml(EQUIP.aviso)}</div>`;
         if (!R) return h + aj('eq-ajuda', 'ATUALIZAR lê o corpo dos 4, a mochila e o depósito, busca os atributos base e ranqueia por vocação e slot. Nada é equipado nem descartado sem o botão EQUIPAR. Raridade não pontua: um épico com atributos que a vocação não usa perde para um incomum com o atributo certo.');
-        h += `<div class="tb-sub">${VOCS.map(x => { const n = Object.values(R.porVoc[x] || {}).filter(y => y.ganho >= GANHO_MIN).length; return `<span class="${x === v ? 'on' : ''}" data-voc="${x}">${VOC_CURTO[x]}${n ? ` <b>${n}</b>` : ''}</span>`; }).join('')}
-            <span id="tb-eq-tudo" class="${EQUIP.verTudo ? 'on' : ''}" style="margin-left:auto" title="mostrar os 8 slots, não só as trocas">8 slots</span></div>`;
-        const nomePeca = (p, voc) => p ? `${escHtml(p.nome)}${rarTag(p)}${p.origem === 'depósito' ? '<span class="tb-tag">dep.</span>' : p.origem === 'mochila' ? '<span class="tb-tag">mochila</span>' : p.dono && p.dono !== voc ? `<span class="tb-tag">no ${VOC_CURTO[p.dono] || p.dono}</span>` : ''}` : '<span class="tb-mut">vazio</span>';
+        h += `<div class="tb-sub tb-eq-vocs" role="group" aria-label="vocação">${VOCS.map(x => {
+            const n = Object.values(R.porVoc[x] || {}).filter(y => y.ganho >= GANHO_MIN).length;
+            const rot = VOC_ROTULO[x] + (n ? ` — ${n} troca${n > 1 ? 's' : ''}` : '');
+            return `<button type="button" class="${x === v ? 'on' : ''}" data-voc="${x}" aria-pressed="${x === v}" title="${rot}" aria-label="${rot}">${VOC_CURTO[x]}${n ? ` <b>${n}</b>` : ''}</button>`;
+        }).join('')}</div>
+          <button type="button" class="tb-eq-sw" id="tb-eq-tudo" role="switch" aria-checked="${!!EQUIP.verTudo}" title="mostrar os 8 slots, não só os que têm troca"><span class="tb-sw ${EQUIP.verTudo ? 'on' : ''}" tabindex="-1" aria-hidden="true"><i></i></span>mostrar os 8 slots</button>`;
+        const nomePeca = (p, voc) => p ? `${escHtml(p.nome)}${rarTag(p)}${p.origem === 'depósito' ? '<span class="tb-tag">dep.</span>' : p.origem === 'mochila' ? '<span class="tb-tag">mochila</span>' : p.dono && p.dono !== voc ? `<span class="tb-tag" title="${VOC_ROTULO[p.dono] || escHtml(p.dono)}">no ${VOC_CURTO[p.dono] || escHtml(p.dono)}</span>` : ''}` : '<span class="tb-mut">vazio</span>';
         const det = (p, voc) => { if (!p) return ''; const r = pontuarPeca(p, voc, EQUIP.ctx);
-            return r.detalhe.map(d => `<span class="${d.pt > 0 ? '' : d.pt < 0 ? 'neg' : 'm'}">${escHtml(rotulo(d.id))} ${d.valor}${d.pt !== 0 ? ` <span class="tb-mut">(${d.pt})</span>` : ''}</span>`).join(' · ') + (r.temporario ? ' <span class="tb-tag">temporário</span>' : '') + ` <span class="tb-mut">= ${r.pontos} pt</span>`; };
+            return r.detalhe.map(d => `<span class="${d.pt > 0 ? '' : d.pt < 0 ? 'neg' : 'm'}">${escHtml(rotulo(d.id))} ${escHtml(typeof d.valor === 'number' ? numBR(d.valor, 2) : d.valor)}${d.pt !== 0 ? ` <span class="tb-mut">(${numBR(d.pt, 1)})</span>` : ''}</span>`).join(' · ') + (r.temporario ? ' <span class="tb-tag">temporário</span>' : '') + ` <span class="tb-mut">= ${pt(r.pontos)}</span>`; };
         let linhas = 0;
         for (const s of SLOTS_EQUIP) {
             const x = R.porVoc[v][s]; if (!x) continue;
@@ -5746,37 +6069,41 @@
             linhas++;
             const chave = v + '|' + s, aberto = EQUIP.abertos.has(chave);
             const mot = troca ? pontuarPeca(x.melhor, v, EQUIP.ctx).motivos.join(' · ') : '';
-            h += `<div class="tb-eq" data-k="${chave}">
-                <span class="s">${s}</span>
-                <span>${nomePeca(x.atual, v)}<small>${x.atualPt} pt</small></span>
-                <span class="tb-mut">${troca || tirar ? '→' : '='}</span>
-                <span>${troca ? nomePeca(x.melhor, v) + `<small><span class="g">+${x.ganho} pt</span> · ${escHtml(mot)}</small>` : tirar ? '<span class="tb-av">tirar (arma de 2 mãos)</span>' : '<span class="tb-mut">já é o melhor</span>'}</span>
+            const direita = troca ? nomePeca(x.melhor, v) + `<small><span class="g">+${pt(x.ganho)}</span> · ${escHtml(decBR(mot))}</small>`
+                : tirar ? '<span class="tb-av">tirar (arma de 2 mãos)</span>'
+                : !x.atual ? '<span class="tb-mut">nada melhor no estoque</span>' : '<span class="tb-mut">já é o melhor</span>';
+            h += `<div class="tb-eq" data-k="${chave}" role="button" tabindex="0" aria-expanded="${aberto}" aria-label="${slotPt(s)} do ${VOC_ROTULO[v]}: detalhes">
+                <span class="s">${slotPt(s)}</span>
+                <span>${nomePeca(x.atual, v)}${x.atual ? `<small>${pt(x.atualPt)}</small>` : ''}</span>
+                <span class="tb-mut" aria-hidden="true">${troca || tirar ? '→' : '='}</span>
+                <span>${direita}</span>
                 ${aberto ? `<div class="tb-det"><div><b>atual:</b> ${det(x.atual, v) || '—'}</div>${troca ? `<div style="margin-top:3px"><b>melhor:</b> ${det(x.melhor, v)}</div>` : ''}</div>` : ''}
               </div>`;
         }
         if (!linhas) h += `<div class="tb-ok" style="margin:4px 0">${VOC_ROTULO[v]}: nada a trocar — o que está no corpo já é o melhor que você tem.</div>`;
         const disp = R.dispensaveis, soma = disp.reduce((n, p) => n + (p.sell || 0), 0);
-        h += aj('eq-disp', `<div class="tb-mut" style="font-size:10px">não são a melhor nem a reserva de ninguém. Encaixes de imbuement não pontuam — confira antes de vender.</div>` +
-            disp.slice(0, 60).map(p => `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)}<span class="tb-tag">${p.origem}</span> <span class="tb-mut" style="font-size:9.5px">${escHtml(p.motivo)}</span></span><span>${(p.sell || 0).toLocaleString('pt-BR')}</span></div>`).join('') +
-            (disp.length > 60 ? `<div class="tb-mut">… e mais ${disp.length - 60}</div>` : ''), `dispensáveis (${disp.length} · ${soma.toLocaleString('pt-BR')}o)`);
-        h += aj('eq-res', [...R.reservas].map(iid => { const p = candidatoPorIid(iid); return p ? `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)} <span class="tb-mut">${p.slot} · ${p.origem}</span></span></div>` : ''; }).join(''), `reservas (${R.reservas.size})`);
+        h += aj('eq-disp', `<div class="tb-mut tb-eq-nota">não são a melhor nem a reserva de ninguém. Encaixes de imbuement não pontuam — confira antes de vender.</div>` +
+            disp.slice(0, 60).map(p => `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)}<span class="tb-tag">${escHtml(p.origem)}</span> <span class="tb-mut tb-eq-nota">${escHtml(p.motivo)}</span></span><span>${numBR(p.sell || 0)}</span></div>`).join('') +
+            (disp.length > 60 ? `<div class="tb-mut">… e mais ${disp.length - 60}</div>` : ''), `dispensáveis (${disp.length} · ${numBR(soma)} o)`);
+        h += aj('eq-res', [...R.reservas].map(iid => { const p = candidatoPorIid(iid); return p ? `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)} <span class="tb-mut">${escHtml(slotPt(p.slot))} · ${escHtml(p.origem)}</span></span></div>` : ''; }).join(''), `reservas (${R.reservas.size})`);
         const temp = R.temporarios || [];
-        if (temp.length) h += aj('eq-temp', `<div class="tb-mut" style="font-size:10px">acabam por carga ou por tempo de caçada (wiki): não entram nas trocas nem na lista de venda — use à mão (boss, mapa difícil).</div>` +
+        if (temp.length) h += aj('eq-temp', `<div class="tb-mut tb-eq-nota">acabam por carga ou por tempo de caçada (wiki): não entram nas trocas nem na lista de venda — use à mão (boss, mapa difícil).</div>` +
             temp.slice(0, 40).map(p => {
                 const m = VOCS.filter(x => vocacaoPode(p.attrs, x)).map(x => ({ x, r: pontuarPeca(p, x, EQUIP.ctx) })).sort((a, b) => b.r.pontos - a.r.pontos)[0];
                 if (!m) return '';
-                const dura = m.r.cargas ? m.r.cargas + ' cargas' : m.r.duracaoS ? Math.round(m.r.duracaoS / 60) + ' min' : 'temporário';
-                return `<div class="tb-lin"><span>${escHtml(p.nome)} <span class="tb-mut">${p.slot} · ${p.origem} · ${dura}</span></span><span class="tb-mut">${VOC_CURTO[m.x]} ${m.r.pontos} pt</span></div>`; }).join(''), `temporários (${temp.length})`);
-        h += aj('eq-opc', `<label class="tb-l"><input type="checkbox" id="tb-eq-guardar" ${ler('equip_guardar', true) ? 'checked' : ''}> depois de equipar, guardar a mochila inteira no depósito</label><div style="font-size:10px">pelo socket: tira do depósito e equipa; a peça que sai cai na mochila. O jogo só tem "guardar tudo": o loot da mochila vai junto. Peça de outro personagem só depois que ele trocar. Arco ↔ besta troca a munição do Paladino junto.</div>`, 'opções');
+                const dura = m.r.cargas ? numBR(m.r.cargas) + ' cargas' : m.r.duracaoS ? numBR(Math.round(m.r.duracaoS / 60)) + ' min' : 'temporário';
+                return `<div class="tb-lin"><span>${escHtml(p.nome)} <span class="tb-mut">${escHtml(slotPt(p.slot))} · ${escHtml(p.origem)} · ${dura}</span></span><span class="tb-mut" title="${VOC_ROTULO[m.x]}">${VOC_CURTO[m.x]} ${pt(m.r.pontos)}</span></div>`; }).join(''), `temporários (${temp.length})`);
+        h += aj('eq-opc', `<label class="tb-l"><input type="checkbox" id="tb-eq-guardar" ${ler('equip_guardar', true) ? 'checked' : ''}> depois de equipar, guardar a mochila inteira no depósito</label><div class="tb-eq-nota">pelo socket: tira do depósito e equipa; a peça que sai cai na mochila. O jogo só tem "guardar tudo": o loot da mochila vai junto. Peça de outro personagem só depois que ele trocar. Arco ↔ besta troca a munição do Paladino junto.</div>`, 'opções');
         return h;
     }
     function ligarEquip() {
-        const b = $('#tb-eq-atualizar'); if (b) b.onclick = equipAtualizar;
-        $$('.tb-sub span[data-voc]').forEach(s => s.onclick = () => { EQUIP.voc = s.dataset.voc; renderizar(); });
-        $$('.tb-eq').forEach(e => e.onclick = (ev) => { if (ev.target.closest('.tb-det')) return; const k = e.dataset.k; if (EQUIP.abertos.has(k)) EQUIP.abertos.delete(k); else EQUIP.abertos.add(k); renderizar(); });
+        const corpo = $('#tb-corpo');
+        const b = $('#tb-eq-atualizar'); if (b) b.onclick = () => { if (!EQUIP.lendo && !EQUIP.equipando) equipAtualizar(); };
+        $$('[data-voc]', corpo).forEach(s => s.onclick = () => { if (EQUIP.voc === s.dataset.voc) return; EQUIP.voc = s.dataset.voc; renderizar(); });
+        $$('.tb-eq', corpo).forEach(e => e.onclick = (ev) => { if (ev.target && ev.target.closest && ev.target.closest('.tb-det')) return; const k = e.dataset.k; if (EQUIP.abertos.has(k)) EQUIP.abertos.delete(k); else EQUIP.abertos.add(k); renderizar(); });
         const tudo = $('#tb-eq-tudo'); if (tudo) tudo.onclick = () => { EQUIP.verTudo = !EQUIP.verTudo; renderizar(); };
-        const e4 = $('#tb-eq-equipar4'); if (e4) e4.onclick = () => equiparTrocas(VOCS);
-        const e1 = $('#tb-eq-equipar1'); if (e1) e1.onclick = () => equiparTrocas([EQUIP.voc]);
+        const e4 = $('#tb-eq-equipar4'); if (e4) e4.onclick = () => { if (!EQUIP.equipando) equiparTrocas(VOCS); };
+        const e1 = $('#tb-eq-equipar1'); if (e1) e1.onclick = () => { if (!EQUIP.equipando) equiparTrocas([EQUIP.voc]); };
         const gd = $('#tb-eq-guardar'); if (gd) gd.onchange = () => guardar('equip_guardar', gd.checked);
     }
 
@@ -6680,130 +7007,64 @@
         pintarFaixa();
         posicionarCaixa();
     }
+    /* v2.11 (D2) — REPINTE SEM EFEITO COLATERAL. O corpo era refeito inteiro a
+     * cada chamada (o repinte de 4 s do Status/Analisador/Auto Hunt, cada log,
+     * cada frame que pede renderizar): o select da hunt perdia o foco e fechava
+     * na mão do dono, a seleção de texto sumia, a caixa do "copiar JSON" ia
+     * embora. Agora:
+     *   1. HTML igual ao já pintado → não toca no DOM (nem religa handlers);
+     *   2. HTML diferente com um select ou caixa de texto da gaveta em uso (foco
+     *      nele e nenhum clique/mudança do dono no último 1,5 s) → espera o blur;
+     *      a mudança que o PRÓPRIO dono fez (change no select) repinta na hora
+     *      e a casca devolve o foco ao mesmo controle;
+     *   3. senão, troca o innerHTML, devolve "?" abertos e rolagem e liga os
+     *      handlers da aba (uma linha por tela). */
+    let _htmlPintado = null, _repinteAdiado = null;
+    const REPINTE_DO_DONO_MS = 1500;
+    function campoEmUso(c) {
+        const f = document.activeElement;
+        if (!f || f === c || typeof c.contains !== 'function' || !c.contains(f) || !/^(SELECT|TEXTAREA)$/.test(f.tagName || '')) return null;
+        if (_acaoNaAba && Date.now() - _acaoNaAba.t < REPINTE_DO_DONO_MS) return null;
+        return f;
+    }
+    function adiarRepinte(f) {
+        if (_repinteAdiado === f) return;
+        _repinteAdiado = f;
+        f.addEventListener('blur', () => { if (_repinteAdiado === f) _repinteAdiado = null; renderizar(); }, { once: true });
+    }
     function _renderizar() {
         pintarTrilho();
         const g = $('#tb-gaveta'), c = $('#tb-corpo'); if (!g || !c) return;
         const u = ui();
         g.classList.toggle('on', !!u.aberta && !u.oculto);
         posicionarCaixa();
-        if (!u.aberta || u.oculto) { _abaPintada = null; return; }
+        if (!u.aberta || u.oculto) { _abaPintada = null; _htmlPintado = null; return; }
         const tit = $('#tb-titulo'); if (tit) tit.textContent = (ICONES.find(x => x[0] === ABA) || [])[2] || ABA;
+        const mesmaAba = _abaPintada === ABA;
+        const html = ABA === 'estado' ? telaEstado() : ABA === 'autohunt' ? telaAutoHunt() : ABA === 'scan' ? telaScan()
+            : ABA === 'magia' ? telaMagia() : ABA === 'analise' ? telaAnalise() : ABA === 'equip' ? telaEquip()
+            : ABA === 'progresso' ? telaProgresso() : `<div id="tb-log"></div>`;
+        if (mesmaAba && html === _htmlPintado) { if (ABA === 'log') pintarLog(); return; }
+        if (mesmaAba) { const f = campoEmUso(c); if (f) { adiarRepinte(f); return; } }
         /* v2.3.0 — trocar o innerHTML zera a rolagem: marcar um mapa no Scan
          * jogava a lista de volta ao topo (dono, 27/09). Guarda a posição do
          * corpo e da lista e devolve quando a aba é a mesma. v2.8.0: idem
          * para os "?" abertos (details[data-k]). */
-        const mesmaAba = _abaPintada === ABA;
         const rol = { corpo: mesmaAba ? c.scrollTop : 0, lista: mesmaAba && $('#tb-scan-lista') ? $('#tb-scan-lista').scrollTop : 0 };
         const abertos = new Set(mesmaAba ? $$('details[data-k]', c).filter(d => d.open).map(d => d.dataset.k) : []);
-        if (ABA === 'estado') c.innerHTML = telaEstado();
-        else if (ABA === 'autohunt') c.innerHTML = telaAutoHunt();
-        else if (ABA === 'scan') c.innerHTML = telaScan();
-        else if (ABA === 'magia') c.innerHTML = telaMagia();
-        else if (ABA === 'analise') c.innerHTML = telaAnalise();
-        else if (ABA === 'equip') c.innerHTML = telaEquip();
-        else if (ABA === 'progresso') c.innerHTML = telaProgresso();
-        else c.innerHTML = `<div id="tb-log"></div>`;
-
+        c.innerHTML = html;
+        _htmlPintado = html; _repinteAdiado = null;
         if (ABA === 'log') pintarLog();
         $$('details[data-k]', c).forEach(d => { if (abertos.has(d.dataset.k)) d.open = true; });
         if (mesmaAba) { c.scrollTop = rol.corpo; const l = $('#tb-scan-lista'); if (l) l.scrollTop = rol.lista; }
         _abaPintada = ABA;
+        if (ABA === 'estado') ligarEstado();       // v2.11 (D2) — handlers ao lado de cada tela
+        if (ABA === 'magia') ligarMagia();
+        if (ABA === 'analise') ligarAnalise();
         if (ABA === 'equip') ligarEquip();
         if (ABA === 'progresso') ligarProgresso();
-
-        const exp = $('#tb-exportar');
-        if (exp) exp.onclick = () => {
-            const dados = JSON.stringify({
-                sessoes: sessoes(), resumo: resumoPorHunt(),
-                ws: { frames: WS.frames, tipos: WS.tipos, binarios: WS.bin,
-                      amostrasRecebidas: WS.amostras, ENVIADOS: WS.enviados }
-            }, null, 2);
-            const caixa = document.createElement('textarea');
-            caixa.value = dados; caixa.style.cssText = 'width:100%;height:120px;margin-top:6px;background:#0d1016;color:#dde3ee;border:1px solid #2b3242;font:11px ui-monospace,monospace';
-            exp.insertAdjacentElement('afterend', caixa); caixa.select();
-            (navigator.clipboard ? navigator.clipboard.writeText(dados) : Promise.reject())
-                .then(() => log('dados copiados pra área de transferência (e na caixa abaixo)', 'ok'))
-                .catch(() => log('clipboard bloqueado — os dados estão na caixa abaixo do botão', 'erro'));
-        };
-        const lim = $('#tb-limpar-sessoes');
-        if (lim) lim.onclick = () => {
-            guardar('sessoes', []); log('histórico de sessões apagado', 'ok'); renderizar();
-        };
-        const rec = $('#tb-recat'); if (rec) rec.onclick = async () => { await carregarCatalogos(true); renderizar(); };
         if (ABA === 'scan') ligarScan();           // v2.11 — handlers do Scan ao lado da tela
-        // v1.9.0 — Status e Auto Hunt
-        const vr = $('#tb-venda-rapida'); if (vr) ligarDoisToques(vr, 'venda', 'confirmar: encerrar e vender?', () => cicloDeVenda('venda'), emHunt);
-        const bat = $('#tb-bt-atualizar'); if (bat) bat.onclick = abrirAtualizacao;
-        const fh = $('#tb-finalizar'); if (fh) fh.onclick = () => cicloDeVenda('finalizar');
         if (ABA === 'autohunt') ligarAutoHunt();   // v2.11 — handlers do Auto Hunt ao lado da tela
-        const apr = $('#tb-aprender');
-        if (apr) apr.onclick = async () => {
-            if (_aprendendo) return;
-            _aprendendo = true; apr.disabled = true;
-            try {
-                const r = await aprenderDanosPorRest(false);
-                if (r.erro) { log('sem /spell-numbers (' + r.erro + ') — medindo pelos diálogos', 'info'); await aprenderDanosTodos(); }
-            } finally { _aprendendo = false; renderizar(); }
-        };
-        const cfh = $('#tb-confhunt');
-        if (cfh) cfh.onclick = async () => {
-            cfh.disabled = true;
-            try {
-                const r = await confirmarHuntPeloExplore();
-                if (r.erro) log('não consegui confirmar a hunt: ' + r.erro, 'erro');
-            } catch (e) { log('confirmar hunt estourou: ' + e.message, 'erro'); }
-            cfh.disabled = false;
-            renderizar();
-        };
-        /* v1.8.0 — F5 zera a marcação do Auto Selling (o ciclo de venda não).
-         * Abre a janela de loot, aba Auto Selling, MARCAR TUDO, fecha. Só por
-         * botão, nunca sozinho. */
-        const ase = $('#tb-autosell');
-        if (ase) ase.onclick = async () => {
-            ase.disabled = true;
-            try {
-                const bl = $$('button').find(b => /^LOOT$/.test((b.textContent || '').trim()));
-                if (!bl) throw new Error('botão LOOT não está na tela (fora de caçada?)');
-                bl.click();
-                const aba = await esperarQue(() => tid('loot-config-autosell'), 3000);
-                if (!aba) throw new Error('janela de loot não abriu');
-                aba.click(); await dorme(300);
-                const tudo = await esperarQue(() => tid('auto-sell-all') || $$('[data-testid="window-loot"] button').find(b => /MARCAR TUDO/i.test(b.textContent || '')), 2000);
-                if (!tudo) throw new Error('MARCAR TUDO não apareceu');
-                tudo.click(); await dorme(400);
-                const w = tid('window-loot');
-                const m = w && (w.innerText || '').match(/MARCADOS PARA VENDA\s*(\d+)/);
-                const fechar = tid('window-close-loot'); if (fechar) fechar.click();
-                log('auto-sell: ' + (m ? m[1] : '?') + ' itens marcados para venda', 'ok');
-            } catch (e) {
-                const fechar = tid('window-close-loot'); if (fechar) fechar.click();
-                log('auto-sell falhou: ' + e.message, 'erro');
-            }
-            ase.disabled = false;
-        };
-        $$('[data-modelo]').forEach(b => b.onclick = () => { guardar('modelo', b.dataset.modelo); renderizar(); });
-        const selHunt = $('#tb-hunt');
-        if (selHunt) {
-            selHunt.onchange = () => {
-                const v = selHunt.value;
-                guardar('hunt_id', v === '' ? null : parseInt(v));
-                renderizar();
-            };
-        }
-        $$('[data-usar-palpite]').forEach(b => {
-            b.onclick = () => {
-                guardar('hunt_id', parseInt(b.dataset.usarPalpite));
-                renderizar();
-            };
-        });
-        const selBoss = $('#tb-boss');
-        if (selBoss) selBoss.onchange = () => { guardar('boss_nome', selBoss.value || null); renderizar(); };
-        const ap4 = $('#tb-aplicar-todos');
-        if (ap4) ap4.onclick = () => {
-            const h = alvoDoModelo();
-            if (h) aplicarEmTodos(ler('modelo', 'equilibrado'), h);
-            else log(ler('modelo', 'equilibrado') === 'boss' ? 'escolha o boss primeiro' : 'sem hunt confirmada', 'erro');
-        };
     }
 
     /* =========================================================================
