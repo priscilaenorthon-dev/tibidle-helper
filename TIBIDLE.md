@@ -3916,3 +3916,38 @@ Lançamento oficial em **18/09/2026**; o progresso do beta não passou para o la
 - **Premium hoje**: +10 % de EXP; loot igual para todos; nenhuma hunt exclusiva. Guilda não dá bônus. Torre "em breve".
 - **Termos (15/09, seção 4)**: proíbe "bots, scripts, exploits, macros ou qualquer forma de automação não
   prevista pelo próprio jogo", com possível banimento. Decisão do dono (29/09): manter o Auto Hunt.
+
+### 2.11.0 — auditoria completa, correções e três abas novas (29/09)
+
+Auditoria com 6 revisores (Auto Hunt/Scan, socket, layout, Magia, código, produto) e implementação por
+agentes em paralelo, cada um numa área, juntados com testes. **Testes: 161 em 9 arquivos** (`testes/*.test.js`,
+rodam em qualquer clone; o CI em `.github/workflows/testes.yml` roda tudo a cada push). Roteiro de teste com a
+conta logada: `docs/teste-ao-vivo-2.11.md`.
+
+- **Auto Hunt / Scan**: lista "nunca vender" (equipamento, material de imbuement e lista do dono são
+  desmarcados antes de confirmar; se não conseguir desmarcar, não vende); Scan para em morte/`ended` e devolve
+  mapa, lure e presets; trava comum entre ciclo, Scan e Mercado; depot cheio desliga em vez de ciclar; F5 só
+  retoma ciclo pendente recente; não encerra boss; veredito por xp sem boost, sujas e outro nível fora do
+  ranking; histórico de ciclos; telas refeitas.
+- **Socket e robustez**: `profiles_set` só com perfil real do servidor (antes podia apagar presets e cura);
+  boss/torre (huntId 800) reconhecidos; ticket/token redigidos em tudo que se copia; grampo do WebSocket com
+  `Reflect.construct` e adoção só do socket do welcome; `falhou()` central (Auto Hunt desliga após 5 falhas);
+  catálogos numa gaveta comum, timeout de 10 s, cache velho quando a rede cai; render agendado; abates/xp do
+  analisador do próprio jogo (não clica mais em `hud-analyzer`); reconexão limpa o estado.
+- **Magia**: simulador puro da fila (`simularFila`) para o veredito do kit inteiro (poção só de quem bebe +
+  runa por carga); uma magia por grupo secundário; Boss com runa e ML; "mana sobrando" só para quem não bebe;
+  curas por gatilho crescente; veto de imunidade ponderado em área; slots mortos cortados; munição por `/ammo`;
+  cache do plano; releitura do dano depois de EQUIPAR.
+- **Painel**: não cobre barra de atalhos, mochila nem barra de ação (lugar padrão à esquerda da cena, altura
+  limitada); arrasto por toque; folha inferior no celular; fonte ≥ 10,5 px, alvos ≥ 28 px, contraste 5:1;
+  botões acessíveis e Esc; faixa de retorno por aba (`avisar`); contador de erros no Log.
+- **Telas**: escape de todo texto externo; repinte só quando o HTML muda (fim do botão reabilitado e do foco
+  perdido); Magia segmentada com selo de veredito; Equip em português; "OURO —" sem leitura.
+- **Progresso (nova, só leitura)**: mochila de chaves (aviso de chave perdida), chave → Elite, bestiário com
+  horas até o próximo marco (também nos cartões do Scan), plano offline, Prey, calculadoras de refino e imbuement.
+- **Mercado (nova)**: lista o baú negociável com preço = menor anúncio de outro vendedor − 1 (mesmo item;
+  forjado = mesma raridade e refino), sem concorrente = média de 30 dias, nunca abaixo do NPC após a taxa de 5 %;
+  anunciar por 2 toques em fila (retirar → `market_create`), 1 pedido a cada 3,5 s; revisar meus anúncios e
+  resgatar a caixa de entrada por botão; nada re-anuncia sozinho.
+- **Diagnóstico (Status)**: relatório só de leitura com a FORMA das mensagens (sem valores) e o que falta.
+- **Repositório**: dados da conta fora; scripts Python pré-wipe apagados; §15 com as regras atuais da wiki.

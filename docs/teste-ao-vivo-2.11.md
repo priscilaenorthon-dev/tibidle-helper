@@ -14,7 +14,7 @@ navegador já logado — ou você mesmo, seguindo item por item.
 
 ## 0. Instalação e Diagnóstico 🟢
 - [ ] Instale pelo link raw da versão entregue (Tampermonkey → Sobrescrever) e dê F5 no jogo.
-- [ ] O título da gaveta mostra **v2.11.x**. O painel fica **à esquerda da cena** e não cobre a barra de atalhos, a mochila nem ENCERRAR CAÇADA.
+- [ ] O título da gaveta mostra **v2.11.0**. O painel fica **à esquerda da cena** e não cobre a barra de atalhos, a mochila nem ENCERRAR CAÇADA.
 - [ ] Na cidade: aba **Status → DIAGNÓSTICO**. Abre uma aba com o relatório (e copia). Cole na conversa.
 - [ ] Entre numa caçada, espere 1 min e rode o **DIAGNÓSTICO** de novo. Cole também. (É daqui que saem as confirmações de formato dos itens 3, 5 e 7.)
 
@@ -76,11 +76,19 @@ Compare cada número com a janela do jogo:
 - [ ] "ir ›" pede confirmação (2 toques).
 - [ ] (Opcional, com cuidado) Se alguém morrer num mapa do Scan, o Scan para e não entra no próximo.
 
-## 8. Mercado 🔴 (se a aba estiver na versão entregue)
-- [ ] Abra a aba Mercado: a lista mostra itens do baú com o **menor anúncio − 1** e, sem concorrente, a **média de 30 dias**.
-- [ ] Itens com preço abaixo do NPC (depois da taxa de 5 %) aparecem como "vender no NPC".
-- [ ] Anuncie **um** item barato. Confira no mercado do jogo (Minhas ordens) o preço e a quantidade.
-- [ ] "Revisar meus anúncios" mostra se alguém ficou mais barato e quanto custaria refazer (nada é refeito sozinho).
+## 8. Mercado 🔴 (Premium)
+Antes de anunciar, rode o **DIAGNÓSTICO** depois do ATUALIZAR do Mercado e cole: ele guarda a forma das mensagens `market_*`.
+- [ ] **ATUALIZAR** só lê: no Log não aparece create/withdraw/cancel/claim. Linha de status: "Premium ✓ até dd/mm", "taxa 5%", ações/min.
+- [ ] Lista: itens do baú e da mochila; fora da lista os selados, imbuídos, com cadeado, os que o Equip marcou como melhor/reserva e a sua lista "nunca vender".
+- [ ] Preço: **menor anúncio de outro vendedor − 1**; se o menor é seu, mantém o seu; sem concorrente, **média de 30 dias**; sem histórico, campo vazio (você digita).
+- [ ] Confira 2 itens no mercado do jogo: o menor anúncio bate; a média de 30 dias bate com a do livro.
+- [ ] Um item de loot barato aparece como **"vender no NPC"** (líquido após a taxa ≤ o que o NPC paga).
+- [ ] 🔴 Anuncie **um** item empilhável barato: ANUNCIAR (1) → confirmar. No jogo, **Minhas ordens**: preço e quantidade batem; a taxa cobrada bate com a mostrada e com o Log.
+- [ ] 🔴 (Opcional) Uma peça forjada: vai com quantidade 1; a ordem aparece com a raridade e o refino certos. (A wiki diz que peça Incomum+ ou com refino não vai ao mercado — este teste tira a dúvida.)
+- [ ] **REVISAR**: "alguém mais barato" bate com o livro do jogo; cancelar (2 toques) devolve o item e a taxa não volta (esperado).
+- [ ] **RESGATAR TUDO**: o ouro das vendas entra na carteira.
+- [ ] Com uma fila de ANUNCIAR rodando, o Auto Hunt mostra "Mercado em andamento" e não dispara.
+- [ ] Se aparecer erro (preço acima do teto, item que saiu da mochila): o Log mostra o código do jogo e só aquele item falha.
 
 ---
 
