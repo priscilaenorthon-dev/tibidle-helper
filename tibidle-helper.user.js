@@ -1175,19 +1175,6 @@
         return preco / Math.max(1, m.charges || 1);
     }
 
-    /* v1.8.0 — MANA SOBRANDO. O bestiário da conta dá +6 MP/s; em 22/09 o
-     * Feiticeiro ficava em 98% de mana com Fire Wave e Energy Beam nos slots.
-     * Nesse caso a mana NÃO é o gargalo e ordenar por eficiência (6 de mana
-     * primeiro) só deixa regeneração na mesa. Regra: em regeneração, se a
-     * barra do personagem está ≥ 80%, o Equilibrado ordena por DPS. */
-    function manaPercent(voc) {
-        const el = $$('[aria-label]').find(e => (e.getAttribute('aria-label') || '').toUpperCase().startsWith(voc + ':'));
-        const m = el && (el.getAttribute('aria-label') || '').match(/Mana\s*(\d+)%/i);
-        if (!m) return null;
-        const cache = ler('mana_pct', {}); cache[voc] = parseInt(m[1]); guardar('mana_pct', cache);
-        return parseInt(m[1]);
-    }
-    const MANA_SOBRANDO = 80;
 
     function avaliar(m, hunt, info, vocForcada, danos) {
         const casas = casasDaMagia(m);
@@ -1374,7 +1361,7 @@
      *  ⭐ v2.6.0 — INTELIGENTE (pedido do dono, 28/09: "a mais inteligente de
      *  todas, para matar o mob mais rápido; combinações de poções, magias,
      *  runas, defesa e suporte para cada personagem").
-     *  Fontes: logbook da comunidade (Toxic Butter, Discord 27/09) e a Wiki
+     *  Fontes: logbook de um jogador da comunidade (Discord 27/09) e a Wiki
      *  /configurando-o-combate: os slots de ataque são FILA DE PREFERÊNCIA
      *  (o primeiro pronto dispara → cd longo no slot 1); mana gasta em
      *  ataque → suporte → cura; cura forte ~40 % e fraca ~70 %; poções nascem
@@ -2289,7 +2276,7 @@
         try { await _aplicarEmTodos(modelo, hunt); } finally { _aplicando = false; renderizar(); }
     }
     async function _aplicarEmTodos(modelo, hunt) {
-        /* v1.8.2 — CONTA NOVA SEM DANO MEDIDO. Na conta u2tag (23/09) o
+        /* v1.8.2 — CONTA NOVA SEM DANO MEDIDO. Numa conta de teste (23/09) o
          * APLICAR saiu com 1 runa por mago e nada no Cavaleiro: o plano só
          * usa magia com dano conhecido, e ali nada tinha sido medido. Como o
          * clique em APLICAR é do dono, medir antes faz parte do pedido —
@@ -2830,6 +2817,7 @@
     }
     function observarRecebido(o) {
         try { observarProgresso(o); } catch { }       // v2.11 — aba Progresso: só leitura (chaves, bestiário, prey, plano offline)
+        try { diagObservar(o); } catch { }            // v2.11 — Diagnóstico: guarda só a FORMA das mensagens
         if (!o || !o.type) return;
         const d = (o.data && typeof o.data === 'object') ? o.data : {};
         if (o.type === 'depot_state' && Array.isArray(d.entries)) {
@@ -3710,7 +3698,7 @@
         const fila = [];
         for (const id of ids) for (const modelo of modelos) fila.push({ id, modelo });
         if (!fila.length) { log('Scan: marque pelo menos um mapa' + (c.comparar ? ' e uma variante' : ''), 'erro'); return false; }
-        if (!socketAberto() || !ESTADO_WS.profiles) { log('Scan: socket sem perfis — dá um F5 com o helper instalado', 'erro'); return false; }
+        if (!socketAberto() || !ESTADO_WS.perfisDoServidor) { log('Scan: socket sem perfis — dá um F5 com o helper instalado', 'erro'); return false; }
         const ocup = travaJogo();
         if (ocup) { log('Scan: ' + ocup + ' em andamento — espera terminar', 'erro'); return false; }
         if (ESTADO_WS.boss) { log('Scan: boss em andamento — termina o boss antes', 'erro'); return false; }
@@ -4082,7 +4070,9 @@
         if (anOk && aN.anLoot != null && a0.anLoot != null) { s.lootH = Math.round((aN.anLoot - a0.anLoot) / dur * 3600); s.supH = Math.round((aN.anSup - a0.anSup) / dur * 3600); }
         // fator real = custo medido / custo previsto SEM o fator (o previsto já traz o fator)
         if (s.custoRealAbate != null && s.custoPrevisto && !regen) {
-            const semFator = s.custoPrevisto / fatorDesperdicio(SESSAO.hp || 1);
+            /* v2.11 — o previsto agora soma runa (que não leva a curva): usar o custo
+             * SEM a curva que viabilidadeParty devolve; a divisão só vale para sessão velha */
+            const semFator = SESSAO.custoSemFator != null ? SESSAO.custoSemFator : s.custoPrevisto / fatorDesperdicio(SESSAO.hp || 1);
             s.fatorReal = Math.round(s.custoRealAbate / Math.max(0.01, semFator) * 100) / 100;
         }
         guardarSessao(s);
@@ -4178,12 +4168,12 @@
         if (!SESSAO) {
             const w = h && h.monsters ? (h.monsters.reduce((s, m) => s + (m.weight || 1), 0) || 1) : 1;
             const hp = h && h.monsters ? h.monsters.reduce((s, m) => s + m.health * (m.weight || 1), 0) / w : null;
-            let custoPrev = null;
-            try { const vp = viabilidadeParty(ler('modelo', 'equilibrado'), h); if (vp) custoPrev = vp.custoPorAbate; } catch (e) { }
+            let custoPrev = null, custoPrevSemFator = null;
+            try { const vp = viabilidadeParty(ler('modelo', 'equilibrado'), h); if (vp) { custoPrev = vp.custoPorAbate; custoPrevSemFator = vp.custoSemFator != null ? vp.custoSemFator : null; } } catch (e) { }
             SESSAO = {
                 huntId: idAgora, huntTitle: h ? h.title : 'desconhecida',
                 hp: hp ? Math.round(hp) : null, loot: h ? LOOT_CACHE[h.id] : null,
-                custoPrevisto: custoPrev, regen: partyEmRegen(), amostras: [], a0: null, pctMax: 0
+                custoPrevisto: custoPrev, custoSemFator: custoPrevSemFator, regen: partyEmRegen(), amostras: [], a0: null, pctMax: 0
             };
         }
         const exp = lerExpTotal();
@@ -5419,10 +5409,14 @@
                 r.sorte ? `<span class="tb-av">sorte +${r.sorte.toLocaleString('pt-BR')}: ${(r.raros || []).map(escHtml).join(', ')}</span>` : '',
                 r.ultimaFalha ? `<span class="tb-ruim">última tentativa (${hora(r.ultimaFalha.t)}): ${escHtml(r.ultimaFalha.erro)}</span>` : ''
             ].filter(Boolean).map(x => `<div>${x}</div>`).join('') + (razaoTexto(r.razao) ? razaoHtml(r.razao, true) : '');
+            /* v2.11 — bestiário no resultado do Scan (aba Progresso): quanto falta para o próximo
+             * bônus permanente deste mapa, no ritmo de abates medido aqui. pgBestiarioTexto já escapa. */
+            const bestiarioDoCartao = r => { try { const t = pgBestiarioTexto(r.id, { [r.id]: { abatesH: r.abatesH } }); return t ? `<div class="tb-mut">${t}</div>` : ''; } catch (e) { return ''; } };
             const cartao = r => `<div class="tb-sc-card ${r.fora ? 'fora' : ''}">
                 <div class="tb-sc-cab"><b>${escHtml(r.title)}</b>${r.modelo && r.modelo !== 'equilibrado' ? `<span class="tb-tag">${escHtml(nomeModelo(r.modelo))}</span>` : ''}<span class="tb-selo ${selo(r)}">${escHtml(r.veredito)}</span></div>
                 <div class="tb-sc-num"><div><small>xp/h sem boost</small><b class="${!r.fora && xpBase(r) >= v.melhorXp * 0.9 ? 'tb-ok' : ''}">${fmtK(xpBase(r))}</b><small>real ${fmtK(r.xpH)} · nível em ${tNivel(r.xpH)}</small></div>
                   <div><small>ouro/h ${r.estavelH != null ? 'estável' : 'bruto'}</small><b class="${ouroBase(r) < 0 ? 'tb-ruim' : !r.fora && ouroBase(r) >= v.melhorOuro * 0.9 ? 'tb-ok' : ''}">${fmtO(ouroBase(r))}</b><small>loot − poção${r.ouroH != null && r.estavelH != null ? ' · bruto ' + fmtO(r.ouroH) : ''}</small></div></div>
+                ${bestiarioDoCartao(r)}
                 <div class="tb-sc-pe"><details class="tb-aj" data-k="scan-r-${r.id}-${escHtml(r.modelo || '')}"><summary>+</summary><div class="tb-sc-det">${detalhe(r)}</div></details>
                   <button type="button" class="tb-bt mini" data-scan-ir="${r.id}" ${ocupado ? 'disabled' : ''} title="trocar a party para este mapa (pede confirmação)">ir ›</button></div>
               </div>`;
@@ -5714,6 +5708,7 @@
                 if (g.erro) log('equip: guardar a mochila no depósito falhou — ' + g.erro, 'erro');
             }
             log(`equip: ${feitas} de ${fila.length} troca(s) feita(s)`, feitas ? 'ok' : 'erro');
+            if (feitas) pedirReleituraDeDanos('equipar');   // v2.11 — arma nova muda o dano de todas as magias
         } catch (e) { log('equip: estourou — ' + e.message, 'erro'); }
         EQUIP.equipando = false;
         await equipAtualizar();
@@ -6631,6 +6626,118 @@
         }, 5000);
     }
 
+    /* @@DIAGNOSTICO-INICIO */
+    /* =========================================================================
+     *  ⭐ v2.11 — DIAGNÓSTICO (só leitura; nada é enviado ao jogo)
+     *
+     *  Várias peças da 2.11 leem dados que ninguém viu ao vivo com a conta
+     *  logada (chaves, bestiário, prey, meta, skills, inventário, painel de
+     *  venda). O diagnóstico confere, num clique, se cada um está chegando no
+     *  formato que o código espera e monta um relatório para colar na conversa.
+     *  Guarda só a FORMA das mensagens (nomes de campo e tipos) — nunca
+     *  valores —, então não há token, ticket nem id de conta no relatório.
+     * ====================================================================== */
+    const DIAG = { formas: {}, vistos: {} };
+    function diagForma(x, prof) {
+        if (x === null) return 'null';
+        if (Array.isArray(x)) return x.length ? `[${x.length}× ${prof < 3 ? diagForma(x[0], prof + 1) : '…'}]` : '[]';
+        if (typeof x !== 'object') return typeof x;
+        if (prof >= 3) return '{…}';
+        const k = Object.keys(x).slice(0, 40);
+        return '{' + k.map(c => c + ':' + diagForma(x[c], prof + 1)).join(', ') + (Object.keys(x).length > 40 ? ', …' : '') + '}';
+    }
+    function diagObservar(o) {
+        if (!o || !o.type) return;
+        DIAG.vistos[o.type] = (DIAG.vistos[o.type] || 0) + 1;
+        const d = o.data && typeof o.data === 'object' ? o.data : null; if (!d) return;
+        const guardarForma = (k, v) => { if (v !== undefined) DIAG.formas[k] = { forma: diagForma(v, 0), t: Date.now() }; };
+        if (o.type === 'frame') {
+            const st = d.state || {};
+            guardarForma('frame.state (campos)', Object.fromEntries(Object.keys(st).map(k => [k, typeof st[k]])));
+            guardarForma('frame.state.keyBag', st.keyBag);
+            guardarForma('frame.state.inventory[0]', Array.isArray(st.inventory) ? st.inventory[0] : st.inventory);
+            const p0 = Array.isArray(st.party) ? st.party.find(Boolean) : null;
+            if (p0) guardarForma('frame.state.party[].skills', p0.skills);
+            guardarForma('frame.analyzer', d.analyzer);
+            guardarForma('frame.bestiaryKills', d.bestiaryKills);
+            if (Array.isArray(d.events)) for (const e of d.events) if (e && e.kind && !DIAG.formas['evento ' + e.kind]) guardarForma('evento ' + e.kind, e);
+        } else if (o.type === 'welcome' || o.type === 'resume') {
+            guardarForma(o.type + ' (campos)', Object.fromEntries(Object.keys(d).map(k => [k, typeof d[k]])));
+            guardarForma(o.type + '.meta', d.meta);
+        } else if (/^meta|prey|market|depot_state|sell_result|ended$/.test(o.type)) {
+            guardarForma(o.type, d);
+        }
+    }
+    const DIAG_ANCORAS = ['rail-level-n', 'hud-gold', 'actionbar-explore', 'actionbar-selling', 'actionbar-depot', 'rail-backpack-toggle',
+                          'lure-toggle', 'stop', 'hud-analyzer', 'scene-slot-attack-0', 'scene-slot-mana-0', 'party-member-KNIGHT'];
+    function montarDiagnostico() {
+        const L = [], ok = (s) => L.push('OK       ' + s), falta = (s) => L.push('FALTA    ' + s), ver = (s) => L.push('CONFERIR ' + s);
+        const idade = (t) => t ? Math.round((Date.now() - t) / 1000) + ' s' : '—';
+        L.push(`Tibidle Helper ${VERSAO} · diagnóstico ${new Date().toLocaleString('pt-BR')} · tela ${window.innerWidth}×${window.innerHeight}`);
+        L.push('Só leitura: forma dos dados (campos e tipos), sem valores, token ou id.');
+        L.push('');
+        L.push('— Conexão');
+        (CONTA ? ok : ver)('conta identificada: ' + (CONTA ? 'sim' : 'não (sem /auth/me)'));
+        (socketAberto() ? ok : falta)('socket do jogo aberto');
+        (ESTADO_WS.perfisDoServidor ? ok : falta)('perfis vieram do servidor (welcome/resume) — sem isto o APLICAR vai pelas janelas');
+        for (const v of VOCS) (perfilReal(v) ? ok : falta)(`perfil real de ${v}`);
+        (ESTADO_WS.worldToken ? ok : falta)('worldToken presente (dano real via /spell-numbers)');
+        const fr = ESTADO_WS.frame;
+        (fr && frameFresco() ? ok : ver)('frame do jogo: último há ' + idade(fr && fr.t) + (fr && frameFresco() ? '' : ' (entre numa caçada para ver)'));
+        L.push('');
+        L.push('— Catálogos');
+        (CAT.hunts && CAT.hunts.length ? ok : falta)(`hunts: ${(CAT.hunts || []).length}`);
+        (CAT.magias && CAT.magias.length ? ok : falta)(`magias: ${(CAT.magias || []).length}`);
+        (CAT.bosses && CAT.bosses.length ? ok : ver)(`bosses: ${(CAT.bosses || []).length}`);
+        (CAT.pocoes ? ok : ver)('poções: ' + (CAT.pocoes ? 'sim' : 'não'));
+        for (const v of VOCS) { const n = danosMedidosNesteNivel(v); (n ? ok : ver)(`dano medido no nível atual — ${v}: ${n} magias`); }
+        L.push('');
+        L.push('— Dados que a 2.11 lê e ninguém viu ao vivo');
+        const sk = ESTADO_WS.sk || {};
+        for (const v of VOCS) { const x = sk[v] || {}; const ch = Object.keys(x); (ch.length ? ok : ver)(`skills lidas de ${v}: ${ch.length ? ch.map(k => k + '=' + x[k]).join(' ') : 'nenhuma'}`); }
+        if (!sk.KNIGHT || sk.KNIGHT.melee == null) ver('corpo a corpo do Knight não lido — confira os nomes em "frame.state.party[].skills" abaixo');
+        if (!sk.SORCERER || sk.SORCERER.ml == null) ver('nível mágico não lido — confira os nomes em "frame.state.party[].skills" abaixo');
+        (PROG.chaves ? ok : ver)('mochila de chaves: ' + (PROG.chaves ? 'lida' : 'sem dado (entre numa caçada)'));
+        (Object.keys(PROG.best || {}).length ? ok : ver)(`bestiário: ${Object.keys(PROG.best || {}).length} hunts com contador`);
+        (PROG.meta ? ok : ver)('meta (prey, wildcards, auto leave): ' + (PROG.meta ? Object.keys(PROG.meta).join(', ') : 'não chegou — abra a Prey no jogo'));
+        (fr && fr.an ? ok : ver)('analisador do jogo no frame: ' + (fr && fr.an ? 'sim' : 'não'));
+        L.push('');
+        L.push('— Tela do jogo (âncoras que o helper usa; muda conforme cidade/caçada)');
+        const achou = DIAG_ANCORAS.filter(a => tid(a)), naoAchou = DIAG_ANCORAS.filter(a => !tid(a));
+        ok('visíveis agora: ' + (achou.join(', ') || 'nenhuma'));
+        if (naoAchou.length) ver('não visíveis agora: ' + naoAchou.join(', '));
+        const sp = tid('sell-panel');
+        if (sp) {
+            const linha = sp.querySelector('[data-testid^="sell-row-"]'), caixa = sp.querySelector('[data-testid^="sell-check-"]');
+            ok('painel de venda ABERTO — linha: ' + (linha ? linha.getAttribute('data-testid') : 'nenhuma') + ' · caixa: ' + (caixa ? caixa.getAttribute('data-testid') : 'nenhuma'));
+            if (caixa) L.push('         caixa (HTML): ' + caixa.outerHTML.replace(/\s+/g, ' ').slice(0, 300));
+        } else ver('painel de venda fechado — para conferir o "nunca vender", abra VENDER na cidade e rode de novo (não confirme a venda)');
+        L.push('');
+        L.push('— Erros desde que a página abriu');
+        const lug = Object.entries(ERROS.porLugar || {});
+        if (!lug.length) ok('nenhuma falha registrada');
+        for (const [onde, x] of lug) ver(`${onde}: ${x.n}× (última: ${String(x.msg || '').slice(0, 120)})`);
+        try { let tot = 0, nosso = 0; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i), n = (localStorage.getItem(k) || '').length + k.length; tot += n; if (k.startsWith('tb_helper_')) nosso += n; } ok(`localStorage: ${Math.round(tot / 1024)} KB no total, ${Math.round(nosso / 1024)} KB do helper`); } catch (e) { ver('localStorage ilegível'); }
+        L.push('');
+        L.push('— Mensagens vistas (tipo: quantas)');
+        L.push('         ' + (Object.entries(DIAG.vistos).map(([k, n]) => k + ':' + n).join(' · ') || 'nenhuma'));
+        L.push('');
+        L.push('— Forma dos dados (campos e tipos)');
+        for (const [k, x] of Object.entries(DIAG.formas)) L.push(`  ${k} (há ${idade(x.t)}): ${x.forma.slice(0, 900)}`);
+        return L.join('\n');
+    }
+    function rodarDiagnostico() {
+        let txt;
+        try { txt = montarDiagnostico(); } catch (e) { falhou('diagnóstico', e); return; }
+        DIAG.ultimo = txt;
+        const n = (re) => (txt.match(re) || []).length;
+        const resumo = `diagnóstico: ${n(/^OK /gm)} ok · ${n(/^FALTA /gm)} faltando · ${n(/^CONFERIR /gm)} a conferir — relatório copiado/aberto numa aba nova`;
+        try { navigator.clipboard.writeText(txt).catch(() => { }); } catch (e) { }
+        try { const u = URL.createObjectURL(new Blob([txt], { type: 'text/plain;charset=utf-8' })); window.open(u, '_blank'); setTimeout(() => URL.revokeObjectURL(u), 60000); } catch (e) { }
+        if (typeof avisar === 'function') avisar('estado', resumo, n(/^FALTA /gm) ? 'erro' : 'ok'); else log(resumo, 'ok');
+    }
+    /* @@DIAGNOSTICO-FIM */
+
     /* ⚠ O CORPO INTEIRO VAI NUM try. Motivo real (30/08): eu escrevi
      * `$('[data-usar-palpite]').forEach` — um cifrão em vez de dois. `$` é
      * querySelector e devolve UM nó, então `.forEach` estourou TypeError. Só
@@ -6850,7 +6957,7 @@
         try { const n = limparChavesLegadas(); if (n) log(`${n} chaves de dano no formato antigo removidas`, 'info'); } catch (e) { }
         try {
             const pg = purgarSeEraVelha();
-            if (pg) log(`era ${pg.de || '(nenhuma)'} -> ${pg.para}: ${pg.apagadas} chaves medidas apagadas. Dano e curva precisam ser remedidos.`, 'erro');
+            if (pg) log(pg.de ? `era ${pg.de} -> ${pg.para}: ${pg.apagadas} chaves medidas apagadas. Dano e curva precisam ser remedidos.` : `primeira vez nesta era (${pg.para}) — nada a apagar`, pg.de ? 'erro' : 'info');
         } catch (e) { console.error('[TB] purga', e); }
         // os catálogos vêm SEMPRE, mesmo que o painel tenha falhado em desenhar
         const okCat = await carregarCatalogos(false);
