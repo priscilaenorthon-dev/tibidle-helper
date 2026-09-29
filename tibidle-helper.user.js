@@ -7030,7 +7030,7 @@
         L.push('');
         L.push('— Tela do jogo (âncoras que o helper usa; muda conforme cidade/caçada)');
         const achou = DIAG_ANCORAS.filter(a => tid(a)), naoAchou = DIAG_ANCORAS.filter(a => !tid(a));
-        ok('visíveis agora: ' + (achou.join(', ') || 'nenhuma'));
+        (achou.length ? ok : ver)('visíveis agora: ' + (achou.join(', ') || 'nenhuma — abra o jogo logado'));
         if (naoAchou.length) ver('não visíveis agora: ' + naoAchou.join(', '));
         const sp = tid('sell-panel');
         if (sp) {
