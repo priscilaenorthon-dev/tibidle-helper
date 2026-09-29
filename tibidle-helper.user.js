@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.8.4
+// @version      2.8.5
 // @description  Magia Inteligente (Econômica / Equilibrado / Área / Boss) + Analisador + Auto Hunt (mochila cheia → finalizar, purificar, vender, depot, voltar). Hunt, boss, mochila e ouro lidos do WebSocket; APLICAR NOS 4 e dano real pelo socket/REST, sem abrir janela. Scan: mede N mapas por 5 min cada (lure máximo, Equilibrado) e diz qual vale para XP, ouro ou os dois. Inteligente: 4 slots por DPS + poções, cura, suporte e munição. Nada automático nos slots. Equip: ranqueia corpo + depósito + mochila por vocação e slot e equipa pelo socket só por botão.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -28,7 +28,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.8.4';
+    const VERSAO = '2.8.5';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
