@@ -23,10 +23,12 @@ Ao mudar comportamento: suba as duas versões juntas e registre no fim do `TIBID
 ## Regras do dono (não quebrar)
 - Nada que envia comando ao jogo dispara sozinho — só por botão (2 toques nas ações caras). Exceções: Auto Hunt e Scan quando
   o dono liga. Abas Progresso e Diagnóstico são só leitura.
-- O jogo aceita **uma conexão por conta**: nunca abra um navegador novo/automatizado logado na conta (derruba a sessão do dono).
-  Para testar ao vivo use o **Chrome do dono já logado** (extensão Claude in Chrome / `/chrome`).
+- **Teste ao vivo: carta branca** (decisão do dono em 30/09). O Claude pode testar sozinho no navegador do Playwright
+  (MCP `playwright`, perfil `.playwright-mcp` com Tampermonkey) ou no Chrome do dono, e rodar qualquer item 🟡/🔴 do roteiro
+  (aplicar magia, equipar, Auto Hunt, Scan, anunciar no mercado) sem pedir confirmação. Relatar depois o que fez e o que mudou.
+- O jogo aceita **uma conexão por conta**: logar no Playwright derruba a sessão do Chrome do dono (e vice-versa). Isso é
+  aceito; só avisar na resposta quando acontecer.
 - Nunca peça nem digite a senha do Google do dono.
-- Antes de qualquer item 🟡/🔴 do roteiro (aplicar magia, equipar, Auto Hunt, Scan, anunciar no mercado), peça confirmação.
 - Termos do jogo (seção 4) proíbem automação; o dono decidiu manter o Auto Hunt conscientemente.
 
 ## Estado do teste ao vivo (29/09)
