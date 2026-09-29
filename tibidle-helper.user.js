@@ -491,6 +491,18 @@
         try { console.log('[TB]', linha.msg); } catch (e) { }
     }
     /* @@ARMAZEM-FIM */
+    /* v2.10 — FAIXA DE RETORNO (auditoria de UI, 29/09): "Venda rápida" fora
+     * da cidade não mostrava nada na aba — o erro ia só para o Log, com um
+     * ponto vermelho que sumia na linha seguinte. avisar() grava no Log (via
+     * log) E mostra a mensagem por 10 s numa faixa logo abaixo do cabeçalho da
+     * gaveta, só na aba que pediu. Use no lugar de log() para o RESULTADO de
+     * uma ação da tela — não chame os dois (sairia duplicado no Log).
+     * aba = chave de ICONES ('estado', 'magia', 'scan'…); tipo = 'ok' | 'erro' | 'info'. */
+    const AVISOS = {};
+    function avisar(aba, msg, tipo) {
+        AVISOS[aba] = { t: Date.now(), msg: String(msg), tipo: tipo || 'info' };
+        log(msg, tipo);
+    }
 
     /* =========================================================================
      *  CATÁLOGOS — busca no próprio jogo e guarda em localStorage
@@ -3706,85 +3718,133 @@
      * cobria atalhos, chat e ENCERRAR; Equip rolava 3.937 px. Agora: trilho de
      * 44 px na borda direita, gaveta de 300 px que abre ao clicar no ícone,
      * telas com botão principal no topo e explicação atrás de um "?". */
+    /* v2.10 — CASCA REVISTA (auditoria de UI com o CSS real do jogo, 29/09):
+     * cores em variáveis (--tb-mut #9aa4b8 dá ≥ 4,5:1 até sobre #2b3242; o
+     * #7d879b antigo dava 4,03 sobre #232936), fonte mínima 10,5 px (havia
+     * 8,75), alvos ≥ 28 px no desktop e ≥ 40 px no celular (✕ era 15×16, alça
+     * 26×12), gaveta em position:fixed própria (abre para o lado com espaço e
+     * cresce para cima perto do fundo) e, até 640 px, trilho horizontal com
+     * rótulo + gaveta como folha inferior. Classes das telas continuam as mesmas. */
     const CSS = `
-    #tb-caixa{position:fixed;z-index:99999;display:flex;align-items:flex-start;gap:4px}
+    #tb-caixa,#tb-mostrar{--tb-bg:#12151c;--tb-bg2:#171b24;--tb-cx:#1a1f29;--tb-campo:#232936;--tb-borda:#2b3242;--tb-borda2:#3a4356;--tb-texto:#dde3ee;--tb-mut:#9aa4b8;--tb-ouro:#ffd479;--tb-fmin:10.5px;--tb-alvo:28px}
+    #tb-caixa{position:fixed;z-index:99999;left:8px;top:84px}
     #tb-caixa.tb-oculto{display:none}
-    #tb-trilho{width:44px;background:#12151c;border:1px solid #2b3242;border-radius:10px;display:flex;flex-direction:column;align-items:center;padding:5px 0 4px;gap:1px;font:12px/1.4 ui-monospace,Consolas,monospace;color:#dde3ee;box-shadow:0 8px 30px #0009;transition:transform .15s}
-    #tb-alca{width:26px;height:12px;border-radius:6px;background:#2b3242;cursor:grab;margin-bottom:5px}
-    #tb-cab{cursor:grab}
-    #tb-alca:active{cursor:grabbing}
-    .tb-ico{position:relative;width:36px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#9fb0c9;font-size:17px;user-select:none}
-    .tb-ico:hover{background:#232936;color:#fff}
-    .tb-ico.on{background:#2c3550;color:#ffd479}
-    .tb-ico .tb-dot{position:absolute;right:5px;top:4px;width:7px;height:7px;border-radius:4px;display:none}
+    #tb-caixa button{font-family:inherit}
+    #tb-caixa :focus-visible,#tb-mostrar:focus-visible{outline:2px solid var(--tb-ouro);outline-offset:1px}
+    #tb-trilho{width:46px;box-sizing:border-box;background:var(--tb-bg);border:1px solid var(--tb-borda);border-radius:10px;display:flex;flex-direction:column;align-items:center;padding:3px 0;gap:1px;font:12px/1.4 ui-monospace,Consolas,monospace;color:var(--tb-texto);box-shadow:0 8px 30px #0009}
+    #tb-alca{width:40px;height:28px;flex:none;border:0;border-radius:8px;background:transparent;padding:0;cursor:grab;touch-action:none;display:flex;align-items:center;justify-content:center}
+    #tb-alca::before{content:"";width:24px;height:9px;background:repeating-linear-gradient(180deg,#56607a 0 2px,transparent 2px 4px)}
+    #tb-alca:hover{background:var(--tb-campo)}
+    #tb-caixa.tb-arrastando,#tb-caixa.tb-arrastando #tb-alca,#tb-caixa.tb-arrastando #tb-cab{cursor:grabbing;user-select:none}
+    .tb-ico{position:relative;width:38px;height:34px;flex:none;border:0;padding:0;margin:0;background:transparent;border-radius:9px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;color:#9fb0c9;font-size:17px;line-height:1;user-select:none}
+    .tb-ico .tb-rot{display:none}
+    .tb-ico:hover{background:var(--tb-campo);color:#fff}
+    .tb-ico.on{background:#2c3550;color:var(--tb-ouro)}
+    .tb-ico .tb-dot{position:absolute;right:4px;top:3px;width:8px;height:8px;border-radius:4px;display:none}
     .tb-ico .tb-dot.ok{display:block;background:#6ede8a}
     .tb-ico .tb-dot.av{display:block;background:#ffd479}
     .tb-ico .tb-dot.ruim{display:block;background:#ff7b72}
     .tb-ico .tb-dot.pulsa{animation:tbpulsa 1.2s infinite}
+    .tb-ico .tb-cont{position:absolute;right:0;top:0;min-width:16px;height:16px;box-sizing:border-box;padding:0 4px;border-radius:8px;background:#c93b33;color:#fff;font:bold var(--tb-fmin)/16px system-ui,sans-serif;text-align:center}
+    .tb-ico .tb-cont[hidden]{display:none}
     @keyframes tbpulsa{0%,100%{opacity:1}50%{opacity:.2}}
-    #tb-esconder{margin-top:3px;font-size:12px;color:#7d879b;cursor:pointer;padding:2px 8px}
-    #tb-esconder:hover{color:#fff}
-    #tb-mostrar{position:fixed;right:0;top:84px;width:12px;height:44px;background:#2b3242;border-radius:7px 0 0 7px;cursor:pointer;z-index:99999;display:none}
+    #tb-esconder{width:40px;height:28px;flex:none;border:0;border-radius:8px;background:transparent;padding:0;margin-top:2px;font-size:14px;color:var(--tb-mut);cursor:pointer}
+    #tb-esconder:hover{color:#fff;background:var(--tb-campo)}
+    #tb-mostrar{position:fixed;right:0;top:84px;width:28px;height:56px;box-sizing:border-box;padding:0;border:1px solid var(--tb-borda2);background:var(--tb-borda);color:var(--tb-texto);border-radius:8px 0 0 8px;cursor:pointer;z-index:99999;display:none;font:15px/1 ui-monospace,monospace}
+    #tb-mostrar.esq{border-radius:0 8px 8px 0}
     #tb-mostrar:hover{background:#3a4356}
-    #tb-gaveta{width:300px;max-height:62vh;background:#12151c;color:#dde3ee;border:1px solid #2b3242;border-radius:10px;font:11.5px/1.4 ui-monospace,Consolas,monospace;box-shadow:0 12px 40px #000a;display:none;flex-direction:column}
+    #tb-gaveta{position:fixed;left:0;top:0;width:300px;box-sizing:border-box;max-height:62vh;background:var(--tb-bg);color:var(--tb-texto);border:1px solid var(--tb-borda);border-radius:10px;font:11.5px/1.4 ui-monospace,Consolas,monospace;box-shadow:0 12px 40px #000a;display:none;flex-direction:column}
     #tb-gaveta.on{display:flex}
-    #tb-cab{display:flex;align-items:center;gap:6px;padding:6px 9px;border-bottom:1px solid #2b3242;background:#171b24;border-radius:10px 10px 0 0}
-    #tb-cab b{color:#ffd479;letter-spacing:.3px;font-size:11px;text-transform:uppercase}
-    .tb-x{margin-left:auto;cursor:pointer;color:#8b93a5;padding:0 4px}
-    .tb-x:hover{color:#fff}
-    #tb-corpo{padding:8px;overflow:auto;overflow-x:hidden;flex:1;overflow-wrap:anywhere}
-    .tb-lin{display:flex;justify-content:space-between;gap:6px;padding:1px 0;border-bottom:1px dotted #232936}
+    #tb-cab{display:flex;align-items:center;gap:6px;min-height:34px;box-sizing:border-box;padding:2px 3px 2px 10px;border-bottom:1px solid var(--tb-borda);background:var(--tb-bg2);border-radius:10px 10px 0 0;cursor:grab;touch-action:none;flex:none}
+    #tb-cab b{color:var(--tb-ouro);letter-spacing:.3px;font-size:11.5px;text-transform:uppercase}
+    .tb-x{margin-left:auto;width:32px;height:28px;flex:none;border:0;border-radius:7px;background:transparent;padding:0;cursor:pointer;color:var(--tb-mut);font-size:13px}
+    .tb-x:hover{color:#fff;background:var(--tb-campo)}
+    #tb-faixa{display:flex;gap:6px;align-items:flex-start;flex:none;padding:5px 10px;border-bottom:1px solid var(--tb-borda);background:#161a22;color:var(--tb-texto);font-size:11px;line-height:1.35}
+    #tb-faixa[hidden]{display:none}
+    #tb-faixa::before{content:attr(data-icone);flex:none;font-weight:bold}
+    #tb-faixa span{overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+    #tb-faixa.ok{color:#6ede8a;background:#14231a}
+    #tb-faixa.erro{color:#ff8a80;background:#241417}
+    #tb-corpo{padding:8px;overflow:auto;overflow-x:hidden;flex:1 1 auto;min-height:0;overflow-wrap:anywhere;overscroll-behavior:contain}
+    .tb-lin{display:flex;justify-content:space-between;gap:6px;padding:1px 0;border-bottom:1px dotted var(--tb-campo)}
     .tb-lin span:last-child{color:#fff;text-align:right}
     .tb-linha{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin:3px 0}
-    .tb-bt{background:#2a3142;border:1px solid #3a4356;color:#dde3ee;padding:4px 8px;border-radius:6px;cursor:pointer;margin:2px 2px 2px 0;font:inherit}
+    .tb-bt{background:#2a3142;border:1px solid var(--tb-borda2);color:var(--tb-texto);min-height:var(--tb-alvo);box-sizing:border-box;padding:4px 8px;border-radius:6px;cursor:pointer;margin:2px 2px 2px 0;font:inherit}
     .tb-bt:hover{background:#39415a}
     .tb-bt:disabled{opacity:.45;cursor:default}
     .tb-bt.pri{background:#8a6a1f;border-color:#c39a34;color:#fff}
     .tb-bt.on{background:#2c5c3a;border-color:#4a9a63;color:#fff}
-    .tb-bt.mini{padding:1px 6px;font-size:10.5px}
-    .tb-cx{background:#1a1f29;border:1px solid #262d3b;border-radius:7px;padding:6px 7px;margin:5px 0}
-    .tb-mut{color:#7d879b}
+    .tb-bt.mini{padding:1px 6px;min-width:var(--tb-alvo);font-size:var(--tb-fmin)}
+    .tb-cx{background:var(--tb-cx);border:1px solid #262d3b;border-radius:7px;padding:6px 7px;margin:5px 0}
+    .tb-mut{color:var(--tb-mut)}
     .tb-ok{color:#6ede8a}.tb-ruim{color:#ff7b72}.tb-av{color:#ffd479}
-    .tb-tag{font-size:10px;padding:0 5px;border-radius:9px;background:#2b3242;color:#9fb0c9;margin-left:3px;white-space:nowrap}
-    .tb-ficha{display:inline-block;padding:0 5px;border-radius:5px;background:#232936;border:1px solid #2b3242;margin:1px 2px 1px 0;font-size:10.5px;white-space:nowrap}
+    .tb-tag{font-size:var(--tb-fmin);padding:0 5px;border-radius:9px;background:var(--tb-borda);color:#9fb0c9;margin-left:3px;white-space:nowrap}
+    .tb-ficha{display:inline-block;padding:0 5px;border-radius:5px;background:var(--tb-campo);border:1px solid var(--tb-borda);margin:1px 2px 1px 0;font-size:var(--tb-fmin);white-space:nowrap}
     .tb-ficha.r{border-color:#4a3a8a}
-    .tb-ficha small{color:#7d879b}
-    table.tb-t{width:100%;border-collapse:collapse;font-size:10.5px;table-layout:fixed}
+    .tb-ficha small{color:var(--tb-mut);font-size:inherit}
+    table.tb-t{width:100%;border-collapse:collapse;font-size:var(--tb-fmin);table-layout:fixed}
     table.tb-t th.n{width:52px}
     table.tb-t td .tb-tag{white-space:normal}
-    table.tb-t th{text-align:left;color:#7d879b;font-weight:normal;border-bottom:1px solid #2b3242;padding:2px 3px}
+    table.tb-t th{text-align:left;color:var(--tb-mut);font-weight:normal;border-bottom:1px solid var(--tb-borda);padding:2px 3px}
     table.tb-t td{padding:2px 3px;border-bottom:1px dotted #1f2531;vertical-align:top}
-    #tb-hunt,#tb-boss,.tb-in{background:#232936;color:#dde3ee;border:1px solid #3a4356;border-radius:5px;padding:3px 5px;font:inherit}
+    #tb-hunt,#tb-boss,.tb-in{background:var(--tb-campo);color:var(--tb-texto);border:1px solid var(--tb-borda2);border-radius:5px;min-height:var(--tb-alvo);box-sizing:border-box;padding:3px 5px;font:inherit}
     #tb-hunt,#tb-boss{width:100%}
-    #tb-log{font-size:10px;max-height:52vh;overflow:auto}
-    #tb-log div{padding:1px 0;border-bottom:1px dotted #1f2531}
+    #tb-log{font-size:11px;line-height:1.45}
+    #tb-log div{padding:2px 0 2px 6px;border-bottom:1px dotted #1f2531;border-left:2px solid transparent}
+    #tb-log div.erro{border-left-color:#ff7b72;background:#1d1417}
+    #tb-log div.novo{border-left-color:var(--tb-ouro)}
+    #tb-log div.erro.novo{border-left-color:#ff7b72;background:#2a1517}
+    #tb-log .tb-log-h{color:var(--tb-mut);margin-right:4px}
     .tb-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin:5px 0}
-    .tb-card{background:#1a1f29;border:1px solid #262d3b;border-radius:7px;padding:4px 7px}
-    .tb-card small{display:block;color:#7d879b;font-size:9px;letter-spacing:.5px}
+    .tb-card{background:var(--tb-cx);border:1px solid #262d3b;border-radius:7px;padding:4px 7px}
+    .tb-card small{display:block;color:var(--tb-mut);font-size:var(--tb-fmin);letter-spacing:.5px}
     .tb-card b{font-size:14px;color:#fff}
-    .tb-sw{display:inline-block;width:34px;height:18px;border-radius:9px;background:#3a4356;position:relative;vertical-align:middle;cursor:pointer;flex:none}
-    .tb-sw.on{background:#4a9a63}
-    .tb-sw i{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:7px;background:#fff;transition:left .15s}
+    .tb-sw{display:inline-block;box-sizing:content-box;width:36px;height:20px;border:4px solid transparent;background:#3a4356;background-clip:padding-box;border-radius:14px;position:relative;vertical-align:middle;cursor:pointer;flex:none;padding:0;margin:0;appearance:none}
+    .tb-sw.on{background-color:#4a9a63}
+    .tb-sw i{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:8px;background:#fff;transition:left .15s}
     .tb-sw.on i{left:18px}
-    .tb-sub{display:flex;gap:3px;margin:3px 0 5px}
-    .tb-sub span{padding:2px 8px;border-radius:12px;background:#1a1f29;color:#8b93a5;cursor:pointer;border:1px solid #262d3b}
-    .tb-sub span.on{background:#2c5c3a;color:#fff;border-color:#4a9a63}
-    .tb-sub span b{color:#ffd479}
-    .tb-eq{display:grid;grid-template-columns:46px 1fr 12px 1fr;gap:2px 5px;align-items:center;padding:3px 0;border-bottom:1px dotted #262d3b;cursor:pointer}
-    .tb-eq .s{color:#7d879b;font-size:9px;letter-spacing:.3px;text-transform:uppercase}
+    .tb-sub{display:flex;flex-wrap:wrap;gap:3px;margin:3px 0 5px}
+    .tb-sub span,.tb-sub button{display:inline-flex;align-items:center;gap:3px;min-height:var(--tb-alvo);box-sizing:border-box;padding:2px 10px;border-radius:14px;background:var(--tb-cx);color:#9fb0c9;cursor:pointer;border:1px solid #262d3b;font:inherit}
+    .tb-sub span.on,.tb-sub button.on{background:#2c5c3a;color:#fff;border-color:#4a9a63}
+    .tb-sub span b,.tb-sub button b{color:#ffd479}
+    .tb-eq{display:grid;grid-template-columns:58px 1fr 12px 1fr;gap:2px 5px;align-items:center;padding:3px 0;border-bottom:1px dotted #262d3b;cursor:pointer}
+    .tb-eq .s{color:var(--tb-mut);font-size:var(--tb-fmin);letter-spacing:.2px;text-transform:uppercase}
     .tb-eq .g{color:#6ede8a;font-weight:bold}
-    .tb-eq small{display:block;color:#7d879b;font-size:9.5px}
-    .tb-rar{font-size:9px;padding:0 3px;border-radius:3px;margin-left:2px;background:#2b3242;color:#9fb0c9}
+    .tb-eq small{display:block;color:var(--tb-mut);font-size:var(--tb-fmin)}
+    .tb-rar{font-size:var(--tb-fmin);padding:0 3px;border-radius:3px;margin-left:2px;background:var(--tb-borda);color:#9fb0c9}
     .tb-rar.r1{color:#6ede8a}.tb-rar.r2{color:#5ab0ff}.tb-rar.r3{color:#c38bff}.tb-rar.r4{color:#ffb14a}.tb-rar.r5{color:#ff7b72}
-    .tb-det{grid-column:1/-1;background:#12151c;border-radius:6px;padding:5px 7px;font-size:10.5px;cursor:default}
+    .tb-det{grid-column:1/-1;background:var(--tb-bg);border-radius:6px;padding:5px 7px;font-size:var(--tb-fmin);cursor:default}
     .tb-det .m{color:#ff7b72;text-decoration:line-through;opacity:.8}
     .tb-det .neg{color:#ff7b72}
     details.tb-aj{margin:3px 0}
-    details.tb-aj>summary{cursor:pointer;color:#7d879b;font-size:10px;list-style:none;display:inline-block;padding:0 7px;border:1px solid #2b3242;border-radius:9px;user-select:none}
+    details.tb-aj>summary{cursor:pointer;color:var(--tb-mut);font-size:var(--tb-fmin);list-style:none;display:inline-flex;align-items:center;justify-content:center;min-width:var(--tb-alvo);min-height:var(--tb-alvo);box-sizing:border-box;padding:0 9px;border:1px solid var(--tb-borda);border-radius:14px;user-select:none}
     details.tb-aj>summary::-webkit-details-marker{display:none}
-    details.tb-aj[open]>summary{color:#ffd479;border-color:#3a4356}
+    details.tb-aj[open]>summary{color:var(--tb-ouro);border-color:var(--tb-borda2)}
     details.tb-aj>div{margin-top:4px}
-    label.tb-l{display:inline-flex;align-items:center;gap:3px;color:#9fb0c9}
+    label.tb-l{display:inline-flex;align-items:center;gap:4px;min-height:var(--tb-alvo);min-width:var(--tb-alvo);color:#9fb0c9}
+    label.tb-l input[type=checkbox],label.tb-l input[type=radio]{width:15px;height:15px;margin:0}
+    #tb-corpo [style*="font-size:8"],#tb-corpo [style*="font-size:9"],#tb-corpo [style*="font-size:10px"]{font-size:var(--tb-fmin)!important}
+    #tb-caixa.tb-cel{--tb-fmin:12px;--tb-alvo:40px;left:0;right:0}
+    .tb-cel #tb-trilho{width:auto;flex-direction:row;align-items:stretch;padding:2px;gap:0;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+    .tb-cel .tb-ico{flex:1 1 0;min-width:40px;height:52px;font-size:19px;gap:4px}
+    .tb-cel .tb-ico .tb-rot{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:9px/1 system-ui,-apple-system,sans-serif;letter-spacing:.2px}
+    .tb-cel .tb-ico .tb-dot{right:6px}
+    .tb-cel #tb-alca,.tb-cel #tb-esconder{width:40px;height:52px;margin:0}
+    .tb-cel #tb-alca::before{width:9px;height:24px;background:repeating-linear-gradient(90deg,#56607a 0 2px,transparent 2px 4px)}
+    .tb-cel #tb-gaveta{left:0!important;right:0!important;top:auto!important;bottom:0!important;width:auto;height:50vh;height:50dvh;max-height:none!important;border-radius:14px 14px 0 0;font-size:13px}
+    .tb-cel #tb-cab{cursor:default;touch-action:auto;min-height:46px}
+    .tb-cel #tb-corpo{padding-bottom:calc(8px + env(safe-area-inset-bottom, 0px))}
+    .tb-cel #tb-cab b{font-size:13px}
+    .tb-cel .tb-x{width:46px;height:42px;font-size:17px}
+    .tb-cel #tb-faixa{font-size:13px}
+    .tb-cel #tb-log{font-size:12px}
+    .tb-cel .tb-bt{padding:6px 12px}
+    .tb-cel #tb-hunt,.tb-cel #tb-boss,.tb-cel select{font-size:16px}
+    .tb-cel .tb-in{font-size:14px}
+    .tb-cel label.tb-l input[type=checkbox],.tb-cel label.tb-l input[type=radio]{width:20px;height:20px}
+    .tb-cel .tb-sw{border-width:10px 6px;border-radius:20px}
+    .tb-cel #tb-corpo [style*="font-size:10"],.tb-cel #tb-corpo [style*="font-size:11"]{font-size:var(--tb-fmin)!important}
+    #tb-mostrar.tb-cel{width:40px;height:56px}
     `;
 
     let ABA = 'magia';
@@ -3837,10 +3897,21 @@
     }
     function abrirAtualizacao() { window.open(RAW_URL, '_blank'); }
     /* v2.8.0 — estado da interface por conta: qual gaveta, aberta ou não,
-     * posição vertical do trilho, trilho escondido. */
-    const UI_PADRAO = { aba: 'magia', aberta: false, top: 84, right: 8, oculto: false };
+     * posição vertical do trilho, trilho escondido.
+     * v2.10 — posição nova: livre=false → lugar automático (borda esquerda da
+     * cena, medido no jogo a cada repintura); livre=true → onde o dono soltou,
+     * guardado a partir da borda mais próxima (ancora 'esq'|'dir' + dx) para
+     * sobreviver a troca de resolução. yCel = altura do trilho no celular.
+     * logLido = hora em que o Log foi aberto pela última vez (contador). */
+    const UI_PADRAO = { aba: 'magia', aberta: false, oculto: false, livre: false, ancora: 'esq', dx: 8, y: 84, yCel: null, logLido: 0 };
     let UI = null;
-    const ui = () => UI || (UI = Object.assign({}, UI_PADRAO, ler('ui', {})));
+    const ui = () => {
+        if (UI) return UI;
+        const s = ler('ui', {}) || {};
+        UI = migrarUI(s, UI_PADRAO, Date.now());
+        if (s.logLido === undefined || s.livre === undefined) guardar('ui', UI);
+        return UI;
+    };
     const guardarUI = (patch) => { UI = Object.assign(ui(), patch); guardar('ui', UI); };
     const ICONES = [['estado', '⌂', 'Status'], ['magia', '✦', 'Magia'], ['autohunt', '↻', 'Auto Hunt'], ['scan', '◎', 'Scan'], ['equip', '⛨', 'Equip'], ['analise', '▤', 'Analisador'], ['progresso', '⚑', 'Progresso'], ['log', '≡', 'Log']];
     /* "?" com a explicação escondida; data-k preserva aberto/fechado ao repintar */
@@ -3848,58 +3919,296 @@
 
     /* v2.8.4 — o helper não fica mais preso na borda: trilho + gaveta vivem
      * numa caixa solta (#tb-caixa), arrastável pela alça ou pelo cabeçalho
-     * da gaveta para qualquer canto; posição (right/top) guardada por conta. */
-    let _caixa = null;
-    function posicionarCaixa() {
-        const cx = _caixa, m = $('#tb-mostrar'); if (!cx) return;
-        const u = ui(), w = cx.offsetWidth || 44, h = Math.min(cx.offsetHeight || 60, 120);
-        const right = Math.max(0, Math.min(window.innerWidth - w, +u.right || 0));
-        const top = Math.max(0, Math.min(window.innerHeight - h, +u.top || 84));
-        u.right = right; u.top = top;
-        cx.style.right = right + 'px'; cx.style.top = top + 'px';
-        if (m) m.style.top = top + 'px';
+     * da gaveta para qualquer canto; posição (right/top) guardada por conta.
+     * v2.10 — medido numa maquete com o CSS real do jogo (29/09): colado à
+     * direita, a gaveta cobria 74 % da barra de atalhos (slots de ataque 2–4
+     * inteiros), 88 % da mochila e 96 % do equipamento, e em 1366×768 entrava
+     * na barra de ação. Agora o lugar padrão é a borda ESQUERDA da cena
+     * (coluna esquerda + 8, topbar + 12), medido na hora; a gaveta abre para
+     * dentro da cena e para antes da barra de ação. Arrastar ao fundo tirava 6
+     * ícones da tela (o limite olhava só 120 px do trilho): agora o trilho
+     * inteiro fica na tela e a gaveta cresce para cima quando embaixo não cabe. */
+    /* @@CASCA-INICIO — geometria e contas puras da casca (sem DOM); testes/casca.test.js roda este trecho no node. */
+    const CEL_MAX = 640, MARGEM = 8;
+    const limitar = (v, a, b) => Math.max(a, Math.min(b, v));
+    /* 2.9 → 2.10: a 2.9 guardava {right, top} sempre, mesmo sem arrastar, e
+     * right 8/top 84 era o padrão (colado na barra de atalhos). Esse par vira
+     * o lugar automático novo; qualquer outro é arrasto do dono e continua
+     * valendo, ancorado à direita. logLido ausente = agora (a versão nova não
+     * herda erros velhos no contador do Log). */
+    function migrarUI(s, padrao, agora) {
+        s = s || {};
+        const u = Object.assign({}, padrao, s);
+        if (s.livre === undefined) {
+            const movida = s.right != null && s.top != null && (+s.right !== 8 || +s.top !== 84);
+            Object.assign(u, movida ? { livre: true, ancora: 'dir', dx: +s.right || 0, y: +s.top || 0 } : { livre: false });
+        }
+        delete u.right; delete u.top;
+        if (s.logLido === undefined) u.logLido = agora;
+        return u;
     }
+    /* canto de cima/esquerda do trilho no desktop. J = layout do jogo medido
+     * (medirJogo); sem shell (login, lobby) cai em 8/84. O trilho INTEIRO fica
+     * na tela — antes o limite olhava só 120 px dele. */
+    function lugarDoTrilho(W, H, tw, th, u, arrasto, J) {
+        let x, y;
+        if (arrasto) { x = arrasto.x; y = arrasto.y; }
+        else if (u.livre) { x = u.ancora === 'dir' ? W - (+u.dx || 0) - tw : +u.dx || 0; y = +u.y || 0; }
+        else { x = (J.esq ? J.esq.right : 0) + MARGEM; y = (J.topo ? J.topo.bottom : 72) + 12; }
+        return { x: limitar(Math.round(x), 4, Math.max(4, W - tw - 4)), y: limitar(Math.round(y), 4, Math.max(4, H - th - 4)) };
+    }
+    /* celular: só a altura; padrão logo acima de onde a folha (50 %) abre */
+    const alturaDoTrilhoCel = (H, th, u, arrasto) => limitar(Math.round(arrasto ? arrasto.y : u.yCel != null ? +u.yCel : H * 0.5 - th - 4), 0, Math.max(0, H - th));
+    /* gaveta: no lugar padrão, para dentro da cena (direita do trilho); solta,
+     * para o lado com mais espaço. chão = topo da barra de ação (o chat vem
+     * abaixo dela) quando ela está sob a gaveta; teto = fim da topbar. Desce a
+     * partir do topo do trilho (top) ou, se embaixo não cabe, sobe a partir da
+     * base do trilho sem passar do chão (bottom) — trilho arrastado ao fundo
+     * não joga a gaveta em cima do ENCERRAR. Altura ≤ 62 % da janela. */
+    function lugarDaGaveta(W, H, p, tw, th, gw, padrao, J) {
+        const { x, y } = p, esq = x + tw / 2 < W / 2;
+        const cabeDir = x + tw + 4 + gw <= W - 4, cabeEsq = x - 4 - gw >= 4;
+        const gx = limitar(((padrao || esq) && cabeDir) || !cabeEsq ? x + tw + 4 : x - 4 - gw, 4, Math.max(4, W - gw - 4));
+        const barra = J.acao || J.chat, teto = (J.topo ? J.topo.bottom : 0) + 4, alvo = Math.round(H * 0.62);
+        const chao = barra && gx < barra.right && gx + gw > barra.left && barra.top - MARGEM - teto >= 200 ? barra.top - MARGEM : H - MARGEM;
+        const hA = (y + 200 <= chao ? chao : H - MARGEM) - y, baseB = Math.min(y + th, chao), hB = baseB - teto;
+        if (hA >= Math.min(alvo, 320) || hA >= hB) return { gx, top: y, bottom: null, maxH: Math.min(alvo, hA), esq };
+        return { gx, top: null, bottom: H - baseB, maxH: Math.min(alvo, hB), esq };
+    }
+    /* erros do Log depois da última leitura (LOG está em ordem de chegada) */
+    function contarErrosNaoLidos(linhas, lido) {
+        let n = 0;
+        for (let i = linhas.length - 1; i >= 0 && linhas[i].t > lido; i--) if (linhas[i].tipo === 'erro') n++;
+        return n;
+    }
+    /* faixa de retorno: o aviso explícito da aba ou, enquanto as telas não
+     * chamam avisar(), a última linha do Log que chegou até 60 s depois de um
+     * clique num controle desta aba; some 10 s depois de chegar. */
+    const FAIXA_MS = 10000, FAIXA_JANELA_MS = 60000;
+    function escolherAviso(aviso, acao, ultima, aba, agora) {
+        let a = aviso || null;
+        if (acao && acao.aba === aba && ultima && ultima.t >= acao.t && ultima.t - acao.t <= FAIXA_JANELA_MS && (!a || ultima.t > a.t)) a = ultima;
+        return a && agora - a.t < FAIXA_MS ? a : null;
+    }
+    /* @@CASCA-FIM */
+    const ehCelular = () => (window.innerWidth || 1200) <= CEL_MAX;
+    let _caixa = null, _arrasto = null, _pos = null;
+    /* layout do jogo medido na hora (null = não está na tela: login, lobby) */
+    function medirJogo() {
+        const r = s => { const e = document.querySelector(s); if (!e || !e.getBoundingClientRect) return null; const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0 ? b : null; };
+        return { esq: r('.s-shell-col-left'), topo: r('.s-shell-topbar'), acao: r('.s-action-bar'), chat: r('.s-log-dock') };
+    }
+    function posicionarCaixa() {
+        const cx = _caixa, t = $('#tb-trilho'), g = $('#tb-gaveta'), m = $('#tb-mostrar'); if (!cx || !t || !g) return;
+        const W = window.innerWidth || 1200, H = window.innerHeight || 800, u = ui(), cel = ehCelular();
+        cx.classList.toggle('tb-cel', cel); if (m) m.classList.toggle('tb-cel', cel);
+        if (cel) {
+            /* celular (≤ 640 px): trilho horizontal de largura total que só sobe
+             * e desce; a gaveta é folha inferior (CSS). Com a folha aberta, o
+             * trilho fica logo acima dela em vez de sumir embaixo. */
+            const th = t.offsetHeight || 58;
+            let y = alturaDoTrilhoCel(H, th, u, _arrasto);
+            _pos = { x: 0, y };
+            if (g.classList.contains('on')) { const topo = g.getBoundingClientRect().top; if (y + th > topo) y = Math.max(0, topo - th); }
+            cx.style.left = ''; cx.style.top = y + 'px';
+            g.style.left = g.style.top = g.style.bottom = g.style.maxHeight = '';
+            if (m) { m.classList.remove('esq'); m.style.left = ''; m.style.right = '0px'; m.style.top = limitar(y, 0, H - 56) + 'px'; m.textContent = '‹'; }
+            const es = $('#tb-esconder', t); if (es) es.textContent = '›';
+            return;
+        }
+        const J = medirJogo(), tw = t.offsetWidth || 46, th = t.offsetHeight || 300;
+        const p = lugarDoTrilho(W, H, tw, th, u, _arrasto, J), { x, y } = p;
+        _pos = p;
+        cx.style.left = x + 'px'; cx.style.top = y + 'px';
+        const L = lugarDaGaveta(W, H, p, tw, th, g.offsetWidth || 300, !u.livre && !_arrasto, J), esq = L.esq;
+        g.style.left = L.gx + 'px'; g.style.maxHeight = L.maxH + 'px';
+        g.style.top = L.top != null ? L.top + 'px' : 'auto'; g.style.bottom = L.bottom != null ? L.bottom + 'px' : 'auto';
+        if (m) { m.classList.toggle('esq', esq); m.style.left = esq ? '0px' : ''; m.style.right = esq ? '' : '0px'; m.style.top = limitar(y, 0, H - 56) + 'px'; m.textContent = esq ? '›' : '‹'; }
+        const es = $('#tb-esconder', t); if (es) es.textContent = esq ? '‹' : '›';
+    }
+    /* soltou: guarda a partir da borda mais próxima (resolução nova não joga o
+     * trilho para fora) — no celular, só a altura */
+    function fixarPosicao() {
+        const p = _pos; _arrasto = null; if (!p) return;
+        if (ehCelular()) guardarUI({ yCel: p.y });
+        else {
+            const t = $('#tb-trilho'), tw = (t && t.offsetWidth) || 46, W = window.innerWidth || 1200, dir = p.x + tw / 2 > W / 2;
+            guardarUI({ livre: true, ancora: dir ? 'dir' : 'esq', dx: dir ? W - p.x - tw : p.x, y: p.y });
+        }
+        posicionarCaixa();
+    }
+    function voltarAoPadrao() { _arrasto = null; guardarUI({ livre: false, yCel: null }); posicionarCaixa(); avisar(ABA, 'helper de volta ao lugar padrão', 'ok'); }
+    /* rótulo de 9 px sob o ícone no celular; sem entrada aqui, usa o nome de ICONES */
+    const ROTULO_CURTO = { autohunt: 'Auto', analise: 'Análise' };
     function montarPainel() {
         if ($('#tb-trilho')) return;
         const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
         const u = ui(); ABA = ICONES.some(x => x[0] === u.aba) ? u.aba : 'magia';
         const cx = document.createElement('div'); cx.id = 'tb-caixa'; _caixa = cx;
+        /* v2.10 — ícones, alça, esconder e ✕ são <button> com aria-label (antes
+         * <div> sem tabindex: o Tab não chegava a nada); aria-pressed marca a
+         * aba aberta. O trilho vem antes da gaveta no DOM (ordem do Tab). */
+        const bt = (id, cls, rot, txt) => `<button type="button" id="${id}"${cls ? ` class="${cls}"` : ''} title="${rot}" aria-label="${rot}">${txt}</button>`;
         const t = document.createElement('div'); t.id = 'tb-trilho';
-        t.innerHTML = `<div id="tb-alca" title="arrastar"></div>` +
-            ICONES.map(([k, ic, nome]) => `<div class="tb-ico" data-aba="${k}" title="${nome}">${ic}<span class="tb-dot"></span></div>`).join('') +
-            `<div class="tb-ico" id="tb-atualizar" title="versão nova disponível" style="display:none;color:#6ede8a">↑</div>` +
-            `<div id="tb-esconder" title="esconder o helper">›</div>`;
+        t.setAttribute('role', 'group'); t.setAttribute('aria-label', 'Tibidle Helper');
+        t.innerHTML = bt('tb-alca', '', 'mover o helper (arraste ou use as setas; duplo clique volta ao lugar padrão)', '') +
+            ICONES.map(([k, ic, nome]) => `<button type="button" class="tb-ico" data-aba="${k}" title="${nome}" aria-label="${nome}" aria-pressed="false" aria-controls="tb-gaveta"><span aria-hidden="true">${ic}</span><span class="tb-rot" aria-hidden="true">${ROTULO_CURTO[k] || nome}</span><span class="tb-dot"></span>${k === 'log' ? '<span class="tb-cont" hidden></span>' : ''}</button>`).join('') +
+            `<button type="button" class="tb-ico" id="tb-atualizar" title="versão nova disponível" aria-label="atualizar o helper" style="display:none;color:#6ede8a"><span aria-hidden="true">↑</span><span class="tb-rot" aria-hidden="true">Atualizar</span></button>` +
+            bt('tb-esconder', '', 'esconder o helper', '‹');
         const g = document.createElement('div'); g.id = 'tb-gaveta';
-        g.innerHTML = `<div id="tb-cab" title="arrastar"><b id="tb-titulo"></b><span class="tb-mut">v${VERSAO}</span><span class="tb-x" id="tb-fechar" title="fechar">✕</span></div><div id="tb-corpo"></div>`;
-        const m = document.createElement('div'); m.id = 'tb-mostrar'; m.title = 'mostrar o helper';
-        cx.append(g, t);
+        g.setAttribute('role', 'region'); g.setAttribute('aria-labelledby', 'tb-titulo');
+        g.innerHTML = `<div id="tb-cab" title="arrastar"><b id="tb-titulo"></b><span class="tb-mut">v${VERSAO}</span>${bt('tb-fechar', 'tb-x', 'fechar a gaveta (Esc)', '✕')}</div>` +
+            `<div id="tb-faixa" role="status" aria-live="polite" hidden></div><div id="tb-corpo"></div>`;
+        const m = document.createElement('button'); m.type = 'button'; m.id = 'tb-mostrar'; m.title = 'mostrar o helper'; m.setAttribute('aria-label', 'mostrar o helper');
+        cx.append(t, g);
         document.body.append(cx, m);
-        posicionarCaixa();
-        const mostrar = (v) => { cx.classList.toggle('tb-oculto', !v); m.style.display = v ? 'none' : 'block'; if (!v) g.classList.remove('on'); };
+        const icone = k => $(`.tb-ico[data-aba="${k}"]`, t);
+        const mostrar = (v) => { cx.classList.toggle('tb-oculto', !v); m.style.display = v ? 'none' : 'block'; if (!v) g.classList.remove('on'); posicionarCaixa(); };
         $$('.tb-ico[data-aba]', t).forEach(i => i.onclick = () => { const k = i.dataset.aba; const aberta = !(ui().aberta && ABA === k); ABA = k; guardarUI({ aba: k, aberta }); renderizar(); });
-        $('#tb-fechar').onclick = () => { guardarUI({ aberta: false }); renderizar(); };
-        $('#tb-atualizar').onclick = abrirAtualizacao;
-        $('#tb-esconder').onclick = () => { guardarUI({ oculto: true }); mostrar(false); };
-        m.onclick = () => { guardarUI({ oculto: false }); mostrar(true); renderizar(); };
+        $('#tb-fechar', g).onclick = () => { guardarUI({ aberta: false }); renderizar(); const i = icone(ABA); if (i) i.focus(); };
+        $('#tb-atualizar', t).onclick = abrirAtualizacao;
+        $('#tb-esconder', t).onclick = () => { guardarUI({ oculto: true }); mostrar(false); m.focus(); };
+        m.onclick = () => { guardarUI({ oculto: false }); mostrar(true); renderizar(); const i = icone(ABA); if (i) i.focus(); };
+
+        /* v2.10 — arrasto com Pointer Events (mouse, dedo, caneta; antes só
+         * mousedown, e no celular não mexia). setPointerCapture segura o
+         * arrasto com o dedo fora da alça; touch-action:none no CSS impede a
+         * página de rolar junto. 4 px de folga separam clique de arrasto. */
         let arr = null;
-        const pegar = e => { if (e.button !== 0 || e.target.closest('.tb-x')) return; arr = { x: e.clientX, y: e.clientY, right: ui().right, top: ui().top }; e.preventDefault(); };
-        $('#tb-alca').addEventListener('mousedown', pegar);
-        $('#tb-cab').addEventListener('mousedown', pegar);
-        document.addEventListener('mousemove', e => { if (!arr) return; ui().right = arr.right - (e.clientX - arr.x); ui().top = arr.top + (e.clientY - arr.y); posicionarCaixa(); });
-        document.addEventListener('mouseup', () => { if (arr) { arr = null; guardarUI({ right: ui().right, top: ui().top }); } });
+        const pegar = e => {
+            if (e.pointerType === 'mouse' && e.button !== 0) return;
+            if (e.currentTarget.id === 'tb-cab' && (ehCelular() || e.target.closest('button'))) return;
+            const r = t.getBoundingClientRect();
+            arr = { id: e.pointerId, x: e.clientX, y: e.clientY, x0: r.left, y0: r.top, moveu: false };
+            try { e.currentTarget.setPointerCapture(e.pointerId); } catch { }
+            e.preventDefault();
+        };
+        const mover = e => {
+            if (!arr || e.pointerId !== arr.id) return;
+            const dx = e.clientX - arr.x, dy = e.clientY - arr.y;
+            if (!arr.moveu && Math.abs(dx) + Math.abs(dy) < 4) return;
+            arr.moveu = true; cx.classList.add('tb-arrastando');
+            _arrasto = { x: arr.x0 + dx, y: arr.y0 + dy }; posicionarCaixa();
+        };
+        const soltar = e => {
+            if (!arr || e.pointerId !== arr.id) return;
+            const moveu = arr.moveu; arr = null; cx.classList.remove('tb-arrastando');
+            if (moveu) fixarPosicao();
+        };
+        const alca = $('#tb-alca', t);
+        [alca, $('#tb-cab', g)].forEach(el => el.addEventListener('pointerdown', pegar));
+        document.addEventListener('pointermove', mover);
+        document.addEventListener('pointerup', soltar);
+        document.addEventListener('pointercancel', soltar);
+        alca.addEventListener('dblclick', voltarAoPadrao);
+        alca.addEventListener('keydown', e => {
+            if (e.key === 'Home') { e.preventDefault(); voltarAoPadrao(); return; }
+            const p = e.shiftKey ? 48 : 12, d = { ArrowUp: [0, -p], ArrowDown: [0, p], ArrowLeft: [-p, 0], ArrowRight: [p, 0] }[e.key];
+            if (!d || !_pos) return;
+            e.preventDefault(); _arrasto = { x: _pos.x + d[0], y: _pos.y + d[1] }; posicionarCaixa(); fixarPosicao();
+        });
+        /* Esc fecha a gaveta com o foco no helper (ou em lugar nenhum). Com o
+         * foco num diálogo do jogo, o Esc continua sendo do jogo. */
+        document.addEventListener('keydown', e => {
+            if (e.key !== 'Escape' || !ui().aberta || ui().oculto) return;
+            const at = document.activeElement, noHelper = !!at && cx.contains(at);
+            if (!noHelper && at && at !== document.body && at !== document.documentElement) return;
+            if (noHelper) { e.preventDefault(); e.stopPropagation(); }
+            guardarUI({ aberta: false }); renderizar();
+            if (noHelper) { const i = icone(ABA); if (i) i.focus(); }
+        });
+
+        /* v2.10 — acessibilidade do que as telas desenham, sem mexer no HTML
+         * delas: chave (.tb-sw) ganha role=switch + aria-checked, sub-aba e
+         * "ir ›" do Scan ganham role=button (+ aria-pressed na sub-aba), todos
+         * entram no Tab e respondem a Enter/Espaço. Quando as telas passarem a
+         * desenhar <button>, isto só completa o que faltar. O repinte troca o
+         * innerHTML e o foco caía no <body>: volta para o mesmo controle. */
+        const corpo = $('#tb-corpo', g);
+        let foco = null;
+        const chaveDoFoco = el => { if (!el || el === corpo || !corpo.contains(el)) return null; if (el.id) return { id: el.id }; for (const a of ['data-voc', 'data-modelo', 'data-scan-ir', 'data-scan-mapa', 'data-k']) if (el.hasAttribute(a)) return { a, v: el.getAttribute(a) }; return null; };
+        const acharFoco = k => k.id ? document.getElementById(k.id) : corpo.querySelector(`[${k.a}="${String(k.v).replace(/["\\]/g, '\\$&')}"]`);
+        const acessibilizar = () => {
+            $$('.tb-sw', corpo).forEach(s => {
+                s.setAttribute('role', 'switch'); s.setAttribute('aria-checked', s.classList.contains('on') ? 'true' : 'false');
+                if (s.tagName !== 'BUTTON' && !s.hasAttribute('tabindex')) s.tabIndex = 0;
+                if (!s.getAttribute('aria-label')) { const r = s.parentElement && $('b', s.parentElement); s.setAttribute('aria-label', r ? r.textContent.trim() : 'ligar/desligar'); }
+            });
+            $$('.tb-sub > span, .tb-sub > button, [data-scan-ir]', corpo).forEach(s => {
+                if (s.tagName !== 'BUTTON') { s.setAttribute('role', 'button'); if (!s.hasAttribute('tabindex')) s.tabIndex = 0; }
+                if (s.parentElement && s.parentElement.classList.contains('tb-sub') && !s.hasAttribute('aria-pressed')) s.setAttribute('aria-pressed', s.classList.contains('on') ? 'true' : 'false');
+            });
+        };
+        corpo.addEventListener('keydown', e => {
+            if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('[role=switch]:not(button),[role=button]:not(button)')) { e.preventDefault(); e.target.click(); }
+        });
+        corpo.addEventListener('focusin', e => { foco = chaveDoFoco(e.target); });
+        document.addEventListener('focusin', e => { if (!corpo.contains(e.target)) foco = null; }, true);
+        document.addEventListener('pointerdown', e => { if (!cx.contains(e.target)) foco = null; }, true);
+        if (typeof MutationObserver === 'function') new MutationObserver(() => {
+            acessibilizar();
+            const at = document.activeElement;
+            if (foco && (!at || at === document.body)) { const el = acharFoco(foco); if (el) { try { el.focus({ preventScroll: true }); } catch { } } }
+        }).observe(corpo, { childList: true });
+        // faixa de retorno: um clique num controle da aba marca "ação desta aba"
+        corpo.addEventListener('click', e => { if (e.target.closest && e.target.closest('button,[role=switch],[role=button],.tb-sw,[data-scan-ir],input[type=checkbox],input[type=radio]')) _acaoNaAba = { aba: ABA, t: Date.now() }; }, true);
+        corpo.addEventListener('change', () => { _acaoNaAba = { aba: ABA, t: Date.now() }; }, true);
+
         window.addEventListener('resize', posicionarCaixa);
         mostrar(!u.oculto);
         renderizar();
     }
+    /* v2.10 — contador de erros não lidos no ícone do Log (o ponto vermelho
+     * antigo olhava só a ÚLTIMA linha: um erro seguido de um info sumia).
+     * Integração 2.11: fica esta contagem pelo LOG (sobrevive ao F5, porque
+     * logLido é guardado); ERROS.naoLidos (área B, só em memória) é zerado
+     * junto em marcarLogLido para os dois nunca discordarem. */
+    function errosNaoLidos() { return contarErrosNaoLidos(LOG, +ui().logLido || 0); }
+    let _logAberto = false, _logLidoAntes = 0;
+    function marcarLogLido() {
+        const u = ui();
+        if (!_logAberto) { _logAberto = true; _logLidoAntes = +u.logLido || 0; }
+        if (errosNaoLidos() > 0 || Date.now() - (+u.logLido || 0) > 5000) guardarUI({ logLido: Date.now() });
+        ERROS.naoLidos = 0;
+    }
+    function pintarContadorLog() {
+        const i = $('#tb-trilho .tb-ico[data-aba="log"]'); if (!i) return;
+        const n = errosNaoLidos(), b = $('.tb-cont', i), nome = (ICONES.find(x => x[0] === 'log') || [])[2] || 'Log';
+        if (b) { b.textContent = n > 9 ? '9+' : String(n); b.hidden = !n; }
+        const rot = n ? `${nome} — ${n} erro${n > 1 ? 's' : ''} não lido${n > 1 ? 's' : ''}` : nome;
+        if (i.getAttribute('aria-label') !== rot) { i.setAttribute('aria-label', rot); i.title = rot; }
+    }
+    /* faixa de retorno: último aviso DA ABA ABERTA por 10 s (escolherAviso) */
+    let _acaoNaAba = null, _faixaTimer = null;
+    function pintarFaixa() {
+        const f = $('#tb-faixa'); if (!f) return;
+        const u = ui(), a = u.aberta && !u.oculto && ABA !== 'log' ? escolherAviso(AVISOS[ABA], _acaoNaAba, LOG[LOG.length - 1], ABA, Date.now()) : null;
+        clearTimeout(_faixaTimer); _faixaTimer = null;
+        if (!a) { if (!f.hidden) { f.hidden = true; f.textContent = ''; delete f.dataset.t; } return; }
+        if (f.hidden || f.dataset.t !== String(a.t) || f.title !== a.msg) {
+            const tipo = a.tipo === 'erro' ? 'erro' : a.tipo === 'ok' ? 'ok' : 'info';
+            f.className = tipo; f.dataset.icone = tipo === 'erro' ? '✕' : tipo === 'ok' ? '✓' : '›'; f.dataset.t = String(a.t);
+            const s = document.createElement('span'); s.textContent = a.msg; f.replaceChildren(s); f.title = a.msg; f.hidden = false;
+        }
+        _faixaTimer = setTimeout(pintarFaixa, Math.max(250, FAIXA_MS - (Date.now() - a.t) + 50));
+    }
+    /* v2.10 — Log: 11 px (era 10), hora apagada à esquerda, erro com barra
+     * vermelha, linhas que chegaram desde a última leitura com barra dourada;
+     * sem rolagem própria (a gaveta já rola). Abrir o Log zera o contador. */
     function pintarLog() {
-        const c = $('#tb-log'); if (!c) return;
+        const c = $('#tb-log');
+        if (c) marcarLogLido();
+        pintarContadorLog();
+        pintarFaixa();
+        if (!c) return;
+        const novo = _logLidoAntes;
         c.innerHTML = LOG.slice(-80).reverse().map(l => {
-            const cor = l.tipo === 'erro' ? 'tb-ruim' : l.tipo === 'ok' ? 'tb-ok' : 'tb-mut';
+            const cor = l.tipo === 'erro' ? 'tb-ruim' : l.tipo === 'ok' ? 'tb-ok' : '';
             const h = new Date(l.t).toLocaleTimeString('pt-BR');
             /* v2.11 — escHtml: o Log guarda texto que vem de FORA (erro do servidor,
              * nome de item, versão do GitHub) e é persistido; sem escapar, um
              * "<img onerror>" rodava a cada vez que o Log abria (CONFIRMADO). */
-            return `<div><span class="tb-mut">${h}</span> <span class="${cor}">${escHtml(l.msg)}</span></div>`;
+            return `<div class="${l.tipo === 'erro' ? 'erro' : ''}${l.t > novo ? ' novo' : ''}"><span class="tb-log-h">${h}</span> <span class="${cor}">${escHtml(l.msg)}</span></div>`;
         }).join('');
     }
 
@@ -5208,21 +5517,26 @@
 
     let _abaPintada = null, _scanFiltro = '';
     /* pontos de estado nos ícones: verde = ligado/caçando, âmbar pulsando =
-     * trabalhando, vermelho = erro no Log nos últimos 60 s */
+     * trabalhando. v2.10: o Log mostra um contador de erros não lidos (ver
+     * errosNaoLidos) no lugar do ponto vermelho de "erro nos últimos 60 s";
+     * aria-pressed acompanha a aba aberta; a faixa de retorno e a posição
+     * (o jogo pode ter montado/mudado o layout) são refeitas aqui também. */
     function pintarTrilho() {
         const t = $('#tb-trilho'); if (!t) return;
         const u = ui();
-        let erroRecente = false; try { const l = LOG[LOG.length - 1]; erroRecente = !!(l && l.tipo === 'erro' && Date.now() - l.t < 60000); } catch (e) { }
         const estado = {
             estado: _cicloEmCurso ? 'av pulsa' : (emHunt() ? 'ok' : ''),
             magia: _aplicando || _aprendendo ? 'av pulsa' : '',
             autohunt: autoHunt().on ? (_cicloEmCurso ? 'av pulsa' : 'ok') : '',
             scan: SCAN.ativo ? 'ok pulsa' : '',
-            equip: EQUIP.equipando || EQUIP.lendo ? 'av pulsa' : '',
-            log: erroRecente ? 'ruim' : ''
+            equip: EQUIP.equipando || EQUIP.lendo ? 'av pulsa' : ''
         };
-        $$('.tb-ico[data-aba]', t).forEach(i => { i.classList.toggle('on', !!u.aberta && i.dataset.aba === ABA); const d = $('.tb-dot', i); if (d) d.className = 'tb-dot ' + (estado[i.dataset.aba] || ''); });
+        $$('.tb-ico[data-aba]', t).forEach(i => { const on = !!u.aberta && !u.oculto && i.dataset.aba === ABA; i.classList.toggle('on', on); i.setAttribute('aria-pressed', on ? 'true' : 'false'); const d = $('.tb-dot', i); if (d) d.className = 'tb-dot ' + (estado[i.dataset.aba] || ''); });
         const at = $('#tb-atualizar', t); if (at) { at.style.display = NOVA_VERSAO ? 'flex' : 'none'; at.title = NOVA_VERSAO ? 'versão ' + NOVA_VERSAO + ' disponível — clique para atualizar no Tampermonkey' : ''; }
+        if (u.aberta && !u.oculto && ABA === 'log') marcarLogLido(); else _logAberto = false;
+        pintarContadorLog();
+        pintarFaixa();
+        posicionarCaixa();
     }
     function _renderizar() {
         pintarTrilho();
