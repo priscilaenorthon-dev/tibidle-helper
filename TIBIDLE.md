@@ -4097,3 +4097,12 @@ pela Caixa). RESGATAR não testado: a Caixa só recebe algo quando um anúncio v
   +9 vida máx, Cyclops) passava no limiar de pt/h; agora cai em "não compensam".
 - Teste ao vivo da 2.11.10: marco da Dwarf Bridge fechado (10.000 → +9 vida máx), volta automática a Vampire hell (lure 1),
   kits de antes devolvidos, Auto Hunt intacto (hunt 50).
+
+## 2.11.12 (30/09) — o travamento da Magia, achado
+- **Causa:** `simularFila` pulava para a próxima onda com `t − t%ciclo + ciclo`. Com o ritmo MEDIDO ao vivo (Vampire hell:
+  onda morta em 4,019 s + espera 9,524 s → ciclo 13.542,83… ms), em t = 40.628,5 o `%` deu `ciclo − 2e-12` e a conta
+  devolveu o próprio t: laço infinito, página congelada. Só acontecia com a caçada em andamento (ritmo medido no
+  livro-razão) — offline, com o ritmo padrão (números redondos), nunca reproduzia. Foi o congelamento de 29/09 (trocar
+  mapa/modelo na Magia) e o de 30/09 (Scan aplicando Em área).
+- **Correção:** próximo ciclo por índice (`(floor(t/ciclo)+1)·ciclo`, e se não andar, +250 ms) e teto de 200.000 voltas.
+  Reproduzido em node com o livro-razão copiado da conta (16 planos travavam; agora 2–4 ms). Teste em `testes/magia.test.js`.

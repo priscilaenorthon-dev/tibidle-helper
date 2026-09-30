@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.11.11
+// @version      2.11.12
 // @description  Magia (Econômica / Equilibrado / Área / Boss / Inteligente, com simulador da fila) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.11.11';
+    const VERSAO = '2.11.12';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -1649,15 +1649,21 @@
         const vivos = t => { const x = t % ciclo; return x >= matar ? 0 : L - Math.floor(x / porBicho); };
         const pocao = !!o.pocao, max = Math.max(0, o.manaMax || 0), regen = Math.max(0, o.regen || 0) / 1000, fAlvos = o.fatorAlvos || 1;
         const pronto = slots.map(() => 0), sec = {}, disparos = slots.map(() => 0);
-        let t = 0, ult = 0, grupo = 0, mana = max, dano = 0, manaGasta = 0, runas = 0, ouroRuna = 0;
-        while (t < T) {
+        let t = 0, ult = 0, grupo = 0, mana = max, dano = 0, manaGasta = 0, runas = 0, ouroRuna = 0, voltas = 0;
+        /* v2.11.12 — O TRAVAMENTO DA MAGIA (29–30/09). Com o ritmo MEDIDO (onda 4,019 s + espera 9,524 s,
+         * ciclo 13.542,83… ms), "t − t%ciclo + ciclo" deu exatamente t em t = 40.628,5 (erro de
+         * arredondamento: t%ciclo saiu ciclo − 2e-12) e o laço ficou parado para sempre — a página
+         * congelava ao aplicar ou trocar de modelo com a caçada em andamento. O próximo ciclo agora é
+         * contado por índice e sempre anda; e o laço tem teto de voltas. */
+        const proxOnda = x => { const p = (Math.floor(x / ciclo) + 1) * ciclo; return p > x ? p : x + SIM_PASSO_MS; };
+        while (t < T && voltas++ < 200000) {
             if (!pocao) mana = Math.min(max, mana + regen * (t - ult));
             ult = t;
             const v = vivos(t), agora = t, manaAgora = mana;
             const i = v > 0 && t >= grupo
                 ? slots.findIndex((s, k) => pronto[k] <= agora && !(s.sec && sec[s.sec] > agora) && v >= (s.minimo || 1) && (s.runa || pocao || manaAgora >= (s.mana || 0)))
                 : -1;
-            if (i < 0) { t = v > 0 ? (t < grupo ? grupo : t + SIM_PASSO_MS) : t - (t % ciclo) + ciclo; continue; }
+            if (i < 0) { t = v > 0 ? (t < grupo ? grupo : t + SIM_PASSO_MS) : proxOnda(t); continue; }
             const s = slots[i];
             disparos[i]++;
             if (s.runa) { runas++; ouroRuna += s.ouro || 0; } else { manaGasta += s.mana || 0; if (!pocao) mana -= s.mana || 0; }

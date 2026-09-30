@@ -186,6 +186,17 @@ t('item 1 — simulador: a runa ≥2 só sai com 2+ vivos, o Missile ≥1 pega o
     assert(s3.disparos[0] === 10, 'recarga própria 4 s e grupo 4 s: 10 em 40 s, não 20: ' + s3.disparos[0]);
 });
 
+t('2.11.12 — simulador não trava com o ritmo medido ao vivo (ciclo com casas decimais: 4,019 s + 9,524 s em Vampire hell)', () => {
+    /* 30/09: t − t%ciclo + ciclo dava o próprio t em t = 40.628,5 e a página congelava ao aplicar Em área */
+    const onda = { nome: 'onda', minimo: 2, mana: 80, cd: 4000, grupo: 2000, porAlvo: 60, alvos: 6 };
+    const t0 = Date.now();
+    for (const [m, e] of [[24113 / 6 / 1000, 57144 / 6 / 1000], [4.0188333, 9.524], [1 / 3, 7 / 3], [Math.PI, Math.E]]) {
+        const s = M.simularFila([onda], { lure: 6, matarS: m, esperaS: e, seg: 180, pocao: true });
+        assert(s.disparos[0] > 0, 'disparou: ' + JSON.stringify(s.disparos));
+    }
+    assert(Date.now() - t0 < 2000, 'demorou ' + (Date.now() - t0) + ' ms');
+});
+
 t('item 1 — veredito do grupo: kit inteiro, runa cobrada, mana só de quem bebe', () => {
     const h = H(46); M.LOOT_CACHE[h.id] = LOOT[h.id];
     const pot = M.E.pot;
