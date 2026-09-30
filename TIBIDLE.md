@@ -4048,3 +4048,15 @@ Três defeitos juntos, vistos no painel real:
 Depois: ciclo inteiro ok — encerrou, purificou, vendeu (+100), depot, **voltou para a hunt 50**; mel no depósito.
 Mercado: REVISAR ok ("você é o menor", outro a 41); cancelar ok (os itens voltam direto para a mochila, não
 pela Caixa). RESGATAR não testado: a Caixa só recebe algo quando um anúncio vende.
+
+## 2.11.8 (29/09) — editor do Tampermonkey sem "!"
+
+- O "!" amarelo na margem do editor do Tampermonkey era o ESLint embutido dele: 143 avisos de estilo, nenhum erro —
+  106 `no-multi-spaces` (comentário alinhado com vários espaços), 28 `curly` (if/for de várias linhas sem chaves),
+  8 `no-return-assign` (`forEach(x => x.onclick = …)`) e 1 `no-loop-func` (o findIndex do simulador da fila).
+  Corrigidos no código; o comportamento não muda (os 164 testes passam iguais).
+- `eslint.config.mjs` passou a exigir as 4 regras (`curly: multi-line`, `no-multi-spaces`, `no-return-assign`,
+  `no-loop-func`) como erro: o CI barra se voltarem.
+- O triângulo ao lado de "Última atualização" no painel do Tampermonkey ("modificado localmente") aparecia porque o
+  script era colado no editor. Instalar pelo link raw do GitHub (Reinstalar) limpa o aviso e mantém a atualização
+  automática funcionando.

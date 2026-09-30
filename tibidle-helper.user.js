@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.11.7
+// @version      2.11.8
 // @description  Magia (Econômica / Equilibrado / Área / Boss / Inteligente, com simulador da fila) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -14,8 +14,11 @@
 // ==/UserScript==
 
 /* ⚠ ESTILO, não defeito, e de propósito: "if (x) return;" numa linha (guardas
- * de entrada), comentários alinhados à direita e "catch (e) { }" em leitura de
- * DOM que pode não existir ainda. v2.11 — a diretiva eslint-disable que ficava
+ * de entrada) e "catch (e) { }" em leitura de DOM que pode não existir ainda.
+ * v2.11.8 — o editor do Tampermonkey roda um ESLint próprio e marcava 143
+ * linhas com "!" (comentário alinhado com vários espaços, if/for de várias
+ * linhas sem chaves, forEach(x => x.onclick = …)). Corrigido no código, e o
+ * eslint.config.mjs do projeto passou a exigir as mesmas regras. v2.11 — a diretiva eslint-disable que ficava
  * aqui saiu: o ESLint do projeto (config do plano 2.11) não liga essas regras
  * e apontava a diretiva como inútil. Falha que IMPORTA não é mais engolida em
  * silêncio: vai para falhou() (ver ERROS, perto de log()). */
@@ -23,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.11.7';
+    const VERSAO = '2.11.8';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -95,7 +98,7 @@
                 if (!o || typeof o !== 'object') return;
                 const t = typeof o.type === 'string' ? o.type : '?';
                 if (t === 'pong') return;
-                if (t === 'welcome' || t === 'resume') WS.socket = ws;      // o socket do JOGO é este
+                if (t === 'welcome' || t === 'resume') WS.socket = ws; // o socket do JOGO é este
                 WS.tipos[t] = (WS.tipos[t] || 0) + 1;
                 if (!WS.amostras[t]) WS.amostras[t] = semSegredos(o).slice(0, 400);
                 try { observarRecebido(o); } catch (e) { falhou('observarRecebido', e); }
@@ -134,7 +137,7 @@
             const OrigWS = window.WebSocket;
             const Embrulhado = function (...a) {
                 const ws = Reflect.construct(OrigWS, a, new.target || Embrulhado);
-                ouvir(ws);                                  // ouvir() tem try próprio
+                ouvir(ws); // ouvir() tem try próprio
                 return ws;
             };
             Embrulhado.prototype = OrigWS.prototype;
@@ -209,7 +212,7 @@
         }
         const alvo = voc || vis;
         if (cache[alvo] != null) return cache[alvo];
-        return true;                                  // sem leitura, assume o caso caro
+        return true; // sem leitura, assume o caso caro
     }
     function partyEmRegen() { return ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'].every(v => !manaPotionLigada(v)); }
 
@@ -251,7 +254,7 @@
     function gavetaPeloWelcome(conta) {
         if (CONTA || !conta || !conta.nome) return;
         const nomes = lerChave('tb_helper_contas', {}) || {};
-        if (!Object.keys(nomes).length) return;          // nada anotado ainda: não dá para distinguir o dono
+        if (!Object.keys(nomes).length) return; // nada anotado ainda: não dá para distinguir o dono
         const dono = lerChave('tb_helper_dono', null), id = nomes[conta.nome] || null;
         const prefixo = id ? (id === dono ? 'tb_helper_' : 'tb_helper_' + id + '_')
             : 'tb_helper_n' + String(conta.nome).normalize('NFD').replace(/[^A-Za-z0-9]/g, '').slice(0, 24) + '_';
@@ -656,7 +659,7 @@
          * socket tem. Em 27/09 22:52 o boot leu "nível 1" e gravou 6 magias
          * com nível 1 na tabela de dano. */
         if (ESTADO_WS.frame && ESTADO_WS.frame.nivel) return ESTADO_WS.frame.nivel;
-        return ler('nivel_manual', 1);   // sem leitura, assume o piso: nunca libera magia por engano
+        return ler('nivel_manual', 1); // sem leitura, assume o piso: nunca libera magia por engano
     }
 
     function ouroAtual() {
@@ -971,7 +974,7 @@
             const el = {};
             (m.elements || []).forEach(x => { el[x.type] = x.percent; });
             ELEMENTOS.forEach(e => {
-                const tomado = 100 - (el[e] || 0);   // sem entrada = neutro = toma 100%
+                const tomado = 100 - (el[e] || 0); // sem entrada = neutro = toma 100%
                 soma[e] = (soma[e] || 0) + tomado * w;
                 peso[e] = (peso[e] || 0) + w;
                 if (pior[e] == null || tomado < pior[e]) pior[e] = tomado;
@@ -1333,13 +1336,13 @@
      *   Orcs   custo 8,4 contra orçamento 10,2 → cabe   (real: +5k/h ✓)
      *   Vampire custo 155 contra orçamento 34  → não cabe (real: −138k/h ✓) */
     const MARGEM_LUCRO = 0.8;
-    const FATOR_ALVOS_REAIS = 0.5;     // só metade dos alvos teóricos é atingida
+    const FATOR_ALVOS_REAIS = 0.5; // só metade dos alvos teóricos é atingida
 
     /* v2.10 — `bebe`: se ESTE plano deixa a poção de mana ligada (o
      * Inteligente decide pelo Druida; os outros modelos seguem o jogo). */
     function viabilidade(hunt, avaliadas, voc, bebe) {
         const loot = LOOT_CACHE[hunt.id];
-        if (loot == null) return null;              // ainda não baixou
+        if (loot == null) return null; // ainda não baixou
         const w = hunt.monsters.reduce((s, m) => s + (m.weight || 1), 0) || 1;
         const hp = hunt.monsters.reduce((s, m) => s + m.health * (m.weight || 1), 0) / w;
         const orcamento = loot * MARGEM_LUCRO;
@@ -1424,7 +1427,7 @@
     function catalogoMunicao() {
         const c = (Array.isArray(CAT.municao) && CAT.municao.length && CAT.municao) || _ammoCat;
         if (c) return c;
-        if (Date.now() - _ammoTentou > 10 * 60 * 1000) {     // sem rede: tenta de novo em 10 min, não a cada plano
+        if (Date.now() - _ammoTentou > 10 * 60 * 1000) { // sem rede: tenta de novo em 10 min, não a cada plano
             _ammoTentou = Date.now();
             buscarJSON('/ammo').then(a => { if (Array.isArray(a) && a.length) { _ammoCat = a; invalidarPlanos(); } }).catch(() => { });
         }
@@ -1650,9 +1653,9 @@
         while (t < T) {
             if (!pocao) mana = Math.min(max, mana + regen * (t - ult));
             ult = t;
-            const v = vivos(t);
+            const v = vivos(t), agora = t, manaAgora = mana;
             const i = v > 0 && t >= grupo
-                ? slots.findIndex((s, k) => pronto[k] <= t && !(s.sec && sec[s.sec] > t) && v >= (s.minimo || 1) && (s.runa || pocao || mana >= (s.mana || 0)))
+                ? slots.findIndex((s, k) => pronto[k] <= agora && !(s.sec && sec[s.sec] > agora) && v >= (s.minimo || 1) && (s.runa || pocao || manaAgora >= (s.mana || 0)))
                 : -1;
             if (i < 0) { t = v > 0 ? (t < grupo ? grupo : t + SIM_PASSO_MS) : t - (t % ciclo) + ciclo; continue; }
             const s = slots[i];
@@ -1757,13 +1760,13 @@
             const g = kit.map(a => a.m.secondaryGroup).filter(Boolean);
             if (new Set(g).size < g.length) continue;
             const kl = kit.filter(a => !enchimento(a)), ke = kit.filter(enchimento);
-            for (const pl of permutacoes(kl)) for (const pe of permutacoes(ke)) {
+            for (const pl of permutacoes(kl)) { for (const pe of permutacoes(ke)) {
                 const plano = pl.concat(pe).map(a => ({ av: a, minimo: 1 }));
                 if (plano.some((p, j) => slotMorto(plano, j, 1))) continue;
                 const s = simularFila(slotsParaSimular(plano), o);
                 const x = { ordem: plano.map(p => p.av), danoS: s.danoS, ouroS: s.ouroS };
                 if (melhorQue(x, melhor)) melhor = x;
-            }
+            } }
         }
         return melhor ? melhor.ordem : [];
     }
@@ -1834,7 +1837,7 @@
         const danos = danosConhecidos(voc, ent.bruto, true);
 
         const avaliadas = magiasDaVocacao(voc).map(m => avaliar(m, hunt, info, voc, danos))
-            .sort((a, b) => b.danoEfetivo - a.danoEfetivo);   // RANKING IMUTÁVEL
+            .sort((a, b) => b.danoEfetivo - a.danoEfetivo); // RANKING IMUTÁVEL
 
         if (!avaliadas.length) return { erro: 'nenhuma magia de ataque elegível' };
         /* v2.10 (item 3) — runa que o ML do personagem não alcança não entra
@@ -2130,7 +2133,7 @@
                             runasH: Math.round(r.sim.runasS * 3600), pocao: !!r.bebe };
         }
         if (!danoS) return null;
-        const custoPorAbate = hp * (pocaoS * fatorDesperdicio(hp) + runaS) / danoS;   // curva calibrada só na poção
+        const custoPorAbate = hp * (pocaoS * fatorDesperdicio(hp) + runaS) / danoS; // curva calibrada só na poção
         const orcamento = loot * MARGEM_LUCRO;
         const regen = VOCS_PLANO.every(v => !pocoes[v]);
         return {
@@ -2508,7 +2511,7 @@
     function socketAberto() { return !!(WS.socket && WS.socket.readyState === 1); }
     function enviarWS(obj) {
         if (!socketAberto()) throw new Error('socket do jogo não está aberto');
-        WS.socket.send(JSON.stringify(obj));          // passa pelo grampo: conta em WS.enviados e observarEnviado
+        WS.socket.send(JSON.stringify(obj)); // passa pelo grampo: conta em WS.enviados e observarEnviado
     }
     const ordemParty = () => (ESTADO_WS.party.length ? ESTADO_WS.party : ESTADO_WS.roster);
     const vocDoIndice = (i) => ordemParty()[i] || null;
@@ -2524,7 +2527,7 @@
      * num welcome/resume ou num profiles_set do próprio cliente (que manda o
      * perfil inteiro). */
     const perfilReal = (v) => !!(ESTADO_WS.profiles && ESTADO_WS.profiles[v] && typeof ESTADO_WS.profiles[v] === 'object' && Array.isArray(ESTADO_WS.profiles[v].list));
-    function perfilDaVoc(v) {                          // mesmo preenchimento que o cliente faz (4 perfis)
+    function perfilDaVoc(v) { // mesmo preenchimento que o cliente faz (4 perfis)
         const p = ESTADO_WS.profiles && ESTADO_WS.profiles[v];
         const base = p ? clonar(p) : { active: 0, list: [] };
         if (!Array.isArray(base.list)) base.list = [];
@@ -2538,7 +2541,7 @@
         if (c) return c;
         return (ESTADO_WS.battleConfigs && ESTADO_WS.battleConfigs[v]) || null;
     }
-    function normalizarConfig(c) {                      // = e3() do cliente
+    function normalizarConfig(c) { // = e3() do cliente
         c = c || {};
         const r = {
             heals: (c.heals || []).map(h => h ? { name: h.name, percent: h.percent != null ? h.percent : 60 } : null),
@@ -2551,7 +2554,7 @@
         return r;
     }
     const pct100 = v => Math.min(100, Math.max(0, Math.round(Number(v) || 0)));
-    function payloadBattleConfig(c, who) {             // = ee() do cliente
+    function payloadBattleConfig(c, who) { // = ee() do cliente
         const t = {};
         if (who != null) t.who = who;
         const heals = (c.heals || []).slice(0, 5).map(h => h && h.name ? { name: h.name, percent: pct100(h.percent) } : null);
@@ -2576,7 +2579,7 @@
         const nova = normalizarConfig(cfg);
         if (perfilReal(voc)) {
             const p = ESTADO_WS.profiles[voc];
-            while (p.list.length < 4) p.list.push({ name: String(p.list.length + 1), config: null });   // o mesmo preenchimento de perfilDaVoc
+            while (p.list.length < 4) p.list.push({ name: String(p.list.length + 1), config: null }); // o mesmo preenchimento de perfilDaVoc
             const i = (p.active >= 0 && p.active < p.list.length) ? p.active : 0;
             p.list[i] = Object.assign({ name: String(i + 1) }, p.list[i], { config: nova });
             return;
@@ -2800,7 +2803,7 @@
     }
     function observarEnviado(o) {
         if (!o || !o.type) return;
-        try { mkObservarEnviado(o); } catch (e) { falhou('mercado (enviado)', e); }   // v2.11 — conta as ações do mercado (limite 20/min por conta)
+        try { mkObservarEnviado(o); } catch (e) { falhou('mercado (enviado)', e); } // v2.11 — conta as ações do mercado (limite 20/min por conta)
         const d = (o.data && typeof o.data === 'object') ? o.data : {};
         if (o.type === 'start_hunt') { ESTADO_WS.ultimoStart = Object.assign({ t: Date.now() }, d); return; }
         /* v2.9.0 — kit novo = medição nova. A mana média de cada personagem é o
@@ -2820,9 +2823,9 @@
         if (o.type === 'analyzer_reset') { if (SESSAO) fecharSessao('analisador zerado'); }
     }
     function observarRecebido(o) {
-        try { observarProgresso(o); } catch { }       // v2.11 — aba Progresso: só leitura (chaves, bestiário, prey, plano offline)
-        try { diagObservar(o); } catch { }            // v2.11 — Diagnóstico: guarda só a FORMA das mensagens
-        try { observarMercado(o); } catch (e) { falhou('observarMercado', e); }   // v2.11 — aba Mercado: premium, mochila, protegidos, respostas do mercado
+        try { observarProgresso(o); } catch { } // v2.11 — aba Progresso: só leitura (chaves, bestiário, prey, plano offline)
+        try { diagObservar(o); } catch { } // v2.11 — Diagnóstico: guarda só a FORMA das mensagens
+        try { observarMercado(o); } catch (e) { falhou('observarMercado', e); } // v2.11 — aba Mercado: premium, mochila, protegidos, respostas do mercado
         if (!o || !o.type) return;
         const d = (o.data && typeof o.data === 'object') ? o.data : {};
         if (o.type === 'depot_state' && Array.isArray(d.entries)) {
@@ -2888,7 +2891,7 @@
                 ESTADO_WS.rosterFull = clonar(d.roster); ESTADO_WS.rosterFull_t = Date.now();
             }
             if (Array.isArray(d.state && d.state.party) && d.state.party.length) ESTADO_WS.party = vocsPorPosicao(d.state.party);
-            if (d.worldToken) { _danosRestPendente = true; _danosRestProxima = 0; }   // amostrar() lê /spell-numbers quando o catálogo estiver pronto
+            if (d.worldToken) { _danosRestPendente = true; _danosRestProxima = 0; } // amostrar() lê /spell-numbers quando o catálogo estiver pronto
             if (o.type === 'welcome') { renderizar(); return; }
             /* v2.11 — resume SEM huntId = retomada na cidade: não é caçada, e
              * não pode criar frame "fresco" (emHunt() mentiria por 5 s) */
@@ -3098,8 +3101,8 @@
     function motivoNaoDisparaPuro(s) {
         if (!s.on) return 'chave desligada';
         if (s.huntId == null) return 'nenhuma hunt memorizada';
-        if (s.boss) return 'boss em andamento';                      // v2.11: nunca stop no meio de boss
-        if (s.scan) return s.scan;                                     // Scan rodando, terminando ou restaurando
+        if (s.boss) return 'boss em andamento'; // v2.11: nunca stop no meio de boss
+        if (s.scan) return s.scan; // Scan rodando, terminando ou restaurando
         if (s.ciclo) return 'ciclo em andamento';
         if (s.trava) return s.trava + ' em andamento';
         if (s.aprendendo) return 'medindo dano das magias';
@@ -3139,8 +3142,8 @@
         const d = (Number(elAgora) || 0) - (Number(elBase) || 0);
         return d >= 5000 ? d / 1000 : Math.max(1, Number(segPagina) || 1);
     }
-    const ouroBase = r => r.estavelH != null ? r.estavelH : r.ouroH;   // v2.3.0: ranking de ouro pelo estável
-    const xpBase = r => r.xpRawH != null ? r.xpRawH : r.xpH;          // v2.11: xp SEM boost/prey (resultado antigo sem raw usa xp)
+    const ouroBase = r => r.estavelH != null ? r.estavelH : r.ouroH; // v2.3.0: ranking de ouro pelo estável
+    const xpBase = r => r.xpRawH != null ? r.xpRawH : r.xpH; // v2.11: xp SEM boost/prey (resultado antigo sem raw usa xp)
     /* Veredito relativo: quem chega a 90 % do melhor XP é "XP", 90 % do melhor
      * ouro (e positivo) é "Ouro", os dois é "Os dois".
      * v2.11 — JUSTO: XP pelo raw (boost e prey mudam de uma hora para outra);
@@ -3174,7 +3177,7 @@
     const fimDoScan = c => (!c || !c.fim || (c.fim === 'ficar' && !c.fimEscolhido)) ? 'voltar' : c.fim;
     /* @@AUTOHUNT-PURO-FIM */
     const AUTO_HUNT_PADRAO = { on: false, modo: 'pct', pct: 20, oz: 200, voltar: true, huntId: null,
-                               nvEquip: true, nvImbu: true, nuncaVender: [] };   // v2.11 — "nunca vender", ligado por padrão
+                               nvEquip: true, nvImbu: true, nuncaVender: [] }; // v2.11 — "nunca vender", ligado por padrão
     const autoHunt = () => Object.assign({}, AUTO_HUNT_PADRAO, ler('auto_hunt', {}));
     const guardarAutoHunt = (patch) => guardar('auto_hunt', Object.assign(autoHunt(), patch));
 
@@ -3411,7 +3414,7 @@
             const n = $$('[data-testid^="sell-check-"],[data-testid^="sell-row-"]', tid('sell-panel') || document).length;
             const assin = txt + '|' + n;
             iguais = assin === ultimo ? iguais + 1 : 0; ultimo = assin;
-            const cf = tid('sell-confirm'), vazio = !n && (!cf || cf.disabled);   // painel vazio pode vir sem número no total
+            const cf = tid('sell-confirm'), vazio = !n && (!cf || cf.disabled); // painel vazio pode vir sem número no total
             return (/\d/.test(txt) || vazio) && iguais >= 3;
         }, 6000, 150);
         if (!montado) { fecharPainel(); await dorme(400); return { erro: 'painel de venda abriu mas o total (sell-total) não assentou em 6 s — nada vendido' }; }
@@ -3619,7 +3622,7 @@
                 const r1 = await finalizarHunt();
                 if (r1.erro) { desligar('finalizar', r1.erro); return false; }
                 if (origem === 'finalizar') return true;
-                await dorme(800);                       // a cidade termina de montar
+                await dorme(800); // a cidade termina de montar
             }
             const r2 = await purificarTodos();
             if (r2.pulou) log('purificar: ' + r2.pulou + ' (pulei)', 'info');
@@ -3732,13 +3735,13 @@
      *  existiam. Morte/`ended` por fora para o Scan e fica registrado.
      * ====================================================================== */
     const SCAN_PADRAO = { mapas: [], minutos: 5, lureMax: true, fim: 'voltar', modelo: 'equilibrado', comparar: false,
-                          variantes: ['inteligente', 'equilibrado', 'economica'] };   // comparar: cada mapa × cada variante (estudo)
+                          variantes: ['inteligente', 'equilibrado', 'economica'] }; // comparar: cada mapa × cada variante (estudo)
     const scanCfg = () => Object.assign({}, SCAN_PADRAO, ler('scan_cfg', {}));
     const guardarScanCfg = (patch) => guardar('scan_cfg', Object.assign(scanCfg(), patch));
     const scanResultados = () => ler('scan_resultados', {});
     const SCAN = { ativo: false, fila: [], idx: -1, huntId: null, fase: 'parado', t0: 0, base: null, vivo: null, capMin: 100, erro: null, ocupado: false, iniciadoEm: 0,
-                   foto: null, rodada: 0, restaurando: false, encerrou: null, stopEnviado: 0, endedN: 0 };   // v2.11
-    const CAP_MIN_SCAN = 10;                        // abaixo disso o loot se perde e a medição sai suja
+                   foto: null, rodada: 0, restaurando: false, encerrou: null, stopEnviado: 0, endedN: 0 }; // v2.11
+    const CAP_MIN_SCAN = 10; // abaixo disso o loot se perde e a medição sai suja
 
     function scanIniciar() {
         const c = scanCfg();
@@ -3772,7 +3775,7 @@
         log('Scan desligado' + (motivo ? ': ' + motivo : ''), tipo || 'info');
         const modo = restaurar || 'tudo';
         if (SCAN.foto && modo !== 'nada') {
-            SCAN.restaurando = true;                    // fecha a janela até a restauração pegar a vez
+            SCAN.restaurando = true; // fecha a janela até a restauração pegar a vez
             scanRestaurar(modo).catch(e => log('Scan: restaurar estourou — ' + e.message, 'erro'));
         } else if (SCAN.foto) { SCAN.foto = null; log('Scan: jogo NÃO restaurado (' + (motivo || 'parado') + ') — mapa e kits ficaram como o Scan deixou', 'info'); }
         renderizar();
@@ -3807,7 +3810,7 @@
         }
         const h = (CAT.hunts || []).find(x => x.id === foto.huntId);
         if (!h) { log('Scan: mapa de antes (id ' + foto.huntId + ') não está no catálogo — fiquei onde estou', 'erro'); return; }
-        const r = await scanEntrar(h, { lure: foto.lureTier != null ? foto.lureTier : 1 });   // lure desconhecido: o menor
+        const r = await scanEntrar(h, { lure: foto.lureTier != null ? foto.lureTier : 1 }); // lure desconhecido: o menor
         log(r.erro ? 'Scan: não voltei para ' + h.title + ' — ' + r.erro : 'Scan: de volta a ' + h.title + ' (lure ' + lureTexto(h, r.lure) + '), como antes do Scan', r.erro ? 'erro' : 'ok');
     }
     /* Reenvia SÓ os perfis que existiam na foto e que mudaram — o objeto
@@ -3947,8 +3950,9 @@
         try {
             /* reserva do ouvinte de `ended`: o contador do grampo subiu durante
              * a medição e não foi stop do Scan → encerrou por fora */
-            if (!SCAN.encerrou && SCAN.fase === 'medindo' && (WS.tipos.ended || 0) > SCAN.endedN && Date.now() - (SCAN.stopEnviado || 0) > 40000)
+            if (!SCAN.encerrou && SCAN.fase === 'medindo' && (WS.tipos.ended || 0) > SCAN.endedN && Date.now() - (SCAN.stopEnviado || 0) > 40000) {
                 SCAN.encerrou = { falha: true, morte: false, motivo: 'encerrou (ended sem motivo lido)', t: Date.now() };
+            }
             if (SCAN.encerrou) { scanFalhaEncerrou(); return; }
             if (!socketAberto()) { SCAN.erro = 'socket fechado'; return; }
             if (ESTADO_WS.boss) { scanParar('boss em andamento — retome quando terminar', 'erro', 'nada'); return; }
@@ -3961,7 +3965,7 @@
                 log(`Scan ${SCAN.idx + 1}/${SCAN.fila.length}: entrando em ${h.title}…`, 'info');
                 renderizar();
                 const r = await scanEntrar(h);
-                if (!SCAN.ativo) return;                // v2.11: desligaram no meio — a restauração cuida do resto
+                if (!SCAN.ativo) return; // v2.11: desligaram no meio — a restauração cuida do resto
                 if (r.erro) { scanGravar(h, null, r.erro); SCAN.fase = 'proximo'; log(`Scan: ${h.title} pulado — ${r.erro}`, 'erro'); return; }
                 await dorme(1500);
                 try { await lootTabela(h.id); } catch (e) { }
@@ -4015,7 +4019,7 @@
         const chave = scanCfg().comparar ? h.id + '|' + modelo : h.id;
         const novo = Object.assign({ id: h.id, title: h.title, levelMin: h.levelMin, t: Date.now(), lure: tier, lureTxt: lureTexto(h, tier), modelo, rodada: SCAN.rodada || null,
                                      nivel: nivelAtual(), minutos: scanCfg().minutos, capMin: Math.round(SCAN.capMin), suja: SCAN.capMin < CAP_MIN_SCAN, erro: erro || null }, m || {});
-        r[chave] = mesclarResultadoScan(r[chave], novo);   // v2.11: falha não apaga resultado bom
+        r[chave] = mesclarResultadoScan(r[chave], novo); // v2.11: falha não apaga resultado bom
         guardar('scan_resultados', r);
     }
     /* veredito: vereditosScan (@@AUTOHUNT-PURO), com o nível de agora como
@@ -4089,7 +4093,7 @@
         if (!SESSAO || SESSAO.amostras.length < 2) { SESSAO = null; return; }
         const a0 = SESSAO.a0 || SESSAO.amostras[0], aN = SESSAO.amostras[SESSAO.amostras.length - 1];
         const dur = (aN.t - a0.t) / 1000;
-        if (dur < 60) { SESSAO = null; return; }        // amostra curta demais pra valer
+        if (dur < 60) { SESSAO = null; return; } // amostra curta demais pra valer
 
         const dOuro = aN.ouro - a0.ouro;
         const anOk = a0.anXp != null && aN.anXp != null && aN.anMs >= a0.anMs && aN.anXp >= a0.anXp;
@@ -4179,7 +4183,7 @@
             if (resetou) { _huntTrocou = !socketSabe; log(socketSabe ? 'contador de abates zerou (analisador reiniciado)' : 'contador de abates zerou — hunt nova, reconfirmando', 'info'); }
         }
         if (ler('hunt_id', null) == null && !_confirmandoHunt && Date.now() > _proximaTentativaHunt && CAT.hunts
-            && Date.now() - _entrouEmHuntEm > 10000) {   // v2.0.0: reserva — o socket tem 10 s para falar primeiro
+            && Date.now() - _entrouEmHuntEm > 10000) { // v2.0.0: reserva — o socket tem 10 s para falar primeiro
             _confirmandoHunt = true;
             confirmarHuntPeloExplore()
                 .then(async r => {
@@ -4195,7 +4199,7 @@
                 })
                 .catch(e => { _proximaTentativaHunt = Date.now() + 30000; falhou('confirmar hunt pela tela', e); })
                 .finally(() => { _confirmandoHunt = false; renderizar(); });
-            return;   // sem hunt confirmada a amostra sairia com o nome errado
+            return; // sem hunt confirmada a amostra sairia com o nome errado
         }
 
         /* v1.8.0 — NÍVEL NOVO NÃO ABRE DIÁLOGO. O dano medido é escalado pelo
@@ -4423,17 +4427,17 @@
     /* elemento das magias de cada mago (dono, 29/09): Feiticeiro energia e fogo, Druida gelo e terra */
     const ELEM_DO_MAGO = { SORCERER: ['energia', 'fogo'], DRUID: ['gelo', 'terra'] };
     const PARTY_REF = {
-        share: { KNIGHT: 0.10, PALADIN: 0.26, SORCERER: 0.27, DRUID: 0.37 },   // fatia de cada um no dano da party
-        dps: 270,                                                                // dano/s da party
-        dpm: { KNIGHT: 3.4, PALADIN: 3.7, SORCERER: 5, DRUID: 6 },              // dano por mana das magias (livro-razão)
-        mana: { KNIGHT: 18, PALADIN: 8, SORCERER: 8, DRUID: 38 },               // mana média (%)
-        bebe: { KNIGHT: false, PALADIN: false, SORCERER: false, DRUID: true },  // poção de mana ligada
-        fracMagica: { KNIGHT: 0.9, PALADIN: 0.95, SORCERER: 1, DRUID: 1 },      // magia de ataque + runa + wand (Dano mágico da forja)
-        fracMagia: { KNIGHT: 0.9, PALADIN: 0.5, SORCERER: 0.87, DRUID: 0.88 },  // só magia: ML de item não vale na runa
-        fracSagrado: 0.5,                                                        // Paladino: Caldera + Divine Missile
-        tiroS: { SORCERER: 0.14, DRUID: 0.14 },                                  // tiros da wand/rod por segundo (medido: mana curta)
-        tomadoS: 30, fisico: 0.65, golpesS: 0.45,                                // Knight: dano tomado/s, parte corpo a corpo, golpes/s
-        ladoApanha: 1,                                                           // ×defesa dos laterais (4 = mapa de magia de área)
+        share: { KNIGHT: 0.10, PALADIN: 0.26, SORCERER: 0.27, DRUID: 0.37 }, // fatia de cada um no dano da party
+        dps: 270, // dano/s da party
+        dpm: { KNIGHT: 3.4, PALADIN: 3.7, SORCERER: 5, DRUID: 6 }, // dano por mana das magias (livro-razão)
+        mana: { KNIGHT: 18, PALADIN: 8, SORCERER: 8, DRUID: 38 }, // mana média (%)
+        bebe: { KNIGHT: false, PALADIN: false, SORCERER: false, DRUID: true }, // poção de mana ligada
+        fracMagica: { KNIGHT: 0.9, PALADIN: 0.95, SORCERER: 1, DRUID: 1 }, // magia de ataque + runa + wand (Dano mágico da forja)
+        fracMagia: { KNIGHT: 0.9, PALADIN: 0.5, SORCERER: 0.87, DRUID: 0.88 }, // só magia: ML de item não vale na runa
+        fracSagrado: 0.5, // Paladino: Caldera + Divine Missile
+        tiroS: { SORCERER: 0.14, DRUID: 0.14 }, // tiros da wand/rod por segundo (medido: mana curta)
+        tomadoS: 30, fisico: 0.65, golpesS: 0.45, // Knight: dano tomado/s, parte corpo a corpo, golpes/s
+        ladoApanha: 1, // ×defesa dos laterais (4 = mapa de magia de área)
         ouroPorMana: 0.6
     };
     function partyDoCtx(ctx) {
@@ -4457,7 +4461,7 @@
     function ptPorManaS(voc, R) {
         if (R.bebe[voc]) return R.ouroPorMana * 3600 / PT_OURO_H;
         const v = (R.dpm[voc] || 0) / R.dps * 100;
-        return (R.mana[voc] || 0) >= 60 ? v * 0.2 : v;     // mana sobrando: regen quase não vira dano
+        return (R.mana[voc] || 0) >= 60 ? v * 0.2 : v; // mana sobrando: regen quase não vira dano
     }
     function pesosDaVoc(voc, ctx) {
         const R = partyDoCtx(ctx), s = R.share[voc] || 0, P = {};
@@ -4469,7 +4473,7 @@
         P.dano_magico = _r(s * fm);
         P.dano_fisico = _r(s * (voc === 'KNIGHT' ? 1 : voc === 'PALADIN' ? 1 - fm : 0));
         for (const e of ELEM) {
-            const w = voc === 'KNIGHT' ? 0                                          // tudo do Knight é físico
+            const w = voc === 'KNIGHT' ? 0 // tudo do Knight é físico
                 : voc === 'PALADIN' ? (e === 'sagrado' ? R.fracSagrado : Math.max(0, fm - R.fracSagrado) / 4)
                 : (ELEM_DO_MAGO[voc] || []).includes(e) ? 0.6 : 0;
             P['dano_elem_' + e] = _r(s * w);
@@ -4482,31 +4486,31 @@
             const golpe = n5 + 0.0425 * sk.atkArma * sk.melee, berserk = 1.1 * (n5 + sk.melee + sk.atkArma);
             P.attack = _r(s * (_pct(0.0425 * sk.melee, golpe) * (1 - fs) + _pct(1.1, berserk) * fs));
             P.corpo_a_corpo = P.skillsword = P.skillaxe = P.skillclub = _r(s * (_pct(0.0425 * sk.atkArma, golpe) * (1 - fs) + _pct(1.1, berserk) * fs));
-            P.nivel_magico = P.magiclevelpoints = 0.05;                               // só a cura dele (Wound Cleansing)
+            P.nivel_magico = P.magiclevelpoints = 0.05; // só a cura dele (Wound Cleansing)
         } else if (voc === 'PALADIN') {
             const tiro = n5 + 0.045 * MUNICAO_GRATIS.arrow * sk.dist;
             P.distancia = P.skilldist = _r(s * (1 - fm) * _pct(0.045 * MUNICAO_GRATIS.arrow, tiro));
-            P.municao_atk = _r(s * (1 - fm) * _pct(0.045 * sk.dist, tiro));          // por ponto de ataque da munição grátis
-            P.nivel_magico = P.magiclevelpoints = _r(s * fs * _pct(4, n5 + 4 * sk.ml));   // Caldera/Missile (a runa ignora ML de item)
+            P.municao_atk = _r(s * (1 - fm) * _pct(0.045 * sk.dist, tiro)); // por ponto de ataque da munição grátis
+            P.nivel_magico = P.magiclevelpoints = _r(s * fs * _pct(4, n5 + 4 * sk.ml)); // Caldera/Missile (a runa ignora ML de item)
         } else {
-            const onda = voc === 'SORCERER' ? _pct(6.75, n5 + 6.75 * sk.ml)             // Energy Wave: n/5 + 4,5–9·ML
-                                            : _pct(6.05, n5 + 6.05 * sk.ml + 34);       // Strong Ice Wave: n/5 + 4,5–7,6·ML + 20–48
-            P.nivel_magico = P.magiclevelpoints = _r(s * fs * onda * (voc === 'DRUID' ? 1.2 : 1));   // Druida: ML também cura o Knight
+            const onda = voc === 'SORCERER' ? _pct(6.75, n5 + 6.75 * sk.ml) // Energy Wave: n/5 + 4,5–9·ML
+                                            : _pct(6.05, n5 + 6.05 * sk.ml + 34); // Strong Ice Wave: n/5 + 4,5–7,6·ML + 20–48
+            P.nivel_magico = P.magiclevelpoints = _r(s * fs * onda * (voc === 'DRUID' ? 1.2 : 1)); // Druida: ML também cura o Knight
         }
         /* ---- mana ---- */
         P.regen_mana = _r(ptPorManaS(voc, R));
         P.max_mana = 0.001;
         /* ---- defesa ---- */
         if (voc === 'KNIGHT') {
-            const k1 = R.tomadoS / 100 * VIDA_PT_KNIGHT;                               // pt por 1 % a menos de TODO o dano que ele toma
+            const k1 = R.tomadoS / 100 * VIDA_PT_KNIGHT; // pt por 1 % a menos de TODO o dano que ele toma
             P.regen_vida = VIDA_PT_KNIGHT;
             P.max_hp = 0.04;
             P.resist_fisica = P.absorbpercentphysical = _r(k1 * R.fisico);
             P.protecao_magica = _r(k1 * (1 - R.fisico));
             for (const e of ELEM) P['resist_' + e] = P['absorbpercent' + ELEM_EN[e]] = _r(k1 * (1 - R.fisico) / 4);
             P.absorbpercentpoison = P.resist_terra;
-            P.cura_propria = _r(k1 * 0.5);                                             // metade da vida dele volta por poção/cura própria
-            P.armor = P.defense = P.extradef = _r(R.golpesS * 0.75 * VIDA_PT_KNIGHT);  // tira 0,5–1× por golpe corpo a corpo
+            P.cura_propria = _r(k1 * 0.5); // metade da vida dele volta por poção/cura própria
+            P.armor = P.defense = P.extradef = _r(R.golpesS * 0.75 * VIDA_PT_KNIGHT); // tira 0,5–1× por golpe corpo a corpo
             P.escudo = P.skillshield = 0.9;
         } else {
             const la = R.ladoApanha > 0 ? R.ladoApanha : 1;
@@ -4515,11 +4519,11 @@
             for (const e of ELEM) P['resist_' + e] = P['absorbpercent' + ELEM_EN[e]] = _r(0.05 * la);
             P.absorbpercentpoison = _r(0.05 * la);
             P.cura_propria = _r(0.05 * la);
-            P.armor = P.defense = P.extradef = P.escudo = P.skillshield = 0;          // armadura e escudo só seguram corpo a corpo
+            P.armor = P.defense = P.extradef = P.escudo = P.skillshield = 0; // armadura e escudo só seguram corpo a corpo
         }
         /* ---- conta ---- */
-        P.capacidade = 0.004;                                                          // 100 oz ≈ 0,4 pt (menos idas à cidade)
-        P.chance_de_loot = 0.9;                                                        // +1 % de drop ≈ 400 de ouro/h (vale o maior da party)
+        P.capacidade = 0.004; // 100 oz ≈ 0,4 pt (menos idas à cidade)
+        P.chance_de_loot = 0.9; // +1 % de drop ≈ 400 de ouro/h (vale o maior da party)
         P.hitchance = 0;
         return P;
     }
@@ -4597,7 +4601,7 @@
         let baseAttrs = a;
         if (peca.equipPreview && peca.equipPreview.attrs) baseAttrs = Object.assign({}, a, peca.equipPreview.attrs);
         for (const [k, v] of Object.entries(baseAttrs)) {
-            if (typeof v !== 'number' || ATTR_IGNORAR.has(k) || ehEncaixe(k)) continue;   // encaixes de imbuement não são bônus
+            if (typeof v !== 'number' || ATTR_IGNORAR.has(k) || ehEncaixe(k)) continue; // encaixes de imbuement não são bônus
             /* regeneração de item: v a cada manaticks/healthticks ms → por segundo */
             if (k === 'managain') { add('regen_mana', v, v * 1000 / (Number(baseAttrs.manaticks) || 2000) * (P.regen_mana || 0)); continue; }
             if (k === 'healthgain') { add('regen_vida', v, v * 1000 / (Number(baseAttrs.healthticks) || 2000) * (P.regen_vida || 0)); continue; }
@@ -4628,11 +4632,11 @@
         for (const f of atrs) { const q = PARES[f.id]; if (q) meu[q[0]][q[1]] += Number(f.valor) || 0; }
         const danoDele = (R.share[voc] || 0) * R.dps;
         const vidaPt = voc === 'KNIGHT' ? VIDA_PT_KNIGHT : VIDA_PT_LADO;
-        const ganhoPar = (g, lado) => {                    // pt da parte "lado" (c ou d) do par g
+        const ganhoPar = (g, lado) => { // pt da parte "lado" (c ou d) do par g
             const o = par[g], m = meu[g];
             const parte = lado === 'c' ? m.c * o.d + m.c * m.d / 2 : m.d * o.c + m.c * m.d / 2;
-            return g === 'critico' ? parte / 100 * (R.share[voc] || 0)          // % do dano dele → % da party
-                                   : danoDele * parte / 10000 * vidaPt;       // vida/s devolvida → pt
+            return g === 'critico' ? parte / 100 * (R.share[voc] || 0) // % do dano dele → % da party
+                                   : danoDele * parte / 10000 * vidaPt; // vida/s devolvida → pt
         };
         for (const f of atrs) {
             const q = PARES[f.id];
@@ -4659,13 +4663,13 @@
             out.push({ iid: e.iid, nome: e.name, slot, attrs: k.attrs, forja: e.forja || { raridade: 0, atributos: [] }, equipPreview: k.equipPreview,
                        sell: k.sell || 0, origem: 'mochila', dono: null, duasMaos: k.attrs.slotType === 'two-handed' });
         }
-        for (const r of (roster || [])) for (const [slot, it] of Object.entries(r.equipment || {})) {
+        for (const r of (roster || [])) { for (const [slot, it] of Object.entries(r.equipment || {})) {
             if (!it || !it.name) continue;
             const k = b(it.name);
             const attrs = Object.assign({}, k.attrs, it.attrs || {});
             out.push({ iid: it.iid || (r.vocation + ':' + slot), nome: it.name, slot: normalizarSlot(slot), attrs, forja: it.forja || { raridade: 0, atributos: [] },
                        equipPreview: k.equipPreview, sell: k.sell || it.value || 0, origem: 'corpo', dono: r.vocation, duasMaos: attrs.slotType === 'two-handed' });
-        }
+        } }
         for (const e of ((depot && depot.entries) || [])) {
             if (!e.forja || !e.slot) continue;
             const k = b(e.itemName);
@@ -4699,7 +4703,7 @@
             const l = x.candidatos.filter(c => !usadas.has(c.peca.iid)).slice(0, EQUIP_TOPK).map(c => ({ iid: c.peca.iid, peca: c.peca, pt: c.r.pontos + (ehAtual(c.peca) ? EQUIP_FICAR_PT : 0) }));
             if (x.atual && !l.some(c => c.iid === x.atual.iid) && !usadas.has(x.atual.iid)) l.push({ iid: x.atual.iid, peca: x.atual, pt: x.atualPt + EQUIP_FICAR_PT });
             if (extra && extra[v]) l.push(extra[v]);
-            l.push({ iid: null, peca: null, pt: 0 });   // "nada" — evita forçar peça ruim quando falta candidato
+            l.push({ iid: null, peca: null, pt: 0 }); // "nada" — evita forçar peça ruim quando falta candidato
             return l;
         });
         let melhor = { soma: -Infinity, esc: null };
@@ -4718,7 +4722,7 @@
     }
     function distribuirEquip(pecas, vocs, ctx) {
         vocs = vocs || Object.keys(PESOS_EQUIP);
-        const pont = new Map();   // iid|voc → resultado
+        const pont = new Map(); // iid|voc → resultado
         const P = (p, v) => { const k = p.iid + '|' + v; if (!pont.has(k)) pont.set(k, pontuarPeca(p, v, ctx)); return pont.get(k); };
         const porVoc = {};
         for (const v of vocs) {
@@ -4750,7 +4754,7 @@
             if (m2) extra[v] = { iid: '__2m__' + v, peca: null, duasMaos: m2.peca, pt: m2.r.pontos - porVoc[v].weapon.melhorPt };
         }
         for (const r of _resolverSlot(porVoc, vocs.filter(v => porVoc[v].shield), 'shield', usadas, extra)) {
-            if (r.c && r.c.duasMaos) {   // 2 mãos venceu: arma vira a de 2 mãos, escudo fica vazio
+            if (r.c && r.c.duasMaos) { // 2 mãos venceu: arma vira a de 2 mãos, escudo fica vazio
                 if (porVoc[r.v].weapon.melhor) usadas.delete(porVoc[r.v].weapon.melhor.iid);
                 fixar(r.v, 'weapon', { iid: r.c.duasMaos.iid, peca: r.c.duasMaos });
                 fixar(r.v, 'shield', null);
@@ -4765,8 +4769,11 @@
          * pontos > 0. v2.11.6 — eram 1: o dono perdia peça boa que era a
          * segunda melhor de alguém (29/09). */
         const reservas = new Set();
-        for (const v of vocs) for (const s of Object.keys(porVoc[v]))
-            porVoc[v][s].candidatos.filter(c => !usadas.has(c.peca.iid) && c.r.pontos > 0).slice(0, EQUIP_RESERVAS).forEach(c => reservas.add(c.peca.iid));
+        for (const v of vocs) {
+            for (const s of Object.keys(porVoc[v])) {
+                porVoc[v][s].candidatos.filter(c => !usadas.has(c.peca.iid) && c.r.pontos > 0).slice(0, EQUIP_RESERVAS).forEach(c => reservas.add(c.peca.iid));
+            }
+        }
         /* v2.9.0 — DISPENSÁVEL NÃO PODE DEPENDER DO MAPA. Com ctx.notas (elemento
          * do mapa atual) a wand of inferno vale menos que nada em Dragon Lair
          * (imune a fogo) e ia para a lista de venda — sendo a melhor wand em
@@ -4796,11 +4803,11 @@
         const bases = pecas.filter(p => !usadas.has(p.iid) && !ehTemporaria(p) && baseDeForja(p));
         const dispensaveis = pecas.filter(p => !usadas.has(p.iid) && !reservas.has(p.iid) && !ehTemporaria(p) && !baseDeForja(p) && (!sobraNoNeutro || sobraNoNeutro.has(p.iid))).map(p => {
             let melhorUso = null;
-            for (const v of vocs) if (vocacaoPode(p.attrs, v) && porVoc[v][p.slot]) {
+            for (const v of vocs) { if (vocacaoPode(p.attrs, v) && porVoc[v][p.slot]) {
                 const top = porVoc[v][p.slot].melhor; if (!top) continue;
                 const d = P(top, v).pontos - P(p, v).pontos;
                 if (!melhorUso || d < melhorUso.d) melhorUso = { v, top, d };
-            }
+            } }
             return Object.assign({}, p, { motivo: melhorUso ? `superada por ${melhorUso.top.nome} (${melhorUso.v.toLowerCase()}, −${Math.round(melhorUso.d * 10) / 10} pt)` : 'nenhuma vocação usa' });
         }).sort((a, b) => (b.sell || 0) - (a.sell || 0));
         return { porVoc, reservas, dispensaveis, usadas, temporarios, bases };
@@ -4964,7 +4971,7 @@
         const pedir = (comRange) => comPrazo(signal => fetch(RAW_URL + '?t=' + Date.now(),
             Object.assign({ cache: 'no-store' }, comRange ? { headers: { Range: 'bytes=0-4095' } } : {}, signal ? { signal } : {})), PRAZO_REDE_MS);
         let r;
-        try { r = await pedir(true); } catch (e) { r = await pedir(false); }   // Range recusado no CORS: sem ele
+        try { r = await pedir(true); } catch (e) { r = await pedir(false); } // Range recusado no CORS: sem ele
         if (!r || !r.ok) return null;
         if (r.body && typeof r.body.getReader === 'function' && typeof TextDecoder === 'function') {
             const leitor = r.body.getReader(), dec = new TextDecoder();
@@ -5161,7 +5168,7 @@
         document.body.append(cx, m);
         const icone = k => $(`.tb-ico[data-aba="${k}"]`, t);
         const mostrar = (v) => { cx.classList.toggle('tb-oculto', !v); m.style.display = v ? 'none' : 'block'; if (!v) g.classList.remove('on'); posicionarCaixa(); };
-        $$('.tb-ico[data-aba]', t).forEach(i => i.onclick = () => { const k = i.dataset.aba; const aberta = !(ui().aberta && ABA === k); ABA = k; guardarUI({ aba: k, aberta }); renderizar(); });
+        $$('.tb-ico[data-aba]', t).forEach(i => { i.onclick = () => { const k = i.dataset.aba; const aberta = !(ui().aberta && ABA === k); ABA = k; guardarUI({ aba: k, aberta }); renderizar(); }; });
         $('#tb-fechar', g).onclick = () => { guardarUI({ aberta: false }); renderizar(); const i = icone(ABA); if (i) i.focus(); };
         $('#tb-atualizar', t).onclick = abrirAtualizacao;
         $('#tb-esconder', t).onclick = () => { guardarUI({ oculto: true }); mostrar(false); m.focus(); };
@@ -5242,11 +5249,11 @@
         corpo.addEventListener('focusin', e => { foco = chaveDoFoco(e.target); });
         document.addEventListener('focusin', e => { if (!corpo.contains(e.target)) foco = null; }, true);
         document.addEventListener('pointerdown', e => { if (!cx.contains(e.target)) foco = null; }, true);
-        if (typeof MutationObserver === 'function') new MutationObserver(() => {
+        if (typeof MutationObserver === 'function') { new MutationObserver(() => {
             acessibilizar();
             const at = document.activeElement;
             if (foco && (!at || at === document.body)) { const el = acharFoco(foco); if (el) { try { el.focus({ preventScroll: true }); } catch { } } }
-        }).observe(corpo, { childList: true });
+        }).observe(corpo, { childList: true }); }
         // faixa de retorno: um clique num controle da aba marca "ação desta aba"
         corpo.addEventListener('click', e => { if (e.target.closest && e.target.closest('button,[role=switch],[role=button],.tb-sw,[data-scan-ir],input[type=checkbox],input[type=radio]')) _acaoNaAba = { aba: ABA, t: Date.now() }; }, true);
         corpo.addEventListener('change', () => { _acaoNaAba = { aba: ABA, t: Date.now() }; }, true);
@@ -5460,23 +5467,23 @@
         const bat = $('#tb-bt-atualizar'); if (bat) bat.onclick = abrirAtualizacao;
         const fh = $('#tb-finalizar'); if (fh) fh.onclick = () => { if (!_cicloEmCurso) cicloDeVenda('finalizar'); };
         const dg = $('#tb-diagnostico');
-        if (dg) dg.onclick = async () => {
+        if (dg) { dg.onclick = async () => {
             if (_diagnosticando) return;
             _diagnosticando = true; renderizar();
             try { await rodarDiagnostico(); }
             catch (e) { avisar('estado', 'diagnóstico estourou: ' + ((e && e.message) || e), 'erro'); }
             finally { _diagnosticando = false; renderizar(); }
-        };
+        }; }
         const rec = $('#tb-recat');
-        if (rec) rec.onclick = async () => {
+        if (rec) { rec.onclick = async () => {
             if (_rebaixandoCat) return;
             _rebaixandoCat = true; renderizar();
-            try { if (!await carregarCatalogos(true)) avisar('estado', 'catálogos não rebaixados — sem rede? (detalhe no Log)', 'erro'); }   // o sucesso já sai no Log (e na faixa)
+            try { if (!await carregarCatalogos(true)) avisar('estado', 'catálogos não rebaixados — sem rede? (detalhe no Log)', 'erro'); } // o sucesso já sai no Log (e na faixa)
             catch (e) { avisar('estado', 'rebaixar catálogos estourou: ' + e.message, 'erro'); }
             finally { _rebaixandoCat = false; renderizar(); }
-        };
+        }; }
         const apr = $('#tb-aprender');
-        if (apr) apr.onclick = async () => {
+        if (apr) { apr.onclick = async () => {
             if (_aprendendo || _aplicando) return;
             _aprendendo = true; renderizar();
             try {
@@ -5484,10 +5491,10 @@
                 if (r.erro) { avisar('estado', 'sem /spell-numbers (' + r.erro + ') — medindo pelos diálogos', 'info'); await aprenderDanosTodos(); }
             } catch (e) { avisar('estado', 'aprender dano estourou: ' + e.message, 'erro'); }
             finally { _aprendendo = false; renderizar(); }
-        };
+        }; }
         const cfh = $('#tb-confhunt');
-        if (cfh) cfh.onclick = async () => {
-            if (_confirmandoHunt) return;                  // a amostragem também abre esta tela: um de cada vez
+        if (cfh) { cfh.onclick = async () => {
+            if (_confirmandoHunt) return; // a amostragem também abre esta tela: um de cada vez
             _confirmandoHunt = true; renderizar();
             const antes = ler('hunt_id', null);
             try {
@@ -5496,12 +5503,12 @@
                 else if (r.hunt && r.hunt.id === antes) avisar('estado', 'hunt confirmada: ' + r.hunt.title + ' (já era esta)', 'ok');
             } catch (e) { avisar('estado', 'confirmar hunt estourou: ' + e.message, 'erro'); }
             finally { _confirmandoHunt = false; renderizar(); }
-        };
+        }; }
         /* v1.8.0 — F5 zera a marcação do Auto Selling (o ciclo de venda não).
          * Abre a janela de loot, aba Auto Selling, MARCAR TUDO, fecha. Só por
          * botão, nunca sozinho. */
         const ase = $('#tb-autosell');
-        if (ase) ase.onclick = async () => {
+        if (ase) { ase.onclick = async () => {
             if (_autoSellEmCurso) return;
             _autoSellEmCurso = true; renderizar();
             try {
@@ -5522,7 +5529,7 @@
                 const fechar = tid('window-close-loot'); if (fechar) fechar.click();
                 avisar('estado', 'auto-sell falhou: ' + e.message, 'erro');
             } finally { _autoSellEmCurso = false; renderizar(); }
-        };
+        }; }
     }
     /* v2.11 — CSS das telas Auto Hunt e Scan, com escopo (.tb-ah / .tb-sc):
      * a casca do painel é de outra área; aqui só o que estas telas pedem —
@@ -5656,15 +5663,15 @@
     }
     function ligarAutoHunt() {
         const sw = $('#tb-ah-on');
-        if (sw) sw.onclick = () => {
+        if (sw) { sw.onclick = () => {
             const a = autoHunt();
             if (!a.on && a.huntId == null) { log('memorize a hunt antes de ligar a automação', 'erro'); return; }
             guardarAutoHunt({ on: !a.on });
             log('Auto Hunt ' + (!a.on ? 'LIGADO' : 'desligado'), !a.on ? 'ok' : 'info');
             renderizar();
-        };
+        }; }
         const mem = $('#tb-ah-memorizar');
-        if (mem) mem.onclick = async () => {
+        if (mem) { mem.onclick = async () => {
             mem.disabled = true;
             try {
                 const hs = ESTADO_WS.huntId != null && !ESTADO_WS.boss ? (CAT.hunts || []).find(x => x.id === ESTADO_WS.huntId) : null;
@@ -5673,10 +5680,10 @@
                 else { guardarAutoHunt({ huntId: r.hunt.id }); log('hunt memorizada: ' + r.hunt.title, 'ok'); }
             } catch (e) { log('memorizar estourou: ' + e.message, 'erro'); }
             renderizar();
-        };
+        }; }
         const esq = $('#tb-ah-esquecer');
         if (esq) esq.onclick = () => { guardarAutoHunt({ huntId: null, on: false }); log('hunt esquecida; automação desligada', 'info'); renderizar(); };
-        $$('input[name="tb-ah-modo"]').forEach(r => r.onchange = () => { guardarAutoHunt({ modo: r.value }); renderizar(); });
+        $$('input[name="tb-ah-modo"]').forEach(r => { r.onchange = () => { guardarAutoHunt({ modo: r.value }); renderizar(); }; });
         const pct = $('#tb-ah-pct'); if (pct) pct.onchange = () => guardarAutoHunt({ pct: Math.max(1, Math.min(99, parseInt(pct.value) || 20)) });
         const oz = $('#tb-ah-oz'); if (oz) oz.onchange = () => guardarAutoHunt({ oz: Math.max(10, parseInt(oz.value) || 200) });
         const vol = $('#tb-ah-voltar'); if (vol) vol.onchange = () => guardarAutoHunt({ voltar: vol.checked });
@@ -5688,14 +5695,14 @@
             /* grava no Enter e no blur de verdade — não só no change: depois de
              * um repinte o valor volta por código e o Chrome não dispara change */
             const gravar = () => {
-                if (_repintandoAH || !lst.isConnected) return;   // o repinte tirou o campo da página: o rascunho segue em _rascunhoAH
+                if (_repintandoAH || !lst.isConnected) return; // o repinte tirou o campo da página: o rascunho segue em _rascunhoAH
                 const vistos = new Set(), itens = [];
                 lst.value.split(/[,;\n]+/).map(x => x.trim().toLowerCase()).filter(Boolean).forEach(x => { if (!vistos.has(normNomeItem(x))) { vistos.add(normNomeItem(x)); itens.push(x); } });
                 if ((autoHunt().nuncaVender || []).join('|') === itens.join('|')) return;
                 _rascunhoAH = null;
                 guardarAutoHunt({ nuncaVender: itens });
                 log('nunca vender (sua lista): ' + (itens.length ? itens.join(', ') : 'vazia'), 'ok');
-                setTimeout(renderizar, 0);                  // nunca repintar de dentro de um evento do próprio campo
+                setTimeout(renderizar, 0); // nunca repintar de dentro de um evento do próprio campo
             };
             lst.onchange = gravar;
             lst.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); gravar(); } });
@@ -5799,17 +5806,17 @@
         const alternar = () => { if (SCAN.ativo) scanParar('pelo botão'); else scanIniciar(); };
         const scOn = $('#tb-scan-on'); if (scOn) scOn.onclick = alternar;
         const go = $('#tb-scan-go'); if (go) go.onclick = alternar;
-        $$('[data-scan-mapa]').forEach(cb => cb.onchange = () => {
+        $$('[data-scan-mapa]').forEach(cb => { cb.onchange = () => {
             const id = parseInt(cb.dataset.scanMapa), c = scanCfg();
             const m = c.mapas.filter(x => x !== id); if (cb.checked) m.push(id);
             guardarScanCfg({ mapas: m }); renderizar();
-        });
-        const scMin = $('#tb-scan-min'); if (scMin) scMin.onchange = () => { guardarScanCfg({ minutos: Math.max(1, Math.min(60, parseInt(scMin.value) || 5)) }); setTimeout(renderizar, 0); };   // o change pode vir do campo saindo da página num repinte
+        }; });
+        const scMin = $('#tb-scan-min'); if (scMin) scMin.onchange = () => { guardarScanCfg({ minutos: Math.max(1, Math.min(60, parseInt(scMin.value) || 5)) }); setTimeout(renderizar, 0); }; // o change pode vir do campo saindo da página num repinte
         const scLure = $('#tb-scan-lure'); if (scLure) scLure.onchange = () => guardarScanCfg({ lureMax: scLure.checked });
         const scFim = $('#tb-scan-fim'); if (scFim) scFim.onchange = () => guardarScanCfg({ fim: scFim.value, fimEscolhido: true });
         const scMod = $('#tb-scan-modelo'); if (scMod) scMod.onchange = () => guardarScanCfg({ modelo: scMod.value });
         const scCmp = $('#tb-scan-comparar'); if (scCmp) scCmp.onchange = () => { guardarScanCfg({ comparar: scCmp.checked }); renderizar(); };
-        $$('[data-scan-var]').forEach(cb => cb.onchange = () => { const c = scanCfg(); const v = (c.variantes || []).filter(x => x !== cb.dataset.scanVar); if (cb.checked) v.push(cb.dataset.scanVar); guardarScanCfg({ variantes: v }); renderizar(); });
+        $$('[data-scan-var]').forEach(cb => { cb.onchange = () => { const c = scanCfg(); const v = (c.variantes || []).filter(x => x !== cb.dataset.scanVar); if (cb.checked) v.push(cb.dataset.scanVar); guardarScanCfg({ variantes: v }); renderizar(); }; });
         const scLm = $('#tb-scan-limpar-mapas'); if (scLm) scLm.onclick = () => { guardarScanCfg({ mapas: [] }); renderizar(); };
         const scL = $('#tb-scan-limpar'); if (scL) ligarDoisToques(scL, 'scan-limpar', 'apagar todos?', () => { guardar('scan_resultados', {}); log('resultados do Scan apagados', 'info'); renderizar(); });
         $$('[data-scan-ir]').forEach(b => { const id = parseInt(b.dataset.scanIr); ligarDoisToques(b, 'ir-' + id, 'confirmar ›', () => scanIrPara(id)); });
@@ -5885,8 +5892,8 @@
          * não vale. Com ≥ 10 min no mapa mostrado, o selo é o do jogo; a
          * estimativa fica embaixo, para comparar kits. */
         const med = vereditoMedido(h);
-        if (med) corpo += `<div class="tb-ver ${med.cabe ? 'ok' : 'ruim'}"><span class="tb-vsel ${med.cabe ? 'ok' : 'ruim'}">${med.cabe ? '✓ se paga' : '✗ não se paga'}</span>medido no jogo (${numBR(med.min)} min, kit atual): gasto <b>${numBR(med.custo, 1)} o</b>/abate · teto ${numBR(med.loot * MARGEM_LUCRO, 1)} o <span class="tb-mut">(${Math.round(MARGEM_LUCRO * 100)} % do loot medido de ${numBR(med.loot, 1)} o)</span>` +
-            `<div class="tb-mut">${med.lucroH >= 0 ? '+' : ''}${milBR(med.lucroH)} de ouro/h · ${numBR(med.abatesH)} abates/h</div></div>`;
+        if (med) { corpo += `<div class="tb-ver ${med.cabe ? 'ok' : 'ruim'}"><span class="tb-vsel ${med.cabe ? 'ok' : 'ruim'}">${med.cabe ? '✓ se paga' : '✗ não se paga'}</span>medido no jogo (${numBR(med.min)} min, kit atual): gasto <b>${numBR(med.custo, 1)} o</b>/abate · teto ${numBR(med.loot * MARGEM_LUCRO, 1)} o <span class="tb-mut">(${Math.round(MARGEM_LUCRO * 100)} % do loot medido de ${numBR(med.loot, 1)} o)</span>` +
+            `<div class="tb-mut">${med.lucroH >= 0 ? '+' : ''}${milBR(med.lucroH)} de ouro/h · ${numBR(med.abatesH)} abates/h</div></div>`; }
         if (vp) {
             const bebem = VOCS.filter(v => vp.pocoes && vp.pocoes[v]);
             const gasto = vp.ouroH > 0 ? `~${milBR(vp.ouroH)} de ouro/h (${vp.regen ? 'runa' : 'poção e runa'})` : 'sem gasto de ouro';
@@ -5934,7 +5941,7 @@
      * ainda espera (loot, armadura do bestiário). v2.11 (D2): a busca saiu do
      * DESENHO — telaMagia disparava fetch a cada repinte enquanto o anterior
      * não voltava; agora uma por hunt de cada vez, e o repinte vem quando chega. */
-    const _buscandoMagia = new Set(), _semLoot = {};      // _semLoot[huntId] = hora da falha (tenta de novo depois de 1 min)
+    const _buscandoMagia = new Set(), _semLoot = {}; // _semLoot[huntId] = hora da falha (tenta de novo depois de 1 min)
     function buscarUmaVez(chave, fazer) {
         if (_buscandoMagia.has(chave)) return;
         _buscandoMagia.add(chave);
@@ -5942,20 +5949,20 @@
     }
     function ligarMagia() {
         const corpo = $('#tb-corpo');
-        $$('[data-modelo]', corpo).forEach(b => b.onclick = () => { if (ler('modelo', 'equilibrado') === b.dataset.modelo) return; guardar('modelo', b.dataset.modelo); renderizar(); });
+        $$('[data-modelo]', corpo).forEach(b => { b.onclick = () => { if (ler('modelo', 'equilibrado') === b.dataset.modelo) return; guardar('modelo', b.dataset.modelo); renderizar(); }; });
         const selHunt = $('#tb-hunt');
         if (selHunt) selHunt.onchange = () => { const v = selHunt.value; guardar('hunt_id', v === '' ? null : parseInt(v)); renderizar(); };
         $$('[data-usar-palpite]', corpo).forEach(b => { b.onclick = () => { guardar('hunt_id', parseInt(b.dataset.usarPalpite)); renderizar(); }; });
         const selBoss = $('#tb-boss');
         if (selBoss) selBoss.onchange = () => { guardar('boss_nome', selBoss.value || null); renderizar(); };
         const ap4 = $('#tb-aplicar-todos');
-        if (ap4) ap4.onclick = () => {
+        if (ap4) { ap4.onclick = () => {
             if (_aplicando || _aprendendo) return;
             const m = ler('modelo', 'equilibrado'), h = alvoDoModelo();
             if (!h) { avisar('magia', m === 'boss' ? 'escolha o boss primeiro' : 'escolha a caçada primeiro', 'erro'); return; }
-            aplicarEmTodos(m, h);                           // marca _aplicando antes do 1º await
+            aplicarEmTodos(m, h); // marca _aplicando antes do 1º await
             renderizar();
-        };
+        }; }
         buscarDadosDaMagia();
     }
     /* loot (veredito) e armadura (bestiário) da hunt que a Magia mostra; é
@@ -5979,7 +5986,7 @@
      * frame do socket escapados. A caixa do "copiar JSON" é estado
      * (_exportacao): com a área de transferência bloqueada ela era o único
      * lugar dos dados e sumia no repinte seguinte (4 s). */
-    let _exportacao = null;           // { texto, copiado: null|true|false, selecionar }
+    let _exportacao = null; // { texto, copiado: null|true|false, selecionar }
     function telaAnalise() {
         garantirCssTelas();
         const lin = (a, b) => `<div class="tb-lin"><span class="tb-mut">${a}</span><span>${b}</span></div>`;
@@ -6014,9 +6021,9 @@
             (tipos.length ? 'recebidos: ' + tipos.slice(0, 10).map(t => `<span class="tb-tag">${escHtml(t)} ×${numBR(WS.tipos[t])}</span>`).join('') + '<br>' : '') +
             (envs.length ? 'enviados: ' + envs.map(t => `<span class="tb-tag tb-ok">${escHtml(t)} ×${numBR(WS.enviados[t].n)}</span>`).join('') : 'nenhum frame enviado ainda'), 'websocket');
         corpo += `<div class="tb-linha" style="margin-top:4px"><button type="button" class="tb-bt mini" id="tb-exportar">copiar JSON</button><button type="button" class="tb-bt mini" id="tb-limpar-sessoes" title="apaga as sessões medidas (pede confirmação)">limpar histórico</button></div>`;
-        if (_exportacao) corpo += `<div class="tb-an-exp"><div class="tb-linha"><span class="${_exportacao.copiado === false ? 'tb-av' : 'tb-mut'}">${_exportacao.copiado === true ? 'copiado — e também aqui:' : _exportacao.copiado === false ? 'área de transferência bloqueada: selecione e copie daqui' : 'copiando…'}</span>` +
+        if (_exportacao) { corpo += `<div class="tb-an-exp"><div class="tb-linha"><span class="${_exportacao.copiado === false ? 'tb-av' : 'tb-mut'}">${_exportacao.copiado === true ? 'copiado — e também aqui:' : _exportacao.copiado === false ? 'área de transferência bloqueada: selecione e copie daqui' : 'copiando…'}</span>` +
             `<button type="button" class="tb-bt mini" id="tb-exportar-fechar" style="margin-left:auto" aria-label="fechar a caixa do JSON">fechar</button></div>` +
-            `<textarea id="tb-exportar-caixa" readonly spellcheck="false" aria-label="dados do Analisador em JSON"></textarea></div>`;
+            `<textarea id="tb-exportar-caixa" readonly spellcheck="false" aria-label="dados do Analisador em JSON"></textarea></div>`; }
         return corpo;
     }
     /* handlers do Analisador (antes dentro de _renderizar). O texto do JSON
@@ -6024,7 +6031,7 @@
      * do repinte nem precisa de escape). */
     function ligarAnalise() {
         const exp = $('#tb-exportar');
-        if (exp) exp.onclick = () => {
+        if (exp) { exp.onclick = () => {
             const dados = JSON.stringify({
                 sessoes: sessoes(), resumo: resumoPorHunt(),
                 ws: { frames: WS.frames, tipos: WS.tipos, binarios: WS.bin,
@@ -6038,7 +6045,7 @@
             p.then(() => { x.copiado = true; avisar('analise', 'JSON copiado para a área de transferência (e na caixa abaixo)', 'ok'); })
              .catch(() => { x.copiado = false; x.selecionar = true; avisar('analise', 'área de transferência bloqueada — o JSON está na caixa abaixo do botão', 'erro'); })
              .finally(renderizar);
-        };
+        }; }
         const caixa = $('#tb-exportar-caixa');
         if (caixa && _exportacao) {
             caixa.value = _exportacao.texto;
@@ -6058,7 +6065,7 @@
     const SLOT_PT = { weapon: 'arma', hand: 'arma', shield: 'escudo', head: 'elmo', helmet: 'elmo', armor: 'armadura', legs: 'calça', boots: 'bota', feet: 'bota', necklace: 'colar', ring: 'anel', ammo: 'munição' };
     const slotPt = (s) => SLOT_PT[s] || s;
     /* 28/09: com 0,5 ele sugeria trocar um bonelord shield por outro quase igual (+0,55). */
-    const GANHO_MIN = 1;     // abaixo disso é empate técnico: não vale a troca
+    const GANHO_MIN = 1; // abaixo disso é empate técnico: não vale a troca
     const EQUIP = { voc: 'KNIGHT', abertos: new Set(), base: null, res: null, lendo: false, erro: null, aviso: null, t: 0, verReservas: false, verTudo: false, equipando: false, ctx: null };
     const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     const rarTag = (p) => { const r = (p.forja && p.forja.raridade) || 0; return `<span class="tb-rar r${r}">${RAR_NOME[r] || r}</span>`; };
@@ -6238,7 +6245,7 @@
                     const w = ondeEsta(f.peca.iid);
                     if (!w) { log(`equip: ${f.peca.nome} não está em lugar nenhum que eu veja — pulei`, 'erro'); continue; }
                     if (w.lugar === 'corpo' && w.voc === f.v && w.slot === f.s) { feitas++; continue; }
-                    if (w.lugar === 'corpo') { resto.push(f); continue; }       // em outro personagem: espera ele trocar
+                    if (w.lugar === 'corpo') { resto.push(f); continue; } // em outro personagem: espera ele trocar
                     if (w.lugar === 'depósito') { const r = await retirarDoDepot(f.peca); if (r.erro) { log('equip: ' + r.erro, 'erro'); continue; } }
                     const r2 = await equiparPeca(f.peca, f.v, f.s);
                     if (r2.erro) { log('equip: ' + r2.erro, 'erro'); continue; }
@@ -6256,7 +6263,7 @@
                 if (g.erro) log('equip: guardar a mochila no depósito falhou — ' + g.erro, 'erro');
             }
             log(`equip: ${feitas} de ${fila.length} troca(s) feita(s)`, feitas ? 'ok' : 'erro');
-            if (feitas) pedirReleituraDeDanos('equipar');   // v2.11 — arma nova muda o dano de todas as magias
+            if (feitas) pedirReleituraDeDanos('equipar'); // v2.11 — arma nova muda o dano de todas as magias
         } catch (e) { log('equip: estourou — ' + e.message, 'erro'); }
         EQUIP.equipando = false;
         await equipAtualizar();
@@ -6322,24 +6329,24 @@
             disp.slice(0, 60).map(p => `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)}<span class="tb-tag">${escHtml(p.origem)}</span> <span class="tb-mut tb-eq-nota">${escHtml(p.motivo)}</span></span><span>${vendivel(p) ? numBR(p.sell || 0) : 'desmanche'}</span></div>`).join('') +
             (disp.length > 60 ? `<div class="tb-mut">… e mais ${disp.length - 60}</div>` : ''), `sobrando (${disp.length} · comuns ${numBR(soma)} o)`);
         const bases = R.bases || [];
-        if (bases.length) h += aj('eq-bases', `<div class="tb-mut tb-eq-nota">Épico ou melhor que ninguém usa: 3+ encaixes valem pela Forja (trocar o encaixe ruim sai mais barato que subir a raridade). Nunca entram nas sobras.</div>` +
-            bases.map(p => `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)} <span class="tb-mut">${escHtml(slotPt(p.slot))} · ${escHtml(p.origem)} · ${escHtml(((p.forja && p.forja.atributos) || []).map(a => rotulo(a.id) + ' ' + a.valor).join(', '))}</span></span></div>`).join(''), `bases de forja (${bases.length})`);
+        if (bases.length) { h += aj('eq-bases', `<div class="tb-mut tb-eq-nota">Épico ou melhor que ninguém usa: 3+ encaixes valem pela Forja (trocar o encaixe ruim sai mais barato que subir a raridade). Nunca entram nas sobras.</div>` +
+            bases.map(p => `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)} <span class="tb-mut">${escHtml(slotPt(p.slot))} · ${escHtml(p.origem)} · ${escHtml(((p.forja && p.forja.atributos) || []).map(a => rotulo(a.id) + ' ' + a.valor).join(', '))}</span></span></div>`).join(''), `bases de forja (${bases.length})`); }
         h += aj('eq-res', [...R.reservas].map(iid => { const p = candidatoPorIid(iid); return p ? `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)} <span class="tb-mut">${escHtml(slotPt(p.slot))} · ${escHtml(p.origem)}</span></span></div>` : ''; }).join(''), `reservas (${R.reservas.size})`);
         const temp = R.temporarios || [];
-        if (temp.length) h += aj('eq-temp', `<div class="tb-mut tb-eq-nota">acabam por carga ou por tempo de caçada (wiki): não entram nas trocas nem na lista de venda — use à mão (boss, mapa difícil).</div>` +
+        if (temp.length) { h += aj('eq-temp', `<div class="tb-mut tb-eq-nota">acabam por carga ou por tempo de caçada (wiki): não entram nas trocas nem na lista de venda — use à mão (boss, mapa difícil).</div>` +
             temp.slice(0, 40).map(p => {
                 const m = VOCS.filter(x => vocacaoPode(p.attrs, x)).map(x => ({ x, r: pontuarPeca(p, x, EQUIP.ctx) })).sort((a, b) => b.r.pontos - a.r.pontos)[0];
                 if (!m) return '';
                 const dura = m.r.cargas ? numBR(m.r.cargas) + ' cargas' : m.r.duracaoS ? numBR(Math.round(m.r.duracaoS / 60)) + ' min' : 'temporário';
-                return `<div class="tb-lin"><span>${escHtml(p.nome)} <span class="tb-mut">${escHtml(slotPt(p.slot))} · ${escHtml(p.origem)} · ${dura}</span></span><span class="tb-mut" title="${VOC_ROTULO[m.x]}">${VOC_CURTO[m.x]} ${pt(m.r.pontos)}</span></div>`; }).join(''), `temporários (${temp.length})`);
+                return `<div class="tb-lin"><span>${escHtml(p.nome)} <span class="tb-mut">${escHtml(slotPt(p.slot))} · ${escHtml(p.origem)} · ${dura}</span></span><span class="tb-mut" title="${VOC_ROTULO[m.x]}">${VOC_CURTO[m.x]} ${pt(m.r.pontos)}</span></div>`; }).join(''), `temporários (${temp.length})`); }
         h += aj('eq-opc', `<label class="tb-l"><input type="checkbox" id="tb-eq-guardar" ${ler('equip_guardar', true) ? 'checked' : ''}> depois de equipar, guardar a mochila inteira no depósito</label><div class="tb-eq-nota">pelo socket: tira do depósito e equipa; a peça que sai cai na mochila. O jogo só tem "guardar tudo": o loot da mochila vai junto. Peça de outro personagem só depois que ele trocar. Arco ↔ besta troca a munição do Paladino junto.</div>`, 'opções');
         return h;
     }
     function ligarEquip() {
         const corpo = $('#tb-corpo');
         const b = $('#tb-eq-atualizar'); if (b) b.onclick = () => { if (!EQUIP.lendo && !EQUIP.equipando) equipAtualizar(); };
-        $$('[data-voc]', corpo).forEach(s => s.onclick = () => { if (EQUIP.voc === s.dataset.voc) return; EQUIP.voc = s.dataset.voc; renderizar(); });
-        $$('.tb-eq', corpo).forEach(e => e.onclick = (ev) => { if (ev.target && ev.target.closest && ev.target.closest('.tb-det')) return; const k = e.dataset.k; if (EQUIP.abertos.has(k)) EQUIP.abertos.delete(k); else EQUIP.abertos.add(k); renderizar(); });
+        $$('[data-voc]', corpo).forEach(s => { s.onclick = () => { if (EQUIP.voc === s.dataset.voc) return; EQUIP.voc = s.dataset.voc; renderizar(); }; });
+        $$('.tb-eq', corpo).forEach(e => { e.onclick = (ev) => { if (ev.target && ev.target.closest && ev.target.closest('.tb-det')) return; const k = e.dataset.k; if (EQUIP.abertos.has(k)) EQUIP.abertos.delete(k); else EQUIP.abertos.add(k); renderizar(); }; });
         const tudo = $('#tb-eq-tudo'); if (tudo) tudo.onclick = () => { EQUIP.verTudo = !EQUIP.verTudo; renderizar(); };
         const e4 = $('#tb-eq-equipar4'); if (e4) e4.onclick = () => { if (!EQUIP.equipando) equiparTrocas(VOCS); };
         const e1 = $('#tb-eq-equipar1'); if (e1) e1.onclick = () => { if (!EQUIP.equipando) equiparTrocas([EQUIP.voc]); };
@@ -6380,10 +6387,10 @@
      * ====================================================================== */
     /* @@PROGRESSO-INICIO — funções puras; testes/progresso.test.js roda este trecho no node. */
     const PG_WIKI = {
-        chaveMin: 0.00047, chaveMax: 0.00105,   // /elites: "entre 0,047% e 0,105% por abate" (a maioria)
-        mochilaT1: 5, mochilaT2: 10,            // /chaves-e-caixas: Key Backpack T1 grátis, T2 100 coins
-        tetoCacadaH: 12,                        // /a-cacada-com-o-jogo-fechado: sessão dura no máx. 12 h de caçada
-        preyH: 2                                // /prey: cada sorteio/renovação vale 2 h de caçada
+        chaveMin: 0.00047, chaveMax: 0.00105, // /elites: "entre 0,047% e 0,105% por abate" (a maioria)
+        mochilaT1: 5, mochilaT2: 10, // /chaves-e-caixas: Key Backpack T1 grátis, T2 100 coins
+        tetoCacadaH: 12, // /a-cacada-com-o-jogo-fechado: sessão dura no máx. 12 h de caçada
+        preyH: 2 // /prey: cada sorteio/renovação vale 2 h de caçada
     };
     const PG_VOCS = ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'];
     const PG_VOC = { KNIGHT: 'Cavaleiro', PALADIN: 'Paladino', SORCERER: 'Feiticeiro', DRUID: 'Druida' };
@@ -6627,15 +6634,15 @@
         r.margem = margem;
         r.horasOuro = r.ouroH == null || x.ouro == null ? null : r.ouroH < 0 ? Math.max(0, (x.ouro - margem) / -r.ouroH) : Infinity;
         let oz = null;
-        if (x.autoSell) oz = tx && tx.horas >= 0.25 && tx.ozLiqH != null ? tx.ozLiqH : null;   // vende a cada 10 min: só o líquido de 15+ min diz algo
+        if (x.autoSell) oz = tx && tx.horas >= 0.25 && tx.ozLiqH != null ? tx.ozLiqH : null; // vende a cada 10 min: só o líquido de 15+ min diz algo
         else if (tx && tx.horas >= 1 / 30) oz = tx.ozH;
         r.ozH = oz;
         r.horasMochila = x.ozLivre == null || oz == null ? null : oz > 0 ? Math.max(0, x.ozLivre / oz) : Infinity;
         const ev = [{ k: 'teto', h: r.tetoH, encerra: true, texto: 'teto de 12 h: a caçada termina ("Tempo da caçada esgotado")' }];
-        if (r.horasOuro != null && Number.isFinite(r.horasOuro)) ev.push({ k: 'ouro', h: r.horasOuro, encerra: margem > 0,
-            texto: margem > 0 ? 'o ouro chega à margem do Auto Exit e a caçada encerra' : 'o ouro acaba: poções e runas pagas PAUSAM (só cura por magia e regeneração) — risco de morte' });
-        if (r.horasMochila != null && Number.isFinite(r.horasMochila)) ev.push({ k: 'mochila', h: r.horasMochila, encerra: !!x.autoExitCap,
-            texto: x.autoExitCap ? 'a mochila enche e o Auto Exit encerra a caçada' : 'a mochila enche: o loot que não couber deixa de ser coletado (a caçada continua)' });
+        if (r.horasOuro != null && Number.isFinite(r.horasOuro)) { ev.push({ k: 'ouro', h: r.horasOuro, encerra: margem > 0,
+            texto: margem > 0 ? 'o ouro chega à margem do Auto Exit e a caçada encerra' : 'o ouro acaba: poções e runas pagas PAUSAM (só cura por magia e regeneração) — risco de morte' }); }
+        if (r.horasMochila != null && Number.isFinite(r.horasMochila)) { ev.push({ k: 'mochila', h: r.horasMochila, encerra: !!x.autoExitCap,
+            texto: x.autoExitCap ? 'a mochila enche e o Auto Exit encerra a caçada' : 'a mochila enche: o loot que não couber deixa de ser coletado (a caçada continua)' }); }
         ev.sort((a, b) => a.h - b.h);
         r.eventos = ev;
         r.primeiro = ev[0];
@@ -6705,9 +6712,9 @@
             secs.sort((a, b) => a.ms - b.ms || ordem.indexOf(a.k) - ordem.indexOf(b.k));
             const s = secs[0];
             agora = s.ms;
-            if (w <= 0) break;                 // sem wildcard na renovação: expira e a trava desliga
+            if (w <= 0) break; // sem wildcard na renovação: expira e a trava desliga
             w--; renov++; s.ms = agora + DUR;
-            if (w === 0) break;                // zerou: todas desligam agora
+            if (w === 0) break; // zerou: todas desligam agora
         }
         return { travadas: secs.length, wildcards: w0, renovacoes: renov, horasTravas: agora / 3600000,
                  horasBonus: Math.max(...secs.map(s => s.ms)) / 3600000 };
@@ -6866,7 +6873,7 @@
         const ult = PROG.amostras[PROG.amostras.length - 1];
         if ((ouro != null || oz != null) && (!ult || agora - ult.t >= PG_AMOSTRA_MS)) {
             PROG.amostras.push({ t: agora, ouro: PROG.estado.ouro, oz, tot });
-            if (PROG.amostras.length > 240) PROG.amostras.shift();          // 2 h de amostras
+            if (PROG.amostras.length > 240) PROG.amostras.shift(); // 2 h de amostras
         }
     }
 
@@ -7179,7 +7186,7 @@
         return h + `<div class="pg-rodape">Só leitura: nada nesta aba envia comando ao jogo.</div></div>`;
     }
     function ligarProgresso() {
-        $$('[data-pg-sub]').forEach(b => b.onclick = () => { guardar('prog_sub', b.dataset.pgSub); renderizar(); });
+        $$('[data-pg-sub]').forEach(b => { b.onclick = () => { guardar('prog_sub', b.dataset.pgSub); renderizar(); }; });
         const muda = (patch) => { guardar('prog_calc', Object.assign(pgCalc(), patch)); renderizar(); };
         const de = $('#pg-de'); if (de) de.onchange = () => { const x = parseInt(de.value) || 0; muda({ de: x, ate: Math.max(x + 1, pgCalc().ate) }); };
         const ate = $('#pg-ate'); if (ate) ate.onchange = () => muda({ ate: parseInt(ate.value) || 1 });
@@ -7197,7 +7204,7 @@
         /* repinta sozinha a cada 5 s só com a aba aberta e a party caçando (é
          * leitura: ouro, mochila e abates mudam a cada frame); nunca no meio de
          * um campo em edição */
-        if (!PROG.timer) PROG.timer = setInterval(() => {
+        if (!PROG.timer) { PROG.timer = setInterval(() => {
             try {
                 const g = $('#tb-gaveta');
                 if (ABA !== 'progresso' || !g || !g.classList.contains('on') || !$('#tb-prog') || PROG.huntId == null) return;
@@ -7205,7 +7212,7 @@
                 if (f && f.closest && f.closest('#tb-prog') && /^(INPUT|SELECT)$/.test(f.tagName)) return;
                 renderizar();
             } catch { }
-        }, 5000);
+        }, 5000); }
     }
 
     /* =========================================================================
@@ -7253,10 +7260,10 @@
      *  pedem 2 toques; RESGATAR TUDO é um botão explícito.
      * ====================================================================== */
     /* @@MERCADO-INICIO — funções puras do Mercado; testes/mercado.test.js roda este trecho no node. */
-    const MK_TAXA_WIKI = 0.05;                 // wiki /mercado: 5 % do total, arredondado para baixo, mínimo 1
-    const MK_VALOR_MAX = 2e9;                  // teto de uma ordem (quantidade × preço)
-    const MK_ESPACO_MS = 3500;                 // 1 pedido ao mercado a cada 3,5 s (limite 20 ações/min, com folga)
-    const MK_ACOES_FOLGA = 16;                 // no máximo 16 ações (criar/cancelar/retirar) por minuto — o jogo aceita 20
+    const MK_TAXA_WIKI = 0.05; // wiki /mercado: 5 % do total, arredondado para baixo, mínimo 1
+    const MK_VALOR_MAX = 2e9; // teto de uma ordem (quantidade × preço)
+    const MK_ESPACO_MS = 3500; // 1 pedido ao mercado a cada 3,5 s (limite 20 ações/min, com folga)
+    const MK_ACOES_FOLGA = 16; // no máximo 16 ações (criar/cancelar/retirar) por minuto — o jogo aceita 20
     const MK_TIPOS_ACAO = ['market_create', 'market_cancel', 'market_execute', 'market_claim'];
     const MK_CATS = { armas: 'Armas', armaduras: 'Armaduras', escudos: 'Escudos', elmos: 'Elmos', pernas: 'Pernas', botas: 'Botas',
                       amuletos: 'Amuletos', aneis: 'Anéis', bolsas: 'Bolsas', pocoes: 'Poções', runas: 'Runas', comida: 'Comida',
@@ -7459,7 +7466,7 @@
             const m = motivoNome(n);
             if (m) { barrar(nome, solto, m); continue; }
             if (trad && trad[n] && trad[n].forjavel) { barrar(nome, solto, 'equipamento sem cópia identificada (sem iid) — o jogo só anuncia cópia'); continue; }
-            const p = pilha(nome); p.mochila += solto; p.nome = String(nome);        // o nome da mochila é o que vai no anúncio
+            const p = pilha(nome); p.mochila += solto; p.nome = String(nome); // o nome da mochila é o que vai no anúncio
         }
         for (const x of pecas) {
             const m = motivoNome(x.n) || motivoPeca(x);
@@ -7524,8 +7531,8 @@
                 if (!c || (Number(c.copyOrders) || 0) <= minhasCop) outros = [];
                 else {
                     const data = cat ? { category: cat } : { itemName: o.itemName }, k = mkChaveCopias(data), cp = e.copias && e.copias[k];
-                    if (cp && !cp.erro) outros = (cp.copies || []).filter(y => y && (mkMin(y.itemName) === n || mkMin(y.instance && y.instance.name) === n)
-                        && !meusIds.has(y.orderId) && mkMesmoCorte(o.forja, y.instance && y.instance.forja)).map(y => y.unitPrice);
+                    if (cp && !cp.erro) { outros = (cp.copies || []).filter(y => y && (mkMin(y.itemName) === n || mkMin(y.instance && y.instance.name) === n)
+                        && !meusIds.has(y.orderId) && mkMesmoCorte(o.forja, y.instance && y.instance.forja)).map(y => y.unitPrice); }
                     else pendente = { tipo: 'market_copies', data, chave: k, cache: 'copias', alvo: k, rotulo: 'cópias de ' + (cat ? (MK_CATS[cat] || cat) : o.itemName), erro: cp ? cp.erro : null };
                 }
             } else {
@@ -7553,10 +7560,10 @@
                           market_list: 'market_list_result', market_stats: 'market_stats_result', market_copies: 'market_copies_result',
                           market_create: 'market_create_result', market_cancel: 'market_cancel_result', market_claim: 'market_claim_result',
                           depot_withdraw: 'depot_result' };
-    const MK_PRAZO_MS = 8000;                  // sem resposta nisso = para (um anúncio pode ter passado: conferir antes de repetir)
-    const MK_GRACA_ERRO_MS = 1200;             // erro sem requestId: espera o resultado de verdade chegar antes de acreditar
-    const MK_PAUSA_LIMITE_MS = 20000;          // rate_limited: pausa e tenta de novo UMA vez
-    const MK_CONF_MS = 4000;                   // janela do 2º toque
+    const MK_PRAZO_MS = 8000; // sem resposta nisso = para (um anúncio pode ter passado: conferir antes de repetir)
+    const MK_GRACA_ERRO_MS = 1200; // erro sem requestId: espera o resultado de verdade chegar antes de acreditar
+    const MK_PAUSA_LIMITE_MS = 20000; // rate_limited: pausa e tenta de novo UMA vez
+    const MK_CONF_MS = 4000; // janela do 2º toque
     /* o que faz parar a fila inteira (os próximos falhariam igual) */
     const MK_PARA_TUDO = new Set(['premium_required', 'unauthorized', 'forbidden', 'invalid_message', 'rate_limited', 'sem_resposta', 'sem_socket']);
     const MK_ERROS = {
@@ -7634,7 +7641,7 @@
         }
         if (ABA === 'mercado' && !MK.ocupado && (/^market_/.test(t) || t === 'depot_result')) {
             const f = document.activeElement;
-            if (!(f && f.closest && f.closest('#tb-mk') && f.tagName === 'INPUT')) renderizar();     // não tira o foco de quem digita
+            if (!(f && f.closest && f.closest('#tb-mk') && f.tagName === 'INPUT')) renderizar(); // não tira o foco de quem digita
         }
     }
     const mkCasador = (tipo, data) => (data && data.requestId ? (d) => d.requestId === data.requestId
@@ -7655,7 +7662,7 @@
             if (!socketAberto()) return { erro: 'sem_socket' };
             const p = MK.pend = { tipo, data, espera: MK_RESPOSTA[tipo], casa: mkCasador(tipo, data), t0: Date.now(), res: null, erro: null };
             try { enviarWS({ type: tipo, data }); } catch { MK.pend = null; return { erro: 'sem_socket' }; }
-            MK.ultimoEnvio = Date.now();                   // depois do envio: o intervalo medido no servidor nunca fica abaixo de 3,5 s
+            MK.ultimoEnvio = Date.now(); // depois do envio: o intervalo medido no servidor nunca fica abaixo de 3,5 s
             await esperarQue(() => p.res || (p.erro && Date.now() - p.erro.t >= MK_GRACA_ERRO_MS), MK_PRAZO_MS, 100);
             if (MK.pend === p) MK.pend = null;
             if (p.res) return p.res;
@@ -7672,12 +7679,12 @@
     /* /tradeable, /market/fees e /prices (públicos, 1× por sessão, só em memória: /prices tem 188 KB) */
     async function mkCarregarRest() {
         const faltam = [], tarefas = [];
-        if (!MK.tradeable) tarefas.push(buscarJSON('/tradeable').then(j => { if (!j || typeof j !== 'object' || Array.isArray(j)) throw new Error('formato inesperado'); MK.tradeable = mkIndexar(j); })
-            .catch(e => faltam.push('/tradeable (' + e.message + ')')));
-        if (MK.taxa == null || MK.taxaWiki) tarefas.push(buscarJSON('/market/fees').then(j => { const r = Number(j && j.creationFeeRate); if (!(r >= 0 && r < 1)) throw new Error('formato inesperado'); MK.taxa = r; MK.taxaWiki = false; })
-            .catch(e => { if (MK.taxa == null) { MK.taxa = MK_TAXA_WIKI; MK.taxaWiki = true; } faltam.push('/market/fees (' + e.message + ' — uso os 5 % da wiki)'); }));
-        if (!MK.npc) tarefas.push(buscarJSON('/prices').then(j => { if (!j || typeof j !== 'object' || Array.isArray(j)) throw new Error('formato inesperado'); MK.npc = mkIndexar(j); })
-            .catch(e => faltam.push('/prices (' + e.message + ')')));
+        if (!MK.tradeable) { tarefas.push(buscarJSON('/tradeable').then(j => { if (!j || typeof j !== 'object' || Array.isArray(j)) throw new Error('formato inesperado'); MK.tradeable = mkIndexar(j); })
+            .catch(e => faltam.push('/tradeable (' + e.message + ')'))); }
+        if (MK.taxa == null || MK.taxaWiki) { tarefas.push(buscarJSON('/market/fees').then(j => { const r = Number(j && j.creationFeeRate); if (!(r >= 0 && r < 1)) throw new Error('formato inesperado'); MK.taxa = r; MK.taxaWiki = false; })
+            .catch(e => { if (MK.taxa == null) { MK.taxa = MK_TAXA_WIKI; MK.taxaWiki = true; } faltam.push('/market/fees (' + e.message + ' — uso os 5 % da wiki)'); })); }
+        if (!MK.npc) { tarefas.push(buscarJSON('/prices').then(j => { if (!j || typeof j !== 'object' || Array.isArray(j)) throw new Error('formato inesperado'); MK.npc = mkIndexar(j); })
+            .catch(e => faltam.push('/prices (' + e.message + ')'))); }
         await Promise.all(tarefas);
         MK.restErro = faltam.length ? faltam.join(' · ') : null;
         if (faltam.length) log('mercado: não carregou ' + MK.restErro, 'erro');
@@ -7935,7 +7942,7 @@
     #tb-mk .tb-sub button{font-size:11px}
     `;
     function mkGarantirCss() {
-        garantirCssAH();                                   // .tb-conf (botão em "confirmar…") vem de lá
+        garantirCssAH(); // .tb-conf (botão em "confirmar…") vem de lá
         if (document.getElementById('tb-mk-css')) return;
         const s = document.createElement('style'); s.id = 'tb-mk-css'; s.textContent = MK_CSS;
         (document.head || document.documentElement).appendChild(s);
@@ -8055,7 +8062,7 @@
             p.oninput = () => { const s = String(p.value == null ? '' : p.value).trim(); if (s === '') delete MK.digitados[l.chave]; else MK.digitados[l.chave] = s; MK.foco = p.id; };
             p.onchange = () => { MK.conf = null; renderizar(); };
             p.onfocus = () => { MK.foco = p.id; };
-            p.onblur = () => { setTimeout(() => { if (MK.foco === p.id && p.isConnected && document.activeElement !== p) MK.foco = null; }, 0); };   // repinte (campo fora da página) não conta
+            p.onblur = () => { setTimeout(() => { if (MK.foco === p.id && p.isConnected && document.activeElement !== p) MK.foco = null; }, 0); }; // repinte (campo fora da página) não conta
         });
         const todos = $('#tb-mk-todos'); if (todos) todos.onclick = () => { if (MK.ocupado) return; (MK.pintadas || []).forEach(l => { if (!l.bloqueio) MK.marcados.add(l.chave); }); MK.conf = null; renderizar(); };
         const nenhum = $('#tb-mk-nenhum'); if (nenhum) nenhum.onclick = () => { MK.marcados.clear(); MK.conf = null; renderizar(); };
@@ -8294,14 +8301,14 @@
         $$('details[data-k]', c).forEach(d => { if (abertos.has(d.dataset.k)) d.open = true; });
         if (mesmaAba) { c.scrollTop = rol.corpo; const l = $('#tb-scan-lista'); if (l) l.scrollTop = rol.lista; }
         _abaPintada = ABA;
-        if (ABA === 'estado') ligarEstado();       // v2.11 (D2) — handlers ao lado de cada tela
+        if (ABA === 'estado') ligarEstado(); // v2.11 (D2) — handlers ao lado de cada tela
         if (ABA === 'magia') ligarMagia();
         if (ABA === 'analise') ligarAnalise();
         if (ABA === 'equip') ligarEquip();
         if (ABA === 'progresso') ligarProgresso();
         if (ABA === 'mercado') ligarMercado();
-        if (ABA === 'scan') ligarScan();           // v2.11 — handlers do Scan ao lado da tela
-        if (ABA === 'autohunt') ligarAutoHunt();   // v2.11 — handlers do Auto Hunt ao lado da tela
+        if (ABA === 'scan') ligarScan(); // v2.11 — handlers do Scan ao lado da tela
+        if (ABA === 'autohunt') ligarAutoHunt(); // v2.11 — handlers do Auto Hunt ao lado da tela
     }
 
     /* =========================================================================
@@ -8380,7 +8387,7 @@
      * e só expõe o que LÊ: nada que clique no jogo ou mande frame pelo socket
      * (lerDepot/equipAtualizar mandam depot_get e ficaram de fora também).
      * WS sai como cópia, sem o socket. */
-    if (lerChave('tb_helper_debug', false)) window.__tbHelper = {
+    if (lerChave('tb_helper_debug', false)) { window.__tbHelper = {
         // v1.9.0 — Auto Hunt (leituras)
         autoHunt, capLivre, lerTaxaXp, itemSelado, modalAberto, mochilaNoLimite, estadoWS, motivoNaoDispara,
         versao: VERSAO, montarPlano, viabilidadeParty, huntAtual, magiasDaVocacao, danosConhecidos, ouroPorAbate, planoExtras, melhorMunicao, melhorPocao, bestiarioHunt, armaduraMedia, reducaoFisicaMedia, nomeModelo,
@@ -8404,7 +8411,7 @@
         verificarAtualizacao, get NOVA_VERSAO() { return NOVA_VERSAO; },
         // v2.11 — Mercado (modelo puro e o estado lido)
         mkMontar, mkSugerir, mkTaxa, mkRevisao, get MERCADO() { return MK; }
-    };
+    }; }
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar);
     else iniciar();
