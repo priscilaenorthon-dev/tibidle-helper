@@ -4006,3 +4006,31 @@ Respostas do dono à tabela de pesos do Equip:
 - **Roubo de vida é bom no Knight**: chance e quantia 1 pt por % (eram 0,2/0,3). O roll típico visto ao
   vivo (2,4 % + 1,7 %) ≈ 4 pt, perto de +1,2 de regen. vida.
 Teste novo em `testes/equip.test.js`.
+
+### 2.11.6 — Equip refeito com a wiki e a party medida (29/09, noite)
+Dono: "analisa toda sua tabela de comparação, tá calculando tudo errado" / "tô perdendo itens excelentes".
+Lidos: /forja, /como-o-dano-e-calculado, /lure-levas-e-formacao, /equipamentos, /imbuements, /magias-e-runas,
+/bestiario e os 4 guias de vocação. Os guias NÃO trazem "melhor atributo por vocação" — as regras sim.
+Medido ao vivo (hunt 50, 90 s + 2 min) e nos Scans de Banshee/Quara:
+
+| | dano/s | % da party | vida mín | mana média |
+|---|---|---|---|---|
+| Knight | 23–25 | 9–13 % | 55 % (toma 25–30/s, 65–78 % corpo a corpo) | 16–22 % |
+| Paladino | 67–73 | 24–27 % | 56–100 % | 7–10 % |
+| Feiticeiro | 68–80 | 20–29 % | 92–100 % | 5–12 % |
+| Druida | 96–105 | 33–43 % | 36–100 % | 35–40 % (bebe poção) |
+
+Regras da wiki que mudaram a conta:
+- Crítico e roubo de vida são "chance de somar/devolver uma porcentagem": valem em PAR (chance × quantia); base 0.
+- Runa usa o Nível Mágico treinado, sem bônus de item: ML de item só mexe nas magias.
+- Regeneração é por segundo (HP/s, MP/s). Chance de loot vale o MAIOR da party. Capacidade soma na conta.
+- Armadura e defesa do escudo só seguram corpo a corpo (só o Knight leva). Cura própria só no que ele cura em si.
+- Peça Incomum ou melhor (ou refinada) não vende em lugar nenhum: usa ou desmancha (única fonte de fragmento).
+Modelo novo: **1 pt = +1 % do dano da party (≈ 450 de ouro+xp/h)**. Ofensivo = % do dano do personagem × fatia
+dele; mana para quem não bebe = dano/mana medido; mana do Druida = poção economizada (0,6 o/mana); defesa do
+Knight = vida/s a menos × 3,6 pt; laterais com defesa baixa (×4 no cenário de mapa mágico). Pesos lidos do
+livro-razão (≥ 2 min) ou do último Scan; sem medida, PARTY_REF. Sobras: só o que sobra também no cenário de
+mapa mágico; 2 reservas por espaço; Épico ou melhor nunca sobra (base de forja, lista própria).
+Resultado ao vivo: única troca = Paladino, anel max mana +93 (0,09 pt) → regen mana +1,3 do depósito (2,1 pt).
+Wand do Feiticeiro: vortex +1 ML empata com a inferno (tiro ~0,14/s, mana curta). Rod do Druida: underworld rod
+dá prejuízo (13 de mana/tiro pagos em poção); snakebite +1 ML é a certa.

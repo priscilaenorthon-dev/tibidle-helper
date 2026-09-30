@@ -21,11 +21,12 @@ const F = (r, ...at) => ({ raridade: r, atributos: at.map(([id, valor]) => ({ id
 const peca = (nome, forja) => ({ nome, slot: null, attrs: base[nome].attrs, equipPreview: base[nome].equipPreview, forja: forja || F(0) });
 
 t('épico com atributos mortos perde para incomum certo (Knight, colar)', () => {
-    const epico = { nome: 'wolf tooth chain', slot: 'necklace', attrs: {}, forja: { raridade: 4, atributos: [{ id: 'dano_magico', valor: 3 }, { id: 'resist_gelo', valor: 2 }, { id: 'capacidade', valor: 100 }, { id: 'chance_de_loot', valor: 0.3 }] } };
+    /* 2.11.6 — mortos de verdade no Knight: tudo dele é físico (dano elemental 0), Distância 0 */
+    const epico = { nome: 'wolf tooth chain', slot: 'necklace', attrs: {}, forja: { raridade: 3, atributos: [{ id: 'dano_elem_fogo', valor: 3 }, { id: 'dano_elem_morte', valor: 2 }, { id: 'distancia', valor: 1 }] } };
     const incomum = { nome: 'wolf tooth chain', slot: 'necklace', attrs: {}, forja: { raridade: 1, atributos: [{ id: 'dano_fisico', valor: 2.2 }] } };
     const a = M.pontuarPeca(epico, 'KNIGHT'), b = M.pontuarPeca(incomum, 'KNIGHT');
     assert(b.pontos > a.pontos, `incomum ${b.pontos} deveria bater épico ${a.pontos}`);
-    assert(a.mortos.includes('dano_magico'), 'mortos não marcados: ' + a.mortos);   // 2.11.4: capacidade passou a valer 0,01/oz (mochila da party)
+    assert(a.mortos.includes('dano_elem_fogo') && a.mortos.includes('distancia'), 'mortos não marcados: ' + a.mortos);
 });
 t('regen de mana pesa mais que resistência para o Feiticeiro', () => {
     const r = M.pontuarPeca({ nome: 'crystal ring', slot: 'ring', attrs: {}, forja: { raridade: 1, atributos: [{ id: 'regen_mana', valor: 2.3 }] } }, 'SORCERER');
@@ -48,7 +49,9 @@ t('wand com +1 nível mágico (forja) bate wand mais forte; wand de fogo vale ze
     const vortexML = { nome: 'wand of vortex', slot: 'weapon', attrs: base['wand of vortex'].attrs, forja: { raridade: 1, atributos: [{ id: 'nivel_magico', valor: 1 }] } };
     const inferno = { nome: 'wand of inferno', slot: 'weapon', attrs: base['wand of inferno'].attrs, forja: { raridade: 0, atributos: [] } };
     const a = M.pontuarPeca(vortexML, 'SORCERER').pontos, b = M.pontuarPeca(inferno, 'SORCERER').pontos;
-    assert(a > b, `vortex +1 ML (${a}) deveria bater inferno (${b})`);
+    /* 2.11.6 — com a mana curta de hoje (tiro ~0,14/s) as duas empatam: a inferno dá +17 de dano por
+     * tiro já descontada a mana, e +1 ML dá ~0,9 % do dano da party */
+    assert(Math.abs(a - b) < 0.3, `vortex +1 ML (${a}) deveria empatar com a inferno (${b})`);
     const dragao = { notas: { COMBAT_FIREDAMAGE: 0, COMBAT_ENERGYDAMAGE: 80 } };
     const c = M.pontuarPeca(inferno, 'SORCERER', dragao);
     assert(c.pontos < 0, 'inferno em mapa imune a fogo deveria pontuar negativo (só custa mana): ' + c.pontos);
@@ -78,14 +81,16 @@ t('lança não é arma de ninguém (wiki: Paladino usa arco ou besta)', () => {
 t('besta vale mais que arco no Paladino (bolt grátis 30 contra arrow grátis 25)', () => {
     const arco = M.pontuarPeca(peca('bow'), 'PALADIN'), besta = M.pontuarPeca(peca('crossbow'), 'PALADIN');
     assert(arco.pontos === 0, 'arco comum deveria valer 0: ' + arco.pontos);
-    assert(besta.pontos >= 3, 'besta deveria valer o ganho do bolt: ' + besta.pontos);
+    /* 2.11.6 — o tiro é ~5 % do dano do Paladino (o resto é runa + Caldera): o bolt rende pouco, mas rende */
+    assert(besta.pontos > 0, 'besta deveria valer o ganho do bolt: ' + besta.pontos);
     assert(besta.motivos[0].includes('bolt'), 'motivo deveria citar o bolt: ' + besta.motivos);
 });
 t('Paladino: Dano Mágico conta (runa + Caldera + Missile), e divide com Dano Físico', () => {
     const P = M.pesosDaVoc('PALADIN');
-    assert(P.dano_magico > 0 && P.dano_fisico > 0 && Math.abs(P.dano_magico + P.dano_fisico - 1) < 0.01, JSON.stringify({ m: P.dano_magico, f: P.dano_fisico }));
-    const soMagia = M.pesosDaVoc('PALADIN', { fracMagica: { PALADIN: 0.9 } });
-    assert(soMagia.dano_magico === 0.9 && soMagia.distancia < P.distancia, 'fração medida deveria mandar');
+    /* 2.11.6 — medido 29/09: 95 % do dano do Paladino é runa + Caldera + Missile */
+    assert(P.dano_magico > 10 * P.dano_fisico && P.dano_fisico > 0, JSON.stringify({ m: P.dano_magico, f: P.dano_fisico }));
+    const meio = M.pesosDaVoc('PALADIN', { party: { fracMagica: { PALADIN: 0.5 } } });
+    assert(Math.abs(meio.dano_magico - meio.dano_fisico) < 0.001 && meio.distancia > P.distancia, 'fração medida deveria mandar');
 });
 t('Knight: +1 de ataque vale quase o mesmo que +1 de skill (golpe e Berserk são simétricos)', () => {
     const P = M.pesosDaVoc('KNIGHT');
@@ -95,9 +100,9 @@ t('Knight: +1 de ataque vale quase o mesmo que +1 de skill (golpe e Berserk são
 t('nível mágico pesa pelo ML atual: com ML 5 vale bem mais que com ML 20', () => {
     const baixo = M.pesosDaVoc('SORCERER', { nivel: 39, sk: { SORCERER: { ml: 5 } } }), alto = M.pesosDaVoc('SORCERER', { nivel: 62, sk: { SORCERER: { ml: 20 } } });
     assert(baixo.nivel_magico > 2 * alto.nivel_magico, `${baixo.nivel_magico} × ${alto.nivel_magico}`);
-    assert(alto.nivel_magico > 2.5 && alto.nivel_magico < 5, 'ML 20 deveria ficar entre 2,5 e 5: ' + alto.nivel_magico);
+    assert(alto.nivel_magico > 0.7 && alto.nivel_magico < 1.3, 'ML 20: ~1 % do dano da party por ML: ' + alto.nivel_magico);
     const lixo = M.pesosDaVoc('SORCERER', { sk: { SORCERER: { ml: undefined } } });
-    assert(lixo.nivel_magico === alto.nivel_magico, 'skill ausente cai na referência');
+    assert(lixo.nivel_magico === M.pesosDaVoc('SORCERER', {}).nivel_magico, 'skill ausente cai na referência');
 });
 t('peça de carga ou de tempo é marcada temporária (stone skin, might ring, prismatic ring)', () => {
     for (const nome of ['stone skin amulet', 'might ring', 'prismatic ring', 'ring of healing', 'terra amulet']) {
@@ -129,9 +134,10 @@ const fogoImune = { notas: { COMBAT_FIREDAMAGE: 0, COMBAT_ENERGYDAMAGE: 100 } };
 t('distribuir: Paladino fica com besta, nunca com lança; o 2º arco fica de reserva', () => {
     const d = M.distribuirEquip(pecas);
     const arma = d.porVoc.PALADIN.weapon.melhor;
-    assert(arma && arma.nome === 'crossbow' && arma.attrs.ammotype === 'bolt', 'arma do Paladino: ' + (arma && arma.nome));
+    /* 2.11.6 — besta dá +0,2 pt (o tiro é ~5 % do dano dele): abaixo do custo da troca, o arco fica */
+    assert(arma && ['bow', 'crossbow'].includes(arma.nome), 'arma do Paladino: ' + (arma && arma.nome));
     assert(!Object.values(d.porVoc).some(x => x.weapon && x.weapon.melhor && /spear/.test(x.weapon.melhor.nome)), 'lança escolhida para alguém');
-    assert(d.reservas.has(pecas.find(p => p.nome === 'elvish bow').iid), 'o segundo melhor arco deveria ficar de reserva');
+    assert(arma.nome === 'crossbow' || d.reservas.has(pecas.find(p => p.nome === 'crossbow').iid), 'a besta deveria ficar de reserva');
     const lanca = d.dispensaveis.find(p => p.nome === 'royal spear');
     assert(lanca && /nenhuma vocação/.test(lanca.motivo), 'lança deveria sair como "nenhuma vocação usa": ' + (lanca && lanca.motivo));
 });
@@ -149,7 +155,7 @@ t('distribuir: dispensável não depende do mapa (inferno fica fora da venda em 
     assert(mapa.porVoc.SORCERER.weapon.melhor.nome !== 'wand of inferno', 'no mapa imune a fogo a inferno não deveria ser a escolhida');
     assert(!mapa.dispensaveis.some(p => p.nome === 'wand of inferno'), 'inferno na lista de venda');
     const neutro = M.distribuirEquip(pecas);
-    assert(neutro.porVoc.SORCERER.weapon.melhor.nome === 'wand of inferno', 'no mapa neutro a inferno é a melhor');
+    assert(neutro.reservas.has(pecas.find(p => p.nome === 'wand of inferno').iid) || neutro.porVoc.SORCERER.weapon.melhor.nome === 'wand of inferno', 'no mapa neutro a inferno é escolhida ou reserva');
 });
 t('distribuir: item único não vai para dois (cenário público)', () => {
     const d = M.distribuirEquip(pecas);
@@ -215,10 +221,32 @@ t('2.11.2: troca tem custo — nada de tirar o anel do Feiticeiro por +0,2 pt; g
     const d = M.distribuirEquip(an, undefined, ctxDjinns);
     const quem = (v) => d.porVoc[v].ring.melhor && d.porVoc[v].ring.melhor.iid;
     assert.strictEqual(quem('SORCERER'), 's', 'o Feiticeiro não pode perder o anel dele: ' + quem('SORCERER'));
-    assert.strictEqual(quem('PALADIN'), 'p', 'o Paladino fica com o dele: ' + quem('PALADIN'));
+    /* 2.11.6 — Paladino vive com 7–9 % de mana: troca o max mana +93 por regen. mana do depósito */
+    const pal = an.find(x => x.iid === quem('PALADIN'));
+    assert(pal && pal.origem === 'depósito' && pal.forja.atributos.some(a => a.id === 'regen_mana'), 'o Paladino deveria trocar max mana por regen. mana do depósito: ' + quem('PALADIN'));
     assert.strictEqual(quem('DRUID'), 'd');
     const k = d.porVoc.KNIGHT.ring;
     assert(k.melhor && /^dep/.test(k.melhor.iid) && k.ganho > 1, `o Knight ganha +${k.ganho} com o anel do depósito — essa troca vale`);
+});
+t('2.11.6: épico nunca sobra (base de forja); resistência sobrevive ao cenário de mapa mágico', () => {
+    const anel = (iid, dono, r, ...at) => ({ iid, nome: 'crystal ring', slot: 'ring', attrs: {}, origem: dono ? 'corpo' : 'depósito', dono, forja: F(r, ...at) });
+    const pcs = [
+        anel('k', 'KNIGHT', 1, ['regen_vida', 2.4]), anel('p', 'PALADIN', 1, ['regen_mana', 1.3]),
+        anel('s', 'SORCERER', 1, ['regen_mana', 1.2]), anel('d', 'DRUID', 1, ['regen_mana', 2.3]),
+        anel('epico', null, 3, ['resist_energia', 1.1], ['resist_gelo', 0.9], ['resist_sagrado', 0.9]),
+        anel('lixo1', null, 1, ['max_mana', 40]), anel('lixo2', null, 1, ['max_mana', 41]), anel('lixo3', null, 1, ['max_mana', 42])
+    ];
+    /* medido num mapa corpo a corpo: laterais não apanham */
+    const d = M.distribuirEquip(pcs, undefined, { party: { fisico: 0.95, tomadoS: 25 } });
+    assert(!d.dispensaveis.some(p => p.iid === 'epico'), 'épico foi para as sobras');
+    assert(d.bases.some(p => p.iid === 'epico'), 'épico deveria aparecer como base de forja');
+    assert(d.dispensaveis.some(p => /^lixo/.test(p.iid)), 'max mana sem uso deveria sobrar');
+});
+t('2.11.6: a troca do Paladino — anel de max mana sai, regen de mana do depósito entra', () => {
+    const anel = (iid, dono, ...at) => ({ iid, nome: 'crystal ring', slot: 'ring', attrs: {}, origem: dono ? 'corpo' : 'depósito', dono, forja: F(1, ...at) });
+    const d = M.distribuirEquip([anel('p', 'PALADIN', ['max_mana', 93]), anel('dep', null, ['regen_mana', 1.3])], ['PALADIN']);
+    const x = d.porVoc.PALADIN.ring;
+    assert(x.melhor.iid === 'dep' && x.ganho > 1, `Paladino: ${x.melhor.iid} +${x.ganho}`);
 });
 t('2.11.5: dano elemental só no elemento do mago; crítico conta nos magos; roubo de vida vale no Knight', () => {
     const colar = (...at) => ({ nome: 'x', slot: 'necklace', attrs: {}, forja: F(at.length, ...at) });
@@ -229,9 +257,14 @@ t('2.11.5: dano elemental só no elemento do mago; crítico conta nos magos; rou
     assert(pt(colar(['dano_elem_gelo', 2]), 'DRUID') > 0 && pt(colar(['dano_elem_terra', 2]), 'DRUID') > 0, 'Druida: gelo e terra contam');
     assert.strictEqual(pt(colar(['dano_elem_energia', 2]), 'DRUID'), 0, 'Druida: energia não conta');
     assert.strictEqual(pt(colar(['dano_elem_fogo', 2]), 'DRUID'), 0, 'Druida: fogo não conta');
-    for (const v of ['SORCERER', 'DRUID']) assert(pt(colar(['critico_chance', 2], ['critico_dano', 10]), v) > 0, v + ': crítico conta');
-    /* roll visto ao vivo: 2,4 % de chance + 1,7 % de quantia ≈ +1,2 de regen. vida */
+    for (const v of ['SORCERER', 'DRUID']) assert(pt(colar(['critico_chance', 2], ['critico_dano', 10]), v) > 0, v + ': crítico conta (em par)');
+    /* 2.11.6 — PAR: crítico e roubo de vida são chance × porcentagem (wiki). Sozinho não faz nada. */
+    assert.strictEqual(pt(colar(['critico_chance', 3]), 'SORCERER'), 0, 'chance de crítico sem dano crítico = 0');
+    assert.strictEqual(pt(colar(['roubo_vida_chance', 3]), 'KNIGHT'), 0, 'chance de roubo sem quantia = 0');
+    const comPar = M.pontuarPeca(colar(['critico_chance', 3]), 'SORCERER', { usando: { SORCERER: { ring: { critico_dano: 20 } } } }).pontos;
+    assert(comPar > 0, 'com o dano crítico vestido em outro espaço, a chance passa a valer: ' + comPar);
+    /* roll visto ao vivo (2,4 % × 1,7 %) sobre ~27 de dano/s do Knight devolve ~0,01 de vida/s: quase nada */
     const leech = pt(colar(['roubo_vida_chance', 2.4], ['roubo_vida_quantia', 1.7]), 'KNIGHT'), regen = pt(colar(['regen_vida', 1.2]), 'KNIGHT');
-    assert(leech >= regen * 0.8, `roubo de vida ${leech} pt deveria valer perto de regen 1,2 (${regen} pt)`);
+    assert(leech < regen / 20, `roubo de vida ${leech} pt × regen 1,2 ${regen} pt`);
 });
 console.log(`\n${n} testes ok` + (pulados ? ` · ${pulados} pulados (sem o estado da conta em data/)` : ''));

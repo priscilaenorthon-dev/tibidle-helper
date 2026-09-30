@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.11.5
+// @version      2.11.6
 // @description  Magia (Econômica / Equilibrado / Área / Boss / Inteligente, com simulador da fila) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -23,7 +23,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.11.5';
+    const VERSAO = '2.11.6';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -2697,7 +2697,7 @@
      *  a cada ~9,5 s de espera, mortas em ~2,5 s — o spawn limita, dano extra
      *  não vira xp, e vale a build mais barata que ainda limpa a onda.
      * ====================================================================== */
-    const razaoNovo = () => ({ t0: Date.now(), magias: {}, auto: {}, tomado: { total: 0, golpes: 0 }, kills: 0, ondas: { n: 0, tam: 0, timer: 0, matar: 0, tOnda: 0 }, vitais: {}, hpAntes: {} });
+    const razaoNovo = () => ({ t0: Date.now(), magias: {}, auto: {}, tomado: { total: 0, golpes: 0, corpo: 0, golpesCorpo: 0 }, kills: 0, ondas: { n: 0, tam: 0, timer: 0, matar: 0, tOnda: 0 }, vitais: {}, hpAntes: {} });
     let RAZAO = razaoNovo();
     function razaoVitais(L, party) {
         for (const p of party) {
@@ -2727,7 +2727,7 @@
             if (e.hp <= 0) { a.mortos++; delete L.hpAntes[e.id]; } else L.hpAntes[e.id] = e.hp;
             return;
         }
-        if (k === 'mhit' || k === 'mcast') { L.tomado.total += e.amount || 0; L.tomado.golpes++; return; }
+        if (k === 'mhit' || k === 'mcast') { L.tomado.total += e.amount || 0; L.tomado.golpes++; if (k === 'mhit') { L.tomado.corpo += e.amount || 0; L.tomado.golpesCorpo++; } return; }
         if (k === 'kill') { L.kills++; delete L.hpAntes[e.id]; return; }
         if (k === 'wave') { L.ondas.n++; L.ondas.tOnda = agora; L.ondas.tam = e.count || L.ondas.tam; return; }
         if (k === 'wave_timer') { L.ondas.timer += e.ms || 0; if (L.ondas.tOnda) { L.ondas.matar += agora - L.ondas.tOnda; L.ondas.tOnda = 0; } }
@@ -2755,7 +2755,9 @@
         const o = L.ondas, n = o.n || 0;
         const ondas = n ? { n, tam: o.tam, timer: Math.round(o.timer / n / 100) / 10, matar: Math.round(o.matar / n / 100) / 10 } : null;
         if (ondas) { ondas.ciclo = Math.round((ondas.timer + ondas.matar) * 10) / 10; ondas.spawnLimita = ondas.matar < ondas.timer * 0.5; }
-        return { seg: Math.round(seg), danoTotal, porVoc, magias, ondas, tomado: L.tomado.total, tomadoH: Math.round(L.tomado.total / seg * 3600), kills: L.kills };
+        return { seg: Math.round(seg), danoTotal, porVoc, magias, ondas, tomado: L.tomado.total, tomadoH: Math.round(L.tomado.total / seg * 3600), kills: L.kills,
+                 tomadoCorpoH: Math.round((L.tomado.corpo || 0) / seg * 3600), golpesCorpoH: Math.round((L.tomado.golpesCorpo || 0) / seg * 3600),
+                 tirosH: Object.fromEntries(Object.entries(L.auto).map(([v, a]) => [v, Math.round(a.hits / seg * 3600)])) };
     }
     const VOC_CURTO = { KNIGHT: 'Cav', PALADIN: 'Pal', SORCERER: 'Fei', DRUID: 'Dru' };
     function razaoHtml(rz, curto) {
@@ -4348,111 +4350,168 @@
      *     magia de graça; a mana do tiro da wand compete com a magia.
      *  Raridade NÃO pontua: ela só diz quantos atributos a peça tem.
      * ====================================================================== */
+    /* =========================================================================
+     *  ⭐ v2.11.6 — UMA MOEDA SÓ: 1 pt = +1 % do dano da PARTY.
+     *
+     *  Dono, 29/09: "analisa toda sua tabela de comparação, tá calculando tudo
+     *  errado" e "tô vendendo itens bons por causa da sua comparação". Revisão
+     *  com a wiki (/forja, /como-o-dano-e-calculado, /lure-levas-e-formacao,
+     *  /equipamentos, /imbuements, /magias-e-runas, guias das 4 vocações) e com
+     *  90 s medidos ao vivo (hunt 50) + os Scans de Banshee e Quara:
+     *
+     *            dano/s  % da party  vida mín  mana média
+     *   Knight     25        9 %       55 %      16–19 %   (toma ~30 de dano/s)
+     *   Paladino   73       26 %     56–100 %     7–9 %
+     *   Feiticeiro 80       27 %     92–100 %    6–12 %
+     *   Druida    105       37 %     36–100 %   35–40 %    (bebe poção de mana)
+     *
+     *  O que estava errado na tabela antiga:
+     *   1. "1 pt = 1 % do dano DAQUELE personagem": 1 % do Knight (2,5 de
+     *      dano/s) valia o mesmo que 1 % do Druida (10/s). O machado do Knight
+     *      somava 71 pt e ofuscava tudo. Agora tudo vira % do dano da party.
+     *   2. Crítico e roubo de vida são "uma CHANCE de somar/devolver uma
+     *      porcentagem" (wiki): só valem EM PAR, chance × quantia. Roubo de vida
+     *      2,4 % × 1,7 % no Knight (25 de dano/s) devolve 0,01 de vida/s.
+     *      Agora a conta é em par, com o que o personagem já veste.
+     *   3. Runa usa o Nível Mágico TREINADO, sem bônus de item (/magias-e-runas):
+     *      ML de item só mexe nas magias. E o dano do Paladino é 95 % runa +
+     *      Caldera + Missile — Distância e munição quase não contam.
+     *   4. Quem não bebe poção vive sem mana (Paladino, Feiticeiro, Knight):
+     *      +1 de mana/s = mais lançamentos → dano/mana medido. No Druida, que
+     *      bebe, +1 de mana/s = 3.600 de mana/h que a poção não precisa dar
+     *      (≈ 2.160 de ouro/h). Mana máxima não serve a ninguém: a barra vive
+     *      vazia (ou a poção enche).
+     *   5. Armadura e defesa do escudo só seguram corpo a corpo, que só o Knight
+     *      leva; magia de área de criatura só pega os laterais às vezes (Quara,
+     *      Banshee). Cura própria só vale no que o personagem cura EM SI — a cura
+     *      do Druida no Knight não conta. Chance de loot vale o MAIOR da party,
+     *      não a soma. Regeneração é por segundo (/bestiario: HP/s, MP/s).
+     *  Conversões: 1 pt ≈ 450 de ouro/h (1 % a mais de dano num mapa limitado
+     *  pelo dano ≈ 0,56 % mais abates: ~225 de loot e ~250 de xp por hora).
+     *  1 de vida/s a menos no Knight = poção e cura de ~0,3 ouro por vida ×
+     *  3.600 ≈ 1.080 de ouro/h, ×1,5 pela segurança (a morte encerra a caçada)
+     *  = 3,6 pt. Sem medida, vale PARTY_REF (os números acima). */
     const SLOTS_EQUIP = ['weapon', 'shield', 'head', 'armor', 'legs', 'boots', 'necklace', 'ring'];
     const ELEM = ['fogo', 'gelo', 'energia', 'terra', 'morte', 'sagrado'];
     const ELEM_EN = { fogo: 'fire', gelo: 'ice', energia: 'energy', terra: 'earth', morte: 'death', sagrado: 'holy' };
-    const _fmap = (pref, v) => Object.fromEntries(ELEM.map(e => [pref + e, v]));
-    const _amap = (v) => Object.fromEntries(ELEM.map(e => ['absorbpercent' + ELEM_EN[e], v]).concat([['absorbpercentpoison', v]]));
-    const PESOS_EQUIP = {
-        KNIGHT: Object.assign({
-            attack: 0.9, corpo_a_corpo: 2.8, skillsword: 2.8, skillaxe: 2.8, skillclub: 2.8,
-            dano_fisico: 1, roubo_vida_chance: 1, roubo_vida_quantia: 1, critico_chance: 0.25, critico_dano: 0.03,
-            armor: 1.5, defense: 0.5, extradef: 0.5, escudo: 2, skillshield: 2, resist_fisica: 1.5, absorbpercentphysical: 1.5,
-            max_hp: 0.1, regen_vida: 3.5, cura_propria: 0.3, protecao_magica: 0.5, nivel_magico: 0.3, magiclevelpoints: 0.3,
-            max_mana: 0.02, chance_de_loot: 0.3, capacidade: 0.01, dano_magico: 0, distancia: 0, skilldist: 0, regen_mana: 0.2, hitchance: 0
-        }, _fmap('dano_elem_', 0.6), _fmap('resist_', 0.5), _amap(0.5)),
-        PALADIN: Object.assign({
-            distancia: 3, skilldist: 3, dano_fisico: 1, roubo_vida_chance: 0.15, roubo_vida_quantia: 0.2, critico_chance: 0.25, critico_dano: 0.03,
-            hitchance: 0.5, regen_mana: 1.5, max_mana: 0.02, nivel_magico: 5, magiclevelpoints: 5,
-            armor: 0.2, defense: 0, extradef: 0, escudo: 0, skillshield: 0, resist_fisica: 0.2, absorbpercentphysical: 0.2,
-            max_hp: 0.05, regen_vida: 0.2, cura_propria: 0.2, protecao_magica: 0.4, chance_de_loot: 0.3, capacidade: 0.01,
-            attack: 0, corpo_a_corpo: 0, skillsword: 0, skillaxe: 0, skillclub: 0, dano_magico: 0
-        }, _fmap('dano_elem_', 0.6), _fmap('resist_', 0.4), _amap(0.4)),
-        SORCERER: Object.assign({
-            regen_mana: 3, dano_magico: 1, nivel_magico: 7, magiclevelpoints: 7, max_mana: 0.02,
-            protecao_magica: 0.4, resist_fisica: 0.1, absorbpercentphysical: 0.1, max_hp: 0.04, regen_vida: 0.1, cura_propria: 0.2,
-            armor: 0.1, defense: 0.05, extradef: 0, escudo: 0, skillshield: 0, chance_de_loot: 0.3, capacidade: 0.01,
-            attack: 0, corpo_a_corpo: 0, skillsword: 0, skillaxe: 0, skillclub: 0, distancia: 0, skilldist: 0, hitchance: 0,
-            dano_fisico: 0, roubo_vida_chance: 0.1, roubo_vida_quantia: 0.1, critico_chance: 0.25, critico_dano: 0.03
-        }, _fmap('dano_elem_', 0), { dano_elem_energia: 0.6, dano_elem_fogo: 0.6 }, _fmap('resist_', 0.4), _amap(0.4)),
+    const VOCS_EQUIP = ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'];
+    const PT_OURO_H = 450;
+    const VIDA_PT_KNIGHT = 3.6, VIDA_PT_LADO = 0.5;
+    /* elemento das magias de cada mago (dono, 29/09): Feiticeiro energia e fogo, Druida gelo e terra */
+    const ELEM_DO_MAGO = { SORCERER: ['energia', 'fogo'], DRUID: ['gelo', 'terra'] };
+    const PARTY_REF = {
+        share: { KNIGHT: 0.10, PALADIN: 0.26, SORCERER: 0.27, DRUID: 0.37 },   // fatia de cada um no dano da party
+        dps: 270,                                                                // dano/s da party
+        dpm: { KNIGHT: 3.4, PALADIN: 3.7, SORCERER: 5, DRUID: 6 },              // dano por mana das magias (livro-razão)
+        mana: { KNIGHT: 18, PALADIN: 8, SORCERER: 8, DRUID: 38 },               // mana média (%)
+        bebe: { KNIGHT: false, PALADIN: false, SORCERER: false, DRUID: true },  // poção de mana ligada
+        fracMagica: { KNIGHT: 0.9, PALADIN: 0.95, SORCERER: 1, DRUID: 1 },      // magia de ataque + runa + wand (Dano mágico da forja)
+        fracMagia: { KNIGHT: 0.9, PALADIN: 0.5, SORCERER: 0.87, DRUID: 0.88 },  // só magia: ML de item não vale na runa
+        fracSagrado: 0.5,                                                        // Paladino: Caldera + Divine Missile
+        tiroS: { SORCERER: 0.14, DRUID: 0.14 },                                  // tiros da wand/rod por segundo (medido: mana curta)
+        tomadoS: 30, fisico: 0.65, golpesS: 0.45,                                // Knight: dano tomado/s, parte corpo a corpo, golpes/s
+        ladoApanha: 1,                                                           // ×defesa dos laterais (4 = mapa de magia de área)
+        ouroPorMana: 0.6
     };
-    /* v2.11.4 — REGEN DE VIDA E CAPACIDADE (dono, 29/09: "o melhor anel é o
-     * roxo épico" — capacidade +65, regen. vida +1,2, sagrado +1 % contra um
-     * incomum de max HP +21). O Knight é o tanque: toma ~27 de dano/s (Djinns
-     * e Banshee, 29/09), então +1 de vida/s cobre ~3,7 % do que ele toma —
-     * peso 3,5 (era 0,5, e o max HP +21 = 1,9 % da vida dele valia mais).
-     * Capacidade valia 0: +65 oz ≈ 3 % a mais de mochila da party, menos idas
-     * à cidade — 0,01 por oz nos quatro. Épico 5,4 pt × incomum 2,1 pt. */
-    /* v2.11.5 — ENCAIXES POR VOCAÇÃO (dono, 29/09):
-     *   • dano elemental só no elemento das magias de cada mago: Feiticeiro
-     *     energia e fogo, Druida gelo e terra (0,6 por %, a mesma escala do
-     *     Knight); os outros elementos continuam 0;
-     *   • crítico conta nos magos (magia e runa também dão crítico): mesmos
-     *     pesos do Knight e do Paladino;
-     *   • roubo de vida é bom no Knight (é quem apanha): 1 pt por % na chance
-     *     e na quantia (era 0,2/0,3) — o roll típico visto (2,4 % + 1,7 %) ≈
-     *     4 pt, parecido com +1,2 de regen. vida. */
-    PESOS_EQUIP.DRUID = Object.assign({}, PESOS_EQUIP.SORCERER, { cura_propria: 0.5, nivel_magico: 7.5, magiclevelpoints: 7.5,
-                                                                   dano_elem_energia: 0, dano_elem_fogo: 0, dano_elem_gelo: 0.6, dano_elem_terra: 0.6 });
-    /* v2.9.0 — PESOS OFENSIVOS PELA FÓRMULA, com as skills do momento.
-     * Os números fixos acima envelheceram e um deles nasceu errado:
-     *  • Knight: ataque valia 0,9 e skill 2,8. Mas no golpe (wiki: média
-     *    nível/5 + 0,0425·atk·skill) e no Berserk (/spells: 1,1·(nível/5 +
-     *    skill + atk)) ataque e skill entram SIMÉTRICOS — +1 de ataque rende
-     *    quase o mesmo que +1 de skill (nível 61, melee 30, atk 33: 1,8 e 2,0).
-     *  • Magos: nível mágico valia 7 — conta certa com ML≈4 (22/09), mas o
-     *    TIBIDLE.md de 28/09 registra ML 20. Média de Energy Wave/Strong Ice
-     *    Wave com a runa de área (/spells) dá ~3,8 (Fei) e ~3,4 (Dru) no ML 20.
-     *  • Paladino: a wiki (/forja) diz que Dano Mágico "vale para qualquer
-     *    magia de ataque, runa e wand" — e o dano dele é runa + Caldera +
-     *    Missile. Valia 0. Agora Dano Físico e Dano Mágico dividem o peso pela
-     *    fração do dano que vem de magia (ctx.fracMagica, medida no
-     *    livro-razão; sem medida, metade). A skill Distância e a munição só
-     *    mexem no tiro, então também levam (1 − fração).
-     * ctx.sk[VOC] = {melee, atkArma, dist, ml} lidos do jogo; o que faltar
-     * cai na referência de 28/09 (REF_SK). */
-    const REF_SK = { nivel: 62, melee: 30, atkArma: 33, dist: 33, ml: 20 };
+    function partyDoCtx(ctx) {
+        const p = (ctx && ctx.party) || {}, R = {};
+        for (const k of Object.keys(PARTY_REF)) {
+            const ref = PARTY_REF[k], v = p[k];
+            if (ref && typeof ref === 'object') { R[k] = Object.assign({}, ref); for (const [kk, vv] of Object.entries(v || {})) if (typeof vv === 'boolean' || Number.isFinite(vv)) R[k][kk] = vv; }
+            else R[k] = Number.isFinite(v) && v >= 0 ? v : ref;
+        }
+        if (!(R.dps > 0)) R.dps = PARTY_REF.dps;
+        return R;
+    }
+    /* v2.9.0 — as skills do momento (ctx.sk[VOC] = {melee, atkArma, dist, ml});
+     * o que faltar cai na referência. */
+    const REF_SK = { nivel: 67, melee: 33, atkArma: 33, dist: 36, ml: 25 };
     /* /ammo: as duas munições de custo 0. Besta usa bolt (30), arco usa arrow (25). */
     const MUNICAO_GRATIS = { arrow: 25, bolt: 30 };
-    const FRAC_MAGICA_PADRAO = 0.5;
-    const _pct = (ganho, base) => base > 0 ? Math.round(1000 * ganho / base) / 10 : 0;
+    const _pct = (ganho, base) => base > 0 ? 100 * ganho / base : 0;
+    const _r = (x) => Math.round(x * 1000) / 1000;
+    /* regen de mana (pt por 1 de mana/s) — também é o preço da mana do tiro da wand */
+    function ptPorManaS(voc, R) {
+        if (R.bebe[voc]) return R.ouroPorMana * 3600 / PT_OURO_H;
+        const v = (R.dpm[voc] || 0) / R.dps * 100;
+        return (R.mana[voc] || 0) >= 60 ? v * 0.2 : v;     // mana sobrando: regen quase não vira dano
+    }
     function pesosDaVoc(voc, ctx) {
-        const P = Object.assign({}, PESOS_EQUIP[voc] || {});
-        const s = Object.assign({}, REF_SK);
-        for (const [k, v] of Object.entries((ctx && ctx.sk && ctx.sk[voc]) || {})) if (Number.isFinite(v) && v > 0) s[k] = v;
-        const n5 = ((ctx && ctx.nivel > 0 && ctx.nivel) || s.nivel) / 5;
-        if (voc === 'KNIGHT') {
-            const golpe = n5 + 0.0425 * s.atkArma * s.melee, berserk = 1.1 * (n5 + s.melee + s.atkArma);
-            P.attack = Math.round((_pct(0.0425 * s.melee, golpe) + _pct(1.1, berserk)) / 2 * 10) / 10;
-            const sk = Math.round((_pct(0.0425 * s.atkArma, golpe) + _pct(1.1, berserk)) / 2 * 10) / 10;
-            P.corpo_a_corpo = P.skillsword = P.skillaxe = P.skillclub = sk;
-        } else if (voc === 'PALADIN') {
-            const f = ctx && ctx.fracMagica && ctx.fracMagica.PALADIN != null ? ctx.fracMagica.PALADIN : FRAC_MAGICA_PADRAO;
-            const tiro = n5 + 0.045 * MUNICAO_GRATIS.arrow * s.dist;
-            P.distancia = P.skilldist = Math.round(_pct(0.045 * MUNICAO_GRATIS.arrow, tiro) * (1 - f) * 10) / 10;
-            P.municao_atk = Math.round(_pct(0.045 * s.dist, tiro) * (1 - f) * 10) / 10;   // por ponto de ataque da munição grátis
-            P.dano_fisico = Math.round((1 - f) * 100) / 100; P.dano_magico = Math.round(f * 100) / 100;
-        } else if (voc === 'SORCERER' || voc === 'DRUID') {
-            const runa = _pct(2, n5 + 2 * s.ml + 12);                          // avalanche/gfb/thunderstorm: n/5 + 1,2–2,8·ML + 7–17
-            const onda = voc === 'SORCERER' ? _pct(6.75, n5 + 6.75 * s.ml)     // Energy Wave: n/5 + 4,5–9·ML
-                                            : _pct(6.05, n5 + 6.05 * s.ml + 34);  // Strong Ice Wave: n/5 + 4,5–7,6·ML + 20–48
-            P.nivel_magico = P.magiclevelpoints = Math.round((runa + onda) / 2 * 10) / 10;
+        const R = partyDoCtx(ctx), s = R.share[voc] || 0, P = {};
+        const sk = Object.assign({}, REF_SK);
+        for (const [k, v] of Object.entries((ctx && ctx.sk && ctx.sk[voc]) || {})) if (Number.isFinite(v) && v > 0) sk[k] = v;
+        const n5 = ((ctx && ctx.nivel > 0 && ctx.nivel) || sk.nivel) / 5;
+        const fm = R.fracMagica[voc] || 0, fs = R.fracMagia[voc] || 0;
+        /* ---- ataque: % do dano do personagem × a fatia dele na party ---- */
+        P.dano_magico = _r(s * fm);
+        P.dano_fisico = _r(s * (voc === 'KNIGHT' ? 1 : voc === 'PALADIN' ? 1 - fm : 0));
+        for (const e of ELEM) {
+            const w = voc === 'KNIGHT' ? 0                                          // tudo do Knight é físico
+                : voc === 'PALADIN' ? (e === 'sagrado' ? R.fracSagrado : Math.max(0, fm - R.fracSagrado) / 4)
+                : (ELEM_DO_MAGO[voc] || []).includes(e) ? 0.6 : 0;
+            P['dano_elem_' + e] = _r(s * w);
         }
+        P.attack = P.corpo_a_corpo = P.skillsword = P.skillaxe = P.skillclub = 0;
+        P.distancia = P.skilldist = P.municao_atk = 0;
+        P.nivel_magico = P.magiclevelpoints = 0;
+        if (voc === 'KNIGHT') {
+            /* golpe (wiki): média nível/5 + 0,0425·atk·skill; Berserk (/spells): 1,1·(nível/5 + skill + atk) */
+            const golpe = n5 + 0.0425 * sk.atkArma * sk.melee, berserk = 1.1 * (n5 + sk.melee + sk.atkArma);
+            P.attack = _r(s * (_pct(0.0425 * sk.melee, golpe) * (1 - fs) + _pct(1.1, berserk) * fs));
+            P.corpo_a_corpo = P.skillsword = P.skillaxe = P.skillclub = _r(s * (_pct(0.0425 * sk.atkArma, golpe) * (1 - fs) + _pct(1.1, berserk) * fs));
+            P.nivel_magico = P.magiclevelpoints = 0.05;                               // só a cura dele (Wound Cleansing)
+        } else if (voc === 'PALADIN') {
+            const tiro = n5 + 0.045 * MUNICAO_GRATIS.arrow * sk.dist;
+            P.distancia = P.skilldist = _r(s * (1 - fm) * _pct(0.045 * MUNICAO_GRATIS.arrow, tiro));
+            P.municao_atk = _r(s * (1 - fm) * _pct(0.045 * sk.dist, tiro));          // por ponto de ataque da munição grátis
+            P.nivel_magico = P.magiclevelpoints = _r(s * fs * _pct(4, n5 + 4 * sk.ml));   // Caldera/Missile (a runa ignora ML de item)
+        } else {
+            const onda = voc === 'SORCERER' ? _pct(6.75, n5 + 6.75 * sk.ml)             // Energy Wave: n/5 + 4,5–9·ML
+                                            : _pct(6.05, n5 + 6.05 * sk.ml + 34);       // Strong Ice Wave: n/5 + 4,5–7,6·ML + 20–48
+            P.nivel_magico = P.magiclevelpoints = _r(s * fs * onda * (voc === 'DRUID' ? 1.2 : 1));   // Druida: ML também cura o Knight
+        }
+        /* ---- mana ---- */
+        P.regen_mana = _r(ptPorManaS(voc, R));
+        P.max_mana = 0.001;
+        /* ---- defesa ---- */
+        if (voc === 'KNIGHT') {
+            const k1 = R.tomadoS / 100 * VIDA_PT_KNIGHT;                               // pt por 1 % a menos de TODO o dano que ele toma
+            P.regen_vida = VIDA_PT_KNIGHT;
+            P.max_hp = 0.04;
+            P.resist_fisica = P.absorbpercentphysical = _r(k1 * R.fisico);
+            P.protecao_magica = _r(k1 * (1 - R.fisico));
+            for (const e of ELEM) P['resist_' + e] = P['absorbpercent' + ELEM_EN[e]] = _r(k1 * (1 - R.fisico) / 4);
+            P.absorbpercentpoison = P.resist_terra;
+            P.cura_propria = _r(k1 * 0.5);                                             // metade da vida dele volta por poção/cura própria
+            P.armor = P.defense = P.extradef = _r(R.golpesS * 0.75 * VIDA_PT_KNIGHT);  // tira 0,5–1× por golpe corpo a corpo
+            P.escudo = P.skillshield = 0.9;
+        } else {
+            const la = R.ladoApanha > 0 ? R.ladoApanha : 1;
+            P.regen_vida = _r(VIDA_PT_LADO * la); P.max_hp = _r(0.01 * la);
+            P.resist_fisica = P.absorbpercentphysical = _r(0.02 * la); P.protecao_magica = _r(0.15 * la);
+            for (const e of ELEM) P['resist_' + e] = P['absorbpercent' + ELEM_EN[e]] = _r(0.05 * la);
+            P.absorbpercentpoison = _r(0.05 * la);
+            P.cura_propria = _r(0.05 * la);
+            P.armor = P.defense = P.extradef = P.escudo = P.skillshield = 0;          // armadura e escudo só seguram corpo a corpo
+        }
+        /* ---- conta ---- */
+        P.capacidade = 0.004;                                                          // 100 oz ≈ 0,4 pt (menos idas à cidade)
+        P.chance_de_loot = 0.9;                                                        // +1 % de drop ≈ 400 de ouro/h (vale o maior da party)
+        P.hitchance = 0;
         return P;
     }
-    /* v2.7.3 — WAND/ROD NA ESCALA CERTA (dono, 29/09: "wand com +1 ML é melhor
-     * que wand mais forte, porque o dano das magias é em área e aumenta tudo").
-     * 1 ponto ≈ 1 % do dano do personagem. O tiro sai a cada ~4 s (28 tiros em
-     * 111 s, Dragon Lair) e um mago faz ~100 de dano/s: 65 de dano por tiro =
-     * 16 dano/s = 16 pontos → 0,25 por ponto de dano (era 0,8: a wand of
-     * inferno valia 52 pontos, três vezes o que rende). A mana do tiro é mana
-     * que a onda não usa: Feiticeiro na regeneração, Energy Wave 5,5 dano/mana
-     * → 1,4 pt por mana; Druida bebe poção e a Strong Ice Wave dá 8 dano/mana
-     * → 2 pt por mana. E o ELEMENTO da wand conta contra o mapa atual (wand of
-     * inferno é fogo: zero em Dragon Lair). +1 ML vale 7 % de TUDO (magias e
-     * runas), então a wand of vortex forjada com +1 ML ganha da inferno. */
-    const WAND_PT_DANO = 0.25, WAND_PT_MANA = { SORCERER: 1.4, DRUID: 2.0 };
-    const WAND_ELEM = { fire: 'COMBAT_FIREDAMAGE', energy: 'COMBAT_ENERGYDAMAGE', earth: 'COMBAT_EARTHDAMAGE', ice: 'COMBAT_ICEDAMAGE', death: 'COMBAT_DEATHDAMAGE', holy: 'COMBAT_HOLYDAMAGE' };
+    /* v2.11.6 — PARES (crítico e roubo de vida): o ganho de uma peça depende do
+     * que o personagem já veste nos OUTROS espaços (ctx.usando[voc][slot]).
+     * Crítico: dano extra = chance% × dano% ÷ 100 do dano dele. Roubo de vida:
+     * vida/s = dano/s × chance% × quantia% ÷ 10.000. Base 0 (wiki: não existe
+     * crítico de base). */
+    const PARES = { critico_chance: ['critico', 'c'], critico_dano: ['critico', 'd'], roubo_vida_chance: ['roubo', 'c'], roubo_vida_quantia: ['roubo', 'd'] };
+    function outrosDoPar(ctx, voc, slot) {
+        const t = { critico: { c: 0, d: 0 }, roubo: { c: 0, d: 0 } };
+        const u = ctx && ctx.usando && ctx.usando[voc];
+        if (u) for (const [sl, at] of Object.entries(u)) if (sl !== slot) for (const [id, v] of Object.entries(at || {})) { const p = PARES[id]; if (p) t[p[0]][p[1]] += Number(v) || 0; }
+        return t;
+    }
     const ROTULO = Object.assign({
         attack: 'attack', armor: 'armor', defense: 'defesa', extradef: 'defesa extra', magiclevelpoints: 'nível mágico (base)',
         skillsword: 'sword (base)', skillaxe: 'axe (base)', skillclub: 'club (base)', skilldist: 'distance (base)', skillshield: 'shield (base)',
@@ -4463,6 +4522,9 @@
         capacidade: 'capacidade', regen_vida: 'regen vida', regen_mana: 'regen mana', cura_propria: 'cura própria', chance_de_loot: 'chance de loot'
     }, Object.fromEntries(ELEM.map(e => ['dano_elem_' + e, 'dano ' + e])), Object.fromEntries(ELEM.map(e => ['resist_' + e, 'resist ' + e])),
        Object.fromEntries(ELEM.map(e => ['absorbpercent' + ELEM_EN[e], 'resist ' + e + ' (base)'])));
+    /* a tabela sem medida (PARTY_REF), para quem só quer olhar os pesos */
+    const PESOS_EQUIP = Object.fromEntries(VOCS_EQUIP.map(v => [v, pesosDaVoc(v, null)]));
+    const WAND_ELEM = { fire: 'COMBAT_FIREDAMAGE', energy: 'COMBAT_ENERGYDAMAGE', earth: 'COMBAT_EARTHDAMAGE', ice: 'COMBAT_ICEDAMAGE', death: 'COMBAT_DEATHDAMAGE', holy: 'COMBAT_HOLYDAMAGE' };
     const rotulo = (id) => ROTULO[id] || id;
     const normalizarSlot = (s) => s === 'feet' ? 'boots' : s === 'hand' ? 'weapon' : s;
     const VOC_NOME = { KNIGHT: 'knight', PALADIN: 'paladin', SORCERER: 'sorcerer', DRUID: 'druid' };
@@ -4505,7 +4567,7 @@
         const P = pesosDaVoc(voc, ctx);
         const a = peca.attrs || {};
         const detalhe = [];
-        const add = (id, valor, pt) => detalhe.push({ id, valor, pt: Math.round(pt * 100) / 100 });
+        const add = (id, valor, pt) => detalhe.push({ id, valor, pt: Math.round(pt * 1000) / 1000 });
         const temporario = ehTemporaria(peca);
         const cargas = Number(a.charges) || 0;
         const duracaoS = (peca.equipPreview && peca.equipPreview.durationS) || null;
@@ -4513,8 +4575,9 @@
         if (peca.equipPreview && peca.equipPreview.attrs) baseAttrs = Object.assign({}, a, peca.equipPreview.attrs);
         for (const [k, v] of Object.entries(baseAttrs)) {
             if (typeof v !== 'number' || ATTR_IGNORAR.has(k) || ehEncaixe(k)) continue;   // encaixes de imbuement não são bônus
-            if (k === 'managain') { add('regen_mana', v, v * 0.5 * (P.regen_mana || 0)); continue; }
-            if (k === 'healthgain') { add('regen_vida', v, v * 0.5 * (P.regen_vida || 0)); continue; }
+            /* regeneração de item: v a cada manaticks/healthticks ms → por segundo */
+            if (k === 'managain') { add('regen_mana', v, v * 1000 / (Number(baseAttrs.manaticks) || 2000) * (P.regen_mana || 0)); continue; }
+            if (k === 'healthgain') { add('regen_vida', v, v * 1000 / (Number(baseAttrs.healthticks) || 2000) * (P.regen_vida || 0)); continue; }
             if (k === 'skillmagic' || k === 'magiclevelpoints') { add('magiclevelpoints', v, v * (P.magiclevelpoints || 0)); continue; }
             if (k in P) { add(k, v, v * P[k]); }
         }
@@ -4525,18 +4588,35 @@
             const atk = MUNICAO_GRATIS[a.ammotype];
             add('munição grátis (' + a.ammotype + ' ' + atk + ')', atk, (atk - MUNICAO_GRATIS.arrow) * (P.municao_atk || 0));
         }
-        // wand/rod: dano fixo por tiro menos a mana que ele rouba da magia
+        /* wand/rod (v2.11.6): dano do tiro × tiros por segundo (medido: ~0,14/s,
+         * a mana é curta) em % do dano da party, menos a mana do tiro ao preço
+         * da mana daquele personagem (a mesma conta da regen. de mana). */
+        const R = partyDoCtx(ctx);
         if ((a.weaponType === 'wand' || a.wandType) && a.fromDamage != null && voc !== 'KNIGHT' && voc !== 'PALADIN') {
-            const medio = (Number(a.fromDamage) + Number(a.toDamage)) / 2;
+            const medio = (Number(a.fromDamage) + Number(a.toDamage)) / 2, tiros = R.tiroS[voc] || 0.14;
             const el = WAND_ELEM[a.wandType] || null;
             const nota = el && ctx && ctx.notas && ctx.notas[el] != null ? ctx.notas[el] / 100 : 1;
-            add('dano da wand' + (el && nota !== 1 ? ' (' + (a.wandType) + ' ' + Math.round(nota * 100) + '% no mapa)' : ''), medio, medio * nota * WAND_PT_DANO);
-            if (a.mana) add('mana por tiro', a.mana, -Number(a.mana) * (WAND_PT_MANA[voc] || 1.4));
+            add('dano da wand' + (el && nota !== 1 ? ' (' + (a.wandType) + ' ' + Math.round(nota * 100) + '% no mapa)' : ''), medio, medio * nota * tiros / R.dps * 100);
+            if (a.mana) add('mana por tiro', a.mana, -Number(a.mana) * tiros * (P.regen_mana || 0));
         }
-        for (const f of ((peca.forja && peca.forja.atributos) || [])) {
+        /* pares: crítico (chance × dano) e roubo de vida (chance × quantia), com o que ele veste nos outros espaços */
+        const atrs = (peca.forja && peca.forja.atributos) || [];
+        const par = outrosDoPar(ctx, voc, peca.slot), meu = { critico: { c: 0, d: 0 }, roubo: { c: 0, d: 0 } };
+        for (const f of atrs) { const q = PARES[f.id]; if (q) meu[q[0]][q[1]] += Number(f.valor) || 0; }
+        const danoDele = (R.share[voc] || 0) * R.dps;
+        const vidaPt = voc === 'KNIGHT' ? VIDA_PT_KNIGHT : VIDA_PT_LADO;
+        const ganhoPar = (g, lado) => {                    // pt da parte "lado" (c ou d) do par g
+            const o = par[g], m = meu[g];
+            const parte = lado === 'c' ? m.c * o.d + m.c * m.d / 2 : m.d * o.c + m.c * m.d / 2;
+            return g === 'critico' ? parte / 100 * (R.share[voc] || 0)          // % do dano dele → % da party
+                                   : danoDele * parte / 10000 * vidaPt;       // vida/s devolvida → pt
+        };
+        for (const f of atrs) {
+            const q = PARES[f.id];
+            if (q) { add(f.id, f.valor, ganhoPar(q[0], q[1])); continue; }
             const p = P[f.id]; add(f.id, f.valor, (p || 0) * Number(f.valor));
         }
-        const pontos = Math.round(detalhe.reduce((s, d) => s + d.pt, 0) * 10) / 10;
+        const pontos = Math.round(detalhe.reduce((s, d) => s + d.pt, 0) * 100) / 100;
         const contam = detalhe.filter(d => d.pt > 0).sort((x, y) => y.pt - x.pt);
         const mortos = detalhe.filter(d => d.pt === 0 && !/^munição grátis/.test(d.id)).map(d => d.id);
         const motivos = contam.slice(0, 2).map(d => `${rotulo(d.id)} +${d.valor} (${d.pt} pt)`);
@@ -4581,7 +4661,7 @@
      * que vale (melhor 2 mãos − arma de 1 mão escolhida); se ele vence, o
      * escudo fica vazio e a arma vira a de 2 mãos.
      * → {porVoc:{VOC:{slot:{atual, atualPt, melhor, melhorPt, ganho, candidatos[]}}}, reservas:Set(iid), dispensaveis:[peça+motivo], usadas:Set} */
-    const EQUIP_TOPK = 6;
+    const EQUIP_TOPK = 6, EQUIP_RESERVAS = 2, RARIDADE_BASE_FORJA = 3;
     /* v2.11.2 — TROCA TEM CUSTO. Com 0,05 de bônus para ficar, o otimizador
      * tirava o anel do Feiticeiro (5,1 pt) para o Paladino (+1,4) e dava ao
      * Feiticeiro um do depósito (−1,2, sem aparecer na tela): 3 trocas por
@@ -4658,21 +4738,40 @@
             if (s === 'weapon' || s === 'shield') continue;
             for (const r of _resolverSlot(porVoc, vocs, s, usadas)) fixar(r.v, s, r.c);
         }
-        // reservas: melhor candidato não usado de cada (voc, slot)
+        /* reservas: os 2 melhores candidatos não usados de cada (voc, slot) com
+         * pontos > 0. v2.11.6 — eram 1: o dono perdia peça boa que era a
+         * segunda melhor de alguém (29/09). */
         const reservas = new Set();
-        for (const v of vocs) for (const s of Object.keys(porVoc[v])) {
-            const r = porVoc[v][s].candidatos.find(c => !usadas.has(c.peca.iid));
-            if (r) reservas.add(r.peca.iid);
-        }
+        for (const v of vocs) for (const s of Object.keys(porVoc[v]))
+            porVoc[v][s].candidatos.filter(c => !usadas.has(c.peca.iid) && c.r.pontos > 0).slice(0, EQUIP_RESERVAS).forEach(c => reservas.add(c.peca.iid));
         /* v2.9.0 — DISPENSÁVEL NÃO PODE DEPENDER DO MAPA. Com ctx.notas (elemento
          * do mapa atual) a wand of inferno vale menos que nada em Dragon Lair
          * (imune a fogo) e ia para a lista de venda — sendo a melhor wand em
          * quase todo o resto. Só é dispensável o que também sobra na conta
          * neutra (sem elemento). Temporárias/de carga nunca entram: consumíveis. */
-        const neutro = ctx && ctx.notas ? distribuirEquip(pecas, vocs, Object.assign({}, ctx, { notas: null })) : null;
-        const sobraNoNeutro = neutro ? new Set(neutro.dispensaveis.map(p => p.iid)) : null;
+        /* v2.11.6 — e também não pode depender do TIPO de mapa. Medido num mapa
+         * corpo a corpo, resistência elemental quase não vale — e um anel épico
+         * de 3 resistências ia para a lista de sobras, sendo o melhor anel num
+         * mapa de magia (Quara: o Druida caiu a 36 % de vida). Só sobra o que
+         * sobra também no cenário "mapa mágico" (e sem o elemento do mapa). */
+        let sobraNoNeutro = null;
+        if (!(ctx && ctx._cenario)) {
+            const pc = (ctx && ctx.party) || {};
+            const cenarios = [Object.assign({}, ctx || {}, { notas: null, _cenario: true, party: Object.assign({}, pc, { fisico: 0.3, tomadoS: Math.max(40, pc.tomadoS || 0), ladoApanha: 4 }) })];
+            if (ctx && ctx.notas) cenarios.push(Object.assign({}, ctx, { notas: null, _cenario: true }));
+            for (const c of cenarios) {
+                const alt = new Set(distribuirEquip(pecas, vocs, c).dispensaveis.map(p => p.iid));
+                sobraNoNeutro = sobraNoNeutro ? new Set([...sobraNoNeutro].filter(i => alt.has(i))) : alt;
+            }
+        }
         const temporarios = pecas.filter(p => ehTemporaria(p) && !(p.origem === 'corpo'));
-        const dispensaveis = pecas.filter(p => !usadas.has(p.iid) && !reservas.has(p.iid) && !ehTemporaria(p) && (!sobraNoNeutro || sobraNoNeutro.has(p.iid))).map(p => {
+        /* v2.11.6 — ÉPICO OU MELHOR NUNCA SOBRA: 3+ encaixes são base de forja
+         * (wiki /forja: Raro → Épico 20 % por Rarity Gem de 30.000 + 7 coins; com
+         * Limpeza T2 + Atributo T1 troca-se o encaixe ruim). A pontuação mede o
+         * que a peça dá HOJE; o valor dela é o que dá para fazer com ela. */
+        const baseDeForja = p => ((p.forja && p.forja.raridade) || 0) >= RARIDADE_BASE_FORJA;
+        const bases = pecas.filter(p => !usadas.has(p.iid) && !ehTemporaria(p) && baseDeForja(p));
+        const dispensaveis = pecas.filter(p => !usadas.has(p.iid) && !reservas.has(p.iid) && !ehTemporaria(p) && !baseDeForja(p) && (!sobraNoNeutro || sobraNoNeutro.has(p.iid))).map(p => {
             let melhorUso = null;
             for (const v of vocs) if (vocacaoPode(p.attrs, v) && porVoc[v][p.slot]) {
                 const top = porVoc[v][p.slot].melhor; if (!top) continue;
@@ -4681,7 +4780,7 @@
             }
             return Object.assign({}, p, { motivo: melhorUso ? `superada por ${melhorUso.top.nome} (${melhorUso.v.toLowerCase()}, −${Math.round(melhorUso.d * 10) / 10} pt)` : 'nenhuma vocação usa' });
         }).sort((a, b) => (b.sell || 0) - (a.sell || 0));
-        return { porVoc, reservas, dispensaveis, usadas, temporarios };
+        return { porVoc, reservas, dispensaveis, usadas, temporarios, bases };
     }
     /* @@EQUIP-PURO-FIM */
 
@@ -5954,12 +6053,53 @@
             const atk = Number((arma.attrs && arma.attrs.attack) || b.attack) + (Number(arma.forja && arma.forja.refino) || 0);
             if (atk > 0) sk.KNIGHT = Object.assign(sk.KNIGHT || {}, { atkArma: atk });
         }
-        const fracMagica = {};
-        try {
-            const rz = razaoResumo(RAZAO), pv = rz.porVoc.PALADIN;
-            if (pv && pv.dano >= 2000) fracMagica.PALADIN = Math.round(rz.magias.filter(m => m.voc === 'PALADIN').reduce((s, m) => s + m.dano, 0) / pv.dano * 100) / 100;
-        } catch (e) { }
-        return { nivel: nivelAtual(), sk, fracMagica };
+        /* v2.11.6 — o grupo MEDIDO (livro-razão desta caçada com ≥ 2 min; senão
+         * o Scan mais recente): fatia de dano de cada um, dano por mana, mana
+         * média, quem bebe poção, dano que o Knight toma. Sem medida, PARTY_REF. */
+        let party = null;
+        try { party = partyMedida(); } catch (e) { falhou('equip (party medida)', e); }
+        /* o que cada um veste agora, por espaço (pares de crítico e roubo de vida) */
+        const usando = {};
+        for (const r of (roster || [])) {
+            if (!r || !r.vocation) continue;
+            usando[r.vocation] = {};
+            for (const [sl, it] of Object.entries(r.equipment || {})) {
+                if (!it || !it.forja) continue;
+                usando[r.vocation][normalizarSlot(sl)] = Object.fromEntries((it.forja.atributos || []).map(a => [a.id, Number(a.valor) || 0]));
+            }
+        }
+        return { nivel: nivelAtual(), sk, party, usando };
+    }
+    function partyMedida() {
+        let rz = null, fonte = null;
+        const vivo = razaoResumo(RAZAO);
+        if (vivo && vivo.seg >= 120 && vivo.danoTotal > 0) { rz = vivo; fonte = 'caçada atual'; }
+        else {
+            const sc = Object.values(scanResultados()).filter(r => r && r.razao && r.razao.danoTotal > 0).sort((a, b) => (b.t || 0) - (a.t || 0))[0];
+            if (sc) { rz = sc.razao; fonte = 'Scan ' + sc.title; }
+        }
+        if (!rz) return null;
+        const P = { fonte, share: {}, dpm: {}, mana: {}, bebe: {}, fracMagica: {}, fracMagia: {}, tiroS: {} };
+        P.dps = rz.danoTotal / Math.max(1, rz.seg);
+        const cat = {}; for (const m of (CAT.magias || [])) cat[m.name] = m;
+        for (const v of VOCS) {
+            const pv = rz.porVoc[v]; if (!pv || !pv.dano) continue;
+            P.share[v] = pv.dano / rz.danoTotal;
+            if (pv.manaMedia != null) P.mana[v] = pv.manaMedia;
+            const ms = (rz.magias || []).filter(m => m.voc === v && m.dano > 0);
+            const spells = ms.filter(m => !m.runa), manaG = spells.reduce((s, m) => s + (m.mana || 0), 0), danoS = spells.reduce((s, m) => s + m.dano, 0);
+            if (manaG > 0 && danoS > 0) P.dpm[v] = danoS / manaG;
+            P.fracMagia[v] = danoS / pv.dano;
+            P.fracMagica[v] = v === 'SORCERER' || v === 'DRUID' ? 1 : ms.reduce((s, m) => s + m.dano, 0) / pv.dano;
+            if (v === 'PALADIN') P.fracSagrado = spells.filter(m => cat[m.nome] && cat[m.nome].combatType === 'COMBAT_HOLYDAMAGE').reduce((s, m) => s + m.dano, 0) / pv.dano;
+            if (rz.tirosH && rz.tirosH[v] != null) P.tiroS[v] = rz.tirosH[v] / 3600;
+            try { const c = configAtiva(v); if (c) P.bebe[v] = !!(c.manaPotion && c.manaPotion.name && c.manaPotion.percent > 0); } catch (e) { }
+        }
+        if (rz.tomadoH > 0) {
+            P.tomadoS = rz.tomadoH / 3600;
+            if (rz.tomadoCorpoH != null && rz.golpesCorpoH != null && rz.golpesCorpoH > 0) { P.fisico = rz.tomadoCorpoH / rz.tomadoH; P.golpesS = rz.golpesCorpoH / 3600; }
+        }
+        return P;
     }
     async function equipAtualizar() {
         if (EQUIP.lendo) return;
@@ -6150,10 +6290,17 @@
               </div>`;
         }
         if (!linhas) h += `<div class="tb-ok" style="margin:4px 0">${VOC_ROTULO[v]}: nada a trocar — o que está no corpo já é o melhor que você tem.</div>`;
-        const disp = R.dispensaveis, soma = disp.reduce((n, p) => n + (p.sell || 0), 0);
-        h += aj('eq-disp', `<div class="tb-mut tb-eq-nota">não são a melhor nem a reserva de ninguém. Encaixes de imbuement não pontuam — confira antes de vender.</div>` +
-            disp.slice(0, 60).map(p => `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)}<span class="tb-tag">${escHtml(p.origem)}</span> <span class="tb-mut tb-eq-nota">${escHtml(p.motivo)}</span></span><span>${numBR(p.sell || 0)}</span></div>`).join('') +
-            (disp.length > 60 ? `<div class="tb-mut">… e mais ${disp.length - 60}</div>` : ''), `dispensáveis (${disp.length} · ${numBR(soma)} o)`);
+        /* v2.11.6 — wiki /forja: peça Incomum ou melhor (ou refinada) NÃO vende na
+         * cidade, no Auto Selling nem no Mercado — só se usa ou se desmancha, e o
+         * desmanche é a ÚNICA fonte de fragmentos (gemas). Comum sem refino vende. */
+        const disp = R.dispensaveis, vendivel = p => !((p.forja && p.forja.raridade) > 0) && !((p.forja && p.forja.refino) > 0);
+        const soma = disp.filter(vendivel).reduce((n, p) => n + (p.sell || 0), 0);
+        h += aj('eq-disp', `<div class="tb-mut tb-eq-nota">não são a melhor nem uma das 2 reservas de ninguém, pela conta de hoje (1 pt = 1 % do dano da party). Comum: vende no NPC. Incomum ou melhor não vende em lugar nenhum (wiki /forja): ou fica guardada, ou vira fragmento no Desmanche — antes de desmanchar, confira você mesmo. Encaixes de imbuement não pontuam.</div>` +
+            disp.slice(0, 60).map(p => `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)}<span class="tb-tag">${escHtml(p.origem)}</span> <span class="tb-mut tb-eq-nota">${escHtml(p.motivo)}</span></span><span>${vendivel(p) ? numBR(p.sell || 0) : 'desmanche'}</span></div>`).join('') +
+            (disp.length > 60 ? `<div class="tb-mut">… e mais ${disp.length - 60}</div>` : ''), `sobrando (${disp.length} · comuns ${numBR(soma)} o)`);
+        const bases = R.bases || [];
+        if (bases.length) h += aj('eq-bases', `<div class="tb-mut tb-eq-nota">Épico ou melhor que ninguém usa: 3+ encaixes valem pela Forja (trocar o encaixe ruim sai mais barato que subir a raridade). Nunca entram nas sobras.</div>` +
+            bases.map(p => `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)} <span class="tb-mut">${escHtml(slotPt(p.slot))} · ${escHtml(p.origem)} · ${escHtml(((p.forja && p.forja.atributos) || []).map(a => rotulo(a.id) + ' ' + a.valor).join(', '))}</span></span></div>`).join(''), `bases de forja (${bases.length})`);
         h += aj('eq-res', [...R.reservas].map(iid => { const p = candidatoPorIid(iid); return p ? `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)} <span class="tb-mut">${escHtml(slotPt(p.slot))} · ${escHtml(p.origem)}</span></span></div>` : ''; }).join(''), `reservas (${R.reservas.size})`);
         const temp = R.temporarios || [];
         if (temp.length) h += aj('eq-temp', `<div class="tb-mut tb-eq-nota">acabam por carga ou por tempo de caçada (wiki): não entram nas trocas nem na lista de venda — use à mão (boss, mapa difícil).</div>` +
