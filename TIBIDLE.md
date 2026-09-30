@@ -4106,3 +4106,19 @@ pela Caixa). RESGATAR não testado: a Caixa só recebe algo quando um anúncio v
   mapa/modelo na Magia) e o de 30/09 (Scan aplicando Em área).
 - **Correção:** próximo ciclo por índice (`(floor(t/ciclo)+1)·ciclo`, e se não andar, +250 ms) e teto de 200.000 voltas.
   Reproduzido em node com o livro-razão copiado da conta (16 planos travavam; agora 2–4 ms). Teste em `testes/magia.test.js`.
+
+## 2.11.13 (30/09) — o Inteligente sai do menu
+- Scan comparando Em área × Inteligente, 7 min cada, lure máximo, nível ~67 (analisador zerado a cada medição):
+
+  | mapa | modelo | xp raw/h | ouro/h estável | abates/h | poção/h |
+  |---|---|---|---|---|---|
+  | Vampire hell | Em área | 55,4k | +3,5k | 1.635 | 16,2k |
+  | Vampire hell | Inteligente | 52,0k | +1,1k | 1.584 | 14,4k |
+  | The Banshee Quest | Em área | 46,9k | +7,8k | 938 | 21,1k |
+  | The Banshee Quest | Inteligente | 44,9k | −10,2k | 898 | 27,8k |
+
+- Além de perder, ele trocava de kit a cada APLICAR: as magias do kit entravam com o dano MEDIDO e as de fora com o
+  TEÓRICO (todos os alvos do lure), mais alto — e cada `profiles_set` zerava a mana medida do personagem.
+- Dono: "pode retirar". Saiu da Magia, do Scan (modelo e estudo de variantes) e do kit do bestiário. A escolha guardada
+  vira Em área (`migrarModelos`, no boot e na troca de gaveta). O planejador continua no código (os testes o exercitam),
+  em `MODELOS_FORA`, sem botão.

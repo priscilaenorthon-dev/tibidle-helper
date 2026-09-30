@@ -262,16 +262,16 @@ t('Status: boss com nome malicioso na linha de cima sai escapado', async () => {
     semXss(W.html(), 'Status');
 });
 
-t('Magia: controle segmentado (Eco · Equil · Área · Boss · Intel) com aria-pressed', async () => {
+t('Magia: controle segmentado (Eco · Equil · Área · Boss) com aria-pressed — sem o Inteligente (2.11.13)', async () => {
     const W = criarMundo({ ls: comAba('magia', { tb_helper_hunt_id: '34', tb_helper_modelo: '"area"' }) });
     await W.avancar(0);
     const seg = (W.html().match(/<div class="tb-seg"[\s\S]*?<\/div>/) || [''])[0];
     const bts = [...seg.matchAll(/<button[^>]*data-modelo="(\w+)"[^>]*aria-pressed="(true|false)"[^>]*>([^<]*)<\/button>/g)].map(m => [m[1], m[2], m[3]]);
-    assert.deepStrictEqual(bts.map(b => b[2]), ['Eco', 'Equil', 'Área', 'Boss', 'Intel']);
+    assert.deepStrictEqual(bts.map(b => b[2]), ['Eco', 'Equil', 'Área', 'Boss']);
     assert.deepStrictEqual(bts.filter(b => b[1] === 'true').map(b => b[0]), ['area']);
 });
 
-t('Magia: escape de hunt, boss, magia e bestiário; "2+ alvos"; "poção de mana ≤30%" (sem "mana Mana")', async () => {
+t('Magia: escape de hunt, boss, magia e bestiário; "2+ alvos"; Inteligente guardado vira Em área (sem "mana Mana")', async () => {
     const W = criarMundo({ ls: comAba('magia', { tb_helper_hunt_id: '34', tb_helper_modelo: '"inteligente"' }) });
     await W.avancar(0);
     await W.avancar(200);                                    // loot e bestiário chegam → repinte com o selo
@@ -281,7 +281,9 @@ t('Magia: escape de hunt, boss, magia e bestiário; "2+ alvos"; "poção de mana
     assert(/Berserk&lt;img/.test(h), 'nome da magia não escapado na ficha');
     assert(/dano &lt;img/.test(h), 'bônus do bestiário não escapado');
     assert(!/mana Mana/.test(h), '"mana Mana" voltou');
-    assert(/poção de mana ≤30%/.test(h), 'Druida do Inteligente deveria mostrar "poção de mana ≤30%"');
+    /* 2.11.13 — o Inteligente saiu do menu: a escolha guardada vira Em área */
+    assert(/data-modelo="area" aria-pressed="true"/.test(h) && !/data-modelo="inteligente"/.test(h), '"inteligente" guardado não virou Em área');
+    assert.strictEqual(W.lsGet('tb_helper_modelo'), 'area');
     assert(/\d\+ alvos?/.test(h) && !/≥\d/.test(h.replace(/≤\d+/g, '')), 'fichas ainda com "≥": ' + (h.match(/.{20}≥\d.{10}/) || [''])[0]);
     assert(/tb-vsel (ok|ruim)">(✓ se paga|✗ não se paga)</.test(h), 'selo do veredito ausente');
     assert(/teto [\d.,]+ o/.test(h) && /\(80 % do loot de 20 o do catálogo\)/.test(h), 'veredito sem teto/loot em pt-BR: ' + (h.match(/tb-ver.{0,300}/) || [''])[0]);

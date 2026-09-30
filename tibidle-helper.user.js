@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.11.12
-// @description  Magia (Econômica / Equilibrado / Área / Boss / Inteligente, com simulador da fila) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
+// @version      2.11.13
+// @description  Magia (Econômica / Equilibrado / Área / Boss, com simulador da fila) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
 // @updateURL    https://raw.githubusercontent.com/priscilaenorthon-dev/tibidle-helper/main/tibidle-helper.user.js
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.11.12';
+    const VERSAO = '2.11.13';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -264,10 +264,27 @@
     /* troca de gaveta com o helper já de pé: memória que veio da gaveta velha cai */
     function trocarGaveta(prefixo, porque) {
         LS = prefixo; MEMO.clear();
+        try { migrarModelos(); } catch (e) { falhou('migrar modelos', e); }
         try { purgarSeEraVelha(); } catch (e) { falhou('purga da era', e); }
         LOG = ler('log', []);
         log('gaveta: ' + porque, 'info');
         renderizar();
+    }
+
+    /* v2.11.13 — modelo que saiu do menu (o Inteligente e as variantes dele):
+     * a escolha guardada na Magia, no Scan e no bestiário vira Em área. */
+    function migrarModelos() {
+        const fora = m => m != null && !MODELOS[m];
+        let mudou = false;
+        if (fora(ler('modelo', null))) { guardar('modelo', 'area'); mudou = true; }
+        const sc = ler('scan_cfg', null);
+        if (sc && (fora(sc.modelo) || (sc.variantes || []).some(fora))) {
+            guardar('scan_cfg', Object.assign({}, sc, { modelo: fora(sc.modelo) ? 'area' : sc.modelo, variantes: (sc.variantes || []).filter(m => !fora(m)) }));
+            mudou = true;
+        }
+        const bc = ler('best_cfg', null);
+        if (bc && fora(bc.modelo)) { guardar('best_cfg', Object.assign({}, bc, { modelo: 'area' })); mudou = true; }
+        if (mudou) log('o modelo Inteligente saiu do helper — a escolha guardada virou Em área', 'info');
     }
 
     /* =========================================================================
@@ -349,7 +366,17 @@
         boss: {
             nome: 'Boss',
             dica: 'Escolha o boss: as magias e runas que mais dão dano por segundo nele com a mana que cada um tem (uma por grupo de recarga), todas com gatilho ≥1.'
-        },
+        }
+    };
+    /* v2.11.13 — O INTELIGENTE SAIU DO MENU (dono, 30/09: "pode retirar"). Scan de
+     * 7 min por modelo, nível ~67: Em área venceu nos dois mapas — Vampire hell
+     * 55,4k xp raw/h e +3,5k de ouro estável contra 52,0k e +1,1k; The Banshee
+     * Quest 46,9k e +7,8k contra 44,9k e −10,2k (o Druida bebeu quase o dobro).
+     * E ele trocava de kit a cada APLICAR: as magias do kit entravam com o dano
+     * MEDIDO e as de fora com o TEÓRICO (todos os alvos do lure), mais alto — a
+     * de fora sempre "ganhava" no papel. O planejador continua aqui (os testes
+     * o exercitam), só sem botão; escolha guardada vira Em área (migrarModelos). */
+    const MODELOS_FORA = {
         inteligente: {
             nome: 'Inteligente',
             dica: 'Mais por menos: mana é o orçamento. Magias por dano/mana; o que recarrega em 2 s (runa, strike, Divine Missile) vai no fim da fila como preenchimento — runa ≥2 antes do golpe ≥1. Poção de mana só no Druida (a mais barata por ponto), cura própria nos 4 + Heal Friend do Druida, Protector só se o Knight apanhar (ele corta 35 % do dano), segundo suporte só com mana sobrando.'
@@ -364,7 +391,7 @@
         /* dono, 28/09: "se tirar todas as magias de defesa e suporte você aguenta o mapa" */
         inteligente_seco: { base: 'inteligente', seco: true, nome: 'Intel. seco (só poção, sem cura/suporte)' }
     };
-    const nomeModelo = (m) => (MODELOS[m] || VARIANTES[m] || { nome: m }).nome;
+    const nomeModelo = (m) => (MODELOS[m] || MODELOS_FORA[m] || VARIANTES[m] || { nome: m }).nome;
     /* v2.10 — as flags globais _manaTodos/_semRuna/_seco saíram: montarPlano
      * lê a variante e passa as opções adiante ({ manaTodos, semRuna, seco }).
      * Com o plano em cache, uma flag global de uma chamada vazava na outra. */
@@ -2248,7 +2275,7 @@
     async function aplicarPlano(resultado, silencioso) {
         if (!resultado || !resultado.plano) return 0;
         const voc = vocacaoAtual();
-        if (!silencioso) log(`aplicando ${MODELOS[resultado.modelo].nome} em ${resultado.hunt.title} (${voc})…`);
+        if (!silencioso) log(`aplicando ${nomeModelo(resultado.modelo)} em ${resultado.hunt.title} (${voc})…`);
         let ok = 0;
         for (const p of resultado.plano) {
             try {
@@ -3747,7 +3774,7 @@
      *  existiam. Morte/`ended` por fora para o Scan e fica registrado.
      * ====================================================================== */
     const SCAN_PADRAO = { mapas: [], minutos: 5, lureMax: true, fim: 'voltar', modelo: 'equilibrado', comparar: false,
-                          variantes: ['inteligente', 'equilibrado', 'economica'] }; // comparar: cada mapa × cada variante (estudo)
+                          variantes: ['area', 'equilibrado', 'economica'] }; // comparar: cada mapa × cada variante (estudo)
     const scanCfg = () => Object.assign({}, SCAN_PADRAO, ler('scan_cfg', {}));
     const guardarScanCfg = (patch) => guardar('scan_cfg', Object.assign(scanCfg(), patch));
     const scanResultados = () => ler('scan_resultados', {});
@@ -3758,7 +3785,7 @@
     function scanIniciar() {
         const c = scanCfg();
         const ids = c.mapas.filter(id => (CAT.hunts || []).some(h => h.id === id));
-        const modelos = c.comparar ? (c.variantes || []).filter(m => MODELOS[m] || VARIANTES[m]) : [c.modelo || 'equilibrado'];
+        const modelos = c.comparar ? (c.variantes || []).filter(m => MODELOS[m] && m !== 'boss') : [c.modelo || 'equilibrado'];
         const fila = [];
         for (const id of ids) for (const modelo of modelos) fila.push({ id, modelo });
         if (!fila.length) { log('Scan: marque pelo menos um mapa' + (c.comparar ? ' e uma variante' : ''), 'erro'); return false; }
@@ -5736,7 +5763,7 @@
      * confirmação em 2 toques; lista de mapas com display por CLASSE (o
      * filtro trocava display 'block' por '' e os rótulos viravam inline — a
      * caixa ficava colada no mapa errado). */
-    const MODELOS_SCAN = ['equilibrado', 'inteligente', 'economica', 'area'];
+    const MODELOS_SCAN = ['equilibrado', 'economica', 'area'];
     const FIM_SCAN = [['voltar', 'fim: voltar'], ['ficar', 'fim: ficar'], ['xp', 'fim: melhor XP'], ['ouro', 'fim: melhor ouro']];
     function telaScan() {
         garantirCssAH();
@@ -5751,7 +5778,7 @@
         const ocupado = scanOcupado() || !!travaJogo();
         const dis = scanOcupado() ? 'disabled' : '';
         const nMapas = c.mapas.filter(id => (CAT.hunts || []).some(h => h.id === id)).length;
-        const nVar = c.comparar ? (c.variantes || []).filter(m => MODELOS[m] || VARIANTES[m]).length : 1;
+        const nVar = c.comparar ? (c.variantes || []).filter(m => MODELOS[m] && m !== 'boss').length : 1;
         const nMed = nMapas * nVar, estMin = Math.max(1, Math.round(nMed * (c.minutos + 0.5)));
         const btTxt = SCAN.ativo ? `Parar · ${Math.max(1, SCAN.idx + 1)}/${SCAN.fila.length}` : scanOcupado() ? (SCAN.fase === 'restaurando' || SCAN.restaurando ? 'devolvendo o jogo…' : 'terminando…')
             : `Iniciar · ${nMapas} mapa${nMapas === 1 ? '' : 's'}${nVar > 1 ? ' × ' + nVar : ''} · ~${estMin} min`;
@@ -5774,7 +5801,7 @@
             <label class="tb-l" style="margin-left:auto"><input type="checkbox" id="tb-scan-lure" ${c.lureMax ? 'checked' : ''} ${dis}> lure máximo</label></div>
           <details class="tb-aj" data-k="scan-estudo"><summary>estudo de variantes${c.comparar ? ' · ligado' : ''}</summary><div>
             <label class="tb-l"><input type="checkbox" id="tb-scan-comparar" ${c.comparar ? 'checked' : ''} ${dis}> em cada mapa, medir cada variante</label>
-            ${c.comparar ? '<div style="margin:2px 0 0 4px">' + ['inteligente', 'inteligente_seco', 'inteligente_semruna', 'inteligente_mana', 'equilibrado', 'economica', 'area'].map(m => `<label class="tb-l" style="margin-right:6px"><input type="checkbox" data-scan-var="${m}" ${(c.variantes || []).includes(m) ? 'checked' : ''} ${dis}> ${escHtml(nomeModelo(m))}</label>`).join('') + '</div>' : ''}
+            ${c.comparar ? '<div style="margin:2px 0 0 4px">' + ['equilibrado', 'economica', 'area'].map(m => `<label class="tb-l" style="margin-right:6px"><input type="checkbox" data-scan-var="${m}" ${(c.variantes || []).includes(m) ? 'checked' : ''} ${dis}> ${escHtml(nomeModelo(m))}</label>`).join('') + '</div>' : ''}
           </div></details>
           <details class="tb-aj" data-k="scan-mapas"><summary>mapas (${marc.size} marcados)</summary><div>
             <div class="tb-linha"><input class="tb-in" id="tb-scan-filtro" placeholder="filtrar…" style="flex:1" aria-label="filtrar mapas"><button type="button" class="tb-bt mini" id="tb-scan-limpar-mapas" ${dis}>desmarcar</button></div>
@@ -5857,7 +5884,7 @@
      *  personagem o gasto/h e as runas/h, fichas com "2+ alvos", extras em
      *  português ("poção de mana ≤30%" — saía "mana Mana ≤30") e os slots que a
      *  Magia cortou por nunca dispararem (r.mortos) numa linha discreta. */
-    const MODELO_CURTO = { economica: 'Eco', equilibrado: 'Equil', area: 'Área', boss: 'Boss', inteligente: 'Intel' };
+    const MODELO_CURTO = { economica: 'Eco', equilibrado: 'Equil', area: 'Área', boss: 'Boss' };
     /* nome da poção como o painel fala: "Strong Mana Potion" → "poção de mana forte" */
     function nomePocao(n) {
         const s = String(n || '');
@@ -8579,6 +8606,7 @@
     async function iniciar() {
         await escolherGaveta();
         LOG = ler('log', []);
+        try { migrarModelos(); } catch (e) { falhou('migrar modelos', e); }
         try { bestRecarregar(); } catch (e) { falhou('bestiário (recarregar)', e); }
         await esperarQue(() => tid('shell') || tid('action-bar') || document.body, 20000, 400);
         try { montarPainel(); } catch (e) { console.error('[TB] painel', e); }
