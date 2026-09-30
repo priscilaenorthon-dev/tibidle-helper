@@ -101,4 +101,18 @@ t('faixa de retorno: aviso da aba, linha do Log depois do clique, 10 s, outra ab
     assert.strictEqual(C.escolherAviso(null, clique, { t: 2000 + 61000, msg: 'muito depois' }, 'estado', 2000 + 62000), null);
     assert.strictEqual(C.escolherAviso({ t: 2600, msg: 'avisar', tipo: 'ok' }, clique, linha, 'estado', 3000).msg, 'avisar', 'o mais novo vence');
 });
+t('2.13.0: trilho com 10 ícones (Radar) cabe inteiro em 1366×768 e no celular rola na horizontal', () => {
+    const icones = (src.match(/const ICONES = \[(.*)\];/) || [])[1] || '';
+    const nIco = (icones.match(/\['\w+', '/g) || []).length;
+    assert.strictEqual(nIco, 10, 'ICONES: ' + nIco);
+    /* TH = 312 px com 9 ícones (34 px + 1 de vão cada); o 10º soma 35 */
+    const TH10 = TH + 35;
+    const { J } = jogo(1366, 768);
+    const p = C.lugarDoTrilho(1366, 768, TW, TH10, PADRAO, null, J);
+    assert(p.y >= 38 && p.y + TH10 <= J.acao.top, 'trilho padrão desce na barra de ação: ' + (p.y + TH10) + ' > ' + J.acao.top);
+    const f = C.lugarDoTrilho(1366, 768, TW, TH10, PADRAO, { x: 258, y: 5000 }, J);
+    assert(f.y + TH10 <= 768 && f.y >= 0, 'arrastado ao fundo sai da tela');
+    assert(/\.tb-cel #tb-trilho\{[^}]*overflow-x:auto/.test(src), 'no celular o trilho precisa rolar na horizontal');
+    assert.strictEqual(C.alturaDoTrilhoCel(844, 58, PADRAO, null), 422 - 58 - 4, 'altura do trilho no celular não depende do nº de ícones');
+});
 console.log(`\n${n} testes ok`);

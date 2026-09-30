@@ -4242,3 +4242,59 @@ pela Caixa). RESGATAR não testado: a Caixa só recebe algo quando um anúncio v
   (escada); buffMs de Protector/Blood Rage/Sharpshooter e Magic Shield (API × wiki); aceite: Scan A/B Em área ×
   Inteligente em Vampire hell e Banshee, 7 min cada (xp ≥ Em área −2 %, lucro ≥ Em área, mesmo kit em 2 APLICAR).
   A barra do Knight com 4 ataques segue sem confirmação (o logbook mostra 2).
+
+## 2.13.0 (30/09) — aba nova "Radar" (só leitura): ranking de mapas, loot ao vivo, alertas de preço e o dia
+- Dono: "coloque em novas telas, para não misturar com as que já utilizo: ranking de todos os mapas sem precisar caçar
+  (levando em consideração meus status com o do monstro), valor do loot em tempo real, alerta de preço no Mercado e
+  relatório diário". Ícone ⌖ antes do Log, 4 sub-abas: **Mapas | Loot | Alertas | Dia**. Rodapé fixo: "Só leitura".
+  (O Inteligente v3 = 2.12.0 está sendo feito em paralelo; a numeração se acerta no merge.)
+- **Nada envia comando de ação.** Leituras extras só por botão: `CALCULAR` (GET público `/hunt/lootTable` e
+  `/bestiary/creature`, 1 a cada 0,3 s, guardados na gaveta comum `loot_tab_<título>`), `ler preços do mercado` e
+  `CONFERIR AGORA` (`market_catalog` + até 5 `market_stats`, pela fila do Mercado: 3,5 s entre pedidos). O **vigiar**
+  vem desligado; ligado, lê no máximo 1× a cada 15 min (o campo não aceita menos), só com socket aberto, Mercado livre,
+  sem Scan/ciclo e com Premium. Testado no vm: 2 h de relógio com vigiar desligado = 0 `market_*`; ligado = só
+  `market_catalog`/`market_stats`, intervalos ≥ 15 min.
+- **Mapas (estimado, calibrado pelo medido)**: por mapa até nível+5, T = lure × HP médio ÷ dano/s da party (o mesmo
+  planejador da aba Magia, com o dano medido dos 4 — `viabilidadeParty`), abates/h = kAbates × lure × 3600 ÷
+  (T + espera + 0,5 × lure), xp/h = abates × xp médio (ponderado por weight), loot/h = abates × loot do catálogo × fator
+  de loot, gasto/h = abates × custo por abate do planejador. **Calibração pelos Scans limpos do nível (±2)**: kAbates =
+  mediana medido/estimado (0,5–1,5), fator de loot = mediana loot medido ÷ (abates × catálogo) (0,15–1; **padrão 0,35
+  sem Scan**, TIBIDLE §12). Com Scan limpo o **medido manda** (xp raw, ouro) e a estimativa fica ao lado. Risco por
+  pontos: nível mínimo perto do seu (+1), dano tomado estimado > 1,5× o maior já aguentado com o Knight ≥ 50 % (+2),
+  onda > 25 s (+1), nota do elemento da party < 60 (+1), Knight já a < 40 % ali (+2), morte nos últimos 7 dias (+3);
+  0–1 baixo, 2–3 médio, ≥ 4 alto; nível abaixo do mínimo = bloqueado. **A API não dá o dano que o monstro causa**: o
+  "dano tomado estimado" é aTomado × lure × xp por abate, com aTomado calibrado nos Scans (sem Scan esse ponto não entra).
+  `dropNerf` do codex: `/assets/v100/codex.json` saiu do ar (a versão corrente é v167) e `entries` veio **vazio** —
+  sem lista de itens de codex o nerf por item não é aplicado; o fator de loot calibrado faz esse papel.
+  Ponto de plugar outro motor: `registrarMotorRanking(nome, fn)` (o v3 devolve `{abH, custoH, danoS, porVoc}` e a
+  fórmula é pulada). Resultado em `radar_rank` (~20 KB), com "recalcule" quando o nível muda.
+- **Loot ao vivo (medido)**: delta do `frame.analyzer` frame a frame (reset quando a caçada troca ou o analisador zera;
+  a base fica guardada 12 h, então o F5 não conta duas vezes nem perde o que rodou no meio). Valor NPC = `value` da
+  tabela do mapa; mercado líquido da taxa quando lido; etiqueta "mercado +X %" com ≥ 10 % e negócio em 30 d. Raro =
+  chance < 1 % ou valor ≥ 20× o loot médio por abate: dourado e 1 linha no Log por drop.
+- **Alertas**: lista de itens (vender/comprar; gatilho % sobre a média de 30 d e/ou preço). Mensagens: "vale anunciar",
+  "COMPRA aberta a Y — aceitar no jogo é na hora e sem taxa", "barato: Y". Mesmo alerta não repete em 6 h. Contador no
+  ícone até abrir a sub-aba. Sugestões: itens do baú e da mochila com negócio em 30 d.
+- **Dia**: xp, ouro líquido, loot, abates, mortes, horas, por mapa, ciclos do Auto Hunt, venda ao NPC (`sell_result`),
+  vendas no mercado (`market_inbox_result` trade_proceeds, id sem repetir), raros; hoje × média dos 7 dias anteriores e
+  7 barrinhas; "copiar texto". Frame que cruza a meia-noite é dividido. Caçada que terminou com a página fechada entra
+  pelo `ended.summary` (menos o que os frames já contaram). `radar_dias` fica com 30 dias (PODAR).
+- Testes: `testes/telas-api.test.js` (19 puras + 8 no vm), `casca` (10 ícones em 1366×768), `fumaca` (PODAR isolado).
+
+## 2.13.0 — junção (Inteligente v3 + Radar) e correções da verificação
+- As duas frentes (Inteligente v3, feito como 2.12.0, e a aba Radar, 2.13.0) foram juntadas numa versão só: 2.13.0.
+- A verificação adversarial foi interrompida para economizar o crédito dos agentes: a do Radar achou 7 problemas
+  (2 altos), a do Inteligente não chegou a relatar. Corrigidos à mão:
+  - **ranking de mapas (alto)**: o motor padrão passou a ser o Inteligente v3 (`MOTORES_RANK.inteligente` →
+    `partyInt`), que devolve abates/h e gasto/h da própria simulação da party. O motor antigo derivava o tempo da
+    onda de um dano médio diluído pela espera e multiplicava o gasto pela curva de desperdício (gasto/h maior que o
+    possível). O motor antigo continua no seletor.
+  - **drop raro**: chance < 1 % só conta se o item valer ≥ 5× o loot médio por abate (antes metade da tabela, de 1 a
+    30 de ouro, virava "raro" e enchia o Log).
+  - **recomeço no mesmo mapa**: o analisador do jogo não zera; a base do loot ao vivo só vira zero se o 1º frame for
+    de caçada nova (< 5 s).
+- Pendentes da verificação (médios, não corrigidos): validade/purga da cópia da tabela de loot na gaveta comum;
+  caçada offline que cruza meia-noite entra toda no dia do resumo; alerta "vale anunciar" não desconta os anúncios
+  do próprio dono nem compara com o NPC.
+- Teste ao vivo pendente: Scan A/B Em área × Inteligente (Vampire hell e Banshee, 7 min cada) e conferir o ranking
+  do Radar contra os Scans já medidos.
