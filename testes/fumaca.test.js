@@ -555,6 +555,25 @@ t('@@ARMAZEM: scan_resultados fica com os 60 mais recentes e é lido 1× do disc
     assert.strictEqual(A.LOG.filter(l => /falha em x/.test(l.msg)).length, 1, 'mesmo lugar no mesmo minuto: 1 linha no Log');
 });
 
+t('@@ARMAZEM: radar_dias fica com os 30 dias mais novos (2.13.0), sem função de fora', async () => {
+    const disco = new Map();
+    const A = new Function('localStorage', 'window', `
+        const console = { log() { }, warn() { }, error() { } };
+        let LS = 'tb_helper_'; const autoHunt = () => ({ on: false }), guardarAutoHunt = () => {}, renderizar = () => {}, pintarLog = () => {};
+        ${trecho('/* @@ARMAZEM-INICIO', '/* @@ARMAZEM-FIM */')}
+        return { guardar, ler };
+    `)({ getItem: (k) => (disco.has(k) ? disco.get(k) : null), setItem: (k, v) => disco.set(k, String(v)), removeItem: (k) => disco.delete(k) }, { addEventListener() { } });
+    const dias = {};
+    for (let i = 1; i <= 45; i++) { const d = new Date(2026, 7, i, 12); dias[d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')] = { xp: i }; }
+    assert.strictEqual(A.guardar('radar_dias', dias), true);
+    const salvo = JSON.parse(disco.get('tb_helper_radar_dias'));
+    const k = Object.keys(salvo).sort();
+    assert.strictEqual(k.length, 30);
+    assert.strictEqual(k[0], '2026-08-16'); assert.strictEqual(k[29], '2026-09-14');
+    assert.strictEqual(A.guardar('radar_dias', { '2026-09-30': { xp: 1 } }), true);
+    assert.deepStrictEqual(JSON.parse(disco.get('tb_helper_radar_dias')), { '2026-09-30': { xp: 1 } }, 'poucos dias ficam como estão');
+});
+
 t('@@ARMAZEM: 5 falhas seguidas no gatilho desligam o Auto Hunt', async () => {
     const estado = { on: true };
     const A = new Function('localStorage', 'window', 'estado', `
