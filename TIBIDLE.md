@@ -4127,3 +4127,60 @@ pela Caixa). RESGATAR não testado: a Caixa só recebe algo quando um anúncio v
 - A leitura do Equip (o melhor e a reserva de cada personagem, que o Mercado nunca anuncia) vive só na memória. Depois
   de um F5 toda peça forjada aparecia travada com "rode ATUALIZAR no Equip antes" e o dono não conseguia marcar nada.
   Agora o ATUALIZAR do Mercado lê o Equip junto quando ele ainda não foi lido (só leitura: depot_get + /item/info).
+
+## 2.11.15 (30/09) — revisão do "Completar marcos"
+- Venda do modo "completar" falhou → o modo desliga **e devolve os kits de antes** (`bestEncerrar(..., 'perfis')`, que
+  espera o ciclo terminar). Antes a foto era descartada e o kit do bestiário ficava nos 4.
+- Mochila cheia com o Auto Hunt desligado e a venda ainda travada (5 min desde o último ciclo, ou janela aberta): o modo
+  **espera na cidade**. Antes caía no "entrar" e reentrava com a mochila cheia — o Auto Exit tirava a party de novo, em laço.
+
+## 2.11.16 (30/09) — Equip: encaixe nobre nunca sobra (regra da comunidade + wiki /forja)
+- Dono: "todos os itens com regen de mana são bons para todos; no Knight regen de mana + regen de vida. Arma e colar:
+  corpo a corpo, distância, nível mágico, ou dano físico/mágico (a cada ~2 % vale 1 nível mágico)".
+- Wiki /forja: encaixes de defesa (escudo, elmo, armadura, calça, bota, anel) e de ataque (arma, colar) são grupos
+  separados. Faixas por potência I–VI: regen. de vida/mana +1,1 a +5,2; nível mágico/skill +1 a +3; dano 1,2 % a 9,8 %.
+- Conferência da tabela (potência III, uma peça de 1 encaixe): na defesa, regen. de mana já era o 1º de Paladino,
+  Feiticeiro e Druida, e no Knight regen. de vida (9 pt) > regen. de mana (3,2 pt). Na arma/colar dos magos, nível
+  mágico > dano mágico (≈ 1 ML ≈ 2,8 % de dano: bate com a regra dos 2 %).
+- Corrigido: com a mana do mago medida ≥ 60 % a regen. de mana valia ×0,2 e caía para trás de chance de loot e
+  capacidade. O corte saiu.
+- Novo grupo **"guardar: encaixe bom"**: peça que nenhum personagem usa hoje nem é reserva, mas tem regen. de mana/vida
+  (defesa) ou corpo a corpo/distância/nível mágico/dano físico/dano mágico (arma e colar), não entra nas sobras nem no
+  Mercado. Só vale para peça que alguma vocação veste (lança continua saindo).
+- Divergência que ficou: no Paladino a distância vale quase nada (0,03 pt por +1) porque o dano medido dele é 95 %
+  runa + magia. A peça com distância é guardada pela regra acima, mas não ganha troca.
+
+## 2.11.17 (30/09) — Knight: regen. de mana em 1º
+- Dono: "o Knight tem que ter regen. de mana como principal, depois regen. de vida". Peso da regen. de mana do Knight =
+  máx(conta da mana, 1,25 × o da regen. de vida) = 4,5 pt por 1 de mana/s (era 1,26). Potência III: regen. de mana
+  11,3 pt > regen. de vida 9 > cura própria 2,1 > escudo 1,4.
+
+## 2.11.18 (30/09) — troca por ganho pequeno volta a aparecer
+- Dono: "avalia se o regen de mana 2 é maior que 1,9?". A nota já era maior (é linear: valor × peso), mas o custo de
+  troca de 1 pt (2.11.2) escondia a sugestão: +0,1 de regen. de mana dá +0,14 a +0,48 pt, e no Paladino nem 1,9 → 2,5
+  (+0,8) aparecia. O custo existia contra a cadeia de trocas entre personagens, que a 2.11.11 já proibiu. Agora é
+  0,1 pt (só desempate): 2,0 tira a 1,9 nos 4; empate fica com a vestida. A peça que sai continua reserva/"guardar".
+
+## 2.11.19 (30/09) — encaixe bom volta a ser vendável quando todos já vestem igual ou melhor
+- Dono: "caso todos já estejam equipados com itens bons quero ter a opção de vender eles".
+- "Guardar: encaixe bom" agora só segura a peça cujo encaixe nobre (em pt) supera o da peça que alguma vocação que a
+  veste vai usar naquele espaço. Se todos já vestem igual ou melhor, ela volta para "sobrando" com o motivo
+  "encaixe bom, mas todos que a vestem já usam igual ou melhor" — e vende como antes.
+- Nobre por vocação: defesa = regen. de mana (4) + regen. de vida (só Knight); arma/colar = Knight corpo a corpo e
+  dano físico; Paladino distância, nível mágico, dano mágico e físico; magos nível mágico e dano mágico.
+
+## 2.11.20 (30/09) — "não errar": auditoria da venda + conferência das regras na wiki
+- Dois agentes: um conferiu as regras da comunidade nas 52 páginas da wiki, outro auditou todo caminho que vende.
+- **Wiki** (/forja, /vender-e-auto-selling, /mercado): peça **Incomum ou melhor, ou com refino, não vende na cidade, no
+  Auto Selling nem no Mercado** — só usa ou desmancha. O que vende é a Comum sem refino (sem encaixe nenhum).
+  Regen. de vida/mana da forja é **por segundo** (/bestiario). Arma/colar sorteiam do grupo ofensivo; skill tem peso 1
+  (rara), dano peso 10. Nível 67, ML 25: 1 ML ≈ 2,6 % de dano mágico (Energy Strike) — a regra "2 % ≈ 1 ML" é boa.
+  A wiki não diz que regen. de mana é "o melhor" nem que distância é o melhor no Paladino: é regra da comunidade.
+  Runa: o dano sobe com o ML TREINADO e o nível (o "dano de runa é fixo" das seções antigas está desatualizado).
+- **Auditoria**: Auto Hunt e Venda rápida já eram seguros (protegem todo equipamento pelo nome e não vendem nada se
+  não conseguem desmarcar). As brechas eram no Mercado, que só barrava o que o Equip conhecia:
+  - **lista branca**: cópia de equipamento só pode ser marcada se a última leitura do Equip a pôs nas sobras (fecha:
+    peça que o Auto Hunt guardou depois da leitura, depósito não lido, base desconhecida, base de forja épica+);
+  - o ATUALIZAR do Mercado **sempre** relê o Equip (antes só quando não havia leitura);
+  - encaixe da forja normalizado (id em minúsculas com `_`, valor "1,9" → 1.9) — antes um formato diferente zerava o
+    encaixe em silêncio e a peça podia cair nas sobras.

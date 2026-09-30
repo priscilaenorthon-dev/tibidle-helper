@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.11.14
+// @version      2.11.20
 // @description  Magia (Econômica / Equilibrado / Área / Boss, com simulador da fila) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.11.14';
+    const VERSAO = '2.11.20';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -3642,7 +3642,9 @@
             log(`${NOME_ORIGEM[origem] || origem} parou no passo "${passo}": ${erro}` + (a.on ? ' — automação DESLIGADA' : ''), 'erro');
             if (a.on) guardarAutoHunt({ on: false });
             /* v2.11.10 — a venda do modo "completar bestiário" falhou: o modo para (senão voltaria a tentar a cada 5 min) */
-            if (origem === 'bestiario' && BEST.ativo) { BEST.ativo = false; BEST.foto = null; bestSalvar(); log('bestiário: modo "completar" DESLIGADO (a venda falhou)', 'erro'); }
+            /* v2.11.15 — e devolve os kits de antes (antes a foto era jogada fora e o kit do bestiário ficava);
+             * o bestEncerrar espera o ciclo terminar antes de mexer nos perfis */
+            if (origem === 'bestiario' && BEST.ativo) bestEncerrar('modo "completar" DESLIGADO (a venda falhou) — kits devolvidos', 'erro', 'perfis').catch(e => falhou('bestiário (encerrar)', e));
         };
         try {
             log(`ciclo de venda (${origem}) iniciado — mochila ${c0 ? c0.pct + '% livre' : '?'}`, 'info');
@@ -4504,8 +4506,10 @@
     /* regen de mana (pt por 1 de mana/s) — também é o preço da mana do tiro da wand */
     function ptPorManaS(voc, R) {
         if (R.bebe[voc]) return R.ouroPorMana * 3600 / PT_OURO_H;
-        const v = (R.dpm[voc] || 0) / R.dps * 100;
-        return (R.mana[voc] || 0) >= 60 ? v * 0.2 : v; // mana sobrando: regen quase não vira dano
+        /* v2.11.16 — sem o corte de "mana sobrando" (era ×0,2 com a barra ≥ 60 %): num mapa fácil
+         * a regen. de mana do Feiticeiro caía para trás de chance de loot e capacidade. A peça
+         * dura muitos mapas; regra da comunidade (dono, 30/09): regen. de mana é boa para todos. */
+        return (R.dpm[voc] || 0) / R.dps * 100;
     }
     function pesosDaVoc(voc, ctx) {
         const R = partyDoCtx(ctx), s = R.share[voc] || 0, P = {};
@@ -4543,6 +4547,10 @@
         }
         /* ---- mana ---- */
         P.regen_mana = _r(ptPorManaS(voc, R));
+        /* v2.11.17 — dono, 30/09: "o Knight tem que ter regen. de mana como principal, depois regen. de vida".
+         * A mana dele vive em 16–19 % (Berserk/cura rodam na regeneração): a regen. de mana vale 25 % a
+         * mais que a de vida, por unidade — fica na frente de tudo nos encaixes de defesa dele. */
+        if (voc === 'KNIGHT') P.regen_mana = _r(Math.max(P.regen_mana, VIDA_PT_KNIGHT * 1.25));
         P.max_mana = 0.001;
         /* ---- defesa ---- */
         if (voc === 'KNIGHT') {
@@ -4695,6 +4703,15 @@
     }
     /* roster (welcome/fibra) + depot_state.entries + base{nome:{attrs,sell,equipPreview}} → peças
      * {iid, nome, slot, attrs, forja, equipPreview, sell, origem:'corpo'|'depósito', dono?:voc, duasMaos} */
+    /* v2.11.20 — encaixe da forja normalizado: id em minúsculas com _ ("Regen-Mana" → regen_mana) e valor
+     * numérico ("1,1" → 1.1). Um id ou valor fora do formato zerava o encaixe em silêncio. */
+    function normForja(f) {
+        if (!f || typeof f !== 'object') return { raridade: 0, atributos: [] };
+        const atributos = (Array.isArray(f.atributos) ? f.atributos : []).map(a => ({ ...a,
+            id: String((a && a.id) || '').trim().toLowerCase().replace(/[\s-]+/g, '_'),
+            valor: typeof (a && a.valor) === 'string' ? Number(a.valor.replace(',', '.')) : Number(a && a.valor) }));
+        return { ...f, atributos };
+    }
     function candidatosEquip(roster, depot, base, mochila) {
         const out = [];
         const b = (nome) => base[nome] || { attrs: {}, sell: 0, equipPreview: null };
@@ -4704,20 +4721,20 @@
             const k = b(e.name);
             const slot = slotDaBase(k.attrs);
             if (!slot || !SLOTS_EQUIP.includes(slot)) continue;
-            out.push({ iid: e.iid, nome: e.name, slot, attrs: k.attrs, forja: e.forja || { raridade: 0, atributos: [] }, equipPreview: k.equipPreview,
+            out.push({ iid: e.iid, nome: e.name, slot, attrs: k.attrs, forja: normForja(e.forja), equipPreview: k.equipPreview,
                        sell: k.sell || 0, origem: 'mochila', dono: null, duasMaos: k.attrs.slotType === 'two-handed' });
         }
         for (const r of (roster || [])) { for (const [slot, it] of Object.entries(r.equipment || {})) {
             if (!it || !it.name) continue;
             const k = b(it.name);
             const attrs = Object.assign({}, k.attrs, it.attrs || {});
-            out.push({ iid: it.iid || (r.vocation + ':' + slot), nome: it.name, slot: normalizarSlot(slot), attrs, forja: it.forja || { raridade: 0, atributos: [] },
+            out.push({ iid: it.iid || (r.vocation + ':' + slot), nome: it.name, slot: normalizarSlot(slot), attrs, forja: normForja(it.forja),
                        equipPreview: k.equipPreview, sell: k.sell || it.value || 0, origem: 'corpo', dono: r.vocation, duasMaos: attrs.slotType === 'two-handed' });
         } }
         for (const e of ((depot && depot.entries) || [])) {
             if (!e.forja || !e.slot) continue;
             const k = b(e.itemName);
-            out.push({ iid: e.iid, nome: e.itemName, slot: normalizarSlot(e.slot), attrs: k.attrs, forja: e.forja, equipPreview: k.equipPreview,
+            out.push({ iid: e.iid, nome: e.itemName, slot: normalizarSlot(e.slot), attrs: k.attrs, forja: normForja(e.forja), equipPreview: k.equipPreview,
                        sell: k.sell || 0, origem: 'depósito', dono: null, duasMaos: k.attrs.slotType === 'two-handed' });
         }
         return out;
@@ -4738,7 +4755,31 @@
      * Feiticeiro um do depósito (−1,2, sem aparecer na tela): 3 trocas por
      * +0,2 pt (29/09, ao vivo). Ficar com a peça atual vale +1 pt (≈ 10 de
      * vida máx.): só troca quem ganha mais que isso, somando os afetados. */
-    const EQUIP_FICAR_PT = 1;
+    /* v2.11.18 — o custo era 1 pt: regen. de mana 2,0 do depósito não tirava a 1,9 vestida (+0,1 a +0,5 pt), e no
+     * Paladino nem a 2,5 tirava (+0,8). Desde a 2.11.11 peça vestida não troca de personagem — a cadeia de 3 trocas
+     * que motivou o custo não existe mais. Fica só um desempate: qualquer ganho real de encaixe vira sugestão. */
+    const EQUIP_FICAR_PT = 0.1;
+    /* v2.11.16 — ENCAIXE NOBRE NUNCA SOBRA (dono, 30/09, regra da comunidade + wiki /forja):
+     *   escudo, elmo, armadura, calça, bota e anel → regen. de mana (todos) e regen. de vida (Knight);
+     *   arma e colar → corpo a corpo, distância, nível mágico, dano físico ou dano mágico.
+     * A peça com um desses encaixes pode não ser a melhor nem reserva de ninguém hoje, mas é o
+     * que a comunidade guarda — não vai para a lista de sobras (nem para o Mercado). */
+    /* v2.11.19 — por vocação: regen. de vida só é nobre no Knight; na arma/colar, o que aquela vocação usa. */
+    const NOBRE_DEFESA = { KNIGHT: ['regen_mana', 'regen_vida'], PALADIN: ['regen_mana'], SORCERER: ['regen_mana'], DRUID: ['regen_mana'] };
+    const NOBRE_ATAQUE = { KNIGHT: ['corpo_a_corpo', 'dano_fisico'], PALADIN: ['distancia', 'nivel_magico', 'dano_magico', 'dano_fisico'],
+                           SORCERER: ['nivel_magico', 'dano_magico'], DRUID: ['nivel_magico', 'dano_magico'] };
+    const nobresDe = (slot, voc) => ((slot === 'weapon' || slot === 'necklace' ? NOBRE_ATAQUE : NOBRE_DEFESA)[voc] || []);
+    function encaixeNobre(p, voc) {
+        const at = (p && p.forja && p.forja.atributos) || [];
+        const vocs = voc ? [voc] : VOCS_EQUIP;
+        return vocs.some(v => at.some(a => nobresDe(p.slot, v).includes(a.id) && Number(a.valor) > 0));
+    }
+    /* só a parte nobre da nota (pt), para comparar com a peça que a vocação veste/vai vestir */
+    function ptNobre(p, voc, ctx) {
+        if (!p) return 0;
+        const ids = nobresDe(p.slot, voc);
+        return pontuarPeca(p, voc, ctx).detalhe.filter(d => ids.includes(d.id)).reduce((s, d) => s + d.pt, 0);
+    }
     function _resolverSlot(porVoc, vocsSlot, s, usadas, extra) {
         // candidatos por voc: top-K não usados + o atual (se não estiver) + extra (virtual)
         const listas = vocsSlot.map(v => {
@@ -4847,16 +4888,25 @@
          * que a peça dá HOJE; o valor dela é o que dá para fazer com ela. */
         const baseDeForja = p => ((p.forja && p.forja.raridade) || 0) >= RARIDADE_BASE_FORJA;
         const bases = pecas.filter(p => !usadas.has(p.iid) && !ehTemporaria(p) && baseDeForja(p));
-        const dispensaveis = pecas.filter(p => !usadas.has(p.iid) && !reservas.has(p.iid) && !ehTemporaria(p) && !baseDeForja(p) && (!sobraNoNeutro || sobraNoNeutro.has(p.iid))).map(p => {
+        /* v2.11.19 — dono, 30/09: "caso todos já estejam equipados com itens bons quero ter a opção de vender".
+         * A peça de encaixe nobre só é guardada se o encaixe dela SUPERA o da peça que alguma vocação que a
+         * veste vai usar naquele espaço (ex.: regen. de mana 2,0 contra a 1,5 vestida). Se todos já vestem
+         * igual ou melhor, ela volta às sobras, com o motivo dizendo isso — dá para vender como antes. */
+        const nobreUtil = (p) => vocs.some(v => vocacaoPode(p.attrs, v) && porVoc[v][p.slot] && encaixeNobre(p, v)
+            && ptNobre(p, v, ctx) > ptNobre(porVoc[v][p.slot].melhor, v, ctx) + 1e-9);
+        const nobres = pecas.filter(p => !usadas.has(p.iid) && !reservas.has(p.iid) && !ehTemporaria(p) && !baseDeForja(p) && nobreUtil(p));
+        const nobreSet = new Set(nobres.map(p => p.iid));
+        const dispensaveis = pecas.filter(p => !usadas.has(p.iid) && !reservas.has(p.iid) && !ehTemporaria(p) && !baseDeForja(p) && !nobreSet.has(p.iid) && (!sobraNoNeutro || sobraNoNeutro.has(p.iid))).map(p => {
             let melhorUso = null;
             for (const v of vocs) { if (vocacaoPode(p.attrs, v) && porVoc[v][p.slot]) {
                 const top = porVoc[v][p.slot].melhor; if (!top) continue;
                 const d = P(top, v).pontos - P(p, v).pontos;
                 if (!melhorUso || d < melhorUso.d) melhorUso = { v, top, d };
             } }
+            if (encaixeNobre(p) && vocs.some(v => vocacaoPode(p.attrs, v))) return Object.assign({}, p, { motivo: 'encaixe bom, mas todos que a vestem já usam igual ou melhor' + (melhorUso ? ` (${melhorUso.top.nome}, ${melhorUso.v.toLowerCase()})` : '') });
             return Object.assign({}, p, { motivo: melhorUso ? `superada por ${melhorUso.top.nome} (${melhorUso.v.toLowerCase()}, −${Math.round(melhorUso.d * 10) / 10} pt)` : 'nenhuma vocação usa' });
         }).sort((a, b) => (b.sell || 0) - (a.sell || 0));
-        return { porVoc, reservas, dispensaveis, usadas, temporarios, bases };
+        return { porVoc, reservas, dispensaveis, usadas, temporarios, bases, nobres };
     }
     /* @@EQUIP-PURO-FIM */
 
@@ -6377,6 +6427,9 @@
         const bases = R.bases || [];
         if (bases.length) { h += aj('eq-bases', `<div class="tb-mut tb-eq-nota">Épico ou melhor que ninguém usa: 3+ encaixes valem pela Forja (trocar o encaixe ruim sai mais barato que subir a raridade). Nunca entram nas sobras.</div>` +
             bases.map(p => `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)} <span class="tb-mut">${escHtml(slotPt(p.slot))} · ${escHtml(p.origem)} · ${escHtml(((p.forja && p.forja.atributos) || []).map(a => rotulo(a.id) + ' ' + a.valor).join(', '))}</span></span></div>`).join(''), `bases de forja (${bases.length})`); }
+        const nobres = R.nobres || [];
+        if (nobres.length) { h += aj('eq-nobres', `<div class="tb-mut tb-eq-nota">Encaixe que a comunidade guarda (wiki /forja): regen. de mana ou de vida nas peças de defesa; corpo a corpo, distância, nível mágico, dano físico ou mágico na arma e no colar. O encaixe dela supera o da peça que alguém que a veste vai usar, mas a nota total perdeu: fica guardada, fora das sobras e do Mercado. Quando todos já vestem encaixe igual ou melhor, ela volta para as sobras e dá para vender.</div>` +
+            nobres.map(p => `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)} <span class="tb-mut">${escHtml(slotPt(p.slot))} · ${escHtml(p.origem)} · ${escHtml(((p.forja && p.forja.atributos) || []).map(a => rotulo(a.id) + ' ' + a.valor).join(', '))}</span></span></div>`).join(''), `guardar: encaixe bom (${nobres.length})`); }
         h += aj('eq-res', [...R.reservas].map(iid => { const p = candidatoPorIid(iid); return p ? `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)} <span class="tb-mut">${escHtml(slotPt(p.slot))} · ${escHtml(p.origem)}</span></span></div>` : ''; }).join(''), `reservas (${R.reservas.size})`);
         const temp = R.temporarios || [];
         if (temp.length) { h += aj('eq-temp', `<div class="tb-mut tb-eq-nota">acabam por carga ou por tempo de caçada (wiki): não entram nas trocas nem na lista de venda — use à mão (boss, mapa difícil).</div>` +
@@ -7226,6 +7279,10 @@
             try { await cicloDeVenda('bestiario'); } finally { BEST.passo = false; }
             return;
         }
+        /* v2.11.15 — mochila cheia e a venda ainda não pode (trava de 5 min, janela aberta): espera na
+         * cidade. Antes caía no "entrar" e a party reentrava com a mochila cheia — o Auto Exit a
+         * tirava de novo, em laço, até a trava liberar. */
+        if (mochilaCheia && !autoHunt().on && !aqui) return;
         if (aqui) return;
         BEST.passo = true; _travaJogo = 'Bestiário';
         renderizar();
@@ -7715,6 +7772,11 @@
         const protN = new Set(((e.prot && e.prot.nomes) || []).map(mkMin)), protI = new Set((e.prot && e.prot.iids) || []);
         const nunca = new Set((e.nunca || []).map(mkNorm).filter(Boolean));
         const eq = e.equip ? new Set([...(e.equip.usadas || []), ...(e.equip.reservas || [])]) : null;
+        /* v2.11.20 — LISTA BRANCA (auditoria 30/09): a cópia de equipamento só pode ser marcada se a última
+         * leitura do Equip a pôs nas SOBRAS. Antes o Mercado só barrava o que o Equip conhecia (melhor,
+         * reserva): peça que entrou depois da leitura, peça do depósito com o depósito não lido, peça de
+         * base desconhecida e base de forja (épico+) passavam como vendáveis. */
+        const sobras = e.equip && Array.isArray(e.equip.sobras) ? new Set(e.equip.sobras) : null;
         const naCidade = e.naCidade !== false, marcados = new Set(e.marcados || []);
         const fora = [], pilhas = new Map(), copias = [];
         const barrar = (nome, qtd, motivo, iid) => fora.push({ nome: String(nome), n: mkMin(nome), qtd: qtd || 1, motivo, iid: iid || null });
@@ -7761,6 +7823,7 @@
             if (m) { barrar(x.nome, x.count, m, x.iid); continue; }
             if (trad && trad[x.n] && trad[x.n].forjavel) {
                 if (!x.forja) { barrar(x.nome, 1, 'sem forja — o jogo não anuncia esta peça', x.iid); continue; }
+                if (sobras && !sobras.has(x.iid)) { barrar(x.nome, 1, 'o Equip não pôs nas sobras (melhor, reserva, encaixe bom, base de forja ou peça que ele não avaliou)', x.iid); continue; }
                 copias.push(x);
             } else {
                 const p = pilha(x.nome);
@@ -7993,7 +8056,8 @@
         const b = mkBagAtual(), R = EQUIP.res;
         return { bag: b ? b.bag : null, bagInst: b ? b.inst : null, depot: ESTADO_WS.depot ? ESTADO_WS.depot.entries : null,
                  tradeable: MK.tradeable, npc: MK.npc, taxa: MK.taxa, catalogo: MK.catalogo, minhas: MK.minhas, livros: MK.livros, copias: MK.copias, stats: MK.stats,
-                 prot: mkProtegidos(), nunca: autoHunt().nuncaVender || [], equip: R ? { usadas: [...(R.usadas || [])], reservas: [...(R.reservas || [])] } : null,
+                 prot: mkProtegidos(), nunca: autoHunt().nuncaVender || [], equip: R ? { usadas: [...(R.usadas || [])], reservas: [...(R.reservas || []), ...(R.nobres || []).map(p => p.iid), ...(R.bases || []).map(p => p.iid)],
+                                                                         sobras: (R.dispensaveis || []).map(p => p.iid).filter(Boolean) } : null,
                  naCidade: !emHunt(), digitados: MK.digitados, marcados: [...MK.marcados] };
     }
     const mkVista = () => mkMontar(mkEntrada());
@@ -8058,7 +8122,9 @@
             /* v2.11.14 — a leitura do Equip (o melhor e a reserva de cada um) mora só na memória: depois
              * de um F5 toda peça forjada ficava travada ("rode ATUALIZAR no Equip antes") e o dono não
              * conseguia marcar nada (30/09). O ATUALIZAR do Mercado já lê o Equip junto — é só leitura. */
-            if (!EQUIP.res && !EQUIP.lendo) { MK.progresso = 'equipamento dos 4 (o melhor e a reserva ficam fora)…'; renderizar(); await equipAtualizar(); }
+            /* v2.11.20 — sempre (não só sem leitura): peça que o Auto Hunt guardou depois da última leitura do Equip
+             * ficaria sem avaliação. Com o depósito não lido, o Equip não põe peça do depósito nas sobras. */
+            if (!EQUIP.lendo) { MK.progresso = 'equipamento dos 4 (o melhor e a reserva ficam fora)…'; renderizar(); await equipAtualizar(); }
             MK.livros = {}; MK.copias = {}; MK.stats = {};
             if (await mkLerBase([['market_catalog', 'preços do mercado'], ['market_my_orders', 'suas ordens'], ['market_inbox', 'caixa de entrada']])) {
                 await mkBuscarPendencias(() => mkVista().pendencias, 'preços');

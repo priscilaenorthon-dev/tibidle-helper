@@ -139,6 +139,10 @@ t('cópia forjada: só mesma raridade E mesmo refino; minha cópia não conta; 1
     r = P.mkMontar(base(Object.assign({}, e, { copias: { 'cat:armas': { copies: [cp('o4', 900, 3, 3)] } }, stats: { 'elvish bow': { stats: { avg: 4100.2 } } } })));
     const l = linha(r, 'i:b1'); assert.strictEqual(l.preco, null); assert.strictEqual(l.origem, 'vazio'); assert(/digite/.test(l.bloqueio)); assert(/todas as raridades/.test(l.nota));
     assert(!r.pendencias.some(p => p.tipo === 'market_stats'), 'cópia não pede a média de 30 d');
+    // 2.11.20 — lista branca: com a leitura do Equip, só a cópia que ele pôs nas SOBRAS pode ser marcada
+    r = P.mkMontar(base(Object.assign({}, e, { copias, equip: { usadas: [], reservas: [], sobras: ['b2'] } })));
+    assert(r.fora.some(f => f.iid === 'b1' && /não pôs nas sobras/.test(f.motivo)), 'b1 fora das sobras tem que ser barrada: ' + JSON.stringify(r.fora));
+    assert(linha(r, 'i:b2'), 'b2 está nas sobras: pode ser anunciada');
     // Equip não calculado: cópia não pode ser marcada
     r = P.mkMontar(base(Object.assign({}, e, { copias, equip: null })));
     assert(/ATUALIZAR no Equip/.test(linha(r, 'i:b1').bloqueio));
@@ -417,7 +421,7 @@ async function mundoMercado(cfg) {
     const S = servidor(W, ws, cfg);
     ws.emitir({ type: 'welcome', data: { account: { name: 'Northon', mainVocation: 'KNIGHT', premiumUntil: 'premium' in cfg ? cfg.premium : '2026-12-31T00:00:00Z' },
         bag: Object.assign({}, S.bag), bagInstances: S.inst.slice(), meta: { protected: cfg.protegidos || [], protectedIids: [] } } });
-    if (cfg.equip) W.H.EQUIP.res = { porVoc: {}, usadas: new Set(cfg.equip.usadas || []), reservas: new Set(cfg.equip.reservas || []), dispensaveis: [], temporarios: [] };
+    if (cfg.equip) W.H.EQUIP.res = { porVoc: {}, usadas: new Set(cfg.equip.usadas || []), reservas: new Set(cfg.equip.reservas || []), dispensaveis: (cfg.equip.sobras || []).map(iid => ({ iid })), temporarios: [] };
     await W.avancar(0);
     const clicar = async (id) => { await W.avancar(0); const b = W.porId.get(id); assert(b && typeof b.onclick === 'function', 'botão ausente: ' + id); b.onclick(); await W.avancar(0); };
     const indice = (chave) => { const i = W.H.MERCADO.pintadas.findIndex(l => l.chave === chave); assert(i >= 0, 'linha ausente: ' + chave + ' — tem: ' + W.H.MERCADO.pintadas.map(l => l.chave)); return i; };
@@ -466,7 +470,7 @@ t('vm: nada é enviado sem o 2º toque (e o 1º toque expira em 4 s)', async () 
 t('vm: fila depósito → mochila → market_create com o payload exato; cópia vai com iid e qtd 1', async () => {
     const copias = { armas: [{ orderId: 'o1', itemName: 'elvish bow', unitPrice: 2500, sellerName: 'Outro', instance: { iid: 'z1', name: 'elvish bow', forja: { raridade: 1, refino: 0 } }, expiresAt: 1 }] };
     const M = await mundoMercado({ bag: { 'small ruby': 3, 'elvish bow': 1 }, inst: [{ iid: 'b1', name: 'elvish bow', forja: { raridade: 1, refino: 0 } }],
-        depot: [{ itemName: 'small ruby', count: 2 }], catalogo: CAT_BASE, copias, equip: { usadas: [], reservas: [] } });
+        depot: [{ itemName: 'small ruby', count: 2 }], catalogo: CAT_BASE, copias, equip: { usadas: [], reservas: [], sobras: ['b1'] } });
     await M.atualizar();
     igual(M.S.tipos('market_copies').map(x => x.o.data), [{ category: 'armas' }]);
     await M.marcar('n:small ruby');
