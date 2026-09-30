@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.11.8
+// @version      2.11.9
 // @description  Magia (Econômica / Equilibrado / Área / Boss / Inteligente, com simulador da fila) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.11.8';
+    const VERSAO = '2.11.9';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -7384,12 +7384,13 @@
                     && !meusIds.has(y.orderId) && mkMesmoCorte(x.forja, y.instance && y.instance.forja)).map(y => y.unitPrice);
             } else pendente = { tipo: 'market_copies', data, chave: k, cache: 'copias', alvo: k, rotulo: 'cópias de ' + (cat ? (MK_CATS[cat] || cat) : x.nome), erro: cp ? cp.erro : null };
         }
-        let media = null, nota = null;
-        if (!pendente && !outros.length && !meus.length) {
-            ({ media, pendente } = mkPendMedia(x.nome, n, c, e));
-            if (media != null) nota = 'média do item inteiro (todas as raridades e refinos) — confira';
-        }
-        return { ref: { outros, meus, media }, pendente, nota };
+        /* v2.11.8 — SEM MÉDIA PARA CÓPIA. A média de 30 dias é do item inteiro e
+         * mistura todas as raridades: ao vivo (29/09) o simple dress COMUM saía a
+         * 104.790 e o crystal ring comum a 83.778 (o incomum estava a 399) — anúncio
+         * que nunca vende e cuja taxa de ~5 % não volta. Sem cópia do mesmo corte à
+         * venda, fica sem sugestão: o dono digita. */
+        const nota = !pendente && !outros.length && !meus.length ? 'nenhuma cópia desta raridade e refino à venda — digite o preço (a média de 30 dias mistura todas as raridades)' : null;
+        return { ref: { outros, meus, media: null }, pendente, nota };
     }
     function mkLinha(b, r, e, marcados) {
         const dig = e.digitados ? e.digitados[b.chave] : undefined;
@@ -7970,7 +7971,7 @@
             if (c !== catAtual) { catAtual = c; const n = v.linhas.filter(x => (x.cat || 'outros') === c).length; h += `<div class="mk-cat">${escHtml(MK_CATS[c] || 'Outros')} (${n})</div>`; }
             const onde = l.deposito && l.mochila ? `${l.mochila} mochila + ${l.deposito} dep.` : l.deposito ? 'no depósito' : 'na mochila';
             const org = l.origem === 'menor' ? `menor −1 (outro a ${mkFmt(l.sug.ref)})` : MK_ORIGEM[l.origem] || l.origem;
-            const npcTxt = l.npc == null ? 'NPC ?' : l.npc > 0 ? 'NPC ' + mkFmt(l.npcTotal) : 'NPC não compra';
+            const npcTxt = l.npc == null ? 'NPC ?' : !(l.npc > 0) ? 'NPC não compra' : l.qtd ? 'NPC ' + mkFmt(l.npcTotal) : 'NPC ' + mkFmt(l.npc) + '/un';
             const blq = l.bloqueio ? (l.bloqueio === 'vender no NPC' ? `<b class="tb-av">vender no NPC</b> (o mercado daria ${mkFmt(l.liquido)} líquido)` : `<span class="tb-ruim">${escHtml(l.bloqueio)}</span>`) : '';
             const valor = l.origem === 'digitado' ? MK.digitados[l.chave] : l.preco;
             h += `<div class="mk-it${l.bloqueio ? ' bloq' : ''}">

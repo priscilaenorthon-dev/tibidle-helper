@@ -135,9 +135,10 @@ t('cópia forjada: só mesma raridade E mesmo refino; minha cópia não conta; 1
     // sem a minha: o menor do corte raro +3 é o o1 (5200), não o o2 (+2) nem o o4 (épico)
     r = P.mkMontar(base(Object.assign({}, e, { copias: { 'cat:armas': { copies: copias['cat:armas'].copies.filter(c => c.orderId !== 'm9') } } })));
     assert.strictEqual(linha(r, 'i:b1').preco, 5199);
-    // sem cópia do mesmo corte: média 30 d do item (com aviso)
+    // 2.11.8 — sem cópia do mesmo corte: SEM sugestão (a média de 30 d mistura raridades: dress comum a 104.790 ao vivo)
     r = P.mkMontar(base(Object.assign({}, e, { copias: { 'cat:armas': { copies: [cp('o4', 900, 3, 3)] } }, stats: { 'elvish bow': { stats: { avg: 4100.2 } } } })));
-    const l = linha(r, 'i:b1'); assert.strictEqual(l.preco, 4100); assert.strictEqual(l.origem, 'media'); assert(/todas as raridades/.test(l.nota));
+    const l = linha(r, 'i:b1'); assert.strictEqual(l.preco, null); assert.strictEqual(l.origem, 'vazio'); assert(/digite/.test(l.bloqueio)); assert(/todas as raridades/.test(l.nota));
+    assert(!r.pendencias.some(p => p.tipo === 'market_stats'), 'cópia não pede a média de 30 d');
     // Equip não calculado: cópia não pode ser marcada
     r = P.mkMontar(base(Object.assign({}, e, { copias, equip: null })));
     assert(/ATUALIZAR no Equip/.test(linha(r, 'i:b1').bloqueio));

@@ -4060,3 +4060,12 @@ pela Caixa). RESGATAR não testado: a Caixa só recebe algo quando um anúncio v
 - O triângulo ao lado de "Última atualização" no painel do Tampermonkey ("modificado localmente") aparecia porque o
   script era colado no editor. Instalar pelo link raw do GitHub (Reinstalar) limpa o aviso e mantém a atualização
   automática funcionando.
+
+## 2.11.9 (29/09) — Mercado: cópia sem concorrente do mesmo corte não usa a média
+
+- Visto ao vivo no ATUALIZAR do Mercado: o simple dress **comum** saía sugerido a 104.790 e o crystal ring comum a
+  83.778 (o incomum estava a 399 no mercado). A "média de 30 dias" (`market_stats`) é do item inteiro e mistura todas
+  as raridades e refinos. Anunciado assim, não vende, e a taxa de 5 % (~5.200) não volta.
+- Agora: cópia forjada sem cópia do **mesmo corte** à venda fica sem sugestão ("digite o preço") e nem pede a média.
+  Item empilhável continua usando a média de 30 dias quando não há concorrente (ali não há raridade).
+- "NPC 0" com o item só no depósito (quantidade 0 caçando) virou o preço por unidade ("NPC 250/un").
