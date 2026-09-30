@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.11.2
+// @version      2.11.3
 // @description  Magia (Econômica / Equilibrado / Área / Boss / Inteligente, com simulador da fila) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -23,7 +23,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.11.2';
+    const VERSAO = '2.11.3';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -4545,12 +4545,19 @@
      * escudo fica vazio e a arma vira a de 2 mãos.
      * → {porVoc:{VOC:{slot:{atual, atualPt, melhor, melhorPt, ganho, candidatos[]}}}, reservas:Set(iid), dispensaveis:[peça+motivo], usadas:Set} */
     const EQUIP_TOPK = 6;
+    /* v2.11.2 — TROCA TEM CUSTO. Com 0,05 de bônus para ficar, o otimizador
+     * tirava o anel do Feiticeiro (5,1 pt) para o Paladino (+1,4) e dava ao
+     * Feiticeiro um do depósito (−1,2, sem aparecer na tela): 3 trocas por
+     * +0,2 pt (29/09, ao vivo). Ficar com a peça atual vale +1 pt (≈ 10 de
+     * vida máx.): só troca quem ganha mais que isso, somando os afetados. */
+    const EQUIP_FICAR_PT = 1;
     function _resolverSlot(porVoc, vocsSlot, s, usadas, extra) {
         // candidatos por voc: top-K não usados + o atual (se não estiver) + extra (virtual)
         const listas = vocsSlot.map(v => {
             const x = porVoc[v][s]; if (!x) return [];
-            const l = x.candidatos.filter(c => !usadas.has(c.peca.iid)).slice(0, EQUIP_TOPK).map(c => ({ iid: c.peca.iid, peca: c.peca, pt: c.r.pontos + (c.peca.dono === v ? 0.05 : 0) }));
-            if (x.atual && !l.some(c => c.iid === x.atual.iid) && !usadas.has(x.atual.iid)) l.push({ iid: x.atual.iid, peca: x.atual, pt: x.atualPt + 0.05 });
+            const ehAtual = (p) => !!(x.atual && p && p.iid === x.atual.iid);
+            const l = x.candidatos.filter(c => !usadas.has(c.peca.iid)).slice(0, EQUIP_TOPK).map(c => ({ iid: c.peca.iid, peca: c.peca, pt: c.r.pontos + (ehAtual(c.peca) ? EQUIP_FICAR_PT : 0) }));
+            if (x.atual && !l.some(c => c.iid === x.atual.iid) && !usadas.has(x.atual.iid)) l.push({ iid: x.atual.iid, peca: x.atual, pt: x.atualPt + EQUIP_FICAR_PT });
             if (extra && extra[v]) l.push(extra[v]);
             l.push({ iid: null, peca: null, pt: 0 });   // "nada" — evita forçar peça ruim quando falta candidato
             return l;
@@ -7754,7 +7761,7 @@
             const valor = l.origem === 'digitado' ? MK.digitados[l.chave] : l.preco;
             h += `<div class="mk-it${l.bloqueio ? ' bloq' : ''}">
                 <label title="${escHtml(l.bloqueio || 'marcar para anunciar')}"><input type="checkbox" id="tb-mk-c-${i}" ${l.marcado ? 'checked' : ''} ${l.bloqueio || ocup ? 'disabled' : ''} aria-label="anunciar ${escHtml(l.nome)}"></label>
-                <div class="mk-nome"><b>${escHtml(l.nome)}</b> <span class="tb-mut">×${mkFmt(l.qtd)}</span>${mkCorte(l.forja)}</div>
+                <div class="mk-nome"><b>${escHtml(l.nome)}</b> <span class="tb-mut">${!l.qtd && l.deposito ? `${mkFmt(l.deposito)} no depósito` : '×' + mkFmt(l.qtd)}</span>${mkCorte(l.forja)}</div>
                 <input class="tb-in mk-preco" id="tb-mk-p-${i}" type="number" min="1" step="1" inputmode="numeric" placeholder="preço" value="${escHtml(valor == null ? '' : valor)}" aria-label="preço unitário de ${escHtml(l.nome)}" ${ocup ? 'disabled' : ''}>
                 <div class="mk-info"><span class="mk-org ${escHtml(l.origem)}">${escHtml(org)}</span> · ${escHtml(onde)}${l.liquido != null ? ' · líq. ' + mkFmt(l.liquido) : ''} · ${npcTxt}${l.nota ? ` · <span class="tb-av">${escHtml(l.nota)}</span>` : ''}${blq ? '<br>' + blq : ''}</div>
               </div>`;

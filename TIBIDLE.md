@@ -3977,3 +3977,12 @@ conta como desmarcada (antes caía em "não sei" e a decisão ia para o total).
   "Key Backpack T1 · T1 guarda 5".
 - **Achados sem código**: Banshee é limitada pelo spawn (Inteligente: mesmos 936 abates/h e ~52k xp/h do kit
   antigo, com +5,6k/h de suprimento); o Auto Hunt da conta volta para Dragon Lair (hunt 46), não para o mapa atual.
+
+### 2.11.3 — Equip e Mercado conferidos ao vivo (29/09, noite)
+- **Equip: troca tem custo (1 pt).** O otimizador dava o anel r4 do Feiticeiro (5,1 pt) ao Paladino (+1,4) e
+  um r1 do depósito ao Feiticeiro (−1,2, sem aparecer na tela): 3 trocas por +0,2 pt. Ficar com a peça atual
+  vale +1 pt (≈ 10 de vida máx.); a troca do Knight (anel do depósito, +1,4 pt) continua. Teste com os anéis
+  reais em `testes/equip.test.js` — falha no solver antigo.
+- **Mercado: "×0" virou "N no depósito".** Caçando, a quantidade anunciável é só a da mochila; a linha dizia
+  ×0 e parecia que o item não existia. Preços lidos ao vivo: chaves valem 25–74k (The weeping matriarch key
+  74.000, Quara Fishman 48.000, Rhaegal 39.999, Genio 30.000, Cerebro 25.000) e Yalahar gear wheel 114.999.

@@ -195,4 +195,29 @@ tConta('candidatos: a mochila entra com origem "mochila" e slot deduzido da base
     assert(m.length === 2, 'esperava 2 da mochila (metal spike não é equipamento), veio ' + m.length);
     assert(m.find(p => p.iid === 'b1').slot === 'shield' && m.find(p => p.iid === 'b2').slot === 'weapon' && m.find(p => p.iid === 'b2').duasMaos === true);
 });
+t('2.11.2: troca tem custo — nada de tirar o anel do Feiticeiro por +0,2 pt; ganho real de 1,4 pt continua', () => {
+    /* anéis de 29/09 (ao vivo, nível 67): o otimizador dava o r4 do Feiticeiro ao Paladino (+1,4)
+     * e um r1 do depósito ao Feiticeiro (−1,2) — 3 trocas por +0,2 no total */
+    const anel = (iid, origem, dono, r, ...at) => ({ iid, nome: 'crystal ring', slot: 'ring', attrs: base['crystal ring'] ? base['crystal ring'].attrs : {}, origem, dono, forja: F(r, ...at) });
+    const dep = (iid, r, ...at) => anel(iid, 'depósito', null, r, ...at);
+    const an = [
+        anel('k', 'corpo', 'KNIGHT', 3, ['resist_energia', 1.1], ['resist_gelo', 0.9], ['resist_sagrado', 0.9]),
+        anel('p', 'corpo', 'PALADIN', 1, ['max_mana', 93]),
+        anel('s', 'corpo', 'SORCERER', 4, ['resist_terra', 1.1], ['resist_sagrado', 0.8], ['resist_energia', 1.9], ['regen_mana', 1.2]),
+        anel('d', 'corpo', 'DRUID', 1, ['regen_mana', 2.3]),
+        dep('dep1', 2, ['max_hp', 24], ['resist_terra', 1]), dep('dep2', 1, ['max_hp', 26]), dep('dep3', 1, ['max_hp', 13]),
+        dep('dep4', 1, ['regen_vida', 2.4]), dep('dep5', 1, ['max_hp', 12]), dep('dep6', 1, ['resist_morte', 1.3]), dep('dep7', 1, ['regen_vida', 1.1]),
+        dep('dep8', 2, ['regen_mana', 1.2], ['resist_sagrado', 0.6]), dep('dep9', 1, ['resist_fogo', 0.9]), dep('dep10', 1, ['protecao_magica', 0.7]),
+        dep('dep11', 1, ['protecao_magica', 0.7]), dep('dep12', 1, ['resist_energia', 0.6]), dep('dep13', 1, ['regen_mana', 1.3])
+    ];
+    /* contexto do jogo naquela hora: Djinns Marid Territory, nível 67 */
+    const ctxDjinns = { notas: { COMBAT_PHYSICALDAMAGE: 100, COMBAT_ENERGYDAMAGE: 50, COMBAT_FIREDAMAGE: 20, COMBAT_ICEDAMAGE: 110, COMBAT_EARTHDAMAGE: 100, COMBAT_HOLYDAMAGE: 80, COMBAT_DEATHDAMAGE: 113 }, mapa: 'Djinns Marid Territory', nivel: 67 };
+    const d = M.distribuirEquip(an, undefined, ctxDjinns);
+    const quem = (v) => d.porVoc[v].ring.melhor && d.porVoc[v].ring.melhor.iid;
+    assert.strictEqual(quem('SORCERER'), 's', 'o Feiticeiro não pode perder o anel dele: ' + quem('SORCERER'));
+    assert.strictEqual(quem('PALADIN'), 'p', 'o Paladino fica com o dele: ' + quem('PALADIN'));
+    assert.strictEqual(quem('DRUID'), 'd');
+    const k = d.porVoc.KNIGHT.ring;
+    assert(k.melhor && /^dep/.test(k.melhor.iid) && k.ganho > 1, `o Knight ganha +${k.ganho} com o anel do depósito — essa troca vale`);
+});
 console.log(`\n${n} testes ok` + (pulados ? ` · ${pulados} pulados (sem o estado da conta em data/)` : ''));
