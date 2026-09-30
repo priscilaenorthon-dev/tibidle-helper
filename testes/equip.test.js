@@ -276,21 +276,25 @@ t('2.11.5: dano elemental só no elemento do mago; crítico conta nos magos; rou
     const leech = pt(colar(['roubo_vida_chance', 2.4], ['roubo_vida_quantia', 1.7]), 'KNIGHT'), regen = pt(colar(['regen_vida', 1.2]), 'KNIGHT');
     assert(leech < regen / 20, `roubo de vida ${leech} pt × regen 1,2 ${regen} pt`);
 });
-/* 2.11.16 — regra da comunidade (wiki /forja): peça com encaixe nobre nunca vai para as sobras */
-t('encaixe nobre (regen. na defesa; ML/skill/dano na arma e colar) nunca sobra; regen. de mana é o melhor encaixe de defesa de todos', () => {
+/* 2.11.16/2.11.19 — regra da comunidade (wiki /forja): encaixe nobre fica guardado enquanto supera o de alguém;
+ * quando todos já vestem igual ou melhor, volta às sobras (dono: "quero ter a opção de vender") */
+t('encaixe nobre: guardado se supera o vestido; vendável quando todos já vestem igual ou melhor', () => {
     const p = (iid, slot, dono, ...at) => ({ iid, nome: iid, slot, attrs: {}, forja: F(1, ...at), sell: 10, origem: dono ? 'corpo' : 'depósito', dono: dono || null });
-    const vestidos = ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'].map(v => p('bota-' + v, 'boots', v, ['regen_mana', 5]));
-    const pecas = vestidos.concat([
-        p('bota-mana-fraca-1', 'boots', null, ['regen_mana', 1.1]), p('bota-mana-fraca-2', 'boots', null, ['regen_mana', 1.1]),
-        p('bota-mana-fraca-3', 'boots', null, ['regen_mana', 1.1]), p('bota-vida', 'boots', null, ['regen_vida', 1.1]),
-        p('bota-loot', 'boots', null, ['chance_de_loot', 0.3]), p('colar-ml', 'necklace', null, ['nivel_magico', 1]),
-        p('colar-dist', 'necklace', null, ['distancia', 1]), p('anel-ml', 'ring', null, ['nivel_magico', 1])]);
-    const d = M.distribuirEquip(pecas);
-    const sobra = new Set(d.dispensaveis.map(x => x.iid)), guardar = new Set(d.nobres.map(x => x.iid));
-    for (const i of ['bota-mana-fraca-1', 'bota-mana-fraca-2', 'bota-mana-fraca-3', 'bota-vida', 'colar-ml', 'colar-dist']) assert(!sobra.has(i), i + ' foi para as sobras');
-    assert(guardar.has('bota-mana-fraca-3'), 'a 3ª bota de regen. de mana (nem melhor nem reserva) aparece em "guardar"');
-    assert(sobra.has('bota-loot'), 'chance de loot na bota não é nobre');
-    assert(!guardar.has('anel-ml'), 'nível mágico no anel não é encaixe de defesa');
+    const fracas = ['bota-mana-fraca-1', 'bota-mana-fraca-2', 'bota-mana-fraca-3'].map(i => p(i, 'boots', null, ['regen_mana', 1.1]));
+    /* todos com bota de regen. de mana 5: as de 1,1 que não são reserva vão para as sobras, com o motivo */
+    const bons = ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'].map(v => p('bota-' + v, 'boots', v, ['regen_mana', 5]));
+    const d1 = M.distribuirEquip(bons.concat(fracas, [p('bota-loot', 'boots', null, ['chance_de_loot', 0.3])]));
+    assert.strictEqual(d1.nobres.length, 0, 'nada a guardar: ' + d1.nobres.map(x => x.iid));
+    const vend = d1.dispensaveis.filter(x => /^bota-mana-fraca/.test(x.iid));
+    assert(vend.length >= 1 && vend.every(x => /já usam igual ou melhor/.test(x.motivo)), JSON.stringify(vend.map(x => x.motivo)));
+    /* o Druida veste bota de loot: a de regen. de mana supera o encaixe dele → guardada (e na verdade vira a melhor) */
+    const mix = ['KNIGHT', 'PALADIN', 'SORCERER'].map(v => p('bota-' + v, 'boots', v, ['regen_mana', 5])).concat([p('bota-DRUID', 'boots', 'DRUID', ['chance_de_loot', 2])]);
+    const d2 = M.distribuirEquip(mix.concat(fracas));
+    const sobra2 = new Set(d2.dispensaveis.map(x => x.iid));
+    for (const f of fracas) assert(!sobra2.has(f.iid), f.iid + ' foi para as sobras com o Druida sem regen. de mana');
+    /* nobre depende da vocação: regen. de vida só no Knight; ML no anel não é nobre */
+    const d3 = M.distribuirEquip(bons.concat([p('bota-vida', 'boots', null, ['regen_vida', 1.1]), p('anel-ml', 'ring', null, ['nivel_magico', 1])]));
+    assert(!d3.nobres.some(x => x.iid === 'anel-ml'), 'nível mágico no anel não é encaixe de defesa');
     /* defesa: regen. de mana na frente de todo o resto nos 4; no Knight, depois dela vem a regen. de vida */
     const def = { regen_mana: 2.5, regen_vida: 2.5, max_hp: 33, max_mana: 130, capacidade: 200, chance_de_loot: 1.1, protecao_magica: 2.1, cura_propria: 3.8, resist_fisica: 0.7, escudo: 1.5 };
     const top = (v, ctx) => Object.entries(def).map(([id, val]) => [id, M.pontuarPeca({ slot: 'boots', attrs: {}, forja: F(1, [id, val]) }, v, ctx).pontos]).sort((x, y) => y[1] - x[1]).map(x => x[0]);

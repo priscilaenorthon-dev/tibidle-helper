@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.11.18
+// @version      2.11.19
 // @description  Magia (Econômica / Equilibrado / Área / Boss, com simulador da fila) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.11.18';
+    const VERSAO = '2.11.19';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -4755,12 +4755,21 @@
      *   arma e colar → corpo a corpo, distância, nível mágico, dano físico ou dano mágico.
      * A peça com um desses encaixes pode não ser a melhor nem reserva de ninguém hoje, mas é o
      * que a comunidade guarda — não vai para a lista de sobras (nem para o Mercado). */
-    const NOBRE_DEFESA = new Set(['regen_mana', 'regen_vida']);
-    const NOBRE_ATAQUE = new Set(['corpo_a_corpo', 'distancia', 'nivel_magico', 'dano_fisico', 'dano_magico']);
-    function encaixeNobre(p) {
-        const nobre = p.slot === 'weapon' || p.slot === 'necklace' ? NOBRE_ATAQUE : NOBRE_DEFESA;
-        const at = (p.forja && p.forja.atributos) || [];
-        return at.some(a => nobre.has(a.id) && Number(a.valor) > 0);
+    /* v2.11.19 — por vocação: regen. de vida só é nobre no Knight; na arma/colar, o que aquela vocação usa. */
+    const NOBRE_DEFESA = { KNIGHT: ['regen_mana', 'regen_vida'], PALADIN: ['regen_mana'], SORCERER: ['regen_mana'], DRUID: ['regen_mana'] };
+    const NOBRE_ATAQUE = { KNIGHT: ['corpo_a_corpo', 'dano_fisico'], PALADIN: ['distancia', 'nivel_magico', 'dano_magico', 'dano_fisico'],
+                           SORCERER: ['nivel_magico', 'dano_magico'], DRUID: ['nivel_magico', 'dano_magico'] };
+    const nobresDe = (slot, voc) => ((slot === 'weapon' || slot === 'necklace' ? NOBRE_ATAQUE : NOBRE_DEFESA)[voc] || []);
+    function encaixeNobre(p, voc) {
+        const at = (p && p.forja && p.forja.atributos) || [];
+        const vocs = voc ? [voc] : VOCS_EQUIP;
+        return vocs.some(v => at.some(a => nobresDe(p.slot, v).includes(a.id) && Number(a.valor) > 0));
+    }
+    /* só a parte nobre da nota (pt), para comparar com a peça que a vocação veste/vai vestir */
+    function ptNobre(p, voc, ctx) {
+        if (!p) return 0;
+        const ids = nobresDe(p.slot, voc);
+        return pontuarPeca(p, voc, ctx).detalhe.filter(d => ids.includes(d.id)).reduce((s, d) => s + d.pt, 0);
     }
     function _resolverSlot(porVoc, vocsSlot, s, usadas, extra) {
         // candidatos por voc: top-K não usados + o atual (se não estiver) + extra (virtual)
@@ -4870,14 +4879,22 @@
          * que a peça dá HOJE; o valor dela é o que dá para fazer com ela. */
         const baseDeForja = p => ((p.forja && p.forja.raridade) || 0) >= RARIDADE_BASE_FORJA;
         const bases = pecas.filter(p => !usadas.has(p.iid) && !ehTemporaria(p) && baseDeForja(p));
-        const nobres = pecas.filter(p => !usadas.has(p.iid) && !reservas.has(p.iid) && !ehTemporaria(p) && !baseDeForja(p) && encaixeNobre(p) && vocs.some(v => vocacaoPode(p.attrs, v)));
-        const dispensaveis = pecas.filter(p => !usadas.has(p.iid) && !reservas.has(p.iid) && !ehTemporaria(p) && !baseDeForja(p) && !(encaixeNobre(p) && vocs.some(v => vocacaoPode(p.attrs, v))) && (!sobraNoNeutro || sobraNoNeutro.has(p.iid))).map(p => {
+        /* v2.11.19 — dono, 30/09: "caso todos já estejam equipados com itens bons quero ter a opção de vender".
+         * A peça de encaixe nobre só é guardada se o encaixe dela SUPERA o da peça que alguma vocação que a
+         * veste vai usar naquele espaço (ex.: regen. de mana 2,0 contra a 1,5 vestida). Se todos já vestem
+         * igual ou melhor, ela volta às sobras, com o motivo dizendo isso — dá para vender como antes. */
+        const nobreUtil = (p) => vocs.some(v => vocacaoPode(p.attrs, v) && porVoc[v][p.slot] && encaixeNobre(p, v)
+            && ptNobre(p, v, ctx) > ptNobre(porVoc[v][p.slot].melhor, v, ctx) + 1e-9);
+        const nobres = pecas.filter(p => !usadas.has(p.iid) && !reservas.has(p.iid) && !ehTemporaria(p) && !baseDeForja(p) && nobreUtil(p));
+        const nobreSet = new Set(nobres.map(p => p.iid));
+        const dispensaveis = pecas.filter(p => !usadas.has(p.iid) && !reservas.has(p.iid) && !ehTemporaria(p) && !baseDeForja(p) && !nobreSet.has(p.iid) && (!sobraNoNeutro || sobraNoNeutro.has(p.iid))).map(p => {
             let melhorUso = null;
             for (const v of vocs) { if (vocacaoPode(p.attrs, v) && porVoc[v][p.slot]) {
                 const top = porVoc[v][p.slot].melhor; if (!top) continue;
                 const d = P(top, v).pontos - P(p, v).pontos;
                 if (!melhorUso || d < melhorUso.d) melhorUso = { v, top, d };
             } }
+            if (encaixeNobre(p) && vocs.some(v => vocacaoPode(p.attrs, v))) return Object.assign({}, p, { motivo: 'encaixe bom, mas todos que a vestem já usam igual ou melhor' + (melhorUso ? ` (${melhorUso.top.nome}, ${melhorUso.v.toLowerCase()})` : '') });
             return Object.assign({}, p, { motivo: melhorUso ? `superada por ${melhorUso.top.nome} (${melhorUso.v.toLowerCase()}, −${Math.round(melhorUso.d * 10) / 10} pt)` : 'nenhuma vocação usa' });
         }).sort((a, b) => (b.sell || 0) - (a.sell || 0));
         return { porVoc, reservas, dispensaveis, usadas, temporarios, bases, nobres };
@@ -6402,7 +6419,7 @@
         if (bases.length) { h += aj('eq-bases', `<div class="tb-mut tb-eq-nota">Épico ou melhor que ninguém usa: 3+ encaixes valem pela Forja (trocar o encaixe ruim sai mais barato que subir a raridade). Nunca entram nas sobras.</div>` +
             bases.map(p => `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)} <span class="tb-mut">${escHtml(slotPt(p.slot))} · ${escHtml(p.origem)} · ${escHtml(((p.forja && p.forja.atributos) || []).map(a => rotulo(a.id) + ' ' + a.valor).join(', '))}</span></span></div>`).join(''), `bases de forja (${bases.length})`); }
         const nobres = R.nobres || [];
-        if (nobres.length) { h += aj('eq-nobres', `<div class="tb-mut tb-eq-nota">Encaixe que a comunidade guarda (wiki /forja): regen. de mana ou de vida nas peças de defesa; corpo a corpo, distância, nível mágico, dano físico ou mágico na arma e no colar. Não é a melhor nem reserva de ninguém hoje, mas nunca entra nas sobras nem no Mercado.</div>` +
+        if (nobres.length) { h += aj('eq-nobres', `<div class="tb-mut tb-eq-nota">Encaixe que a comunidade guarda (wiki /forja): regen. de mana ou de vida nas peças de defesa; corpo a corpo, distância, nível mágico, dano físico ou mágico na arma e no colar. O encaixe dela supera o da peça que alguém que a veste vai usar, mas a nota total perdeu: fica guardada, fora das sobras e do Mercado. Quando todos já vestem encaixe igual ou melhor, ela volta para as sobras e dá para vender.</div>` +
             nobres.map(p => `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)} <span class="tb-mut">${escHtml(slotPt(p.slot))} · ${escHtml(p.origem)} · ${escHtml(((p.forja && p.forja.atributos) || []).map(a => rotulo(a.id) + ' ' + a.valor).join(', '))}</span></span></div>`).join(''), `guardar: encaixe bom (${nobres.length})`); }
         h += aj('eq-res', [...R.reservas].map(iid => { const p = candidatoPorIid(iid); return p ? `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)} <span class="tb-mut">${escHtml(slotPt(p.slot))} · ${escHtml(p.origem)}</span></span></div>` : ''; }).join(''), `reservas (${R.reservas.size})`);
         const temp = R.temporarios || [];

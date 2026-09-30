@@ -4160,3 +4160,11 @@ pela Caixa). RESGATAR não testado: a Caixa só recebe algo quando um anúncio v
   troca de 1 pt (2.11.2) escondia a sugestão: +0,1 de regen. de mana dá +0,14 a +0,48 pt, e no Paladino nem 1,9 → 2,5
   (+0,8) aparecia. O custo existia contra a cadeia de trocas entre personagens, que a 2.11.11 já proibiu. Agora é
   0,1 pt (só desempate): 2,0 tira a 1,9 nos 4; empate fica com a vestida. A peça que sai continua reserva/"guardar".
+
+## 2.11.19 (30/09) — encaixe bom volta a ser vendável quando todos já vestem igual ou melhor
+- Dono: "caso todos já estejam equipados com itens bons quero ter a opção de vender eles".
+- "Guardar: encaixe bom" agora só segura a peça cujo encaixe nobre (em pt) supera o da peça que alguma vocação que a
+  veste vai usar naquele espaço. Se todos já vestem igual ou melhor, ela volta para "sobrando" com o motivo
+  "encaixe bom, mas todos que a vestem já usam igual ou melhor" — e vende como antes.
+- Nobre por vocação: defesa = regen. de mana (4) + regen. de vida (só Knight); arma/colar = Knight corpo a corpo e
+  dano físico; Paladino distância, nível mágico, dano mágico e físico; magos nível mágico e dano mágico.
