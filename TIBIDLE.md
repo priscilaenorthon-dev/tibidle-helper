@@ -3997,3 +3997,12 @@ conta como desmarcada (antes caía em "não sei" e a decisão ia para o total).
   (tanque toma ~27 de dano/s: +1 vida/s ≈ 3,7 %); capacidade 0 → 0,01/oz nos quatro. Na auditoria com as
   peças reais, três itens com regen. de vida saíram da lista de "dispensáveis". Raridade e potência NÃO
   pontuam — só os encaixes, com o peso de cada vocação (PESOS_EQUIP).
+
+### 2.11.5 — encaixes certos por vocação (29/09, noite)
+Respostas do dono à tabela de pesos do Equip:
+- **Dano elemental só no elemento do mago.** Feiticeiro: energia e fogo; Druida: gelo e terra (0,6 por %,
+  a mesma escala do Knight). Os outros elementos seguem 0 nos magos. Antes valiam 0 em todos.
+- **Crítico conta nos magos** (magia e runa também dão crítico): chance 0,25 e dano 0,03, como Knight e Paladino.
+- **Roubo de vida é bom no Knight**: chance e quantia 1 pt por % (eram 0,2/0,3). O roll típico visto ao
+  vivo (2,4 % + 1,7 %) ≈ 4 pt, perto de +1,2 de regen. vida.
+Teste novo em `testes/equip.test.js`.

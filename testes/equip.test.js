@@ -220,4 +220,18 @@ t('2.11.2: troca tem custo — nada de tirar o anel do Feiticeiro por +0,2 pt; g
     const k = d.porVoc.KNIGHT.ring;
     assert(k.melhor && /^dep/.test(k.melhor.iid) && k.ganho > 1, `o Knight ganha +${k.ganho} com o anel do depósito — essa troca vale`);
 });
+t('2.11.5: dano elemental só no elemento do mago; crítico conta nos magos; roubo de vida vale no Knight', () => {
+    const colar = (...at) => ({ nome: 'x', slot: 'necklace', attrs: {}, forja: F(at.length, ...at) });
+    const pt = (p, v) => M.pontuarPeca(p, v).pontos;
+    assert(pt(colar(['dano_elem_energia', 2]), 'SORCERER') > 0 && pt(colar(['dano_elem_fogo', 2]), 'SORCERER') > 0, 'Feiticeiro: energia e fogo contam');
+    assert.strictEqual(pt(colar(['dano_elem_gelo', 2]), 'SORCERER'), 0, 'Feiticeiro: gelo não conta');
+    assert.strictEqual(pt(colar(['dano_elem_morte', 2]), 'SORCERER'), 0, 'Feiticeiro: morte não conta');
+    assert(pt(colar(['dano_elem_gelo', 2]), 'DRUID') > 0 && pt(colar(['dano_elem_terra', 2]), 'DRUID') > 0, 'Druida: gelo e terra contam');
+    assert.strictEqual(pt(colar(['dano_elem_energia', 2]), 'DRUID'), 0, 'Druida: energia não conta');
+    assert.strictEqual(pt(colar(['dano_elem_fogo', 2]), 'DRUID'), 0, 'Druida: fogo não conta');
+    for (const v of ['SORCERER', 'DRUID']) assert(pt(colar(['critico_chance', 2], ['critico_dano', 10]), v) > 0, v + ': crítico conta');
+    /* roll visto ao vivo: 2,4 % de chance + 1,7 % de quantia ≈ +1,2 de regen. vida */
+    const leech = pt(colar(['roubo_vida_chance', 2.4], ['roubo_vida_quantia', 1.7]), 'KNIGHT'), regen = pt(colar(['regen_vida', 1.2]), 'KNIGHT');
+    assert(leech >= regen * 0.8, `roubo de vida ${leech} pt deveria valer perto de regen 1,2 (${regen} pt)`);
+});
 console.log(`\n${n} testes ok` + (pulados ? ` · ${pulados} pulados (sem o estado da conta em data/)` : ''));

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.11.4
+// @version      2.11.5
 // @description  Magia (Econômica / Equilibrado / Área / Boss / Inteligente, com simulador da fila) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -23,7 +23,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.11.4';
+    const VERSAO = '2.11.5';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -4356,7 +4356,7 @@
     const PESOS_EQUIP = {
         KNIGHT: Object.assign({
             attack: 0.9, corpo_a_corpo: 2.8, skillsword: 2.8, skillaxe: 2.8, skillclub: 2.8,
-            dano_fisico: 1, roubo_vida_chance: 0.2, roubo_vida_quantia: 0.3, critico_chance: 0.25, critico_dano: 0.03,
+            dano_fisico: 1, roubo_vida_chance: 1, roubo_vida_quantia: 1, critico_chance: 0.25, critico_dano: 0.03,
             armor: 1.5, defense: 0.5, extradef: 0.5, escudo: 2, skillshield: 2, resist_fisica: 1.5, absorbpercentphysical: 1.5,
             max_hp: 0.1, regen_vida: 3.5, cura_propria: 0.3, protecao_magica: 0.5, nivel_magico: 0.3, magiclevelpoints: 0.3,
             max_mana: 0.02, chance_de_loot: 0.3, capacidade: 0.01, dano_magico: 0, distancia: 0, skilldist: 0, regen_mana: 0.2, hitchance: 0
@@ -4373,8 +4373,8 @@
             protecao_magica: 0.4, resist_fisica: 0.1, absorbpercentphysical: 0.1, max_hp: 0.04, regen_vida: 0.1, cura_propria: 0.2,
             armor: 0.1, defense: 0.05, extradef: 0, escudo: 0, skillshield: 0, chance_de_loot: 0.3, capacidade: 0.01,
             attack: 0, corpo_a_corpo: 0, skillsword: 0, skillaxe: 0, skillclub: 0, distancia: 0, skilldist: 0, hitchance: 0,
-            dano_fisico: 0, roubo_vida_chance: 0.1, roubo_vida_quantia: 0.1, critico_chance: 0, critico_dano: 0
-        }, _fmap('dano_elem_', 0), _fmap('resist_', 0.4), _amap(0.4)),
+            dano_fisico: 0, roubo_vida_chance: 0.1, roubo_vida_quantia: 0.1, critico_chance: 0.25, critico_dano: 0.03
+        }, _fmap('dano_elem_', 0), { dano_elem_energia: 0.6, dano_elem_fogo: 0.6 }, _fmap('resist_', 0.4), _amap(0.4)),
     };
     /* v2.11.4 — REGEN DE VIDA E CAPACIDADE (dono, 29/09: "o melhor anel é o
      * roxo épico" — capacidade +65, regen. vida +1,2, sagrado +1 % contra um
@@ -4383,7 +4383,17 @@
      * peso 3,5 (era 0,5, e o max HP +21 = 1,9 % da vida dele valia mais).
      * Capacidade valia 0: +65 oz ≈ 3 % a mais de mochila da party, menos idas
      * à cidade — 0,01 por oz nos quatro. Épico 5,4 pt × incomum 2,1 pt. */
-    PESOS_EQUIP.DRUID = Object.assign({}, PESOS_EQUIP.SORCERER, { cura_propria: 0.5, nivel_magico: 7.5, magiclevelpoints: 7.5 });
+    /* v2.11.5 — ENCAIXES POR VOCAÇÃO (dono, 29/09):
+     *   • dano elemental só no elemento das magias de cada mago: Feiticeiro
+     *     energia e fogo, Druida gelo e terra (0,6 por %, a mesma escala do
+     *     Knight); os outros elementos continuam 0;
+     *   • crítico conta nos magos (magia e runa também dão crítico): mesmos
+     *     pesos do Knight e do Paladino;
+     *   • roubo de vida é bom no Knight (é quem apanha): 1 pt por % na chance
+     *     e na quantia (era 0,2/0,3) — o roll típico visto (2,4 % + 1,7 %) ≈
+     *     4 pt, parecido com +1,2 de regen. vida. */
+    PESOS_EQUIP.DRUID = Object.assign({}, PESOS_EQUIP.SORCERER, { cura_propria: 0.5, nivel_magico: 7.5, magiclevelpoints: 7.5,
+                                                                   dano_elem_energia: 0, dano_elem_fogo: 0, dano_elem_gelo: 0.6, dano_elem_terra: 0.6 });
     /* v2.9.0 — PESOS OFENSIVOS PELA FÓRMULA, com as skills do momento.
      * Os números fixos acima envelheceram e um deles nasceu errado:
      *  • Knight: ataque valia 0,9 e skill 2,8. Mas no golpe (wiki: média
