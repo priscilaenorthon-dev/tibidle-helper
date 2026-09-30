@@ -4149,3 +4149,8 @@ pela Caixa). RESGATAR não testado: a Caixa só recebe algo quando um anúncio v
   Mercado. Só vale para peça que alguma vocação veste (lança continua saindo).
 - Divergência que ficou: no Paladino a distância vale quase nada (0,03 pt por +1) porque o dano medido dele é 95 %
   runa + magia. A peça com distância é guardada pela regra acima, mas não ganha troca.
+
+## 2.11.17 (30/09) — Knight: regen. de mana em 1º
+- Dono: "o Knight tem que ter regen. de mana como principal, depois regen. de vida". Peso da regen. de mana do Knight =
+  máx(conta da mana, 1,25 × o da regen. de vida) = 4,5 pt por 1 de mana/s (era 1,26). Potência III: regen. de mana
+  11,3 pt > regen. de vida 9 > cura própria 2,1 > escudo 1,4.

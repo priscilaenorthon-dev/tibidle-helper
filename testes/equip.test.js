@@ -291,11 +291,11 @@ t('encaixe nobre (regen. na defesa; ML/skill/dano na arma e colar) nunca sobra; 
     assert(guardar.has('bota-mana-fraca-3'), 'a 3ª bota de regen. de mana (nem melhor nem reserva) aparece em "guardar"');
     assert(sobra.has('bota-loot'), 'chance de loot na bota não é nobre');
     assert(!guardar.has('anel-ml'), 'nível mágico no anel não é encaixe de defesa');
-    /* defesa: regen. de mana na frente de todo o resto nos 3; no Knight, regen. de vida e depois regen. de mana */
+    /* defesa: regen. de mana na frente de todo o resto nos 4; no Knight, depois dela vem a regen. de vida */
     const def = { regen_mana: 2.5, regen_vida: 2.5, max_hp: 33, max_mana: 130, capacidade: 200, chance_de_loot: 1.1, protecao_magica: 2.1, cura_propria: 3.8, resist_fisica: 0.7, escudo: 1.5 };
     const top = (v, ctx) => Object.entries(def).map(([id, val]) => [id, M.pontuarPeca({ slot: 'boots', attrs: {}, forja: F(1, [id, val]) }, v, ctx).pontos]).sort((x, y) => y[1] - x[1]).map(x => x[0]);
     for (const v of ['PALADIN', 'SORCERER', 'DRUID']) assert.strictEqual(top(v, null)[0], 'regen_mana', v);
-    assert.deepStrictEqual(top('KNIGHT', null).slice(0, 2), ['regen_vida', 'regen_mana']);
+    assert.deepStrictEqual(top('KNIGHT', null).slice(0, 2), ['regen_mana', 'regen_vida'], 'Knight: regen. de mana em 1º, regen. de vida em 2º (dono)');
     assert.strictEqual(top('SORCERER', { party: { mana: { SORCERER: 95 } } })[0], 'regen_mana', 'com a mana sobrando no mapa também');
 });
 console.log(`\n${n} testes ok` + (pulados ? ` · ${pulados} pulados (sem o estado da conta em data/)` : ''));

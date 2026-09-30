@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.11.16
+// @version      2.11.17
 // @description  Magia (Econômica / Equilibrado / Área / Boss, com simulador da fila) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.11.16';
+    const VERSAO = '2.11.17';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -4547,6 +4547,10 @@
         }
         /* ---- mana ---- */
         P.regen_mana = _r(ptPorManaS(voc, R));
+        /* v2.11.17 — dono, 30/09: "o Knight tem que ter regen. de mana como principal, depois regen. de vida".
+         * A mana dele vive em 16–19 % (Berserk/cura rodam na regeneração): a regen. de mana vale 25 % a
+         * mais que a de vida, por unidade — fica na frente de tudo nos encaixes de defesa dele. */
+        if (voc === 'KNIGHT') P.regen_mana = _r(Math.max(P.regen_mana, VIDA_PT_KNIGHT * 1.25));
         P.max_mana = 0.001;
         /* ---- defesa ---- */
         if (voc === 'KNIGHT') {
