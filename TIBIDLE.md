@@ -3961,3 +3961,19 @@ nome do catálogo pelo huntId.
 Painel de venda confirmado ao vivo: `sell-row-<nome>` / `sell-check-<nome>` com o nome do item (espaços
 incluídos), e a caixa é `<span class="s-sellp-check">✓</span>` — marcada = tem ✓. Na 2.11.1 essa classe sem ✓
 conta como desmarcada (antes caía em "não sei" e a decisão ia para o total).
+
+### 2.11.2 — segundo teste ao vivo (29/09, noite)
+- **Travamento na Magia (não reproduzido)**: o navegador do dono congelou duas vezes trocando mapa/modelo na
+  aba Magia. Offline, 70 mapas × 5 modelos × 4 vocações com o dano real do nível 67 respondem em < 50 ms; ao
+  vivo, com um vigia do DevTools pingando a página a cada 2 s, cliques em todos os modelos, lista de mapas
+  aberta e cliques cruzados não travaram (máx. 8 ms). A detecção de hunt (1 ms), a varredura da fibra (2 ms)
+  e o repinte (a gaveta não repinta sozinha) foram medidos ao vivo. Agora todo desenho > 250 ms vai para o
+  Log com aba, mapa e modelo — se voltar, a linha do Log aponta o culpado.
+- **Veredito medido**: com ≥ 10 min no mapa mostrado, o selo "se paga" usa o analisador do jogo (gasto e
+  loot por abate reais). Banshee Quest: estimativa 143 o/abate × medido 28,6; loot do catálogo 62,8 ×
+  medido 45,5. A estimativa continua embaixo, sem selo, para comparar kits. A curva de desperdício da poção
+  (30/08, os quatro bebendo) superestima ×4–5 quando só o Druida bebe — recalibrar com mais medidas.
+- **Mochila de chaves**: tier e limite do jogo (`keyBagTierId: "keybag_t2"`, `keyBagMax: 10`); saía
+  "Key Backpack T1 · T1 guarda 5".
+- **Achados sem código**: Banshee é limitada pelo spawn (Inteligente: mesmos 936 abates/h e ~52k xp/h do kit
+  antigo, com +5,6k/h de suprimento); o Auto Hunt da conta volta para Dragon Lair (hunt 46), não para o mapa atual.

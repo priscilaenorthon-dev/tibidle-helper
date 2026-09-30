@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.11.1
+// @version      2.11.2
 // @description  Magia (Econômica / Equilibrado / Área / Boss / Inteligente, com simulador da fila) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -23,7 +23,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.11.1';
+    const VERSAO = '2.11.2';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -2862,6 +2862,9 @@
                     aplicarConfigLocal(vocDoIndice(ev.who), ev.config);
                 }
             } }
+            /* v2.11.2 — a Magia não repinta por frame; o selo medido aparece
+             * quando a caçada passa de 10 min (repinte só nessa virada) */
+            if (ABA === 'magia') { const k = ESTADO_WS.huntId + '|' + !!(an && Number(an.elapsedMs) >= 10 * 60000); if (k !== _medidoK) { _medidoK = k; renderizar(); } }
             return;
         }
         if (o.type === 'welcome' || o.type === 'resume') {
@@ -5708,10 +5711,21 @@
          * mana só de quem bebe), com a poção que o PLANO usa. v2.11 (D2): selo
          * "✓ se paga"/"✗ não se paga" + custo por abate contra o teto (80 % do
          * loot) + ouro/h do grupo e quem bebe mana. */
+        /* v2.11.2 — O MEDIDO MANDA NO SELO. Banshee Quest, 29/09: a estimativa
+         * dizia "✗ não se paga, 143 o/abate" com a party lucrando +16k/h — o
+         * analisador do jogo mediu 28,6 o/abate de gasto e 45,5 de loot (o
+         * catálogo diz 62,8). A curva de desperdício da poção (30/08, os 4
+         * bebendo) multiplica ×4,9 com 1.200 de HP; com só o Druida bebendo ela
+         * não vale. Com ≥ 10 min no mapa mostrado, o selo é o do jogo; a
+         * estimativa fica embaixo, para comparar kits. */
+        const med = vereditoMedido(h);
+        if (med) corpo += `<div class="tb-ver ${med.cabe ? 'ok' : 'ruim'}"><span class="tb-vsel ${med.cabe ? 'ok' : 'ruim'}">${med.cabe ? '✓ se paga' : '✗ não se paga'}</span>medido no jogo (${numBR(med.min)} min, kit atual): gasto <b>${numBR(med.custo, 1)} o</b>/abate · teto ${numBR(med.loot * MARGEM_LUCRO, 1)} o <span class="tb-mut">(${Math.round(MARGEM_LUCRO * 100)} % do loot medido de ${numBR(med.loot, 1)} o)</span>` +
+            `<div class="tb-mut">${med.lucroH >= 0 ? '+' : ''}${milBR(med.lucroH)} de ouro/h · ${numBR(med.abatesH)} abates/h</div></div>`;
         if (vp) {
             const bebem = VOCS.filter(v => vp.pocoes && vp.pocoes[v]);
             const gasto = vp.ouroH > 0 ? `~${milBR(vp.ouroH)} de ouro/h (${vp.regen ? 'runa' : 'poção e runa'})` : 'sem gasto de ouro';
-            corpo += `<div class="tb-ver ${vp.cabe ? 'ok' : 'ruim'}"><span class="tb-vsel ${vp.cabe ? 'ok' : 'ruim'}">${vp.cabe ? '✓ se paga' : '✗ não se paga'}</span>custo <b>${numBR(vp.custoPorAbate)} o</b>/abate · teto ${numBR(vp.orcamento, 1)} o <span class="tb-mut">(${Math.round(MARGEM_LUCRO * 100)} % do loot de ${numBR(vp.loot, 1)} o)</span>` +
+            const selo = med ? `<span class="tb-mut">estimativa deste kit: </span>` : `<span class="tb-vsel ${vp.cabe ? 'ok' : 'ruim'}">${vp.cabe ? '✓ se paga' : '✗ não se paga'}</span>`;
+            corpo += `<div class="tb-ver ${med ? '' : vp.cabe ? 'ok' : 'ruim'}">${selo}custo <b>${numBR(vp.custoPorAbate)} o</b>/abate · teto ${numBR(vp.orcamento, 1)} o <span class="tb-mut">(${Math.round(MARGEM_LUCRO * 100)} % do loot de ${numBR(vp.loot, 1)} o do catálogo${med ? ' — estimativa, o medido acima vale mais' : ''})</span>` +
                 `<div class="tb-mut">${gasto} · poção de mana: ${bebem.length ? bebem.map(v => VOC_ROTULO[v]).join(', ') : 'ninguém (regeneração)'}</div></div>`;
         } else if (h.boss) corpo += `<div class="tb-mx">boss: sem veredito de ouro — o kit é o de mais dano por segundo com a mana de cada um</div>`;
         else if (LOOT_CACHE[h.id] == null) corpo += `<div class="tb-mx">veredito: ${_semLoot[h.id] ? 'a tabela de loot desta hunt não veio (rede?) — tento de novo em 1 min' : 'lendo a tabela de loot…'}</div>`;
@@ -5738,6 +5752,17 @@
         linhas.push(`<div>${MODELOS[modelo] ? escHtml(maisAlvos(MODELOS[modelo].dica)) : ''} Nada é aplicado sozinho. ${socketAberto() && ESTADO_WS.perfisDoServidor ? 'Aplica pelo socket, sem abrir janela.' : 'Aplica pelos diálogos do jogo (só os 4 ataques).'}</div>`);
         corpo += aj('magia-mais', linhas.join(''), 'detalhes');
         return corpo;
+    }
+    /* v2.11.2 — gasto e loot por abate do analisador do jogo, se a party está
+     * NO mapa mostrado há ≥ 10 min (a sessão do jogo zera ao trocar de mapa). */
+    let _medidoK = null;
+    function vereditoMedido(h) {
+        const an = anDoFrame();
+        if (!h || h.boss || !an || String(ESTADO_WS.huntId) !== String(h.id)) return null;
+        if (!(an.elapsedMs >= 10 * 60000) || !(an.kills > 0)) return null;
+        const loot = an.lootGold / an.kills, custo = an.suppliesGold / an.kills;
+        return { min: Math.round(an.elapsedMs / 60000), abatesH: Math.round(an.kills / an.elapsedMs * 3600000),
+                 loot, custo, lucroH: Math.round((an.lootGold - an.suppliesGold) / an.elapsedMs * 3600000), cabe: custo <= loot * MARGEM_LUCRO };
     }
     /* handlers da Magia (antes dentro de _renderizar) + os dados que o plano
      * ainda espera (loot, armadura do bestiário). v2.11 (D2): a busca saiu do
@@ -6714,7 +6739,11 @@
             const t = pgTierDaMochila(kb, regras), av = pgAvisoChaves(Object.assign({}, kb, { max: t.max }));
             const cls = av && av.nivel === 'cheia' ? 'tb-ruim' : av && (av.nivel === 'quase' || av.nivel === 'talvez') ? 'tb-av' : 'tb-ok';
             h += `<div class="pg-lin"><b>Mochila de chaves</b><span class="${cls}">${pgInt(kb.usadas)}${t.max ? ' / ' + pgInt(t.max) : ''}</span></div>`;
-            h += `<div class="pg-mut pg-peq">${t.nome ? escHtml(t.nome) + ' · ' : ''}T1 guarda ${PG_WIKI.mochilaT1}, T2 guarda ${PG_WIKI.mochilaT2} (100 coins). Chave no depósito também vale para o Elite e o Sweep.</div>`;
+            /* v2.11.2 — o tier e o limite do JOGO (frame: keyBagTierId "keybag_t2",
+             * keyBagMax 10). Aparecia "Key Backpack T1 · T1 guarda 5" com a T2. */
+            const tierN = (String(kb.tierId || '').match(/t(\d+)$/i) || [])[1];
+            const nomeTier = tierN ? 'Key Backpack T' + tierN : t.nome;
+            h += `<div class="pg-mut pg-peq">${nomeTier ? escHtml(nomeTier) + ' · ' : ''}${t.max ? 'guarda ' + pgInt(t.max) + ' chaves. ' : ''}${t.max && t.max < PG_WIKI.mochilaT2 ? `A T2 guarda ${PG_WIKI.mochilaT2} (100 coins). ` : ''}Chave no depósito também vale para o Elite e o Sweep.</div>`;
             if (av && (av.nivel === 'quase' || av.nivel === 'talvez')) h += `<div class="pg-atencao">${escHtml(av.texto)}</div>`;
             const nomes = Object.keys(kb.chaves || {}).sort((a, b) => a.localeCompare(b));
             if (!nomes.length) h += `<div class="pg-mut">nenhuma chave na mochila de chaves.</div>`;
@@ -7952,14 +7981,26 @@
      * Agora renderizar() só MARCA; o desenho sai uma vez, fora do evento, no
      * próximo giro (setTimeout 0 — requestAnimationFrame pararia com a aba em
      * segundo plano). Todas as chamadas do mesmo giro viram um desenho só. */
+    /* v2.11.2 — TELA LENTA VAI PARA O LOG. Em 29/09 o navegador do dono
+     * congelou duas vezes mexendo na Magia e nada reproduziu offline (70
+     * mapas × 5 modelos × 4 vocações < 50 ms) nem ao vivo com um vigia do
+     * DevTools. Se voltar a acontecer, o Log diz qual aba demorou e quanto —
+     * um desenho > 250 ms já é o sintoma, antes de virar travamento. */
     let _renderAgendado = false;
+    const _lentoAvisado = {};
     function renderizar() {
         if (_renderAgendado) return;
         _renderAgendado = true;
         try {
             setTimeout(() => {
                 _renderAgendado = false;
+                const t0 = Date.now(), aba = ABA;
                 try { _renderizar(); } catch (e) { falhou('desenhar a tela', e); }
+                const ms = Date.now() - t0;
+                if (ms > 250 && !(Date.now() - (_lentoAvisado[aba] || 0) < 30000)) {
+                    _lentoAvisado[aba] = Date.now();
+                    log(`a aba ${aba} levou ${ms} ms para desenhar (mapa: ${(huntAtual() || {}).title || '—'}, modelo: ${ler('modelo', 'equilibrado')}) — se o jogo travar, mande esta linha`, 'erro');
+                }
             }, 0);
         } catch (e) { _renderAgendado = false; }
     }

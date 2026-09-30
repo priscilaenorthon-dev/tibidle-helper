@@ -284,7 +284,7 @@ t('Magia: escape de hunt, boss, magia e bestiário; "2+ alvos"; "poção de mana
     assert(/poção de mana ≤30%/.test(h), 'Druida do Inteligente deveria mostrar "poção de mana ≤30%"');
     assert(/\d\+ alvos?/.test(h) && !/≥\d/.test(h.replace(/≤\d+/g, '')), 'fichas ainda com "≥": ' + (h.match(/.{20}≥\d.{10}/) || [''])[0]);
     assert(/tb-vsel (ok|ruim)">(✓ se paga|✗ não se paga)</.test(h), 'selo do veredito ausente');
-    assert(/teto [\d.,]+ o/.test(h) && /\(80 % do loot de 20 o\)/.test(h), 'veredito sem teto/loot em pt-BR: ' + (h.match(/tb-ver.{0,300}/) || [''])[0]);
+    assert(/teto [\d.,]+ o/.test(h) && /\(80 % do loot de 20 o do catálogo\)/.test(h), 'veredito sem teto/loot em pt-BR: ' + (h.match(/tb-ver.{0,300}/) || [''])[0]);
     // o boss malicioso no <option value="…">
     const W2 = criarMundo({ ls: comAba('magia', { tb_helper_hunt_id: '34', tb_helper_modelo: '"boss"', tb_helper_boss_nome: JSON.stringify(BOSS_MAL) }) });
     await W2.avancar(0); await W2.avancar(200);
@@ -292,6 +292,29 @@ t('Magia: escape de hunt, boss, magia e bestiário; "2+ alvos"; "poção de mana
     semXss(h2, 'Magia/boss');
     assert(h2.includes('<option value="Pesso&amp;Vesso&quot;&gt;&lt;img src=x onerror=alert(2)&gt;" selected>'), 'option do boss não escapada/selecionada');
     assert(!/\bvalue="[^"]*"[^ >]/.test(h2.replace(/<option value="[^"]*"( selected)?>/g, '')), 'aspas soltas num value');
+});
+
+t('Magia 2.11.2: com ≥10 min no mapa o selo é o MEDIDO pelo jogo (Banshee: 143 estimado × 28,6 real)', async () => {
+    const W = criarMundo({ ls: comAba('magia', { tb_helper_hunt_id: '34', tb_helper_modelo: '"inteligente"' }) });
+    await W.avancar(0);
+    const ws = new W.window.WebSocket('wss://jogo');
+    ws.emitir({ type: 'welcome', data: {} });
+    ws.emitir({ type: 'hunt_started', data: { huntId: 34, state: { party: party4() } } });
+    /* 9 min: ainda a estimativa */
+    ws.emitir(frame({}, { elapsedMs: 9 * 60000, killsTotal: 140, lootGold: 140 * 45.5, suppliesGold: 140 * 28.6 }));
+    await W.avancar(200);
+    assert(!/medido no jogo/.test(W.html()), 'com 9 min não deveria haver selo medido');
+    /* 12 min: selo do jogo (28,6 ≤ 80 % de 45,5 = 36,4 → se paga), estimativa embaixo sem selo próprio */
+    ws.emitir(frame({}, { elapsedMs: 12 * 60000, killsTotal: 190, lootGold: 190 * 45.5, suppliesGold: 190 * 28.6 }));
+    await W.avancar(200);
+    const h = W.html();
+    assert(/tb-vsel ok">✓ se paga<\/span>medido no jogo \(12 min, kit atual\): gasto <b>28,6 o<\/b>\/abate · teto 36,4 o/.test(h), 'selo medido: ' + (h.match(/tb-ver.{0,260}/) || [''])[0]);
+    assert.strictEqual((h.match(/tb-vsel/g) || []).length, 1, 'só um selo: a estimativa não pode dizer o contrário do medido');
+    assert(/estimativa deste kit: /.test(h), 'a estimativa continua para comparar kits');
+    /* o dono escolhe OUTRO mapa na lista (a party segue no 34): o medido não vale para ele */
+    const sel = W.el('tb-hunt'); sel.value = '32'; sel.onchange();
+    await W.avancar(200);
+    assert(/Elfs Shadowthorn/.test(W.html()) && !/medido no jogo/.test(W.html()), 'medido de outro mapa não pode virar selo do mapa escolhido');
 });
 
 t('Magia: loot que não veio aparece como tal e é pedido de novo 1 min depois (a busca saiu do desenho)', async () => {
