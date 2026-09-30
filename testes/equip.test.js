@@ -313,4 +313,11 @@ t('regen. de mana 2,0 do depósito tira a 1,9 vestida, nos 4', () => {
         assert.strictEqual(igual.melhor.iid, 'veste', voc + ': empate fica com a vestida');
     }
 });
+/* 2.11.20 — encaixe com id/valor fora do formato (maiúsculas, hífen, vírgula) não pode zerar em silêncio */
+t('candidatos: id e valor do encaixe normalizados ("Regen-Mana", "1,9")', () => {
+    const dep = { entries: [{ iid: 'x', itemName: 'bota', slot: 'feet', forja: { raridade: 1, atributos: [{ id: 'Regen-Mana', valor: '1,9' }] } }] };
+    const c = M.candidatosEquip([], dep, { bota: { attrs: {}, sell: 0 } }, []);
+    assert.deepStrictEqual(c[0].forja.atributos.map(a => [a.id, a.valor]), [['regen_mana', 1.9]]);
+    assert(M.pontuarPeca(c[0], 'DRUID', null).pontos > 9);
+});
 console.log(`\n${n} testes ok` + (pulados ? ` · ${pulados} pulados (sem o estado da conta em data/)` : ''));

@@ -4168,3 +4168,19 @@ pela Caixa). RESGATAR não testado: a Caixa só recebe algo quando um anúncio v
   "encaixe bom, mas todos que a vestem já usam igual ou melhor" — e vende como antes.
 - Nobre por vocação: defesa = regen. de mana (4) + regen. de vida (só Knight); arma/colar = Knight corpo a corpo e
   dano físico; Paladino distância, nível mágico, dano mágico e físico; magos nível mágico e dano mágico.
+
+## 2.11.20 (30/09) — "não errar": auditoria da venda + conferência das regras na wiki
+- Dois agentes: um conferiu as regras da comunidade nas 52 páginas da wiki, outro auditou todo caminho que vende.
+- **Wiki** (/forja, /vender-e-auto-selling, /mercado): peça **Incomum ou melhor, ou com refino, não vende na cidade, no
+  Auto Selling nem no Mercado** — só usa ou desmancha. O que vende é a Comum sem refino (sem encaixe nenhum).
+  Regen. de vida/mana da forja é **por segundo** (/bestiario). Arma/colar sorteiam do grupo ofensivo; skill tem peso 1
+  (rara), dano peso 10. Nível 67, ML 25: 1 ML ≈ 2,6 % de dano mágico (Energy Strike) — a regra "2 % ≈ 1 ML" é boa.
+  A wiki não diz que regen. de mana é "o melhor" nem que distância é o melhor no Paladino: é regra da comunidade.
+  Runa: o dano sobe com o ML TREINADO e o nível (o "dano de runa é fixo" das seções antigas está desatualizado).
+- **Auditoria**: Auto Hunt e Venda rápida já eram seguros (protegem todo equipamento pelo nome e não vendem nada se
+  não conseguem desmarcar). As brechas eram no Mercado, que só barrava o que o Equip conhecia:
+  - **lista branca**: cópia de equipamento só pode ser marcada se a última leitura do Equip a pôs nas sobras (fecha:
+    peça que o Auto Hunt guardou depois da leitura, depósito não lido, base desconhecida, base de forja épica+);
+  - o ATUALIZAR do Mercado **sempre** relê o Equip (antes só quando não havia leitura);
+  - encaixe da forja normalizado (id em minúsculas com `_`, valor "1,9" → 1.9) — antes um formato diferente zerava o
+    encaixe em silêncio e a peça podia cair nas sobras.

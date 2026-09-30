@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.11.19
+// @version      2.11.20
 // @description  Magia (Econômica / Equilibrado / Área / Boss, com simulador da fila) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.11.19';
+    const VERSAO = '2.11.20';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -4703,6 +4703,15 @@
     }
     /* roster (welcome/fibra) + depot_state.entries + base{nome:{attrs,sell,equipPreview}} → peças
      * {iid, nome, slot, attrs, forja, equipPreview, sell, origem:'corpo'|'depósito', dono?:voc, duasMaos} */
+    /* v2.11.20 — encaixe da forja normalizado: id em minúsculas com _ ("Regen-Mana" → regen_mana) e valor
+     * numérico ("1,1" → 1.1). Um id ou valor fora do formato zerava o encaixe em silêncio. */
+    function normForja(f) {
+        if (!f || typeof f !== 'object') return { raridade: 0, atributos: [] };
+        const atributos = (Array.isArray(f.atributos) ? f.atributos : []).map(a => ({ ...a,
+            id: String((a && a.id) || '').trim().toLowerCase().replace(/[\s-]+/g, '_'),
+            valor: typeof (a && a.valor) === 'string' ? Number(a.valor.replace(',', '.')) : Number(a && a.valor) }));
+        return { ...f, atributos };
+    }
     function candidatosEquip(roster, depot, base, mochila) {
         const out = [];
         const b = (nome) => base[nome] || { attrs: {}, sell: 0, equipPreview: null };
@@ -4712,20 +4721,20 @@
             const k = b(e.name);
             const slot = slotDaBase(k.attrs);
             if (!slot || !SLOTS_EQUIP.includes(slot)) continue;
-            out.push({ iid: e.iid, nome: e.name, slot, attrs: k.attrs, forja: e.forja || { raridade: 0, atributos: [] }, equipPreview: k.equipPreview,
+            out.push({ iid: e.iid, nome: e.name, slot, attrs: k.attrs, forja: normForja(e.forja), equipPreview: k.equipPreview,
                        sell: k.sell || 0, origem: 'mochila', dono: null, duasMaos: k.attrs.slotType === 'two-handed' });
         }
         for (const r of (roster || [])) { for (const [slot, it] of Object.entries(r.equipment || {})) {
             if (!it || !it.name) continue;
             const k = b(it.name);
             const attrs = Object.assign({}, k.attrs, it.attrs || {});
-            out.push({ iid: it.iid || (r.vocation + ':' + slot), nome: it.name, slot: normalizarSlot(slot), attrs, forja: it.forja || { raridade: 0, atributos: [] },
+            out.push({ iid: it.iid || (r.vocation + ':' + slot), nome: it.name, slot: normalizarSlot(slot), attrs, forja: normForja(it.forja),
                        equipPreview: k.equipPreview, sell: k.sell || it.value || 0, origem: 'corpo', dono: r.vocation, duasMaos: attrs.slotType === 'two-handed' });
         } }
         for (const e of ((depot && depot.entries) || [])) {
             if (!e.forja || !e.slot) continue;
             const k = b(e.itemName);
-            out.push({ iid: e.iid, nome: e.itemName, slot: normalizarSlot(e.slot), attrs: k.attrs, forja: e.forja, equipPreview: k.equipPreview,
+            out.push({ iid: e.iid, nome: e.itemName, slot: normalizarSlot(e.slot), attrs: k.attrs, forja: normForja(e.forja), equipPreview: k.equipPreview,
                        sell: k.sell || 0, origem: 'depósito', dono: null, duasMaos: k.attrs.slotType === 'two-handed' });
         }
         return out;
@@ -7763,6 +7772,11 @@
         const protN = new Set(((e.prot && e.prot.nomes) || []).map(mkMin)), protI = new Set((e.prot && e.prot.iids) || []);
         const nunca = new Set((e.nunca || []).map(mkNorm).filter(Boolean));
         const eq = e.equip ? new Set([...(e.equip.usadas || []), ...(e.equip.reservas || [])]) : null;
+        /* v2.11.20 — LISTA BRANCA (auditoria 30/09): a cópia de equipamento só pode ser marcada se a última
+         * leitura do Equip a pôs nas SOBRAS. Antes o Mercado só barrava o que o Equip conhecia (melhor,
+         * reserva): peça que entrou depois da leitura, peça do depósito com o depósito não lido, peça de
+         * base desconhecida e base de forja (épico+) passavam como vendáveis. */
+        const sobras = e.equip && Array.isArray(e.equip.sobras) ? new Set(e.equip.sobras) : null;
         const naCidade = e.naCidade !== false, marcados = new Set(e.marcados || []);
         const fora = [], pilhas = new Map(), copias = [];
         const barrar = (nome, qtd, motivo, iid) => fora.push({ nome: String(nome), n: mkMin(nome), qtd: qtd || 1, motivo, iid: iid || null });
@@ -7809,6 +7823,7 @@
             if (m) { barrar(x.nome, x.count, m, x.iid); continue; }
             if (trad && trad[x.n] && trad[x.n].forjavel) {
                 if (!x.forja) { barrar(x.nome, 1, 'sem forja — o jogo não anuncia esta peça', x.iid); continue; }
+                if (sobras && !sobras.has(x.iid)) { barrar(x.nome, 1, 'o Equip não pôs nas sobras (melhor, reserva, encaixe bom, base de forja ou peça que ele não avaliou)', x.iid); continue; }
                 copias.push(x);
             } else {
                 const p = pilha(x.nome);
@@ -8041,7 +8056,8 @@
         const b = mkBagAtual(), R = EQUIP.res;
         return { bag: b ? b.bag : null, bagInst: b ? b.inst : null, depot: ESTADO_WS.depot ? ESTADO_WS.depot.entries : null,
                  tradeable: MK.tradeable, npc: MK.npc, taxa: MK.taxa, catalogo: MK.catalogo, minhas: MK.minhas, livros: MK.livros, copias: MK.copias, stats: MK.stats,
-                 prot: mkProtegidos(), nunca: autoHunt().nuncaVender || [], equip: R ? { usadas: [...(R.usadas || [])], reservas: [...(R.reservas || []), ...(R.nobres || []).map(p => p.iid)] } : null,
+                 prot: mkProtegidos(), nunca: autoHunt().nuncaVender || [], equip: R ? { usadas: [...(R.usadas || [])], reservas: [...(R.reservas || []), ...(R.nobres || []).map(p => p.iid), ...(R.bases || []).map(p => p.iid)],
+                                                                         sobras: (R.dispensaveis || []).map(p => p.iid).filter(Boolean) } : null,
                  naCidade: !emHunt(), digitados: MK.digitados, marcados: [...MK.marcados] };
     }
     const mkVista = () => mkMontar(mkEntrada());
@@ -8106,7 +8122,9 @@
             /* v2.11.14 — a leitura do Equip (o melhor e a reserva de cada um) mora só na memória: depois
              * de um F5 toda peça forjada ficava travada ("rode ATUALIZAR no Equip antes") e o dono não
              * conseguia marcar nada (30/09). O ATUALIZAR do Mercado já lê o Equip junto — é só leitura. */
-            if (!EQUIP.res && !EQUIP.lendo) { MK.progresso = 'equipamento dos 4 (o melhor e a reserva ficam fora)…'; renderizar(); await equipAtualizar(); }
+            /* v2.11.20 — sempre (não só sem leitura): peça que o Auto Hunt guardou depois da última leitura do Equip
+             * ficaria sem avaliação. Com o depósito não lido, o Equip não põe peça do depósito nas sobras. */
+            if (!EQUIP.lendo) { MK.progresso = 'equipamento dos 4 (o melhor e a reserva ficam fora)…'; renderizar(); await equipAtualizar(); }
             MK.livros = {}; MK.copias = {}; MK.stats = {};
             if (await mkLerBase([['market_catalog', 'preços do mercado'], ['market_my_orders', 'suas ordens'], ['market_inbox', 'caixa de entrada']])) {
                 await mkBuscarPendencias(() => mkVista().pendencias, 'preços');
