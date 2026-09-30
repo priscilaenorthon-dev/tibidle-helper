@@ -4127,3 +4127,9 @@ pela Caixa). RESGATAR não testado: a Caixa só recebe algo quando um anúncio v
 - A leitura do Equip (o melhor e a reserva de cada personagem, que o Mercado nunca anuncia) vive só na memória. Depois
   de um F5 toda peça forjada aparecia travada com "rode ATUALIZAR no Equip antes" e o dono não conseguia marcar nada.
   Agora o ATUALIZAR do Mercado lê o Equip junto quando ele ainda não foi lido (só leitura: depot_get + /item/info).
+
+## 2.11.15 (30/09) — revisão do "Completar marcos"
+- Venda do modo "completar" falhou → o modo desliga **e devolve os kits de antes** (`bestEncerrar(..., 'perfis')`, que
+  espera o ciclo terminar). Antes a foto era descartada e o kit do bestiário ficava nos 4.
+- Mochila cheia com o Auto Hunt desligado e a venda ainda travada (5 min desde o último ciclo, ou janela aberta): o modo
+  **espera na cidade**. Antes caía no "entrar" e reentrava com a mochila cheia — o Auto Exit tirava a party de novo, em laço.

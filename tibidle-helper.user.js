@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.11.14
+// @version      2.11.15
 // @description  Magia (Econômica / Equilibrado / Área / Boss, com simulador da fila) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.11.14';
+    const VERSAO = '2.11.15';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -3642,7 +3642,9 @@
             log(`${NOME_ORIGEM[origem] || origem} parou no passo "${passo}": ${erro}` + (a.on ? ' — automação DESLIGADA' : ''), 'erro');
             if (a.on) guardarAutoHunt({ on: false });
             /* v2.11.10 — a venda do modo "completar bestiário" falhou: o modo para (senão voltaria a tentar a cada 5 min) */
-            if (origem === 'bestiario' && BEST.ativo) { BEST.ativo = false; BEST.foto = null; bestSalvar(); log('bestiário: modo "completar" DESLIGADO (a venda falhou)', 'erro'); }
+            /* v2.11.15 — e devolve os kits de antes (antes a foto era jogada fora e o kit do bestiário ficava);
+             * o bestEncerrar espera o ciclo terminar antes de mexer nos perfis */
+            if (origem === 'bestiario' && BEST.ativo) bestEncerrar('modo "completar" DESLIGADO (a venda falhou) — kits devolvidos', 'erro', 'perfis').catch(e => falhou('bestiário (encerrar)', e));
         };
         try {
             log(`ciclo de venda (${origem}) iniciado — mochila ${c0 ? c0.pct + '% livre' : '?'}`, 'info');
@@ -7226,6 +7228,10 @@
             try { await cicloDeVenda('bestiario'); } finally { BEST.passo = false; }
             return;
         }
+        /* v2.11.15 — mochila cheia e a venda ainda não pode (trava de 5 min, janela aberta): espera na
+         * cidade. Antes caía no "entrar" e a party reentrava com a mochila cheia — o Auto Exit a
+         * tirava de novo, em laço, até a trava liberar. */
+        if (mochilaCheia && !autoHunt().on && !aqui) return;
         if (aqui) return;
         BEST.passo = true; _travaJogo = 'Bestiário';
         renderizar();
