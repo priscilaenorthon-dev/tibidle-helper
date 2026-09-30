@@ -61,6 +61,15 @@ await t('venda: sell-check-<id> numérico também resolve; proteções desligada
     const r3 = P.escolherDesmarcar([{ nome: 'elvish bow' }], prot({ base: {} }));
     assert(/sem dados/.test(r3.guardar[0].motivo), '/item/info falhou → guarda');
 });
+await t('2.11.7: nome do catálogo em outra caixa ("wild honey" × "Wild Honey") e NPC que paga 0', () => {
+    /* ao vivo, 29/09: items-by-name tem "wild honey", o /item/info devolve "Wild Honey"
+     * e o NPC paga 0 — "vender" jogava fora um item de ~40 no Mercado */
+    const o = { equip: true, imbu: false, lista: [], materiais: [], nomes: { 'wild honey': 'wild honey', 'grave flower': 'grave flower' },
+                base: { 'Wild Honey': { attrs: { weight: 50 }, sell: 0 }, 'grave flower': { attrs: { weight: 30 }, sell: 25 } } };
+    const r = P.escolherDesmarcar([{ nome: 'Wild Honey' }, { nome: 'grave flower' }], o);
+    assert(r.guardar.length === 1 && /paga 0/.test(r.guardar[0].motivo), 'mel deveria ficar guardado por pagar 0: ' + JSON.stringify(r.guardar));
+    assert.deepStrictEqual(r.vender, ['grave flower']);
+});
 await t('estado da caixa de marcar do painel', () => {
     const el = (o) => Object.assign({ tagName: 'DIV', className: '', textContent: '', getAttribute: () => null, querySelector: () => null }, o);
     assert.strictEqual(P.estadoMarcado(el({ tagName: 'INPUT', checked: false })), false);

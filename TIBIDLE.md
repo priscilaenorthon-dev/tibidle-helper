@@ -4034,3 +4034,17 @@ mapa mágico; 2 reservas por espaço; Épico ou melhor nunca sobra (base de forj
 Resultado ao vivo: única troca = Paladino, anel max mana +93 (0,09 pt) → regen mana +1,3 do depósito (2,1 pt).
 Wand do Feiticeiro: vortex +1 ML empata com a inferno (tiro ~0,14/s, mana curta). Rod do Druida: underworld rod
 dá prejuízo (13 de mana/tiro pagos em poção); snakebite +1 ML é a certa.
+
+### 2.11.7 — venda do Auto Hunt: nome em outra caixa, caixa que some e NPC que paga 0 (29/09, noite)
+Teste ao vivo do ciclo completo (Vampire hell) parou no passo "vender": "não consegui desmarcar wild honey".
+Três defeitos juntos, vistos no painel real:
+- `items-by-name` tem "wild honey" e o `/item/info` devolve "Wild Honey": o `basePorNome` guardava só pelo nome
+  devolvido e a venda não achava o item ("sem dados — guardado por segurança"). Agora guarda também pelo nome
+  pedido, e `escolherDesmarcar` procura sem diferenciar maiúsculas.
+- Desmarcar no painel REMOVE o `<span class="s-sellp-check">✓</span>` e a linha `sell-row-<nome>` ganha
+  `s-sellp-cell--dim`. O helper esperava a caixa continuar lá; com o NPC pagando 0 o total também não mudava.
+  Agora `linhaDesmarcada()` reconhece a linha apagada.
+- Wild Honey vale 0 no NPC (~40 no Mercado): "vender" era jogar fora. Item com `sell === 0` fica guardado.
+Depois: ciclo inteiro ok — encerrou, purificou, vendeu (+100), depot, **voltou para a hunt 50**; mel no depósito.
+Mercado: REVISAR ok ("você é o menor", outro a 41); cancelar ok (os itens voltam direto para a mochila, não
+pela Caixa). RESGATAR não testado: a Caixa só recebe algo quando um anúncio vende.

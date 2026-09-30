@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.11.6
+// @version      2.11.7
 // @description  Magia (Econômica / Equilibrado / Área / Boss / Inteligente, com simulador da fila) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -23,7 +23,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.11.6';
+    const VERSAO = '2.11.7';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -3048,6 +3048,7 @@
         const lista = new Set((o.lista || []).map(normNomeItem).filter(Boolean));
         const mats = new Set((o.materiais || []).map(normNomeItem));
         const guardar = [], vender = [];
+        const baseMin = {}; for (const [k, v] of Object.entries(o.base || {})) baseMin[normNomeItem(k)] = v;
         for (const l of linhas || []) {
             const n = normNomeItem(l.nome);
             const real = o.nomes ? (o.nomes[n] || null) : null;
@@ -3056,10 +3057,16 @@
             if (lista.has(n) || (real && lista.has(normNomeItem(real)))) motivo = 'sua lista';
             else if (o.imbu && (mats.has(n) || (real && mats.has(normNomeItem(real))))) motivo = 'material de imbuement';
             else if (o.equip) {
-                const b = real && o.base ? o.base[real] : null;
+                /* v2.11.7 — o nome do catálogo ("wild honey") e o do /item/info
+                 * ("Wild Honey") diferem em maiúsculas: sem casar, todo item caía
+                 * em "sem dados" (ao vivo, 29/09). */
+                const b = real && o.base ? (o.base[real] || baseMin[normNomeItem(real)] || null) : null;
                 if (!real) motivo = 'nome não reconhecido — guardado por segurança';
                 else if (!b) motivo = 'sem dados do item — guardado por segurança';
                 else if (ehEquipamento(b)) motivo = 'equipamento' + (b.attrs && (b.attrs.slot || b.attrs.slotType) ? ' (' + (b.attrs.slot || b.attrs.slotType) + ')' : '');
+                /* v2.11.7 — NPC que paga 0 não compra: "vender" = jogar fora. Wild
+                 * Honey (0 no NPC, ~40 no Mercado) estava marcado no painel. */
+                else if (b.sell === 0) motivo = 'o NPC paga 0 — guardado (vale no Mercado)';
             }
             if (motivo) guardar.push(Object.assign({}, l, { nome, motivo })); else vender.push(nome);
         }
@@ -3332,20 +3339,30 @@
      * a 3,2 s por clique (≤ 20/min), até 3 tentativas por caixa. */
     const VENDA_ESPACO_MS = 400, VENDA_ESPACO_LENTO_MS = 3200, VENDA_PAUSA_LIMITE_MS = 12000;
     const erroServidor = () => { try { return { t: ESTADO_WS.ultimoErro_t || 0, code: ESTADO_WS.ultimoErro }; } catch { return { t: 0, code: null }; } };
+    /* v2.11.7 — visto ao vivo (29/09): desmarcar REMOVE o <span ✓> e a linha
+     * sell-row-<nome> ganha a classe s-sellp-cell--dim. Com a caixa sumida e o
+     * total igual (item que o NPC paga 0), o helper achava que o clique falhou. */
+    function linhaDesmarcada(g) {
+        const el = elDaLinha(g);
+        if (el) return estadoMarcado(el) === false;
+        const nome = String(g.testid || '').replace(/^sell-check-/, '');
+        const row = $$(`[data-testid="sell-row-${nome}"]`)[g.idx || 0];
+        return !!(row && /(^|\s)s-sellp-cell--dim(\s|$)/.test(row.className || ''));
+    }
     async function desmarcarNaVenda(guardarLista) {
         const falhas = [];
         let espaco = VENDA_ESPACO_MS, ultimo = 0;
         for (const g of guardarLista) {
+            if (linhaDesmarcada(g)) continue;
             if (!elDaLinha(g)) { falhas.push(g.nome + ' (caixa sumiu)'); continue; }
-            if (estadoMarcado(elDaLinha(g)) === false) continue;
             let ok = false;
             for (let tent = 0; tent < 3 && !ok; tent++) {
                 const el = elDaLinha(g);
                 if (!el) break;
-                if (estadoMarcado(el) === false) { ok = true; break; }
+                if (linhaDesmarcada(g)) { ok = true; break; }
                 const falta = ultimo + espaco - Date.now(); if (falta > 0) await dorme(falta);
                 const t0 = totalVenda(), e0 = erroServidor().t;
-                const saiu = () => estadoMarcado(elDaLinha(g)) === false || (t0 != null && totalVenda() != null && totalVenda() < t0);
+                const saiu = () => linhaDesmarcada(g) || (t0 != null && totalVenda() != null && totalVenda() < t0);
                 el.click(); ultimo = Date.now();
                 ok = !!(await esperarQue(saiu, 1500, 100));
                 if (ok) break;
@@ -3412,8 +3429,8 @@
             if (guardados.length) {
                 if (!lv.checks) { fecharPainel(); await dorme(400); return { erro: `achei ${guardados.length} item(ns) para NÃO vender (${guardados.map(g => g.nome).join(', ')}) mas o painel não tem as caixas sell-check-* — nada vendido` }; }
                 const falhas = await desmarcarNaVenda(guardados);
-                const ainda = guardados.filter(g => estadoMarcado(elDaLinha(g)) === true).map(g => g.nome);
-                const semEstado = guardados.some(g => estadoMarcado(elDaLinha(g)) == null);
+                const ainda = guardados.filter(g => !linhaDesmarcada(g) && estadoMarcado(elDaLinha(g)) === true).map(g => g.nome);
+                const semEstado = guardados.some(g => !linhaDesmarcada(g) && estadoMarcado(elDaLinha(g)) == null);
                 const totalDepois = totalVenda();
                 const problema = falhas.length ? 'não consegui desmarcar ' + falhas.join(', ')
                     : ainda.length ? 'continuam marcados: ' + ainda.join(', ')
@@ -4329,7 +4346,13 @@
             const lote = faltam.slice(i, i + 100);
             try {
                 const lista = await buscarJSON('/item/info?ids=' + lote.map(n => ids[n]).join(','));
-                for (const it of lista) cache[it.name] = { id: it.id, attrs: it.attrs || {}, sell: it.sell || 0, equipPreview: it.equipPreview || null };
+                for (const it of lista) {
+                    /* v2.11.7 — guardado também pelo nome PEDIDO ("wild honey"), não só pelo
+                     * que o /item/info devolve ("Wild Honey"); sell desconhecido = null, não 0 */
+                    const v = { id: it.id, attrs: it.attrs || {}, sell: it.sell != null ? Number(it.sell) || 0 : null, equipPreview: it.equipPreview || null };
+                    cache[it.name] = v;
+                    for (const n of lote) if (ids[n] === it.id) cache[n] = v;
+                }
             } catch (e) { log('equip: /item/info falhou: ' + e.message, 'erro'); }
         }
         if (faltam.length) guardar('equip_base', cache);
