@@ -33,7 +33,7 @@ const M = new Function('SPELLS', 'POTIONS', 'BOSSES', `
     ${trecho('/* @@MODELOS-INICIO */', '/* @@MODELOS-FIM */')}
     ${trecho('/* @@MAGIA-INICIO', '/* @@MAGIA-FIM */')}
     CAT.bosses = normalizarBosses(BOSSES);
-    return { montarPlano, melhorPocao, regimeSobrando, viabilidadeParty, simularFila, slotMorto, notasElementos, planoExtras, melhorMunicao, custoMunicao,
+    return { montarPlano, melhorPocao, viabilidadeParty, simularFila, slotMorto, notasElementos, planoExtras, melhorMunicao, custoMunicao,
              danosConhecidos, valorFormula, mlDaMedida, huntDeBoss, magiasDaVocacao, invalidarPlanos, pedirReleituraDeDanos, avaliar, lureMax, slotsParaSimular, manaDoPersonagem,
              RUNA_SEMENTE, BESTIARIO, TIMERS, CAT, MEM, RAZAO, ESTADO_WS, E, LOOT_CACHE };
 `)(SPELLS, POTIONS, BOSSES);
@@ -73,15 +73,8 @@ const plano = (modelo, h, voc) => { M.E.voc = voc; const r = M.montarPlano(model
 const txt = (r) => r.plano.map(p => `${p.av.m.name}≥${p.minimo}`).join(', ');
 const enchimento = (p) => (p.av.m.cooldownMs || 2000) <= (p.av.m.groupCooldownMs || 2000);
 
-t('Inteligente nunca passa de 4 slots (mana sobrando + lure baixo dava 5)', () => {
-    const h = mapa(2); medir(h, 'SORCERER', 96);
-    const r = plano('inteligente', h, 'SORCERER');
-    assert(r.plano.length <= 4, `${r.plano.length} slots: ${txt(r)}`);
-    assert(!r.plano.some(p => p.av.m.isRune), 'com mana sobrando a runa é a que sai: ' + txt(r));
-    limpar();
-});
 t('recarga de 2 s (runa, strike, Missile) vai sempre depois das magias de recarga longa', () => {
-    for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) for (const lure of [2, 4, 6]) for (const mana of [null, 20, 90]) for (const modelo of ['inteligente', 'equilibrado', 'area', 'economica']) {
+    for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) for (const lure of [2, 4, 6]) for (const mana of [null, 20, 90]) for (const modelo of ['equilibrado', 'area', 'economica']) {
         const h = mapa(lure); if (mana != null) medir(h, voc, mana);
         const r = plano(modelo, h, voc);
         const i = r.plano.findIndex(enchimento);
@@ -91,48 +84,12 @@ t('recarga de 2 s (runa, strike, Missile) vai sempre depois das magias de recarg
         limpar();
     }
 });
-t('Feiticeiro sem mana medida: a runa não fica no slot 1 (era o caso da 2.8.5)', () => {
-    for (const lure of [2, 4]) {
-        const r = plano('inteligente', mapa(lure), 'SORCERER');
-        assert(!r.plano[0].av.m.isRune, `lure ${lure}: ${txt(r)}`);
-        const runa = r.plano.find(p => p.av.m.isRune), golpe = r.plano.find(p => p.minimo === 1 && !p.av.m.isRune);
-        if (runa && golpe) assert(r.plano.indexOf(runa) < r.plano.indexOf(golpe), 'runa ≥2 antes do golpe ≥1: ' + txt(r));
-    }
-});
-t('Paladino: Caldera, runa ≥2, Missile ≥1 (padrão da comunidade)', () => {
-    const r = plano('inteligente', mapa(4), 'PALADIN');
-    assert(/^Divine Caldera≥2, \S.* rune≥2, Divine Missile≥1$/.test(txt(r)), txt(r));
-});
-t('Knight: Berserk (4 s, o mais forte) no slot 1', () => {
-    const r = plano('inteligente', mapa(4), 'KNIGHT');
-    assert(r.plano[0].av.m.name === 'Berserk', txt(r));
-});
-t('Protector: fica sem medida; sai se o Knight nunca desceu de 60 % de vida', () => {
-    const h = mapa(4);
-    assert(plano('inteligente', h, 'KNIGHT').extras.supports.includes('Protector'), 'sem medida deveria manter o Protector');
-    medir(h, 'KNIGHT', 30, 80);
-    assert(!plano('inteligente', h, 'KNIGHT').extras.supports.includes('Protector'), 'Knight seguro (vida mín. 80 %) não precisa cortar 35 % do próprio dano');
-    medir(h, 'KNIGHT', 30, 35);
-    assert(plano('inteligente', h, 'KNIGHT').extras.supports.includes('Protector'), 'Knight apanhando (35 %) precisa do Protector');
-    limpar();
-});
 t('poção de mana: a mais barata por ponto (Mana Potion 0,56), com e sem o catálogo', () => {
     assert(M.melhorPocao('mana', 'DRUID', 62) === 'Mana Potion', M.melhorPocao('mana', 'DRUID', 62));
     assert(M.melhorPocao('vida', 'KNIGHT', 62) === 'Strong Health Potion', 'vida continua a mais forte: ' + M.melhorPocao('vida', 'KNIGHT', 62));
     const cat = M.CAT.pocoes; M.CAT.pocoes = null;
     try { assert(M.melhorPocao('mana', 'DRUID', 90) === 'Mana Potion' && M.melhorPocao('vida', 'SORCERER', 90) === 'Health Potion'); } finally { M.CAT.pocoes = cat; }
-    assert(plano('inteligente', mapa(4), 'DRUID').extras.manaPotion.name === 'Mana Potion');
 });
-t('regime de mana com histerese: entra com 70 %, só sai abaixo de 40 %', () => {
-    const h = mapa(3), v = 'SORCERER';
-    assert(M.regimeSobrando(h, v, null) === false);
-    assert(M.regimeSobrando(h, v, 75) === true, 'entra com 75');
-    assert(M.regimeSobrando(h, v, 55) === true, 'continua com 55 (antes saía com < 70)');
-    assert(M.regimeSobrando(h, v, null) === true, 'sem medida (kit acabou de mudar) mantém o regime');
-    assert(M.regimeSobrando(h, v, 35) === false, 'sai com 35');
-    assert(M.regimeSobrando(h, v, 60) === false, 'fora, 60 não basta para voltar');
-});
-
 /* ============================ PARTE 2 — dano calibrado (v2.10) ============================ */
 const STATS = {
     KNIGHT: { ml: 3, skill: 21, attack: 31 },     // skill+attack=52 (Berserk 42-99)
@@ -152,7 +109,8 @@ function semear(L) {
     M.invalidarPlanos();
 }
 const H = (id) => { const h = HUNTS.find(x => x.id === id); assert(h, 'hunt ' + id + ' fora da fixture'); return h; };
-const MODELOS = ['economica', 'equilibrado', 'area', 'inteligente', 'inteligente_mana', 'inteligente_semruna', 'inteligente_seco'];
+/* v2.12.0 — o Inteligente (v3) tem os testes dele em testes/inteligente.test.js (a busca da party) */
+const MODELOS = ['economica', 'equilibrado', 'area'];
 const txt2 = (r) => r.plano.map(p => `${p.av.m.name}≥${p.minimo}`).join(' | ');
 const BOSS_NOMES = BOSSES.bosses.map(b => b.name);
 semear(62);
@@ -232,7 +190,7 @@ t('item 2 — uma magia por grupo secundário (focus, special, ultimatestrikes, 
             assert(new Set(g).size === g.length, `L${L} ${alvo.title} ${modelo} ${voc}: ${txt2(r)}`);
         }
     }
-    assert(kits > 1500, 'poucos kits: ' + kits);
+    assert(kits > 900, 'poucos kits: ' + kits);
     semear(62);
     const r = M.montarPlano('area', H(26), 'SORCERER');   // Daramian: Hell's Core + Rage juntas na 2.9.0
     assert(r.plano.filter(p => p.av.m.secondaryGroup === 'focus').length === 1, txt2(r));
@@ -268,19 +226,6 @@ t('item 3 — Boss: sudden death entra quando o ML alcança (ou é desconhecido)
         const sv = M.simularFila(M.slotsParaSimular(plV), o), sn = M.simularFila(M.slotsParaSimular(r.plano), o);
         assert(sn.danoS >= sv.danoS * 0.995, `${nome} ${voc}: novo ${sn.danoS.toFixed(1)}/s (${txt2(r)}) < 2.9.0 ${sv.danoS.toFixed(1)}/s (${plV.map(p => p.av.m.name).join(' | ')})`);
     }
-});
-
-t('item 4 — "mana sobrando" só para quem não bebe: Druida a 90 % não pega Eternal Winter; Feiticeiro a 90 % ainda pega ultimate', () => {
-    for (const id of [46, 50, 102, 146, 190, 109]) {
-        const h = H(id);
-        M.ESTADO_WS.huntId = h.id;
-        M.RAZAO.vitais.DRUID = { n: 60, mana: 54, hp: 54, hpMin: 0.9 }; M.RAZAO.vitais.SORCERER = { n: 60, mana: 54, hp: 54, hpMin: 0.9 };
-        const dr = M.montarPlano('inteligente', h, 'DRUID');
-        assert(!dr.plano.some(p => (p.av.m.cooldownMs || 0) > 12000), `${h.title}: Druida bebendo não pode ter ultimate: ${txt2(dr)}`);
-        const so = M.montarPlano('inteligente', h, 'SORCERER');
-        assert(so.plano.filter(p => !p.av.m.isRune && p.minimo >= 2).length >= 3 || so.plano.some(p => (p.av.m.cooldownMs || 0) > 12000), `${h.title}: Feiticeiro em regeneração a 90 % continua no regime sobrando: ${txt2(so)}`);
-    }
-    M.ESTADO_WS.huntId = null; delete M.RAZAO.vitais.DRUID; delete M.RAZAO.vitais.SORCERER;
 });
 
 t('item 5 — curas por gatilho crescente (a de 40 % antes da de 60 %), poção no lugar certo', () => {
@@ -323,29 +268,11 @@ t('item 7 — nenhum slot morto: runa atrás de runa, strike atrás de strike co
             assert(r.plano.length <= 4);
         }
     }
-    assert(kits > 1500, 'poucos kits: ' + kits);
-    // casos da auditoria
-    semear(55);
-    const z = M.montarPlano('inteligente', H(144), 'DRUID');
-    assert(!z.plano.some(p => p.av.m.name === 'Physical Strike') && z.mortos.some(x => x.nome === 'Physical Strike'), 'Zombies, Druida: Physical Strike atrás de Flame Strike sai (e fica em mortos): ' + txt2(z));
+    assert(kits > 900, 'poucos kits: ' + kits);
+    // casos da auditoria (os do Inteligente antigo — Zombies e Quara — viraram invariantes em testes/inteligente.test.js)
     semear(62);
     const a = M.montarPlano('area', H(46), 'PALADIN');
     assert(a.plano.filter(p => p.av.m.isRune).length === 1, 'Em área do Paladino: a segunda runa ≥2 sai: ' + txt2(a));
-    semear(70);
-    const q = M.montarPlano('inteligente', H(190), 'DRUID');   // Quara: Strong Terra Strike ≥1 tomava o ciclo da runa
-    const iR = q.plano.findIndex(p => p.av.m.isRune), iS = q.plano.findIndex(p => p.av.m.name === 'Strong Terra Strike');
-    assert(iR >= 0 && iS > iR, 'Quara, Druida: runa ≥2 antes do Strong Terra Strike ≥1: ' + txt2(q));
-    semear(62);
-});
-
-t('2.9.0 com dano calibrado: Paladino Caldera→runa≥2→Missile≥1, Knight Berserk no slot 1, runa nunca no slot 1 do Inteligente', () => {
-    const q = M.montarPlano('inteligente', H(190), 'PALADIN');
-    assert(/^Divine Caldera≥2 \| \S.* rune≥2 \| Divine Missile≥1$/.test(txt2(q)), txt2(q));
-    for (const h of HUNTS.filter(x => x.levelMin <= 62)) {
-        const k = M.montarPlano('inteligente', h, 'KNIGHT');
-        assert(k.plano[0].av.m.name === 'Berserk', h.title + ': ' + txt2(k));
-        for (const v of ['PALADIN', 'SORCERER']) { const r = M.montarPlano('inteligente', h, v); if (r.plano.length > 1) assert(!r.plano[0].av.m.isRune, h.title + ' ' + v + ': ' + txt2(r)); }
-    }
 });
 
 t('item 8 — armadura: golpe físico desconta 0,75 × (armadura + defesa), como a munição', () => {
@@ -400,17 +327,17 @@ t('item 10 — munição: custo por disparo do /ammo (burst 9, crystalline 100),
 
 t('item 11 — plano em cache: mesma entrada devolve o mesmo cálculo; dano, mana ou regime novo refazem', () => {
     const h = H(190);
-    const a = M.montarPlano('inteligente', h, 'SORCERER'), b = M.montarPlano('inteligente', h, 'SORCERER');
+    const a = M.montarPlano('area', h, 'SORCERER'), b = M.montarPlano('area', h, 'SORCERER');
     assert(a.ranking === b.ranking, 'segunda chamada tem de vir do cache');
-    b.extras.heals.push('lixo'); b.plano[0].minimo = 99;
-    const c = M.montarPlano('inteligente', h, 'SORCERER');
-    assert(!c.extras.heals.includes('lixo') && c.plano[0].minimo !== 99, 'quem mexe no resultado não suja o cache');
+    b.plano[0].minimo = 99;
+    const c = M.montarPlano('area', h, 'SORCERER');
+    assert(c.plano[0].minimo !== 99, 'quem mexe no resultado não suja o cache');
     const tab = M.MEM.danos_SORCERER; M.MEM.danos_SORCERER = Object.assign({}, tab, { 'Energy Wave': Object.assign({}, tab['Energy Wave'], { min: tab['Energy Wave'].min + 50 }) });
-    const d2 = M.montarPlano('inteligente', h, 'SORCERER');
+    const d2 = M.montarPlano('area', h, 'SORCERER');
     assert(d2.ranking !== a.ranking, 'dano novo invalida');
     M.MEM.danos_SORCERER = tab;
     M.ESTADO_WS.huntId = h.id; M.RAZAO.vitais.SORCERER = { n: 60, mana: 57, hp: 54, hpMin: 0.9 };
-    const e = M.montarPlano('inteligente', h, 'SORCERER');
+    const e = M.montarPlano('area', h, 'SORCERER');
     assert(e.ranking !== a.ranking, 'mana medida nova invalida');
     M.ESTADO_WS.huntId = null; delete M.RAZAO.vitais.SORCERER;
     // o veredito (4 vocações) + as 4 fichas da aba = 1 cálculo por vocação
@@ -420,22 +347,18 @@ t('item 11 — plano em cache: mesma entrada devolve o mesmo cálculo; dano, man
     assert(r1.every((x, i) => x === r2[i]), 'veredito e fichas reusam o mesmo plano');
 });
 
-t('item 12 — sem flags globais: variantes não vazam uma na outra (nem pelo cache); ordemI/viavel fora', () => {
+t('item 12 — sem flags globais; v2.12.0: as variantes do Inteligente (_mana, _semruna, _seco) saíram', () => {
     const codigo = src.replace(/\/\*[\s\S]*?\*\//g, '');
-    assert(!/(?<!\w)(_manaTodos|_semRuna|_seco)\b|\bordemI\b|\bviavel\b/.test(codigo), 'resto das flags/variáveis mortas no código');
-    const h = H(46);
-    assert(M.montarPlano('inteligente_mana', h, 'KNIGHT').extras.manaPotion.percent === 40);
-    assert(M.montarPlano('inteligente', h, 'KNIGHT').extras.manaPotion.percent === 0, 'a variante _mana vazou para o Inteligente');
-    assert(M.montarPlano('inteligente_seco', h, 'DRUID').extras.supports.every(x => x == null));
-    assert(M.montarPlano('inteligente', h, 'DRUID').extras.supports.some(Boolean), 'a variante seca vazou');
-    assert(!M.montarPlano('inteligente_semruna', h, 'SORCERER').plano.some(p => p.av.m.isRune));
+    assert(!/(?<!\w)(_manaTodos|_semRuna|_seco)\b|\bordemI\b|\bviavel\b|\bVARIANTES\b|\bMODELOS_FORA\b|\bregimeSobrando\b/.test(codigo), 'resto das flags/variáveis mortas no código');
+    const r = M.montarPlano('inteligente', H(46), 'SORCERER');
+    assert(r.pendente && !r.plano.length, 'o Inteligente não calcula no desenho da tela (só no clique): ' + JSON.stringify(Object.keys(r)));
 });
 
 t('item 13 — pedirReleituraDeDanos: invalida o cache e relê /spell-numbers UMA vez depois de equipar (várias trocas seguidas)', () => {
-    const h = H(46), a = M.montarPlano('inteligente', h, 'PALADIN');
+    const h = H(46), a = M.montarPlano('area', h, 'PALADIN');
     M.TIMERS.length = 0; M.E.rest = 0;
     M.pedirReleituraDeDanos('equipar'); M.pedirReleituraDeDanos('equipar'); M.pedirReleituraDeDanos('equipar');
-    assert(M.montarPlano('inteligente', h, 'PALADIN').ranking !== a.ranking, 'cache limpo na hora');
+    assert(M.montarPlano('area', h, 'PALADIN').ranking !== a.ranking, 'cache limpo na hora');
     const vivos = M.TIMERS.filter(Boolean);
     assert(vivos.length === 1 && vivos[0].ms >= 1000, 'uma leitura só, com espera para o servidor aplicar: ' + JSON.stringify(vivos.map(x => x.ms)));
     vivos[0].fn();

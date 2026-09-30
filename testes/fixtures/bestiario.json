@@ -1,0 +1,105 @@
+{
+ "fonte": "GET /bestiary/creature?name=… (público), 30/09 — só armor e defense dos monstros de hunts.json",
+ "criaturas": {
+  "Orc Berserker": {
+   "armor": 12,
+   "defense": 15
+  },
+  "Orc Leader": {
+   "armor": 20,
+   "defense": 25
+  },
+  "Orc Shaman": {
+   "armor": 8,
+   "defense": 10
+  },
+  "Mutated Human": {
+   "armor": 14,
+   "defense": 15
+  },
+  "Slime": {
+   "armor": 3,
+   "defense": 15
+  },
+  "Blue Djinn": {
+   "armor": 20,
+   "defense": 15
+  },
+  "Vampire": {
+   "armor": 28,
+   "defense": 30
+  },
+  "Demon Skeleton": {
+   "armor": 25,
+   "defense": 30
+  },
+  "Zombie": {
+   "armor": 10,
+   "defense": 15
+  },
+  "Water Elemental": {
+   "armor": 10,
+   "defense": 15
+  },
+  "Dragon Hatchling": {
+   "armor": 15,
+   "defense": 10
+  },
+  "Dragon": {
+   "armor": 25,
+   "defense": 30
+  },
+  "Quara Constrictor Scout": {
+   "armor": 14,
+   "defense": 15
+  },
+  "Quara Hydromancer Scout": {
+   "armor": 30,
+   "defense": 15
+  },
+  "Quara Mantassin": {
+   "armor": 16,
+   "defense": 15
+  },
+  "Banshee": {
+   "armor": 25,
+   "defense": 25
+  },
+  "Bog Raider": {
+   "armor": 20,
+   "defense": 0
+  },
+  "Gargoyle": {
+   "armor": 26,
+   "defense": 25
+  },
+  "Wolf": {
+   "armor": 1,
+   "defense": 5
+  },
+  "Minotaur": {
+   "armor": 11,
+   "defense": 15
+  },
+  "Wyrm": {
+   "armor": 34,
+   "defense": 35
+  },
+  "Energy Elemental": {
+   "armor": 25,
+   "defense": 15
+  },
+  "Adept of the Cult": {
+   "armor": 33,
+   "defense": 20
+  },
+  "Acolyte of the Cult": {
+   "armor": 30,
+   "defense": 15
+  },
+  "Enlightened of the Cult": {
+   "armor": 40,
+   "defense": 25
+  }
+ }
+}
