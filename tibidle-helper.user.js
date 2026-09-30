@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.11.9
+// @version      2.11.10
 // @description  Magia (Econômica / Equilibrado / Área / Boss / Inteligente, com simulador da fila) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.11.9';
+    const VERSAO = '2.11.10';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -3590,7 +3590,7 @@
      * 'finalizar' (botão Finalizar hunt: só o passo 1). Decisão do dono em
      * 27/09: "Venda rápida completa: um clique dentro da hunt encerra,
      * purifica, vende, guarda e fica na cidade". */
-    const NOME_ORIGEM = { auto: 'AUTO HUNT', venda: 'Venda rápida', finalizar: 'Finalizar hunt' };
+    const NOME_ORIGEM = { auto: 'AUTO HUNT', venda: 'Venda rápida', finalizar: 'Finalizar hunt', bestiario: 'Bestiário' };
     async function cicloDeVenda(origem) {
         if (_cicloEmCurso) { log('ciclo já em andamento', 'erro'); return false; }
         if (_aprendendo) { log('medindo dano — ciclo adiado', 'erro'); return false; }
@@ -3608,6 +3608,8 @@
             reg.erro = passo + ': ' + erro;
             log(`${NOME_ORIGEM[origem] || origem} parou no passo "${passo}": ${erro}` + (a.on ? ' — automação DESLIGADA' : ''), 'erro');
             if (a.on) guardarAutoHunt({ on: false });
+            /* v2.11.10 — a venda do modo "completar bestiário" falhou: o modo para (senão voltaria a tentar a cada 5 min) */
+            if (origem === 'bestiario' && BEST.ativo) { BEST.ativo = false; BEST.foto = null; bestSalvar(); log('bestiário: modo "completar" DESLIGADO (a venda falhou)', 'erro'); }
         };
         try {
             log(`ciclo de venda (${origem}) iniciado — mochila ${c0 ? c0.pct + '% livre' : '?'}`, 'info');
@@ -3640,9 +3642,13 @@
                 desligar('depot', `a mochila continua no limite depois do depot (${c ? c.pct + '% livre' : '?'}${r4.lugares ? ' · depot ' + r4.lugares : ''}) — depot cheio?`);
                 return false;
             }
-            if (origem === 'auto' && a.voltar) {
-                if (a.huntId == null) { desligar('voltar', 'nenhuma hunt memorizada'); return false; }
-                const r5 = await voltarParaHunt(a.huntId);
+            /* v2.11.10 — com o modo "completar bestiário" ligado, a volta é para a
+             * caçada do bestiário, não para a memorizada (dono, 29/09: "e se a
+             * mochila encher fazendo bestiário?") */
+            const destino = bestAlvoId() != null ? bestAlvoId() : a.huntId;
+            if (origem === 'bestiario' || (origem === 'auto' && a.voltar)) {
+                if (destino == null) { desligar('voltar', 'nenhuma hunt memorizada'); return false; }
+                const r5 = await voltarParaHunt(destino);
                 if (r5.erro) { desligar('voltar', r5.erro); return false; }
             }
             log('ciclo de venda terminado', 'ok');
@@ -3754,6 +3760,7 @@
         const ocup = travaJogo();
         if (ocup) { log('Scan: ' + ocup + ' em andamento — espera terminar', 'erro'); return false; }
         if (ESTADO_WS.boss) { log('Scan: boss em andamento — termina o boss antes', 'erro'); return false; }
+        if (BEST.ativo) { log('Scan: o modo "completar bestiário" está ligado (aba Progresso) — pare ele antes', 'erro'); return false; }
         ouvirEncerramentos();
         /* v2.11 — FOTO do jogo antes de mexer: mapa, lure e perfis por vocação */
         const cacando = frameFresco() && ESTADO_WS.huntId != null;
@@ -3792,32 +3799,35 @@
             try { await _scanRestaurar(foto, modo); } finally { SCAN.ocupado = false; SCAN.fase = 'parado'; }
         } finally { SCAN.restaurando = false; renderizar(); }
     }
-    async function _scanRestaurar(foto, modo) {
-        if (_cicloEmCurso || ESTADO_WS.boss) { log('Scan: ' + (ESTADO_WS.boss ? 'boss' : 'ciclo de venda') + ' em andamento — jogo NÃO restaurado', 'erro'); return; }
-        if (!socketAberto()) { log('Scan: socket fechado — jogo NÃO restaurado (mapa e kits como o Scan deixou)', 'erro'); return; }
+    async function _scanRestaurar(foto, modo, quem) {
+        quem = quem || 'Scan';
+        if (_cicloEmCurso || ESTADO_WS.boss) { log(quem + ': ' + (ESTADO_WS.boss ? 'boss' : 'ciclo de venda') + ' em andamento — jogo NÃO restaurado', 'erro'); return; }
+        if (!socketAberto()) { log(quem + ': socket fechado — jogo NÃO restaurado (mapa e kits como o ' + quem + ' deixou)', 'erro'); return; }
         if (modo === 'tudo') {
-            try { await scanVoltarMapa(foto); } catch (e) { log('Scan: voltar ao mapa de antes falhou — ' + e.message, 'erro'); }
+            try { await scanVoltarMapa(foto, quem); } catch (e) { log(quem + ': voltar ao mapa de antes falhou — ' + e.message, 'erro'); }
         }
-        try { await scanRestaurarPerfis(foto); } catch (e) { log('Scan: restaurar os kits falhou — ' + e.message, 'erro'); }
+        try { await scanRestaurarPerfis(foto, quem); } catch (e) { log(quem + ': restaurar os kits falhou — ' + e.message, 'erro'); }
     }
-    async function scanVoltarMapa(foto) {
+    async function scanVoltarMapa(foto, quem) {
+        quem = quem || 'Scan';
         const cacando = () => frameFresco() && ESTADO_WS.huntId != null;
         if (foto.huntId == null) {
             if (!cacando()) return;
             const r = await scanEncerrarCacada();
-            log(r.erro ? 'Scan: não voltei para a cidade — ' + r.erro : 'Scan: party de volta à cidade, como estava antes do Scan', r.erro ? 'erro' : 'ok');
+            log(r.erro ? quem + ': não voltei para a cidade — ' + r.erro : quem + ': party de volta à cidade, como estava antes do ' + quem, r.erro ? 'erro' : 'ok');
             return;
         }
         const h = (CAT.hunts || []).find(x => x.id === foto.huntId);
-        if (!h) { log('Scan: mapa de antes (id ' + foto.huntId + ') não está no catálogo — fiquei onde estou', 'erro'); return; }
+        if (!h) { log(quem + ': mapa de antes (id ' + foto.huntId + ') não está no catálogo — fiquei onde estou', 'erro'); return; }
         const r = await scanEntrar(h, { lure: foto.lureTier != null ? foto.lureTier : 1 }); // lure desconhecido: o menor
-        log(r.erro ? 'Scan: não voltei para ' + h.title + ' — ' + r.erro : 'Scan: de volta a ' + h.title + ' (lure ' + lureTexto(h, r.lure) + '), como antes do Scan', r.erro ? 'erro' : 'ok');
+        log(r.erro ? quem + ': não voltei para ' + h.title + ' — ' + r.erro : quem + ': de volta a ' + h.title + ' (lure ' + lureTexto(h, r.lure) + '), como antes do ' + quem, r.erro ? 'erro' : 'ok');
     }
     /* Reenvia SÓ os perfis que existiam na foto e que mudaram — o objeto
      * inteiro que o servidor mandou (presets, curas, poções), não um molde.
      * Caçando, manda também o update_battle_config do perfil ativo, como a
      * janela de atalhos faz. */
-    async function scanRestaurarPerfis(foto) {
+    async function scanRestaurarPerfis(foto, quem) {
+        quem = quem || 'Scan';
         if (!foto.profiles) return;
         const cacando = emHunt();
         let n = 0;
@@ -3832,7 +3842,7 @@
             n++;
             await dorme(150);
         }
-        log(n ? `Scan: kits de ${n} personagem(ns) devolvidos como estavam antes do Scan` : 'Scan: kits já estavam como antes do Scan', 'ok');
+        log(n ? `${quem}: kits de ${n} personagem(ns) devolvidos como estavam antes do ${quem}` : quem + ': kits já estavam como antes do ' + quem, 'ok');
     }
     const scanHuntAtual = () => (SCAN.idx >= 0 && SCAN.idx < SCAN.fila.length) ? (CAT.hunts || []).find(h => h.id === SCAN.fila[SCAN.idx].id) : null;
     const scanModeloAtual = () => (SCAN.idx >= 0 && SCAN.idx < SCAN.fila.length) ? SCAN.fila[SCAN.idx].modelo : (scanCfg().modelo || 'equilibrado');
@@ -4149,6 +4159,7 @@
     function amostrar() {
         try { gatilhoAutoHunt(); deuCerto('gatilhoAutoHunt'); } catch (e) { falhou('gatilhoAutoHunt', e); }
         if (SCAN.ativo) scanPasso().catch(() => { });
+        if (BEST.ativo) bestPasso().catch(e => falhou('bestiário (completar)', e));
         /* v2.1.0: assim que houver token + catálogo, lê o dano real de tudo (só leitura, sem janela) */
         lerDanosPendentes();
         const dentro = emHunt();
@@ -6806,6 +6817,60 @@
         const limite = p < 1 ? base.protecao * p / (1 - p) - base.taxa : Infinity;
         return { sem, com, vale: com < sem, limite, diferenca: Math.abs(sem - com), tentativas: 1 / p, M };
     }
+
+    /* ---- 6. COMPLETAR O BESTIÁRIO (v2.11.10) ------------------------------- */
+    /* Dono, 29/09: "um botão para completar, e ir trocando assim que completar".
+     * Vale a pena só para ALGUNS marcos: o bônus é para os 4 e para sempre (wiki
+     * /bestiario), mas +3 de mana máxima em 10.000 abates não paga as horas fora
+     * do mapa de upar. A moeda é a do Equip (1 pt = 1 % do dano da party ≈ 450 de
+     * ouro+xp por hora): `pesos` = pt por unidade de cada bônus, somado nos 4
+     * (vem de pesosDaVoc em tempo de execução). Um marco entra se o ganho dele
+     * rende ≥ PG_BEST_LIMIAR pt por hora de caçada gasta nele — regen. de mana e
+     * de vida passam folgado; mana/vida máx., capacidade, armadura e skill +1 em
+     * 10.000 abates não. Abates/h: o medido (ao vivo, Scan, sessões); sem medida,
+     * 280 × lure (spawn limitando: Stonerefiners 8 → 2.372/h, Djinns 7 → 1.908/h,
+     * medidos 28–29/09 — a party de nível 67 mata a onda de caçada baixa na hora). */
+    const PG_BONUS_PESO = { hpRegen: 'regen_vida', manaRegen: 'regen_mana', maxHealth: 'max_hp', maxMana: 'max_mana', capacity: 'capacidade',
+                            armor: 'armor', attack: 'attack', melee: 'corpo_a_corpo', distance: 'distancia', shielding: 'escudo', magicLevel: 'nivel_magico' };
+    const PG_ABATES_POR_LURE = 280, PG_BEST_LIMIAR = 0.5;
+    /* → linhas [{hunt, id, bonus, atual, k, conhecido, abatesH, estimado, alvo {kills, value, falta, horas, ganhoPt} | null,
+     *            ultimo {…o marco final…} | null, ptH, vale}], as que valem primeiro (mais pt por hora antes) */
+    function pgPlanoBestiario(hunts, contadores, medidos, nivel, pesos, o) {
+        o = o || {};
+        const limiar = o.limiar != null ? o.limiar : PG_BEST_LIMIAR;
+        const out = [];
+        for (const h of (hunts || [])) {
+            if (!h || !h.bestiary || (h.levelMin || 1) > nivel || (pgNum(h.levelMax) > 0 && nivel > pgNum(h.levelMax)) || (h.premium && o.premium === false)) continue;
+            const st = (h.bestiary.stages || []).map(s => ({ kills: pgNum(s && s.kills), value: pgNum(s && s.value) || 0 })).filter(s => s.kills > 0).sort((a, b) => a.kills - b.kills);
+            if (!st.length) continue;
+            const cru = (contadores || {})[String(h.id)], k = Math.max(0, pgNum(cru) || 0);
+            const lure = Math.max(1, ...((h.lureTiers || []).map(x => pgNum(x && (x.max || x.min)) || 1)));
+            const m = (medidos || {})[h.id];
+            const abatesH = m && m.abatesH > 0 ? m.abatesH : PG_ABATES_POR_LURE * lure;
+            const ptU = Math.max(0, pgNum(pesos && pesos[h.bestiary.bonus]) || 0);
+            const feitos = st.filter(s => k >= s.kills);
+            const atual = feitos.length ? feitos[feitos.length - 1].value : 0;
+            /* passos com ganho de verdade (o +0 dos marcos I/II de skill não é passo) */
+            const passos = [];
+            let valAnt = atual, killsAnt = k;
+            for (const s of st) {
+                if (s.kills <= k || s.value <= valAnt) continue;
+                const horas = (s.kills - killsAnt) / abatesH, ganhoPt = (s.value - valAnt) * ptU;
+                passos.push({ kills: s.kills, value: s.value, falta: s.kills - k, horas: (s.kills - k) / abatesH, ganhoPt: (s.value - atual) * ptU, ptHPasso: horas > 0 ? ganhoPt / horas : 0 });
+                valAnt = s.value; killsAnt = s.kills;
+            }
+            if (!passos.length) continue; // completo
+            let alvo = null;
+            for (const p of passos) { if (p.ptHPasso >= limiar) alvo = p; else break; }
+            const ultimo = passos[passos.length - 1];
+            const ref = alvo || passos[0];
+            out.push({ hunt: h, id: h.id, bonus: h.bestiary.bonus, atual, k, conhecido: cru != null, abatesH, estimado: !(m && m.abatesH > 0),
+                       alvo, ultimo, ptH: ref.horas > 0 ? ref.ganhoPt / ref.horas : 0, vale: !!alvo });
+        }
+        return out.sort((a, b) => (b.vale - a.vale) || (b.ptH - a.ptH));
+    }
+    /* marcados (ids) → fila [{id, kills, value}] na ordem das linhas; quem não "vale" e foi marcado vai até o fim */
+    const pgFilaBestiario = (linhas, marcados) => (linhas || []).filter(l => marcados.has(l.id)).map(l => { const a = l.alvo || l.ultimo; return { id: l.id, kills: a.kills, value: a.value, bonus: l.bonus }; });
     /* @@PROGRESSO-FIM */
     /* v2.11 — estado da aba Progresso, alimentado SÓ por observarProgresso()
      * (uma linha no começo de observarRecebido). Em memória: o que o jogo
@@ -7006,6 +7071,187 @@
         return h;
     }
 
+    /* =========================================================================
+     *  ⭐ v2.11.10 — COMPLETAR O BESTIÁRIO (dono, 29/09: "um botão para
+     *  completar, e ir trocando assim que completar"; "e se a mochila encher?
+     *  e depois, onde o boneco fica upando?").
+     *
+     *  Só roda quando o dono liga (2 toques), como o Scan. A cada amostra (3 s):
+     *    • marco da caçada-alvo fechado (contador do frame ≥ alvo) → próxima;
+     *    • party fora da caçada-alvo → entra pelo socket com o lure máximo (a
+     *      mesma entrada do Scan) e aplica o kit escolhido nos 4;
+     *    • mochila no limite do Auto Hunt: com o Auto Hunt ligado, ele vende e
+     *      VOLTA PARA A CAÇADA DO BESTIÁRIO (cicloDeVenda usa bestAlvoId); com
+     *      ele desligado, o próprio modo faz o ciclo de venda;
+     *    • morte ou Auto Exit por ouro → o modo para e devolve os kits;
+     *    • fila vazia → vai para o mapa escolhido para upar (ou o de antes),
+     *      devolve os kits de antes e passa esse mapa ao Auto Hunt.
+     *  Espera (não briga) com Scan, ciclo de venda, boss, aplicar magia.
+     *  Estado em best_estado: F5 no meio continua de onde parou.
+     *  ⚠ Com o jogo fechado o helper não roda: a party fica no mapa em que
+     *  estiver (os abates seguem contando, só não troca de caçada).
+     * ====================================================================== */
+    const BEST_PADRAO = { marcados: null, modelo: 'economica', fim: 'voltar', fimHunt: null };
+    const bestCfg = () => Object.assign({}, BEST_PADRAO, ler('best_cfg', {}));
+    const guardarBestCfg = (p) => guardar('best_cfg', Object.assign(bestCfg(), p));
+    const BEST = { ativo: false, fila: [], idx: 0, foto: null, passo: false, ocupado: false, restaurando: false, entrouEm: 0, falhas: 0 }; // passo = trocando de caçada; ocupado = encerrando
+    const bestSalvar = () => guardar('best_estado', BEST.ativo ? { ativo: true, fila: BEST.fila, idx: BEST.idx, foto: BEST.foto, t: Date.now() } : null);
+    const bestAlvoId = () => (BEST.ativo && BEST.fila[BEST.idx] ? BEST.fila[BEST.idx].id : null);
+    function bestRecarregar() {
+        const e = ler('best_estado', null);
+        if (!e || !e.ativo || !Array.isArray(e.fila) || !(e.idx < e.fila.length)) return;
+        Object.assign(BEST, { ativo: true, fila: e.fila, idx: e.idx || 0, foto: e.foto || null, entrouEm: Date.now() });
+        log(`bestiário: modo "completar" continua ligado — ${BEST.fila.length - BEST.idx} caçada(s) na fila`, 'info');
+    }
+    /* pt por unidade de cada bônus, somado nos 4 (a capacidade é uma só, da conta) */
+    function pesosBestiario() {
+        let ctx = null;
+        try { ctx = { nivel: nivelAtual(), party: partyMedida() }; } catch (e) { ctx = null; }
+        const soma = {};
+        for (const v of VOCS) { const P = pesosDaVoc(v, ctx); for (const [b, campo] of Object.entries(PG_BONUS_PESO)) soma[b] = (soma[b] || 0) + (Number(P[campo]) || 0); }
+        soma.capacity = Number(pesosDaVoc('KNIGHT', ctx).capacidade) || 0;
+        return soma;
+    }
+    const bestLinhas = () => pgPlanoBestiario(CAT.hunts, PROG.best, pgMedidos(), nivelAtual(), pesosBestiario(), { premium: mkPremiumAgora() === false ? false : undefined });
+    function bestDestino() {
+        const c = bestCfg();
+        return c.fim === 'hunt' && c.fimHunt != null ? (CAT.hunts || []).find(x => x.id === c.fimHunt) || null : null;
+    }
+    function bestIniciar() {
+        const c = bestCfg(), linhas = bestLinhas();
+        const fila = pgFilaBestiario(linhas, new Set(c.marcados || linhas.filter(l => l.vale).map(l => l.id)));
+        if (!fila.length) { avisar('progresso', 'bestiário: marque ao menos uma caçada', 'erro'); return; }
+        if (!socketAberto() || !ESTADO_WS.perfisDoServidor) { avisar('progresso', 'bestiário: socket sem perfis — dê F5 com o helper instalado', 'erro'); return; }
+        const ocup = travaJogo();
+        if (ocup || SCAN.ativo) { avisar('progresso', 'bestiário: ' + (ocup || 'Scan') + ' em andamento — espera terminar', 'erro'); return; }
+        if (ESTADO_WS.boss) { avisar('progresso', 'bestiário: boss em andamento — termina o boss antes', 'erro'); return; }
+        const cacando = frameFresco() && ESTADO_WS.huntId != null;
+        BEST.foto = { t: Date.now(), huntId: cacando ? ESTADO_WS.huntId : null, lureTier: cacando ? ESTADO_WS.frame.lureTier : null,
+                      profiles: ESTADO_WS.profiles ? clonar(ESTADO_WS.profiles) : null };
+        Object.assign(BEST, { ativo: true, fila, idx: 0, entrouEm: Date.now(), falhas: 0 });
+        bestSalvar();
+        const dest = bestDestino();
+        avisar('progresso', `bestiário: modo "completar" LIGADO — ${fila.map(f => ((pgHuntCat(f.id) || {}).title || f.id) + ' até ' + pgInt(f.kills)).join(' → ')} · no fim: ${dest ? 'upar em ' + dest.title : 'voltar para onde estava'}`, 'ok');
+        renderizar();
+    }
+    /* restaurar: 'fim' (vai upar no destino), 'tudo' (volta para onde estava), 'perfis' (só os kits), 'nada' */
+    async function bestEncerrar(motivo, tipo, restaurar) {
+        const foto = BEST.foto;
+        Object.assign(BEST, { ativo: false, foto: null });
+        bestSalvar();
+        log('bestiário: ' + motivo, tipo || 'info');
+        if (!foto || restaurar === 'nada') { renderizar(); return; }
+        BEST.restaurando = true; BEST.ocupado = true; _travaJogo = 'Bestiário';
+        renderizar();
+        try {
+            await esperarQue(() => !_cicloEmCurso && !BEST.passo, 120000, 500); // a troca em curso termina antes
+            const dest = restaurar === 'fim' ? bestDestino() : null;
+            if (dest) {
+                const lure = dest.id === foto.huntId && foto.lureTier != null ? foto.lureTier : (dest.lureTiers && dest.lureTiers.length ? dest.lureTiers.length : 1);
+                const r = await scanEntrar(dest, { lure });
+                log(r.erro ? 'bestiário: não entrei em ' + dest.title + ' — ' + r.erro : 'bestiário: party em ' + dest.title + ' para upar', r.erro ? 'erro' : 'ok');
+                await _scanRestaurar(foto, 'perfis', 'Bestiário');
+                if (!r.erro) guardarAutoHunt({ huntId: dest.id }); // o Auto Hunt passa a vender e voltar para lá
+            } else await _scanRestaurar(foto, restaurar === 'perfis' ? 'perfis' : 'tudo', 'Bestiário');
+        } catch (e) { falhou('bestiário (encerrar)', e); }
+        finally { BEST.restaurando = false; BEST.ocupado = false; if (_travaJogo === 'Bestiário') _travaJogo = null; renderizar(); }
+    }
+    async function bestPasso() {
+        if (!BEST.ativo || BEST.passo || BEST.ocupado) return;
+        if (SCAN.ativo || scanOcupado() || _cicloEmCurso || _aprendendo || _aplicando || ESTADO_WS.boss || cicloTravadoPorOutraAba()) return; // espera a vez
+        if (_travaJogo || !socketAberto() || !CAT.hunts) return;
+        /* morte ou Auto Exit por ouro depois da última entrada: para e devolve os kits
+         * (não reentra sozinho depois de uma morte, igual ao Scan). 12 h (expired) e
+         * mochila cheia (cap_full) só fazem entrar de novo — depois da venda. */
+        const en = ESTADO_WS.ultimoEnded;
+        if (en && en.t > BEST.entrouEm && /death|dead|morte|no_gold/i.test(String(en.reason || ''))) {
+            await bestEncerrar(`a caçada terminou (${PG_FIM[en.reason] || en.reason}) — modo desligado, kits devolvidos`, 'erro', 'perfis');
+            return;
+        }
+        const alvo = BEST.fila[BEST.idx];
+        if (!alvo) { await bestEncerrar('todos os marcos da lista fechados ✓', 'ok', 'fim'); return; }
+        const h = pgHuntCat(alvo.id);
+        if (!h) { log(`bestiário: caçada ${alvo.id} não está no catálogo — pulei`, 'erro'); BEST.idx++; bestSalvar(); return; }
+        const k = pgNum(PROG.best[String(alvo.id)]);
+        if (k != null && k >= alvo.kills) {
+            log(`bestiário: ${h.title} chegou a ${pgInt(k)} abates → ${pgBonusTxt(alvo.bonus, alvo.value)} ✓`, 'ok');
+            BEST.idx++; bestSalvar(); renderizar();
+            return;
+        }
+        const aqui = frameFresco() && ESTADO_WS.huntId === h.id;
+        const mochilaCheia = mochilaNoLimite() || (en && en.t > BEST.entrouEm && en.reason === 'cap_full');
+        /* mochila cheia sem o Auto Hunt ligado: o próprio modo vende e volta para cá */
+        if (mochilaCheia && !autoHunt().on && Date.now() - _ultimoCiclo >= CICLO_INTERVALO_MIN_MS && !modalAberto()) {
+            log('bestiário: mochila no limite — vendendo e voltando para ' + h.title, 'info');
+            BEST.entrouEm = Date.now(); BEST.passo = true;
+            try { await cicloDeVenda('bestiario'); } finally { BEST.passo = false; }
+            return;
+        }
+        if (aqui) return;
+        BEST.passo = true; _travaJogo = 'Bestiário';
+        renderizar();
+        try {
+            log(`bestiário: indo para ${h.title} — ${pgInt(k || 0)}/${pgInt(alvo.kills)} abates até ${pgBonusTxt(alvo.bonus, alvo.value)}`, 'info');
+            const r = await scanEntrar(h, { lure: h.lureTiers && h.lureTiers.length ? h.lureTiers.length : 1 });
+            if (!BEST.ativo) return;
+            if (r.erro) {
+                BEST.falhas++;
+                log(`bestiário: não entrei em ${h.title} — ${r.erro}`, 'erro');
+                if (BEST.falhas >= 3) { BEST.passo = false; _travaJogo = null; await bestEncerrar('3 falhas seguidas para entrar — modo desligado', 'erro', 'perfis'); }
+                return;
+            }
+            BEST.falhas = 0; BEST.entrouEm = Date.now();
+            await dorme(1500);
+            try { await bestiarioHunt(h); } catch (e) { /* armadura do bestiário é só refinamento do plano */ }
+            await aplicarEmTodos(bestCfg().modelo, h);
+        } finally {
+            BEST.passo = false;
+            if (!BEST.restaurando && _travaJogo === 'Bestiário') _travaJogo = null;
+            renderizar();
+        }
+    }
+    function bestCartao() {
+        let linhas;
+        try { linhas = bestLinhas(); } catch (e) { falhou('bestiário (plano)', e); return ''; }
+        if (BEST.ativo || BEST.restaurando) {
+            const alvo = BEST.fila[BEST.idx], h = alvo ? pgHuntCat(alvo.id) : null;
+            const k = alvo ? pgNum(PROG.best[String(alvo.id)]) : null;
+            const l = alvo ? linhas.find(x => x.id === alvo.id) : null;
+            const horas = l && k != null ? Math.max(0, alvo.kills - k) / l.abatesH : null;
+            const dest = bestDestino();
+            return `<div class="pg-cx"><div class="pg-lin"><b>Completar marcos</b><span class="tb-ok">${BEST.restaurando ? 'terminando…' : 'ligado · ' + (BEST.idx + 1) + '/' + BEST.fila.length}</span></div>` +
+                (h ? `<div>${BEST.passo ? 'indo para' : 'caçando'} <b>${escHtml(h.title)}</b>: ${pgInt(k)}/${pgInt(alvo.kills)} → ${pgBonusTxt(alvo.bonus, alvo.value)}${horas != null ? ' · ~' + pgHoras(horas) : ''}</div>` : '') +
+                `<div class="pg-mut pg-peq">depois: ${BEST.fila.slice(BEST.idx + 1).map(f => escHtml((pgHuntCat(f.id) || {}).title || f.id)).join(', ') || '—'} · no fim: ${dest ? 'upar em ' + escHtml(dest.title) : 'voltar para onde estava'}</div>` +
+                `<button type="button" class="tb-bt" id="pg-best-parar" ${BEST.restaurando ? 'disabled' : ''} style="width:100%;margin-top:4px">PARAR e voltar para onde estava</button></div>`;
+        }
+        const c = bestCfg(), marc = new Set(c.marcados || linhas.filter(l => l.vale).map(l => l.id));
+        const linhaHtml = l => {
+            const a = l.alvo || l.ultimo;
+            return `<label class="pg-lin" style="cursor:pointer;align-items:center"><span><input type="checkbox" data-pg-best="${l.id}" ${marc.has(l.id) ? 'checked' : ''} style="margin:0 4px 0 0;vertical-align:middle">${escHtml(l.hunt.title)} <span class="pg-mut">[${pgInt(pgNum(l.hunt.levelMin) || 1)}]</span>` +
+                `<div class="pg-mut pg-peq">${pgInt(l.k)}${l.conhecido ? '' : ' (não lido)'} → ${pgInt(a.kills)} abates · ~${pgHoras(a.horas)}${l.estimado ? ' (est.)' : ''}</div></span>` +
+                `<span>${pgBonusTxt(l.bonus, a.value)}<div class="pg-mut pg-peq">≈ ${pgDec(a.ganhoPt, 1)} pt</div></span></label>`;
+        };
+        const valem = linhas.filter(l => l.vale), outras = linhas.filter(l => !l.vale);
+        const fila = pgFilaBestiario(linhas, marc);
+        const tot = fila.reduce((s, f) => { const l = linhas.find(x => x.id === f.id); return s + (l.alvo || l.ultimo).horas; }, 0);
+        const nv = nivelAtual();
+        const huntsNivel = (CAT.hunts || []).filter(x => x && (x.levelMin || 1) <= nv).sort((a, b) => (b.levelMin || 0) - (a.levelMin || 0) || String(a.title).localeCompare(String(b.title)));
+        return `<div class="pg-cx"><div class="pg-lin"><b>Completar marcos</b><span class="pg-mut">desligado</span></div>` +
+            (valem.length ? valem.map(linhaHtml).join('') : '<div class="pg-mut">nenhum marco compensa agora.</div>') +
+            (outras.length ? `<details class="pg-aj" data-k="pg-best-outras"><summary>não compensam (${outras.length})</summary><div>${outras.map(linhaHtml).join('')}</div></details>` : '') +
+            `<div class="pg-form"><label for="pg-best-modelo">kit</label><select id="pg-best-modelo">${Object.keys(MODELOS).filter(m => m !== 'boss').map(m => `<option value="${m}"${c.modelo === m ? ' selected' : ''}>${escHtml(nomeModelo(m))}</option>`).join('')}</select></div>` +
+            `<div class="pg-form"><label for="pg-best-fim">no fim, upar em</label><select id="pg-best-fim" style="flex:1;min-width:0"><option value="">onde estava antes</option>${huntsNivel.map(x => `<option value="${x.id}"${c.fim === 'hunt' && c.fimHunt === x.id ? ' selected' : ''}>[${x.levelMin || 1}] ${escHtml(x.title)}</option>`).join('')}</select></div>` +
+            `<button type="button" class="tb-bt pri" id="pg-best-ir" ${fila.length ? '' : 'disabled'} style="width:100%;margin-top:4px">COMPLETAR (${fila.length}) · ~${pgHoras(tot)}</button>` +
+            `<div class="pg-mut pg-peq">${autoHunt().on ? 'Mochila cheia: o Auto Hunt vende e volta para a caçada do bestiário.' : 'Mochila cheia (no limite do Auto Hunt): o próprio modo vende e volta.'} Morte para o modo. Com o jogo fechado o helper não troca de caçada.</div></div>`;
+    }
+    function ligarBestiario() {
+        $$('[data-pg-best]').forEach(cb => { cb.onchange = () => { guardarBestCfg({ marcados: $$('[data-pg-best]').filter(x => x.checked).map(x => parseInt(x.dataset.pgBest)) }); renderizar(); }; });
+        const mo = $('#pg-best-modelo'); if (mo) mo.onchange = () => guardarBestCfg({ modelo: mo.value });
+        const fi = $('#pg-best-fim'); if (fi) fi.onchange = () => guardarBestCfg(fi.value ? { fim: 'hunt', fimHunt: parseInt(fi.value) } : { fim: 'voltar', fimHunt: null });
+        const ir = $('#pg-best-ir'); if (ir) ligarDoisToques(ir, 'best-ir', 'confirmar: trocar de caçada?', bestIniciar);
+        const pa = $('#pg-best-parar'); if (pa) ligarDoisToques(pa, 'best-parar', 'confirmar: parar e voltar?', () => { bestEncerrar('parado por você — voltando para onde estava', 'info', 'tudo').catch(e => falhou('bestiário (parar)', e)); });
+    }
+
     function pgTelaBestiario() {
         const hs = CAT.hunts || [];
         if (!hs.length) return `<div class="pg-mut">catálogo de caçadas ainda não carregou.</div>`;
@@ -7021,6 +7267,7 @@
         const bon = pgBonusConta(hs, cont);
         const bl = Object.keys(bon).sort((a, b) => bon[b] - bon[a]).map(b => pgBonusTxt(b, bon[b]));
         h += `<div class="pg-cx"><div class="pg-mut pg-peq">Bônus da conta (marcos fechados)</div>${bl.length ? bl.join(' · ') : 'nenhum ainda'}</div>`;
+        h += bestCartao();
         const rows = pgLinhasBestiario(hs, cont, med, nv);
         const linha = r => `<tr><td>${escHtml(r.hunt.title)} <span class="pg-mut">[${pgInt(pgNum(r.hunt.levelMin) || 1)}]</span><div class="pg-barra"><i style="width:${Math.round(r.e.pct * 100)}%"></i></div>` +
             `<div class="pg-mut">${pgInt(r.e.kills)}/${pgInt(r.e.prox.kills)} · faltam ${pgInt(r.e.falta)}</div></td>` +
@@ -7187,6 +7434,7 @@
     }
     function ligarProgresso() {
         $$('[data-pg-sub]').forEach(b => { b.onclick = () => { guardar('prog_sub', b.dataset.pgSub); renderizar(); }; });
+        ligarBestiario();
         const muda = (patch) => { guardar('prog_calc', Object.assign(pgCalc(), patch)); renderizar(); };
         const de = $('#pg-de'); if (de) de.onchange = () => { const x = parseInt(de.value) || 0; muda({ de: x, ate: Math.max(x + 1, pgCalc().ate) }); };
         const ate = $('#pg-ate'); if (ate) ate.onchange = () => muda({ ate: parseInt(ate.value) || 1 });
@@ -8240,6 +8488,7 @@
             estado: _cicloEmCurso ? 'av pulsa' : (emHunt() ? 'ok' : ''),
             magia: _aplicando || _aprendendo ? 'av pulsa' : '',
             autohunt: autoHunt().on ? (_cicloEmCurso ? 'av pulsa' : 'ok') : '',
+            progresso: BEST.ativo || BEST.restaurando ? (BEST.passo || BEST.ocupado ? 'av pulsa' : 'ok') : '',
             scan: SCAN.ativo ? 'ok pulsa' : '',
             equip: EQUIP.equipando || EQUIP.lendo ? 'av pulsa' : '',
             mercado: MK.ocupado ? 'av pulsa' : ''
@@ -8318,6 +8567,7 @@
     async function iniciar() {
         await escolherGaveta();
         LOG = ler('log', []);
+        try { bestRecarregar(); } catch (e) { falhou('bestiário (recarregar)', e); }
         await esperarQue(() => tid('shell') || tid('action-bar') || document.body, 20000, 400);
         try { montarPainel(); } catch (e) { console.error('[TB] painel', e); }
         log(`Tibidle Helper v${VERSAO} iniciado` + (CONTA ? ` — conta ${CONTA.nome} (${CONTA.mundo})` : ' — sem sessão, gaveta comum'), 'ok');

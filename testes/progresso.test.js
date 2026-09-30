@@ -12,7 +12,7 @@ const M = new Function(src.slice(ini, fim) + `
     return { PG_WIKI, PG_REFINO, PG_IMBU_BASES, pgNum, pgHoras, pgLerChaves, pgTierDaMochila, pgAvisoChaves, pgChaveDaHunt, pgInfoChave,
              pgResumoElite, pgFatorLootPrey, pgChavesHora, pgLinhasChaves, pgAbatesPorHunt, pgMesclarBestiario, pgEstagio, pgBonusConta,
              pgLinhasBestiario, pgTaxas, pgPlanoOffline, pgXpFalta, pgTipoPrey, pgLerPrey, pgTravasPrey, pgSugestaoPrey, pgRefino,
-             pgBasesImbu, pgNomesImbu, pgMateriaisImbu, pgProtecao };`)();
+             pgBasesImbu, pgNomesImbu, pgMateriaisImbu, pgProtecao, pgPlanoBestiario, pgFilaBestiario, PG_ABATES_POR_LURE };`)();
 const FX = JSON.parse(fs.readFileSync(path.join(raiz, 'testes/fixtures/progresso.json'), 'utf8'));
 const hunt = (t) => FX.hunts.find(h => h.title === t);
 
@@ -20,6 +20,43 @@ let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 const perto = (a, b, tol, msg) => assert(Math.abs(a - b) <= tol, `${msg || ''} esperado ~${b}, veio ${a}`);
 const H = 3600000;
+
+// ---- 6. completar o bestiário (2.11.10) -------------------------------------
+const hb = (id, titulo, lv, bonus, stages, lure, extra) => Object.assign({ id, title: titulo, levelMin: lv, levelMax: 0, lureTiers: [{ min: lure, max: lure }],
+    bestiary: { bonus, stages: stages.map(([kills, value]) => ({ kills, value })) } }, extra || {});
+const PESOS_BEST = { manaRegen: 9.3, hpRegen: 5.1, maxHealth: 0.07, maxMana: 0.004, capacity: 0.004, magicLevel: 2.6, armor: 1.2, shielding: 0.9 };
+t('bestiário/completar: regen. de mana (Goblins, 0 abates, lure 4) vale até o +3; mana máx. não vale', () => {
+    const hs = [hb(125, 'Goblins Femor Hills', 15, 'manaRegen', [[1000, 1], [2000, 2], [4000, 3]], 4),
+                hb(140, 'Scarabs Cave', 30, 'maxMana', [[2000, 3], [5000, 6], [10000, 9]], 4)];
+    const r = M.pgPlanoBestiario(hs, { 140: 68 }, {}, 67, PESOS_BEST);
+    assert.strictEqual(r[0].id, 125, 'o que vale vem primeiro');
+    const g = r[0];
+    assert(g.vale && g.alvo.kills === 4000 && g.alvo.value === 3, JSON.stringify(g.alvo));
+    perto(g.alvo.horas, 4000 / (M.PG_ABATES_POR_LURE * 4), 0.01, 'horas pela estimativa 280 × lure');
+    perto(g.alvo.ganhoPt, 27.9, 0.01); assert(g.estimado && !g.conhecido, 'contador não lido = 0 e marcado como não lido');
+    assert(!r[1].vale && r[1].alvo === null && r[1].ultimo.kills === 10000, 'mana máxima não compensa');
+});
+t('bestiário/completar: Tarpit (regen. de vida) vai até o III; abates medidos mandam no tempo', () => {
+    const tar = hb(28, 'Tarpit Tomb First Floor', 20, 'hpRegen', [[2000, 1], [5000, 2], [10000, 3]], 3);
+    const r = M.pgPlanoBestiario([tar], { 28: 337 }, {}, 67, PESOS_BEST)[0];
+    assert(r.vale && r.alvo.kills === 10000 && r.alvo.falta === 9663, JSON.stringify(r.alvo));
+    const m = M.pgPlanoBestiario([tar], { 28: 337 }, { 28: { abatesH: 400 } }, 67, PESOS_BEST)[0];
+    assert(m.alvo.kills === 5000 && !m.estimado, 'com 400 abates/h medidos para no II (o III rende 0,41 pt/h): ' + JSON.stringify(m.alvo));
+});
+t('bestiário/completar: marco +0 não é passo; completo, nível, levelMax e premium ficam de fora', () => {
+    const vamp = hb(50, 'Vampire hell', 50, 'magicLevel', [[2000, 0], [5000, 0], [10000, 1]], 6);
+    const r = M.pgPlanoBestiario([vamp], { 50: 1915 }, { 50: { abatesH: 1480 } }, 67, PESOS_BEST)[0];
+    assert(r.ultimo.kills === 10000 && r.ultimo.falta === 8085, 'o próximo passo é o +1 dos 10.000');
+    const fora = [hb(1, 'Completa', 1, 'hpRegen', [[1000, 1]], 4), hb(2, 'Alta', 80, 'hpRegen', [[1000, 1]], 4),
+                  hb(3, 'Teto', 1, 'hpRegen', [[1000, 1]], 4, { levelMax: 50 }), hb(4, 'Premium', 1, 'hpRegen', [[1000, 1]], 4, { premium: true })];
+    const ids = M.pgPlanoBestiario(fora, { 1: 1000 }, {}, 67, PESOS_BEST, { premium: false }).map(x => x.id);
+    assert.deepStrictEqual(ids, [], 'completa, acima do nível, acima do levelMax e premium sem Premium: ' + ids);
+});
+t('bestiário/completar: fila respeita a ordem e leva a caçada marcada que "não compensa" até o fim', () => {
+    const hs = [hb(125, 'Goblins', 15, 'manaRegen', [[1000, 1], [2000, 2], [4000, 3]], 4), hb(140, 'Scarabs', 30, 'maxMana', [[2000, 3], [5000, 6], [10000, 9]], 4)];
+    const l = M.pgPlanoBestiario(hs, {}, {}, 67, PESOS_BEST);
+    assert.deepStrictEqual(M.pgFilaBestiario(l, new Set([140, 125])).map(f => [f.id, f.kills, f.value]), [[125, 4000, 3], [140, 10000, 9]]);
+});
 
 // ---- 1. chaves ------------------------------------------------------------
 t('bestiário: marco que dá +0 não é "próximo" (Vampire hell ao vivo: 2k→0, 5k→0, 10k→+1 ML)', () => {

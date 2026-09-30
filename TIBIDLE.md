@@ -4069,3 +4069,22 @@ pela Caixa). RESGATAR não testado: a Caixa só recebe algo quando um anúncio v
 - Agora: cópia forjada sem cópia do **mesmo corte** à venda fica sem sugestão ("digite o preço") e nem pede a média.
   Item empilhável continua usando a média de 30 dias quando não há concorrente (ali não há raridade).
 - "NPC 0" com o item só no depósito (quantidade 0 caçando) virou o preço por unidade ("NPC 250/un").
+
+## 2.11.10 (29/09) — Progresso → Bestiário: "Completar marcos"
+
+- Pedido do dono: um botão para completar o bestiário, trocando de caçada sozinho a cada marco fechado; e o que fazer
+  com a mochila cheia e depois do fim.
+- **Quais marcos compensam** (`pgPlanoBestiario`, puro, testado): o bônus vale para os 4 e para sempre (wiki
+  /bestiario). Na moeda do Equip (1 pt = 1 % do dano da party), um marco entra se rende ≥ 0,5 pt por hora de caçada
+  gasta nele. Abates/h: o medido; sem medida, 280 × lure (spawn limitando). Nível 67, 29/09:
+  Goblins Femor Hills (regen. de mana +3, ~4.000 abates, ~3h30, ≈ 28 pt) e Tarpit Tomb (regen. de vida até +3)
+  compensam; mana/vida máx., capacidade, armadura e skill +1 em 10.000 abates não. Os que não compensam ficam atrás de
+  "não compensam", e dá para marcar à mão (aí vai até o último marco).
+- **O modo** (só liga por botão, 2 toques; F5 continua de onde parou): entra na caçada-alvo pelo socket com o lure
+  máximo, aplica o kit escolhido (Econômica por padrão), espera o contador do frame passar do alvo e vai para a próxima.
+- **Mochila cheia:** com o Auto Hunt ligado, a venda dele volta para a caçada do bestiário (não para a memorizada);
+  com ele desligado, o próprio modo faz o ciclo de venda (origem `bestiario`) no limite do Auto Hunt.
+- **No fim:** vai para a caçada escolhida em "no fim, upar em" (ou volta para onde estava), devolve os kits de antes
+  e passa esse mapa ao Auto Hunt. Morte ou Auto Exit por ouro param o modo e devolvem os kits.
+- Scan não liga com o modo ligado; o modo espera Scan, ciclo de venda, boss e aplicar magia.
+- `_scanRestaurar`/`scanVoltarMapa`/`scanRestaurarPerfis` ganharam o parâmetro `quem` (o Log diz "Bestiário:").
