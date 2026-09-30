@@ -4122,3 +4122,8 @@ pela Caixa). RESGATAR não testado: a Caixa só recebe algo quando um anúncio v
 - Dono: "pode retirar". Saiu da Magia, do Scan (modelo e estudo de variantes) e do kit do bestiário. A escolha guardada
   vira Em área (`migrarModelos`, no boot e na troca de gaveta). O planejador continua no código (os testes o exercitam),
   em `MODELOS_FORA`, sem botão.
+
+## 2.11.14 (30/09) — Mercado não trava mais depois de um F5
+- A leitura do Equip (o melhor e a reserva de cada personagem, que o Mercado nunca anuncia) vive só na memória. Depois
+  de um F5 toda peça forjada aparecia travada com "rode ATUALIZAR no Equip antes" e o dono não conseguia marcar nada.
+  Agora o ATUALIZAR do Mercado lê o Equip junto quando ele ainda não foi lido (só leitura: depot_get + /item/info).

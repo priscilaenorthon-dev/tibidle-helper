@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.11.13
+// @version      2.11.14
 // @description  Magia (Econômica / Equilibrado / Área / Boss, com simulador da fila) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.11.13';
+    const VERSAO = '2.11.14';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -8055,6 +8055,10 @@
             MK.progresso = 'depósito…'; renderizar();
             const dp = await lerDepot();
             if (dp.erro) log('mercado: depósito não lido (' + dp.erro + ') — a lista fica só com a mochila', 'erro');
+            /* v2.11.14 — a leitura do Equip (o melhor e a reserva de cada um) mora só na memória: depois
+             * de um F5 toda peça forjada ficava travada ("rode ATUALIZAR no Equip antes") e o dono não
+             * conseguia marcar nada (30/09). O ATUALIZAR do Mercado já lê o Equip junto — é só leitura. */
+            if (!EQUIP.res && !EQUIP.lendo) { MK.progresso = 'equipamento dos 4 (o melhor e a reserva ficam fora)…'; renderizar(); await equipAtualizar(); }
             MK.livros = {}; MK.copias = {}; MK.stats = {};
             if (await mkLerBase([['market_catalog', 'preços do mercado'], ['market_my_orders', 'suas ordens'], ['market_inbox', 'caixa de entrada']])) {
                 await mkBuscarPendencias(() => mkVista().pendencias, 'preços');
