@@ -3986,3 +3986,14 @@ conta como desmarcada (antes caía em "não sei" e a decisão ia para o total).
 - **Mercado: "×0" virou "N no depósito".** Caçando, a quantidade anunciável é só a da mochila; a linha dizia
   ×0 e parecia que o item não existia. Preços lidos ao vivo: chaves valem 25–74k (The weeping matriarch key
   74.000, Quara Fishman 48.000, Rhaegal 39.999, Genio 30.000, Cerebro 25.000) e Yalahar gear wheel 114.999.
+
+### 2.11.4 — venda do Auto Hunt e pesos de encaixe (29/09, noite)
+- **Venda: cliques espaçados.** Cada caixa do painel de venda manda um `city_sell_off` com a lista inteira do
+  que não vender. O ciclo desmarcou ~24 equipamentos em 5 s (48 envios) e o servidor respondeu `rate_limited`:
+  nada foi vendido e o Auto Hunt desligou (a proteção certa, mas o ciclo nunca completava). Agora 400 ms entre
+  cliques; com `rate_limited`, pausa de 12 s e segue a 3,2 s por clique, até 3 tentativas por caixa.
+- **Equip: regen. de vida e capacidade.** Dono: "o melhor anel é o roxo épico" (capacidade +65, regen. vida
+  +1,2, sagrado +1 %) contra um incomum de max HP +21 que o helper preferia. Knight regen_vida 0,5 → 3,5
+  (tanque toma ~27 de dano/s: +1 vida/s ≈ 3,7 %); capacidade 0 → 0,01/oz nos quatro. Na auditoria com as
+  peças reais, três itens com regen. de vida saíram da lista de "dispensáveis". Raridade e potência NÃO
+  pontuam — só os encaixes, com o peso de cada vocação (PESOS_EQUIP).

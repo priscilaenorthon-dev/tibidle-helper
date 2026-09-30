@@ -25,7 +25,7 @@ t('épico com atributos mortos perde para incomum certo (Knight, colar)', () => 
     const incomum = { nome: 'wolf tooth chain', slot: 'necklace', attrs: {}, forja: { raridade: 1, atributos: [{ id: 'dano_fisico', valor: 2.2 }] } };
     const a = M.pontuarPeca(epico, 'KNIGHT'), b = M.pontuarPeca(incomum, 'KNIGHT');
     assert(b.pontos > a.pontos, `incomum ${b.pontos} deveria bater épico ${a.pontos}`);
-    assert(a.mortos.includes('dano_magico') && a.mortos.includes('capacidade'), 'mortos não marcados: ' + a.mortos);
+    assert(a.mortos.includes('dano_magico'), 'mortos não marcados: ' + a.mortos);   // 2.11.4: capacidade passou a valer 0,01/oz (mochila da party)
 });
 t('regen de mana pesa mais que resistência para o Feiticeiro', () => {
     const r = M.pontuarPeca({ nome: 'crystal ring', slot: 'ring', attrs: {}, forja: { raridade: 1, atributos: [{ id: 'regen_mana', valor: 2.3 }] } }, 'SORCERER');

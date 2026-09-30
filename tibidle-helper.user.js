@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.11.3
+// @version      2.11.4
 // @description  Magia (Econômica / Equilibrado / Área / Boss / Inteligente, com simulador da fila) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -23,7 +23,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.11.3';
+    const VERSAO = '2.11.4';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -2927,7 +2927,7 @@
             return;
         }
         if (o.type === 'error') {
-            ESTADO_WS.ultimoErro = String(d.code || d.key || JSON.stringify(d));
+            ESTADO_WS.ultimoErro = String(d.code || d.key || JSON.stringify(d)); ESTADO_WS.ultimoErro_t = Date.now();
             log('servidor respondeu erro: ' + ESTADO_WS.ultimoErro, 'erro');
             return;
         }
@@ -3321,17 +3321,37 @@
     }
     /* Desmarca cada item protegido e confere: a caixa diz "desmarcado" OU o
      * total do painel baixou. Devolve os que não deu para desmarcar. */
+    /* v2.11.4 — CLIQUE ESPAÇADO. Cada caixa do painel manda ao servidor um
+     * city_sell_off com a lista INTEIRA do que não vender. Em 29/09 (ao vivo,
+     * Djinns) o ciclo desmarcou ~24 equipamentos de uma vez: 48 envios em 5 s,
+     * o servidor respondeu rate_limited e nenhuma caixa mudou — o ciclo parou
+     * sem vender (a proteção certa, mas o Auto Hunt não completava nunca).
+     * Agora: 400 ms entre cliques; veio rate_limited → pausa de 12 s e segue
+     * a 3,2 s por clique (≤ 20/min), até 3 tentativas por caixa. */
+    const VENDA_ESPACO_MS = 400, VENDA_ESPACO_LENTO_MS = 3200, VENDA_PAUSA_LIMITE_MS = 12000;
+    const erroServidor = () => { try { return { t: ESTADO_WS.ultimoErro_t || 0, code: ESTADO_WS.ultimoErro }; } catch { return { t: 0, code: null }; } };
     async function desmarcarNaVenda(guardarLista) {
         const falhas = [];
+        let espaco = VENDA_ESPACO_MS, ultimo = 0;
         for (const g of guardarLista) {
-            const el = elDaLinha(g);
-            if (!el) { falhas.push(g.nome + ' (caixa sumiu)'); continue; }
-            if (estadoMarcado(el) === false) continue;
-            const t0 = totalVenda();
-            const saiu = () => estadoMarcado(elDaLinha(g)) === false || (t0 != null && totalVenda() != null && totalVenda() < t0);
-            el.click();
-            let ok = await esperarQue(saiu, 1500, 100);
-            if (!ok && estadoMarcado(elDaLinha(g)) !== false && totalVenda() === t0 && elDaLinha(g)) { ponteiroSemClique(elDaLinha(g)); ok = await esperarQue(saiu, 1500, 100); }
+            if (!elDaLinha(g)) { falhas.push(g.nome + ' (caixa sumiu)'); continue; }
+            if (estadoMarcado(elDaLinha(g)) === false) continue;
+            let ok = false;
+            for (let tent = 0; tent < 3 && !ok; tent++) {
+                const el = elDaLinha(g);
+                if (!el) break;
+                if (estadoMarcado(el) === false) { ok = true; break; }
+                const falta = ultimo + espaco - Date.now(); if (falta > 0) await dorme(falta);
+                const t0 = totalVenda(), e0 = erroServidor().t;
+                const saiu = () => estadoMarcado(elDaLinha(g)) === false || (t0 != null && totalVenda() != null && totalVenda() < t0);
+                el.click(); ultimo = Date.now();
+                ok = !!(await esperarQue(saiu, 1500, 100));
+                if (ok) break;
+                const e = erroServidor();
+                if (e.t > e0 && e.code === 'rate_limited') { espaco = VENDA_ESPACO_LENTO_MS; await dorme(VENDA_PAUSA_LIMITE_MS); ultimo = Date.now(); continue; }
+                if (tent === 0 && estadoMarcado(elDaLinha(g)) !== false && totalVenda() === t0 && elDaLinha(g)) { ponteiroSemClique(elDaLinha(g)); ultimo = Date.now(); ok = !!(await esperarQue(saiu, 1500, 100)); }
+                break;
+            }
             if (!ok) falhas.push(g.nome);
         }
         return falhas;
@@ -4338,24 +4358,31 @@
             attack: 0.9, corpo_a_corpo: 2.8, skillsword: 2.8, skillaxe: 2.8, skillclub: 2.8,
             dano_fisico: 1, roubo_vida_chance: 0.2, roubo_vida_quantia: 0.3, critico_chance: 0.25, critico_dano: 0.03,
             armor: 1.5, defense: 0.5, extradef: 0.5, escudo: 2, skillshield: 2, resist_fisica: 1.5, absorbpercentphysical: 1.5,
-            max_hp: 0.1, regen_vida: 0.5, cura_propria: 0.3, protecao_magica: 0.5, nivel_magico: 0.3, magiclevelpoints: 0.3,
-            max_mana: 0.02, chance_de_loot: 0.3, capacidade: 0, dano_magico: 0, distancia: 0, skilldist: 0, regen_mana: 0.2, hitchance: 0
+            max_hp: 0.1, regen_vida: 3.5, cura_propria: 0.3, protecao_magica: 0.5, nivel_magico: 0.3, magiclevelpoints: 0.3,
+            max_mana: 0.02, chance_de_loot: 0.3, capacidade: 0.01, dano_magico: 0, distancia: 0, skilldist: 0, regen_mana: 0.2, hitchance: 0
         }, _fmap('dano_elem_', 0.6), _fmap('resist_', 0.5), _amap(0.5)),
         PALADIN: Object.assign({
             distancia: 3, skilldist: 3, dano_fisico: 1, roubo_vida_chance: 0.15, roubo_vida_quantia: 0.2, critico_chance: 0.25, critico_dano: 0.03,
             hitchance: 0.5, regen_mana: 1.5, max_mana: 0.02, nivel_magico: 5, magiclevelpoints: 5,
             armor: 0.2, defense: 0, extradef: 0, escudo: 0, skillshield: 0, resist_fisica: 0.2, absorbpercentphysical: 0.2,
-            max_hp: 0.05, regen_vida: 0.2, cura_propria: 0.2, protecao_magica: 0.4, chance_de_loot: 0.3, capacidade: 0,
+            max_hp: 0.05, regen_vida: 0.2, cura_propria: 0.2, protecao_magica: 0.4, chance_de_loot: 0.3, capacidade: 0.01,
             attack: 0, corpo_a_corpo: 0, skillsword: 0, skillaxe: 0, skillclub: 0, dano_magico: 0
         }, _fmap('dano_elem_', 0.6), _fmap('resist_', 0.4), _amap(0.4)),
         SORCERER: Object.assign({
             regen_mana: 3, dano_magico: 1, nivel_magico: 7, magiclevelpoints: 7, max_mana: 0.02,
             protecao_magica: 0.4, resist_fisica: 0.1, absorbpercentphysical: 0.1, max_hp: 0.04, regen_vida: 0.1, cura_propria: 0.2,
-            armor: 0.1, defense: 0.05, extradef: 0, escudo: 0, skillshield: 0, chance_de_loot: 0.3, capacidade: 0,
+            armor: 0.1, defense: 0.05, extradef: 0, escudo: 0, skillshield: 0, chance_de_loot: 0.3, capacidade: 0.01,
             attack: 0, corpo_a_corpo: 0, skillsword: 0, skillaxe: 0, skillclub: 0, distancia: 0, skilldist: 0, hitchance: 0,
             dano_fisico: 0, roubo_vida_chance: 0.1, roubo_vida_quantia: 0.1, critico_chance: 0, critico_dano: 0
         }, _fmap('dano_elem_', 0), _fmap('resist_', 0.4), _amap(0.4)),
     };
+    /* v2.11.4 — REGEN DE VIDA E CAPACIDADE (dono, 29/09: "o melhor anel é o
+     * roxo épico" — capacidade +65, regen. vida +1,2, sagrado +1 % contra um
+     * incomum de max HP +21). O Knight é o tanque: toma ~27 de dano/s (Djinns
+     * e Banshee, 29/09), então +1 de vida/s cobre ~3,7 % do que ele toma —
+     * peso 3,5 (era 0,5, e o max HP +21 = 1,9 % da vida dele valia mais).
+     * Capacidade valia 0: +65 oz ≈ 3 % a mais de mochila da party, menos idas
+     * à cidade — 0,01 por oz nos quatro. Épico 5,4 pt × incomum 2,1 pt. */
     PESOS_EQUIP.DRUID = Object.assign({}, PESOS_EQUIP.SORCERER, { cura_propria: 0.5, nivel_magico: 7.5, magiclevelpoints: 7.5 });
     /* v2.9.0 — PESOS OFENSIVOS PELA FÓRMULA, com as skills do momento.
      * Os números fixos acima envelheceram e um deles nasceu errado:
