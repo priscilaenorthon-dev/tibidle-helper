@@ -4133,3 +4133,19 @@ pela Caixa). RESGATAR não testado: a Caixa só recebe algo quando um anúncio v
   espera o ciclo terminar). Antes a foto era descartada e o kit do bestiário ficava nos 4.
 - Mochila cheia com o Auto Hunt desligado e a venda ainda travada (5 min desde o último ciclo, ou janela aberta): o modo
   **espera na cidade**. Antes caía no "entrar" e reentrava com a mochila cheia — o Auto Exit tirava a party de novo, em laço.
+
+## 2.11.16 (30/09) — Equip: encaixe nobre nunca sobra (regra da comunidade + wiki /forja)
+- Dono: "todos os itens com regen de mana são bons para todos; no Knight regen de mana + regen de vida. Arma e colar:
+  corpo a corpo, distância, nível mágico, ou dano físico/mágico (a cada ~2 % vale 1 nível mágico)".
+- Wiki /forja: encaixes de defesa (escudo, elmo, armadura, calça, bota, anel) e de ataque (arma, colar) são grupos
+  separados. Faixas por potência I–VI: regen. de vida/mana +1,1 a +5,2; nível mágico/skill +1 a +3; dano 1,2 % a 9,8 %.
+- Conferência da tabela (potência III, uma peça de 1 encaixe): na defesa, regen. de mana já era o 1º de Paladino,
+  Feiticeiro e Druida, e no Knight regen. de vida (9 pt) > regen. de mana (3,2 pt). Na arma/colar dos magos, nível
+  mágico > dano mágico (≈ 1 ML ≈ 2,8 % de dano: bate com a regra dos 2 %).
+- Corrigido: com a mana do mago medida ≥ 60 % a regen. de mana valia ×0,2 e caía para trás de chance de loot e
+  capacidade. O corte saiu.
+- Novo grupo **"guardar: encaixe bom"**: peça que nenhum personagem usa hoje nem é reserva, mas tem regen. de mana/vida
+  (defesa) ou corpo a corpo/distância/nível mágico/dano físico/dano mágico (arma e colar), não entra nas sobras nem no
+  Mercado. Só vale para peça que alguma vocação veste (lança continua saindo).
+- Divergência que ficou: no Paladino a distância vale quase nada (0,03 pt por +1) porque o dano medido dele é 95 %
+  runa + magia. A peça com distância é guardada pela regra acima, mas não ganha troca.

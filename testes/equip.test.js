@@ -276,4 +276,26 @@ t('2.11.5: dano elemental só no elemento do mago; crítico conta nos magos; rou
     const leech = pt(colar(['roubo_vida_chance', 2.4], ['roubo_vida_quantia', 1.7]), 'KNIGHT'), regen = pt(colar(['regen_vida', 1.2]), 'KNIGHT');
     assert(leech < regen / 20, `roubo de vida ${leech} pt × regen 1,2 ${regen} pt`);
 });
+/* 2.11.16 — regra da comunidade (wiki /forja): peça com encaixe nobre nunca vai para as sobras */
+t('encaixe nobre (regen. na defesa; ML/skill/dano na arma e colar) nunca sobra; regen. de mana é o melhor encaixe de defesa de todos', () => {
+    const p = (iid, slot, dono, ...at) => ({ iid, nome: iid, slot, attrs: {}, forja: F(1, ...at), sell: 10, origem: dono ? 'corpo' : 'depósito', dono: dono || null });
+    const vestidos = ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'].map(v => p('bota-' + v, 'boots', v, ['regen_mana', 5]));
+    const pecas = vestidos.concat([
+        p('bota-mana-fraca-1', 'boots', null, ['regen_mana', 1.1]), p('bota-mana-fraca-2', 'boots', null, ['regen_mana', 1.1]),
+        p('bota-mana-fraca-3', 'boots', null, ['regen_mana', 1.1]), p('bota-vida', 'boots', null, ['regen_vida', 1.1]),
+        p('bota-loot', 'boots', null, ['chance_de_loot', 0.3]), p('colar-ml', 'necklace', null, ['nivel_magico', 1]),
+        p('colar-dist', 'necklace', null, ['distancia', 1]), p('anel-ml', 'ring', null, ['nivel_magico', 1])]);
+    const d = M.distribuirEquip(pecas);
+    const sobra = new Set(d.dispensaveis.map(x => x.iid)), guardar = new Set(d.nobres.map(x => x.iid));
+    for (const i of ['bota-mana-fraca-1', 'bota-mana-fraca-2', 'bota-mana-fraca-3', 'bota-vida', 'colar-ml', 'colar-dist']) assert(!sobra.has(i), i + ' foi para as sobras');
+    assert(guardar.has('bota-mana-fraca-3'), 'a 3ª bota de regen. de mana (nem melhor nem reserva) aparece em "guardar"');
+    assert(sobra.has('bota-loot'), 'chance de loot na bota não é nobre');
+    assert(!guardar.has('anel-ml'), 'nível mágico no anel não é encaixe de defesa');
+    /* defesa: regen. de mana na frente de todo o resto nos 3; no Knight, regen. de vida e depois regen. de mana */
+    const def = { regen_mana: 2.5, regen_vida: 2.5, max_hp: 33, max_mana: 130, capacidade: 200, chance_de_loot: 1.1, protecao_magica: 2.1, cura_propria: 3.8, resist_fisica: 0.7, escudo: 1.5 };
+    const top = (v, ctx) => Object.entries(def).map(([id, val]) => [id, M.pontuarPeca({ slot: 'boots', attrs: {}, forja: F(1, [id, val]) }, v, ctx).pontos]).sort((x, y) => y[1] - x[1]).map(x => x[0]);
+    for (const v of ['PALADIN', 'SORCERER', 'DRUID']) assert.strictEqual(top(v, null)[0], 'regen_mana', v);
+    assert.deepStrictEqual(top('KNIGHT', null).slice(0, 2), ['regen_vida', 'regen_mana']);
+    assert.strictEqual(top('SORCERER', { party: { mana: { SORCERER: 95 } } })[0], 'regen_mana', 'com a mana sobrando no mapa também');
+});
 console.log(`\n${n} testes ok` + (pulados ? ` · ${pulados} pulados (sem o estado da conta em data/)` : ''));
