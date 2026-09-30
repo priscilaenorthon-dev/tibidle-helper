@@ -228,6 +228,15 @@ t('2.11.2: troca tem custo — nada de tirar o anel do Feiticeiro por +0,2 pt; g
     const k = d.porVoc.KNIGHT.ring;
     assert(k.melhor && /^dep/.test(k.melhor.iid) && k.ganho > 1, `o Knight ganha +${k.ganho} com o anel do depósito — essa troca vale`);
 });
+t('2.11.11: nunca tira peça de um personagem para dar a outro — só depósito e mochila', () => {
+    const arm = (iid, dono, ...at) => ({ iid, nome: 'x armor', slot: 'armor', attrs: {}, origem: dono ? 'corpo' : 'depósito', dono, forja: F(at.length, ...at) });
+    /* ao vivo (30/09): chain armor épica do Druida (regen. mana +1,1) ia para o Paladino (+14 pt) */
+    const d = M.distribuirEquip([arm('pal', 'PALADIN', ['max_hp', 10]), arm('dru', 'DRUID', ['regen_mana', 1.1], ['armor', 6], ['max_hp', 5]), arm('dep', null, ['regen_mana', 0.4])]);
+    assert.strictEqual(d.porVoc.DRUID.armor.melhor.iid, 'dru', 'o Druida fica com a dele');
+    const p = d.porVoc.PALADIN.armor.melhor;
+    assert(p && p.iid !== 'dru', 'o Paladino não pode pegar a do Druida: ' + (p && p.iid));
+    for (const v of Object.keys(d.porVoc)) for (const x of Object.values(d.porVoc[v])) assert(!x.melhor || x.melhor.origem !== 'corpo' || x.melhor.dono === v, v + ' pegou peça de ' + (x.melhor && x.melhor.dono));
+});
 t('2.11.6: épico nunca sobra (base de forja); resistência sobrevive ao cenário de mapa mágico', () => {
     const anel = (iid, dono, r, ...at) => ({ iid, nome: 'crystal ring', slot: 'ring', attrs: {}, origem: dono ? 'corpo' : 'depósito', dono, forja: F(r, ...at) });
     const pcs = [

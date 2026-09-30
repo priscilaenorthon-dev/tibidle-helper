@@ -58,6 +58,13 @@ t('bestiário/completar: fila respeita a ordem e leva a caçada marcada que "nã
     assert.deepStrictEqual(M.pgFilaBestiario(l, new Set([140, 125])).map(f => [f.id, f.kills, f.value]), [[125, 4000, 3], [140, 10000, 9]]);
 });
 
+t('2.11.11 bestiário: marco rápido com ganho < 1 pt não compensa (Dwarf Bridge +9 vida máx ≈ 0,6 pt)', () => {
+    const dw = hb(119, 'Dwarf Bridge', 20, 'maxHealth', [[2000, 3], [5000, 6], [10000, 9]], 5);
+    const r = M.pgPlanoBestiario([dw], { 119: 9784 }, { 119: { abatesH: 1500 } }, 67, PESOS_BEST)[0];
+    assert(r.ptH >= 0.5, 'rápido: passaria só pelo limiar de pt/h (' + r.ptH + ')');
+    assert(!r.vale && r.alvo === null, 'ganho de ' + (3 * 0.07) + ' pt não compensa');
+});
+
 // ---- 1. chaves ------------------------------------------------------------
 t('bestiário: marco que dá +0 não é "próximo" (Vampire hell ao vivo: 2k→0, 5k→0, 10k→+1 ML)', () => {
     const vamp = { bonus: 'magicLevel', stages: [{ kills: 2000, value: 0 }, { kills: 5000, value: 0 }, { kills: 10000, value: 1 }] };

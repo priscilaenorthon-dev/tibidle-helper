@@ -4088,3 +4088,12 @@ pela Caixa). RESGATAR não testado: a Caixa só recebe algo quando um anúncio v
   e passa esse mapa ao Auto Hunt. Morte ou Auto Exit por ouro param o modo e devolvem os kits.
 - Scan não liga com o modo ligado; o modo espera Scan, ciclo de venda, boss e aplicar magia.
 - `_scanRestaurar`/`scanVoltarMapa`/`scanRestaurarPerfis` ganharam o parâmetro `quem` (o Log diz "Bestiário:").
+
+## 2.11.11 (30/09)
+- **Equip: nada passa de um personagem para outro.** Dono: "você está tirando item de um personagem e colocando no outro,
+  não é isso que preciso" (a chain armor épica do Druida ia para o Paladino, +14 pt). Peça vestida só é candidata para quem
+  a veste; as trocas vêm só do depósito e da mochila. Teste em `testes/equip.test.js`.
+- **Bestiário "Completar marcos": ganho mínimo de 1 pt** (`PG_BEST_MIN_PT`). Marco rápido de ganho irrisório (Dwarf Bridge
+  +9 vida máx, Cyclops) passava no limiar de pt/h; agora cai em "não compensam".
+- Teste ao vivo da 2.11.10: marco da Dwarf Bridge fechado (10.000 → +9 vida máx), volta automática a Vampire hell (lure 1),
+  kits de antes devolvidos, Auto Hunt intacto (hunt 50).

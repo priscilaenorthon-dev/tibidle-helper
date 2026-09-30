@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.11.10
+// @version      2.11.11
 // @description  Magia (Econômica / Equilibrado / Área / Boss / Inteligente, com simulador da fila) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.11.10';
+    const VERSAO = '2.11.11';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -4741,7 +4741,9 @@
             for (const s of SLOTS_EQUIP) {
                 if (v === 'PALADIN' && s === 'shield') continue;
                 const atual = pecas.find(p => p.origem === 'corpo' && p.dono === v && p.slot === s) || null;
-                const cands = pecas.filter(p => p.slot === s && vocacaoPode(p.attrs, v) && !ehTemporaria(p)).map(p => ({ peca: p, r: P(p, v) })).sort((x, y) => y.r.pontos - x.r.pontos);
+                /* v2.11.11 — dono, 30/09: "você está tirando item de um personagem e colocando no outro, não é isso
+                 * que preciso". Peça que alguém VESTE só é candidata para ele mesmo; as trocas vêm do depósito e da mochila. */
+                const cands = pecas.filter(p => p.slot === s && vocacaoPode(p.attrs, v) && !ehTemporaria(p) && !(p.origem === 'corpo' && p.dono !== v)).map(p => ({ peca: p, r: P(p, v) })).sort((x, y) => y.r.pontos - x.r.pontos);
                 porVoc[v][s] = { atual, atualPt: atual ? P(atual, v).pontos : 0, melhor: null, melhorPt: 0, ganho: 0, candidatos: cands };
             }
         }
@@ -6832,12 +6834,15 @@
      * medidos 28–29/09 — a party de nível 67 mata a onda de caçada baixa na hora). */
     const PG_BONUS_PESO = { hpRegen: 'regen_vida', manaRegen: 'regen_mana', maxHealth: 'max_hp', maxMana: 'max_mana', capacity: 'capacidade',
                             armor: 'armor', attack: 'attack', melee: 'corpo_a_corpo', distance: 'distancia', shielding: 'escudo', magicLevel: 'nivel_magico' };
-    const PG_ABATES_POR_LURE = 280, PG_BEST_LIMIAR = 0.5;
+    /* v2.11.11 — e o ganho tem que ser de verdade: Dwarf Bridge (+9 vida máx ≈ 0,2 pt) e Cyclops (0,3 pt)
+     * passavam no limiar por serem rápidos, mas mudam nada. Menos de 1 pt (≈ 450 ouro+xp/h) não compensa. */
+    const PG_ABATES_POR_LURE = 280, PG_BEST_LIMIAR = 0.5, PG_BEST_MIN_PT = 1;
     /* → linhas [{hunt, id, bonus, atual, k, conhecido, abatesH, estimado, alvo {kills, value, falta, horas, ganhoPt} | null,
      *            ultimo {…o marco final…} | null, ptH, vale}], as que valem primeiro (mais pt por hora antes) */
     function pgPlanoBestiario(hunts, contadores, medidos, nivel, pesos, o) {
         o = o || {};
         const limiar = o.limiar != null ? o.limiar : PG_BEST_LIMIAR;
+        const minPt = o.minPt != null ? o.minPt : PG_BEST_MIN_PT;
         const out = [];
         for (const h of (hunts || [])) {
             if (!h || !h.bestiary || (h.levelMin || 1) > nivel || (pgNum(h.levelMax) > 0 && nivel > pgNum(h.levelMax)) || (h.premium && o.premium === false)) continue;
@@ -6862,6 +6867,7 @@
             if (!passos.length) continue; // completo
             let alvo = null;
             for (const p of passos) { if (p.ptHPasso >= limiar) alvo = p; else break; }
+            if (alvo && alvo.ganhoPt < minPt) alvo = null;
             const ultimo = passos[passos.length - 1];
             const ref = alvo || passos[0];
             out.push({ hunt: h, id: h.id, bonus: h.bestiary.bonus, atual, k, conhecido: cru != null, abatesH, estimado: !(m && m.abatesH > 0),
