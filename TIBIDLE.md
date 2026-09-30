@@ -4184,3 +4184,117 @@ pela Caixa). RESGATAR não testado: a Caixa só recebe algo quando um anúncio v
   - o ATUALIZAR do Mercado **sempre** relê o Equip (antes só quando não havia leitura);
   - encaixe da forja normalizado (id em minúsculas com `_`, valor "1,9" → 1.9) — antes um formato diferente zerava o
     encaixe em silêncio e a peça podia cair nas sobras.
+
+## 2.12.0 (30/09) — Inteligente v3: a party inteira no simulador
+- **Por que o antigo saiu (2.11.13)**: réguas diferentes dentro e fora do kit (a magia do kit com o dano MEDIDO, a
+  de fora com o teórico × todos os alvos do lure — 5 kits em 5 APLICAR), regras fixas (`pega(…, 2)`, "sobrando ? 3 : 2"),
+  poção cobrada sem descontar a regeneração (previsto 95k/h, medido 16,2k/h) e o APLICAR apagando as vitais.
+- **O que mudou** (tudo em `@@MAGIA`; os modelos Econômica, Equilibrado, Em área e Boss continuam como estavam):
+  - **Régua única** (`reguaInt`): `porLanc = danoAlvo · nota · armadura · alvos(classe, L)`, dentro e fora do kit. A
+    medição NÃO substitui o número: corrige a CLASSE de forma inteira (`fatoresForma`: fForma = clamp((n·r + 15)/(n + 15),
+    0,3, 1,5), n em degraus {0, 30, 100, 300}, fator em degraus de 0,05). Frações da wiki: cerco 1 (Berserk, Groundshaker,
+    runas, Scorch, ultimates), Lesser Front Sweep 0,375, onda lateral 0,6, feixe 0,3, Caldera 0,25. Dano da fórmula
+    (`fonte: 'formula'`) leva ×0,40/0,60/0,75 por classe; sem cartão nem medição, ×0,85 ("estimado").
+  - **`simularParty`**: os 4 contra a onda como um pool de HP (1ª criatura quando a espera acaba, as outras a cada 0,5 s;
+    overkill se perde), passo de 250 ms, 360 s, regeneração sempre, reserva de mana para a cura (medida no livro-razão;
+    sem medida Druida 6/s e Knight 4/s), poção a 30 % com 1 s de descanso compartilhado com a runa, golpe do Knight e
+    tiro do Paladino (fórmula da wiki, com armadura), Protector ×0,65, Blood Rage ×1,35 no físico, Train Party +3 skill.
+  - **`buscarParty`**: A candidatas (≤ 8, fora imune/vetada/runa sem ML/runa no Knight/Sharpshooter/dominada no mesmo
+    grupo secundário) → B barras de 1 a 4 (recarga longa em todas as ordens, preenchimento no fim, área antes de alvo
+    único) × poção {não, 30 %} → C mínimos {1, 2, 3} e a runa de área na frente quando o mínimo dela é maior → D descida
+    por coordenadas (2 rodadas D → S → P → K, suportes permitidos) → E regen ×0,7/×1/×1,6 sem regeneração medida. Tetos
+    N_MAX_SIM 6000 e N_MAX_PARTY 400, memória por assinatura. Escolha GLOBAL entre todas as parties simuladas: seguro →
+    LCB ≥ piso → xp ≥ (1 − ε)·xpMax (ε 3 %; "XP absoluto" 0,5 %) → lucro, ouro, poção ligada, slots, nome.
+  - **Histerese** (`decidirTroca`): troca só com o novo 3 % (tudo medido) ou 5 % melhor, ou vigente inviável; nada nos
+    10 min depois de um APLICAR; "replanejar do zero" esquece o kit do mapa (`kit_int`, `int_aplicado`).
+  - **Escada defensiva** (`escadaDefesa`): sem medida degrau 1 (curas +10); Druida com mana mín. < 2× Heal Friend (ou
+    Knight < 40 % já no 1) → poção de segurança a 20 %; Knight < 30 % ou morte → Protector; de novo < 30 % → aviso "mapa
+    acima da party". Magic Shield só no mago que toma área com vida < 80 %; Blood Rage só com Knight ≥ 70 % em ≥ 30
+    amostras.
+  - **Livro-razão**: `regenMedida` (janelas de 3–10 s sem lançar, sem cura e sem gole → Δmana/Δt; mediana das últimas
+    200, vale com ≥ 30, chave `regen_<VOC>`; o simulador dos modelos antigos também usa), mana mínima por personagem, e
+    as vitais ficam guardadas **por kit** (`vitaisPorKit`) em vez de apagadas a cada APLICAR.
+  - **Só no clique**: a Magia mostra "CALCULAR O KIT"; APLICAR e o Scan (quando o dono liga) calculam. O desenho da tela
+    e o handler de frame só leem o que já foi calculado. O Inteligente voltou ao menu da Magia, ao Scan (modelo e
+    variante) e ao kit do bestiário; `inteligente_mana/_semruna/_seco` guardados viram `inteligente`.
+- **Calibração** (`K_VIVO`, um ponto): dano ao vivo ÷ cartão × alvos, com o Em área de Vampire hell no ritmo medido
+  (onda 4,0 s + espera 9,5 s), dano/s por personagem 25/73/80/105 → Knight 5,8 · Paladino 5,0 · Feiticeiro 4,7 ·
+  Druida 7,35 (o auto-ataque dos magos fica dentro). Previsto com esses fatores: Vampire hell Em área 1.571 abates/h e
+  52,4k xp/h (medido 1.635 e 55,4k); Banshee 1.108 e 55,4k com a espera padrão de 10 s (medido 938 e 46,9k: a Banshee é
+  limitada pelo spawn e a espera dela nunca foi medida — com 13,2 s (espera em degraus de 0,5 s: 13) dá 935 e 46,8k); gasto da party no Em área de Vampire hell
+  8,7k/h (medido 16,2k: o modelo não põe o Druida bebendo nem conta poção de vida).
+- **Busca em node** (nível 67, 15 mapas): 50–153 ms por mapa, média ~85 ms (2.100–5.000 triagens + 180–270 parties).
+  Previsto Em área → Inteligente (xp/h / lucro/h): Vampire hell 52,4k/55,1k → 52,9k/64,2k; Dragon Lair 54,6k/97,1k →
+  59,4k/113,3k; Quara 50,8k/79,1k → 57,6k/94,4k; Banshee 55,4k/57,7k → 55,4k/66,1k; Water Elementals 61,5k/15,6k →
+  60,5k/22,6k (−1,6 % de xp dentro da faixa de 3 %, +7k de lucro). Sem loot conhecido (Wolves, Daramian, Cults,
+  Thunderscar) fica o de maior lucro garantido, com o aviso "não se paga".
+- **Testes**: `testes/inteligente.test.js` (15 casos da ESPEC). Desvios da ESPEC, com o porquê no próprio teste:
+  caso 4 sem "Berserk no slot 1" (Berserk > LFS e LFS > Berserk a < 0,5 % de xp) e dano/s na escala do Scan; caso 5 em
+  Dragon Lair (Vampire hell é limitado pelo spawn); caso 6 — a poção do Knight em Dragon Lair rende ~4 % de xp por
+  ~22k/h, então com ε 3 % ela pode ficar (o teste confere a regra); caso 10 em Quara com XP absoluto e runa ≥2; caso 13
+  Banshee ±20 % com a espera padrão (±12 % com a espera que fecha o medido); caso 15 em 9 de 10 mapas (Quara, com poção
+  no Knight, fica a 1,5 % / 9k da exaustiva). Nova fixture pública `testes/fixtures/bestiario.json` (armadura/defesa).
+- **Fica como estava**: `melhorKitBoss` (o Boss não virou `buscarParty` com L = 1 — mudaria o modelo Boss);
+  `FATOR_ALVOS_REAIS` só nos modelos antigos; `simularFila` intocada (a flag `regenSempre` nasce desligada).
+- **Falta medir ao vivo** (ESPEC §6): regeneração de mana por personagem (a busca usa a tabela 8/12/16/16 até ter 30
+  janelas); alvos por lançamento de Caldera, ondas, LFS e runas (fForma); a espera entre ondas da Banshee e de cada mapa;
+  loot/h e poção por personagem no Scan (c_voc, k_calib); vida mín. do Knight, área nos magos e mana mín. do Druida
+  (escada); buffMs de Protector/Blood Rage/Sharpshooter e Magic Shield (API × wiki); aceite: Scan A/B Em área ×
+  Inteligente em Vampire hell e Banshee, 7 min cada (xp ≥ Em área −2 %, lucro ≥ Em área, mesmo kit em 2 APLICAR).
+  A barra do Knight com 4 ataques segue sem confirmação (o logbook mostra 2).
+
+## 2.13.0 (30/09) — aba nova "Radar" (só leitura): ranking de mapas, loot ao vivo, alertas de preço e o dia
+- Dono: "coloque em novas telas, para não misturar com as que já utilizo: ranking de todos os mapas sem precisar caçar
+  (levando em consideração meus status com o do monstro), valor do loot em tempo real, alerta de preço no Mercado e
+  relatório diário". Ícone ⌖ antes do Log, 4 sub-abas: **Mapas | Loot | Alertas | Dia**. Rodapé fixo: "Só leitura".
+  (O Inteligente v3 = 2.12.0 está sendo feito em paralelo; a numeração se acerta no merge.)
+- **Nada envia comando de ação.** Leituras extras só por botão: `CALCULAR` (GET público `/hunt/lootTable` e
+  `/bestiary/creature`, 1 a cada 0,3 s, guardados na gaveta comum `loot_tab_<título>`), `ler preços do mercado` e
+  `CONFERIR AGORA` (`market_catalog` + até 5 `market_stats`, pela fila do Mercado: 3,5 s entre pedidos). O **vigiar**
+  vem desligado; ligado, lê no máximo 1× a cada 15 min (o campo não aceita menos), só com socket aberto, Mercado livre,
+  sem Scan/ciclo e com Premium. Testado no vm: 2 h de relógio com vigiar desligado = 0 `market_*`; ligado = só
+  `market_catalog`/`market_stats`, intervalos ≥ 15 min.
+- **Mapas (estimado, calibrado pelo medido)**: por mapa até nível+5, T = lure × HP médio ÷ dano/s da party (o mesmo
+  planejador da aba Magia, com o dano medido dos 4 — `viabilidadeParty`), abates/h = kAbates × lure × 3600 ÷
+  (T + espera + 0,5 × lure), xp/h = abates × xp médio (ponderado por weight), loot/h = abates × loot do catálogo × fator
+  de loot, gasto/h = abates × custo por abate do planejador. **Calibração pelos Scans limpos do nível (±2)**: kAbates =
+  mediana medido/estimado (0,5–1,5), fator de loot = mediana loot medido ÷ (abates × catálogo) (0,15–1; **padrão 0,35
+  sem Scan**, TIBIDLE §12). Com Scan limpo o **medido manda** (xp raw, ouro) e a estimativa fica ao lado. Risco por
+  pontos: nível mínimo perto do seu (+1), dano tomado estimado > 1,5× o maior já aguentado com o Knight ≥ 50 % (+2),
+  onda > 25 s (+1), nota do elemento da party < 60 (+1), Knight já a < 40 % ali (+2), morte nos últimos 7 dias (+3);
+  0–1 baixo, 2–3 médio, ≥ 4 alto; nível abaixo do mínimo = bloqueado. **A API não dá o dano que o monstro causa**: o
+  "dano tomado estimado" é aTomado × lure × xp por abate, com aTomado calibrado nos Scans (sem Scan esse ponto não entra).
+  `dropNerf` do codex: `/assets/v100/codex.json` saiu do ar (a versão corrente é v167) e `entries` veio **vazio** —
+  sem lista de itens de codex o nerf por item não é aplicado; o fator de loot calibrado faz esse papel.
+  Ponto de plugar outro motor: `registrarMotorRanking(nome, fn)` (o v3 devolve `{abH, custoH, danoS, porVoc}` e a
+  fórmula é pulada). Resultado em `radar_rank` (~20 KB), com "recalcule" quando o nível muda.
+- **Loot ao vivo (medido)**: delta do `frame.analyzer` frame a frame (reset quando a caçada troca ou o analisador zera;
+  a base fica guardada 12 h, então o F5 não conta duas vezes nem perde o que rodou no meio). Valor NPC = `value` da
+  tabela do mapa; mercado líquido da taxa quando lido; etiqueta "mercado +X %" com ≥ 10 % e negócio em 30 d. Raro =
+  chance < 1 % ou valor ≥ 20× o loot médio por abate: dourado e 1 linha no Log por drop.
+- **Alertas**: lista de itens (vender/comprar; gatilho % sobre a média de 30 d e/ou preço). Mensagens: "vale anunciar",
+  "COMPRA aberta a Y — aceitar no jogo é na hora e sem taxa", "barato: Y". Mesmo alerta não repete em 6 h. Contador no
+  ícone até abrir a sub-aba. Sugestões: itens do baú e da mochila com negócio em 30 d.
+- **Dia**: xp, ouro líquido, loot, abates, mortes, horas, por mapa, ciclos do Auto Hunt, venda ao NPC (`sell_result`),
+  vendas no mercado (`market_inbox_result` trade_proceeds, id sem repetir), raros; hoje × média dos 7 dias anteriores e
+  7 barrinhas; "copiar texto". Frame que cruza a meia-noite é dividido. Caçada que terminou com a página fechada entra
+  pelo `ended.summary` (menos o que os frames já contaram). `radar_dias` fica com 30 dias (PODAR).
+- Testes: `testes/telas-api.test.js` (19 puras + 8 no vm), `casca` (10 ícones em 1366×768), `fumaca` (PODAR isolado).
+
+## 2.13.0 — junção (Inteligente v3 + Radar) e correções da verificação
+- As duas frentes (Inteligente v3, feito como 2.12.0, e a aba Radar, 2.13.0) foram juntadas numa versão só: 2.13.0.
+- A verificação adversarial foi interrompida para economizar o crédito dos agentes: a do Radar achou 7 problemas
+  (2 altos), a do Inteligente não chegou a relatar. Corrigidos à mão:
+  - **ranking de mapas (alto)**: o motor padrão passou a ser o Inteligente v3 (`MOTORES_RANK.inteligente` →
+    `partyInt`), que devolve abates/h e gasto/h da própria simulação da party. O motor antigo derivava o tempo da
+    onda de um dano médio diluído pela espera e multiplicava o gasto pela curva de desperdício (gasto/h maior que o
+    possível). O motor antigo continua no seletor.
+  - **drop raro**: chance < 1 % só conta se o item valer ≥ 5× o loot médio por abate (antes metade da tabela, de 1 a
+    30 de ouro, virava "raro" e enchia o Log).
+  - **recomeço no mesmo mapa**: o analisador do jogo não zera; a base do loot ao vivo só vira zero se o 1º frame for
+    de caçada nova (< 5 s).
+- Pendentes da verificação (médios, não corrigidos): validade/purga da cópia da tabela de loot na gaveta comum;
+  caçada offline que cruza meia-noite entra toda no dia do resumo; alerta "vale anunciar" não desconta os anúncios
+  do próprio dono nem compara com o NPC.
+- Teste ao vivo pendente: Scan A/B Em área × Inteligente (Vampire hell e Banshee, 7 min cada) e conferir o ranking
+  do Radar contra os Scans já medidos.

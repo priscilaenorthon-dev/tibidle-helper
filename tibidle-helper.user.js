@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.11.20
-// @description  Magia (Econômica / Equilibrado / Área / Boss, com simulador da fila) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
+// @version      2.13.0
+// @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
 // @updateURL    https://raw.githubusercontent.com/priscilaenorthon-dev/tibidle-helper/main/tibidle-helper.user.js
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.11.20';
+    const VERSAO = '2.13.0';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -271,20 +271,22 @@
         renderizar();
     }
 
-    /* v2.11.13 — modelo que saiu do menu (o Inteligente e as variantes dele):
-     * a escolha guardada na Magia, no Scan e no bestiário vira Em área. */
+    /* v2.11.13 — modelo que saiu do menu vira Em área. v2.12.0 — o
+     * Inteligente voltou: ele e as variantes antigas dele (inteligente_mana,
+     * _semruna, _seco) viram 'inteligente'; só o que não existe vira Em área. */
     function migrarModelos() {
-        const fora = m => m != null && !MODELOS[m];
+        const conv = m => m == null || MODELOS[m] ? m : /^inteligente/.test(String(m)) ? 'inteligente' : 'area';
         let mudou = false;
-        if (fora(ler('modelo', null))) { guardar('modelo', 'area'); mudou = true; }
+        const mo = ler('modelo', null);
+        if (conv(mo) !== mo) { guardar('modelo', conv(mo)); mudou = true; }
         const sc = ler('scan_cfg', null);
-        if (sc && (fora(sc.modelo) || (sc.variantes || []).some(fora))) {
-            guardar('scan_cfg', Object.assign({}, sc, { modelo: fora(sc.modelo) ? 'area' : sc.modelo, variantes: (sc.variantes || []).filter(m => !fora(m)) }));
+        if (sc && (conv(sc.modelo) !== sc.modelo || (sc.variantes || []).some(m => conv(m) !== m))) {
+            guardar('scan_cfg', Object.assign({}, sc, { modelo: conv(sc.modelo), variantes: [...new Set((sc.variantes || []).map(conv))] }));
             mudou = true;
         }
         const bc = ler('best_cfg', null);
-        if (bc && fora(bc.modelo)) { guardar('best_cfg', Object.assign({}, bc, { modelo: 'area' })); mudou = true; }
-        if (mudou) log('o modelo Inteligente saiu do helper — a escolha guardada virou Em área', 'info');
+        if (bc && conv(bc.modelo) !== bc.modelo) { guardar('best_cfg', Object.assign({}, bc, { modelo: conv(bc.modelo) })); mudou = true; }
+        if (mudou) log('modelo guardado que não existe mais convertido (variante do Inteligente → Inteligente; o resto → Em área)', 'info');
     }
 
     /* =========================================================================
@@ -363,38 +365,23 @@
             nome: 'Em área',
             dica: 'As duas magias de área mais fortes e as duas runas de área mais fortes.'
         },
+        inteligente: {
+            nome: 'Inteligente',
+            dica: 'Busca a party inteira no simulador (os 4 juntos contra a onda): quantas magias (1 a 4), a ordem, o mínimo de criaturas, poção e suporte de cada um saem da conta, não de regra fixa. Mesma régua de dano dentro e fora do kit (a medição corrige a forma inteira). Fica com o de mais XP entre os que se pagam (±3 %), e entre esses o de mais lucro. Só troca o kit aplicado se o novo for 3–5 % melhor, nunca nos 10 min depois de um APLICAR. Calcula só no clique.'
+        },
         boss: {
             nome: 'Boss',
             dica: 'Escolha o boss: as magias e runas que mais dão dano por segundo nele com a mana que cada um tem (uma por grupo de recarga), todas com gatilho ≥1.'
         }
     };
-    /* v2.11.13 — O INTELIGENTE SAIU DO MENU (dono, 30/09: "pode retirar"). Scan de
-     * 7 min por modelo, nível ~67: Em área venceu nos dois mapas — Vampire hell
-     * 55,4k xp raw/h e +3,5k de ouro estável contra 52,0k e +1,1k; The Banshee
-     * Quest 46,9k e +7,8k contra 44,9k e −10,2k (o Druida bebeu quase o dobro).
-     * E ele trocava de kit a cada APLICAR: as magias do kit entravam com o dano
-     * MEDIDO e as de fora com o TEÓRICO (todos os alvos do lure), mais alto — a
-     * de fora sempre "ganhava" no papel. O planejador continua aqui (os testes
-     * o exercitam), só sem botão; escolha guardada vira Em área (migrarModelos). */
-    const MODELOS_FORA = {
-        inteligente: {
-            nome: 'Inteligente',
-            dica: 'Mais por menos: mana é o orçamento. Magias por dano/mana; o que recarrega em 2 s (runa, strike, Divine Missile) vai no fim da fila como preenchimento — runa ≥2 antes do golpe ≥1. Poção de mana só no Druida (a mais barata por ponto), cura própria nos 4 + Heal Friend do Druida, Protector só se o Knight apanhar (ele corta 35 % do dano), segundo suporte só com mana sobrando.'
-        }
-    };
-    /* v2.6.3 — VARIANTES do Inteligente para o estudo: mesmo modelo, outra
-     * regra de poção. Medido em Quara (28/09): mana nos 4 = 51k xp/h e
-     * −92k ouro/h (135k/h de poção); a comunidade só põe mana no Druida. */
-    const VARIANTES = {
-        inteligente_mana: { base: 'inteligente', manaTodos: true, nome: 'Intel. + mana nos 4' },
-        inteligente_semruna: { base: 'inteligente', semRuna: true, nome: 'Intel. sem runa' },
-        /* dono, 28/09: "se tirar todas as magias de defesa e suporte você aguenta o mapa" */
-        inteligente_seco: { base: 'inteligente', seco: true, nome: 'Intel. seco (só poção, sem cura/suporte)' }
-    };
-    const nomeModelo = (m) => (MODELOS[m] || MODELOS_FORA[m] || VARIANTES[m] || { nome: m }).nome;
-    /* v2.10 — as flags globais _manaTodos/_semRuna/_seco saíram: montarPlano
-     * lê a variante e passa as opções adiante ({ manaTodos, semRuna, seco }).
-     * Com o plano em cache, uma flag global de uma chamada vazava na outra. */
+    /* v2.12.0 — O INTELIGENTE VOLTA (v3). Saiu na 2.11.13 porque perdia do Em
+     * área (Vampire hell 52,0k contra 55,4k xp/h; Banshee 44,9k/−10,2k contra
+     * 46,9k/+7,8k) e trocava de kit a cada APLICAR — réguas diferentes dentro e
+     * fora do kit. A v3 (buscarParty, no @@MAGIA) mede todos pela mesma régua e
+     * busca a party inteira. As VARIANTES antigas (_mana, _semruna, _seco)
+     * saíram: poção e suporte agora são decisão da busca (migrarModelos as
+     * converte em 'inteligente'). */
+    const nomeModelo = (m) => (MODELOS[m] || { nome: m }).nome;
     /* @@MODELOS-FIM */
 
     /* =========================================================================
@@ -438,6 +425,12 @@
             const e = Object.entries(v);
             if (e.length <= SCAN_RESULTADOS_MAX) return v;
             return Object.fromEntries(e.sort((a, b) => ((b[1] && b[1].t) || 0) - ((a[1] && a[1].t) || 0)).slice(0, SCAN_RESULTADOS_MAX));
+        },
+        /* v2.13.0 — relatório do Radar: só os 30 dias mais novos (chaves AAAA-MM-DD) */
+        radar_dias: (v) => {
+            if (!v || typeof v !== 'object') return v;
+            const k = Object.keys(v).filter(x => /^\d{4}-\d\d-\d\d$/.test(x)).sort();
+            return Object.fromEntries(k.slice(-30).map(x => [x, v[x]]));
         }
     };
     const cheioDeVerdade = (e) => !!e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || e.code === 22 || e.code === 1014);
@@ -1255,7 +1248,7 @@
         const dps = porLanc / cd;
 
         return {
-            m, casas, alvos, nota, danoMedio, danoEfetivo, medido, semente, fatorArm,
+            m, casas, alvos, nota, danoMedio, danoEfetivo, medido, semente, fatorArm, fonte: conhecido ? conhecido.fonte || null : null,
             confiavel: medido || semente || !!med, medidoNoMapa: !!med, custo, cd,
             danoPorOuro: Math.round(danoPorOuro * 100) / 100,
             dps: Math.round(dps * 10) / 10,
@@ -1603,21 +1596,6 @@
         try { for (const r of Object.values(scanResultados())) { const x = r.id === hunt.id && r.razao && r.razao.porVoc && r.razao.porVoc[voc]; if (x && x.hpMin != null) return x.hpMin; } } catch (e) { }
         return null;
     }
-    /* v2.9.0 — HISTERESE NO REGIME DE MANA. O kit de "mana sobrando" é mais
-     * caro, então a mana cai; o kit normal é mais barato, então ela sobe. Com
-     * um limite só (70 %), o Inteligente trocava de kit a cada medição. Entra
-     * em "sobrando" com ≥ 70 % e só sai abaixo de 40 %. Guardado por mapa e
-     * vocação. */
-    const _regime = {};
-    function regimeSobrando(hunt, voc, manaMed) {
-        if (!hunt || hunt.boss) return false;
-        const k = hunt.id + '|' + voc;
-        if (_regime[k] == null) _regime[k] = !!(ler('regime', {})[k]);
-        const antes = _regime[k];
-        const agora = manaMed == null ? antes : (antes ? manaMed > 40 : manaMed >= 70);
-        if (agora !== antes) { _regime[k] = agora; const g = ler('regime', {}); g[k] = agora; guardar('regime', g); }
-        return agora;
-    }
     /* v2.7.0 — o SPAWN limita neste mapa? (onda morre em menos da metade da
      * espera pela próxima). Djinns 28/09: 7 mortos em 2,5 s, espera 10,6 s. */
     function spawnLimitaMedido(hunt) {
@@ -1675,6 +1653,9 @@
         const ciclo = matar + espera, porBicho = matar / L;
         const vivos = t => { const x = t % ciclo; return x >= matar ? 0 : L - Math.floor(x / porBicho); };
         const pocao = !!o.pocao, max = Math.max(0, o.manaMax || 0), regen = Math.max(0, o.regen || 0) / 1000, fAlvos = o.fatorAlvos || 1;
+        /* v2.12.0 — `regenSempre`: com poção a regeneração continua (desligado:
+         * os modelos antigos seguem como estavam; o Inteligente usa simularParty) */
+        const regenSempre = !!o.regenSempre;
         const pronto = slots.map(() => 0), sec = {}, disparos = slots.map(() => 0);
         let t = 0, ult = 0, grupo = 0, mana = max, dano = 0, manaGasta = 0, runas = 0, ouroRuna = 0, voltas = 0;
         /* v2.11.12 — O TRAVAMENTO DA MAGIA (29–30/09). Com o ritmo MEDIDO (onda 4,019 s + espera 9,524 s,
@@ -1684,7 +1665,7 @@
          * contado por índice e sempre anda; e o laço tem teto de voltas. */
         const proxOnda = x => { const p = (Math.floor(x / ciclo) + 1) * ciclo; return p > x ? p : x + SIM_PASSO_MS; };
         while (t < T && voltas++ < 200000) {
-            if (!pocao) mana = Math.min(max, mana + regen * (t - ult));
+            if (!pocao || regenSempre) mana = Math.min(max, mana + regen * (t - ult));
             ult = t;
             const v = vivos(t), agora = t, manaAgora = mana;
             const i = v > 0 && t >= grupo
@@ -1720,7 +1701,9 @@
         const lvl = nivelAtual() || 1;
         const fp = ((ESTADO_WS.frame && ESTADO_WS.frame.party) || []).find(x => x && x.voc === voc);
         const tibia = { KNIGHT: 5 * lvl + 50, PALADIN: 15 * lvl - 30, SORCERER: 30 * lvl - 150, DRUID: 30 * lvl - 150 }[voc] || 5 * lvl;
-        return { manaMax: fp && fp.maxMana > 0 ? fp.maxMana : Math.max(60, tibia), regen: REGEN_MANA_S[voc] || 8 };
+        /* v2.12.0 — a regeneração MEDIDA (regenMedida) manda; a tabela é a reserva */
+        const rm = regenMedida(voc);
+        return { manaMax: fp && fp.maxMana > 0 ? fp.maxMana : Math.max(60, tibia), regen: rm != null ? rm : REGEN_MANA_S[voc] || 8 };
     }
 
     /* v2.10 — recarga igual à do grupo (2 s): pronto em todo ciclo. */
@@ -1754,6 +1737,889 @@
         arr.forEach((x, i) => { for (const p of permutacoes(arr.slice(0, i).concat(arr.slice(i + 1)))) r.push([x].concat(p)); });
         return r;
     }
+    /* =========================================================================
+     *  ⭐ v2.12.0 — INTELIGENTE v3 (busca da party inteira)
+     *
+     *  Por que o de antes (2.6–2.11.13) falhou, medido: (a) RÉGUAS DIFERENTES —
+     *  a magia do kit entrava com o dano MEDIDO (med.porCast) e a de fora com o
+     *  teórico × todos os alvos do lure: a de fora sempre "ganhava" e o kit
+     *  trocava a cada APLICAR (5 kits em 5 APLICAR); (b) regras fixas
+     *  (pega(…, 2), "sobrando ? 3 : 2"); (c) poção cobrada sem descontar a
+     *  regeneração (previsto 95k/h, medido 16,2k/h); (d) o APLICAR apagava a
+     *  mana/vida medida do personagem. O CPU nunca foi o problema.
+     *
+     *  Agora:
+     *   • RÉGUA ÚNICA: porLanc = danoAlvo · nota · armadura · alvos(classe, L),
+     *     dentro e fora do kit. A medição NÃO substitui o número: ela corrige a
+     *     CLASSE de forma inteira (fForma), com encolhimento para 1.
+     *   • simularParty: os 4 juntos contra a onda como um POOL de HP (quem mata
+     *     mais rápido encurta a onda de todos), regeneração sempre, reserva de
+     *     mana para a cura, poção a 30 % com 1 s de descanso (o mesmo da runa).
+     *   • busca com orçamento por CONTAGEM (N_MAX_SIM / N_MAX_PARTY, nada de
+     *     relógio), determinística, objetivo em ordem: seguro → LCB ≥ piso →
+     *     xp ≥ (1−ε)·xpMax → mais lucro, menos ouro, menos slots, nome.
+     *   • quantas magias (1 a 4, inclusive no Knight), poção e suporte saem da
+     *     busca — não há regra fixa.
+     *   • histerese: só troca o kit aplicado se o novo for 3 % (tudo medido) ou
+     *     5 % melhor, nunca nos 10 min depois de um APLICAR.
+     *  Roda SÓ no clique (CALCULAR / APLICAR / Scan ligado pelo dono), nunca no
+     *  handler de frame nem no desenho da tela. Nada é aplicado sozinho.
+     * ====================================================================== */
+    const N_MAX_SIM = 6000, N_MAX_PARTY = 400;
+    const SIM_INT_SEG = 360, SIM_TRIAGEM_SEG = 120, CHEGADA_MS = 500;
+    const EPS_INT = 0.03, EPS_INT_XP = 0.005;
+    const HISTERESE_INT = { medido: 0.03, estimado: 0.05, esperaMs: 10 * 60000 };
+    const VOCS_INT = ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'];
+    const ORDEM_DESCIDA = ['DRUID', 'SORCERER', 'PALADIN', 'KNIGHT'];
+    /* fração dos L monstros que cada FORMA pega (wiki /lure-levas-e-formacao:
+     * a leva cerca o Knight nos 8 SQMs em volta; Berserk, Groundshaker e runa
+     * 3×3 pegam o cerco inteiro; Lesser Front Sweep 3 de 8; a Caldera, lançada
+     * da caixa lateral, 2 de 8). Onda lateral e feixe: estimativa (0,6 / 0,3),
+     * a medição corrige. O 0,5 fixo (FATOR_ALVOS_REAIS) fica só nos modelos antigos. */
+    const FRACAO_FORMA = { unico: 0, cerco: 1, frente: 0.375, lateral: 0.6, feixe: 0.3, caldera: 0.25 };
+    function classeForma(m) {
+        if (casasDaMagia(m) <= 1) return 'unico';
+        const n = m.name || '', a = m.area || '';
+        if (/caldera/i.test(n)) return 'caldera';
+        if (/front sweep/i.test(n)) return 'frente';
+        if (/beam/i.test(a) || /beam/i.test(n)) return 'feixe';
+        if (/scorch/i.test(n)) return 'cerco';
+        if (/wave/i.test(a) || /wave/i.test(n)) return 'lateral';
+        return 'cerco';
+    }
+    /* Quando o dano veio da FÓRMULA de /spells (fonte 'formula') e não do
+     * cartão de /spell-numbers: a fórmula superestima (tabela do nível 61). */
+    const FATOR_DANO_CLASSE = { grande: 0.40, onda: 0.60, barata: 0.75 };
+    const fatorDanoClasse = (m) => (!m.isRune && (m.mana || 0) <= 25) ? FATOR_DANO_CLASSE.barata : casasDaMagia(m) >= 36 ? FATOR_DANO_CLASSE.grande : FATOR_DANO_CLASSE.onda;
+    /* O dano ao vivo é ~2–4× o do cartão × alvos (Energy Wave: cartão 59 × 6
+     * alvos = 354, medido 958 por lançamento em Dragon Lair, 28/09). O fator
+     * junta equipamento, auto-ataque e o que o cartão não mostra. Calibração de
+     * UM ponto: Scan Em área em Vampire hell (2.11.6/2.11.13), nível 67, ritmo
+     * medido (onda 4,0 s + espera 9,5 s), dano/s por personagem 25/73/80/105.
+     * Recalibrar quando houver outro ponto (TIBIDLE.md "2.12.0"). */
+    const K_VIVO = { KNIGHT: 5.8, PALADIN: 5.0, SORCERER: 4.7, DRUID: 7.35 };
+    /* mana/s guardada para a cura quando não há medida (Heal Friend a cada 20 s
+     * no Druida; Wound Cleansing no Knight) */
+    const RESERVA_CURA_PADRAO = { KNIGHT: 4, PALADIN: 0, SORCERER: 0, DRUID: 6 };
+    /* gatilhos fixos do Inteligente: forte a 40 % antes da leve a 70 %, poção
+     * de vida abaixo da cura por magia, Heal Friend a 65 % */
+    const CURAS_INT = {
+        KNIGHT: [['Wound Cleansing', 40]],
+        PALADIN: [['Divine Healing', 40], ['Light Healing', 70]],
+        SORCERER: [['Ultimate Healing', 40], ['Light Healing', 70]],
+        DRUID: [['Ultimate Healing', 40], ['Heal Friend', 65]]
+    };
+    const POCAO_VIDA_INT = 30;
+    /* suportes que a busca pode ligar e o que cada um faz no dano (wiki
+     * /magias-e-runas). Buff de GRUPO custa ~3× com 4 personagens. */
+    const SUPORTE_INT = { 'Train Party': { skill: 3 }, 'Blood Rage': { fis: 1.35 }, 'Protector': { mult: 0.65 }, 'Magic Shield': {} };
+    const qPasso = (x, p) => Math.round(x / p) * p;
+    const q5pct = (x) => !(x > 0) ? 0 : Math.round(Math.pow(1.05, Math.round(Math.log(x) / Math.log(1.05))) * 1000) / 1000;
+    const qCont = (n) => n >= 300 ? 300 : n >= 100 ? 100 : n >= 30 ? 30 : 0;
+    /* mana/s de um suporte ligado o tempo todo (catálogo: mana ÷ duração) */
+    function drenoSuporte(nome) {
+        const m = (CAT.magias || []).find(x => x.name === nome);
+        const mana = m ? m.mana || 0 : ({ 'Train Party': 60, 'Blood Rage': 290, 'Protector': 200, 'Magic Shield': 50 })[nome] || 0;
+        const dur = m && m.buffMs ? m.buffMs / 1000 : ({ 'Train Party': 120, 'Blood Rage': 20, 'Protector': 20, 'Magic Shield': 180 })[nome] || 60;
+        return mana * (m && m.category === 'party' ? 3 : 1) / dur;
+    }
+
+    /* v2.12.0 — REGENERAÇÃO MEDIDA (razaoVitais guarda a mediana das últimas
+     * 200 janelas sem lançamento, sem gole e sem cura; vale com n ≥ 30). */
+    function regenMedida(voc) {
+        const x = ler('regen_' + voc, null);
+        return x && x.n >= 30 && x.v > 0 ? Math.round(x.v) : null;
+    }
+    /* janelas de ≥ 3 s em que a mana só subiu por regeneração → mana/s */
+    function amostraRegen(janela) {
+        if (!janela || !(janela.t1 - janela.t0 >= 3000)) return null;
+        const v = (janela.m1 - janela.m0) / ((janela.t1 - janela.t0) / 1000);
+        return v >= 0 && v < 500 ? v : null;
+    }
+    function medianaRegen(lista) {
+        if (!lista || !lista.length) return null;
+        const s = lista.slice().sort((a, b) => a - b);
+        return s[Math.floor(s.length / 2)];
+    }
+    /* reserva de cura: curas lançadas neste mapa (livro-razão) × mana delas */
+    function reservaCura(voc, hunt) {
+        try {
+            if (hunt && ESTADO_WS.huntId === hunt.id && RAZAO.t0) {
+                const seg = (Date.now() - RAZAO.t0) / 1000;
+                if (seg >= 120) {
+                    let mana = 0;
+                    for (const x of Object.values(RAZAO.magias)) {
+                        if (x.voc !== voc) continue;
+                        const m = (CAT.magias || []).find(c => c.name === x.nome);
+                        if (m && m.group === 'healing') mana += (m.mana || 0) * x.casts;
+                    }
+                    return Math.round(mana / seg);
+                }
+            }
+        } catch { }
+        return RESERVA_CURA_PADRAO[voc] || 0;
+    }
+    function manaMinMedida(hunt, voc) {
+        if (!hunt || hunt.boss) return null;
+        try { if (ESTADO_WS.huntId === hunt.id) { const v = RAZAO.vitais[voc]; if (v && v.n >= 30 && v.manaMin != null) return Math.round(v.manaMin * 100); } } catch { }
+        return null;
+    }
+    function amostrasVitais(hunt, voc) {
+        try { if (hunt && ESTADO_WS.huntId === hunt.id) { const v = RAZAO.vitais[voc]; if (v) return v.n || 0; } } catch { }
+        return 0;
+    }
+    /* dano de área que a party tomou (mcast) neste mapa */
+    function areaTomada(hunt) {
+        try { if (hunt && ESTADO_WS.huntId === hunt.id) return Math.max(0, (RAZAO.tomado.total || 0) - (RAZAO.tomado.corpo || 0)); } catch { }
+        return 0;
+    }
+
+    /* ESCADA DEFENSIVA: o degrau vem da medição (sem medição, degrau 1); ele
+     * desce um de cada vez, 30 min depois da última subida com o Knight acima
+     * de 60 %.
+     *   1 gatilhos de cura +10   · vida mín. do Knight < 40 % (ou sem medida)
+     *   2 poção de segurança do Druida a 20 % · mana mín. do Druida < 2× a cura
+     *     principal, ou Knight < 40 % já no degrau 1
+     *   3 Protector              · Knight < 30 %, ou alguém morreu
+     *   4 aviso "mapa acima da party" · Knight < 30 % já no degrau 3 */
+    function escadaDefesa(hunt, agora) {
+        const g0 = hunt ? (ler('escada', {})[hunt.id] || null) : null;
+        const guardado = g0 ? g0.d : 0;
+        const vK = hunt ? vidaMinMedida(hunt, 'KNIGHT') : null;
+        let morte = false;
+        for (const v of VOCS_INT) { const x = hunt ? vidaMinMedida(hunt, v) : null; if (x != null && x <= 0) morte = true; }
+        const mD = hunt ? manaMinMedida(hunt, 'DRUID') : null;
+        const curaD = ((CAT.magias || []).find(m => m.name === 'Heal Friend') || { mana: 120 }).mana || 120;
+        const druidaBaixo = mD != null && mD / 100 * manaDoPersonagem('DRUID').manaMax < 2 * curaD;
+        let alvo;
+        if (vK == null && !morte) alvo = 1;
+        else if (morte || vK < 30) alvo = guardado >= 3 ? 4 : 3;
+        else if (druidaBaixo) alvo = 2;
+        else if (vK < 40) alvo = guardado >= 1 ? 2 : 1;
+        else alvo = 0;
+        let d = Math.max(alvo, guardado);
+        if (alvo < guardado && g0 && (agora || Date.now()) - (g0.t || 0) >= 30 * 60000 && vK != null && vK > 60) d = guardado - 1;
+        const motivo = vK == null ? 'sem medida de vida (começa no degrau 1)' : morte ? 'alguém morreu' : `vida mín. do Knight ${vK} %` + (druidaBaixo ? `, mana mín. do Druida ${mD} %` : '');
+        return { degrau: Math.min(4, d), alvo, motivo };
+    }
+    /* SUPORTES que a busca pode experimentar (o de defesa vem da escada) */
+    function suportesPermitidos(voc, hunt) {
+        const lvl = nivelAtual(), r = [[]];
+        const tem = (n) => temMagia(n, voc, lvl);
+        if ((voc === 'KNIGHT' || voc === 'PALADIN') && tem('Train Party')) r.push(['Train Party']);
+        if (voc === 'KNIGHT' && tem('Blood Rage') && hunt && !hunt.boss) {
+            const vK = vidaMinMedida(hunt, 'KNIGHT'), n = amostrasVitais(hunt, 'KNIGHT');
+            let morte = false;
+            for (const v of VOCS_INT) { const x = vidaMinMedida(hunt, v); if (x != null && x <= 0) morte = true; }
+            if (vK != null && vK >= 70 && n >= 30 && !morte) { r.push(['Blood Rage']); if (tem('Train Party')) r.push(['Train Party', 'Blood Rage']); }
+        }
+        return r;
+    }
+    /* suportes OBRIGATÓRIOS de defesa: Protector no degrau 3; Magic Shield no
+     * mago que toma área (medida > 0) com vida mínima < 80 % */
+    function suportesDefesa(voc, hunt, degrau) {
+        const lvl = nivelAtual(), r = [];
+        if (voc === 'KNIGHT' && degrau >= 3 && temMagia('Protector', voc, lvl)) r.push('Protector');
+        if ((voc === 'SORCERER' || voc === 'DRUID') && temMagia('Magic Shield', voc, lvl) && areaTomada(hunt) > 0) {
+            const vm = vidaMinMedida(hunt, voc);
+            if (vm != null && vm < 80) r.push('Magic Shield');
+        }
+        return r;
+    }
+
+    /* A RÉGUA ÚNICA. `a` é o que avaliar() devolve; aqui ganha
+     *   dAlvo    dano por alvo (cartão → ×fator da fórmula → ×0,85 estimado → ×K_VIVO) × nota × armadura
+     *   classe, fr (fração do lure que a forma pega, já com fForma), alvosInt, porLancInt */
+    function danoBaseInt(a, voc) {
+        const formula = a.fonte === 'formula';
+        const base = q5pct(a.danoMedio) * (formula ? fatorDanoClasse(a.m) : 1) * (K_VIVO[voc] || 1);
+        return base * (a.nota / 100) * a.fatorArm;
+    }
+    function alvosForma(classe, casas, L, fr) {
+        return classe === 'unico' ? 1 : Math.max(1, Math.min(casas, L * fr));
+    }
+    function reguaInt(a, voc, ctx) {
+        const classe = classeForma(a.m);
+        const card = a.medido && a.fonte !== 'formula';
+        const medNoMapa = !!(ctx.med && ctx.med[voc + '|' + a.m.name]);
+        const estimado = !card && !medNoMapa;
+        const dAlvo = danoBaseInt(a, voc) * (estimado ? 0.85 : 1);
+        const fr = classe === 'unico' ? 0 : (ctx.fracao && ctx.fracao[classe] != null ? ctx.fracao[classe] : FRACAO_FORMA[classe] * ((ctx.fForma && ctx.fForma[classe]) || 1));
+        const alvosInt = alvosForma(classe, a.casas, ctx.L, fr);
+        return Object.assign(a, { classe, estimado, dAlvo, fr, alvosInt, porLancInt: dAlvo * alvosInt });
+    }
+    /* fForma[mapa, classe] = clamp((n·r + 15·1)/(n + 15), 0,3, 1,5):
+     * r = Σ dano medido ÷ Σ (dano teórico × alvos da geometria) da classe, n
+     * lançamentos (em degraus {0, 30, 100, 300}); fator em degraus de 0,05. */
+    function fatoresForma(hunt, med, info, L, danosPorVoc) {
+        const soma = {};
+        for (const k of Object.keys(med || {}).sort()) {
+            const i = k.indexOf('|'), voc = k.slice(0, i), nome = k.slice(i + 1);
+            const m = (CAT.magias || []).find(x => x.name === nome);
+            if (!m || !VOCS_INT.includes(voc)) continue;
+            const a = avaliar(m, hunt, info, voc, danosPorVoc[voc]);
+            const classe = classeForma(m);
+            const teo = danoBaseInt(a, voc) * alvosForma(classe, a.casas, L, FRACAO_FORMA[classe]);
+            if (!(teo > 0)) continue;
+            const s = soma[classe] || (soma[classe] = { med: 0, teo: 0, n: 0 });
+            s.med += med[k].porCast * med[k].casts; s.teo += teo * med[k].casts; s.n += med[k].casts;
+        }
+        const f = {}, n = {};
+        for (const c of Object.keys(FRACAO_FORMA)) {
+            const s = soma[c], nq = s ? qCont(s.n) : 0;
+            n[c] = nq;
+            if (!s || !nq) { f[c] = 1; continue; }
+            const r = s.med / s.teo;
+            f[c] = qPasso(Math.min(1.5, Math.max(0.3, (nq * r + 15) / (nq + 15))), 0.05);
+        }
+        return { f, n };
+    }
+    /* DOMINADA: do MESMO grupo secundário (só uma do grupo sai por vez — focus,
+     * special, greatbeams…), dá menos ou igual por lançamento e custa igual ou
+     * mais em mana, ouro e recarga. Sem grupo nada é dominado: duas magias da
+     * mesma forma se revezam nas recargas (Berserk 4 s + Groundshaker 8 s
+     * enchem os turnos vazios). Empate total: fica a de nome menor. */
+    function dominada(a, b) {
+        if (a === b || !a.m.secondaryGroup || a.m.secondaryGroup !== b.m.secondaryGroup) return false;
+        const cd = x => x.m.cooldownMs || 2000;
+        if (!(b.porLancInt >= a.porLancInt && (b.m.mana || 0) <= (a.m.mana || 0) && b.custo <= a.custo && cd(b) <= cd(a))) return false;
+        const estrito = b.porLancInt > a.porLancInt || (b.m.mana || 0) < (a.m.mana || 0) || b.custo < a.custo || cd(b) < cd(a);
+        return estrito || b.m.name < a.m.name;
+    }
+    /* A. CANDIDATAS (no máximo 8): sai imune, vetada, runa acima do ML, runa no
+     * Knight, Sharpshooter e dominada; ficam as 2 melhores em dano/custo e as
+     * 2 em dano/lançamento de cada (classe, faixa de recarga). */
+    function candidatasInt(voc, avs, info) {
+        const vetoDe = a => (a.casas > 1 ? info.vetosArea : info.vetos)[a.m.combatType];
+        const ok = avs.filter(a => a.nota > 0 && a.danoEfetivo > 0 && vetoDe(a) == null && !a.semML && !(voc === 'KNIGHT' && a.m.isRune) && a.m.name !== 'Sharpshooter' && a.porLancInt > 0);
+        const vivas = ok.filter(a => !ok.some(b => dominada(a, b)));
+        const faixa = a => { const cd = a.m.cooldownMs || 2000; return cd <= 2000 ? 0 : cd <= 8000 ? 1 : 2; };
+        const nome = (a, b) => a.m.name < b.m.name ? -1 : a.m.name > b.m.name ? 1 : 0;
+        const grupos = {};
+        for (const a of vivas) { const g = a.classe + '|' + (a.m.isRune ? 'r' : 'm') + '|' + faixa(a); if (!grupos[g]) grupos[g] = []; grupos[g].push(a); }
+        const fica = new Set();
+        for (const g of Object.keys(grupos).sort()) {
+            const l = grupos[g];
+            l.slice().sort((a, b) => b.porLancInt / Math.max(0.01, b.custo) - a.porLancInt / Math.max(0.01, a.custo) || nome(a, b)).slice(0, 2).forEach(a => fica.add(a));
+            l.slice().sort((a, b) => b.porLancInt - a.porLancInt || nome(a, b)).slice(0, 2).forEach(a => fica.add(a));
+        }
+        let r = [...fica].sort((a, b) => b.porLancInt - a.porLancInt || nome(a, b));
+        if (r.length > 8) {
+            const unico = r.find(a => a.classe === 'unico');
+            r = r.slice(0, 8);
+            if (unico && !r.includes(unico)) r[7] = unico;
+        }
+        return r;
+    }
+    /* B. BARRAS: subconjuntos de 1 a 4 (1 por grupo secundário); as de recarga
+     * longa em todas as ordens, os preenchimentos (recarga = a do grupo) no fim,
+     * área antes de alvo único. Mínimo padrão: área 2, alvo único 1. Slot morto
+     * sai sem simular. */
+    function combinacoes(n, k, ini, pref, out) {
+        if (pref.length === k) { out.push(pref.slice()); return out; }
+        for (let i = ini; i < n; i++) { pref.push(i); combinacoes(n, k, i + 1, pref, out); pref.pop(); }
+        return out;
+    }
+    function barraValida(plano, L) {
+        if (!plano.length || plano.length > 4 || !plano.some(p => p.minimo === 1)) return false;
+        for (let j = 0; j < plano.length; j++) if (slotMorto(plano, j, L)) return false;
+        return true;
+    }
+    function barrasDe(cands, L) {
+        const out = [];
+        const ordEnch = (a, b) => (a.classe === 'unico') - (b.classe === 'unico') || b.porLancInt - a.porLancInt || (a.m.name < b.m.name ? -1 : 1);
+        for (let k = 1; k <= Math.min(4, cands.length); k++) {
+            for (const idx of combinacoes(cands.length, k, 0, [], [])) {
+                const kit = idx.map(i => cands[i]);
+                const g = kit.map(a => a.m.secondaryGroup).filter(Boolean);
+                if (new Set(g).size < g.length) continue;
+                const longas = kit.filter(a => !enchimento(a)), ench = kit.filter(enchimento).sort(ordEnch);
+                for (const pl of permutacoes(longas)) {
+                    const plano = pl.concat(ench).map(a => ({ av: a, minimo: a.classe === 'unico' ? 1 : Math.min(2, L) }));
+                    if (!plano.some(p => p.minimo === 1)) plano[plano.length - 1].minimo = 1;
+                    if (barraValida(plano, L)) out.push(plano);
+                }
+            }
+        }
+        return out;
+    }
+    /* C. variações de uma barra: mínimos {1, 2, 3} ≤ L nas de área, e a runa/
+     * preenchimento de área na FRENTE das de recarga longa quando o mínimo dela
+     * é maior (runa ≥3 > Caldera ≥1: com 3+ vivos sai a runa, com menos a
+     * Caldera — a fila da comunidade no Paladino). */
+    function variacoesMinimos(plano, L) {
+        const opc = plano.map(p => p.av.classe === 'unico' ? [1] : [1, 2, 3].filter(x => x <= L));
+        const out = [], idx = opc.map(() => 0);
+        for (;;) {
+            const mins = idx.map((i, j) => opc[j][i]);
+            out.push(plano.map((p, j) => ({ av: p.av, minimo: mins[j] })));
+            let j = 0; while (j < idx.length && ++idx[j] >= opc[j].length) { idx[j] = 0; j++; }
+            if (j === idx.length) break;
+        }
+        const r = [];
+        for (const pl of out) {
+            r.push(pl);
+            const fr = pl.filter(p => enchimento(p.av) && p.av.classe !== 'unico'), resto = pl.filter(p => !fr.includes(p));
+            if (fr.length && resto.some(p => !enchimento(p.av))) r.push(fr.concat(resto));
+        }
+        return r;
+    }
+    const assinaturaPlano = (plano) => plano.map(p => p.av.m.name + '≥' + p.minimo).join('>');
+
+    /* =========================================================================
+     *  simularParty — PURO e determinístico (testes/inteligente.test.js).
+     *  membros: [{ voc, slots:[{minimo, runa, mana, ouro, cd, grupo, sec, secMs,
+     *             d (dano por alvo), casas, fr, unico}], manaMax, regen (útil,
+     *             mana/s), pocao (fração de mana que dispara o gole, 0 = não
+     *             bebe), pocaoMana, pocaoOuro, basico (golpe/tiro a cada 2 s) }]
+     *  o: { L, hp (HP médio), E (espera entre ondas, s), seg, externoDps }
+     *  A onda é um pool de HP: chegam L criaturas, a 1ª quando a espera acaba
+     *  e as outras uma a cada 0,5 s; vivos =
+     *  presentes − floor(dano acumulado ÷ HP médio) (dano além dos presentes
+     *  se perde: overkill). A regeneração corre sempre; o gole dá +pocaoMana e
+     *  trava poção/runa por 1 s. Passo de 250 ms. Devolve T (tempo médio para
+     *  matar a onda) e, por personagem, dano/s, mana/s, ouro/s e disparos.
+     * ====================================================================== */
+    function simularParty(membros, o) {
+        const L = Math.max(1, Math.round(o.L || 1)), HP = Math.max(1, o.hp || 1), E = Math.max(0, o.E || 0) * 1000;
+        const fim = Math.max(10, o.seg || SIM_INT_SEG) * 1000, passo = SIM_PASSO_MS, cheg = CHEGADA_MS, ext = Math.max(0, o.externoDps || 0) * passo / 1000;
+        /* estado de cada um em campos simples (o laço roda ~1.500 passos × 4 por simulação e a busca faz milhares) */
+        const n = membros.length, st = new Array(n);
+        for (let j = 0; j < n; j++) {
+            const m = membros[j], ns = m.slots.length, grupos = [], secIdx = new Int8Array(ns);
+            for (let i = 0; i < ns; i++) { const g = m.slots[i].sec; if (!g) { secIdx[i] = -1; continue; } let x = grupos.indexOf(g); if (x < 0) { x = grupos.length; grupos.push(g); } secIdx[i] = x; }
+            st[j] = {
+                m, sl: m.slots, ns, reg: m.regen / 1000, max: m.manaMax, lim: m.pocao > 0 ? m.pocao * m.manaMax : -1, pm: m.pocaoMana || 100, po: m.pocaoOuro || 56, bas: m.basico > 0 ? m.basico : 0,
+                mana: m.manaMax, manaMin: m.manaMax, pronto: new Float64Array(ns), secIdx, secAte: new Float64Array(Math.max(1, grupos.length)),
+                grupo: 0, exaust: 0, dano: 0, basicoT: 0, manaGasta: 0, ouroP: 0, ouroR: 0, pocoes: 0, disparos: new Array(ns).fill(0),
+                /* alvos por nº de vivos: guardado no próprio slot (os 3 que ficam fixos na triagem são os mesmos objetos) */
+                alv: m.slots.map(s => {
+                    if (s.alv && s.alv.length === L + 1) return s.alv;
+                    const a = []; for (let v = 0; v <= L; v++) a.push(s.unico ? 1 : Math.max(1, Math.min(s.casas || 1, v * (s.fr || 0))));
+                    s.alv = a; return a;
+                })
+            };
+        }
+        let t = 0, tUlt = 0, tOnda = 0, D = 0, ondas = 0, somaT = 0, luta = 0, voltas = 0;
+        while (t < fim && voltas++ < 100000) {
+            const dt = t - tUlt; tUlt = t;
+            for (let j = 0; j < n; j++) {
+                const s = st[j];
+                let mana = s.mana + s.reg * dt;
+                if (mana > s.max) mana = s.max; else if (mana < 0) mana = 0;
+                s.mana = mana; if (mana < s.manaMin) s.manaMin = mana;
+            }
+            const presentes = t < tOnda ? 0 : Math.min(L, 1 + Math.floor((t - tOnda) / cheg));
+            const teto = presentes * HP;
+            let mortos = Math.min(L, Math.floor(D / HP));
+            if (mortos >= L) {
+                ondas++; somaT += t - tOnda; D = 0;
+                tOnda = t + E; t = Math.max(t + passo, tOnda); continue;
+            }
+            let vivos = presentes - mortos;
+            if (vivos > 0) {
+                luta += passo;
+                if (ext) { D = Math.min(teto, D + ext); mortos = Math.min(L, Math.floor(D / HP)); vivos = presentes - mortos; }
+            }
+            for (let j = 0; j < n; j++) {
+                const s = st[j];
+                if (s.lim >= 0 && s.mana < s.lim && t >= s.exaust) {
+                    s.mana = Math.min(s.max, s.mana + s.pm); s.ouroP += s.po; s.pocoes++; s.exaust = t + 1000;
+                }
+                if (vivos <= 0) continue;
+                /* golpe/tiro básico: 1 a cada 2 s em quem está vivo, fora da fila de magias */
+                if (s.bas && t >= s.basicoT) {
+                    s.dano += s.bas; D = Math.min(teto, D + s.bas); s.basicoT = t + 2000;
+                    mortos = Math.min(L, Math.floor(D / HP)); vivos = presentes - mortos;
+                    if (vivos <= 0) continue;
+                }
+                if (t < s.grupo) continue;
+                const sls = s.sl;
+                let k = -1;
+                for (let i = 0; i < s.ns; i++) {
+                    const sl = sls[i];
+                    if (s.pronto[i] > t || vivos < sl.minimo) continue;
+                    const gi = s.secIdx[i];
+                    if (gi >= 0 && s.secAte[gi] > t) continue;
+                    if (sl.runa ? t < s.exaust : s.mana < sl.mana) continue;
+                    k = i; break;
+                }
+                if (k < 0) continue;
+                const sl = sls[k], dano = sl.d * s.alv[k][vivos];
+                s.dano += dano; s.disparos[k]++;
+                D = Math.min(teto, D + dano);
+                if (sl.runa) { s.ouroR += sl.ouro || 0; s.exaust = t + 1000; } else { s.mana -= sl.mana; s.manaGasta += sl.mana; if (s.mana < s.manaMin) s.manaMin = s.mana; }
+                s.pronto[k] = t + (sl.cd || 2000);
+                if (s.secIdx[k] >= 0) s.secAte[s.secIdx[k]] = t + (sl.secMs || sl.cd || 2000);
+                s.grupo = t + Math.max(2000, sl.grupo || 2000);
+                mortos = Math.min(L, Math.floor(D / HP)); vivos = presentes - mortos;
+            }
+            t += passo;
+        }
+        const seg = fim / 1000;
+        let T;
+        if (ondas) T = somaT / ondas / 1000;
+        else { const r = D / Math.max(1, (t - tOnda) / 1000); T = Math.min(3600, L * HP / Math.max(1e-6, r)); }
+        const por = {};
+        for (const s of st) por[s.m.voc] = { manaMinFrac: s.max > 0 ? s.manaMin / s.max : 1, danoS: s.dano / seg, danoLutaS: luta ? s.dano / (luta / 1000) : 0, manaS: s.manaGasta / seg, ouroPocaoS: s.ouroP / seg, ouroRunaS: s.ouroR / seg, pocoesH: s.pocoes / seg * 3600, disparos: s.disparos };
+        return { T, ondas, luta: luta / 1000, seg, por };
+    }
+
+    /* personagem do simulador a partir de uma barra (régua única, suportes) */
+    function membroInt(voc, esc, ctx, train, regenMul) {
+        const cv = ctx.voc[voc];
+        const sups = (esc.sups || []).concat(ctx.defesa[voc] || []);
+        let mult = 1, fis = 1, dreno = 0;
+        for (const n of sups) { const s = SUPORTE_INT[n] || {}; dreno += drenoSuporte(n); if (s.mult) mult *= s.mult; if (s.fis) fis *= s.fis; }
+        const tr = train && (voc === 'KNIGHT' || voc === 'PALADIN') ? 1 + 3 / Math.max(5, cv.skill || 30) : 1;
+        const slots = esc.plano.map(p => {
+            const a = p.av, m = a.m, f = mult * (m.combatType === 'COMBAT_PHYSICALDAMAGE' ? fis * tr : 1);
+            return { minimo: p.minimo, runa: !!m.isRune, mana: m.isRune ? 0 : (m.mana || 0), ouro: m.isRune ? (a.custo || 0) : 0, cd: m.cooldownMs || 2000, grupo: m.groupCooldownMs || 2000,
+                     sec: m.secondaryGroup || null, secMs: m.secondaryGroupCooldownMs || m.cooldownMs || 2000, d: a.dAlvo * f, casas: a.casas, fr: a.fr, unico: a.classe === 'unico' };
+        });
+        const seguranca = ctx.escada.degrau >= 2 && voc === 'DRUID' ? 0.2 : 0;
+        const basico = (ctx.basico[voc] || 0) * (K_VIVO[voc] || 1) * mult * fis * tr;
+        return { voc, slots, basico, manaMax: cv.manaMax, regen: cv.regen * (regenMul || 1) - cv.reserva - dreno, dreno, pocao: Math.max(esc.pocao || 0, seguranca),
+                 pocaoMana: ctx.pocao.mana, pocaoOuro: ctx.pocao.ouro };
+    }
+    function metricasInt(ctx, sim, extraOuroS) {
+        const T = sim.T * ctx.eta, abH = ctx.L * 3600 / (T + ctx.E) * ctx.kCalib;
+        let ouroS = extraOuroS || 0, custoS = extraOuroS || 0;
+        for (const v of Object.keys(sim.por)) { const x = sim.por[v], o = x.ouroPocaoS + x.ouroRunaS; ouroS += o; custoS += (ctx.cVoc[v] || 1) * o; }
+        const custoH = custoS * 3600, receitaH = abH * ctx.loot, lucroH = receitaH - custoH;
+        const LCB = lucroH - (0.15 * custoH + (ctx.lootMedido ? 0.05 : 0.20) * receitaH);
+        const piso = ctx.lootMedido ? 0 : Math.max(5000, 0.10 * receitaH);
+        return { T, abH, xpH: abH * ctx.xpAbate, custoH, ouroH: ouroS * 3600, receitaH, lucroH, LCB, piso };
+    }
+    /* seguro: quem não bebe não gasta mais mana (ataque + suporte) do que a
+     * regeneração útil (regen − reserva de cura) repõe, com a folga da barra
+     * cheia do começo */
+    function seguroInt(ctx, membros, sim) {
+        for (const m of membros) {
+            if (m.pocao > 0) continue;
+            const x = sim.por[m.voc]; if (!x) continue;
+            if (x.manaS + m.dreno > Math.max(0, m.regen + m.dreno) * 1.02 + m.manaMax / sim.seg + 0.05) return false;
+        }
+        return true;
+    }
+    const okInt = (x) => !!(x && x.seguro && x.met.LCB >= x.met.piso);
+    /* ORDEM do objetivo (o 1º é o escolhido): seguro e LCB ≥ piso e xp na faixa
+     * (1−ε)·xpMax → maior lucro, menor ouro/h, menos poção ligada, menos
+     * slots, assinatura (xpRef: o maior xp já visto — a descida por
+     * coordenadas não pode perder ε a cada personagem);
+     * depois os que passam no piso por xp; depois os que não se pagam por LCB. */
+    function ordenarInt(lista, eps, xpRef) {
+        const xpMax = Math.max(xpRef || 0, ...lista.filter(okInt).map(x => x.met.xpH));
+        const grupo = x => okInt(x) ? (x.met.xpH >= (1 - eps) * xpMax ? 0 : 1) : x.seguro ? 2 : 3;
+        const r50 = v => Math.round(v / 50);
+        return lista.slice().sort((a, b) => {
+            const ga = grupo(a), gb = grupo(b);
+            if (ga !== gb) return ga - gb;
+            let d = 0;
+            if (ga === 0) d = r50(b.met.lucroH) - r50(a.met.lucroH) || r50(a.met.ouroH) - r50(b.met.ouroH) || (a.nPocao || 0) - (b.nPocao || 0) || a.nSlots - b.nSlots;
+            else if (ga === 1) d = b.met.xpH - a.met.xpH;
+            else d = r50(b.met.LCB) - r50(a.met.LCB) || b.met.xpH - a.met.xpH;
+            return d || (a.sig < b.sig ? -1 : a.sig > b.sig ? 1 : 0);
+        });
+    }
+    /* os `nObj` primeiros pelo objetivo + os `nDano` de mais dano/s do próprio
+     * personagem (sem repetir; a poção só entra se ela aumentar esse dano) */
+    function misturarTop(lista, eps, nObj, nDano, voc) {
+        const vistos = new Set(), r = [];
+        const por = (x) => { if (!vistos.has(x.sig)) { vistos.add(x.sig); r.push(x); } };
+        const ord = ordenarInt(lista, eps);
+        ord.slice(0, nObj).forEach(por);
+        const dano = x => Math.round(x.sim.por[voc].danoS * 10);
+        const xp = lista.slice().sort((a, b) => dano(b) - dano(a) || (a.nPocao || 0) - (b.nPocao || 0) || a.nSlots - b.nSlots || (a.sig < b.sig ? -1 : a.sig > b.sig ? 1 : 0));
+        for (const x of xp) { if (r.length >= nObj + nDano) break; por(x); }
+        for (const x of ord) { if (r.length >= nObj + nDano) break; por(x); }
+        return r;
+    }
+    const scoreInt = (x) => x ? x.met.xpH * (okInt(x) ? 1 : 0.5) : 0;
+    const escSig = (esc) => VOCS_INT.map(v => esc[v] ? v[0] + ':' + assinaturaPlano(esc[v].plano) + '|p' + (esc[v].pocao || 0) + '|' + (esc[v].sups || []).join('+') : v[0] + ':-').join(' ');
+
+    /* a party inteira, 360 s. `regenMul` = {voc: ×regen} (cenários do passo E) */
+    function avaliarPartyInt(ctx, esc, cont, regenMul) {
+        const chave = escSig(esc) + (regenMul ? '|' + JSON.stringify(regenMul) : '');
+        if (ctx.memo.has(chave)) return ctx.memo.get(chave);
+        const train = !!(esc.KNIGHT && (esc.KNIGHT.sups || []).includes('Train Party'));
+        const membros = VOCS_INT.filter(v => esc[v] && esc[v].plano.length).map(v => membroInt(v, esc[v], ctx, train, regenMul && regenMul[v]));
+        if (cont) cont.party++;
+        const sim = simularParty(membros, { L: ctx.L, hp: ctx.hp, E: ctx.E, seg: SIM_INT_SEG });
+        const r = { esc: Object.assign({}, esc), sim, met: metricasInt(ctx, sim), seguro: seguroInt(ctx, membros, sim), membros, cenario: !!regenMul,
+                    nSlots: VOCS_INT.reduce((s, v) => s + (esc[v] ? esc[v].plano.length : 0), 0), nPocao: VOCS_INT.filter(v => esc[v] && esc[v].pocao > 0).length, sig: escSig(esc) };
+        ctx.memo.set(chave, r);
+        return r;
+    }
+    /* triagem (passos B e C): a party inteira, com os outros 3 fixos como
+     * estão em `ref`, em SIM_TRIAGEM_SEG (120 s). (Com os outros como dano/s
+     * constante a onda morria na chegada com qualquer barra — o burst de quem
+     * lança a cada 2 s é o que diferencia uma barra da outra.) */
+    function triagemInt(ctx, voc, plano, pocao, sups, ref, cont) {
+        const esc = { plano, pocao, sups: sups || [] };
+        /* memória por party de referência (chave curta; a assinatura da party é longa) */
+        const memo = ref.tri || (ref.tri = new Map());
+        const chave = voc + '|' + assinaturaPlano(plano) + '|' + pocao + '|' + (sups || []).join('+');
+        if (memo.has(chave)) return memo.get(chave);
+        /* poção que nunca seria bebida (sem ela a mana não desce da marca e o
+         * gasto médio cabe na regeneração — senão desceria depois dos 120 s) = a
+         * mesma barra: não simula */
+        if (pocao > 0) {
+            const sem = triagemInt(ctx, voc, plano, 0, sups, ref, cont), x = sem.sim.por[voc];
+            if (x && x.manaMinFrac >= pocao && x.manaS <= sem.regenUtil + 1e-9) { memo.set(chave, null); return null; }
+        }
+        cont.sim++;
+        const train = voc === 'KNIGHT' ? (sups || []).includes('Train Party') : !!(ref.esc.KNIGHT && (ref.esc.KNIGHT.sups || []).includes('Train Party'));
+        const m = membroInt(voc, esc, ctx, train);
+        const membros = ref.membros.filter(x => x.voc !== voc).concat([m]);
+        const sim = simularParty(membros, { L: ctx.L, hp: ctx.hp, E: ctx.E, seg: SIM_TRIAGEM_SEG });
+        const r = { esc, plano, pocao, sim, met: metricasInt(ctx, sim), seguro: seguroInt(ctx, [m], sim), nSlots: plano.length, nPocao: pocao > 0 ? 1 : 0, sig: assinaturaPlano(plano) + '|p' + pocao, regenUtil: m.regen };
+        memo.set(chave, r);
+        return r;
+    }
+
+    /* =========================================================================
+     *  buscarParty — a busca inteira, com orçamento por CONTAGEM
+     *    A candidatas · B barras × poção {não, 30 %} (triagem, as 16 melhores)
+     *    C mínimos {1,2,3} (as 6 melhores) · D descida por coordenadas, 2
+     *    rodadas D → S → P → K, × suportes permitidos (party inteira)
+     *    E sem regeneração medida: as 3 finalistas com regen ×0,7/×1/×1,6,
+     *      vence o maior mínimo de score ÷ melhor do cenário.
+     *  Tetos N_MAX_SIM (triagens) e N_MAX_PARTY (party inteira): estourou,
+     *  fica o melhor até ali.
+     * ====================================================================== */
+    function buscarParty(ctx) {
+        const cont = { sim: 0, party: 0 }, eps = ctx.eps;
+        const atual = {};
+        for (const v of VOCS_INT) if (ctx.inicial[v] && ctx.inicial[v].plano.length) atual[v] = ctx.inicial[v];
+        let ref = avaliarPartyInt(ctx, atual, cont);
+        const inicial = ref;
+        /* B + C de um personagem contra a party de referência `ref` (a atual).
+         * 1ª rodada: todas as barras (B), as 16 melhores ganham as variações de
+         * mínimo (C). 2ª rodada: só o que passou pelo C é triado de novo, contra
+         * a party que mudou. Saem 24 (16 pelo objetivo + 8 de mais dano próprio)
+         * para a party inteira decidir. */
+        const vistosC = {};
+        const triar = (voc) => {
+            const cands = ctx.cands[voc] || [];
+            if (!cands.length) return [];
+            const pocoes = ctx.semPocao ? [0] : [0, 0.3];
+            const vars = [];
+            if (!vistosC[voc]) {
+                const avals = [];
+                for (const plano of barrasDe(cands, ctx.L)) {
+                    for (const pocao of pocoes) { if (cont.sim >= N_MAX_SIM) break; const x = triagemInt(ctx, voc, plano, pocao, [], ref, cont); if (x) avals.push(x); }
+                }
+                if (!avals.length) return [];
+                /* a triagem simula 120 s e, com a party forte, a onda morre quase
+                 * igual com qualquer barra: além dos melhores pelo objetivo passam
+                 * os de mais dano PRÓPRIO */
+                const top16 = misturarTop(avals, eps, 8, 8, voc);
+                vars.push(...top16);
+                for (const x of top16) {
+                    for (const pl of variacoesMinimos(x.plano, ctx.L)) {
+                        if (cont.sim >= N_MAX_SIM) break;
+                        const y = barraValida(pl, ctx.L) ? triagemInt(ctx, voc, pl, x.pocao, [], ref, cont) : null;
+                        if (y) vars.push(y);
+                    }
+                }
+                vistosC[voc] = vars.map(x => ({ plano: x.plano, pocao: x.pocao }));
+            } else {
+                for (const x of vistosC[voc]) { if (cont.sim >= N_MAX_SIM) break; const y = triagemInt(ctx, voc, x.plano, x.pocao, [], ref, cont); if (y) vars.push(y); }
+            }
+            return misturarTop(vars, eps, 16, 8, voc);
+        };
+        /* D. descida por coordenadas: a cada personagem a triagem é refeita
+         * contra a party como ela está (na 2ª rodada os outros já mudaram) */
+        const finalistas = {};
+        for (let rodada = 0; rodada < 2; rodada++) {
+            for (const voc of ORDEM_DESCIDA) {
+                const top = triar(voc);
+                if (!top.length) continue;
+                const opts = atual[voc] ? [ref] : [];
+                for (const x of top) {
+                    for (const sups of suportesPermitidos(voc, ctx.hunt)) {
+                        if (cont.party >= N_MAX_PARTY) break;
+                        opts.push(avaliarPartyInt(ctx, Object.assign({}, atual, { [voc]: { plano: x.plano, pocao: x.pocao, sups } }), cont));
+                    }
+                }
+                if (!opts.length) continue;
+                const ord = ordenarInt(opts, eps);
+                atual[voc] = ord[0].esc[voc]; ref = ord[0];
+            }
+        }
+        /* a escolha é GLOBAL: entre todas as parties inteiras simuladas (o ponto
+         * de partida incluído), a 1ª pelo objetivo. A descida só explora — a
+         * faixa de ε passo a passo ia cedendo 3 % a cada personagem. */
+        const todas = [...ctx.memo.values()].filter(x => x && x.membros && !x.cenario);
+        const melhor = ordenarInt(todas, eps)[0];
+        for (const v of VOCS_INT) { if (melhor.esc[v]) atual[v] = melhor.esc[v]; else delete atual[v]; }
+        const mesmoFora = (x, voc) => VOCS_INT.every(v => v === voc || (!x.esc[v] && !atual[v]) || (x.esc[v] && atual[v] && escSig({ [v]: x.esc[v] }) === escSig({ [v]: atual[v] })));
+        for (const v of VOCS_INT) finalistas[v] = ordenarInt(todas.filter(x => x.esc[v] && mesmoFora(x, v)), eps).slice(0, 3);
+        /* E. regeneração sem medida: robustez */
+        for (const voc of VOCS_INT) {
+            if (ctx.voc[voc] && ctx.voc[voc].regenMedida) continue;
+            const fin = finalistas[voc];
+            if (!fin || fin.length < 2) continue;
+            const cen = [0.7, 1, 1.6], sc = fin.map(() => []);
+            for (const mult of cen) {
+                const xs = fin.map(f => { if (cont.party >= N_MAX_PARTY) return null; return avaliarPartyInt(ctx, Object.assign({}, atual, { [voc]: f.esc[voc] }), cont, { [voc]: mult }); });
+                if (xs.some(x => !x)) break;
+                const melhor = Math.max(1e-9, ...xs.map(scoreInt));
+                xs.forEach((x, i) => sc[i].push(scoreInt(x) / melhor));
+            }
+            if (sc[0].length !== cen.length) continue;
+            let iMelhor = 0;
+            const minimo = sc.map(l => Math.min(...l));
+            for (let i = 1; i < fin.length; i++) if (minimo[i] > minimo[iMelhor] + 0.005) iMelhor = i;
+            atual[voc] = fin[iMelhor].esc[voc];
+        }
+        /* o ponto de partida (vigente ou Em área) está em `todas`: a busca nunca sai pior que ele */
+        const final = avaliarPartyInt(ctx, atual, cont);
+        if (!inicial) throw new Error('Inteligente: sem party de partida');
+        for (const v of Object.keys(final.esc)) final.esc[v].plano.forEach((p, j) => { if (slotMorto(final.esc[v].plano, j, ctx.L)) throw new Error('Inteligente: slot morto na saída (' + v + ' ' + p.av.m.name + ')'); });
+        return { final, cont, aviso: okInt(final) ? null : 'não se paga: nenhum kit passou no piso de lucro — ficou o de maior lucro garantido' };
+    }
+
+    /* HISTERESE: troca só se o novo for (1 + m)× melhor que o vigente
+     * reavaliado agora (m = 3 % com tudo medido, 5 % com algo estimado), ou se
+     * o vigente ficou inviável; nada nos 10 min depois de um APLICAR. */
+    function decidirTroca(o) {
+        if (o.tAplicar != null && o.agora - o.tAplicar < HISTERESE_INT.esperaMs) return { acao: 'ESPERAR', ganho: null };
+        const ganho = o.scoreVigente > 0 ? o.scoreNovo / o.scoreVigente - 1 : null;
+        if (o.vigenteViavel === false && o.novoViavel !== false) return { acao: 'TROCAR', ganho, motivo: 'o kit aplicado ficou inviável' };
+        const m = o.tudoMedido ? HISTERESE_INT.medido : HISTERESE_INT.estimado;
+        return o.scoreNovo > o.scoreVigente * (1 + m) ? { acao: 'TROCAR', ganho } : { acao: 'MANTER', ganho };
+    }
+
+    /* ---- contexto: tudo que a busca lê, quantizado (mesma entrada → mesma saída) ---- */
+    const _intCtx = new Map(), _intParty = new Map();
+    const INT_CTX_TTL_MS = 1500;
+    function mediaMonstros(hunt, k) {
+        const w = hunt.monsters.reduce((s, m) => s + (m.weight || 1), 0) || 1;
+        return hunt.monsters.reduce((s, m) => s + (Number(m[k]) || 0) * (m.weight || 1), 0) / w;
+    }
+    function kitVigenteInt(hunt) {
+        const g = ler('kit_int', {}) || {};
+        const r = {};
+        for (const v of VOCS_INT) { const x = g[hunt.id + '|' + v]; if (x) r[v] = x; }
+        return r;
+    }
+    function lootMedidoInt(hunt) {
+        let melhor = null;
+        try { for (const r of Object.values(scanResultados())) if (r && r.id === hunt.id && r.kills >= 100 && r.loot != null && (!melhor || r.kills > melhor.kills)) melhor = r; } catch { }
+        return melhor ? melhor.loot / melhor.kills : null;
+    }
+    function contextoInt(hunt, opc) {
+        opc = opc || {};
+        const chaveCtx = hunt.id + '|' + JSON.stringify(opc);
+        const c0 = _intCtx.get(chaveCtx);
+        if (c0 && Date.now() - c0.t < INT_CTX_TTL_MS) return c0.ctx;
+        const info = notasElementos(hunt);
+        if (!info) return null;
+        const L = lureMax(hunt), hp = mediaMonstros(hunt, 'health'), xpAbate = mediaMonstros(hunt, 'experience');
+        const med = indiceMedicoes(hunt);
+        const danosPorVoc = {};
+        for (const v of VOCS_INT) danosPorVoc[v] = danosConhecidos(v, null, true);
+        const ff = fatoresForma(hunt, med, info, L, danosPorVoc);
+        const ritmo = ritmoOndas(hunt);
+        const loot0 = LOOT_CACHE[hunt.id], lootMed = lootMedidoInt(hunt);
+        const escada = escadaDefesa(hunt);
+        const mp = listaPocoes('mana').find(p => p.n === melhorPocao('mana', 'DRUID', nivelAtual() || 1)) || { custo: 56, media: 100 };
+        const modoXp = ler('int_modo', 'lucro') === 'xp';
+        const ctx = {
+            hunt, info, L, hp, xpAbate, med, fForma: opc.fracao ? {} : ff.f, fFormaN: ff.n, fracao: opc.fracao || null,
+            E: qPasso(ritmo.esperaS, 0.5), eta: 1, kCalib: 1,
+            loot: lootMed != null ? Math.round(lootMed * 10) / 10 : loot0 != null ? loot0 : 0, lootMedido: lootMed != null,
+            eps: opc.eps != null ? opc.eps : modoXp ? EPS_INT_XP : EPS_INT, modoXp, semPocao: !!opc.semPocao,
+            escada, defesa: {}, voc: {}, av: {}, porNome: {}, cands: {}, cVoc: {}, memo: new Map(),
+            pocao: { mana: Math.round(mp.media) || 100, ouro: mp.custo || 56 }, basico: {}
+        };
+        const sk = (ESTADO_WS.sk || ler('skills_vistas', {}) || {});
+        /* golpe do Knight e tiro do Paladino (wiki /como-o-dano-e-calculado):
+         * nível/5 + 0,0425 × ataque × corpo a corpo (0,045 × munição × distância)
+         * − 0,75 × (armadura + defesa), no elemento físico. Arma 33 e flecha 25
+         * quando não há leitura (TIBIDLE.md). O K_VIVO multiplica o golpe também
+         * (como no combo-KP); o auto-ataque dos magos fica dentro do K_VIVO deles. */
+        const lvlB = nivelAtual() || 1, red = reducaoFisicaMedia(hunt), nF = (info.notas.COMBAT_PHYSICALDAMAGE != null ? info.notas.COMBAT_PHYSICALDAMAGE : 100) / 100;
+        ctx.basico.KNIGHT = q5pct(Math.max(1, lvlB / 5 + 0.0425 * 33 * ((sk.KNIGHT && sk.KNIGHT.melee) || 30) - red) * nF);
+        ctx.basico.PALADIN = q5pct(Math.max(1, lvlB / 5 + 0.045 * 25 * ((sk.PALADIN && sk.PALADIN.dist) || 33) - red) * nF);
+        for (const v of VOCS_INT) {
+            const md = manaDoPersonagem(v), rm = opc.regen && opc.regen[v] != null ? opc.regen[v] : regenMedida(v);
+            ctx.voc[v] = { manaMax: qPasso(md.manaMax, 10), regen: Math.round(rm != null ? rm : REGEN_MANA_S[v] || 8), regenMedida: rm != null,
+                           reserva: opc.reserva && opc.reserva[v] != null ? opc.reserva[v] : reservaCura(v, hunt),
+                           skill: v === 'KNIGHT' ? (sk.KNIGHT && sk.KNIGHT.melee) || 30 : (sk.PALADIN && sk.PALADIN.dist) || 33 };
+            ctx.defesa[v] = suportesDefesa(v, hunt, escada.degrau);
+            const ml = mlAtual(v);
+            const avs = magiasDaVocacao(v).map(m => avaliar(m, hunt, info, v, danosPorVoc[v]));
+            avs.forEach(a => { a.semML = !!(a.m.isRune && a.m.magicLevel > 0 && ml != null && ml < a.m.magicLevel); reguaInt(a, v, ctx); });
+            ctx.av[v] = avs.sort((a, b) => b.porLancInt - a.porLancInt || (a.m.name < b.m.name ? -1 : 1));
+            ctx.porNome[v] = Object.fromEntries(avs.map(a => [a.m.name, a]));
+            ctx.cands[v] = candidatasInt(v, avs, info);
+        }
+        /* ponto de partida da busca: o kit aplicado pelo Inteligente; senão o Em área (com a poção do jogo) */
+        const vig = kitVigenteInt(hunt);
+        ctx.vigente = {};
+        for (const v of VOCS_INT) {
+            const x = vig[v];
+            if (x && x.plano && x.plano.every(([n]) => ctx.porNome[v][n])) ctx.vigente[v] = { plano: x.plano.map(([n, mi]) => ({ av: ctx.porNome[v][n], minimo: mi })), pocao: x.pocao || 0, sups: x.sups || [] };
+        }
+        ctx.inicial = {};
+        for (const v of VOCS_INT) ctx.inicial[v] = ctx.vigente[v] || escolhaDoModelo('area', hunt, v, ctx);
+        calibrarPorScan(ctx);
+        ctx.tudoMedido = VOCS_INT.every(v => ctx.voc[v].regenMedida) && ctx.lootMedido;
+        const aplic = (ler('int_aplicado', {}) || {})[hunt.id] || null;
+        ctx.tAplicar = aplic;
+        const danosK = VOCS_INT.map(v => Object.keys(danosPorVoc[v]).sort().map(k => k + q5pct((danosPorVoc[v][k].min + danosPorVoc[v][k].max) / 2)).join(',')).join(';');
+        ctx.carimbo = _hash(JSON.stringify([nivelAtual(), _hash(danosK), L, ctx.E, ctx.loot, ctx.lootMedido, ctx.fForma, ctx.fracao, ctx.eps, escada.degrau, ctx.defesa, ctx.kCalib, ctx.cVoc,
+            VOCS_INT.map(v => [ctx.voc[v].manaMax, ctx.voc[v].regen, ctx.voc[v].reserva, mlAtual(v), ctx.cands[v].map(a => a.m.name + ':' + Math.round(a.porLancInt)).join(',')]),
+            escSig(ctx.vigente), aplic != null && Date.now() - aplic < HISTERESE_INT.esperaMs, JSON.stringify(opc)]));
+        _intCtx.set(chaveCtx, { t: Date.now(), ctx });
+        if (_intCtx.size > 40) _intCtx.delete(_intCtx.keys().next().value);
+        return ctx;
+    }
+    /* o kit de um modelo antigo como escolha do simulador (régua única) */
+    function escolhaDoModelo(modelo, hunt, voc, ctx) {
+        const r = montarPlano(modelo, hunt, voc);
+        const plano = r && !r.erro ? r.plano.filter(p => ctx.porNome[voc][p.av.m.name]).map(p => ({ av: ctx.porNome[voc][p.av.m.name], minimo: p.minimo })) : [];
+        return { plano, pocao: manaPotionLigada(voc) ? 0.3 : 0, sups: [] };
+    }
+    /* c_voc (gasto medido ÷ simulado, [0,2; 1,5]) e k_calib (abates medidos ÷
+     * previstos, [0,7; 1,3]) pelo Scan deste mapa com um modelo antigo */
+    function calibrarPorScan(ctx) {
+        let sc = null;
+        try { for (const r of Object.values(scanResultados())) if (r && r.id === ctx.hunt.id && r.abatesH > 0 && r.seg >= 120 && MODELOS[r.modelo] && r.modelo !== 'inteligente' && r.modelo !== 'boss' && (!sc || r.seg > sc.seg)) sc = r; } catch { }
+        for (const v of VOCS_INT) ctx.cVoc[v] = 1;
+        if (!sc) return;
+        const esc = {};
+        for (const v of VOCS_INT) { const e = escolhaDoModelo(sc.modelo, ctx.hunt, v, ctx); if (e.plano.length) esc[v] = e; }
+        const x = avaliarPartyInt(ctx, esc, null);
+        ctx.memo.clear();
+        if (x.met.abH > 0) ctx.kCalib = qPasso(Math.min(1.3, Math.max(0.7, sc.abatesH / x.met.abH)), 0.05);
+        for (const v of VOCS_INT) {
+            const s = x.sim.por[v], sv = sc.supVoc && sc.supVoc[v];
+            const simH = s ? (s.ouroPocaoS + s.ouroRunaS) * 3600 : 0;
+            if (sv && sv.ouro != null && simH > 100) ctx.cVoc[v] = qPasso(Math.min(1.5, Math.max(0.2, (sv.ouro / sc.seg * 3600) / simH)), 0.05);
+        }
+    }
+
+    /* a busca da party (com o vigente e a histerese). `buscar` = pode calcular
+     * (clique); sem ele devolve só o que já foi calculado. */
+    function partyInt(hunt, buscar, opc) {
+        if (!hunt || hunt.boss) return null;
+        const chave = hunt.id + '|' + JSON.stringify(opc || {});
+        const c = _intParty.get(chave);
+        if (!buscar && !c) return null; // sem clique e sem conta anterior: nem o contexto é montado
+        const ctx = contextoInt(hunt, opc);
+        if (!ctx) return null;
+        if (c && c.carimbo === ctx.carimbo) return c.res;
+        if (!buscar) return c ? Object.assign({}, c.res, { desatualizado: true }) : null;
+        const t0 = Date.now();
+        const achado = buscarParty(ctx);
+        let fica = achado.final, decisao = { acao: 'NOVO', ganho: null };
+        const temVig = VOCS_INT.every(v => !ctx.cands[v].length || ctx.vigente[v]);
+        if (temVig && Object.keys(ctx.vigente).length) {
+            const vig = avaliarPartyInt(ctx, ctx.vigente, achado.cont);
+            if (vig.sig === achado.final.sig) decisao = { acao: 'IGUAL', ganho: 0 };
+            else {
+                decisao = decidirTroca({ scoreVigente: scoreInt(vig), scoreNovo: scoreInt(achado.final), tudoMedido: ctx.tudoMedido, tAplicar: ctx.tAplicar, agora: Date.now(),
+                                         vigenteViavel: okInt(vig), novoViavel: okInt(achado.final) });
+                if (decisao.acao !== 'TROCAR') fica = vig;
+            }
+            decisao.vigente = vig;
+        }
+        const res = { ctx, final: fica, novo: achado.final, decisao, cont: achado.cont, aviso: okInt(fica) ? null : achado.aviso,
+                      escada: ctx.escada, ms: Date.now() - t0, carimbo: ctx.carimbo };
+        _intParty.set(chave, { carimbo: ctx.carimbo, res });
+        if (_intParty.size > 20) _intParty.delete(_intParty.keys().next().value);
+        return res;
+    }
+    /* APLICAR: o kit aplicado vira o vigente do mapa (a histerese parte dele) */
+    function registrarAplicacaoInt(hunt, res) {
+        if (!hunt || !res || !res.final) return;
+        const g = ler('kit_int', {}) || {};
+        for (const v of VOCS_INT) { const e = res.final.esc[v]; if (e) g[hunt.id + '|' + v] = { plano: e.plano.map(p => [p.av.m.name, p.minimo]), pocao: e.pocao || 0, sups: e.sups || [], t: Date.now() }; }
+        guardar('kit_int', g);
+        const a = ler('int_aplicado', {}) || {}; a[hunt.id] = Date.now(); guardar('int_aplicado', a);
+        const es = ler('escada', {}) || {}; const d = res.escada ? res.escada.degrau : 0;
+        if (!es[hunt.id] || es[hunt.id].d !== d) { es[hunt.id] = { d, t: Date.now() }; guardar('escada', es); }
+        invalidarPlanos();
+    }
+    /* "replanejar do zero": esquece o kit vigente e a trava de 10 min do mapa */
+    function zerarInt(hunt) {
+        if (!hunt) return;
+        const g = ler('kit_int', {}) || {};
+        for (const v of VOCS_INT) delete g[hunt.id + '|' + v];
+        guardar('kit_int', g);
+        const a = ler('int_aplicado', {}) || {}; delete a[hunt.id]; guardar('int_aplicado', a);
+        invalidarPlanos();
+    }
+    /* cura, poção, suporte e munição do personagem no kit escolhido */
+    function extrasInt(voc, esc, res, hunt) {
+        const lvl = nivelAtual(), d = res.escada ? res.escada.degrau : 1, mais = d >= 1 ? 10 : 0;
+        const heals = [];
+        const vida = melhorPocao('vida', voc, lvl); if (vida) heals.push({ name: vida, percent: Math.min(95, POCAO_VIDA_INT + mais) });
+        for (const [n, p] of (CURAS_INT[voc] || [])) if (temMagia(n, voc, lvl)) heals.push({ name: n, percent: Math.min(95, p + mais) });
+        heals.sort((a, b) => a.percent - b.percent);
+        while (heals.length < 5) heals.push(null);
+        const mp = melhorPocao('mana', voc, lvl);
+        const pct = esc && esc.pocao ? Math.round(esc.pocao * 100) : (d >= 2 && voc === 'DRUID' ? 20 : 0);
+        const manaPotion = mp && pct ? { name: mp, percent: pct } : { percent: 0 };
+        const supports = [...new Set(((esc && esc.sups) || []).concat(res.ctx.defesa[voc] || []))].slice(0, 2);
+        while (supports.length < 2) supports.push(null);
+        const r = { heals, manaPotion, supports };
+        if (voc === 'PALADIN') {
+            const ro = rosterEquip(); const p = ro && ro.find(x => x.vocation === 'PALADIN');
+            const tipo = (p && p.equipment && p.equipment.weapon && p.equipment.weapon.attrs && p.equipment.weapon.attrs.ammotype) || 'arrow';
+            const fp = ((ESTADO_WS.frame && ESTADO_WS.frame.party) || []).find(x => x.voc === 'PALADIN');
+            r.ammo = melhorMunicao(tipo, lvl, lureMax(hunt), reducaoFisicaMedia(hunt), fp && fp.dist, (notasElementos(hunt) || {}).notasArea);
+        }
+        return r;
+    }
+    /* montarPlano('inteligente', …) de UM personagem, tirado da party */
+    function planejarInteligente(hunt, voc, buscar) {
+        const res = partyInt(hunt, buscar);
+        if (!res) return { plano: [], pendente: true, ranking: [], hunt, modelo: 'inteligente', extras: null, sim: null, mortos: [], viab: null, cortadas: 0 };
+        const esc = res.final.esc[voc];
+        const s = res.final.sim.por[voc];
+        const plano = esc ? esc.plano.map((p, i) => ({ slot: i + 1, av: p.av, minimo: p.minimo, disparos: s ? s.disparos[i] : null })) : [];
+        const sim = s ? { danoS: s.danoS, manaS: s.manaS, ouroS: s.ouroPocaoS + s.ouroRunaS, ouroPocaoS: s.ouroPocaoS, ouroRunaS: s.ouroRunaS,
+                          runasS: plano.reduce((t, p, i) => t + (p.av.m.isRune ? (s.disparos[i] || 0) : 0), 0) / res.final.sim.seg, disparos: s.disparos } : null;
+        return { plano, ranking: res.ctx.av[voc] || [], info: res.ctx.info, hunt, modelo: 'inteligente', cortadas: 0, viab: LOOT_CACHE[hunt.id] != null ? { loot: LOOT_CACHE[hunt.id] } : null,
+                 naoCabe: !okInt(res.final), extras: extrasInt(voc, esc, res, hunt), sim, mortos: [], bebe: !!(esc && esc.pocao) || (res.escada.degrau >= 2 && voc === 'DRUID'),
+                 int: { decisao: res.decisao.acao, ganho: res.decisao.ganho, met: res.final.met, aviso: res.aviso, escada: res.escada, ms: res.ms, cont: res.cont, desatualizado: !!res.desatualizado,
+                        sups: esc ? esc.sups || [] : [], pocao: esc ? esc.pocao || 0 : 0 } };
+    }
+    /* veredito do grupo no Inteligente: o lucro/h da party simulada */
+    function viabilidadeInt(hunt) {
+        const res = partyInt(hunt, false);
+        if (!res || LOOT_CACHE[hunt.id] == null) return null;
+        const f = res.final, m = f.met, porVoc = {}, pocoes = {};
+        let danoS = 0;
+        for (const v of VOCS_INT) {
+            const e = f.esc[v], s = f.sim.por[v];
+            if (!e || !s) { porVoc[v] = null; continue; }
+            pocoes[v] = !!(e.pocao || (res.escada.degrau >= 2 && v === 'DRUID'));
+            danoS += s.danoS;
+            porVoc[v] = { magia: e.plano[0] ? e.plano[0].av.m.name : '', kit: e.plano.map((p, i) => `${p.av.m.name} ≥${p.minimo} ×${s.disparos[i]}`).join(' · '), dano: Math.round(s.danoS),
+                          ouroH: Math.round((s.ouroPocaoS + s.ouroRunaS) * 3600), manaS: Math.round(s.manaS * 10) / 10,
+                          runasH: Math.round(e.plano.reduce((t, p, i) => t + (p.av.m.isRune ? s.disparos[i] : 0), 0) / f.sim.seg * 3600), pocao: pocoes[v] };
+        }
+        const loot = res.ctx.loot, custoPorAbate = m.abH > 0 ? m.custoH / m.abH : 0;
+        return { loot, hp: Math.round(res.ctx.hp), orcamento: Math.round(loot * MARGEM_LUCRO * 10) / 10, dOuroParty: null,
+                 custoPorAbate: Math.round(custoPorAbate), custoSemFator: Math.round(custoPorAbate * 10) / 10, exigidoParty: null,
+                 regen: VOCS_INT.every(v => !pocoes[v]), pocoes, cabe: okInt(f), lucroPorAbate: Math.round(loot - custoPorAbate),
+                 danoS: Math.round(danoS), ouroH: Math.round(m.ouroH), porVoc, lucroH: Math.round(m.lucroH), xpH: Math.round(m.xpH), abatesH: Math.round(m.abH) };
+    }
+    /* a party de um modelo antigo pelo simulador novo (Scan A/B, testes de calibração) */
+    function preverModeloInt(modelo, hunt, opc) {
+        const ctx = contextoInt(hunt, opc);
+        if (!ctx) return null;
+        const esc = {};
+        for (const v of VOCS_INT) { const e = escolhaDoModelo(modelo, hunt, v, ctx); if (e.plano.length) esc[v] = e; }
+        return avaliarPartyInt(ctx, esc, null);
+    }
+
     /* =========================================================================
      *  ⭐ v2.10 — BOSS POR DANO/SEGUNDO COM A MANA QUE HÁ (plano 2.11, item 3)
      *
@@ -1817,53 +2683,55 @@
     let _planosCat = [];
     const PLANO_TTL_MS = 5000;
     const VOCS_PLANO = ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'];
-    function invalidarPlanos() { _planos.clear(); }
+    /* v2.12.0 — o contexto do Inteligente cai junto; a party já calculada fica
+     * (vira "desatualizada" se as entradas mudaram — recalcular é no clique) */
+    function invalidarPlanos() { _planos.clear(); _intCtx.clear(); }
     const _hash = (s) => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
-    function entradasDoPlano(modelo, hunt, voc, opc) {
+    function entradasDoPlano(modelo, hunt, voc) {
         const bruto = ler(chaveDano(voc), {});
-        /* v2.10 — QUEM BEBE POÇÃO (plano 2.11, item 4). O Inteligente liga a
-         * poção de mana no Druida (ou nos 4, variante _mana); os outros modelos
-         * não mexem em poção, então vale o que está no jogo. */
-        const bebe = modelo === 'inteligente' ? !!(opc.manaTodos || voc === 'DRUID') : !!manaPotionLigada(voc);
+        /* v2.10 — QUEM BEBE POÇÃO (plano 2.11, item 4): os modelos antigos não
+         * mexem em poção, então vale o que está no jogo. v2.12.0 — o Inteligente
+         * não passa mais por aqui (planejarInteligente): "sobrando",
+         * "spawnLimita" e "bebe" saíram dele; o carimbo dele é quantizado
+         * (contextoInt). */
+        const bebe = !!manaPotionLigada(voc);
         const med = indiceMedicoes(hunt);
         const manaMed = hunt ? manaMedidaMedia(hunt, voc) : null;
-        /* "mana sobrando" é REGENERAÇÃO parada. Em quem bebe, 90 % de mana é a
-         * poção fazendo o trabalho dela (Druida a 90 % pegava Eternal Winter,
-         * 1050 de mana a cada 40 s ≈ 53k/h de poção). Só quem não bebe entra. */
-        const sobrando = modelo === 'inteligente' && !bebe && hunt ? regimeSobrando(hunt, voc, manaMed) : false;
-        const spawnLimita = modelo === 'inteligente' && hunt ? spawnLimitaMedido(hunt) === true : false;
         const vidaMin = hunt && voc === 'KNIGHT' ? vidaMinMedida(hunt, voc) : null;
         const ml = mlAtual(voc), ritmo = ritmoOndas(hunt), mana = manaDoPersonagem(voc);
         const nBest = hunt && hunt.monsters ? hunt.monsters.filter(m => BESTIARIO[m.name]).length : 0;
         const medK = Object.keys(med).sort().map(k => k + med[k].casts + ':' + med[k].porCast).join(',');
         const danosK = Object.keys(bruto).sort().map(k => { const x = bruto[k] || {}; return k + x.min + '-' + x.max + '@' + x.nivel + (x.ml != null ? 'm' + x.ml : ''); }).join(',');
-        const carimbo = [nivelAtual(), _hash(danosK), bebe ? 1 : 0, manaMed, sobrando ? 1 : 0, spawnLimita ? 1 : 0, vidaMin, ml, hunt ? LOOT_CACHE[hunt.id] : null, nBest,
-                         _hash(medK), ritmo.matarS.toFixed(1), ritmo.esperaS.toFixed(1), mana.manaMax, opc.manaTodos ? 1 : 0, opc.semRuna ? 1 : 0, opc.seco ? 1 : 0].join('|');
-        return { bruto, bebe, med, manaMed, sobrando, spawnLimita, ml, ritmo, mana, carimbo };
+        const carimbo = [nivelAtual(), _hash(danosK), bebe ? 1 : 0, manaMed, vidaMin, ml, hunt ? LOOT_CACHE[hunt.id] : null, nBest,
+                         _hash(medK), ritmo.matarS.toFixed(1), ritmo.esperaS.toFixed(1), mana.manaMax, mana.regen].join('|');
+        return { bruto, bebe, med, manaMed, ml, ritmo, mana, carimbo };
     }
     function copiarResultado(r) {
         if (!r || r.erro) return r;
         return Object.assign({}, r, { plano: r.plano.map(p => Object.assign({}, p)), extras: r.extras ? JSON.parse(JSON.stringify(r.extras)) : r.extras });
     }
-    function montarPlano(modelo, hunt, vocForcada) {
-        /* v2.10 (item 12) — a variante vira opções explícitas; nada global */
-        const vr = VARIANTES[modelo];
-        const opc = { manaTodos: !!(vr && vr.manaTodos), semRuna: !!(vr && vr.semRuna), seco: !!(vr && vr.seco) };
-        const base = vr ? vr.base : modelo;
+    /* v2.12.0 — `opcoes.buscar`: o Inteligente só CALCULA quando o chamador
+     * é um clique (CALCULAR, APLICAR, Scan ligado); o desenho da tela e o
+     * handler de frame recebem só o que já foi calculado (ou `pendente`). */
+    function montarPlano(modelo, hunt, vocForcada, opcoes) {
         const voc = vocForcada || vocacaoAtual();
         if (!hunt) return { erro: 'não achei as resistências dessa hunt no catálogo' };
         const cat = [CAT.magias, CAT.precos, CAT.pocoes, CAT.bosses, CAT.municao, _ammoCat];
-        if (cat.some((x, i) => x !== _planosCat[i])) { _planos.clear(); _planosCat = cat; }
-        const ent = entradasDoPlano(base, hunt, voc, opc);
+        if (cat.some((x, i) => x !== _planosCat[i])) { _planos.clear(); _intCtx.clear(); _intParty.clear(); _planosCat = cat; }
+        if (modelo === 'inteligente') {
+            if (hunt.boss || !notasElementos(hunt)) return { erro: hunt.boss ? 'o Inteligente é para caçada (no boss use o modelo Boss)' : 'não achei as resistências dessa hunt no catálogo' };
+            return copiarResultado(planejarInteligente(hunt, voc, !!(opcoes && opcoes.buscar)));
+        }
+        const ent = entradasDoPlano(modelo, hunt, voc);
         const chave = [modelo, hunt.id, voc, ent.carimbo].join('|');
         const c = _planos.get(chave);
         if (c && Date.now() - c.t < PLANO_TTL_MS) return copiarResultado(c.r);
-        const r = planejar(base, hunt, voc, opc, ent);
+        const r = planejar(modelo, hunt, voc, ent);
         if (_planos.size >= 80) _planos.delete(_planos.keys().next().value);
         _planos.set(chave, { t: Date.now(), r });
         return copiarResultado(r);
     }
-    function planejar(modelo, hunt, voc, opc, ent) {
+    function planejar(modelo, hunt, voc, ent) {
         const info = notasElementos(hunt);
         if (!info) return { erro: 'não achei as resistências dessa hunt no catálogo' };
         info.med = ent.med;
@@ -1968,86 +2836,6 @@
             const mA = pega(porDano(magias.filter(ehArea)), 2);
             const mB = mA.length < 2 ? pega(porDano(magias), 2 - mA.length) : [];
             escolhidas = mA.concat(mB, pega(porDano(runas.filter(ehArea)), 2));
-        } else if (modelo === 'inteligente') {
-            /* 4 slots: as 3 melhores de ÁREA por dano/segundo (onda, runa, feixe) +
-             * o melhor golpe de alvo único. Sem ultimates (cd > 12 s): a comunidade
-             * nunca os usa e por DPS eles perdem feio (Rage 752 a cada 40 s contra
-             * Strong Ice Wave 739 a cada 8 s). Ordem final: cd longo primeiro. */
-            /* ⚠ Só UMA magia dispara por ciclo de 2 s (wiki: cooldown de grupo).
-             * Ordenar por dano/segundo enchia os 3 slots com runas de cd 2 s — a do
-             * slot 1 dispararia sempre e as outras nunca (visto em 28/09). Então:
-             * o que conta é o dano POR LANÇAMENTO de cada slot, e a runa (cd 2 s,
-             * custa ouro) é só o preenchimento dos ciclos em que as ondas
-             * recarregam. O golpe de alvo único (≥1) é magia, não runa: 20 de mana
-             * em vez de 8 de ouro por uso. */
-            /* v2.6.9 — A MANA MEDIDA DECIDE O REGIME:
-             *   ≥ 70 % de mana média → sobra regeneração: entra a magia mais forte
-             *     que houver, ultimate incluída (Rage of the Skies a cada 40 s é dano
-             *     de graça para quem fica em 93 %); escolha por dano.
-             *   ≤ 25 % → falta mana: escolha por dano/mana (regra normal).
-             *   sem medida → regra normal.
-             * v2.9.0 — com histerese: entra com ≥ 70 %, só sai abaixo de 40 %
-             * (regimeSobrando), e a medida zera quando o kit muda.
-             * v2.10 — só para quem NÃO bebe poção (entradasDoPlano, item 4). */
-            const sobrando = ent.sobrando;
-            /* v2.7.0 — Djinns 28/09: Paladino 78 % e Feiticeiro 96 % de mana
-             * PARADA porque a runa (cd 2 s) na frente tomava todos os ciclos —
-             * Caldera e Energy Wave nunca saíram, e 6k/h de runa foi gasto onde
-             * a mana de graça bastava. Regra: mana sobrando → magias ANTES da
-             * runa; se além disso o spawn limita (onda morre em 2,5 s de 13),
-             * a runa sai do kit — dano extra não vira xp, só custa ouro. */
-            const semRunaAqui = opc.semRuna || (sobrando && ent.spawnLimita);
-            const cdMax = sobrando ? 40000 : 12000;
-            const rapidas = conf.filter(a => (a.m.cooldownMs || 2000) <= cdMax);
-            const ondas = rapidas.filter(a => !ehRuna(a) && ehArea(a)), runasA = rapidas.filter(a => ehRuna(a) && (a.m.cooldownMs || 2000) <= 12000 && ehArea(a));
-            /* o golpe de alvo único é o que dispara quando sobra 1 monstro; o corte
-             * de "<10 % do melhor" o mataria sempre (Energy Strike 35 contra 845 da
-             * onda), então ele entra direto de `avaliadas`, só sem elemento vetado */
-            const golpes = avaliadas.filter(a => a.confiavel && !ehRuna(a) && !ehArea(a) && info.vetos[a.m.combatType] == null && a.danoEfetivo > 0 && (a.m.cooldownMs || 2000) <= 12000);
-            /* ⭐ v2.6.5 — MANA É O ORÇAMENTO ("mais por muito menos", dono 28/09).
-             * Livro-razão de Dragon Lair: Knight, Paladino e Feiticeiro entre 4 e
-             * 19 % de mana o tempo todo — cada ponto gasto numa magia fraca é
-             * dano que a magia forte deixa de dar. Medido por lançamento:
-             *   Lesser Front Sweep 21,8 de dano por mana · Berserk 4,7 · Whirlwind 1,7
-             *   Energy Wave 6,1 · Great Energy Beam 2,5 · Lightning 1,4
-             *   avalanche rune ≈ 50 de dano por OURO (poção de mana rende ≈ 12)
-             * Regra: magias ordenadas por dano/mana; quem rende menos da metade da
-             * melhor sai (Whirlwind, Lightning, Beam); a runa entra POR ÚLTIMO como
-             * preenchimento dos ciclos sem mana (cd 2 s — na frente ela tomaria
-             * todos os ciclos). Sem golpe eficiente, a runa fica com ≥1. */
-            /* v2.6.6 — quem BEBE mana (Druida, ou todos na variante _mana) tem
-             * ouro como orçamento, não regeneração: nele vale o mais forte por
-             * lançamento (mata rápido, a poção repõe). Nos outros, dano/mana.
-             * Corte frouxo (25 % / 15 %): com 50 % o Knight perdia o Berserk e o
-             * Feiticeiro a Energy Wave (28/09). Golpe de alvo único só se não for
-             * cócega (≥15 % da melhor onda): Buzz de 18 e Lesser Ethereal Spear de
-             * 17 não valem o slot — a runa cobre o ≥1. */
-            /* ⚠ v2.6.7 — A ORDEM DOS SLOTS É SEMPRE A MAIS FORTE PRIMEIRO. Em
-             * Quara (28/09, 21:57) a 2.6.6 pôs Divine Missile (cd 2 s, 20 mana)
-             * no slot 1 do Paladino por ser "eficiente" — e como a fila dispara
-             * o primeiro pronto, a Missile tomou TODOS os ciclos e a Divine
-             * Caldera nunca saiu. Dono: "não funcionou de jeito algum, até a
-             * Equilibrada estava melhor". A eficiência decide QUEM entra (quem
-             * não bebe poção escolhe por dano/mana); o dano por lançamento
-             * decide a ORDEM. Magia barata de cd curto só serve por último. */
-            const comPocao = ent.bebe || sobrando;
-            const escolha = comPocao ? porDano : porEfic;
-            const melhorEfic = Math.max(0, ...ondas.concat(golpes).map(a => a.danoPorOuro));
-            const melhorOnda = Math.max(0, ...ondas.map(a => a.porLancamento));
-            const eficiente = a => a.danoPorOuro >= melhorEfic * (comPocao ? 0.15 : 0.25);
-            const forte = a => a.porLancamento >= melhorOnda * 0.15;
-            /* as 2 ondas entram sem corte (o corte de 25 % tirava o Berserk do
-             * Knight, e sem ele 6 de mana por segundo de regeneração ficavam
-             * parados); o corte vale para o golpe e para o preenchimento. */
-            escolhidas = pega(escolha(ondas), sobrando ? 3 : 2).concat(pega(escolha(golpes.filter(a => eficiente(a) && forte(a))), 1), semRunaAqui ? [] : pega(porDano(runasA), 1));
-            const nMagias = escolhidas.filter(a => !ehRuna(a)).length;
-            if (nMagias < 2) escolhidas = escolhidas.concat(pega(escolha(rapidas.filter(a => !ehRuna(a) && eficiente(a) && forte(a))), 2 - nMagias));
-            /* v2.9.0 — SÃO 4 SLOTS. Com mana sobrando saíam 3 ondas + golpe +
-             * runa = 5; o socket manda só os 4 primeiros e a runa (a última)
-             * sumia calada, com o Log dizendo que as 5 foram aplicadas. Com
-             * mana sobrando é a runa que sai: ela custa ouro e a mana já paga
-             * as ondas. */
-            if (escolhidas.length > 4) { const soMagia = escolhidas.filter(a => !ehRuna(a)); if (soMagia.length >= 4) escolhidas = soMagia; }
         } else if (modelo === 'boss') {
             escolhidas = melhorKitBoss(conf, ent);
         } else {
@@ -2087,12 +2875,10 @@
         escolhidas = escolhidas.slice(0, 4);
         let plano = escolhidas.map((a, i) => ({ slot: i + 1, av: a, minimo: (modelo === 'boss' || !ehArea(a)) ? 1 : 2 }));
         /* Sem slot extra: o dono pediu contagem exata (2 / 2+1 / 2+2). Se
-         * nenhuma ficou com ≥1, a última do plano cai para ≥1. No Inteligente
-         * o ≥1 vai para a runa (8 de ouro) ou, sem runa, para a magia mais
-         * barata por dano — nunca para a onda de 170 de mana. */
+         * nenhuma ficou com ≥1, a última do plano cai para ≥1. (v2.12.0 — o
+         * Inteligente não passa mais por aqui: os mínimos saem da busca.) */
         if (plano.length && !plano.some(p => p.minimo <= 1)) {
-            const alvo1 = modelo === 'inteligente' ? (plano.find(p => ehRuna(p.av)) || plano.slice().sort((a, b) => b.av.danoPorOuro - a.av.danoPorOuro)[0]) : plano[plano.length - 1];
-            alvo1.minimo = 1;
+            plano[plano.length - 1].minimo = 1;
         }
         /* v2.10 (item 7) — slot que nunca dispara sai do plano: slot vazio
          * não gasta mana nem engana o painel. O motivo fica em `mortos`. */
@@ -2110,8 +2896,7 @@
 
         const cortadas = avaliadas.filter(a => a.morta).length;
         const naoCabe = viab && !vivas.some(a => a.cabeNoOrcamento);
-        const extras = modelo === 'inteligente' ? planoExtras(voc, hunt, opc) : null;
-        return { plano, ranking: avaliadas, info, hunt, modelo, cortadas, viab, naoCabe, extras, sim, mortos, bebe: ent.bebe };
+        return { plano, ranking: avaliadas, info, hunt, modelo, cortadas, viab, naoCabe, extras: null, sim, mortos, bebe: ent.bebe };
     }
 
     /* =========================================================================
@@ -2149,6 +2934,7 @@
      * ====================================================================== */
     function viabilidadeParty(modelo, hunt) {
         if (!hunt || !hunt.monsters) return null;
+        if (modelo === 'inteligente') return viabilidadeInt(hunt); // v2.12.0 — lucro/h da party simulada, nada de busca aqui
         const loot = LOOT_CACHE[hunt.id];
         if (loot == null) return null;
         const w = hunt.monsters.reduce((s, m) => s + (m.weight || 1), 0) || 1;
@@ -2331,6 +3117,13 @@
          * plano de cada vocação e manda os mesmos frames que a janela manda.
          * v2.11 — só com os perfis que vieram INTEIROS do servidor
          * (welcome/resume); perfil montado aos pedaços vai pelos diálogos. */
+        /* v2.12.0 — Inteligente: a busca da party roda aqui (o APLICAR é o clique) */
+        let intRes = null;
+        if (modelo === 'inteligente') {
+            try { intRes = partyInt(hunt, true); } catch (e) { falhou('Inteligente (busca)', e); }
+            if (!intRes) { log('Inteligente: não consegui calcular o kit deste mapa — nada aplicado', 'erro'); return; }
+            if (intRes.aviso) log('Inteligente: ' + intRes.aviso, 'erro');
+        }
         if (socketAberto() && ESTADO_WS.perfisDoServidor) {
             log(`aplicando ${nomeModelo(modelo)} nos 4 personagens em ${hunt.title} — pelo socket, sem abrir janela…`);
             let total = 0, semEco = 0;
@@ -2346,6 +3139,7 @@
                 await dorme(150);
             }
             log(`terminado — ${total} slots enviados pelo socket` + (semEco ? ` · ${semEco} sem confirmação (confira os slots na tela)` : ''), total ? 'ok' : 'erro');
+            if (intRes && total) registrarAplicacaoInt(hunt, intRes);
             renderizar();
             return;
         }
@@ -2368,6 +3162,7 @@
         const volta = tid('party-member-' + original);
         if (volta) volta.click();
         log(`terminado — ${total} slots aplicados nos 4 personagens`, total ? 'ok' : 'erro');
+        if (intRes && total) registrarAplicacaoInt(hunt, intRes);
         /* v2.9.0 — pelos diálogos só os ataques mudam: poção, cura, suporte e
          * munição do Inteligente só saem pelo socket. Antes isso era calado. */
         if (semExtras) log('⚠ sem o socket, só os 4 slots de ataque foram trocados — poção, cura, suporte e munição do Inteligente NÃO foram aplicados. Recarregue a página (F5) com o helper instalado e aplique de novo.', 'erro');
@@ -2733,14 +3528,61 @@
      *  a cada ~9,5 s de espera, mortas em ~2,5 s — o spawn limita, dano extra
      *  não vira xp, e vale a build mais barata que ainda limpa a onda.
      * ====================================================================== */
-    const razaoNovo = () => ({ t0: Date.now(), magias: {}, auto: {}, tomado: { total: 0, golpes: 0, corpo: 0, golpesCorpo: 0 }, kills: 0, ondas: { n: 0, tam: 0, timer: 0, matar: 0, tOnda: 0 }, vitais: {}, hpAntes: {} });
+    const razaoNovo = () => ({ t0: Date.now(), magias: {}, auto: {}, tomado: { total: 0, golpes: 0, corpo: 0, golpesCorpo: 0 }, kills: 0, ondas: { n: 0, tam: 0, timer: 0, matar: 0, tOnda: 0 }, vitais: {}, hpAntes: {},
+                               vitaisPorKit: {}, kitVital: {} });
     let RAZAO = razaoNovo();
-    function razaoVitais(L, party) {
-        for (const p of party) {
-            if (!p || !p.vocation || !p.maxMana) continue;
-            const v = L.vitais[p.vocation] || (L.vitais[p.vocation] = { n: 0, mana: 0, hp: 0, hpMin: 1 });
-            v.n++; v.mana += p.mana / p.maxMana; v.hp += p.hp / (p.maxHp || 1); v.hpMin = Math.min(v.hpMin, p.hp / (p.maxHp || 1));
+    /* v2.12.0 — também a mana MÍNIMA (escada defensiva: Druida) e a
+     * REGENERAÇÃO de cada um: janela de ≥ 3 s (até 10 s) em que ele não lançou
+     * nada, ninguém lançou cura, não bebeu e a mana não encostou no máximo →
+     * Δmana/Δt. Mediana das últimas 200 janelas; com ≥ 30 vira regen_<VOC>
+     * (regenMedida), que o Inteligente e o simulador usam no lugar do chute. */
+    const _regenJan = {}, _regenLista = {};
+    function razaoVitais(L, party, eventos) {
+        const agora = Date.now();
+        const lancou = new Set(); let cura = false;
+        for (const e of (Array.isArray(eventos) ? eventos : [])) {
+            if (!e || e.kind !== 'cast') continue;
+            lancou.add(e.who);
+            const m = (CAT.magias || []).find(x => x.name === e.name);
+            if (m && m.group === 'healing') cura = true;
         }
+        party.forEach((p, i) => {
+            if (!p || !p.vocation || !p.maxMana) return;
+            const v = L.vitais[p.vocation] || (L.vitais[p.vocation] = { n: 0, mana: 0, hp: 0, hpMin: 1, manaMin: 1 });
+            v.n++; v.mana += p.mana / p.maxMana; v.hp += p.hp / (p.maxHp || 1); v.hpMin = Math.min(v.hpMin, p.hp / (p.maxHp || 1));
+            v.manaMin = Math.min(v.manaMin != null ? v.manaMin : 1, p.mana / p.maxMana);
+            try { amostrarRegen(p.vocation, p, lancou.has(i) || cura, agora); } catch { /* amostra perdida */ }
+        });
+    }
+    function amostrarRegen(voc, p, mexeu, agora) {
+        const gol = Object.values(p.supplyUsed || {}).reduce((s, u) => s + ((u && u.count) || 0), 0);
+        const j = _regenJan[voc];
+        const quebra = !j || mexeu || gol !== j.gol || p.mana < j.m1 || p.mana >= p.maxMana || agora - j.t1 > 3000;
+        if (j && (quebra || agora - j.t0 >= 10000)) {
+            const x = amostraRegen(j);
+            if (x != null) {
+                const l = _regenLista[voc] || (_regenLista[voc] = []);
+                l.push(x); if (l.length > 200) l.shift();
+                if (l.length >= 30 && l.length % 10 === 0) guardar('regen_' + voc, { v: Math.round(medianaRegen(l) * 10) / 10, n: l.length, t: agora });
+            }
+            _regenJan[voc] = null;
+        }
+        if (!_regenJan[voc] && !mexeu && p.mana < p.maxMana) _regenJan[voc] = { t0: agora, m0: p.mana, t1: agora, m1: p.mana, gol };
+        else if (_regenJan[voc]) { _regenJan[voc].t1 = agora; _regenJan[voc].m1 = p.mana; }
+    }
+    /* v2.12.0 — kit novo não APAGA a mana/vida medida (a 2.11 fazia `delete
+     * RAZAO.vitais[v]` a cada APLICAR e o Inteligente decidia sem medida): elas
+     * ficam guardadas por kit (vitaisPorKit[voc][hash]) e voltam se o kit volta. */
+    const kitHashConfig = (c) => _hash(JSON.stringify(c ? [c.skills || [], c.minCreatures || {}, c.supports || [], c.manaPotion ? c.manaPotion.percent : 0] : null));
+    function trocarVitaisDeKit(voc, hash) {
+        if (!voc) return;
+        const pk = RAZAO.vitaisPorKit || (RAZAO.vitaisPorKit = {}), kv = RAZAO.kitVital || (RAZAO.kitVital = {});
+        const porV = pk[voc] || (pk[voc] = {});
+        const antes = kv[voc] != null ? kv[voc] : '?';
+        if (antes === hash) return;
+        if (RAZAO.vitais[voc]) porV[antes] = RAZAO.vitais[voc];
+        if (porV[hash]) RAZAO.vitais[voc] = porV[hash]; else delete RAZAO.vitais[voc];
+        kv[voc] = hash;
     }
     function razaoEvento(L, e, agora) {
         const k = e.kind;
@@ -2847,10 +3689,11 @@
              * mas não marca perfisDoServidor — as outras três continuam sem */
             if (!ESTADO_WS.profiles) ESTADO_WS.profiles = {};
             ESTADO_WS.profiles[d.vocation] = clonar(d.profiles);
-            delete RAZAO.vitais[d.vocation];
+            const lp = d.profiles.list, at = lp && lp[d.profiles.active >= 0 ? d.profiles.active : 0];
+            trocarVitaisDeKit(d.vocation, kitHashConfig(at && at.config));
             return;
         }
-        if (o.type === 'update_battle_config' && d.who != null) { aplicarConfigLocal(vocDoIndice(d.who), d); const v = vocDoIndice(d.who); if (v) delete RAZAO.vitais[v]; return; }
+        if (o.type === 'update_battle_config' && d.who != null) { aplicarConfigLocal(vocDoIndice(d.who), d); const v = vocDoIndice(d.who); if (v) trocarVitaisDeKit(v, kitHashConfig(d)); return; }
         /* v2.11 — analisador zerado (botão da janela ou o Scan): a sessão do
          * Analisador fecha aqui — as contas dela partiam do zero antigo. */
         if (o.type === 'analyzer_reset') { if (SESSAO) fecharSessao('analisador zerado'); }
@@ -2859,6 +3702,7 @@
         try { observarProgresso(o); } catch { } // v2.11 — aba Progresso: só leitura (chaves, bestiário, prey, plano offline)
         try { diagObservar(o); } catch { } // v2.11 — Diagnóstico: guarda só a FORMA das mensagens
         try { observarMercado(o); } catch (e) { falhou('observarMercado', e); } // v2.11 — aba Mercado: premium, mochila, protegidos, respostas do mercado
+        try { radarObservar(o); } catch (e) { falhou('radar (observar)', e); } // v2.13.0 — aba Radar: loot ao vivo e o dia (só leitura)
         if (!o || !o.type) return;
         const d = (o.data && typeof o.data === 'object') ? o.data : {};
         if (o.type === 'depot_state' && Array.isArray(d.entries)) {
@@ -2889,7 +3733,7 @@
             };
             if (Array.isArray(st.party) && st.party.length) {
                 ESTADO_WS.party = vocsPorPosicao(st.party);
-                try { razaoVitais(RAZAO, st.party); } catch (e) { falhou('livro-razão (vitais)', e); }
+                try { razaoVitais(RAZAO, st.party, d.events); } catch (e) { falhou('livro-razão (vitais)', e); }
                 try { anotarSkills(st.party); } catch (e) { falhou('anotarSkills', e); }
             }
             if (Array.isArray(d.events)) { const agora = Date.now(); for (const ev of d.events) {
@@ -3611,6 +4455,7 @@
         const h = historicoCiclos(); h.push(reg);
         while (h.length > MAX_HIST_CICLOS) h.shift();
         guardar('ciclos_hist', h);
+        try { radarCiclo(reg); } catch { /* o relatório do dia nunca derruba o ciclo */ }
         const n = ciclosNaUltimaHora(h, Date.now());
         if (n > 3 && Date.now() - _alarmeCiclosEm > 3600000) {
             _alarmeCiclosEm = Date.now();
@@ -5113,7 +5958,7 @@
         return UI;
     };
     const guardarUI = (patch) => { UI = Object.assign(ui(), patch); guardar('ui', UI); };
-    const ICONES = [['estado', '⌂', 'Status'], ['magia', '✦', 'Magia'], ['autohunt', '↻', 'Auto Hunt'], ['scan', '◎', 'Scan'], ['equip', '⛨', 'Equip'], ['analise', '▤', 'Analisador'], ['progresso', '⚑', 'Progresso'], ['mercado', '⚖', 'Mercado'], ['log', '≡', 'Log']];
+    const ICONES = [['estado', '⌂', 'Status'], ['magia', '✦', 'Magia'], ['autohunt', '↻', 'Auto Hunt'], ['scan', '◎', 'Scan'], ['equip', '⛨', 'Equip'], ['analise', '▤', 'Analisador'], ['progresso', '⚑', 'Progresso'], ['mercado', '⚖', 'Mercado'], ['radar', '⌖', 'Radar'], ['log', '≡', 'Log']];
     /* "?" com a explicação escondida; data-k preserva aberto/fechado ao repintar */
     const aj = (k, html, rotulo) => `<details class="tb-aj" data-k="${k}"><summary>${rotulo || '?'}</summary><div class="tb-mut">${html}</div></details>`;
 
@@ -5252,7 +6097,7 @@
         const t = document.createElement('div'); t.id = 'tb-trilho';
         t.setAttribute('role', 'group'); t.setAttribute('aria-label', 'Tibidle Helper');
         t.innerHTML = bt('tb-alca', '', 'mover o helper (arraste ou use as setas; duplo clique volta ao lugar padrão)', '') +
-            ICONES.map(([k, ic, nome]) => `<button type="button" class="tb-ico" data-aba="${k}" title="${nome}" aria-label="${nome}" aria-pressed="false" aria-controls="tb-gaveta"><span aria-hidden="true">${ic}</span><span class="tb-rot" aria-hidden="true">${ROTULO_CURTO[k] || nome}</span><span class="tb-dot"></span>${k === 'log' ? '<span class="tb-cont" hidden></span>' : ''}</button>`).join('') +
+            ICONES.map(([k, ic, nome]) => `<button type="button" class="tb-ico" data-aba="${k}" title="${nome}" aria-label="${nome}" aria-pressed="false" aria-controls="tb-gaveta"><span aria-hidden="true">${ic}</span><span class="tb-rot" aria-hidden="true">${ROTULO_CURTO[k] || nome}</span><span class="tb-dot"></span>${k === 'log' || k === 'radar' ? '<span class="tb-cont" hidden></span>' : ''}</button>`).join('') +
             `<button type="button" class="tb-ico" id="tb-atualizar" title="versão nova disponível" aria-label="atualizar o helper" style="display:none;color:#6ede8a"><span aria-hidden="true">↑</span><span class="tb-rot" aria-hidden="true">Atualizar</span></button>` +
             bt('tb-esconder', '', 'esconder o helper', '‹');
         const g = document.createElement('div'); g.id = 'tb-gaveta';
@@ -5813,7 +6658,7 @@
      * confirmação em 2 toques; lista de mapas com display por CLASSE (o
      * filtro trocava display 'block' por '' e os rótulos viravam inline — a
      * caixa ficava colada no mapa errado). */
-    const MODELOS_SCAN = ['equilibrado', 'economica', 'area'];
+    const MODELOS_SCAN = ['equilibrado', 'economica', 'area', 'inteligente'];
     const FIM_SCAN = [['voltar', 'fim: voltar'], ['ficar', 'fim: ficar'], ['xp', 'fim: melhor XP'], ['ouro', 'fim: melhor ouro']];
     function telaScan() {
         garantirCssAH();
@@ -5851,7 +6696,7 @@
             <label class="tb-l" style="margin-left:auto"><input type="checkbox" id="tb-scan-lure" ${c.lureMax ? 'checked' : ''} ${dis}> lure máximo</label></div>
           <details class="tb-aj" data-k="scan-estudo"><summary>estudo de variantes${c.comparar ? ' · ligado' : ''}</summary><div>
             <label class="tb-l"><input type="checkbox" id="tb-scan-comparar" ${c.comparar ? 'checked' : ''} ${dis}> em cada mapa, medir cada variante</label>
-            ${c.comparar ? '<div style="margin:2px 0 0 4px">' + ['equilibrado', 'economica', 'area'].map(m => `<label class="tb-l" style="margin-right:6px"><input type="checkbox" data-scan-var="${m}" ${(c.variantes || []).includes(m) ? 'checked' : ''} ${dis}> ${escHtml(nomeModelo(m))}</label>`).join('') + '</div>' : ''}
+            ${c.comparar ? '<div style="margin:2px 0 0 4px">' + MODELOS_SCAN.map(m => `<label class="tb-l" style="margin-right:6px"><input type="checkbox" data-scan-var="${m}" ${(c.variantes || []).includes(m) ? 'checked' : ''} ${dis}> ${escHtml(nomeModelo(m))}</label>`).join('') + '</div>' : ''}
           </div></details>
           <details class="tb-aj" data-k="scan-mapas"><summary>mapas (${marc.size} marcados)</summary><div>
             <div class="tb-linha"><input class="tb-in" id="tb-scan-filtro" placeholder="filtrar…" style="flex:1" aria-label="filtrar mapas"><button type="button" class="tb-bt mini" id="tb-scan-limpar-mapas" ${dis}>desmarcar</button></div>
@@ -5934,7 +6779,7 @@
      *  personagem o gasto/h e as runas/h, fichas com "2+ alvos", extras em
      *  português ("poção de mana ≤30%" — saía "mana Mana ≤30") e os slots que a
      *  Magia cortou por nunca dispararem (r.mortos) numa linha discreta. */
-    const MODELO_CURTO = { economica: 'Eco', equilibrado: 'Equil', area: 'Área', boss: 'Boss' };
+    const MODELO_CURTO = { economica: 'Eco', equilibrado: 'Equil', area: 'Área', inteligente: 'Intel', boss: 'Boss' };
     /* nome da poção como o painel fala: "Strong Mana Potion" → "poção de mana forte" */
     function nomePocao(n) {
         const s = String(n || '');
@@ -5973,9 +6818,25 @@
         h = alvo;
         const r = montarPlano(modelo, h);
         if (r.erro) return corpo + `<div class="tb-cx tb-ruim">${escHtml(r.erro)}</div>`;
-        const vp = r.viab ? viabilidadeParty(modelo, h) : null;
         const ocupado = _aplicando || _aprendendo;
+        /* v2.12.0 — o Inteligente NÃO calcula no desenho: só no clique */
+        const modoXp = ler('int_modo', 'lucro') === 'xp';
+        const intCtl = `<div class="tb-linha" style="margin-top:4px"><button type="button" class="tb-bt" id="tb-int-calc" ${ocupado ? 'disabled' : ''}>${r.pendente ? 'CALCULAR O KIT' : 'recalcular'}</button>` +
+            `<button type="button" class="tb-bt mini" id="tb-int-zerar" ${ocupado ? 'disabled' : ''} title="esquece o kit aplicado neste mapa e a trava de 10 min: a próxima conta parte do zero">replanejar do zero</button>` +
+            `<label class="tb-l" style="margin-left:auto" title="ε = 0,5 %: fica com o de mais XP mesmo que custe bem mais ouro (o padrão, 3 %, prefere o mais barato entre os quase iguais)"><input type="checkbox" id="tb-int-xp" ${modoXp ? 'checked' : ''}> XP absoluto</label></div>`;
+        if (modelo === 'inteligente' && r.pendente) {
+            return corpo + intCtl + `<div class="tb-mut">o Inteligente simula a party inteira (≈ 0,1–0,3 s) — só quando você clica. Nada é aplicado sozinho.</div>`;
+        }
+        const vp = r.viab ? viabilidadeParty(modelo, h) : null;
         corpo += `<button type="button" class="tb-bt pri tb-larga tb-grande" id="tb-aplicar-todos" ${ocupado ? 'disabled' : ''} style="margin-top:6px">${_aplicando ? 'APLICANDO…' : _aprendendo ? 'MEDINDO O DANO…' : 'APLICAR NOS 4'}</button>`;
+        if (modelo === 'inteligente' && r.int) {
+            const it = r.int, m = it.met, dec = { NOVO: 'kit novo', IGUAL: 'o kit aplicado já é o melhor', MANTER: 'mantém o kit aplicado', TROCAR: 'TROCAR: o novo é melhor', ESPERAR: 'mantém (menos de 10 min desde o APLICAR)' }[it.decisao] || it.decisao;
+            const ganho = it.ganho != null && it.decisao !== 'IGUAL' && it.decisao !== 'NOVO' ? ` (novo ${it.ganho >= 0 ? '+' : ''}${Math.round(it.ganho * 1000) / 10} %)` : '';
+            corpo += intCtl + `<div class="tb-ver ${it.aviso ? 'ruim' : 'ok'}"><b>${escHtml(dec)}</b>${escHtml(ganho)}${it.desatualizado ? ' <span class="tb-av">(as medidas mudaram — recalcule)</span>' : ''}` +
+                `<div class="tb-mut">previsto: ${milBR(m.xpH)} xp/h · ${numBR(Math.round(m.abH))} abates/h · lucro ${m.lucroH >= 0 ? '+' : ''}${milBR(m.lucroH)}/h (garantido ${milBR(m.LCB)}) · ouro ${milBR(m.ouroH)}/h</div>` +
+                `<div class="tb-mut">defesa: degrau ${it.escada.degrau} (${escHtml(it.escada.motivo)})${it.escada.degrau >= 4 ? ' <span class="tb-ruim">⚠ mapa acima da party</span>' : ''} · ${numBR(it.cont.sim)} triagens + ${numBR(it.cont.party)} parties em ${numBR(it.ms)} ms</div>` +
+                (it.aviso ? `<div class="tb-ruim">${escHtml(it.aviso)}</div>` : '') + `</div>`;
+        }
         /* v2.10 — o veredito é do kit inteiro pela fila simulada (runa incluída,
          * mana só de quem bebe), com a poção que o PLANO usa. v2.11 (D2): selo
          * "✓ se paga"/"✗ não se paga" + custo por abate contra o teto (80 % do
@@ -6051,6 +6912,19 @@
         $$('[data-usar-palpite]', corpo).forEach(b => { b.onclick = () => { guardar('hunt_id', parseInt(b.dataset.usarPalpite)); renderizar(); }; });
         const selBoss = $('#tb-boss');
         if (selBoss) selBoss.onchange = () => { guardar('boss_nome', selBoss.value || null); renderizar(); };
+        /* v2.12.0 — Inteligente: a busca roda aqui, no clique (síncrona, ~0,1–0,3 s) */
+        const calc = $('#tb-int-calc');
+        if (calc) {
+            calc.onclick = () => {
+                const h = alvoDoModelo(); if (!h) return;
+                try { const r = partyInt(h, true); if (r) log(`Inteligente: ${h.title} — ${r.cont.sim} triagens + ${r.cont.party} parties em ${r.ms} ms (${r.decisao.acao})`, 'info'); } catch (e) { falhou('Inteligente (calcular)', e); }
+                renderizar();
+            };
+        }
+        const zer = $('#tb-int-zerar');
+        if (zer) zer.onclick = () => { const h = alvoDoModelo(); if (!h) return; zerarInt(h); try { partyInt(h, true); } catch (e) { falhou('Inteligente (do zero)', e); } renderizar(); };
+        const ixp = $('#tb-int-xp');
+        if (ixp) ixp.onchange = () => { guardar('int_modo', ixp.checked ? 'xp' : 'lucro'); invalidarPlanos(); renderizar(); };
         const ap4 = $('#tb-aplicar-todos');
         if (ap4) { ap4.onclick = () => {
             if (_aplicando || _aprendendo) return;
@@ -8546,6 +9420,979 @@
     }
     /* @@DIAGNOSTICO-FIM */
 
+    /* @@TELAS-API-INICIO — aba Radar (2.13.0): funções puras, sem DOM e sem estado; testes/telas-api.test.js roda este trecho no node. */
+    /* =========================================================================
+     *  ⭐ v2.13.0 — RADAR (pedido do dono, 30/09: "coloque em novas telas, para
+     *  não misturar com as que já utilizo"): ranking de todos os mapas sem
+     *  caçar, loot ao vivo, alerta de preço no Mercado e relatório do dia.
+     *  SÓ LEITURA: nada aqui envia comando de ação ao jogo.
+     *
+     *  O que é MEDIDO e o que é ESTIMADO:
+     *    • medido: frame.analyzer (loot, xp, abates, gasto), Scan limpo, vendas;
+     *    • estimado: xp/h e ouro/h de mapa sem Scan. abates/h = L·3600/(T+E+0,5·L),
+     *      T = L·hp/dano da party (o motor de Magia), E = espera entre ondas.
+     *      O loot do catálogo superestima 2–4× (TIBIDLE §12): o absoluto vem do
+     *      fator calibrado nos Scans (padrão 0,35 sem Scan).
+     *    • a API não traz o dano que o MONSTRO dá: o risco é aproximado pelo
+     *      dano tomado nos Scans (∝ lure × xp por abate), pela margem de nível,
+     *      pela nota do elemento e pelo que já aconteceu (hp mínimo, morte).
+     * ====================================================================== */
+    const TP_FATOR_LOOT_PADRAO = 0.35;
+    const TP_DIAS_MAX = 30;
+    const TP_ALERTA_MIN_MIN = 15; // vigiar: nunca menos de 15 min entre leituras
+    const tpNum = (x) => { const n = Number(x); return Number.isFinite(n) ? n : null; };
+    const tpMin = (s) => String(s == null ? '' : s).toLowerCase().trim();
+    const tpMediana = (a) => {
+        const v = a.filter(x => Number.isFinite(x)).sort((x, y) => x - y);
+        if (!v.length) return null;
+        const m = v.length >> 1;
+        return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+    };
+    const tpLim = (v, a, b) => Math.max(a, Math.min(b, v));
+    const tpLure = (h) => { const t = h && h.lureTiers; return t && t.length ? Math.max(...t.map(x => x.max || x.min || 1)) : 1; };
+
+    /* HP e XP médios por abate, ponderados pelo `weight` de cada monstro */
+    function tpHpXpMedio(hunt) {
+        const ms = (hunt && hunt.monsters) || [];
+        let w = 0, hp = 0, xp = 0;
+        for (const m of ms) { if (!m || typeof m !== 'object') continue; const p = Math.max(1, Number(m.weight) || 1); w += p; hp += (Number(m.health) || 0) * p; xp += (Number(m.experience) || 0) * p; }
+        return w ? { hp: hp / w, xp: xp / w } : { hp: 0, xp: 0 };
+    }
+
+    /* Loot esperado por abate. tabela = /hunt/lootTable; precoDe(nome, item) →
+     * {npc, mercado} (opcional; sem ele vale o `value` da tabela).
+     * o.dropNerf = {factor, minChance, nomes[]}: só itens de codex CONHECIDOS
+     * (a lista pública veio vazia em 30/09) caem por `factor`, sem passar abaixo
+     * de minChance. cat = conta crua do catálogo (a mesma de ouroPorAbate);
+     * npc/mercado = com o fator de loot e o de prey. */
+    function tpLootAbate(tabela, precoDe, o) {
+        o = o || {};
+        const nerf = o.dropNerf && Number(o.dropNerf.factor) > 1 ? o.dropNerf : null;
+        const codex = new Set(((nerf && nerf.nomes) || []).map(tpMin));
+        const f = (tpNum(o.fatorLoot) != null ? o.fatorLoot : 1) * (tpNum(o.fatorPrey) != null ? o.fatorPrey : 1);
+        let cat = 0, catMerc = 0;
+        const porItem = [];
+        for (const it of (Array.isArray(tabela) ? tabela : [])) {
+            if (!it || !it.name) continue;
+            let ch = Number(it.chance) || 0;
+            if (nerf && !it.currency && codex.has(tpMin(it.name)) && ch > (Number(nerf.minChance) || 0)) ch = Math.max(Number(nerf.minChance) || 0, ch / nerf.factor);
+            const esperado = ch / 100000 * (((Number(it.maxCount) || 1) + 1) / 2);
+            const p = precoDe ? (precoDe(it.name, it) || {}) : {};
+            const npc = p.npc != null ? Number(p.npc) || 0 : Number(it.value) || 0;
+            const merc = p.mercado != null && Number(p.mercado) > npc ? Number(p.mercado) : null;
+            cat += esperado * npc; catMerc += esperado * (merc != null ? merc : npc);
+            porItem.push({ nome: it.name, chance: Number(it.chance) || 0, esperado, npc, mercado: merc, moeda: !!it.currency });
+        }
+        return { cat, catMerc, npc: cat * f, mercado: catMerc * f, porItem };
+    }
+
+    /* Valor de UM item: NPC (tabela do loot ou /prices) e mercado líquido da
+     * taxa (= cliente: max(1, floor(unit × taxa))). unit = menor anúncio (se há
+     * venda) ou a média de 30 d; sem negócio em 30 dias não há preço de mercado. */
+    function tpValorItem(nome, f) {
+        f = f || {};
+        const n = tpMin(nome);
+        const npc = f.npcTabela != null ? Number(f.npcTabela) || 0 : (f.npc && f.npc[n] != null ? Number(f.npc[n]) || 0 : null);
+        const c = f.cat ? f.cat[n] : null;
+        const s = f.stats ? f.stats[n] : null;
+        const avg = s ? tpNum(s.avg != null ? s.avg : s.stats && s.stats.avg) : null;
+        let unit = null, fonte = null;
+        if (c && Number(c.trades30d) > 0) {
+            if (Number(c.sellOrders) > 0 && tpNum(c.minSell) > 0) { unit = Number(c.minSell); fonte = 'minSell'; }
+            else if (avg > 0) { unit = avg; fonte = 'media'; }
+        }
+        const taxa = tpNum(f.taxa) != null && f.taxa >= 0 && f.taxa < 1 ? f.taxa : 0.05;
+        const mercado = unit != null ? Math.floor(unit) - Math.max(1, Math.floor(Math.floor(unit) * taxa)) : null;
+        const melhor = mercado != null && mercado > (npc || 0) ? 'mercado' : 'npc';
+        const ganhoPct = mercado != null && npc > 0 ? Math.round((mercado / npc - 1) * 100) : null;
+        return { npc, mercado, melhor, ganhoPct, fonte, trades30d: c ? Number(c.trades30d) || 0 : 0 };
+    }
+
+    /* Calibração pelos Scans LIMPOS (não sujos, sem erro, nível ±2).
+     * est = {id: {abH, cat, L, xpAbate}} — abH SEM calibrar (kAbates 1). */
+    function tpCalibrar(scans, est, nivel) {
+        est = est || {};
+        const limpos = (Array.isArray(scans) ? scans : Object.values(scans || {})).filter(r => r && !r.suja && !r.erro && Number(r.abatesH) > 0 &&
+            (!nivel || !r.nivel || Math.abs(r.nivel - nivel) <= 2));
+        const kA = [], fL = [], aT = [];
+        let teto = null;
+        for (const r of limpos) {
+            const e = est[r.id];
+            if (e && e.abH > 0) kA.push(r.abatesH / e.abH);
+            if (e && e.cat > 0 && r.lootH != null) fL.push(r.lootH / (r.abatesH * e.cat));
+            if (e && e.L > 0 && e.xpAbate > 0 && Number(r.tomadoH) > 0) aT.push(r.tomadoH / (e.L * e.xpAbate));
+            const k = r.razao && r.razao.porVoc && r.razao.porVoc.KNIGHT;
+            if (k && Number(k.hpMin) >= 50 && Number(r.tomadoH) > 0) teto = Math.max(teto || 0, Number(r.tomadoH));
+        }
+        const mk = tpMediana(kA), mf = tpMediana(fL), ma = tpMediana(aT);
+        return { kAbates: mk != null ? tpLim(mk, 0.5, 1.5) : 1, fatorLoot: mf != null ? tpLim(mf, 0.15, 1) : TP_FATOR_LOOT_PADRAO,
+                 aTomado: ma, tetoTomadoSeguro: teto, n: limpos.length, nAbates: kA.length, nLoot: fL.length };
+    }
+
+    /* Risco por pontos. Bloqueado = nível abaixo do mínimo. */
+    function tpRisco(x) {
+        x = x || {};
+        const motivos = [];
+        if (x.levelMin && x.nivel && x.levelMin > x.nivel) return { nivel: 'bloqueado', pts: 99, motivos: ['nível ' + x.levelMin + ' exigido (você tem ' + x.nivel + ')'] };
+        let pts = 0;
+        if (x.levelMin && x.nivel && x.levelMin >= x.nivel - 5) { pts += 1; motivos.push('nível mínimo ' + x.levelMin + ', perto do seu (' + x.nivel + ')'); }
+        const tomado = x.aTomado > 0 && x.L > 0 && x.xpAbate > 0 ? x.aTomado * x.L * x.xpAbate : null;
+        if (tomado != null && x.tetoTomado > 0 && tomado > x.tetoTomado * 1.5) { pts += 2; motivos.push('dano tomado estimado ' + Math.round(tomado / 1000) + 'k/h, acima de 1,5× o maior já aguentado'); }
+        if (x.T > 25) { pts += 1; motivos.push('a onda leva ' + Math.round(x.T) + ' s para morrer'); }
+        if (x.notaParty != null && x.notaParty < 60) { pts += 1; motivos.push('elementos fracos contra o mapa (nota ' + Math.round(x.notaParty) + ')'); }
+        if (x.hpMinK != null && x.hpMinK < 40) { pts += 2; motivos.push('o Knight já desceu a ' + Math.round(x.hpMinK) + ' % de vida aqui'); }
+        if (x.mortes > 0) { pts += 3; motivos.push(x.mortes + ' morte' + (x.mortes > 1 ? 's' : '') + ' registrada' + (x.mortes > 1 ? 's' : '') + ' neste mapa'); }
+        if (Array.isArray(x.imunes) && x.imunes.length) motivos.push('imunes: ' + x.imunes.join(', '));
+        return { nivel: pts >= 4 ? 'alto' : pts >= 2 ? 'médio' : 'baixo', pts, motivos, tomadoEst: tomado };
+    }
+
+    /* O NÚCLEO: um mapa. ent = {hunt, nivel, premium, motor, loot, ritmo:{E},
+     * calib, medido, extras:{municaoH, vidaH}, fatorPrey, taxaXp, mortes, imunes} */
+    function tpEstimar(ent) {
+        const h = ent.hunt || {}, calib = ent.calib || { kAbates: 1, fatorLoot: TP_FATOR_LOOT_PADRAO, n: 0 };
+        const L = tpLure(h), { hp, xp } = tpHpXpMedio(h);
+        const motor = ent.motor || null, notas = [];
+        const E = ent.ritmo && tpNum(ent.ritmo.E) != null ? Math.max(0, ent.ritmo.E) : 10;
+        const fPrey = tpNum(ent.fatorPrey) != null ? ent.fatorPrey : 1;
+        let bloqueio = null;
+        if (h.levelMin && ent.nivel && h.levelMin > ent.nivel) bloqueio = 'nível ' + h.levelMin;
+        else if (h.premium === true && ent.premium === false) bloqueio = 'premium';
+        let T = null, abH = null, custoH = null;
+        if (motor && (motor.abH > 0 || motor.danoS > 0)) {
+            T = motor.danoS > 0 ? L * hp / motor.danoS : null;
+            abH = motor.abH > 0 ? motor.abH : calib.kAbates * L * 3600 / (T + E + 0.5 * L);
+            custoH = motor.custoH != null ? motor.custoH : motor.custoPorAbate != null ? abH * motor.custoPorAbate : null;
+        } else notas.push('sem dano: o planejador não montou kit (dano das magias não medido?)');
+        const loot = ent.loot || null;
+        if (!loot) notas.push('sem tabela de loot');
+        const lootH = abH != null && loot ? abH * loot.cat * calib.fatorLoot * fPrey : null;
+        const lootHMerc = abH != null && loot ? abH * (loot.catMerc != null ? loot.catMerc : loot.cat) * calib.fatorLoot * fPrey : null;
+        const ex = ent.extras || {};
+        if (custoH != null) {
+            if (ex.municaoH != null) custoH += ex.municaoH;
+            if (ex.vidaH != null) custoH += ex.vidaH;
+            if (ex.vidaH == null && !ent.medido) notas.push('cura não medida');
+        }
+        const xpH = abH != null ? abH * xp : null;
+        const taxa = tpNum(ent.taxaXp);
+        let r = { id: h.id, title: h.title, levelMin: h.levelMin || 0, premium: h.premium === true, L, hp: Math.round(hp), xpAbate: Math.round(xp * 10) / 10,
+                  T: T != null ? Math.round(T * 10) / 10 : null, abH: abH != null ? Math.round(abH) : null,
+                  xpH: xpH != null ? Math.round(xpH) : null, xpHBonus: xpH != null && taxa > 0 ? Math.round(xpH * taxa / 100) : null,
+                  lootH: lootH != null ? Math.round(lootH) : null, lootHMerc: lootHMerc != null ? Math.round(lootHMerc) : null,
+                  custoH: custoH != null ? Math.round(custoH) : null,
+                  ouroH: lootH != null && custoH != null ? Math.round(lootH - custoH) : null,
+                  ouroHMerc: lootHMerc != null && custoH != null ? Math.round(lootHMerc - custoH) : null,
+                  porVoc: motor ? motor.porVoc || null : null, nota: motor && motor.nota != null ? motor.nota : null, imunes: ent.imunes || [],
+                  fonte: 'estimado', medido: null, est: null, bloqueio, notas,
+                  confianca: calib.n > 0 ? 'calibrado' : 'baixa' };
+        const m = ent.medido;
+        const limpo = m && !m.suja && !m.erro && Number(m.abatesH) > 0 && (!ent.nivel || !m.nivel || Math.abs(m.nivel - ent.nivel) <= 2);
+        if (limpo) {
+            r.est = { xpH: r.xpH, ouroH: r.ouroH, abH: r.abH };
+            r = Object.assign(r, { fonte: 'medido', confianca: 'medido', abH: Math.round(m.abatesH), xpH: m.xpRawH != null ? Math.round(m.xpRawH) : m.xpH != null ? Math.round(m.xpH) : r.xpH,
+                                   lootH: m.lootH != null ? Math.round(m.lootH) : r.lootH, custoH: m.supH != null ? Math.round(m.supH) : r.custoH,
+                                   ouroH: m.ouroH != null ? Math.round(m.ouroH) : r.ouroH,
+                                   medido: { t: m.t || null, nivel: m.nivel || null, minutos: m.minutos || null, tomadoH: m.tomadoH != null ? m.tomadoH : null } });
+            if (r.lootHMerc != null && r.est && r.lootH != null && lootH > 0) r.lootHMerc = Math.round(r.lootH * lootHMerc / lootH);
+            r.ouroHMerc = r.lootHMerc != null && r.custoH != null ? r.lootHMerc - r.custoH : null;
+        }
+        const hpMinK = limpo && m.razao && m.razao.porVoc && m.razao.porVoc.KNIGHT ? tpNum(m.razao.porVoc.KNIGHT.hpMin) : null;
+        r.risco = tpRisco({ nivel: ent.nivel, levelMin: h.levelMin, L, xpAbate: xp, T, notaParty: r.nota, imunes: r.imunes,
+                            aTomado: calib.aTomado, tetoTomado: calib.tetoTomadoSeguro, hpMinK, mortes: ent.mortes || 0 });
+        if (bloqueio === 'premium') r.risco = { nivel: 'bloqueado', pts: 99, motivos: ['mapa premium e a conta está sem Premium'] };
+        return r;
+    }
+
+    /* Nota da party contra o mapa: o elemento da magia principal de cada um,
+     * pela nota do mapa (área ou alvo único), ponderada pelo dano. */
+    function tpNotaParty(porVoc, notasEl, magiaDe) {
+        if (!porVoc || !notasEl) return { nota: null, porVoc: {} };
+        let s = 0, w = 0; const pv = {};
+        for (const [voc, v] of Object.entries(porVoc)) {
+            if (!v || !v.magia) continue;
+            const m = magiaDe ? magiaDe(v.magia) : null;
+            const el = m && m.combatType;
+            if (!el) continue;
+            const tab = m.area ? notasEl.notasArea : notasEl.notas;
+            const nota = tab && tab[el] != null ? tab[el] : 100;
+            const d = Math.max(1, Number(v.dano) || 1);
+            pv[voc] = { elem: el, nota };
+            s += nota * d; w += d;
+        }
+        return { nota: w ? Math.round(s / w) : null, porVoc: pv };
+    }
+
+    /* Ordem: 'xp' | 'ouro' | 'dois' (xp/xpMax + ouro/ouroMax − 0,15·pts).
+     * filtro.esconder tira risco alto e bloqueados. Desempate pelo título. */
+    function tpOrdenar(linhas, modo, filtro) {
+        let v = (linhas || []).filter(Boolean);
+        if (filtro && filtro.esconder) v = v.filter(l => !l.bloqueio && !(l.risco && (l.risco.nivel === 'alto' || l.risco.nivel === 'bloqueado')));
+        const ok = v.filter(l => !l.bloqueio);
+        const xpMax = Math.max(1, ...ok.map(l => l.xpH || 0)), ouroMax = Math.max(1, ...ok.map(l => l.ouroH || 0));
+        const nota = (l) => {
+            if (modo === 'ouro') return l.ouroH;
+            if (modo === 'dois') return l.xpH == null ? null : l.xpH / xpMax + (l.ouroH || 0) / ouroMax - 0.15 * Math.min(10, (l.risco && l.risco.pts) || 0);
+            return l.xpH;
+        };
+        return v.map(l => ({ l, n: l.bloqueio ? null : nota(l) })).sort((a, b) => {
+            const na = a.n == null ? -Infinity : a.n, nb = b.n == null ? -Infinity : b.n;
+            if (na !== nb) return nb - na;
+            return String(a.l.title || '').localeCompare(String(b.l.title || ''));
+        }).map(x => x.l);
+    }
+
+    /* Delta do analisador entre dois frames. prev = {huntId, an}. Reset (delta
+     * zero e base nova): primeiro frame, outra caçada, relógio/xp/abates/loot
+     * voltando, ou um drop diminuindo (o analisador foi zerado). */
+    function tpDeltaAnalisador(prev, an, huntId) {
+        const base = { huntId: huntId == null ? null : huntId, an: { elapsedMs: +an.elapsedMs || 0, xp: +an.xp || 0, xpRaw: +an.xpRaw || 0, kills: +an.kills || 0,
+                                                                    loot: +an.lootGold || 0, sup: +an.suppliesGold || 0, drops: Object.assign({}, an.drops || {}) } };
+        const zero = { seg: 0, xp: 0, xpRaw: 0, kills: 0, loot: 0, sup: 0, drops: {} };
+        if (prev && prev.novo && !prev.an && prev.huntId === base.huntId && base.an.elapsedMs < 5000) prev = { huntId: prev.huntId, an: { elapsedMs: 0, xp: 0, xpRaw: 0, kills: 0, loot: 0, sup: 0, drops: {} } };
+        if (!prev || !prev.an || prev.huntId !== base.huntId) return { delta: zero, base, reset: !!prev };
+        const a = base.an, b = prev.an;
+        const caiu = a.elapsedMs < b.elapsedMs || a.xp < b.xp || a.kills < b.kills || a.loot < b.loot || a.sup < b.sup ||
+            Object.keys(b.drops || {}).some(k => (Number(a.drops[k]) || 0) < (Number(b.drops[k]) || 0));
+        if (caiu) return { delta: zero, base, reset: true };
+        const drops = {};
+        for (const k of Object.keys(a.drops)) { const d = (Number(a.drops[k]) || 0) - (Number((b.drops || {})[k]) || 0); if (d > 0) drops[k] = d; }
+        return { delta: { seg: (a.elapsedMs - b.elapsedMs) / 1000, xp: a.xp - b.xp, xpRaw: a.xpRaw - b.xpRaw, kills: a.kills - b.kills, loot: a.loot - b.loot, sup: a.sup - b.sup, drops }, base, reset: false };
+    }
+
+    /* raro = chance < 1 % no catálogo, ou vale ≥ 20× o loot médio por abate */
+    function tpRaro(item, valorUnit, lootAbate) {
+        if (item && item.currency) return false;
+        if (!(Number(valorUnit) > 0)) return false;
+        /* v2.13.0 — só chance < 1 % pegava metade da tabela (corncob, orc leather de 1–30 de ouro) e
+         * enchia o Log: agora a chance baixa precisa valer também ≥ 5× o loot médio por abate */
+        const la = Number(lootAbate) > 0 ? Number(lootAbate) : null;
+        if (item && Number(item.chance) > 0 && Number(item.chance) < 1000) return la == null || valorUnit >= 5 * la;
+        return la != null && valorUnit >= 20 * la;
+    }
+
+    /* Alerta de preço. item = {nome, modo:'vender'|'comprar', pct (acima/abaixo
+     * da média 30 d; o formulário sugere 20), preco (limite)}; cat = market_catalog indexado;
+     * media = {avg} da média 30 d. Sem `pct` vale só o preço. Devolve null ou {chave, tipo, msg, preco}. */
+    function tpAvaliarAlerta(item, cat, media, taxa) {
+        if (!item || !item.nome || !cat) return null;
+        const n = tpMin(item.nome), c = cat[n];
+        if (!c) return null;
+        const avg = media && Number(media.avg) > 0 ? Number(media.avg) : null;
+        const pct = item.pct != null && item.pct !== '' && tpNum(item.pct) != null ? Math.max(0, Number(item.pct)) : null; // sem % = só o preço
+        const lim = tpNum(item.preco) > 0 ? Number(item.preco) : null;
+        const minSell = Number(c.sellOrders) > 0 && Number(c.minSell) > 0 ? Number(c.minSell) : null;
+        const maxBuy = Number(c.maxBuy) > 0 ? Number(c.maxBuy) : null;
+        const fmt = (v) => Math.round(v).toLocaleString('pt-BR');
+        const acima = (v) => (avg && pct != null && v >= avg * (1 + pct / 100)) || (lim && v >= lim);
+        const t = tpNum(taxa) != null ? taxa : 0.05;
+        if ((item.modo || 'vender') === 'vender') {
+            if (maxBuy && acima(maxBuy)) {
+                return { chave: n + '|compra', tipo: 'compra', preco: maxBuy,
+                         msg: `${item.nome}: COMPRA aberta a ${fmt(maxBuy)}${avg ? ` (média 30 d ${fmt(avg)})` : ''} — aceitar no jogo é na hora e sem taxa` };
+            }
+            if (minSell && acima(minSell)) {
+                return { chave: n + '|vender', tipo: 'vender', preco: minSell,
+                         msg: `${item.nome}: vale anunciar — menor anúncio ${fmt(minSell)}${avg ? ` (${Math.round((minSell / avg - 1) * 100)} % acima da média 30 d)` : ''}; líquido ${fmt(minSell - 1 - Math.max(1, Math.floor((minSell - 1) * t)))} anunciando a ${fmt(minSell - 1)}` };
+            }
+            return null;
+        }
+        if (minSell && ((lim && minSell <= lim) || (avg && pct != null && minSell <= avg * (1 - pct / 100)))) {
+            return { chave: n + '|barato', tipo: 'barato', preco: minSell, msg: `${item.nome}: barato: ${fmt(minSell)}${avg ? ` (média 30 d ${fmt(avg)})` : ''}` };
+        }
+        return null;
+    }
+    /* vigiar ligado e ≥ max(15, min) minutos desde a última leitura */
+    function tpAlertaDevido(cfg, est, agora) {
+        if (!cfg || cfg.vigiar !== true) return false;
+        const min = Math.max(TP_ALERTA_MIN_MIN, Number(cfg.min) || 0);
+        return agora - ((est && Number(est.ult)) || 0) >= min * 60000;
+    }
+
+    /* ---- relatório do dia ---- */
+    const tpDiaChave = (t) => { const d = new Date(t); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+    const tpDiaNovo = () => ({ seg: 0, xp: 0, xpRaw: 0, kills: 0, loot: 0, sup: 0, mortes: 0, offline: 0, mapas: {}, ciclos: { n: 0, ouro: 0, falhas: 0 }, npc: 0, mercado: 0, mercIds: [], raros: [] });
+    function tpSomarDia(dia, delta, f, huntId, title) {
+        for (const k of ['seg', 'xp', 'xpRaw', 'kills', 'loot', 'sup']) dia[k] += (Number(delta[k]) || 0) * f;
+        const nome = title || (huntId != null ? 'hunt ' + huntId : '?');
+        const m = dia.mapas[nome] || (dia.mapas[nome] = { seg: 0, xp: 0, loot: 0, sup: 0 });
+        m.seg += (Number(delta.seg) || 0) * f; m.xp += (Number(delta.xp) || 0) * f; m.loot += (Number(delta.loot) || 0) * f; m.sup += (Number(delta.sup) || 0) * f;
+    }
+    /* ev: {tipo:'delta', huntId, title, delta} | {tipo:'morte'} | {tipo:'ciclo', reg}
+     *   | {tipo:'npc', ouro} | {tipo:'mercado', id, ouro} | {tipo:'offline', summary, delta?}
+     *   | {tipo:'raro', nome, n, valor}. Muta e devolve `dias`. */
+    function tpAcumularDia(dias, t, ev) {
+        dias = dias || {};
+        if (!ev || !ev.tipo) return dias;
+        const dia = (c) => dias[c] || (dias[c] = tpDiaNovo());
+        const hoje = tpDiaChave(t);
+        if (ev.tipo === 'delta') {
+            const d = ev.delta || {}, ms = (Number(d.seg) || 0) * 1000;
+            const ini = t - ms, cIni = tpDiaChave(ini);
+            if (ms > 0 && cIni !== hoje) {
+                const x = new Date(t); const meiaNoite = new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+                const f = tpLim((t - meiaNoite) / ms, 0, 1);
+                tpSomarDia(dia(hoje), d, f, ev.huntId, ev.title);
+                tpSomarDia(dia(cIni), d, 1 - f, ev.huntId, ev.title);
+            } else tpSomarDia(dia(hoje), d, 1, ev.huntId, ev.title);
+        } else if (ev.tipo === 'morte') dia(hoje).mortes++;
+        else if (ev.tipo === 'ciclo') { const c = dia(hoje).ciclos, r = ev.reg || {}; c.n++; c.ouro += Number(r.ouro) || 0; if (r.erro) c.falhas++; }
+        else if (ev.tipo === 'npc') dia(hoje).npc += Number(ev.ouro) || 0;
+        else if (ev.tipo === 'mercado') {
+            const x = dia(hoje);
+            if (ev.id != null && x.mercIds.includes(ev.id)) return dias;
+            if (ev.id != null) { x.mercIds.push(ev.id); while (x.mercIds.length > 200) x.mercIds.shift(); }
+            x.mercado += Number(ev.ouro) || 0;
+        } else if (ev.tipo === 'offline') {
+            const s = ev.summary || {}, d = ev.delta || tpDeltaResumo(null, s);
+            if (!d) return dias;
+            tpSomarDia(dia(hoje), d, 1, s.huntId, s.title);
+            dia(hoje).offline++;
+        } else if (ev.tipo === 'raro') {
+            const r = dia(hoje).raros; r.push({ t, nome: String(ev.nome), n: Number(ev.n) || 1, valor: Number(ev.valor) || 0 });
+            while (r.length > 20) r.shift();
+        }
+        return dias;
+    }
+    function tpPodarDias(dias, max) {
+        const k = Object.keys(dias || {}).filter(x => /^\d{4}-\d\d-\d\d$/.test(x)).sort().reverse().slice(0, max || TP_DIAS_MAX);
+        return Object.fromEntries(k.map(x => [x, dias[x]]));
+    }
+    const tpResumoDia = (d) => {
+        d = d || tpDiaNovo();
+        const horas = (d.seg || 0) / 3600;
+        return { xp: Math.round(d.xp || 0), xpH: horas > 0.01 ? Math.round(d.xp / horas) : null, loot: Math.round(d.loot || 0), sup: Math.round(d.sup || 0),
+                 liquido: Math.round((d.loot || 0) - (d.sup || 0)), kills: Math.round(d.kills || 0), mortes: d.mortes || 0, horas };
+    };
+    /* chave − i dias, pelo calendário local */
+    const tpDiaAntes = (chave, i) => { const [a, m, d] = chave.split('-').map(Number); return tpDiaChave(new Date(a, m - 1, d - i, 12).getTime()); };
+    function tpCompararDias(dias, chave, n) {
+        n = n || 7;
+        const hoje = tpResumoDia(dias[chave]);
+        const ant = [];
+        for (let i = 1; i <= n; i++) { const c = tpDiaAntes(chave, i); if (dias[c]) ant.push(tpResumoDia(dias[c])); }
+        const med = (k) => ant.length ? ant.reduce((s, x) => s + (x[k] || 0), 0) / ant.length : null;
+        const media = { xp: med('xp'), liquido: med('liquido'), loot: med('loot'), horas: med('horas') };
+        const pct = {};
+        for (const k of Object.keys(media)) pct[k] = media[k] ? Math.round((hoje[k] - media[k]) / Math.abs(media[k]) * 100) : null;
+        const serie = [];
+        for (let i = n - 1; i >= 0; i--) { const c = tpDiaAntes(chave, i), r = tpResumoDia(dias[c]); serie.push({ chave: c, xp: r.xp, liquido: r.liquido }); }
+        return { hoje, media, pct, n: ant.length, serie };
+    }
+    function tpTextoRelatorio(dia, cmp, chave) {
+        const r = tpResumoDia(dia), f = (v) => Math.round(v || 0).toLocaleString('pt-BR');
+        const p = (v) => v == null ? '' : ` (${v >= 0 ? '+' : ''}${v} % vs. média de 7 dias)`;
+        const hh = (h) => Math.floor(h) + 'h' + String(Math.round((h % 1) * 60)).padStart(2, '0');
+        const [a, m, d] = String(chave || '').split('-');
+        const L = [`Tibidle — relatório de ${d}/${m}/${a}`,
+            `XP: ${f(r.xp)}${r.xpH ? ` (${f(r.xpH)}/h)` : ''}${p(cmp && cmp.pct.xp)}`,
+            `Ouro líquido: ${f(r.liquido)} (loot ${f(r.loot)} − gasto ${f(r.sup)})${p(cmp && cmp.pct.liquido)}`,
+            `Abates: ${f(r.kills)} · mortes: ${r.mortes} · caçando: ${hh(r.horas)}${p(cmp && cmp.pct.horas)}`];
+        const mapas = Object.entries((dia && dia.mapas) || {}).sort((x, y) => y[1].seg - x[1].seg);
+        if (mapas.length) { L.push('Por mapa:'); for (const [nome, x] of mapas) L.push(`  ${nome}: ${hh(x.seg / 3600)} · ${f(x.xp)} xp · ${f(x.loot - x.sup)} líquido`); }
+        if (dia && dia.ciclos && dia.ciclos.n) L.push(`Ciclos do Auto Hunt: ${dia.ciclos.n} (${f(dia.ciclos.ouro)} vendido${dia.ciclos.falhas ? `, ${dia.ciclos.falhas} com falha` : ''})`);
+        if (dia && dia.npc) L.push(`Venda ao NPC: ${f(dia.npc)}`);
+        if (dia && dia.mercado) L.push(`Vendas no Mercado: ${f(dia.mercado)}`);
+        if (dia && dia.raros && dia.raros.length) L.push('Raros: ' + dia.raros.map(x => `${x.nome} ×${x.n}`).join(', '));
+        if (dia && dia.offline) L.push(`(${dia.offline} caçada${dia.offline > 1 ? 's' : ''} fechada${dia.offline > 1 ? 's' : ''} fora da página, pelo resumo do jogo)`);
+        return L.join('\n');
+    }
+    /* O que o resumo da caçada (`ended.summary`) traz além do que já foi
+     * contado pelos frames (base). Sem base = a caçada inteira (caçada que
+     * rodou com a página fechada). null quando não sobra nada. */
+    function tpDeltaResumo(base, sm) {
+        if (!sm || typeof sm !== 'object') return null;
+        const seg = Number(sm.elapsedSec) || 0;
+        const tot = { seg, xp: (Number(sm.xpPerHour) || 0) * seg / 3600, loot: Number(sm.lootGold) || 0, sup: Number(sm.suppliesGold) || 0, kills: Number(sm.kills) || 0 };
+        const b = base && base.an && (sm.huntId == null || base.huntId === sm.huntId) ? base.an : null;
+        const d = b ? { seg: tot.seg - b.elapsedMs / 1000, xp: tot.xp - b.xp, loot: tot.loot - b.loot, sup: tot.sup - b.sup, kills: tot.kills - b.kills } : tot;
+        for (const k of Object.keys(d)) d[k] = Math.max(0, d[k]);
+        return d.seg > 5 || d.loot > 0 || d.kills > 0 ? d : null;
+    }
+    /* @@TELAS-API-FIM */
+
+    /* =========================================================================
+     *  RADAR — estado, ganchos e tela (v2.13.0). Tudo abaixo LÊ: REST pública
+     *  (/hunt/lootTable, /bestiary/creature) e as leituras do mercado
+     *  (market_catalog, market_stats) só no clique de um botão ou no "vigiar"
+     *  que o dono liga (desligado por padrão, no mínimo 15 min entre leituras).
+     *  Nenhum market_create/cancel/claim/execute, nenhum start/stop.
+     * ====================================================================== */
+    const RADAR = { rank: undefined, rodando: false, parar: false, prog: null, abertos: new Set(),
+                    lv: null, dias: null, diasSalvo: 0, diasSujo: false, mercVistos: null,
+                    alertas: { naoVistos: 0, lendo: false }, diaSel: null, exp: null };
+    const RADAR_CFG_PADRAO = { modelo: 'motor:inteligente', ordem: 'xp', mercado: false, esconder: false };
+    const radarCfg = () => Object.assign({}, RADAR_CFG_PADRAO, ler('radar_cfg', {}) || {});
+    const guardarRadarCfg = (p) => guardar('radar_cfg', Object.assign(radarCfg(), p));
+    const alertasCfg = () => { const c = Object.assign({ itens: [], vigiar: false, min: TP_ALERTA_MIN_MIN }, ler('radar_alertas', {}) || {}); c.min = Math.max(TP_ALERTA_MIN_MIN, Number(c.min) || TP_ALERTA_MIN_MIN); if (!Array.isArray(c.itens)) c.itens = []; return c; };
+    const guardarAlertasCfg = (p) => guardar('radar_alertas', Object.assign(alertasCfg(), p));
+    const alertasEst = () => Object.assign({ ult: 0, disparos: {}, hist: [], erro: null }, ler('radar_alertas_est', {}) || {});
+    const RADAR_ALERTA_REPETE_MS = 6 * 3600000;
+    const RADAR_BASE_VALE_MS = 12 * 3600000; // base do analisador guardada vale até 12 h (depois vira só base de novo)
+
+    /* ---- motores do ranking: o ponto onde o planejador (e o v3) se pluga ---- */
+    const MOTORES_RANK = {
+        atual: (h, m) => { const v = viabilidadeParty(m, h); return v && { danoS: v.danoS, custoPorAbate: v.custoPorAbate, porVoc: v.porVoc }; },
+        /* v2.13.0 — o Inteligente v3 monta a party inteira contra os monstros do mapa (vida, elemento,
+         * lure, mana e regeneração dos 4) e devolve abates/h e gasto/h da própria simulação — sem
+         * derivar o tempo da onda de um dano médio diluído pela espera (achado da verificação). */
+        inteligente: (h) => {
+            const res = partyInt(h, true);
+            const m = res && res.final && res.final.met;
+            if (!m || !(m.abH > 0)) return null;
+            const porVoc = {};
+            for (const v of VOCS_INT) { const e = res.final.esc[v]; porVoc[v] = e ? { magia: e.plano[0] ? e.plano[0].av.m.name : '', kit: e.plano.map(p => p.av.m.name).join(' · ') } : null; }
+            return { abH: m.abH, xpH: m.xpH, custoH: m.custoH, lucroH: m.lucroH, danoS: null, porVoc };
+        }
+    };
+    /* o v3 registra fn(h, nome) → { abH, xpH, custoH, lucroH, danoS, porVoc } */
+    function registrarMotorRanking(nome, fn) { if (nome && typeof fn === 'function') MOTORES_RANK[nome] = fn; }
+    const radarMagiaDe = (nome) => { const m = (CAT.magias || []).find(x => x.name === nome); return m ? { combatType: m.combatType, area: (m.areaCells || 1) > 1 } : null; };
+    const radarSlug = (t) => String(t || '').replace(/[^\w]+/g, '_').toLowerCase();
+    function radarMortes(id) {
+        const m = ler('radar_mortes', {}) || {}, x = m[id];
+        return x && Date.now() - (x.t || 0) < 7 * 86400000 ? x.n || 0 : 0;
+    }
+    function radarScanDoMapa(id) {
+        const nv = nivelAtual();
+        return Object.values(scanResultados() || {}).filter(r => r && r.id === id && !r.suja && !r.erro && Number(r.abatesH) > 0 && (!r.nivel || !nv || Math.abs(r.nivel - nv) <= 2))
+            .sort((a, b) => (b.t || 0) - (a.t || 0))[0] || null;
+    }
+    /* preço de um item pelo que já foi lido (tabela do loot, /prices e o catálogo do mercado) */
+    function radarValor(nome, npcTabela) {
+        const stats = {};
+        for (const [k, v] of Object.entries(MK.stats || {})) if (v && v.stats) stats[k] = v.stats;
+        const med = ler('radar_medias', {}) || {};
+        for (const [k, v] of Object.entries(med)) if (!stats[k] && v && v.avg) stats[k] = { avg: v.avg };
+        return tpValorItem(nome, { npcTabela, npc: MK.npc || null, cat: MK.catalogo || null, stats, taxa: MK.taxa != null ? MK.taxa : MK_TAXA_WIKI });
+    }
+    const radarPrecoDe = (nome, it) => { const v = radarValor(nome, it && it.value != null ? it.value : null); return { npc: v.npc, mercado: v.mercado }; };
+
+    /* ENTRADA ÚNICA: estima um mapa com o que já está em memória (sem rede). */
+    function estimarMapa(h, opc) {
+        opc = opc || {};
+        const cfg = radarCfg(), modelo = opc.modelo || cfg.modelo;
+        const nomeMotor = /^motor:/.test(modelo) ? modelo.slice(6) : 'atual';
+        const fn = MOTORES_RANK[nomeMotor] || MOTORES_RANK.atual;
+        let motor = null;
+        try { motor = fn(h, nomeMotor === 'atual' ? modelo : nomeMotor) || null; } catch (e) { falhou('radar (motor ' + nomeMotor + ')', e); }
+        const ne = notasElementos(h);
+        if (motor) {
+            const np = tpNotaParty(motor.porVoc, ne, radarMagiaDe);
+            const porVoc = {};
+            for (const [v, x] of Object.entries(motor.porVoc || {})) porVoc[v] = x ? Object.assign({}, x, np.porVoc[v] || {}) : null;
+            motor = Object.assign({}, motor, { nota: motor.nota != null ? motor.nota : np.nota, porVoc });
+        }
+        const tab = LOOT_TABELA[h.id];
+        const mercado = opc.mercado != null ? opc.mercado : cfg.mercado;
+        const loot = tab ? tpLootAbate(tab, mercado && MK.catalogo ? radarPrecoDe : null, {}) : null;
+        const rit = ritmoOndas(h);
+        const ent = { hunt: h, nivel: opc.nivel || nivelAtual(), premium: mkPremiumAgora(), motor, loot, ritmo: { E: rit.esperaS },
+                      calib: opc.calib || (RADAR.rank && RADAR.rank.calib) || null, medido: opc.semMedido ? null : radarScanDoMapa(h.id), extras: {},
+                      taxaXp: lerTaxaXp(), mortes: radarMortes(h.id), imunes: ne ? Object.keys(ne.vetos).map(rotuloElem) : [] };
+        return opc.entrada ? ent : tpEstimar(ent);
+    }
+    /* o que vai para radar_rank (resumido: ~20 KB para 70 mapas) */
+    function radarCompacto(r) {
+        const pv = {};
+        for (const [v, x] of Object.entries(r.porVoc || {})) pv[v] = x ? { magia: x.magia, kit: x.kit, elem: x.elem || null, nota: x.nota != null ? x.nota : null, pocao: !!x.pocao } : null;
+        return { id: r.id, title: r.title, levelMin: r.levelMin, premium: r.premium, L: r.L, T: r.T, abH: r.abH, xpH: r.xpH, xpHBonus: r.xpHBonus, lootH: r.lootH, lootHMerc: r.lootHMerc,
+                 custoH: r.custoH, ouroH: r.ouroH, ouroHMerc: r.ouroHMerc, nota: r.nota, imunes: r.imunes, fonte: r.fonte, est: r.est, bloqueio: r.bloqueio,
+                 confianca: r.confianca, notas: r.notas, risco: { nivel: r.risco.nivel, pts: r.risco.pts, motivos: r.risco.motivos }, porVoc: pv };
+    }
+    /* tabela de loot: memória → gaveta comum (compacta, por título) → GET. Devolve true se foi à rede. */
+    async function radarGarantirLoot(h) {
+        let tab = LOOT_TABELA[h.id], rede = false;
+        if (!tab) {
+            const g = lerComum('loot_tab_' + radarSlug(h.title), null);
+            if (Array.isArray(g)) tab = g.map(x => ({ name: x[0], chance: x[1], maxCount: x[2], value: x[3], currency: !!x[4] }));
+            else {
+                rede = true;
+                try { const t = await buscarJSON('/hunt/lootTable?huntId=' + h.id); tab = Array.isArray(t) ? t : []; }
+                catch { return rede; }
+                guardarComum('loot_tab_' + radarSlug(h.title), tab.filter(x => x && x.name).map(x => [x.name, Number(x.chance) || 0, Number(x.maxCount) || 1, Number(x.value) || 0, x.currency ? 1 : 0]));
+            }
+            LOOT_TABELA[h.id] = tab;
+        }
+        if (LOOT_CACHE[h.id] == null) LOOT_CACHE[h.id] = Math.round(tpLootAbate(tab, null, {}).cat * 10) / 10;
+        return rede;
+    }
+    /* tabela do mapa sem rede: memória ou a cópia da gaveta comum (o CALCULAR guarda) */
+    function radarTabelaLocal(id) {
+        if (id == null) return null;
+        if (!LOOT_TABELA[id]) {
+            const h = (CAT.hunts || []).find(x => x.id === id);
+            const g = h ? lerComum('loot_tab_' + radarSlug(h.title), null) : null;
+            if (Array.isArray(g)) LOOT_TABELA[id] = g.map(x => ({ name: x[0], chance: x[1], maxCount: x[2], value: x[3], currency: !!x[4] }));
+        }
+        const tab = LOOT_TABELA[id] || null;
+        if (tab && LOOT_CACHE[id] == null) LOOT_CACHE[id] = Math.round(tpLootAbate(tab, null, {}).cat * 10) / 10;
+        return tab;
+    }
+    /* armadura/defesa dos monstros (bestiarioHunt), uma criatura por vez com folga */
+    async function radarGarantirBestiario(h) {
+        let rede = false;
+        for (const m of (h.monsters || [])) {
+            if (!m || BESTIARIO[m.name] || ler('bestiario_' + m.name, null)) continue;
+            rede = true;
+            await bestiarioHunt({ monsters: [m] });
+            await dorme(300);
+        }
+        if (!rede) await bestiarioHunt(h); // só carrega da gaveta para a memória
+        return rede;
+    }
+    const radarCeder = () => new Promise(r => setTimeout(r, 0));
+    async function rankingRodar() {
+        if (RADAR.rodando) return;
+        if (!CAT.hunts || !CAT.magias) { avisar('radar', 'radar: catálogos ainda não carregados — espere o boot ou use "Rebaixar catálogos" no Status', 'erro'); return; }
+        const cfg = radarCfg(), nivel = nivelAtual();
+        const lista = CAT.hunts.filter(h => h && h.id !== HUNT_ID_BOSS && Array.isArray(h.monsters) && h.monsters.length && (h.levelMin || 0) <= nivel + 5);
+        RADAR.rodando = true; RADAR.parar = false; RADAR.prog = { fase: 'tabelas de loot', i: 0, n: lista.length, nome: '' };
+        renderizar();
+        try {
+            if (cfg.mercado && !MK.catalogo) await radarLerCatalogo('ranking');
+            for (let i = 0; i < lista.length && !RADAR.parar; i++) {
+                RADAR.prog = { fase: 'tabelas de loot', i, n: lista.length, nome: lista[i].title };
+                const rede = await radarGarantirLoot(lista[i]);
+                const rb = await radarGarantirBestiario(lista[i]);
+                if (rede) { renderizar(); await dorme(300); } else if (rb) renderizar();
+            }
+            const brutos = [];
+            for (let i = 0; i < lista.length && !RADAR.parar; i++) {
+                RADAR.prog = { fase: 'calculando', i, n: lista.length, nome: lista[i].title };
+                renderizar();
+                await radarCeder(); // um mapa por giro: a tela e o jogo respiram entre eles
+                const ent = estimarMapa(lista[i], { entrada: true, nivel });
+                const cru = tpEstimar(Object.assign({}, ent, { medido: null, calib: { kAbates: 1, fatorLoot: 1, n: 0 } }));
+                brutos.push({ ent, cru });
+            }
+            const est = {};
+            for (const b of brutos) est[b.ent.hunt.id] = { abH: b.cru.abH, cat: b.ent.loot ? b.ent.loot.cat : null, L: b.cru.L, xpAbate: b.cru.xpAbate };
+            const calib = tpCalibrar(Object.values(scanResultados() || {}), est, nivel);
+            const linhas = brutos.map(b => radarCompacto(tpEstimar(Object.assign({}, b.ent, { calib }))));
+            const rank = { t: Date.now(), nivel, modelo: cfg.modelo, mercado: !!(cfg.mercado && MK.catalogo), calib, parcial: !!RADAR.parar, n: lista.length, linhas };
+            RADAR.rank = rank;
+            guardar('radar_rank', rank);
+            const top = tpOrdenar(linhas, cfg.ordem, { esconder: true })[0];
+            avisar('radar', `radar: ${linhas.length} mapas calculados${RADAR.parar ? ' (interrompido)' : ''}` + (top ? ` — 1º por ${cfg.ordem === 'ouro' ? 'ouro' : cfg.ordem === 'dois' ? 'xp e ouro' : 'xp'}: ${top.title}` : ''), 'ok');
+        } catch (e) { falhou('radar (ranking)', e); avisar('radar', 'radar: o ranking parou — ' + e.message, 'erro'); }
+        finally { RADAR.rodando = false; RADAR.parar = false; RADAR.prog = null; renderizar(); }
+    }
+
+    /* ---- dia e loot ao vivo ---- */
+    function radarDias() {
+        if (!RADAR.dias) RADAR.dias = tpPodarDias(ler('radar_dias', {}) || {}, TP_DIAS_MAX);
+        return RADAR.dias;
+    }
+    function radarLv() {
+        if (!RADAR.lv) {
+            const g = ler('radar_lv', null) || {};
+            const base = g.base && g.t && Date.now() - g.t < RADAR_BASE_VALE_MS ? g.base : null;
+            RADAR.lv = { base, sessao: g.sessao || null, raros: Array.isArray(g.raros) ? g.raros : [], vistos: new Set() };
+        }
+        return RADAR.lv;
+    }
+    /* grava o dia e a sessão do Loot no máximo 1× por minuto (ou já, no beforeunload) */
+    function radarSalvarDia(ja) {
+        if (!RADAR.diasSujo && !ja) return;
+        if (!ja && Date.now() - RADAR.diasSalvo < 60000) return;
+        RADAR.diasSalvo = Date.now(); RADAR.diasSujo = false;
+        if (RADAR.dias) guardar('radar_dias', RADAR.dias);
+        if (RADAR.lv) guardar('radar_lv', { t: Date.now(), base: RADAR.lv.base, sessao: RADAR.lv.sessao, raros: RADAR.lv.raros.slice(-10) });
+    }
+    function radarAcumular(ev) { tpAcumularDia(radarDias(), Date.now(), ev); RADAR.diasSujo = true; }
+    function radarCiclo(reg) { if (reg) { radarAcumular({ tipo: 'ciclo', reg }); radarSalvarDia(); } }
+    function radarSessaoNova() { return { t0: Date.now(), seg: 0, xp: 0, xpRaw: 0, kills: 0, loot: 0, sup: 0, drops: {}, huntId: null, title: null }; }
+    /* uma linha em observarRecebido: só LÊ o que o jogo já manda */
+    function radarObservar(o) {
+        if (!o || typeof o.type !== 'string') return;
+        const d = o.data && typeof o.data === 'object' ? o.data : {};
+        const t = o.type;
+        if (t === 'hunt_started') { const lv = radarLv(); lv.base = { huntId: d.huntId != null ? d.huntId : null, an: null, novo: true }; return; } // v2.13.0 — o analisador NÃO zera ao recomeçar no mesmo mapa: base = zero só se o 1º frame for de caçada nova (< 5 s)
+        if (t === 'frame' && d.analyzer && typeof d.analyzer === 'object') {
+            const a = d.analyzer, lv = radarLv(), huntId = ESTADO_WS.huntId;
+            const r = tpDeltaAnalisador(lv.base, { elapsedMs: a.elapsedMs, xp: a.xp, xpRaw: a.xpRaw, kills: a.killsTotal, lootGold: a.lootGold, suppliesGold: a.suppliesGold,
+                                                   drops: a.drops && typeof a.drops === 'object' ? a.drops : {} }, huntId);
+            lv.base = r.base;
+            const dl = r.delta;
+            if (!(dl.seg > 0 || dl.xp > 0 || dl.kills > 0 || dl.loot > 0 || dl.sup > 0)) return;
+            const h = (CAT.hunts || []).find(x => x.id === huntId);
+            const title = h ? h.title : ESTADO_WS.boss ? 'boss ' + ESTADO_WS.boss : huntId != null ? 'hunt ' + huntId : null;
+            const s = lv.sessao || (lv.sessao = radarSessaoNova());
+            for (const k of ['seg', 'xp', 'xpRaw', 'kills', 'loot', 'sup']) s[k] += dl[k] || 0;
+            for (const [k, n] of Object.entries(dl.drops)) s.drops[k] = (s.drops[k] || 0) + n;
+            s.huntId = huntId; s.title = title;
+            radarAcumular({ tipo: 'delta', huntId, title, delta: dl });
+            const tab = radarTabelaLocal(huntId), lootAbate = LOOT_CACHE[huntId];
+            for (const [nome, n] of Object.entries(dl.drops)) {
+                const it = tab ? tab.find(x => x && x.name === nome) : null;
+                const valor = it ? Number(it.value) || 0 : (MK.npc && MK.npc[mkMin(nome)] != null ? Number(MK.npc[mkMin(nome)]) || 0 : 0);
+                if (!tpRaro(it, valor, lootAbate)) continue;
+                const chave = huntId + '|' + nome + '|' + (Number(a.drops[nome]) || 0);
+                if (lv.vistos.has(chave)) continue;
+                lv.vistos.add(chave);
+                lv.raros.push({ t: Date.now(), nome, n, valor, title });
+                while (lv.raros.length > 10) lv.raros.shift();
+                radarAcumular({ tipo: 'raro', nome, n, valor });
+                log(`radar: drop raro — ${nome} ×${n}${valor ? ' (' + numBR(valor * n) + ' de ouro no NPC)' : ''}${title ? ' em ' + title : ''}`, 'ok');
+            }
+            radarSalvarDia();
+            return;
+        }
+        if (t === 'ended') {
+            const sm = d.summary && typeof d.summary === 'object' ? d.summary : {};
+            const lv = radarLv();
+            const dl = tpDeltaResumo(lv.base, sm);
+            /* > 1 min que os frames não mostraram = caçada (ou parte dela) com a página fechada;
+             * menos que isso é só o atraso do último frame e entra como delta comum */
+            if (dl && dl.seg > 60) radarAcumular({ tipo: 'offline', summary: sm, delta: dl });
+            else if (dl) radarAcumular({ tipo: 'delta', huntId: sm.huntId, title: sm.title || null, delta: dl });
+            if (/death|dead|morr/i.test(String(sm.reason || ''))) {
+                radarAcumular({ tipo: 'morte' });
+                if (sm.huntId != null) { const m = ler('radar_mortes', {}) || {}; const x = m[sm.huntId] || { n: 0 }; m[sm.huntId] = { n: (Date.now() - (x.t || 0) < 7 * 86400000 ? x.n : 0) + 1, t: Date.now() }; guardar('radar_mortes', m); }
+            }
+            lv.base = null;
+            radarSalvarDia(true);
+            return;
+        }
+        if (t === 'sell_result' && Number(d.goldCredited) > 0) { radarAcumular({ tipo: 'npc', ouro: Number(d.goldCredited) }); radarSalvarDia(); return; }
+        if (t === 'market_inbox_result' && Array.isArray(d.entries)) {
+            if (!RADAR.mercVistos) RADAR.mercVistos = new Set(ler('radar_merc_vistos', []) || []);
+            let novo = false;
+            for (const x of d.entries) {
+                if (!x || x.reason !== 'trade_proceeds' || x.id == null || (x.currency && x.currency !== 'gold') || RADAR.mercVistos.has(x.id)) continue;
+                RADAR.mercVistos.add(x.id); novo = true;
+                radarAcumular({ tipo: 'mercado', id: x.id, ouro: Number(x.amount) || 0 });
+            }
+            if (novo) { guardar('radar_merc_vistos', [...RADAR.mercVistos].slice(-500)); radarSalvarDia(); }
+        }
+    }
+
+    /* ---- mercado: SÓ leituras (market_catalog / market_stats), pela fila do Mercado ---- */
+    function radarMercadoImpedido() {
+        if (!socketAberto()) return 'socket do jogo não está à mão — dê F5 com o helper instalado';
+        if (mkPremiumAgora() === false) return 'a conta está sem Premium — o mercado é só Premium';
+        if (MK.ocupado) return 'o Mercado está ocupado (' + MK.ocupado + ')';
+        const ocup = travaJogo();
+        if (ocup) return ocup + ' em andamento';
+        return null;
+    }
+    async function radarLerCatalogo(origem) {
+        const imp = radarMercadoImpedido();
+        if (imp) { avisar('radar', 'radar: preços do mercado não lidos — ' + imp, 'erro'); return false; }
+        MK.ocupado = 'radar'; renderizar();
+        try {
+            if (MK.taxa == null) { MK.taxa = MK_TAXA_WIKI; MK.taxaWiki = true; }
+            const r = await mkPedir('market_catalog', {});
+            if (r.erro) { avisar('radar', 'radar: catálogo do mercado não lido (' + mkErroTexto(r.erro) + ')', 'erro'); return false; }
+            if (origem !== 'ranking') avisar('radar', 'radar: preços do mercado lidos (' + Object.keys(MK.catalogo || {}).length + ' itens)', 'ok');
+            return true;
+        } finally { MK.ocupado = null; renderizar(); }
+    }
+    async function alertasLer(origem) {
+        const imp = radarMercadoImpedido();
+        if (imp) { if (origem !== 'vigia') avisar('radar', 'radar: alertas não conferidos — ' + imp, 'erro'); return; }
+        const cfg = alertasCfg(), est = alertasEst(), itens = cfg.itens.filter(x => x && x.on !== false && x.nome);
+        MK.ocupado = 'radar'; RADAR.alertas.lendo = true; renderizar();
+        let disparou = 0;
+        try {
+            if (MK.taxa == null) { MK.taxa = MK_TAXA_WIKI; MK.taxaWiki = true; }
+            const r = await mkPedir('market_catalog', {});
+            if (r.erro) {
+                est.erro = mkErroTexto(r.erro);
+                avisar('radar', 'radar: alertas — catálogo não lido (' + est.erro + ')' + (r.erro === 'premium_required' ? '; a leitura parou' : ''), 'erro');
+                return;
+            }
+            est.erro = null;
+            const med = ler('radar_medias', {}) || {};
+            let pedidos = 0;
+            for (const it of itens) {
+                const n = mkMin(it.nome), c = MK.catalogo && MK.catalogo[n];
+                if (it.pct == null || it.pct === '' || !c || !(Number(c.trades30d) > 0) || pedidos >= 5) continue; // média só serve ao gatilho em %
+                if (med[n] && Date.now() - (med[n].t || 0) < 24 * 3600000) continue;
+                pedidos++;
+                const s = await mkPedir('market_stats', { itemName: it.nome });
+                if (s.erro) { if (s.erro === 'premium_required') break; continue; }
+                const avg = s.data && s.data.stats && Number(s.data.stats.avg);
+                if (avg > 0) med[n] = { avg, t: Date.now() };
+            }
+            guardar('radar_medias', med);
+            for (const it of itens) {
+                const a = tpAvaliarAlerta(it, MK.catalogo, med[mkMin(it.nome)] || null, MK.taxa);
+                if (!a || Date.now() - (est.disparos[a.chave] || 0) < RADAR_ALERTA_REPETE_MS) continue;
+                est.disparos[a.chave] = Date.now();
+                est.hist = [{ t: Date.now(), tipo: a.tipo, msg: a.msg }].concat(est.hist || []).slice(0, 20);
+                disparou++;
+                RADAR.alertas.naoVistos++;
+                avisar('radar', 'radar: ' + a.msg, 'ok');
+            }
+            if (!disparou && origem !== 'vigia') avisar('radar', `radar: ${itens.length} ${itens.length === 1 ? 'item conferido' : 'itens conferidos'} — nenhum alerta novo`, 'info');
+        } catch (e) { falhou('radar (alertas)', e); }
+        finally {
+            est.ult = Date.now();
+            guardar('radar_alertas_est', est);
+            MK.ocupado = null; RADAR.alertas.lendo = false; renderizar();
+        }
+    }
+    /* de minuto em minuto; só age com o "vigiar" ligado pelo dono */
+    function radarVigia() {
+        try {
+            const cfg = alertasCfg();
+            if (!tpAlertaDevido(cfg, alertasEst(), Date.now())) return;
+            if (!cfg.itens.some(x => x && x.on !== false)) return;
+            if (!socketAberto() || MK.ocupado || travaJogo() || scanOcupado() || _cicloEmCurso || mkPremiumAgora() === false) return;
+            alertasLer('vigia').catch(e => falhou('radar (vigia)', e));
+        } catch (e) { falhou('radar (vigia)', e); }
+    }
+    /* sugestões: o que está no baú e na mochila e teve negócio em 30 dias */
+    function radarSugestoes() {
+        const nomes = new Set();
+        try { const b = mkBagAtual(); if (b && b.bag) Object.keys(b.bag).forEach(k => nomes.add(k)); } catch { /* sem mochila lida */ }
+        try { for (const e of ((ESTADO_WS.depot && ESTADO_WS.depot.entries) || [])) if (e && (e.name || e.itemName)) nomes.add(e.name || e.itemName); } catch { /* sem depósito lido */ }
+        const cat = MK.catalogo || null;
+        return [...nomes].filter(n => !cat || (cat[mkMin(n)] && Number(cat[mkMin(n)].trades30d) > 0)).sort((a, b) => a.localeCompare(b)).slice(0, 80);
+    }
+    function pintarContadorRadar() {
+        const i = $('#tb-trilho .tb-ico[data-aba="radar"]'); if (!i) return;
+        const n = RADAR.alertas.naoVistos, b = $('.tb-cont', i);
+        if (b) { b.textContent = n > 9 ? '9+' : String(n); b.hidden = !n; }
+        const rot = n ? `Radar — ${n} alerta${n > 1 ? 's' : ''} de preço não visto${n > 1 ? 's' : ''}` : 'Radar';
+        if (i.getAttribute('aria-label') !== rot) { i.setAttribute('aria-label', rot); i.title = rot; }
+    }
+
+    /* ---- tela ---- */
+    const RD_CSS = `
+    #tb-radar{font-size:11.5px}
+    #tb-radar .rd-sub{display:flex;flex-wrap:wrap;gap:3px;margin:0 0 6px}
+    #tb-radar .rd-aba{flex:1 1 auto;min-height:28px;padding:3px 4px;border-radius:14px;background:#1a1f29;color:#c3cad6;border:1px solid #2b3242;cursor:pointer;font:inherit;font-size:11px}
+    #tb-radar .rd-aba:hover{background:#232936;color:#fff}
+    #tb-radar .rd-aba.on{background:#2c5c3a;color:#fff;border-color:#4a9a63}
+    #tb-radar button:focus-visible,#tb-radar select:focus-visible,#tb-radar input:focus-visible,#tb-radar summary:focus-visible{outline:2px solid #ffd479;outline-offset:1px}
+    #tb-radar .tb-mut{color:#9ba5b7}
+    #tb-radar .rd-cx{background:#1a1f29;border:1px solid #262d3b;border-radius:7px;padding:6px 7px;margin:5px 0}
+    #tb-radar .rd-tit{margin:9px 0 3px;color:#ffd479;font-size:11px;letter-spacing:.3px;text-transform:uppercase}
+    #tb-radar .rd-barras{display:flex;align-items:flex-end;gap:3px;height:46px;margin:4px 0 0}
+    #tb-radar .rd-barras>div{flex:1 1 0;display:flex;flex-direction:column;justify-content:flex-end;gap:1px;height:100%}
+    #tb-radar .rd-barra{border-radius:2px 2px 0 0;min-height:1px}
+    #tb-radar .rd-barra.xp{background:#4a78c2}#tb-radar .rd-barra.ouro{background:#c9a13b}#tb-radar .rd-barra.neg{background:#8a3a3a}
+    #tb-radar .rd-dias{display:flex;gap:3px;font-size:9.5px;color:#9ba5b7}#tb-radar .rd-dias>span{flex:1 1 0;text-align:center}
+    #tb-radar details.rd-det{margin:3px 0;border:1px solid #262d3b;border-radius:7px;background:#1a1f29}
+    #tb-radar details.rd-det>summary{list-style:none;cursor:pointer;min-height:28px;display:grid;grid-template-columns:minmax(0,1fr) 4.2em 4.4em 3.6em;gap:4px;align-items:center;padding:3px 6px}
+    #tb-radar details.rd-det>summary::-webkit-details-marker{display:none}
+    #tb-radar details.rd-det>summary>span{text-align:right;white-space:nowrap}
+    #tb-radar details.rd-det>summary>span:first-child{text-align:left;white-space:normal;overflow-wrap:break-word}
+    #tb-radar details.rd-det>div{padding:2px 7px 6px;font-size:10.5px}
+    #tb-radar .rd-cab{display:grid;grid-template-columns:minmax(0,1fr) 4.2em 4.4em 3.6em;gap:4px;padding:0 7px;color:#9ba5b7;font-size:10.5px}
+    #tb-radar .rd-cab>span{text-align:right}#tb-radar .rd-cab>span:first-child{text-align:left}
+    #tb-radar .rd-r{display:inline-block;padding:0 5px;border-radius:9px;font-size:10px}
+    #tb-radar .rd-r.baixo{background:#1f4a2c;color:#8ff0a8}#tb-radar .rd-r.médio{background:#4a431f;color:#ffe3a3}
+    #tb-radar .rd-r.alto{background:#4a1f1f;color:#ff9b93}#tb-radar .rd-r.bloqueado{background:#2b3242;color:#9ba5b7}
+    #tb-radar .rd-raro{color:#ffd479;font-weight:bold}
+    #tb-radar select,#tb-radar input{min-height:28px;background:#232936;color:#dde3ee;border:1px solid #3a4356;border-radius:5px;padding:2px 5px;font:inherit;font-size:11px;box-sizing:border-box}
+    #tb-radar .rd-form{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin:4px 0}
+    #tb-radar .rd-form input[type=number]{width:5.2em}
+    #tb-radar textarea{display:block;width:100%;height:120px;box-sizing:border-box;margin-top:3px;resize:vertical;font:10.5px/1.35 ui-monospace,Consolas,monospace;background:#0d1016;color:#dde3ee;border:1px solid #2b3242;border-radius:5px}
+    #tb-radar .rd-rodape{margin-top:8px;color:#9ba5b7;font-size:10.5px}
+    `;
+    function rdGarantirCss() {
+        if (document.getElementById('tb-radar-css')) return;
+        const s = document.createElement('style'); s.id = 'tb-radar-css'; s.textContent = RD_CSS;
+        (document.head || document.documentElement).appendChild(s);
+    }
+    const rdK = (n) => n == null || !isFinite(n) ? '—' : Math.abs(n) >= 1000 ? milBR(n) : numBR(n);
+    const rdSinal = (n) => n == null || !isFinite(n) ? '—' : (n > 0 ? '+' : '') + rdK(n);
+    const rdHa = (t) => { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'agora' : m < 60 ? 'há ' + m + ' min' : m < 2880 ? 'há ' + Math.round(m / 60) + ' h' : 'há ' + Math.round(m / 1440) + ' dias'; };
+    const rdSw = (id, on, rot) => `<button type="button" class="tb-eq-sw" id="${id}" role="switch" aria-checked="${on ? 'true' : 'false'}">${on ? '☑' : '☐'} ${rot}</button>`;
+    function rdTelaMapas() {
+        const cfg = radarCfg(), nivel = nivelAtual();
+        if (RADAR.rank === undefined) RADAR.rank = ler('radar_rank', null);
+        const rank = RADAR.rank;
+        const modelos = [['equilibrado', nomeModelo('equilibrado')], ['area', nomeModelo('area')]].concat(Object.keys(MOTORES_RANK).filter(k => k !== 'atual').map(k => ['motor:' + k, k]));
+        let h = `<div class="tb-linha"><button type="button" class="tb-bt" id="rd-calc"${RADAR.rodando ? ' disabled' : ''}>${RADAR.rodando ? 'calculando…' : 'CALCULAR'}</button>` +
+            (RADAR.rodando ? `<button type="button" class="tb-bt mini" id="rd-parar">parar</button>` : '') +
+            `<select id="rd-modelo" aria-label="modelo do motor">${modelos.map(([k, n]) => `<option value="${escHtml(k)}"${k === cfg.modelo ? ' selected' : ''}>${escHtml(n)}</option>`).join('')}</select></div>`;
+        if (RADAR.prog) h += `<div class="tb-mut" role="status">${escHtml(RADAR.prog.fase)} ${numBR(RADAR.prog.i + 1)}/${numBR(RADAR.prog.n)}${RADAR.prog.nome ? ' — ' + escHtml(RADAR.prog.nome) : ''}</div>`;
+        h += `<div class="tb-seg" role="group" aria-label="ordem">` + [['xp', 'XP'], ['ouro', 'Ouro'], ['dois', 'Os dois']].map(([k, n]) => `<button type="button" data-rd-ordem="${k}" aria-pressed="${cfg.ordem === k}">${n}</button>`).join('') + `</div>`;
+        h += `<div class="tb-linha">${rdSw('rd-merc', cfg.mercado, 'preço do mercado')}${rdSw('rd-esconder', cfg.esconder, 'esconder risco alto e bloqueados')}</div>`;
+        if (!rank || !Array.isArray(rank.linhas)) {
+            return h + `<div class="rd-cx tb-mut">Nenhum ranking ainda. CALCULAR baixa a tabela de loot de cada mapa até o nível ${numBR(nivel + 5)} (uma leitura pública a cada 0,3 s, guardada) e roda o planejador de magias com o dano medido dos 4 em cada um. Não entra em mapa nenhum.</div>`;
+        }
+        const c = rank.calib || {};
+        h += `<div class="tb-mut">calculado ${rdHa(rank.t)}, nível ${numBR(rank.nivel)}${rank.parcial ? ' · <span class="tb-av">interrompido</span>' : ''}${rank.mercado ? ' · com preço do mercado' : ''}` +
+             (rank.nivel !== nivel && nivel > 1 ? ` · <b class="tb-av">você está no nível ${numBR(nivel)}: recalcule</b>` : '') + `</div>`;
+        h += `<div class="tb-mut">fator de loot ${numBR(c.fatorLoot, 2)} ${c.nLoot ? `(n = ${c.nLoot} Scan${c.nLoot > 1 ? 's' : ''})` : '<span class="tb-av">(padrão, sem Scan: estimado)</span>'} · abates ×${numBR(c.kAbates, 2)}${c.nAbates ? '' : ' (sem calibração)'}` +
+             aj('rd-calib', 'O catálogo de loot superestima 2 a 4× (TIBIDLE §12): o valor absoluto vem da mediana de <b>loot medido ÷ (abates × loot do catálogo)</b> nos Scans limpos do seu nível (±2). Sem Scan, 0,35. Abates/h = lure × 3600 ÷ (T + espera + 0,5 × lure), com T = lure × HP médio ÷ dano/s da party (o planejador de Magia), corrigido pela mediana medido/estimado. <b>medido</b> = Scan limpo manda; <b>estimado</b> = conta. O dano que o monstro dá não existe na API: o risco usa o dano tomado nos Scans, a margem de nível, a nota do elemento, o hp mínimo do Knight e as mortes.') + `</div>`;
+        const linhas = tpOrdenar(rank.linhas, cfg.ordem, { esconder: cfg.esconder });
+        const falta = xpFaltando();
+        const ouroDe = (l) => rank.mercado && l.ouroHMerc != null ? l.ouroHMerc : l.ouroH;
+        h += `<div class="rd-cab"><span>mapa</span><span>xp/h</span><span>ouro/h</span><span>risco</span></div>`;
+        for (const l of linhas) {
+            const tags = [l.fonte === 'medido' ? '<span class="tb-tag tb-ok">medido</span>' : '<span class="tb-tag">estimado</span>',
+                          l.bloqueio && /^nível/.test(l.bloqueio) ? `<span class="tb-tag tb-ruim">${escHtml(l.bloqueio)}</span>` : '',
+                          l.premium ? '<span class="tb-tag tb-av">premium</span>' : ''].join('');
+            const o = ouroDe(l);
+            const pv = Object.entries(l.porVoc || {}).map(([v, x]) => x ? `<div><b>${escHtml(VOC_ROTULO[v] || v)}</b>: ${escHtml(x.kit || x.magia || '—')}${x.elem ? ` · ${escHtml(rotuloElem(x.elem))} nota ${numBR(x.nota)}` : ''}${x.pocao ? ' · bebe poção' : ''}</div>` : `<div><b>${escHtml(VOC_ROTULO[v] || v)}</b>: <span class="tb-mut">sem kit</span></div>`).join('');
+            const xpReal = l.xpHBonus || l.xpH;
+            h += `<details class="rd-det" data-k="rd-${escHtml(String(l.id))}"><summary><span>${escHtml(l.title)} ${tags}</span><span>${rdK(l.xpH)}</span><span class="${o > 0 ? 'tb-ok' : o < 0 ? 'tb-ruim' : ''}">${rdSinal(o)}</span>` +
+                 `<span><span class="rd-r ${escHtml(l.risco.nivel)}">${escHtml(l.risco.nivel)}</span></span></summary><div>` +
+                 `<div>lure ${numBR(l.L)} · ${l.abH != null ? numBR(l.abH) + ' abates/h' : 'sem abates'}${l.T != null ? ` · onda em ${numBR(l.T, 1)} s` : ''}${xpReal && falta ? ` · próximo nível em ${escHtml(fmtHoras(falta / xpReal))}` : ''}</div>` +
+                 `<div>loot ${rdK(l.lootH)}/h${l.lootHMerc != null && l.lootHMerc !== l.lootH ? ` (mercado ${rdK(l.lootHMerc)})` : ''} · gasto ${rdK(l.custoH)}/h${l.xpHBonus ? ` · xp com bônus ${rdK(l.xpHBonus)}/h` : ''}</div>` +
+                 (l.est && l.fonte === 'medido' ? `<div class="tb-mut">est.: ${rdK(l.est.xpH)} xp/h · ${rdSinal(l.est.ouroH)} ouro/h</div>` : '') +
+                 (l.nota != null ? `<div>nota da party contra o mapa: ${numBR(l.nota)}</div>` : '') + pv +
+                 (l.imunes && l.imunes.length ? `<div class="tb-av">imunes: ${escHtml(l.imunes.join(', '))}</div>` : '') +
+                 (l.risco.motivos.length ? `<div class="tb-mut">risco: ${l.risco.motivos.map(escHtml).join('; ')}</div>` : '') +
+                 (l.notas && l.notas.length ? `<div class="tb-mut">${l.notas.map(escHtml).join(' · ')}</div>` : '') + `</div></details>`;
+        }
+        if (!linhas.length) h += `<div class="rd-cx tb-mut">Nenhum mapa passou no filtro.</div>`;
+        return h;
+    }
+    function rdTelaLoot() {
+        const lv = radarLv(), s = lv.sessao;
+        const hH = s && s.seg > 0 ? 3600 / s.seg : null;
+        const card = (r, v) => `<div class="tb-card"><small>${r}</small><b>${v}</b></div>`;
+        let h = `<div class="tb-grid">${card('loot da sessão (NPC)', s ? numBR(s.loot) : '—')}${card('loot/h', hH ? rdK(s.loot * hH) : '—')}` +
+                `${card('gasto/h', hH ? rdK(s.sup * hH) : '—')}${card('líquido/h', hH ? rdSinal((s.loot - s.sup) * hH) : '—')}${card('abates/h', hH ? numBR(s.kills * hH) : '—')}${card('tempo', s ? escHtml(fmtHoras(s.seg / 3600)) : '—')}</div>`;
+        h += `<div class="tb-linha"><button type="button" class="tb-bt mini" id="rd-lv-zerar">zerar sessão</button><button type="button" class="tb-bt mini" id="rd-lv-merc"${MK.ocupado ? ' disabled' : ''}>ler preços do mercado</button>` +
+             `<span class="tb-mut">${MK.catalogo_t ? 'mercado lido ' + rdHa(MK.catalogo_t) : 'mercado não lido'}</span></div>`;
+        if (!s || !Object.keys(s.drops).length) h += `<div class="rd-cx tb-mut">Sem drop nesta sessão ainda. A conta vem do analisador do próprio jogo (frame a frame), só enquanto a página está aberta.</div>`;
+        else {
+            const tab = radarTabelaLocal(s.huntId) || [], lootAbate = LOOT_CACHE[s.huntId];
+            if (!tab.length) h += `<div class="tb-mut">sem a tabela de loot deste mapa: o valor vem de /prices (se o Mercado já leu) e o raro por chance não é marcado — rode CALCULAR em Mapas uma vez.</div>`;
+            const itens = Object.entries(s.drops).map(([nome, n]) => {
+                const it = tab.find(x => x && x.name === nome) || null;
+                const v = radarValor(nome, it ? it.value : null);
+                return { nome, n, it, v, tot: (v.npc || 0) * n };
+            }).sort((a, b) => b.tot - a.tot);
+            h += `<table class="tb-an"><colgroup><col><col class="c5"><col class="c5"></colgroup><thead><tr><th>item</th><th>NPC</th><th>mercado</th></tr></thead><tbody>` +
+                itens.map(x => {
+                    const raro = tpRaro(x.it, x.v.npc, lootAbate);
+                    const vale = x.v.mercado != null && x.v.trades30d > 0 && x.v.ganhoPct != null && x.v.ganhoPct >= 10;
+                    return `<tr><td><span class="${raro ? 'rd-raro' : ''}">${escHtml(x.nome)} ×${numBR(x.n)}</span>${vale ? ` <span class="tb-tag tb-ok">mercado +${numBR(x.v.ganhoPct)} %</span>` : ''}</td>` +
+                           `<td>${numBR(x.tot)}</td><td>${x.v.mercado != null ? numBR(x.v.mercado * x.n) : '—'}</td></tr>`;
+                }).join('') + `</tbody></table>`;
+        }
+        if (lv.raros.length) h += `<div class="rd-tit">Últimos raros</div>` + lv.raros.slice().reverse().map(r => `<div class="tb-lin"><span class="rd-raro">${escHtml(r.nome)} ×${numBR(r.n)}</span><span class="tb-mut">${r.valor ? numBR(r.valor * r.n) + ' · ' : ''}${escHtml(r.title || '')} ${rdHa(r.t)}</span></div>`).join('');
+        return h + aj('rd-loot', 'Valor NPC = o "value" da tabela de loot do mapa (é o que o analisador do jogo soma). Mercado = menor anúncio (ou a média de 30 dias) menos a taxa de 5 %; a etiqueta aparece quando rende ≥ 10 % mais que o NPC e o item teve negócio em 30 dias. Raro (dourado) = chance < 1 % no catálogo ou valor ≥ 20× o loot médio por abate; cada raro vai 1× para o Log.');
+    }
+    function rdTelaAlertas() {
+        const cfg = alertasCfg(), est = alertasEst();
+        const sug = radarSugestoes();
+        let h = `<div class="tb-linha"><button type="button" class="tb-bt" id="rd-al-conferir"${MK.ocupado || !cfg.itens.length ? ' disabled' : ''}>${RADAR.alertas.lendo ? 'conferindo…' : 'CONFERIR AGORA'}</button>` +
+                `${rdSw('rd-al-vigiar', cfg.vigiar, 'vigiar a cada')}<input type="number" id="rd-al-min" min="15" step="5" value="${cfg.min}" aria-label="minutos entre leituras (mínimo 15)"> min</div>`;
+        h += `<div class="tb-mut">${est.ult ? 'última leitura ' + rdHa(est.ult) : 'nunca conferido'}${cfg.vigiar ? ` · próxima em ~${numBR(Math.max(0, Math.ceil((est.ult + cfg.min * 60000 - Date.now()) / 60000)))} min` : ''}${est.erro ? ` · <span class="tb-ruim">${escHtml(est.erro)}</span>` : ''}${mkPremiumAgora() === false ? ' · <span class="tb-ruim">sem Premium: o mercado não responde</span>' : ''}</div>`;
+        h += `<div class="rd-tit">Observando</div>`;
+        if (!cfg.itens.length) h += `<div class="tb-mut">Nenhum item. Adicione abaixo.</div>`;
+        cfg.itens.forEach((it, i) => {
+            const g = [it.pct != null && it.pct !== '' ? `${it.modo === 'comprar' ? 'abaixo' : 'acima'} da média 30 d em ${numBR(it.pct)} %` : '', it.preco ? `${it.modo === 'comprar' ? 'anúncio ≤' : 'preço ≥'} ${numBR(it.preco)}` : ''].filter(Boolean).join(' ou ');
+            h += `<div class="tb-lin"><span>${rdSw('rd-al-on-' + i, it.on !== false, escHtml(it.nome))} <span class="tb-mut">${it.modo === 'comprar' ? 'comprar' : 'vender'} · ${escHtml(g || '—')}</span></span>` +
+                 `<button type="button" class="tb-bt mini" id="rd-al-tirar-${i}" aria-label="tirar ${escHtml(it.nome)}">✕</button></div>`;
+        });
+        h += `<div class="rd-form"><input id="rd-al-nome" list="rd-al-lista" placeholder="nome do item" aria-label="nome do item" style="flex:1 1 9em">` +
+             `<datalist id="rd-al-lista">${sug.map(n => `<option value="${escHtml(n)}"></option>`).join('')}</datalist>` +
+             `<select id="rd-al-modo" aria-label="vender ou comprar"><option value="vender">vender</option><option value="comprar">comprar</option></select></div>` +
+             `<div class="rd-form"><label>média ± <input type="number" id="rd-al-pct" min="0" value="20" aria-label="porcentagem sobre a média de 30 dias"> %</label>` +
+             `<label>ou preço <input type="number" id="rd-al-preco" min="0" placeholder="—" aria-label="preço limite"></label>` +
+             `<button type="button" class="tb-bt mini" id="rd-al-add">adicionar</button></div>`;
+        if (sug.length) h += `<div class="tb-mut">${numBR(sug.length)} sugestões do baú e da mochila${MK.catalogo ? ' com negócio em 30 dias' : ' (leia o mercado para filtrar as que têm negócio)'} na lista do campo.</div>`;
+        if ((est.hist || []).length) h += `<div class="rd-tit">Disparados</div>` + est.hist.map(x => `<div class="tb-lin"><span>${escHtml(x.msg)}</span><span class="tb-mut">${rdHa(x.t)}</span></div>`).join('');
+        return h + aj('rd-alertas', 'Só LÊ o mercado (market_catalog e, para a média de 30 dias, market_stats de até 5 itens por rodada, com a média guardada por 24 h), no ritmo da fila do Mercado (1 pedido a cada 3,5 s). Não compra, não anuncia e não aceita nada. "vender": avisa quando há COMPRA aberta ou o menor anúncio está acima da média em X % (ou do preço). "comprar": avisa quando o menor anúncio está abaixo da média em X % (ou ≤ preço). O mesmo alerta não repete em 6 h. Vigiar vem desligado; com ele ligado, no mínimo 15 min entre leituras e só com o socket aberto, o Mercado livre, sem Scan nem ciclo de venda.');
+    }
+    function rdTelaDia() {
+        const dias = radarDias(), hoje = tpDiaChave(Date.now());
+        const sel = RADAR.diaSel || hoje, dia = dias[sel] || null;
+        const r = tpResumoDia(dia), cmp = tpCompararDias(dias, sel, 7);
+        const ops = []; for (let i = 0; i < TP_DIAS_MAX; i++) ops.push(tpDiaAntes(hoje, i));
+        const rotDia = (c, i) => { const [, m, d] = c.split('-'); return (i === 0 ? 'hoje · ' : i === 1 ? 'ontem · ' : '') + d + '/' + m + (dias[c] ? '' : ' (vazio)'); };
+        let h = `<div class="tb-linha"><select id="rd-dia" aria-label="dia">${ops.map((c, i) => `<option value="${c}"${c === sel ? ' selected' : ''}>${rotDia(c, i)}</option>`).join('')}</select>` +
+                `<button type="button" class="tb-bt mini" id="rd-copiar">copiar texto</button></div>`;
+        const pct = (v) => v == null ? '' : ` <small class="${v >= 0 ? 'tb-ok' : 'tb-ruim'}">${v >= 0 ? '+' : ''}${v} %</small>`;
+        const card = (rot, v, p) => `<div class="tb-card"><small>${rot}</small><b>${v}</b>${p || ''}</div>`;
+        h += `<div class="tb-grid">${card('xp', rdK(r.xp) + (r.xpH ? ` <small class="tb-mut">${rdK(r.xpH)}/h</small>` : ''), pct(cmp.pct.xp))}${card('ouro líquido', rdSinal(r.liquido), pct(cmp.pct.liquido))}` +
+             `${card('loot', rdK(r.loot), pct(cmp.pct.loot))}${card('abates', numBR(r.kills))}${card('mortes', `<span class="${r.mortes ? 'tb-ruim' : ''}">${numBR(r.mortes)}</span>`)}${card('caçando', escHtml(fmtHoras(r.horas)), pct(cmp.pct.horas))}</div>`;
+        if (!dia) h += `<div class="rd-cx tb-mut">Nada registrado neste dia. O dia conta o que o analisador do jogo mostra com a página aberta, mais o resumo das caçadas que terminam (inclusive as que rodaram com a página fechada, se o resumo chegar).</div>`;
+        const mapas = Object.entries((dia && dia.mapas) || {}).sort((a, b) => b[1].seg - a[1].seg);
+        if (mapas.length) {
+            h += `<table class="tb-an"><colgroup><col><col class="c4"><col class="c5"><col class="c5"></colgroup><thead><tr><th>mapa</th><th>tempo</th><th>xp</th><th>líquido</th></tr></thead><tbody>` +
+                mapas.map(([n, x]) => `<tr><td>${escHtml(n)}</td><td>${escHtml(fmtHoras(x.seg / 3600))}</td><td>${rdK(x.xp)}</td><td>${rdSinal(x.loot - x.sup)}</td></tr>`).join('') + `</tbody></table>`;
+        }
+        if (dia) {
+            h += `<div class="tb-lin"><span>ciclos do Auto Hunt</span><span>${numBR(dia.ciclos.n)}${dia.ciclos.n ? ` · ${numBR(dia.ciclos.ouro)} vendido` : ''}${dia.ciclos.falhas ? ` · <span class="tb-ruim">${numBR(dia.ciclos.falhas)} falha${dia.ciclos.falhas > 1 ? 's' : ''}</span>` : ''}</span></div>` +
+                 `<div class="tb-lin"><span>venda ao NPC</span><span>${numBR(dia.npc)}</span></div><div class="tb-lin"><span>vendas no mercado</span><span>${numBR(dia.mercado)}</span></div>`;
+            if (dia.raros.length) h += `<div class="tb-lin"><span>raros</span><span class="rd-raro">${escHtml(dia.raros.map(x => x.nome + ' ×' + x.n).join(', '))}</span></div>`;
+        }
+        const mx = Math.max(1, ...cmp.serie.map(x => x.xp)), mo = Math.max(1, ...cmp.serie.map(x => Math.abs(x.liquido)));
+        h += `<div class="rd-tit">7 dias${cmp.n ? ` (média de ${cmp.n} dia${cmp.n > 1 ? 's' : ''} antes)` : ''}</div><div class="rd-barras" aria-hidden="true">` +
+             cmp.serie.map(x => `<div title="${escHtml(x.chave)}"><i class="rd-barra xp" style="height:${Math.round(x.xp / mx * 45)}%"></i><i class="rd-barra ${x.liquido < 0 ? 'neg' : 'ouro'}" style="height:${Math.round(Math.abs(x.liquido) / mo * 45)}%"></i></div>`).join('') +
+             `</div><div class="rd-dias">${cmp.serie.map(x => `<span>${escHtml(x.chave.slice(8))}</span>`).join('')}</div><div class="tb-mut">azul = xp · dourado = ouro líquido (vermelho = negativo)</div>`;
+        if (RADAR.exp) {
+            h += `<div class="tb-linha"><span class="${RADAR.exp.copiado === false ? 'tb-av' : 'tb-mut'}">${RADAR.exp.copiado === true ? 'copiado — e também aqui:' : RADAR.exp.copiado === false ? 'área de transferência bloqueada: selecione e copie daqui' : 'copiando…'}</span>` +
+                 `<button type="button" class="tb-bt mini" id="rd-copiar-fechar" style="margin-left:auto">fechar</button></div><textarea id="rd-texto" readonly spellcheck="false" aria-label="relatório do dia em texto"></textarea>`;
+        }
+        return h;
+    }
+    function telaRadar() {
+        rdGarantirCss();
+        const sub = ler('radar_sub', 'mapas');
+        const n = RADAR.alertas.naoVistos;
+        const abas = [['mapas', 'Mapas'], ['loot', 'Loot'], ['alertas', 'Alertas' + (n && sub !== 'alertas' ? ` <b class="tb-av">${n > 9 ? '9+' : n}</b>` : '')], ['dia', 'Dia']];
+        let h = `<div id="tb-radar"><div class="rd-sub" role="tablist">` + abas.map(([k, nome]) =>
+            `<button type="button" class="rd-aba${k === sub ? ' on' : ''}" data-rd-sub="${k}" role="tab" aria-selected="${k === sub}">${nome}</button>`).join('') + `</div>`;
+        let corpo = '';
+        try { corpo = sub === 'loot' ? rdTelaLoot() : sub === 'alertas' ? rdTelaAlertas() : sub === 'dia' ? rdTelaDia() : rdTelaMapas(); }
+        catch (e) { falhou('radar (tela ' + sub + ')', e); corpo = `<div class="rd-cx tb-ruim">esta parte da tela falhou: ${escHtml(e.message)}</div>`; }
+        return h + corpo + `<div class="rd-rodape">Só leitura: nada aqui envia comando de ação ao jogo.</div></div>`;
+    }
+    function ligarRadar() {
+        $$('[data-rd-sub]').forEach(b => { b.onclick = () => { guardar('radar_sub', b.dataset.rdSub); renderizar(); }; });
+        const sub = ler('radar_sub', 'mapas');
+        if (sub === 'alertas' && RADAR.alertas.naoVistos) { RADAR.alertas.naoVistos = 0; pintarContadorRadar(); }
+        const cl = (id, f) => { const e = $('#' + id); if (e) e.onclick = f; };
+        /* mapas */
+        cl('rd-calc', () => { rankingRodar().catch(e => falhou('radar (ranking)', e)); });
+        cl('rd-parar', () => { RADAR.parar = true; avisar('radar', 'radar: parando depois do mapa atual…', 'info'); });
+        $$('[data-rd-ordem]').forEach(b => { b.onclick = () => { guardarRadarCfg({ ordem: b.dataset.rdOrdem }); renderizar(); }; });
+        const md = $('#rd-modelo'); if (md) md.onchange = () => { guardarRadarCfg({ modelo: md.value }); renderizar(); };
+        cl('rd-merc', () => { guardarRadarCfg({ mercado: !radarCfg().mercado }); renderizar(); });
+        cl('rd-esconder', () => { guardarRadarCfg({ esconder: !radarCfg().esconder }); renderizar(); });
+        /* loot */
+        cl('rd-lv-zerar', () => { const lv = radarLv(); lv.sessao = radarSessaoNova(); lv.raros = []; RADAR.diasSujo = true; radarSalvarDia(true); avisar('radar', 'radar: sessão do Loot zerada (só aqui; o analisador do jogo não é tocado)', 'ok'); renderizar(); });
+        cl('rd-lv-merc', () => { radarLerCatalogo('loot').catch(e => falhou('radar (mercado)', e)); });
+        /* alertas */
+        cl('rd-al-conferir', () => { alertasLer('botao').catch(e => falhou('radar (alertas)', e)); });
+        cl('rd-al-vigiar', () => { const on = !alertasCfg().vigiar; guardarAlertasCfg({ vigiar: on }); avisar('radar', on ? `radar: vigiar ligado — confere o mercado a cada ${alertasCfg().min} min (só leitura)` : 'radar: vigiar desligado', 'ok'); renderizar(); });
+        const mn = $('#rd-al-min'); if (mn) mn.onchange = () => { guardarAlertasCfg({ min: Math.max(TP_ALERTA_MIN_MIN, parseInt(mn.value) || TP_ALERTA_MIN_MIN) }); renderizar(); };
+        alertasCfg().itens.forEach((it, i) => {
+            cl('rd-al-on-' + i, () => { const c = alertasCfg(); if (c.itens[i]) c.itens[i].on = c.itens[i].on === false; guardarAlertasCfg({ itens: c.itens }); renderizar(); });
+            cl('rd-al-tirar-' + i, () => { const c = alertasCfg(); c.itens.splice(i, 1); guardarAlertasCfg({ itens: c.itens }); renderizar(); });
+        });
+        cl('rd-al-add', () => {
+            const nome = String(($('#rd-al-nome') || {}).value || '').trim();
+            if (!nome) { avisar('radar', 'radar: escreva o nome do item', 'erro'); return; }
+            const pctV = String(($('#rd-al-pct') || {}).value || '').trim(), precoV = parseInt(($('#rd-al-preco') || {}).value) || null;
+            const c = alertasCfg();
+            c.itens = c.itens.filter(x => !(mkMin(x.nome) === mkMin(nome) && x.modo === (($('#rd-al-modo') || {}).value || 'vender')));
+            c.itens.push({ nome, modo: ($('#rd-al-modo') || {}).value === 'comprar' ? 'comprar' : 'vender', pct: pctV === '' ? null : Math.max(0, parseInt(pctV) || 0), preco: precoV, on: true });
+            guardarAlertasCfg({ itens: c.itens.slice(-40) });
+            avisar('radar', 'radar: ' + nome + ' na lista de alertas', 'ok'); renderizar();
+        });
+        /* dia */
+        const dsel = $('#rd-dia'); if (dsel) dsel.onchange = () => { RADAR.diaSel = dsel.value; RADAR.exp = null; renderizar(); };
+        cl('rd-copiar', () => {
+            const dias = radarDias(), ch = RADAR.diaSel || tpDiaChave(Date.now());
+            const txt = tpTextoRelatorio(dias[ch], tpCompararDias(dias, ch, 7), ch);
+            const x = RADAR.exp = { texto: txt, copiado: null, selecionar: true };
+            renderizar();
+            let p;
+            try { p = navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(txt) : Promise.reject(new Error('sem clipboard')); } catch (e) { p = Promise.reject(e); }
+            p.then(() => { x.copiado = true; avisar('radar', 'relatório copiado (e na caixa abaixo)', 'ok'); })
+             .catch(() => { x.copiado = false; x.selecionar = true; avisar('radar', 'área de transferência bloqueada — o relatório está na caixa abaixo', 'erro'); })
+             .finally(renderizar);
+        });
+        const cx = $('#rd-texto');
+        if (cx && RADAR.exp) { cx.value = RADAR.exp.texto; if (RADAR.exp.selecionar) { RADAR.exp.selecionar = false; try { cx.focus({ preventScroll: true }); cx.select(); } catch { /* fora da página */ } } }
+        cl('rd-copiar-fechar', () => { RADAR.exp = null; renderizar(); });
+    }
+
+
     /* ⚠ O CORPO INTEIRO VAI NUM try. Motivo real (30/08): eu escrevi
      * `$('[data-usar-palpite]').forEach` — um cifrão em vez de dois. `$` é
      * querySelector e devolve UM nó, então `.forEach` estourou TypeError. Só
@@ -8600,12 +10447,14 @@
             progresso: BEST.ativo || BEST.restaurando ? (BEST.passo || BEST.ocupado ? 'av pulsa' : 'ok') : '',
             scan: SCAN.ativo ? 'ok pulsa' : '',
             equip: EQUIP.equipando || EQUIP.lendo ? 'av pulsa' : '',
-            mercado: MK.ocupado ? 'av pulsa' : ''
+            mercado: MK.ocupado ? 'av pulsa' : '',
+            radar: RADAR.rodando || MK.ocupado === 'radar' ? 'av pulsa' : alertasCfg().vigiar ? 'ok' : ''
         };
         $$('.tb-ico[data-aba]', t).forEach(i => { const on = !!u.aberta && !u.oculto && i.dataset.aba === ABA; i.classList.toggle('on', on); i.setAttribute('aria-pressed', on ? 'true' : 'false'); const d = $('.tb-dot', i); if (d) d.className = 'tb-dot ' + (estado[i.dataset.aba] || ''); });
         const at = $('#tb-atualizar', t); if (at) { at.style.display = NOVA_VERSAO ? 'flex' : 'none'; at.title = NOVA_VERSAO ? 'versão ' + NOVA_VERSAO + ' disponível — clique para atualizar no Tampermonkey' : ''; }
         if (u.aberta && !u.oculto && ABA === 'log') marcarLogLido(); else _logAberto = false;
         pintarContadorLog();
+        pintarContadorRadar();
         pintarFaixa();
         posicionarCaixa();
     }
@@ -8645,7 +10494,7 @@
         const mesmaAba = _abaPintada === ABA;
         const html = ABA === 'estado' ? telaEstado() : ABA === 'autohunt' ? telaAutoHunt() : ABA === 'scan' ? telaScan()
             : ABA === 'magia' ? telaMagia() : ABA === 'analise' ? telaAnalise() : ABA === 'equip' ? telaEquip()
-            : ABA === 'progresso' ? telaProgresso() : ABA === 'mercado' ? telaMercado() : `<div id="tb-log"></div>`;
+            : ABA === 'progresso' ? telaProgresso() : ABA === 'mercado' ? telaMercado() : ABA === 'radar' ? telaRadar() : `<div id="tb-log"></div>`;
         if (mesmaAba && html === _htmlPintado) { if (ABA === 'log') pintarLog(); return; }
         if (mesmaAba) { const f = campoEmUso(c); if (f) { adiarRepinte(f); return; } }
         /* v2.3.0 — trocar o innerHTML zera a rolagem: marcar um mapa no Scan
@@ -8666,6 +10515,7 @@
         if (ABA === 'equip') ligarEquip();
         if (ABA === 'progresso') ligarProgresso();
         if (ABA === 'mercado') ligarMercado();
+        if (ABA === 'radar') ligarRadar(); // v2.13.0
         if (ABA === 'scan') ligarScan(); // v2.11 — handlers do Scan ao lado da tela
         if (ABA === 'autohunt') ligarAutoHunt(); // v2.11 — handlers do Auto Hunt ao lado da tela
     }
@@ -8727,7 +10577,7 @@
          * lobby e a troca de hunt de uma vez. */
         renderizar();
         // repinta Estado e Analisador sozinhos; as outras só quando o usuário mexe
-        setInterval(() => { try { pintarTrilho(); } catch (e) { } if ((ABA === 'estado' || ABA === 'analise' || ABA === 'autohunt' || (ABA === 'scan' && SCAN.ativo)) && ui().aberta && $('#tb-gaveta') && !$('#tb-ah-pct:focus') && !$('#tb-ah-oz:focus') && !$('#tb-scan-min:focus') && !$('#tb-scan-filtro:focus')) renderizar(); }, 4000);
+        setInterval(() => { try { pintarTrilho(); } catch (e) { } if ((ABA === 'estado' || ABA === 'analise' || ABA === 'autohunt' || (ABA === 'scan' && SCAN.ativo) || (ABA === 'radar' && ler('radar_sub', 'mapas') === 'loot')) && ui().aberta && $('#tb-gaveta') && !$('#tb-ah-pct:focus') && !$('#tb-ah-oz:focus') && !$('#tb-scan-min:focus') && !$('#tb-scan-filtro:focus')) renderizar(); }, 4000);
 
         /* o analisador roda SEMPRE, mesmo com a aba fechada — é o que garante
          * que nenhuma caçada passe sem virar dado. Fecha a sessão ao sair da
@@ -8735,7 +10585,9 @@
         setInterval(() => { try { amostrar(); deuCerto('amostrar'); } catch (e) { falhou('amostrar', e); } }, AMOSTRA_MS);
         setTimeout(() => verificarAtualizacao().catch(() => { }), 15000);
         setInterval(() => verificarAtualizacao().catch(() => { }), 30 * 60 * 1000);
-        window.addEventListener('beforeunload', () => { try { fecharSessao('página fechada'); } catch (e) { } });
+        /* v2.13.0 — Radar: o vigiar dos alertas (só age se o dono ligou) e o dia salvo ao sair */
+        setInterval(radarVigia, 60000);
+        window.addEventListener('beforeunload', () => { try { fecharSessao('página fechada'); } catch (e) { } try { radarSalvarDia(true); } catch { /* sem espaço */ } });
     }
 
     /* GANCHO DE DEPURACAO — so leitura. Deixa simular o plano de fora
@@ -8763,7 +10615,7 @@
         // v2.2.0 — Scan (leituras)
         scanCfg, scanResultados, scanVereditos, scanMedidaViva, scanDividirLoot, lootTabela, xpFaltando, fmtHoras,
         // v2.6.4 — livro-razão de combate (só leitura dos eventos do frame)
-        razaoResumo, razaoHtml, razaoTexto, manaMedidaMedia, spawnLimitaMedido, get RAZAO() { return RAZAO; },
+        razaoResumo, razaoHtml, razaoTexto, manaMedidaMedia, spawnLimitaMedido, partyInt, preverModeloInt, regenMedida, get RAZAO() { return RAZAO; },
         get SCAN() { return SCAN; },
         get WS() { return { tipos: WS.tipos, amostras: WS.amostras, bin: WS.bin, enviados: WS.enviados, frames: WS.frames, desde: WS.desde, socket: !!WS.socket, aberto: socketAberto() }; },
         get aprendendo() { return _aprendendo; },
@@ -8771,7 +10623,9 @@
         get ERROS() { return ERROS; }, get SESSAO() { return SESSAO; }, lerAbates, lerExpTotal,
         verificarAtualizacao, get NOVA_VERSAO() { return NOVA_VERSAO; },
         // v2.11 — Mercado (modelo puro e o estado lido)
-        mkMontar, mkSugerir, mkTaxa, mkRevisao, get MERCADO() { return MK; }
+        mkMontar, mkSugerir, mkTaxa, mkRevisao, get MERCADO() { return MK; },
+        // v2.13.0 — Radar (estimativa e calibração; só leitura)
+        estimarMapa, tpEstimar, tpCalibrar, registrarMotorRanking, get RADAR() { return RADAR; }
     }; }
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar);
