@@ -100,35 +100,40 @@ t('2 — determinismo: 10 chamadas seguidas dão o mesmo resultado', () => {
     for (let i = 0; i < 3; i++) assert.strictEqual(resumo(buscar(BANSHEE)), b);
 });
 
-t('3 — mesma régua: medir só a Fire Wave a 0,5 derruba o porLanc da Great Fire Wave (a classe "onda lateral" inteira)', () => {
+t('3 — mesma régua (2.13.1): medir a Fire Wave a 0,5 corrige a VOCAÇÃO inteira (as não medidas caem juntas) e a Fire Wave um pouco mais; outra vocação não muda', () => {
     zerar();
     const h = H(VH), L = M.lureMax(h);
-    const antes = M.contextoInt(h).porNome.SORCERER;
-    const fw = antes['Fire Wave'], gfw0 = antes['Great Fire Wave'].porLancInt, eb0 = antes['Energy Beam'].porLancInt;
-    const teo = M.danoBaseInt(fw, 'SORCERER') * M.alvosForma(fw.classe, fw.casas, L, M.FRACAO_FORMA[fw.classe]);
-    M.E.scan = { m: { id: VH, razao: { magias: [{ voc: 'SORCERER', nome: 'Fire Wave', casts: 60, porCast: Math.round(0.5 * teo) }] } } };
+    const c0 = M.contextoInt(h), antes = c0.porNome.SORCERER, siw0 = c0.porNome.DRUID['Strong Ice Wave'].porLancInt;
+    const fw = antes['Fire Wave'], fw0 = fw.porLancInt, gfw0 = antes['Great Fire Wave'].porLancInt, eb0 = antes['Energy Beam'].porLancInt;
+    const alvos = M.alvosForma(fw.classe, fw.casas, L, M.FRACAO_FORMA[fw.classe]);
+    const porAlvo = 0.5 * M.danoBaseInt(fw, 'SORCERER');
+    /* 60 lançamentos × alvos ≥ 300 acertos (degrau 300): kVoc = (300·0,5K + 30K)/330 ≈ 0,55K; a Fire Wave, encolhida
+     * para o kVoc: (300·0,5K + 30·0,55K)/330 ≈ 0,5K */
+    M.E.scan = { m: { id: VH, razao: { magias: [{ voc: 'SORCERER', nome: 'Fire Wave', casts: 60, porCast: Math.round(porAlvo * alvos), alvosPorCast: alvos }] } } };
     M.invalidarPlanos();
     const ctx = M.contextoInt(h), depois = ctx.porNome.SORCERER;
-    assert(Math.abs(ctx.fForma.lateral - 0.65) < 1e-9, 'fForma lateral = (30·0,5 + 15)/(30 + 15) = 0,67 → 0,65: ' + ctx.fForma.lateral);
-    const razao = depois['Great Fire Wave'].porLancInt / gfw0;
-    assert(razao > 0.6 && razao < 0.7, 'Great Fire Wave caiu junto: ×' + razao.toFixed(3));
-    assert(Math.abs(depois['Energy Beam'].porLancInt - eb0) < 1e-9, 'feixe (outra classe) não muda');
-    assert(Math.abs(depois['Fire Wave'].porLancInt / depois['Great Fire Wave'].porLancInt - fw.porLancInt / gfw0) < 0.02, 'as duas na mesma régua (a medida não substitui o número da Fire Wave)');
+    const rG = depois['Great Fire Wave'].porLancInt / gfw0, rE = depois['Energy Beam'].porLancInt / eb0, rF = depois['Fire Wave'].porLancInt / fw0;
+    assert(rG > 0.5 && rG < 0.6, 'Great Fire Wave (não medida) cai com a vocação: ×' + rG.toFixed(3));
+    assert(Math.abs(rE - rG) < 1e-9, 'Energy Beam (outra forma, mesma vocação) cai igual: ×' + rE.toFixed(3));
+    assert(rF > 0.45 && rF <= rG, 'a Fire Wave medida fica perto do que se mediu: ×' + rF.toFixed(3));
+    assert(Math.abs(ctx.porNome.DRUID['Strong Ice Wave'].porLancInt - siw0) < 1e-9, 'outra vocação não muda');
 });
 
-t('4 — Knight com regen 8, sem poção (Vampire hell, ε 0,5 %): Berserk + Lesser Front Sweep ≥1, 2 ou 3 magias', () => {
+t('4 — Knight com regen 8, sem poção (Vampire hell, ε 0,5 %): Berserk no kit, 1 a 3 magias, mais dano que o do Em área', () => {
     zerar(); M.E.scan = { vh: RITMO_VH };
     const r = buscar(VH, { regen: { KNIGHT: 8 }, reserva: { KNIGHT: 0 }, semPocao: true, eps: 0.005 });
     const k = r.final.esc.KNIGHT, s = r.final.sim.por.KNIGHT;
     /* ESPEC: "Berserk no slot 1". Com 8 de mana/s o Berserk (115 a cada 4 s) sai quando há mana, em
      * qualquer ordem: Berserk > LFS e LFS > Berserk ficam a < 0,5 % de xp um do outro no simulador, e o
      * desempate (lucro) escolhe. O que o caso quer ver — as duas no kit, LFS com ≥1, poucas magias — fica. */
-    assert(nomes(k).includes('Berserk') && k.plano.some(p => p.av.m.name === 'Lesser Front Sweep' && p.minimo === 1), kit(k));
-    assert(k.plano.length >= 2 && k.plano.length <= 3, kit(k));
+    /* 2.13.1 — com a régua medida (Knight 0,9 por alvo, Lesser Front Sweep 1/3 do lure e golpe ×0,3) o Berserk
+     * sozinho acerta a onda inteira e o LFS não se paga em mana: a ESPEC ("Berserk + LFS ≥1, 2 ou 3 magias") era da
+     * régua da 2.12.0, que dava ao LFS e ao golpe 5,8× o dano (ao vivo o LFS fez 51 por lançamento, previsto 290). */
+    assert(nomes(k).includes('Berserk'), kit(k));
+    assert(k.plano.length >= 1 && k.plano.length <= 3, kit(k));
     assert(!k.pocao, 'sem poção');
-    /* ESPEC: 16–18 de dano/s (escala do combo-KP). Aqui a escala é a do Scan (K_VIVO + golpe básico): o Knight
-     * do Em área dá 24–25/s, calibrado no medido (25/s). Com 8 de mana útil (o dobro do Em área) ele fica entre 1,5× e 4×. */
-    assert(s.danoS > 36 && s.danoS < 100, 'dano/s ' + s.danoS.toFixed(1));
+    const area = M.preverModeloInt('area', H(VH)).sim.por.KNIGHT.danoS;
+    assert(s.danoS >= 1.5 * area && s.danoS < 60, 'dano/s ' + s.danoS.toFixed(1) + ' (Em área ' + area.toFixed(1) + ')');
 });
 
 t('5 — Knight com regen 20 (Dragon Lair, limitado por dano): ≥3 ataques com Groundshaker, dano/s ≥24 e ≥1,3× o de regen 8', () => {
@@ -140,12 +145,14 @@ t('5 — Knight com regen 20 (Dragon Lair, limitado por dano): ≥3 ataques com 
     assert(d20 >= 24 && d20 >= 1.3 * d8, `regen 20: ${d20.toFixed(1)}/s (${kit(k20)}) · regen 8: ${d8.toFixed(1)}/s (${kit(r8.final.esc.KNIGHT)})`);
 });
 
-t('6 — Knight em Dragon Lair: ε 0,5 % + loot medido → 4 magias e poção (LCB ≥ 0); ε 3 % só fica com a poção se ela der > 3 % de xp', () => {
+t('6 — Knight em Dragon Lair: ε 0,5 % + loot medido → ≥3 magias e poção (LCB ≥ 0); ε 3 % só fica com a poção se ela der > 3 % de xp', () => {
     zerar();
     M.E.scan = { dl: { id: DL, kills: 1000, loot: 78900 } }; // loot medido = o do catálogo (78,9/abate)
     const r05 = buscar(DL, { eps: 0.005 });
     const k = r05.final.esc.KNIGHT;
-    assert(k.plano.length === 4 && k.pocao > 0, kit(k));
+    /* ESPEC: 4 magias. Com a régua medida (2.13.1) o Brutal Strike/Lesser Front Sweep valem ~0,55 do cartão por
+     * alvo e a 4ª magia não paga a mana: ficam 3 (Berserk, Groundshaker e uma de alvo único) com poção. */
+    assert(k.plano.length >= 3 && k.pocao > 0, kit(k));
     assert(r05.final.met.LCB >= 0, 'LCB ' + r05.final.met.LCB);
     /* ESPEC: "com ε = 3 % sai sem poção". No simulador a poção do Knight em Dragon Lair (limitado por dano)
      * custa ~22k/h, não 70k/h, e rende ~4 % de xp — passa da faixa. O que vale conferir é a regra: com ε 3 %
@@ -261,19 +268,18 @@ t('12 — lucro: com loot/abate = 0 fica o de maior LCB, com o aviso "não se pa
     } finally { M.LOOT_CACHE[VH] = salvo; }
 });
 
-t('13 — calibração: Em área previsto ±8 % do medido em Vampire hell (1.635 abates/h, 55,4k xp/h); Banshee (938, 46,9k) ±20 % sem a espera medida', () => {
+t('13 — calibração: Em área em Vampire hell ±15 % do medido no nível 67 (1.635 abates/h) e Banshee ±12 % (938); com a espera medida em 30/09 (9,5 s, nível 71: 992) ±10 %', () => {
+    /* 2.13.1 — a calibração de verdade agora é o testes/int-calibracao.test.js (os 4 Scans de 30/09, com o dano real
+     * da conta). Aqui o dano sai das fórmulas no nível 67; o Scan desse nível deu 1.635 e o de 30/09 (nível 71) 1.745. */
     zerar(); M.E.scan = { vh: RITMO_VH };
     const vh = M.preverModeloInt('area', H(VH)).met;
-    assert(Math.abs(vh.abH / 1635 - 1) <= 0.08 && Math.abs(vh.xpH / 55400 - 1) <= 0.08, `Vampire hell: ${Math.round(vh.abH)} abates/h, ${Math.round(vh.xpH)} xp/h`);
+    assert(Math.abs(vh.abH / 1635 - 1) <= 0.15 && Math.abs(vh.xpH / 55400 - 1) <= 0.15, `Vampire hell: ${Math.round(vh.abH)} abates/h, ${Math.round(vh.xpH)} xp/h`);
     zerar();
     const b = M.preverModeloInt('area', H(BANSHEE)).met;
-    /* ESPEC: ±12 %. A Banshee é limitada pelo spawn (TIBIDLE.md 2.11.2: os mesmos 936 abates/h com qualquer
-     * kit) e a espera entre ondas dela nunca foi medida: com a espera padrão (10 s) a previsão sai ~18 %
-     * acima. Com a espera que fecha o medido (13,2 s) ela entra nos ±12 % — é o que o Scan vai trazer. */
-    assert(Math.abs(b.abH / 938 - 1) <= 0.20 && Math.abs(b.xpH / 46900 - 1) <= 0.20, `Banshee: ${Math.round(b.abH)} abates/h, ${Math.round(b.xpH)} xp/h`);
-    zerar(); M.E.scan = { b: { id: BANSHEE, razao: { ondas: { n: 20, matar: 6, timer: 13.2 } } } };
+    assert(Math.abs(b.abH / 938 - 1) <= 0.12 && Math.abs(b.xpH / 46900 - 1) <= 0.12, `Banshee: ${Math.round(b.abH)} abates/h, ${Math.round(b.xpH)} xp/h`);
+    zerar(); M.E.scan = { b: { id: BANSHEE, razao: { ondas: { n: 24, matar: 7.8, timer: 9.5 } } } };
     const b2 = M.preverModeloInt('area', H(BANSHEE)).met;
-    assert(Math.abs(b2.abH / 938 - 1) <= 0.12 && Math.abs(b2.xpH / 46900 - 1) <= 0.12, `Banshee com espera 13,2 s: ${Math.round(b2.abH)} abates/h, ${Math.round(b2.xpH)} xp/h`);
+    assert(Math.abs(b2.abH / 992 - 1) <= 0.10, `Banshee com a espera medida (9,5 s): ${Math.round(b2.abH)} abates/h`);
 });
 
 t('14 — CPU: < 150 ms por mapa, tetos N_MAX_SIM/N_MAX_PARTY respeitados; o ciclo de 13.542,83 ms termina', () => {

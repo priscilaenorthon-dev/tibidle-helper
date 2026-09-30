@@ -13,7 +13,7 @@ const le = (p) => JSON.parse(fs.readFileSync(path.join(raiz, p), 'utf8'));
 const trecho = (a, b) => { const i = SRC.indexOf(a), f = SRC.indexOf(b); assert(i > 0 && f > i, 'marcador ausente: ' + a); return SRC.slice(i, f); };
 const P = new Function(`${trecho('/* @@TELAS-API-INICIO', '/* @@TELAS-API-FIM */')}
     return { tpHpXpMedio, tpLootAbate, tpValorItem, tpCalibrar, tpRisco, tpEstimar, tpNotaParty, tpOrdenar, tpDeltaAnalisador, tpRaro,
-             tpAvaliarAlerta, tpAlertaDevido, tpDiaChave, tpAcumularDia, tpPodarDias, tpResumoDia, tpCompararDias, tpTextoRelatorio, tpDeltaResumo,
+             tpAvaliarAlerta, tpAlertaDevido, tpDiaChave, tpAcumularDia, tpPodarDias, tpResumoDia, tpCompararDias, tpTextoRelatorio, tpDeltaResumo, tpTituloResumo, tpAbatesResumo,
              TP_FATOR_LOOT_PADRAO, TP_DIAS_MAX };`)();
 const MKP = new Function(`${trecho('/* @@MERCADO-INICIO', '/* @@MERCADO-PURO-FIM */')}\n return { mkTaxa };`)();
 const FXH = le('testes/fixtures/hunts.json');
@@ -234,6 +234,25 @@ t('tpDeltaResumo: resumo sem base = caçada inteira; com base conta só o que fa
     const base = { huntId: 34, an: { elapsedMs: 3600000, xp: 30000, loot: 5000, sup: 1500, kills: 600 } };
     assert.deepStrictEqual(P.tpDeltaResumo(base, sm), { seg: 3600, xp: 30000, loot: 3000, sup: 500, kills: 400 });
     assert.strictEqual(P.tpDeltaResumo({ huntId: 34, an: { elapsedMs: 7200000, xp: 60000, loot: 8000, sup: 2000, kills: 1000 } }, sm), null, 'tudo já contado');
+});
+t('tpDeltaResumo (2.13.1): frames até o fim = nada a somar; título {key, params}; abates em killsTotal', () => {
+    /* formato real do ended.summary (30/09) */
+    const sm = { huntId: 103, title: { key: 'server.hunt.title.data', params: { name: 'Nargor Pirate island' } }, elapsedSec: 7335, xpPerHour: 41588,
+                 lootGold: 87056, suppliesGold: 42266, kills: { 'Pirate Buccaneer': 3065, 'Pirate Corsair': 1559 }, killsTotal: 4624 };
+    assert.strictEqual(P.tpTituloResumo(sm), 'Nargor Pirate island');
+    assert.strictEqual(P.tpTituloResumo({ title: 'Vampire hell' }), 'Vampire hell');
+    assert.strictEqual(P.tpAbatesResumo(sm), 4624);
+    assert.strictEqual(P.tpAbatesResumo({ kills: { a: 2, b: 3 } }), 5);
+    const agora = 1790800000000;
+    /* base de 20 s atrás no mesmo mapa (o Scan zerou o analisador no meio: resumo − base daria a caçada de novo) */
+    const fresca = { huntId: 103, t: agora - 20000, an: { elapsedMs: 400000, xp: 5000, loot: 900, sup: 400, kills: 250 } };
+    assert.strictEqual(P.tpDeltaResumo(fresca, sm, agora), null, 'os frames acompanharam até o fim');
+    /* base velha (página fechada 10 min antes do fim): conta o que faltou */
+    const velha = { huntId: 103, t: agora - 600000, an: { elapsedMs: 6735000, xp: 76000, loot: 80000, sup: 39000, kills: 4200 } };
+    const d = P.tpDeltaResumo(velha, sm, agora);
+    assert(d && Math.abs(d.seg - 600) < 1e-6 && d.kills === 424, JSON.stringify(d));
+    /* sem base: a caçada inteira, com os abates certos */
+    assert.strictEqual(P.tpDeltaResumo(null, sm, agora).kills, 4624);
 });
 t('tpCompararDias e tpTextoRelatorio: médias de 7 dias, porcentagens e números em pt-BR', () => {
     const dias = {};
@@ -570,6 +589,36 @@ t('Radar/Loot e Dia: frames com drops — valor, valor/h, raro dourado 1× no Lo
     assert(/<small>xp<\/small><b>52,0k/.test(h2), 'o dia não voltou do disco: ' + (h2.match(/<small>xp.{0,60}/) || [''])[0]);
     assert(/<small>mortes<\/small><b><span class="tb-ruim">1</.test(h2));
     assert(/Orc Fortress<\/td>/.test(h2) && /vendas no mercado<\/span><span>900/.test(h2));
+});
+t('Radar/Loot e Dia (2.13.1): recomeçar no mesmo mapa zera a sessão; resumo com a página aberta (analisador zerado no meio) não soma de novo', async () => {
+    const W = criarMundo({ ls: comAba('loot') });
+    await W.avancar(0);
+    const ws = await conectar(W);
+    ws.emitir({ type: 'hunt_started', data: { huntId: 34, state: { party: party4() } } });
+    ws.emitir(frame({ elapsedMs: 1000, xp: 100, xpRaw: 80, killsTotal: 3, lootGold: 50, drops: { 'gold coin': 50 } }));
+    ws.emitir(frame({ elapsedMs: 300000, xp: 9000, xpRaw: 8000, killsTotal: 200, lootGold: 2000, suppliesGold: 500, drops: { 'gold coin': 2000 } }));
+    /* o Scan zera o analisador no meio: o resumo do fim é da caçada INTEIRA */
+    ws.emitir(frame({ elapsedMs: 1000, xp: 50, xpRaw: 40, killsTotal: 1, lootGold: 10, drops: { 'gold coin': 10 } }));
+    ws.emitir(frame({ elapsedMs: 120000, xp: 3000, xpRaw: 2500, killsTotal: 60, lootGold: 700, suppliesGold: 100, drops: { 'gold coin': 700 } }));
+    await W.avancar(2000);
+    const s1 = W.H.RADAR.lv.sessao;
+    assert.strictEqual(s1.loot, 2000 + 690, 'sessão antes: ' + s1.loot); // o 1º frame depois do zerar vira base (os 10 dele ficam fora)
+    ws.emitir({ type: 'ended', data: { summary: { huntId: 34, title: { key: 'server.hunt.title.data', params: { name: 'Orc Fortress' } }, reason: 'stop', elapsedSec: 430, xpPerHour: 100000, lootGold: 2700, suppliesGold: 600, kills: { Orc: 260 }, killsTotal: 260 } } });
+    await W.avancar(1000);
+    const dia = W.H.RADAR.dias[hojeDe(W)];
+    assert.strictEqual(dia.offline, 0, 'resumo com a página aberta virou "offline"');
+    assert.strictEqual(dia.loot, 2690, 'loot do dia contado duas vezes: ' + dia.loot);
+    assert(!Object.keys(dia.mapas).some(k => /object/.test(k)), 'mapa "[object Object]": ' + Object.keys(dia.mapas));
+    /* recomeço no MESMO mapa: o analisador do jogo zera e a sessão também */
+    ws.emitir({ type: 'hunt_started', data: { huntId: 34, state: { party: party4() } } });
+    ws.emitir(frame({ elapsedMs: 1000, xp: 60, xpRaw: 50, killsTotal: 2, lootGold: 30, drops: { 'gold coin': 30 } }));
+    await W.avancar(2000);
+    assert.strictEqual(W.H.RADAR.lv.sessao.loot, 30, 'sessão herdou a caçada anterior: ' + W.H.RADAR.lv.sessao.loot);
+    /* F5 no meio (resume) não zera */
+    ws.emitir({ type: 'resume', data: { huntId: 34, state: { party: party4() } } });
+    ws.emitir(frame({ elapsedMs: 5000, xp: 200, xpRaw: 160, killsTotal: 6, lootGold: 90, drops: { 'gold coin': 90 } }));
+    await W.avancar(2000);
+    assert.strictEqual(W.H.RADAR.lv.sessao.loot, 90, 'resume zerou a sessão: ' + W.H.RADAR.lv.sessao.loot);
 });
 t('Radar/Dia: caçada fechada com a página fechada entra pelo resumo (offline); a mesma caçada não conta duas vezes', async () => {
     const W = criarMundo({ ls: comAba('dia') });

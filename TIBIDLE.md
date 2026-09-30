@@ -4298,3 +4298,39 @@ pela Caixa). RESGATAR não testado: a Caixa só recebe algo quando um anúncio v
   do próprio dono nem compara com o NPC.
 - Teste ao vivo pendente: Scan A/B Em área × Inteligente (Vampire hell e Banshee, 7 min cada) e conferir o ranking
   do Radar contra os Scans já medidos.
+
+## 2.13.1 (30/09) — Inteligente recalibrado pelos Scans ao vivo + 3 correções do Radar
+Teste ao vivo da 2.13.0 (`docs/resultado-2.13.md`): no Scan A/B de 7 min o Inteligente perdeu 44 % de xp nos dois
+mapas (Vampire hell 32,5k × 58,0k do Em área; Banshee 27,7k × 49,6k) e ainda tirou os suportes e as curas do dono.
+- **Por quê (medido magia a magia, 4 Scans, ~1.700 lançamentos)**: o simulador previa +80 % e +92 % de abates/h para
+  os kits do Inteligente. Três erros que se compensavam no Em área (−12 %/−2 %):
+  1. `K_VIVO` (5,8/5,0/4,7/7,35) inflava o dano **por alvo**: medido (dano ÷ alvos atingidos ÷ cartão) é Druida 2,0–2,3,
+     Feiticeiro 2,0 (Energy Wave e Rage 3,0), Paladino 1,4–1,8, Knight 0,55–1,0. Alvo único previsto 285–320 por
+     lançamento, medido 31–88.
+  2. As frações de alvos estavam pela metade (onda 0,42, Caldera 0,25 depois da "correção da classe"): na 1ª rajada
+     Strong Ice Wave, Energy Wave e Berserk acertaram 6 de 6 e a Caldera 5,7 de 6.
+  3. O golpe do Knight e o tiro do Paladino levavam ×K_VIVO (~160 e ~120 de dano/s); medido ~15 por golpe. Era o que
+     fazia 2 magias baratas "bastarem".
+  E o simulador matava a onda como um pool (uma criatura por vez): a 3ª magia da 1ª rajada já saía com metade da onda
+  "morta" e a última criatura ficava 6 s apanhando de runa de alvo único.
+- **Agora** (`@@MAGIA`): `K_VIVO` = dano por alvo (0,9/1,5/2,2/2,2) e `K_BASICO` 0,3 no golpe; `FRACAO_FORMA` cerco,
+  onda e Caldera 1, frente 0,33, feixe 0,25 (a média medida por lançamento não entra: ela cai com o kit — 6 alvos no Em
+  área, 4,3 no kit lento — e o simulador já desconta os vivos). `calibracaoInt` troca o `fatoresForma`: dano por alvo
+  medido por vocação (kVoc) e por magia (kMagia), encolhidos com N0 = 30 e em degraus. `simularParty` com **vida por
+  criatura** (área acerta as vivas, alvo único foca a de menos vida, overkill se perde) e `CHEGADA_MS` 0 (a leva chega
+  inteira). `indiceMedicoes` guarda os acertos (`hits`).
+- **Validação** (`testes/int-calibracao.test.js` com `data/scans-30-09.json` — o dano real da conta, fora do git; sem o arquivo o teste é pulado): abates/h
+  previstos × medidos — Vampire hell Em área 1.880 × 1.745 (+8 %), Inteligente 922 × 966 (−5 %); Banshee Em área
+  966 × 992 (−3 %), Inteligente 591 × 554 (+7 %). A busca passa a escolher kits só de área que matam a onda na 1ª
+  rajada (Vampire hell: 1.873 abates/h previstos, contra 1.880 do Em área, com menos runa).
+- **Suportes e curas do dono** (`configDono`/`suportesDono`): com o perfil lido do servidor a busca usa os suportes
+  dele (Train Party conta no dano; os de grupo gastam mana) e o APLICAR manda as curas e os suportes dele como estão. A
+  escada só põe Protector num slot de suporte livre; o "+10 nas curas" só vale sem o perfil do dono.
+- Aba Magia: linha "regeneração de mana/s" (medida ou * da tabela); "ouro X/h" virou "gasto em poção/runa X/h".
+- **Radar**: (1) o ranking usa o **melhor** Scan limpo do mapa (mais xp) e mostra de que modelo ele é — antes o último
+  medido (o Inteligente ruim) derrubava Vampire hell para 32,5k; (2) a sessão do Loot zera a cada `hunt_started`, como
+  a janela do jogo (o F5/`resume` não zera); (3) Dia: `ended.summary.title` é `{key, params:{name}}` e `kills` é
+  objeto (total em `killsTotal`) — saía "[object Object]"; e o resumo do fim não soma nada quando os frames
+  acompanharam a caçada até o fim (base com < 90 s): o Scan zera o analisador no meio e resumo − base contava de novo
+  (30/09: +15 min e +14,1k xp, XP do dia +40 %).
+- Testes: 229 (224 no CI: os 5 de calibração precisam do `data/`; inteligente 3, 4, 6 e 13 reescritos com o porquê; +2 do Radar).
