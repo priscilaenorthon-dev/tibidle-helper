@@ -298,4 +298,15 @@ t('encaixe nobre (regen. na defesa; ML/skill/dano na arma e colar) nunca sobra; 
     assert.deepStrictEqual(top('KNIGHT', null).slice(0, 2), ['regen_mana', 'regen_vida'], 'Knight: regen. de mana em 1º, regen. de vida em 2º (dono)');
     assert.strictEqual(top('SORCERER', { party: { mana: { SORCERER: 95 } } })[0], 'regen_mana', 'com a mana sobrando no mapa também');
 });
+/* 2.11.18 — dono: "avalia se o regen de mana 2 é maior que 1,9?" — sim, e a troca aparece nos 4 */
+t('regen. de mana 2,0 do depósito tira a 1,9 vestida, nos 4', () => {
+    const b = (iid, v, origem, dono) => ({ iid, nome: 'bota ' + v, slot: 'boots', attrs: {}, forja: F(1, ['regen_mana', v]), origem, dono });
+    for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) {
+        const x = M.distribuirEquip([b('veste', 1.9, 'corpo', voc), b('dep', 2, 'depósito', null)], [voc]).porVoc[voc].boots;
+        assert.strictEqual(x.melhor.iid, 'dep', voc + ' ficou com a 1,9');
+        assert(x.ganho > 0, voc + ' ganho ' + x.ganho);
+        const igual = M.distribuirEquip([b('veste', 2, 'corpo', voc), b('dep', 2, 'depósito', null)], [voc]).porVoc[voc].boots;
+        assert.strictEqual(igual.melhor.iid, 'veste', voc + ': empate fica com a vestida');
+    }
+});
 console.log(`\n${n} testes ok` + (pulados ? ` · ${pulados} pulados (sem o estado da conta em data/)` : ''));

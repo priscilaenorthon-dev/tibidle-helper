@@ -4154,3 +4154,9 @@ pela Caixa). RESGATAR não testado: a Caixa só recebe algo quando um anúncio v
 - Dono: "o Knight tem que ter regen. de mana como principal, depois regen. de vida". Peso da regen. de mana do Knight =
   máx(conta da mana, 1,25 × o da regen. de vida) = 4,5 pt por 1 de mana/s (era 1,26). Potência III: regen. de mana
   11,3 pt > regen. de vida 9 > cura própria 2,1 > escudo 1,4.
+
+## 2.11.18 (30/09) — troca por ganho pequeno volta a aparecer
+- Dono: "avalia se o regen de mana 2 é maior que 1,9?". A nota já era maior (é linear: valor × peso), mas o custo de
+  troca de 1 pt (2.11.2) escondia a sugestão: +0,1 de regen. de mana dá +0,14 a +0,48 pt, e no Paladino nem 1,9 → 2,5
+  (+0,8) aparecia. O custo existia contra a cadeia de trocas entre personagens, que a 2.11.11 já proibiu. Agora é
+  0,1 pt (só desempate): 2,0 tira a 1,9 nos 4; empate fica com a vestida. A peça que sai continua reserva/"guardar".

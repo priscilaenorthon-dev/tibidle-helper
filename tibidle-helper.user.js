@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.11.17
+// @version      2.11.18
 // @description  Magia (Econômica / Equilibrado / Área / Boss, com simulador da fila) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.11.17';
+    const VERSAO = '2.11.18';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -4746,7 +4746,10 @@
      * Feiticeiro um do depósito (−1,2, sem aparecer na tela): 3 trocas por
      * +0,2 pt (29/09, ao vivo). Ficar com a peça atual vale +1 pt (≈ 10 de
      * vida máx.): só troca quem ganha mais que isso, somando os afetados. */
-    const EQUIP_FICAR_PT = 1;
+    /* v2.11.18 — o custo era 1 pt: regen. de mana 2,0 do depósito não tirava a 1,9 vestida (+0,1 a +0,5 pt), e no
+     * Paladino nem a 2,5 tirava (+0,8). Desde a 2.11.11 peça vestida não troca de personagem — a cadeia de 3 trocas
+     * que motivou o custo não existe mais. Fica só um desempate: qualquer ganho real de encaixe vira sugestão. */
+    const EQUIP_FICAR_PT = 0.1;
     /* v2.11.16 — ENCAIXE NOBRE NUNCA SOBRA (dono, 30/09, regra da comunidade + wiki /forja):
      *   escudo, elmo, armadura, calça, bota e anel → regen. de mana (todos) e regen. de vida (Knight);
      *   arma e colar → corpo a corpo, distância, nível mágico, dano físico ou dano mágico.
