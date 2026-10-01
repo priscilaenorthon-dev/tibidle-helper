@@ -330,7 +330,7 @@
          * a segunda conta a subir não derruba o que a primeira já baixou. */
         const morre = new RegExp('^' + LS + '(danos_|loot_|sessoes$|cat_|hunt_id$|hunt_manual$|regime$|skills_vistas$)');
         const mortos = Object.keys(localStorage).filter(k => morre.test(k));
-        if (lerChave(LS_COMUM + 'cat_era', null) !== ERA) mortos.push(...Object.keys(localStorage).filter(k => k.startsWith(LS_COMUM + 'cat_')));
+        if (lerChave(LS_COMUM + 'cat_era', null) !== ERA) mortos.push(...Object.keys(localStorage).filter(k => k.startsWith(LS_COMUM + 'cat_') || k.startsWith(LS_COMUM + 'loot_tab_'))); // v2.13.2: a tabela de loot do Radar também morre na virada de era
         mortos.forEach(k => { try { localStorage.removeItem(k); } catch (e) { } });
         MEMO.clear();
 
@@ -9822,7 +9822,11 @@
     /* Alerta de preço. item = {nome, modo:'vender'|'comprar', pct (acima/abaixo
      * da média 30 d; o formulário sugere 20), preco (limite)}; cat = market_catalog indexado;
      * media = {avg} da média 30 d. Sem `pct` vale só o preço. Devolve null ou {chave, tipo, msg, preco}. */
-    function tpAvaliarAlerta(item, cat, media, taxa) {
+    /* v2.13.2 — opc = {meus: [preços dos SEUS anúncios abertos deste item], npc: o que o NPC paga}:
+     * o "vale anunciar" não dispara quando o menor anúncio é o seu (só você vende) nem quando o
+     * líquido depois da taxa não passa do NPC (achado da verificação da 2.13.0). */
+    function tpAvaliarAlerta(item, cat, media, taxa, opc) {
+        opc = opc || {};
         if (!item || !item.nome || !cat) return null;
         const n = tpMin(item.nome), c = cat[n];
         if (!c) return null;
@@ -9839,7 +9843,11 @@
                 return { chave: n + '|compra', tipo: 'compra', preco: maxBuy,
                          msg: `${item.nome}: COMPRA aberta a ${fmt(maxBuy)}${avg ? ` (média 30 d ${fmt(avg)})` : ''} — aceitar no jogo é na hora e sem taxa` };
             }
-            if (minSell && acima(minSell)) {
+            const meus = (opc.meus || []).map(Number).filter(v => v > 0);
+            const souOMenor = minSell && meus.length && Math.min(...meus) <= minSell && Number(c.sellOrders) <= meus.length;
+            const liquido = minSell ? minSell - 1 - Math.max(1, Math.floor((minSell - 1) * t)) : 0;
+            const npc = Number(opc.npc) > 0 ? Number(opc.npc) : 0;
+            if (minSell && acima(minSell) && !souOMenor && liquido > npc) {
                 return { chave: n + '|vender', tipo: 'vender', preco: minSell,
                          msg: `${item.nome}: vale anunciar — menor anúncio ${fmt(minSell)}${avg ? ` (${Math.round((minSell / avg - 1) * 100)} % acima da média 30 d)` : ''}; líquido ${fmt(minSell - 1 - Math.max(1, Math.floor((minSell - 1) * t)))} anunciando a ${fmt(minSell - 1)}` };
             }
@@ -9874,16 +9882,21 @@
         if (!ev || !ev.tipo) return dias;
         const dia = (c) => dias[c] || (dias[c] = tpDiaNovo());
         const hoje = tpDiaChave(t);
-        if (ev.tipo === 'delta') {
-            const d = ev.delta || {}, ms = (Number(d.seg) || 0) * 1000;
-            const ini = t - ms, cIni = tpDiaChave(ini);
-            if (ms > 0 && cIni !== hoje) {
-                const x = new Date(t); const meiaNoite = new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-                const f = tpLim((t - meiaNoite) / ms, 0, 1);
-                tpSomarDia(dia(hoje), d, f, ev.huntId, ev.title);
-                tpSomarDia(dia(cIni), d, 1 - f, ev.huntId, ev.title);
-            } else tpSomarDia(dia(hoje), d, 1, ev.huntId, ev.title);
-        } else if (ev.tipo === 'morte') dia(hoje).mortes++;
+        /* v2.13.2 — reparte um trecho [t − seg, t] entre os dias que ele cruza (quantos forem): a
+         * caçada fechada com a página fechada (offline) entrava inteira no dia do resumo */
+        const repartir = (d, huntId, title) => {
+            const ms = (Number(d.seg) || 0) * 1000;
+            if (!(ms > 0) || tpDiaChave(t - ms) === hoje) { tpSomarDia(dia(hoje), d, 1, huntId, title); return; }
+            let fim = t;
+            for (let i = 0; i < 400 && fim > t - ms; i++) {
+                const x = new Date(fim - 1), meiaNoite = new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+                const ini = Math.max(t - ms, meiaNoite);
+                tpSomarDia(dia(tpDiaChave(fim - 1)), d, tpLim((fim - ini) / ms, 0, 1), huntId, title);
+                fim = ini;
+            }
+        };
+        if (ev.tipo === 'delta') repartir(ev.delta || {}, ev.huntId, ev.title);
+        else if (ev.tipo === 'morte') dia(hoje).mortes++;
         else if (ev.tipo === 'ciclo') { const c = dia(hoje).ciclos, r = ev.reg || {}; c.n++; c.ouro += Number(r.ouro) || 0; if (r.erro) c.falhas++; }
         else if (ev.tipo === 'npc') dia(hoje).npc += Number(ev.ouro) || 0;
         else if (ev.tipo === 'mercado') {
@@ -9894,7 +9907,7 @@
         } else if (ev.tipo === 'offline') {
             const s = ev.summary || {}, d = ev.delta || tpDeltaResumo(null, s);
             if (!d) return dias;
-            tpSomarDia(dia(hoje), d, 1, s.huntId, tpTituloResumo(s));
+            repartir(d, s.huntId, tpTituloResumo(s));
             dia(hoje).offline++;
         } else if (ev.tipo === 'raro') {
             const r = dia(hoje).raros; r.push({ t, nome: String(ev.nome), n: Number(ev.n) || 1, valor: Number(ev.valor) || 0 });
@@ -10071,17 +10084,24 @@
                  custoH: r.custoH, ouroH: r.ouroH, ouroHMerc: r.ouroHMerc, nota: r.nota, imunes: r.imunes, fonte: r.fonte, est: r.est, bloqueio: r.bloqueio,
                  confianca: r.confianca, notas: r.notas, risco: { nivel: r.risco.nivel, pts: r.risco.pts, motivos: r.risco.motivos }, porVoc: pv };
     }
+    /* v2.13.2 — cópia da tabela de loot na gaveta comum com data e era: vale 7 dias e só na era atual
+     * (antes não vencia nunca). O formato antigo (lista) ainda é lido até a próxima virada de era. */
+    const RADAR_LOOT_VALIDADE_MS = 7 * 86400000;
+    function radarLerTabComum(h) {
+        const g = lerComum('loot_tab_' + radarSlug(h.title), null);
+        const lista = Array.isArray(g) ? g : g && g.era === ERA && Date.now() - (g.t || 0) < RADAR_LOOT_VALIDADE_MS && Array.isArray(g.tab) ? g.tab : null;
+        return lista ? lista.map(x => ({ name: x[0], chance: x[1], maxCount: x[2], value: x[3], currency: !!x[4] })) : null;
+    }
     /* tabela de loot: memória → gaveta comum (compacta, por título) → GET. Devolve true se foi à rede. */
     async function radarGarantirLoot(h) {
         let tab = LOOT_TABELA[h.id], rede = false;
         if (!tab) {
-            const g = lerComum('loot_tab_' + radarSlug(h.title), null);
-            if (Array.isArray(g)) tab = g.map(x => ({ name: x[0], chance: x[1], maxCount: x[2], value: x[3], currency: !!x[4] }));
-            else {
+            tab = radarLerTabComum(h);
+            if (!tab) {
                 rede = true;
                 try { const t = await buscarJSON('/hunt/lootTable?huntId=' + h.id); tab = Array.isArray(t) ? t : []; }
                 catch { return rede; }
-                guardarComum('loot_tab_' + radarSlug(h.title), tab.filter(x => x && x.name).map(x => [x.name, Number(x.chance) || 0, Number(x.maxCount) || 1, Number(x.value) || 0, x.currency ? 1 : 0]));
+                guardarComum('loot_tab_' + radarSlug(h.title), { t: Date.now(), era: ERA, tab: tab.filter(x => x && x.name).map(x => [x.name, Number(x.chance) || 0, Number(x.maxCount) || 1, Number(x.value) || 0, x.currency ? 1 : 0]) });
             }
             LOOT_TABELA[h.id] = tab;
         }
@@ -10093,8 +10113,8 @@
         if (id == null) return null;
         if (!LOOT_TABELA[id]) {
             const h = (CAT.hunts || []).find(x => x.id === id);
-            const g = h ? lerComum('loot_tab_' + radarSlug(h.title), null) : null;
-            if (Array.isArray(g)) LOOT_TABELA[id] = g.map(x => ({ name: x[0], chance: x[1], maxCount: x[2], value: x[3], currency: !!x[4] }));
+            const g = h ? radarLerTabComum(h) : null;
+            if (g) LOOT_TABELA[id] = g;
         }
         const tab = LOOT_TABELA[id] || null;
         if (tab && LOOT_CACHE[id] == null) LOOT_CACHE[id] = Math.round(tpLootAbate(tab, null, {}).cat * 10) / 10;
@@ -10299,7 +10319,10 @@
             }
             guardar('radar_medias', med);
             for (const it of itens) {
-                const a = tpAvaliarAlerta(it, MK.catalogo, med[mkMin(it.nome)] || null, MK.taxa);
+                const nMin = mkMin(it.nome);
+                const meus = (MK.minhas || []).filter(o => mkAbertaVenda(o) && mkMin(o.itemName) === nMin && !o.forja).map(o => o.unitPrice);
+                let npc = 0; try { npc = radarValor(it.nome, null).npc || 0; } catch { }
+                const a = tpAvaliarAlerta(it, MK.catalogo, med[nMin] || null, MK.taxa, { meus, npc });
                 if (!a || Date.now() - (est.disparos[a.chave] || 0) < RADAR_ALERTA_REPETE_MS) continue;
                 est.disparos[a.chave] = Date.now();
                 est.hist = [{ t: Date.now(), tipo: a.tipo, msg: a.msg }].concat(est.hist || []).slice(0, 20);

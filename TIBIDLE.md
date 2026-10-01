@@ -4347,3 +4347,10 @@ mapas (Vampire hell 32,5k × 58,0k do Em área; Banshee 27,7k × 49,6k) e ainda 
   depois trocar? bota um aviso"). Mostra o que falta e como fazer: regeneração de mana dos 4 (x/30, mede sozinha
   caçando em qualquer mapa), Scan ≥ 2 min do mapa com Em área (calibra abates/h e gasto), loot medido (Scan com
   ≥ 100 abates) e dano das magias no mapa. Com tudo medido: "✓ Inteligente calibrado neste mapa".
+- **Radar, pendentes da verificação da 2.13.0 (fechados):**
+  - alerta "vale anunciar" não dispara quando o menor anúncio é o seu (só você vende) nem quando o líquido depois
+    da taxa não passa do NPC;
+  - a cópia da tabela de loot na gaveta comum agora tem data e era: vale 7 dias e morre na virada de era;
+  - caçada fechada com a página fechada (offline) é repartida entre os dias que cruza (antes entrava toda no dia do
+    resumo).
+- Revisão geral: os 66 avisos do ESLint são todos `catch (e)` sem uso (inofensivos).
