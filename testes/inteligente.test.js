@@ -113,6 +113,17 @@ t('2.13.2 — aviso CALIBRANDO: sem regen nem Scan do mapa mostra o que falta; c
     assert(/CALIBRANDO/.test(M.calibracaoHtmlInt(H(VH))) && /Em área/.test(M.calibracaoHtmlInt(H(VH))), 'o aviso explica como calibrar');
     assert(c.itens.some(i => !i.ok && /0\/30/.test(i.txt)), 'mostra o progresso da regeneração');
 });
+t('2.13.4 — cura cobra o tempo vivo: kit que mata mais devagar deixa mais monstro·s vivo e paga mais cura', () => {
+    zerar();
+    const r = buscar(VH), ctx = r.ctx;
+    ctx.curaPorVivo = 5; ctx.memo.clear();
+    const forte = M.avaliarPartyInt(ctx, r.final.esc, null);
+    const fraco = M.avaliarPartyInt(ctx, Object.assign({}, r.final.esc, { SORCERER: { plano: r.final.esc.SORCERER.plano.slice(-1), pocao: 0, sups: [] }, DRUID: { plano: r.final.esc.DRUID.plano.slice(-1), pocao: 0, sups: [] } }), null);
+    assert(fraco.sim.vivosOnda > forte.sim.vivosOnda, `vivos ${fraco.sim.vivosOnda} × ${forte.sim.vivosOnda}`);
+    assert(fraco.met.curaH > forte.met.curaH && forte.met.curaH > 0, `cura ${fraco.met.curaH} × ${forte.met.curaH}`);
+    ctx.curaPorVivo = 0; ctx.memo.clear();
+    assert.strictEqual(M.avaliarPartyInt(ctx, r.final.esc, null).met.curaH, 0, 'sem Scan não cobra');
+});
 t('2 — determinismo: 10 chamadas seguidas dão o mesmo resultado', () => {
     zerar(); M.E.scan = { vh: RITMO_VH };
     const resumo = (r) => JSON.stringify({ sig: r.final.sig, xp: Math.round(r.final.met.xpH), l: Math.round(r.final.met.lucroH), c: r.cont });

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.13.3
+// @version      2.13.4
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.13.3';
+    const VERSAO = '2.13.4';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -2230,7 +2230,7 @@
             for (let a = 0; a < cheios; a++) ferir(ordem[a], porAlvo);
             if (frac > 1e-9) ferir(ordem[cheios], porAlvo * frac);
         };
-        let t = 0, tUlt = 0, tOnda = 0, ondas = 0, somaT = 0, luta = 0, voltas = 0;
+        let t = 0, tUlt = 0, tOnda = 0, ondas = 0, somaT = 0, luta = 0, voltas = 0, vivoAc = 0, somaVivo = 0; // v2.13.4: monstro·tempo vivo por onda
         while (t < fim && voltas++ < 100000) {
             const dt = t - tUlt; tUlt = t;
             for (let j = 0; j < n; j++) {
@@ -2241,7 +2241,7 @@
             }
             const presentes = t < tOnda ? 0 : cheg > 0 ? Math.min(L, 1 + Math.floor((t - tOnda) / cheg)) : L;
             if (mortos >= L) {
-                ondas++; somaT += t - tOnda; vidaM.fill(HP); mortos = 0; Dtot = 0;
+                ondas++; somaT += t - tOnda; somaVivo += vivoAc; vivoAc = 0; vidaM.fill(HP); mortos = 0; Dtot = 0;
                 tOnda = t + E; t = Math.max(t + passo, tOnda); continue;
             }
             let vivos = presentes - mortos;
@@ -2282,6 +2282,7 @@
                 s.grupo = t + Math.max(2000, sl.grupo || 2000);
                 vivos = presentes - mortos;
             }
+            if (vivos > 0) vivoAc += vivos * passo;
             t += passo;
         }
         const seg = fim / 1000;
@@ -2290,7 +2291,11 @@
         else { const r = Dtot / Math.max(1, (t - tOnda) / 1000); T = Math.min(3600, L * HP / Math.max(1e-6, r)); }
         const por = {};
         for (const s of st) por[s.m.voc] = { manaMinFrac: s.max > 0 ? s.manaMin / s.max : 1, danoS: s.dano / seg, danoLutaS: luta ? s.dano / (luta / 1000) : 0, manaS: s.manaGasta / seg, ouroPocaoS: s.ouroP / seg, ouroRunaS: s.ouroR / seg, pocoesH: s.pocoes / seg * 3600, disparos: s.disparos };
-        return { T, ondas, luta: luta / 1000, seg, por };
+        /* v2.13.4 — VIVOS × TEMPO por onda (monstro·s): quanto mais tempo o bicho fica vivo, mais ele bate
+         * e mais a party gasta curando (dono, 01/10: "quanto mais o bicho fica vivo, mais ele bate e gasta
+         * tudo — por isso tem que ser insta kill"). metricasInt cobra a cura por isso. */
+        const vivosOnda = (ondas ? somaVivo / ondas : vivoAc) / 1000;
+        return { T, ondas, luta: luta / 1000, seg, por, vivosOnda };
     }
 
     /* personagem do simulador a partir de uma barra (régua única, suportes) */
@@ -2314,10 +2319,13 @@
         const T = sim.T * ctx.eta, abH = ctx.L * 3600 / (T + ctx.E) * ctx.kCalib;
         let ouroS = extraOuroS || 0, custoS = extraOuroS || 0;
         for (const v of Object.keys(sim.por)) { const x = sim.por[v], o = x.ouroPocaoS + x.ouroRunaS; ouroS += o; custoS += (ctx.cVoc[v] || 1) * o; }
-        const custoH = custoS * 3600, receitaH = abH * ctx.loot, lucroH = receitaH - custoH;
+        /* v2.13.4 — cura: ouro por monstro·s vivo (calibrado no Scan do mapa: poção de vida medida ÷ vivos
+         * da party do Scan) × vivos por onda × ondas/h. Sem Scan, 0 (o kit do Scan custa o mesmo de antes). */
+        const curaH = (ctx.curaPorVivo || 0) * (sim.vivosOnda || 0) * ctx.eta * (abH / Math.max(1, ctx.L));
+        const custoH = custoS * 3600 + curaH, receitaH = abH * ctx.loot, lucroH = receitaH - custoH;
         const LCB = lucroH - (0.15 * custoH + (ctx.lootMedido ? 0.05 : 0.20) * receitaH);
         const piso = ctx.lootMedido ? 0 : Math.max(5000, 0.10 * receitaH);
-        return { T, abH, xpH: abH * ctx.xpAbate, custoH, ouroH: ouroS * 3600, receitaH, lucroH, LCB, piso };
+        return { T, abH, xpH: abH * ctx.xpAbate, custoH, ouroH: ouroS * 3600 + curaH, curaH, receitaH, lucroH, LCB, piso };
     }
     /* seguro: quem não bebe não gasta mais mana (ataque + suporte) do que a
      * regeneração útil (regen − reserva de cura) repõe, com a folga da barra
@@ -2613,7 +2621,7 @@
         const aplic = (ler('int_aplicado', {}) || {})[hunt.id] || null;
         ctx.tAplicar = aplic;
         const danosK = VOCS_INT.map(v => Object.keys(danosPorVoc[v]).sort().map(k => k + q5pct((danosPorVoc[v][k].min + danosPorVoc[v][k].max) / 2)).join(',')).join(';');
-        ctx.carimbo = _hash(JSON.stringify([nivelAtual(), _hash(danosK), L, ctx.E, ctx.loot, ctx.lootMedido, ctx.fForma, calib.kVoc, calib.kMagia, ctx.fracao, ctx.eps, escada.degrau, ctx.defesa, ctx.kCalib, ctx.cVoc,
+        ctx.carimbo = _hash(JSON.stringify([nivelAtual(), _hash(danosK), L, ctx.E, ctx.loot, ctx.lootMedido, ctx.fForma, calib.kVoc, calib.kMagia, ctx.fracao, ctx.eps, escada.degrau, ctx.defesa, ctx.kCalib, ctx.cVoc, ctx.curaPorVivo,
             VOCS_INT.map(v => [ctx.voc[v].manaMax, ctx.voc[v].regen, ctx.voc[v].reserva, mlAtual(v), ctx.cands[v].map(a => a.m.name + ':' + Math.round(a.porLancInt)).join(',')]),
             escSig(ctx.vigente), aplic != null && Date.now() - aplic < HISTERESE_INT.esperaMs, JSON.stringify(opc)]));
         _intCtx.set(chaveCtx, { t: Date.now(), ctx });
@@ -2628,8 +2636,17 @@
     }
     /* c_voc (gasto medido ÷ simulado, [0,2; 1,5]) e k_calib (abates medidos ÷
      * previstos, [0,7; 1,3]) pelo Scan deste mapa com um modelo antigo */
+    /* v2.13.4 — ouro de poção de VIDA num {nome: quantidade} (supVoc do Scan) pelo preço do catálogo */
+    function ouroVidaItens(itens) {
+        const preco = {};
+        for (const p of listaPocoes('vida')) preco[String(p.n).toLowerCase()] = p.custo || 0;
+        let o = 0;
+        for (const [n, q] of Object.entries(itens || {})) { const c = preco[String(n).toLowerCase()]; if (c != null) o += c * (Number(q) || 0); }
+        return o;
+    }
     function calibrarPorScan(ctx) {
-        let sc = null;
+        let sc = null, curaTotH = 0;
+        ctx.curaPorVivo = 0;
         try { for (const r of Object.values(scanResultados())) if (r && r.id === ctx.hunt.id && r.abatesH > 0 && r.seg >= 120 && MODELOS[r.modelo] && r.modelo !== 'inteligente' && r.modelo !== 'boss' && (!sc || r.seg > sc.seg)) sc = r; } catch { }
         for (const v of VOCS_INT) ctx.cVoc[v] = 1;
         if (!sc) return;
@@ -2641,8 +2658,14 @@
         for (const v of VOCS_INT) {
             const s = x.sim.por[v], sv = sc.supVoc && sc.supVoc[v];
             const simH = s ? (s.ouroPocaoS + s.ouroRunaS) * 3600 : 0;
-            if (sv && sv.ouro != null && simH > 100) ctx.cVoc[v] = qPasso(Math.min(1.5, Math.max(0.2, (sv.ouro / sc.seg * 3600) / simH)), 0.05);
+            const vidaV = sv ? ouroVidaItens(sv.itens) : 0; // v2.13.4: a poção de vida sai do ataque e vira o custo da cura
+            curaTotH += vidaV / sc.seg * 3600;
+            if (sv && sv.ouro != null && simH > 100) ctx.cVoc[v] = qPasso(Math.min(1.5, Math.max(0.2, ((sv.ouro - vidaV) / sc.seg * 3600) / simH)), 0.05);
         }
+        /* ouro de cura por monstro·s vivo: o Scan pagou curaTotH com a party do Scan deixando os bichos vivos
+         * x.sim.vivosOnda por onda. Kit que mata mais rápido deixa menos vivo e paga menos cura. */
+        const ondasH = sc.abatesH / Math.max(1, ctx.L), vivo = (x.sim.vivosOnda || 0) * ctx.eta;
+        if (curaTotH > 0 && vivo > 0 && ondasH > 0) ctx.curaPorVivo = Math.round(curaTotH / (vivo * ondasH) * 100) / 100;
     }
 
     /* a busca da party (com o vigente e a histerese). `buscar` = pode calcular
@@ -6981,7 +7004,7 @@
             const it = r.int, m = it.met, dec = { NOVO: 'kit novo', IGUAL: 'o kit aplicado já é o melhor', MANTER: 'mantém o kit aplicado', TROCAR: 'TROCAR: o novo é melhor', ESPERAR: 'mantém (menos de 10 min desde o APLICAR)' }[it.decisao] || it.decisao;
             const ganho = it.ganho != null && it.decisao !== 'IGUAL' && it.decisao !== 'NOVO' ? ` (novo ${it.ganho >= 0 ? '+' : ''}${Math.round(it.ganho * 1000) / 10} %)` : '';
             corpo += calibracaoHtmlInt(h) + intCtl + `<div class="tb-ver ${it.aviso ? 'ruim' : 'ok'}"><b>${escHtml(dec)}</b>${escHtml(ganho)}${it.desatualizado ? ' <span class="tb-av">(as medidas mudaram — recalcule)</span>' : ''}` +
-                `<div class="tb-mut">previsto: ${milBR(m.xpH)} xp/h · ${numBR(Math.round(m.abH))} abates/h${m.T != null ? ` · onda limpa em ${numBR(Math.round(m.T * 10) / 10, 1)} s (${tpCombos(m.T) === 1 ? '⚡ 1 combo' : tpCombos(m.T) + ' combos'})` : ''} · lucro ${m.lucroH >= 0 ? '+' : ''}${milBR(m.lucroH)}/h (garantido ${milBR(m.LCB)}) · gasto em poção/runa ${milBR(m.ouroH)}/h</div>` +
+                `<div class="tb-mut">previsto: ${milBR(m.xpH)} xp/h · ${numBR(Math.round(m.abH))} abates/h${m.T != null ? ` · onda limpa em ${numBR(Math.round(m.T * 10) / 10, 1)} s (${tpCombos(m.T) === 1 ? '⚡ 1 combo' : tpCombos(m.T) + ' combos'})` : ''} · lucro ${m.lucroH >= 0 ? '+' : ''}${milBR(m.lucroH)}/h (garantido ${milBR(m.LCB)}) · gasto em poção/runa ${milBR(m.ouroH)}/h${m.curaH > 0 ? ` (cura ${milBR(m.curaH)}/h pelo tempo que os bichos ficam vivos)` : ''}</div>` +
                 `<div class="tb-mut">${regenTexto()}</div>` +
                 `<div class="tb-mut">defesa: degrau ${it.escada.degrau} (${escHtml(it.escada.motivo)})${it.escada.degrau >= 4 ? ' <span class="tb-ruim">⚠ mapa acima da party</span>' : ''} · ${numBR(it.cont.sim)} triagens + ${numBR(it.cont.party)} parties em ${numBR(it.ms)} ms</div>` +
                 (it.aviso ? `<div class="tb-ruim">${escHtml(it.aviso)}</div>` : '') + `</div>`;
