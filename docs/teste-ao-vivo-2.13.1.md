@@ -1,5 +1,8 @@
 # Roteiro de teste ao vivo — 2.13.1 + 2.13.2 (para 01/10)
 
+> **Rodado em 01/10 com a 2.13.4** — resultado em `docs/resultado-2.13.1.md` (Inteligente aprovado no Scan A/B nos
+> dois mapas; 2 defeitos novos no Radar).
+
 > **Atualizado para a 2.13.2**: o item 0 já foi corrigido (a busca sempre avalia o Em área). Instale a **v2.13.2**
 > e comece pelo item 1. Itens novos da 2.13.2 marcados com **(2.13.2)**.
 
