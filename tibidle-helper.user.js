@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.13.1
+// @version      2.13.2
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.13.1';
+    const VERSAO = '2.13.2';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -330,7 +330,7 @@
          * a segunda conta a subir não derruba o que a primeira já baixou. */
         const morre = new RegExp('^' + LS + '(danos_|loot_|sessoes$|cat_|hunt_id$|hunt_manual$|regime$|skills_vistas$)');
         const mortos = Object.keys(localStorage).filter(k => morre.test(k));
-        if (lerChave(LS_COMUM + 'cat_era', null) !== ERA) mortos.push(...Object.keys(localStorage).filter(k => k.startsWith(LS_COMUM + 'cat_')));
+        if (lerChave(LS_COMUM + 'cat_era', null) !== ERA) mortos.push(...Object.keys(localStorage).filter(k => k.startsWith(LS_COMUM + 'cat_') || k.startsWith(LS_COMUM + 'loot_tab_'))); // v2.13.2: a tabela de loot do Radar também morre na virada de era
         mortos.forEach(k => { try { localStorage.removeItem(k); } catch (e) { } });
         MEMO.clear();
 
@@ -1860,6 +1860,36 @@
         const x = ler('regen_' + voc, null);
         return x && x.n >= 30 && x.v > 0 ? Math.round(x.v) : null;
     }
+    /* v2.13.2 — CALIBRANDO (dono, 01/10: "tenho que ficar no mapa 10 min usando Em área e depois trocar?
+     * Se for assim, bota um aviso"). O que o Inteligente precisa para sair do chute neste mapa:
+     *   1. regeneração de mana dos 4 (30 janelas de 3 s sem lançar; vale para todos os mapas);
+     *   2. um Scan ≥ 2 min neste mapa com um modelo comum (Em área…): calibra abates/h e o gasto;
+     *   3. loot medido: esse Scan com ≥ 100 abates;
+     *   4. dano por alvo das magias neste mapa (vem do mesmo Scan ou de caçar aqui).
+     * Sem isso ele funciona, mas com estimativa: o aviso diz o que falta e como fazer. */
+    function calibracaoStatusInt(hunt) {
+        const itens = [];
+        const ab = { KNIGHT: 'Cav', PALADIN: 'Pal', SORCERER: 'Fei', DRUID: 'Dru' };
+        const reg = VOCS_INT.map(v => { const x = ler('regen_' + v, null); return { v, n: x && x.n > 0 ? x.n : 0 }; });
+        const regOk = reg.every(x => x.n >= 30);
+        itens.push({ ok: regOk, txt: regOk ? 'regeneração de mana dos 4 medida' : 'regeneração de mana: ' + reg.map(x => `${ab[x.v]} ${Math.min(30, x.n)}/30`).join(' · ') + ' (mede sozinha caçando, em qualquer mapa)' });
+        let sc = null;
+        try { for (const r of Object.values(scanResultados())) if (r && r.id === hunt.id && r.abatesH > 0 && r.seg >= 120 && MODELOS[r.modelo] && r.modelo !== 'inteligente' && r.modelo !== 'boss' && (!sc || r.seg > sc.seg)) sc = r; } catch { }
+        itens.push({ ok: !!sc, txt: sc ? `Scan deste mapa com ${nomeModelo(sc.modelo)} (${Math.round(sc.seg / 60)} min)` : 'falta um Scan deste mapa com Em área (≥ 2 min; 5 min é o ideal)' });
+        const loot = lootMedidoInt(hunt) != null;
+        itens.push({ ok: loot, txt: loot ? 'loot por abate medido' : 'loot por abate: precisa de um Scan com ≥ 100 abates' });
+        let nMed = 0;
+        try { nMed = Object.values(indiceMedicoes(hunt)).filter(x => x.hits > 0).length; } catch { }
+        itens.push({ ok: nMed >= 3, txt: nMed ? `dano medido de ${nMed} magia(s) neste mapa` : 'dano das magias neste mapa: ainda não medido' });
+        return { pronto: itens.every(i => i.ok), itens };
+    }
+    function calibracaoHtmlInt(hunt) {
+        const c = calibracaoStatusInt(hunt);
+        if (c.pronto) return `<div class="tb-ok" style="margin:4px 0">✓ Inteligente calibrado neste mapa</div>`;
+        return `<div class="tb-cx tb-av" role="status" style="margin:4px 0"><b>⏳ CALIBRANDO o Inteligente neste mapa</b> — já pode usar: ele calcula com estimativa (erro típico de ±10 %) e nunca escolhe nada pior que o Em área na conta dele. ` +
+            `Para afinar (opcional, uma vez por mapa): aba <b>Scan</b> → só este mapa, modelo <b>Em área</b>, 5 min → Iniciar; depois CALCULAR de novo.` +
+            c.itens.map(i => `<div class="${i.ok ? 'tb-ok' : 'tb-mut'}">${i.ok ? '✓' : '·'} ${escHtml(i.txt)}</div>`).join('') + `</div>`;
+    }
     /* v2.13.1 — a regeneração de cada um na aba Magia (o roteiro 2.13 pedia e ela só
      * existia no localStorage): medida com ≥ 30 janelas, senão a da tabela */
     function regenTexto() {
@@ -2392,6 +2422,13 @@
         for (const v of VOCS_INT) if (ctx.inicial[v] && ctx.inicial[v].plano.length) atual[v] = ctx.inicial[v];
         let ref = avaliarPartyInt(ctx, atual, cont);
         const inicial = ref;
+        /* v2.13.2 — o Em área entra na escolha global e, se for melhor que o vigente, vira o ponto de partida */
+        if (ctx.area) {
+            const area = {};
+            for (const v of VOCS_INT) if (ctx.area[v] && ctx.area[v].plano.length) area[v] = ctx.area[v];
+            const ra = avaliarPartyInt(ctx, area, cont);
+            if (ra !== ref && ordenarInt([ref, ra], eps)[0] === ra) ref = ra;
+        }
         /* B + C de um personagem contra a party de referência `ref` (a atual).
          * 1ª rodada: todas as barras (B), as 16 melhores ganham as variações de
          * mínimo (C). 2ª rodada: só o que passou pelo C é triado de novo, contra
@@ -2566,7 +2603,11 @@
             if (x && x.plano && x.plano.every(([n]) => ctx.porNome[v][n])) ctx.vigente[v] = { plano: x.plano.map(([n, mi]) => ({ av: ctx.porNome[v][n], minimo: mi })), pocao: x.pocao || 0, sups: suportesDono(v) || x.sups || [] };
         }
         ctx.inicial = {};
-        for (const v of VOCS_INT) ctx.inicial[v] = ctx.vigente[v] || escolhaDoModelo('area', hunt, v, ctx);
+        /* v2.13.2 — a party do Em área é SEMPRE avaliada (antes só entrava sem kit guardado: com o kit
+         * fraco da 2.13.0 em `kit_int`, a busca partia dele e nunca via o Em área — 57,6k × 59,4k ao vivo) */
+        ctx.area = {};
+        for (const v of VOCS_INT) ctx.area[v] = escolhaDoModelo('area', hunt, v, ctx);
+        for (const v of VOCS_INT) ctx.inicial[v] = ctx.vigente[v] || ctx.area[v];
         calibrarPorScan(ctx);
         ctx.tudoMedido = VOCS_INT.every(v => ctx.voc[v].regenMedida) && ctx.lootMedido;
         const aplic = (ler('int_aplicado', {}) || {})[hunt.id] || null;
@@ -6932,14 +6973,14 @@
             `<button type="button" class="tb-bt mini" id="tb-int-zerar" ${ocupado ? 'disabled' : ''} title="esquece o kit aplicado neste mapa e a trava de 10 min: a próxima conta parte do zero">replanejar do zero</button>` +
             `<label class="tb-l" style="margin-left:auto" title="ε = 0,5 %: fica com o de mais XP mesmo que custe bem mais ouro (o padrão, 3 %, prefere o mais barato entre os quase iguais)"><input type="checkbox" id="tb-int-xp" ${modoXp ? 'checked' : ''}> XP absoluto</label></div>`;
         if (modelo === 'inteligente' && r.pendente) {
-            return corpo + intCtl + `<div class="tb-mut">o Inteligente simula a party inteira (≈ 0,1–0,3 s) — só quando você clica. Nada é aplicado sozinho.</div>`;
+            return corpo + calibracaoHtmlInt(h) + intCtl + `<div class="tb-mut">o Inteligente simula a party inteira (≈ 0,1–0,3 s) — só quando você clica. Nada é aplicado sozinho.</div>`;
         }
         const vp = r.viab ? viabilidadeParty(modelo, h) : null;
         corpo += `<button type="button" class="tb-bt pri tb-larga tb-grande" id="tb-aplicar-todos" ${ocupado ? 'disabled' : ''} style="margin-top:6px">${_aplicando ? 'APLICANDO…' : _aprendendo ? 'MEDINDO O DANO…' : 'APLICAR NOS 4'}</button>`;
         if (modelo === 'inteligente' && r.int) {
             const it = r.int, m = it.met, dec = { NOVO: 'kit novo', IGUAL: 'o kit aplicado já é o melhor', MANTER: 'mantém o kit aplicado', TROCAR: 'TROCAR: o novo é melhor', ESPERAR: 'mantém (menos de 10 min desde o APLICAR)' }[it.decisao] || it.decisao;
             const ganho = it.ganho != null && it.decisao !== 'IGUAL' && it.decisao !== 'NOVO' ? ` (novo ${it.ganho >= 0 ? '+' : ''}${Math.round(it.ganho * 1000) / 10} %)` : '';
-            corpo += intCtl + `<div class="tb-ver ${it.aviso ? 'ruim' : 'ok'}"><b>${escHtml(dec)}</b>${escHtml(ganho)}${it.desatualizado ? ' <span class="tb-av">(as medidas mudaram — recalcule)</span>' : ''}` +
+            corpo += calibracaoHtmlInt(h) + intCtl + `<div class="tb-ver ${it.aviso ? 'ruim' : 'ok'}"><b>${escHtml(dec)}</b>${escHtml(ganho)}${it.desatualizado ? ' <span class="tb-av">(as medidas mudaram — recalcule)</span>' : ''}` +
                 `<div class="tb-mut">previsto: ${milBR(m.xpH)} xp/h · ${numBR(Math.round(m.abH))} abates/h · lucro ${m.lucroH >= 0 ? '+' : ''}${milBR(m.lucroH)}/h (garantido ${milBR(m.LCB)}) · gasto em poção/runa ${milBR(m.ouroH)}/h</div>` +
                 `<div class="tb-mut">${regenTexto()}</div>` +
                 `<div class="tb-mut">defesa: degrau ${it.escada.degrau} (${escHtml(it.escada.motivo)})${it.escada.degrau >= 4 ? ' <span class="tb-ruim">⚠ mapa acima da party</span>' : ''} · ${numBR(it.cont.sim)} triagens + ${numBR(it.cont.party)} parties em ${numBR(it.ms)} ms</div>` +
@@ -9781,7 +9822,11 @@
     /* Alerta de preço. item = {nome, modo:'vender'|'comprar', pct (acima/abaixo
      * da média 30 d; o formulário sugere 20), preco (limite)}; cat = market_catalog indexado;
      * media = {avg} da média 30 d. Sem `pct` vale só o preço. Devolve null ou {chave, tipo, msg, preco}. */
-    function tpAvaliarAlerta(item, cat, media, taxa) {
+    /* v2.13.2 — opc = {meus: [preços dos SEUS anúncios abertos deste item], npc: o que o NPC paga}:
+     * o "vale anunciar" não dispara quando o menor anúncio é o seu (só você vende) nem quando o
+     * líquido depois da taxa não passa do NPC (achado da verificação da 2.13.0). */
+    function tpAvaliarAlerta(item, cat, media, taxa, opc) {
+        opc = opc || {};
         if (!item || !item.nome || !cat) return null;
         const n = tpMin(item.nome), c = cat[n];
         if (!c) return null;
@@ -9798,7 +9843,11 @@
                 return { chave: n + '|compra', tipo: 'compra', preco: maxBuy,
                          msg: `${item.nome}: COMPRA aberta a ${fmt(maxBuy)}${avg ? ` (média 30 d ${fmt(avg)})` : ''} — aceitar no jogo é na hora e sem taxa` };
             }
-            if (minSell && acima(minSell)) {
+            const meus = (opc.meus || []).map(Number).filter(v => v > 0);
+            const souOMenor = minSell && meus.length && Math.min(...meus) <= minSell && Number(c.sellOrders) <= meus.length;
+            const liquido = minSell ? minSell - 1 - Math.max(1, Math.floor((minSell - 1) * t)) : 0;
+            const npc = Number(opc.npc) > 0 ? Number(opc.npc) : 0;
+            if (minSell && acima(minSell) && !souOMenor && liquido > npc) {
                 return { chave: n + '|vender', tipo: 'vender', preco: minSell,
                          msg: `${item.nome}: vale anunciar — menor anúncio ${fmt(minSell)}${avg ? ` (${Math.round((minSell / avg - 1) * 100)} % acima da média 30 d)` : ''}; líquido ${fmt(minSell - 1 - Math.max(1, Math.floor((minSell - 1) * t)))} anunciando a ${fmt(minSell - 1)}` };
             }
@@ -9833,16 +9882,21 @@
         if (!ev || !ev.tipo) return dias;
         const dia = (c) => dias[c] || (dias[c] = tpDiaNovo());
         const hoje = tpDiaChave(t);
-        if (ev.tipo === 'delta') {
-            const d = ev.delta || {}, ms = (Number(d.seg) || 0) * 1000;
-            const ini = t - ms, cIni = tpDiaChave(ini);
-            if (ms > 0 && cIni !== hoje) {
-                const x = new Date(t); const meiaNoite = new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-                const f = tpLim((t - meiaNoite) / ms, 0, 1);
-                tpSomarDia(dia(hoje), d, f, ev.huntId, ev.title);
-                tpSomarDia(dia(cIni), d, 1 - f, ev.huntId, ev.title);
-            } else tpSomarDia(dia(hoje), d, 1, ev.huntId, ev.title);
-        } else if (ev.tipo === 'morte') dia(hoje).mortes++;
+        /* v2.13.2 — reparte um trecho [t − seg, t] entre os dias que ele cruza (quantos forem): a
+         * caçada fechada com a página fechada (offline) entrava inteira no dia do resumo */
+        const repartir = (d, huntId, title) => {
+            const ms = (Number(d.seg) || 0) * 1000;
+            if (!(ms > 0) || tpDiaChave(t - ms) === hoje) { tpSomarDia(dia(hoje), d, 1, huntId, title); return; }
+            let fim = t;
+            for (let i = 0; i < 400 && fim > t - ms; i++) {
+                const x = new Date(fim - 1), meiaNoite = new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+                const ini = Math.max(t - ms, meiaNoite);
+                tpSomarDia(dia(tpDiaChave(fim - 1)), d, tpLim((fim - ini) / ms, 0, 1), huntId, title);
+                fim = ini;
+            }
+        };
+        if (ev.tipo === 'delta') repartir(ev.delta || {}, ev.huntId, ev.title);
+        else if (ev.tipo === 'morte') dia(hoje).mortes++;
         else if (ev.tipo === 'ciclo') { const c = dia(hoje).ciclos, r = ev.reg || {}; c.n++; c.ouro += Number(r.ouro) || 0; if (r.erro) c.falhas++; }
         else if (ev.tipo === 'npc') dia(hoje).npc += Number(ev.ouro) || 0;
         else if (ev.tipo === 'mercado') {
@@ -9853,7 +9907,7 @@
         } else if (ev.tipo === 'offline') {
             const s = ev.summary || {}, d = ev.delta || tpDeltaResumo(null, s);
             if (!d) return dias;
-            tpSomarDia(dia(hoje), d, 1, s.huntId, tpTituloResumo(s));
+            repartir(d, s.huntId, tpTituloResumo(s));
             dia(hoje).offline++;
         } else if (ev.tipo === 'raro') {
             const r = dia(hoje).raros; r.push({ t, nome: String(ev.nome), n: Number(ev.n) || 1, valor: Number(ev.valor) || 0 });
@@ -10030,17 +10084,24 @@
                  custoH: r.custoH, ouroH: r.ouroH, ouroHMerc: r.ouroHMerc, nota: r.nota, imunes: r.imunes, fonte: r.fonte, est: r.est, bloqueio: r.bloqueio,
                  confianca: r.confianca, notas: r.notas, risco: { nivel: r.risco.nivel, pts: r.risco.pts, motivos: r.risco.motivos }, porVoc: pv };
     }
+    /* v2.13.2 — cópia da tabela de loot na gaveta comum com data e era: vale 7 dias e só na era atual
+     * (antes não vencia nunca). O formato antigo (lista) ainda é lido até a próxima virada de era. */
+    const RADAR_LOOT_VALIDADE_MS = 7 * 86400000;
+    function radarLerTabComum(h) {
+        const g = lerComum('loot_tab_' + radarSlug(h.title), null);
+        const lista = Array.isArray(g) ? g : g && g.era === ERA && Date.now() - (g.t || 0) < RADAR_LOOT_VALIDADE_MS && Array.isArray(g.tab) ? g.tab : null;
+        return lista ? lista.map(x => ({ name: x[0], chance: x[1], maxCount: x[2], value: x[3], currency: !!x[4] })) : null;
+    }
     /* tabela de loot: memória → gaveta comum (compacta, por título) → GET. Devolve true se foi à rede. */
     async function radarGarantirLoot(h) {
         let tab = LOOT_TABELA[h.id], rede = false;
         if (!tab) {
-            const g = lerComum('loot_tab_' + radarSlug(h.title), null);
-            if (Array.isArray(g)) tab = g.map(x => ({ name: x[0], chance: x[1], maxCount: x[2], value: x[3], currency: !!x[4] }));
-            else {
+            tab = radarLerTabComum(h);
+            if (!tab) {
                 rede = true;
                 try { const t = await buscarJSON('/hunt/lootTable?huntId=' + h.id); tab = Array.isArray(t) ? t : []; }
                 catch { return rede; }
-                guardarComum('loot_tab_' + radarSlug(h.title), tab.filter(x => x && x.name).map(x => [x.name, Number(x.chance) || 0, Number(x.maxCount) || 1, Number(x.value) || 0, x.currency ? 1 : 0]));
+                guardarComum('loot_tab_' + radarSlug(h.title), { t: Date.now(), era: ERA, tab: tab.filter(x => x && x.name).map(x => [x.name, Number(x.chance) || 0, Number(x.maxCount) || 1, Number(x.value) || 0, x.currency ? 1 : 0]) });
             }
             LOOT_TABELA[h.id] = tab;
         }
@@ -10052,8 +10113,8 @@
         if (id == null) return null;
         if (!LOOT_TABELA[id]) {
             const h = (CAT.hunts || []).find(x => x.id === id);
-            const g = h ? lerComum('loot_tab_' + radarSlug(h.title), null) : null;
-            if (Array.isArray(g)) LOOT_TABELA[id] = g.map(x => ({ name: x[0], chance: x[1], maxCount: x[2], value: x[3], currency: !!x[4] }));
+            const g = h ? radarLerTabComum(h) : null;
+            if (g) LOOT_TABELA[id] = g;
         }
         const tab = LOOT_TABELA[id] || null;
         if (tab && LOOT_CACHE[id] == null) LOOT_CACHE[id] = Math.round(tpLootAbate(tab, null, {}).cat * 10) / 10;
@@ -10258,7 +10319,10 @@
             }
             guardar('radar_medias', med);
             for (const it of itens) {
-                const a = tpAvaliarAlerta(it, MK.catalogo, med[mkMin(it.nome)] || null, MK.taxa);
+                const nMin = mkMin(it.nome);
+                const meus = (MK.minhas || []).filter(o => mkAbertaVenda(o) && mkMin(o.itemName) === nMin && !o.forja).map(o => o.unitPrice);
+                let npc = 0; try { npc = radarValor(it.nome, null).npc || 0; } catch { }
+                const a = tpAvaliarAlerta(it, MK.catalogo, med[nMin] || null, MK.taxa, { meus, npc });
                 if (!a || Date.now() - (est.disparos[a.chave] || 0) < RADAR_ALERTA_REPETE_MS) continue;
                 est.disparos[a.chave] = Date.now();
                 est.hist = [{ t: Date.now(), tipo: a.tipo, msg: a.msg }].concat(est.hist || []).slice(0, 20);

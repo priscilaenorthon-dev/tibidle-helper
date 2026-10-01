@@ -4334,3 +4334,23 @@ mapas (Vampire hell 32,5k × 58,0k do Em área; Banshee 27,7k × 49,6k) e ainda 
   acompanharam a caçada até o fim (base com < 90 s): o Scan zera o analisador no meio e resumo − base contava de novo
   (30/09: +15 min e +14,1k xp, XP do dia +40 %).
 - Testes: 229 (224 no CI: os 5 de calibração precisam do `data/`; inteligente 3, 4, 6 e 13 reescritos com o porquê; +2 do Radar).
+
+## 2.13.2 (01/10) — a busca do Inteligente sempre compara com o Em área
+- Defeito aberto no roteiro 2.13.1 (item 0): com um kit guardado em `kit_int`, `buscarParty` partia dele e a party do
+  Em área só entrava na escolha global quando não havia kit guardado (ao vivo: 57,6k × 59,4k xp/h em Vampire hell).
+- Agora `contextoInt` monta sempre `ctx.area` e `buscarParty` avalia essa party: ela entra em `todas` (a busca nunca
+  sai pior que o Em área) e vira o ponto de partida da descida quando é melhor que o vigente.
+- Teste novo em `inteligente.test.js` com o kit fraco da 2.13.0 guardado. Nas fixtures a busca já achava um kit bom
+  mesmo partindo do fraco (o teste passa com e sem a correção) — o defeito ao vivo depende das medições da conta;
+  conferir no item 1 do roteiro 2.13.1.
+- **Aviso "⏳ CALIBRANDO o Inteligente neste mapa"** na aba Magia (dono: "tenho que ficar 10 min no Em área e
+  depois trocar? bota um aviso"). Mostra o que falta e como fazer: regeneração de mana dos 4 (x/30, mede sozinha
+  caçando em qualquer mapa), Scan ≥ 2 min do mapa com Em área (calibra abates/h e gasto), loot medido (Scan com
+  ≥ 100 abates) e dano das magias no mapa. Com tudo medido: "✓ Inteligente calibrado neste mapa".
+- **Radar, pendentes da verificação da 2.13.0 (fechados):**
+  - alerta "vale anunciar" não dispara quando o menor anúncio é o seu (só você vende) nem quando o líquido depois
+    da taxa não passa do NPC;
+  - a cópia da tabela de loot na gaveta comum agora tem data e era: vale 7 dias e morre na virada de era;
+  - caçada fechada com a página fechada (offline) é repartida entre os dias que cruza (antes entrava toda no dia do
+    resumo).
+- Revisão geral: os 66 avisos do ESLint são todos `catch (e)` sem uso (inofensivos).

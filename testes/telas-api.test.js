@@ -183,6 +183,20 @@ t('tpDeltaAnalisador: hunt_started no mesmo mapa — analisador que não zerou v
 t('tpRaro: item de chance baixa mas barato não é raro', () => {
     assert.strictEqual(P.tpRaro({ chance: 500 }, 15, 20), false, 'corncob');
 });
+t('tpAvaliarAlerta 2.13.2: "vale anunciar" não dispara se o menor anúncio é o seu, nem abaixo do NPC', () => {
+    const cat = { 'wild honey': { sellOrders: 1, minSell: 500 } }, it = { nome: 'Wild Honey', modo: 'vender', preco: 300 };
+    assert(P.tpAvaliarAlerta(it, cat, null, 0.05), 'sem opc: alerta');
+    assert.strictEqual(P.tpAvaliarAlerta(it, cat, null, 0.05, { meus: [500] }), null, 'só eu vendo');
+    assert.strictEqual(P.tpAvaliarAlerta(it, cat, null, 0.05, { npc: 480 }), null, 'líquido 475 ≤ NPC 480');
+    assert(P.tpAvaliarAlerta(it, { 'wild honey': { sellOrders: 3, minSell: 500 } }, null, 0.05, { meus: [500] }), 'com concorrente: alerta');
+});
+t('tpAcumularDia 2.13.2: caçada offline das 22 h às 2 h reparte entre os dois dias', () => {
+    const t = new Date(2026, 9, 2, 2, 0, 0).getTime();
+    const dias = P.tpAcumularDia({}, t, { tipo: 'offline', delta: { seg: 4 * 3600, xp: 4000, xpRaw: 4000, kills: 400, loot: 0, sup: 0, drops: {} }, summary: { huntId: 34 } });
+    const ontem = dias[P.tpDiaChave(t - 3 * 3600000)], hoje = dias[P.tpDiaChave(t)];
+    assert(ontem && hoje, 'os dois dias');
+    assert.strictEqual(Math.round(ontem.xp), 2000); assert.strictEqual(Math.round(hoje.xp), 2000);
+});
 t('tpRaro: chance < 1 % ou valor ≥ 20× o loot por abate; moeda nunca', () => {
     assert.strictEqual(P.tpRaro(TAB[3], 2000, 20), true);
     assert.strictEqual(P.tpRaro(TAB[1], 85, 20), false);
@@ -222,7 +236,8 @@ t('tpAcumularDia: meia-noite divide; tempo por mapa; mortes; ids do mercado sem 
     const h = d['2026-09-30'];
     assert.deepStrictEqual([h.mortes, h.mercado, h.ciclos.n, h.ciclos.ouro, h.ciclos.falhas, h.npc], [2, 500, 2, 3000, 1, 1200]);
     P.tpAcumularDia(d, t0, { tipo: 'offline', summary: { huntId: 50, title: 'Vampire hell', elapsedSec: 3600, xpPerHour: 40000, lootGold: 9000, suppliesGold: 1000, kills: 900 } });
-    assert.strictEqual(h.offline, 1); perto(h.mapas['Vampire hell'].xp, 40000, 1e-6);
+    /* 2.13.2: a hora offline (23:00:30 → 00:00:30) é repartida: 30 s hoje, o resto ontem */
+    assert.strictEqual(h.offline, 1); perto(h.mapas['Vampire hell'].xp, 40000 * 30 / 3600, 1e-6); perto(d['2026-09-29'].mapas['Vampire hell'].xp, 40000 * 3570 / 3600, 1e-6);
     const muitos = {}; for (let i = 1; i <= 40; i++) muitos['2026-08-' + String(i > 31 ? 31 : i).padStart(2, '0')] = { i };
     for (let i = 1; i <= 9; i++) muitos['2026-09-0' + i] = { i };
     const p = P.tpPodarDias(muitos, 30);

@@ -15,6 +15,7 @@ const M = new Function('SPELLS', 'POTIONS', 'BOSSES', `
     const OURO_POR_MANA = 0.56;
     const MEM = {}; const ler = (k, p) => (k in MEM ? MEM[k] : p); const guardar = (k, v) => { MEM[k] = v; };
     const tid = () => null, $$ = () => [], $ = () => null, log = () => {};
+    const escHtml = (x) => String(x == null ? "" : x).replace(/[&<>"']/g, c => "&#" + c.charCodeAt(0) + ";");
     const CAT = { hunts: [], magias: SPELLS, areas: null, pocoes: POTIONS, bosses: null,
                   precos: { 'avalanche rune': 32, 'great fireball rune': 32, 'thunderstorm rune': 32, 'stone shower rune': 32, 'sudden death rune': 162 } };
     const LOOT_CACHE = {}; const ESTADO_WS = { huntId: null, frame: null, party: [], roster: [], sk: {} };
@@ -28,7 +29,7 @@ const M = new Function('SPELLS', 'POTIONS', 'BOSSES', `
     ${trecho('/* @@MODELOS-INICIO */', '/* @@MODELOS-FIM */')}
     ${trecho('/* @@MAGIA-INICIO', '/* @@MAGIA-FIM */')}
     CAT.bosses = normalizarBosses(BOSSES);
-    return { montarPlano, partyInt, contextoInt, simularParty, decidirTroca, preverModeloInt, registrarAplicacaoInt, zerarInt, avaliarPartyInt, ordenarInt, okInt,
+    return { calibracaoStatusInt, calibracaoHtmlInt, montarPlano, partyInt, contextoInt, simularParty, decidirTroca, preverModeloInt, registrarAplicacaoInt, zerarInt, avaliarPartyInt, ordenarInt, okInt,
              slotMorto, lureMax, magiasDaVocacao, invalidarPlanos, suportesPermitidos, membroInt, danoBaseInt, alvosForma, barraValida, escSig,
              FRACAO_FORMA, N_MAX_SIM, N_MAX_PARTY, _intParty, CAT, MEM, RAZAO, ESTADO_WS, E, LOOT_CACHE, BESTIARIO };
 `)(SPELLS, POTIONS, BOSSES);
@@ -91,6 +92,27 @@ t('1 — estabilidade: Feiticeiro em Vampire hell, 5 rodadas de medir (0,5 × te
     assert(daRodada2.size === 1, 'kits por rodada:\n      ' + kits.join('\n      '));
 });
 
+t('2.13.2 — kit fraco guardado (kit_int) não impede o Em área: a busca nunca sai pior que ele', () => {
+    zerar();
+    const h = H(VH);
+    const ref = M.preverModeloInt('area', h);
+    /* o kit da 2.13.0 que ficou guardado ao vivo: 7 slots fracos */
+    M.MEM.kit_int = { [VH + '|KNIGHT']: { plano: [['Lesser Front Sweep', 1], ['Brutal Strike', 1]], pocao: 0, sups: [] },
+                      [VH + '|PALADIN']: { plano: [['Divine Missile', 1]], pocao: 0, sups: [] },
+                      [VH + '|SORCERER']: { plano: [['Energy Beam', 1], ['Great Energy Beam', 1]], pocao: 0, sups: [] },
+                      [VH + '|DRUID']: { plano: [['Strong Ice Wave', 1], ['Energy Strike', 1]], pocao: 0, sups: [] } };
+    const r = buscar(VH);
+    assert(r.final.met.xpH >= ref.met.xpH * 0.97, `escolhido ${Math.round(r.final.met.xpH)} xp/h × Em área ${Math.round(ref.met.xpH)}`);
+    delete M.MEM.kit_int;
+});
+t('2.13.2 — aviso CALIBRANDO: sem regen nem Scan do mapa mostra o que falta; com tudo medido, "calibrado"', () => {
+    zerar();
+    for (const v of VOCS) delete M.MEM['regen_' + v];
+    const c = M.calibracaoStatusInt(H(VH));
+    assert.strictEqual(c.pronto, false);
+    assert(/CALIBRANDO/.test(M.calibracaoHtmlInt(H(VH))) && /Em área/.test(M.calibracaoHtmlInt(H(VH))), 'o aviso explica como calibrar');
+    assert(c.itens.some(i => !i.ok && /0\/30/.test(i.txt)), 'mostra o progresso da regeneração');
+});
 t('2 — determinismo: 10 chamadas seguidas dão o mesmo resultado', () => {
     zerar(); M.E.scan = { vh: RITMO_VH };
     const resumo = (r) => JSON.stringify({ sig: r.final.sig, xp: Math.round(r.final.met.xpH), l: Math.round(r.final.met.lucroH), c: r.cont });
