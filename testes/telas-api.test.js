@@ -13,7 +13,7 @@ const le = (p) => JSON.parse(fs.readFileSync(path.join(raiz, p), 'utf8'));
 const trecho = (a, b) => { const i = SRC.indexOf(a), f = SRC.indexOf(b); assert(i > 0 && f > i, 'marcador ausente: ' + a); return SRC.slice(i, f); };
 const P = new Function(`${trecho('/* @@TELAS-API-INICIO', '/* @@TELAS-API-FIM */')}
     return { tpHpXpMedio, tpLootAbate, tpValorItem, tpCalibrar, tpRisco, tpEstimar, tpNotaParty, tpOrdenar, tpDeltaAnalisador, tpRaro,
-             tpAvaliarAlerta, tpAlertaDevido, tpDiaChave, tpAcumularDia, tpPodarDias, tpResumoDia, tpCompararDias, tpTextoRelatorio, tpDeltaResumo, tpTituloResumo, tpAbatesResumo,
+             tpAvaliarAlerta, tpAlertaDevido, tpCombos, tpDiaChave, tpAcumularDia, tpPodarDias, tpResumoDia, tpCompararDias, tpTextoRelatorio, tpDeltaResumo, tpTituloResumo, tpAbatesResumo,
              TP_FATOR_LOOT_PADRAO, TP_DIAS_MAX };`)();
 const MKP = new Function(`${trecho('/* @@MERCADO-INICIO', '/* @@MERCADO-PURO-FIM */')}\n return { mkTaxa };`)();
 const FXH = le('testes/fixtures/hunts.json');
@@ -196,6 +196,11 @@ t('tpAcumularDia 2.13.2: caçada offline das 22 h às 2 h reparte entre os dois 
     const ontem = dias[P.tpDiaChave(t - 3 * 3600000)], hoje = dias[P.tpDiaChave(t)];
     assert(ontem && hoje, 'os dois dias');
     assert.strictEqual(Math.round(ontem.xp), 2000); assert.strictEqual(Math.round(hoje.xp), 2000);
+});
+t('tpCombos 2.13.3: rajadas a cada 2 s; ordem "1 combo" põe quem limpa na 1ª rajada na frente, depois o de mais xp', () => {
+    assert.deepStrictEqual([P.tpCombos(0), P.tpCombos(1.9), P.tpCombos(2.3), P.tpCombos(4.1), P.tpCombos(null)], [1, 1, 2, 3, null]);
+    const L = [{ id: 1, xpH: 60000, T: 2.3 }, { id: 2, xpH: 50000, T: 1.2 }, { id: 3, xpH: 55000, T: 0.8 }, { id: 4, xpH: 90000, T: null }];
+    assert.deepStrictEqual(P.tpOrdenar(L, 'combo').map(x => (x.l || x).id), [3, 2, 1, 4]);
 });
 t('tpRaro: chance < 1 % ou valor ≥ 20× o loot por abate; moeda nunca', () => {
     assert.strictEqual(P.tpRaro(TAB[3], 2000, 20), true);
