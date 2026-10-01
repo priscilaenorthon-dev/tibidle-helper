@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.13.5
+// @version      2.13.6
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.13.5';
+    const VERSAO = '2.13.6';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -9921,7 +9921,7 @@
      * no mesmo mapa é sempre desta caçada (com a página aberta, recomeçar passa pelo hunt_started). */
     const TP_MESMA_CACADA_MS = 5 * 60000, TP_BASE_VIVA_MS = 2 * 60000;
     function tpTrechoAntes(base, an, huntId, agora) {
-        if (base && base.novo) return null;
+        if (huntId == null || (base && base.novo)) return null; // v2.13.6: caçada ainda desconhecida (frame antes do resume) nunca conta
         const el = +an.elapsedMs || 0;
         if (el < 60000) return null;
         if (base && base.an && base.t && base.huntId === (huntId == null ? null : huntId) &&
@@ -10343,6 +10343,9 @@
         }
         if (t === 'frame' && d.analyzer && typeof d.analyzer === 'object') {
             const a = d.analyzer, lv = radarLv(), huntId = ESTADO_WS.huntId;
+            /* v2.13.6 — depois do F5 o jogo manda frame ANTES do resume: sem saber a caçada, a base guardada
+             * parecia de "outra caçada" e a 2.13.5 lançava a caçada inteira como offline (ao vivo: 2×, +62k de xp) */
+            if (huntId == null) return;
             const an = { elapsedMs: a.elapsedMs, xp: a.xp, xpRaw: a.xpRaw, kills: a.killsTotal, lootGold: a.lootGold, suppliesGold: a.suppliesGold,
                          drops: a.drops && typeof a.drops === 'object' ? a.drops : {} };
             /* v2.13.5 — 1º frame de uma caçada que a página não viu começar: o que veio antes entra no Dia

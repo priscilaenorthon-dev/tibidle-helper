@@ -4401,3 +4401,12 @@ mapas (Vampire hell 32,5k × 58,0k do Em área; Banshee 27,7k × 49,6k) e ainda 
   `autoSellInMs`, e a mochila não prova nada), APLICAR em dobro (o bloqueio funciona; o 2º toque veio depois de
   terminar), Radar × Magia nos combos (a mesma conta em momentos diferentes; no mesmo instante batem).
 
+## 2.13.6 (01/10) — F5 no meio da caçada virava "offline" (regressão da 2.13.5)
+- Ao vivo, logo depois de instalar a 2.13.5: F5 em Vampire hell → Dia com `offline` 0 → 2 e xp 77k → 139k (a caçada
+  em andamento contada 2× a mais). Depois do F5 o jogo manda `frame` ANTES do `resume`: com `huntId` ainda `null`, a
+  base guardada (mapa 50) parecia de outra caçada, `tpTrechoAntes` lançava o analisador inteiro como offline, e o
+  frame seguinte (já com 50) lançava de novo.
+- O Radar ignora o analisador enquanto a caçada não é conhecida (`huntId == null`), e `tpTrechoAntes` nunca conta
+  sem `huntId`. Teste no `vm` com o frame antes do `resume`. O Dia de 01/10 do dono foi consertado à mão (os 2
+  lançamentos falsos tirados).
+

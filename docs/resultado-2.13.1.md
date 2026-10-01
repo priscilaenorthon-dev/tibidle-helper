@@ -157,5 +157,5 @@ mapa medido usa o T do Scan (1,3 s).
 - Auto Hunt continuou ligado como estava (hunt 155, 50 % livre); não disparou.
 
 ## Próximo
-O Inteligente passou no Scan A/B e os achados foram corrigidos na 2.13.5 (243 testes, ESLint 0 erros). Seguir com
+O Inteligente passou no Scan A/B e os achados foram corrigidos na 2.13.5 (244 testes, ESLint 0 erros). Seguir com
 o combinado: calcular ao escolher o mapa, calibrar caçando (sem Scan) e mostrar o kit no ranking do Radar.

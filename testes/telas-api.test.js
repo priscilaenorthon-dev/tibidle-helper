@@ -207,6 +207,8 @@ t('tpTrechoAntes (2.13.5): página aberta no meio da caçada — o que o analisa
     assert.strictEqual(P.tpTrechoAntes({ huntId: 34, t: agora - 1000, an: mesma.an }, an, 50, agora).kills, 6600, 'outro mapa');
     /* começo de caçada (< 1 min): é só a base */
     assert.strictEqual(P.tpTrechoAntes(null, Object.assign({}, an, { elapsedMs: 40000 }), 50, agora), null, 'menos de 1 min');
+    /* 2.13.6: caçada ainda desconhecida (frame antes do resume, depois do F5) nunca conta */
+    assert.strictEqual(P.tpTrechoAntes(null, an, null, agora), null, 'huntId desconhecido');
 });
 t('tpRaro: item de chance baixa mas barato não é raro', () => {
     assert.strictEqual(P.tpRaro({ chance: 500 }, 15, 20), false, 'corncob');
@@ -721,6 +723,31 @@ t('Radar/Loot (2.13.5): tabela de loot baixada pelo Scan/Magia também vai para 
     const h2 = W2.html();
     assert(!/sem a tabela de loot deste mapa/.test(h2), 'depois do F5 o Loot ficou sem a tabela');
     assert(/broken helmet/.test(h2), 'o drop da sessão sumiu: ' + h2.slice(0, 300));
+});
+t('Radar/Dia (2.13.6): F5 no meio da caçada com o 1º frame ANTES do resume (huntId ainda desconhecido) não lança nada como offline', async () => {
+    /* ao vivo, 01/10 com a 2.13.5: F5 em Vampire hell → offline 0 → 2 e xp 77k → 139k (a caçada contada 2× a mais) */
+    const W = criarMundo({ ls: comAba('dia') });
+    await W.avancar(0);
+    const ws = await conectar(W);
+    ws.emitir({ type: 'hunt_started', data: { huntId: 50, state: { party: party4() } } });
+    ws.emitir(frame({ elapsedMs: 1000, xp: 10, xpRaw: 10, killsTotal: 1, lootGold: 5, drops: {} }));
+    for (let i = 1; i <= 30; i++) { await W.avancar(60000); ws.emitir(frame({ elapsedMs: 1000 + i * 60000, xp: 10 + i * 1000, xpRaw: 10 + i * 900, killsTotal: 1 + i * 30, lootGold: 5 + i * 200, drops: {} })); }
+    await W.avancar(1000);
+    const antes = W.H.RADAR.dias[hojeDe(W)];
+    const xpAntes = antes.xp;
+    /* F5: o jogo manda frame antes do resume */
+    const W2 = criarMundo({ ls: Object.fromEntries(W.store) });
+    await W2.avancar(0);
+    const ws2 = new W2.window.WebSocket('wss://jogo');
+    ws2.emitir({ type: 'welcome', data: { account: { name: 'Teste', premiumUntil: '2099-01-01T00:00:00Z' } } });
+    await W2.avancar(5000);
+    ws2.emitir(frame({ elapsedMs: 1000 + 30 * 60000 + 6000, xp: 30100, xpRaw: 27090, killsTotal: 902, lootGold: 6020, drops: {} }));
+    ws2.emitir({ type: 'resume', data: { huntId: 50, state: { party: party4() } } });
+    ws2.emitir(frame({ elapsedMs: 1000 + 30 * 60000 + 7000, xp: 30120, xpRaw: 27108, killsTotal: 903, lootGold: 6025, drops: {} }));
+    await W2.avancar(1000);
+    const d = W2.H.RADAR.dias[hojeDe(W2)];
+    assert.strictEqual(d.offline, 0, 'F5 virou caçada offline');
+    assert(d.xp - xpAntes < 200, `xp do dia pulou ${xpAntes} → ${d.xp}`);
 });
 t('Radar/Dia: caçada fechada com a página fechada entra pelo resumo (offline); a mesma caçada não conta duas vezes', async () => {
     const W = criarMundo({ ls: comAba('dia') });
