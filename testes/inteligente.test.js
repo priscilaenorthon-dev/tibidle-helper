@@ -91,6 +91,19 @@ t('1 — estabilidade: Feiticeiro em Vampire hell, 5 rodadas de medir (0,5 × te
     assert(daRodada2.size === 1, 'kits por rodada:\n      ' + kits.join('\n      '));
 });
 
+t('2.13.2 — kit fraco guardado (kit_int) não impede o Em área: a busca nunca sai pior que ele', () => {
+    zerar();
+    const h = H(VH);
+    const ref = M.preverModeloInt('area', h);
+    /* o kit da 2.13.0 que ficou guardado ao vivo: 7 slots fracos */
+    M.MEM.kit_int = { [VH + '|KNIGHT']: { plano: [['Lesser Front Sweep', 1], ['Brutal Strike', 1]], pocao: 0, sups: [] },
+                      [VH + '|PALADIN']: { plano: [['Divine Missile', 1]], pocao: 0, sups: [] },
+                      [VH + '|SORCERER']: { plano: [['Energy Beam', 1], ['Great Energy Beam', 1]], pocao: 0, sups: [] },
+                      [VH + '|DRUID']: { plano: [['Strong Ice Wave', 1], ['Energy Strike', 1]], pocao: 0, sups: [] } };
+    const r = buscar(VH);
+    assert(r.final.met.xpH >= ref.met.xpH * 0.97, `escolhido ${Math.round(r.final.met.xpH)} xp/h × Em área ${Math.round(ref.met.xpH)}`);
+    delete M.MEM.kit_int;
+});
 t('2 — determinismo: 10 chamadas seguidas dão o mesmo resultado', () => {
     zerar(); M.E.scan = { vh: RITMO_VH };
     const resumo = (r) => JSON.stringify({ sig: r.final.sig, xp: Math.round(r.final.met.xpH), l: Math.round(r.final.met.lucroH), c: r.cont });

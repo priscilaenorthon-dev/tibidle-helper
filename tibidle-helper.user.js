@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.13.1
+// @version      2.13.2
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.13.1';
+    const VERSAO = '2.13.2';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -2392,6 +2392,13 @@
         for (const v of VOCS_INT) if (ctx.inicial[v] && ctx.inicial[v].plano.length) atual[v] = ctx.inicial[v];
         let ref = avaliarPartyInt(ctx, atual, cont);
         const inicial = ref;
+        /* v2.13.2 — o Em área entra na escolha global e, se for melhor que o vigente, vira o ponto de partida */
+        if (ctx.area) {
+            const area = {};
+            for (const v of VOCS_INT) if (ctx.area[v] && ctx.area[v].plano.length) area[v] = ctx.area[v];
+            const ra = avaliarPartyInt(ctx, area, cont);
+            if (ra !== ref && ordenarInt([ref, ra], eps)[0] === ra) ref = ra;
+        }
         /* B + C de um personagem contra a party de referência `ref` (a atual).
          * 1ª rodada: todas as barras (B), as 16 melhores ganham as variações de
          * mínimo (C). 2ª rodada: só o que passou pelo C é triado de novo, contra
@@ -2566,7 +2573,11 @@
             if (x && x.plano && x.plano.every(([n]) => ctx.porNome[v][n])) ctx.vigente[v] = { plano: x.plano.map(([n, mi]) => ({ av: ctx.porNome[v][n], minimo: mi })), pocao: x.pocao || 0, sups: suportesDono(v) || x.sups || [] };
         }
         ctx.inicial = {};
-        for (const v of VOCS_INT) ctx.inicial[v] = ctx.vigente[v] || escolhaDoModelo('area', hunt, v, ctx);
+        /* v2.13.2 — a party do Em área é SEMPRE avaliada (antes só entrava sem kit guardado: com o kit
+         * fraco da 2.13.0 em `kit_int`, a busca partia dele e nunca via o Em área — 57,6k × 59,4k ao vivo) */
+        ctx.area = {};
+        for (const v of VOCS_INT) ctx.area[v] = escolhaDoModelo('area', hunt, v, ctx);
+        for (const v of VOCS_INT) ctx.inicial[v] = ctx.vigente[v] || ctx.area[v];
         calibrarPorScan(ctx);
         ctx.tudoMedido = VOCS_INT.every(v => ctx.voc[v].regenMedida) && ctx.lootMedido;
         const aplic = (ler('int_aplicado', {}) || {})[hunt.id] || null;

@@ -4334,3 +4334,12 @@ mapas (Vampire hell 32,5k × 58,0k do Em área; Banshee 27,7k × 49,6k) e ainda 
   acompanharam a caçada até o fim (base com < 90 s): o Scan zera o analisador no meio e resumo − base contava de novo
   (30/09: +15 min e +14,1k xp, XP do dia +40 %).
 - Testes: 229 (224 no CI: os 5 de calibração precisam do `data/`; inteligente 3, 4, 6 e 13 reescritos com o porquê; +2 do Radar).
+
+## 2.13.2 (01/10) — a busca do Inteligente sempre compara com o Em área
+- Defeito aberto no roteiro 2.13.1 (item 0): com um kit guardado em `kit_int`, `buscarParty` partia dele e a party do
+  Em área só entrava na escolha global quando não havia kit guardado (ao vivo: 57,6k × 59,4k xp/h em Vampire hell).
+- Agora `contextoInt` monta sempre `ctx.area` e `buscarParty` avalia essa party: ela entra em `todas` (a busca nunca
+  sai pior que o Em área) e vira o ponto de partida da descida quando é melhor que o vigente.
+- Teste novo em `inteligente.test.js` com o kit fraco da 2.13.0 guardado. Nas fixtures a busca já achava um kit bom
+  mesmo partindo do fraco (o teste passa com e sem a correção) — o defeito ao vivo depende das medições da conta;
+  conferir no item 1 do roteiro 2.13.1.
