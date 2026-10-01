@@ -4375,3 +4375,29 @@ mapas (Vampire hell 32,5k × 58,0k do Em área; Banshee 27,7k × 49,6k) e ainda 
   (menos vivos) paga menos cura — inclusive o Knight com mais magias, se ele encurtar a onda. Na party do Scan o
   total fica igual ao medido. Sem Scan do mapa, 0 (comportamento antigo).
 - Aba Magia: "gasto em poção/runa X/h (cura Y/h pelo tempo que os bichos ficam vivos)".
+
+## 2.13.5 (01/10) — correções do teste ao vivo da 2.13.4 (`docs/resultado-2.13.1.md`)
+- **Dia sem a caçada anterior à página** (01/10: 3h32 com a página fechada, o dono encerrou 4 min depois de abrir; o
+  Dia ficou com 4 min). `tpTrechoAntes(base, an, huntId, agora)`: no 1º frame de uma caçada que a página não viu
+  começar, o que o analisador já tinha entra como "offline". Mesma caçada = mesma hora de início (`t − elapsedMs`,
+  ±5 min) ou base de < 2 min no mesmo mapa; `hunt_started` visto (base `novo`) nunca conta.
+- **Inteligente trocava de kit a cada clique** (3 cliques em 3 s → 56,8k → 58,4k → 58,4k, kits diferentes). No node:
+  espera 9,5–10,2 s e regen do Knight 7–7,5 alternam kits com xp e lucro IGUAIS (só a ordem de 2 magias muda). Agora
+  o kit **mostrado** também tem histerese (`_intMostrado`, decisão `MOSTRADO`): o novo só tira o anterior com > 1 % de
+  xp, ou xp igual (−0,5 %) e lucro > 1k/h e 3 % maior. Reavaliado sempre com os suportes do dono de agora;
+  "replanejar do zero" esquece.
+- **Suportes do dono fora do carimbo**: trocar os suportes no jogo não invalidava a conta guardada do Inteligente
+  (a tela seguia com o kit antigo). O carimbo agora inclui `suportesDono` dos 4.
+- **Mercado: "suas ordens" em páginas de 50** (`market_my_orders {page}`): o dono tinha 55 abertas e o helper via 50
+  (Meus anúncios, REVISAR). `mkLerMinhas` lê até a página vir incompleta.
+- **Alertas do Radar sem as suas ordens**: a regra "o menor anúncio é o seu" (2.13.2) só valia se a aba Mercado
+  tivesse sido lida na sessão (`MK.minhas` era `null` no teste). O CONFERIR lê as suas ordens (todas as páginas,
+  só leitura) quando não lidas ou com > 30 min.
+- **Radar, mapa medido**: o ouro/h é o **estável** do Scan (o bruto de 4 min virava +18,8k/h com uma black pearl e
+  uma spike sword; estável −1,4k/h). A sorte aparece no detalhe ("sorte no Scan … fora do ouro").
+- **Loot depois do F5 sem valor**: a tabela de loot baixada pelo Scan/Magia/ouro por abate não ia para a gaveta
+  comum (69 de 70 guardadas — faltava justo Vampire hell). `radarGuardarTab` guarda de qualquer caminho.
+- Não eram defeitos (ver o resultado): "raro em dobro" (2 spike swords de verdade — o jogo vende o loot sozinho,
+  `autoSellInMs`, e a mochila não prova nada), APLICAR em dobro (o bloqueio funciona; o 2º toque veio depois de
+  terminar), Radar × Magia nos combos (a mesma conta em momentos diferentes; no mesmo instante batem).
+

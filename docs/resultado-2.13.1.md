@@ -8,6 +8,10 @@ Prints em `docs/prints-2.13.1/` (só local: o `.gitignore` não deixa `*.png` ir
 > Às 18:47:58 a caçada parou e a party vendeu na cidade — foi o **dono** (confirmado na conversa), não o helper.
 > O 1º APLICAR caiu nesse momento e saiu "na cidade: vale na próxima caçada".
 
+> **Atualizado depois das correções (2.13.5, mesmo dia):** o "raro em dobro" **não era defeito** (eram 2 spike swords
+> de verdade — ver "Defeitos" 1). Os demais ⚠️/❌ foram corrigidos na 2.13.5, e o reteste achou mais dois (ordens do
+> Mercado paginadas e Alertas sem as suas ordens), também corrigidos.
+
 ## Resumo
 | Item | Resultado |
 |---|---|
@@ -15,7 +19,7 @@ Prints em `docs/prints-2.13.1/` (só local: o `.gitignore` não deixa `*.png` ir
 | 0. Degrau 3 / Protector em Vampire hell | ✅ degrau 1 (vida mín. do Knight 70–75 %), sem Protector |
 | 1. "✓ Inteligente calibrado neste mapa" (Vampire hell) | ✅ |
 | 1. replanejar do zero ≥ Em área −3 % | ✅ 58,4k × 57,6k (+1,5 %) no mesmo simulador |
-| 1. Cálculos seguidos dão o mesmo kit | ⚠️ 3 cliques: 56,8k (2 magias em todos) → 58,4k → 58,4k (1 magia no Knight/Fei/Dru) |
+| 1. Cálculos seguidos dão o mesmo kit | ⚠️ 3 cliques: 56,8k (2 magias em todos) → 58,4k → 58,4k (1 magia no Knight/Fei/Dru) → **2.13.5: histerese do kit mostrado** |
 | 1. Suportes e curas do dono mantidos | ✅ Train/Protect/Enchant/Heal Party, curas com os % do dono, poção de mana Knight 30 % e Druida 20 % |
 | 1. Regeneração medida na aba | ✅ Cav 7,1 · Pal 8,1 · Fei 13,1 · Dru 17,1 (medida) |
 | 1. APLICAR 2× com 1 min: mesmo kit | ✅ "mantém (menos de 10 min desde o APLICAR)" |
@@ -25,14 +29,15 @@ Prints em `docs/prints-2.13.1/` (só local: o `.gitignore` não deixa `*.png` ir
 | 2. Scan A/B Vampire hell | ✅ **Inteligente passa**: xp +5,5 %, ouro estável −1,4k × −7,3k |
 | 2. Scan A/B Banshee | ✅ **Inteligente passa**: xp +8,6 %, ouro estável −2,7k × −8,8k |
 | 2. Volta ao mapa/lure/presets | ✅ Vampire hell lure 6, "kits de 4 personagem(ns) devolvidos" |
-| 3. Radar: Vampire hell e Banshee "medido" pelo melhor Scan | ✅ (agora o melhor é o Inteligente nos dois) · ⚠️ ouro/h do medido é o bruto com sorte |
-| **(2.13.3)** Radar ordem "⚡ 1 combo" | ✅ ver top 5 abaixo · ⚠️ estimado de Vampire hell dizia 2 combos; a aba Magia e o Scan dizem 1 |
+| 3. Radar: Vampire hell e Banshee "medido" pelo melhor Scan | ✅ (agora o melhor é o Inteligente nos dois) · ⚠️ ouro/h do medido era o bruto com sorte → **2.13.5: estável** |
+| **(2.13.3)** Radar ordem "⚡ 1 combo" | ✅ ver top 5 abaixo · ➖ o "2 combos" do Radar foi a mesma conta em outro momento (ver Defeitos 4) |
 | 3. Loot: recomeçar no mesmo mapa zera a sessão | ✅ 1 min ↔ 0:54 do jogo; líquido/h −15,7k ↔ −15,2k |
-| 3. Loot: F5 no meio não zera | ✅ início 19:07:55 mantido (290 → 306 s) · ⚠️ depois do F5 os itens mostram NPC 0 até rodar CALCULAR |
-| 3. **Drop raro em dobro** | ❌ spike sword registrada 2× (só 1 na mochila) — Loot "Últimos raros" e Dia |
+| 3. Loot: F5 no meio não zera | ✅ início 19:07:55 mantido (290 → 306 s) · ⚠️ depois do F5 os itens mostravam NPC 0 → **2.13.5: tabela guardada** |
+| 3. Drop raro em dobro | ✅ **não era defeito**: 2 spike swords de verdade (o jogo vende o loot sozinho; a mochila não prova nada) |
 | 3. Dia: sem "[object Object]", "caçando" ≈ real, XP ≈ personagem | ✅ 26 min; 27,9k × 28.073 de xp do personagem desde 18:44 |
-| 3. **Dia: caçada que já rodava com a página fechada** | ❌ as 3h32 antes de abrir a página (≈ 220k de xp) não entraram no dia |
-| **(2.13.2)** Alertas: item que só você anuncia | ➖ não exercitado: o Wild Honey tem 17 anúncios de outros (menor a 1). "2 itens conferidos — nenhum alerta novo" |
+| 3. **Dia: caçada que já rodava com a página fechada** | ❌ as 3h32 antes de abrir a página (≈ 220k de xp) não entraram no dia → **2.13.5: corrigido** |
+| **(2.13.2)** Alertas: item que só você anuncia | ➖ não exercitado (Wild Honey tem 17 anúncios de outros) · ❌ e a regra estava desligada: as suas ordens não eram lidas → **2.13.5: o CONFERIR lê** |
+| Mercado: "Meus anúncios" | ❌ 50 antes e depois do crowbar: o servidor manda em **páginas de 50** e o dono tem 55 → **2.13.5: lê todas** |
 | 3. Alertas durante o Scan | ✅ bloqueado: "radar: alertas não conferidos — Scan em andamento" |
 | **(2.13.2)** Dia: caçada que cruzou a meia-noite | ➖ não testável hoje |
 | 4. Auto Hunt "nunca vender" | ➖ pulado (decisão do dono, `nvEquip: false`) |
@@ -86,46 +91,59 @@ Djinns Marid 51,6k/−9,7k · Orc Fortress 45,7k/−7,2k · Coryms Lair 40,1k/�
 Mutated Humans 36,9k/+6,8k (todos 1 combo, risco baixo). Vampire hell aparecia "2 combos", 52,4k.
 Pela ordem de xp, o 1º é Yalahar Worker Golem (69,4k, 5 combos, estimado).
 
-## Defeitos
-### ❌ 1. Drop raro registrado em dobro (Radar → Loot e Dia)
+## Defeitos (e o que a 2.13.5 fez)
+### ✅ 1. "Drop raro em dobro" — NÃO era defeito
 ```
-18:57:40 radar: drop raro — spike sword ×1 (1.000 de ouro no NPC) em Vampire hell     ← durante o Scan (Inteligente)
-18:58:31 Scan: Vampire hell [Inteligente] — … raros: spike sword ×1 …
-18:58:34 Scan: de volta a Vampire hell (lure 6), como antes do Scan
-18:58:50 radar: drop raro — spike sword ×1 (1.000 de ouro no NPC) em Vampire hell     ← 16 s depois do recomeço
+18:57:40 radar: drop raro — spike sword ×1 em Vampire hell     ← durante o Scan (Inteligente)
+18:58:34 Scan: de volta a Vampire hell (lure 6)
+18:58:50 radar: drop raro — spike sword ×1 em Vampire hell     ← 16 s depois do recomeço
+18:59:25 sessão fechada: Vampire hell · +25052 ouro/h · 68289 exp/h   ← sessão de 51 s: a espada de 1.000 explica o +25k/h
 ```
-Na mochila há **uma** spike sword (`mochilaEquip()`; nada foi vendido entre 18:48 e o fim). O Dia mostra
-"raros: spike sword ×1, spike sword ×1" (print `dia-raros-duplicados.png`), e as entradas de 24 h do Loot também vêm em
-pares (spike sword ×2, blood preservation ×2), então acontece sempre que se recomeça no mesmo mapa.
-A trava `huntId|nome|contagem do analisador` (`radarObservar`, ~linha 10266) não segurou: a contagem do item no
-analisador mudou entre os dois frames. Provável: no recomeço do mesmo mapa o 1º frame (elapsedMs < 5 s → base zerada)
-ainda traz os drops da caçada anterior. Correção sugerida: chave sem a contagem (`huntId|nome|t0 da caçada` + janela de
-tempo), ou não contar drops no frame que zerou a base.
+A prova pela mochila estava errada: o jogo **vende o loot sozinho** (`frame.state.autoSellInMs`), e a espada de
+antes (`iid` muq2fsg5…) já tinha sumido quando outra (muq3i89h…) caiu. No reteste, gravando os frames de 19:17 a
+19:31, o resumo do servidor deu `"spike sword": 2` nessa caçada e o Radar registrou exatamente 2 (19:27:34 e
+19:31:14). A spike sword cai ~8×/h em Vampire hell com lure 6 — é "rara" pela regra (chance < 1 % e ≥ 5× o loot por
+abate).
 
-### ❌ 2. Dia perde a caçada que já rodava com a página fechada
-A party caçava em Vampire hell havia 3h32 (≈ 63k xp/h) quando a página abriu às 18:44; o dono encerrou às 18:48.
-O Dia contou só os 4 min vistos pelos frames ("caçando 5min", 5,8k de xp). Causa: sem base guardada (> 12 h), o 1º
-frame vira base com delta 0; no `ended` a base é recente (< 90 s) e `tpDeltaResumo` devolve `null`, então o resumo da
-caçada não soma o que veio antes da página. Correção sugerida: quando o 1º frame de uma caçada chega sem base e com
-`elapsedMs` grande, lançar esse trecho como "offline" (como já é feito com a caçada fechada fora da página).
+### ❌→✅ 2. Dia perdia a caçada que já rodava com a página fechada
+O 1º frame sem base virava base com delta 0, e no `ended` a base era recente (< 90 s): `tpDeltaResumo` devolvia
+`null`. **2.13.5:** `tpTrechoAntes` lança como "offline" o que o analisador já tinha no 1º frame de uma caçada que a
+página não viu começar (mesma caçada = mesma hora de início ±5 min, ou base de < 2 min no mesmo mapa). Teste no
+`vm`: página aberta numa caçada de 3h32 → o dia fica com o xp da caçada inteira, e o fim com a página aberta não soma
+de novo.
 
-### ⚠️ 3. Inteligente: cálculos seguidos dão kits diferentes
+### ⚠️→✅ 3. Inteligente: cálculos seguidos davam kits diferentes
 ```
 18:47:14 Inteligente: Vampire hell — 4064 triagens + 165 parties em 125 ms (NOVO)   → 56,8k, 2 magias em todos
 18:47:16 Inteligente: Vampire hell — 3956 triagens + 165 parties em 134 ms (NOVO)   → 58,4k, Knight/Fei/Dru com 1 magia
-18:47:17 Inteligente: Vampire hell — 3956 triagens + 165 parties em 133 ms (NOVO)   → 58,4k (igual)
 ```
-A escolha global de `buscarParty` olha `ctx.memo`, que acumula parties de cliques anteriores; a busca parte do vigente.
-O resultado depende do caminho e converge depois de 2 cliques. Todos ficaram dentro de −3 % do Em área, então não
-reprova, mas o dono pode ver kits diferentes ao clicar de novo.
+Causa (reproduzida no node): as medidas ao vivo mexem um pouco a cada frame e a busca cai em kits **empatados** (xp
+e lucro iguais; espera 9,8 s com regen do Knight 7 ou 7,5 só troca a ordem Energy Wave/Fire Wave). **2.13.5:** o kit
+mostrado tem histerese — o novo só tira o anterior com > 1 % de xp ou lucro claramente maior ("mantém o kit
+calculado antes"). Na mesma correção: os suportes do dono não entravam no carimbo da conta (trocar o suporte no jogo
+não invalidava o kit mostrado) — agora entram, e o kit guardado volta sempre com os suportes do dono de agora.
 
-### ⚠️ 4. Menores
-- Radar: o ouro/h de mapa **medido** é o bruto do Scan, com sorte (Vampire hell +18,8k; o estável foi −1,4k).
-- Radar estimado × Magia: Vampire hell "2 combos" no Radar estimado e "1 combo" (1,1 s) na aba Magia; o Scan mediu
-  1,3 s (1 combo). Os dois motores calculam T de jeitos diferentes.
-- Loot depois do F5: "sem a tabela de loot deste mapa" — os itens ficam com NPC 0 até rodar CALCULAR em Mapas.
-- Mercado: "Meus anúncios" mostrou 50 antes e 50 depois do anúncio do crowbar (o crowbar aparece na lista).
-- APLICAR NOS 4 aplica no 1º toque (meu 2º toque aplicou de novo o mesmo kit).
+### ✅ 4. Radar "2 combos" × Magia "1 combo" — mesma conta, momentos diferentes
+O motor Inteligente do Radar chama o mesmo `partyInt` da aba Magia. No mesmo instante os dois batem (19:33: T 0,25 ×
+0,3 s, xp 63.220 × 63.220). As 3 leituras de hoje foram em estados diferentes da party: caçando (1,1 s), na cidade
+(1,7 s) e durante o Scan do Em área (≥ 2 s). Fica a observação: o T previsto oscila com a calibração ao vivo, mas o
+mapa medido usa o T do Scan (1,3 s).
+
+### ❌→✅ 5. Menores
+- Radar, mapa medido: o ouro/h era o bruto com sorte (+18,8k; estável −1,4k). **2.13.5:** estável; a sorte vai para
+  o detalhe.
+- Loot depois do F5 com NPC 0: a tabela de Vampire hell veio pelo Scan e nunca foi para a gaveta comum (69 de 70
+  guardadas). **2.13.5:** toda tabela baixada é guardada.
+- APLICAR em dobro: **não era defeito** — o bloqueio (`_aplicando`) funciona; o meu 2º toque chegou depois de a 1ª
+  aplicação terminar (< 1 s).
+
+### ❌→✅ 6. Achados no reteste
+- **Mercado — suas ordens em páginas de 50**: `market_my_orders` responde `{orders, page}`; o dono tem **55**
+  abertas (página 0: 50, da mais nova; página 1: 5, entre elas o refine fragment t1). O helper lia só a página 0:
+  "Meus anúncios" e o REVISAR não viam as 5 mais antigas. **2.13.5:** lê até a página vir incompleta.
+- **Alertas sem as suas ordens**: a regra "o menor anúncio é o seu" (2.13.2) usa `MK.minhas`, que só a aba Mercado
+  preenchia — no teste estava `null`, então a regra estava desligada. **2.13.5:** o CONFERIR lê as suas ordens (só
+  leitura, todas as páginas) quando não lidas ou com > 30 min.
 
 ## O que mudou na conta
 - Presets: aplicados Em área/Inteligente pelo Scan e o Inteligente pelo APLICAR; **devolvidos** à foto do começo
@@ -134,8 +152,10 @@ reprova, mas o dono pode ver kits diferentes ao clicar de novo.
 - Caçada: 2 Scans (Vampire hell e Banshee, ~18 min), uma parada às 19:14 para anunciar; party de volta em Vampire hell
   lure 6 às 19:17.
 - Mercado: 1 anúncio novo (crowbar incomum a 1.443, taxa 72). Nada mais anunciado nem cancelado.
+- Reteste (19:17–19:31): uma parada e um recomeço em Vampire hell (~15 s) para gravar os frames; leituras de
+  `market_my_orders` (páginas 0 e 1). Party de volta em Vampire hell lure 6 com os presets do começo.
 - Auto Hunt continuou ligado como estava (hunt 155, 50 % livre); não disparou.
 
 ## Próximo
-O Inteligente passou no Scan A/B — seguir com o combinado: calcular ao escolher o mapa, calibrar caçando (sem Scan) e
-mostrar o kit no ranking do Radar. Antes, corrigir os defeitos 1 e 2 (Radar) e firmar o kit da busca (3).
+O Inteligente passou no Scan A/B e os achados foram corrigidos na 2.13.5 (243 testes, ESLint 0 erros). Seguir com
+o combinado: calcular ao escolher o mapa, calibrar caçando (sem Scan) e mostrar o kit no ranking do Radar.

@@ -20,18 +20,19 @@ const M = new Function('SPELLS', 'POTIONS', 'BOSSES', `
                   precos: { 'avalanche rune': 32, 'great fireball rune': 32, 'thunderstorm rune': 32, 'stone shower rune': 32, 'sudden death rune': 162 } };
     const LOOT_CACHE = {}; const ESTADO_WS = { huntId: null, frame: null, party: [], roster: [], sk: {} };
     const RAZAO = { magias: {}, vitais: {}, ondas: { n: 0 }, tomado: { total: 0, corpo: 0 } };
-    const E = { nivel: 67, voc: 'SORCERER', pot: { DRUID: true }, scan: {} };
+    const E = { nivel: 67, voc: 'SORCERER', pot: { DRUID: true }, scan: {}, dono: null };
     const nivelAtual = () => E.nivel, vocacaoAtual = () => E.voc;
     const manaPotionLigada = (v) => !!E.pot[v], partyEmRegen = () => false;
     const scanResultados = () => E.scan, rosterEquip = () => null, huntAtual = () => null, buscarJSON = async () => { throw new Error('offline'); };
     const aprenderDanosPorRest = async () => ({ ok: true, n: 0 });
+    const configAtiva = (v) => E.dono ? E.dono[v] || null : null;
     const setTimeout = () => 0, clearTimeout = () => {};
     ${trecho('/* @@MODELOS-INICIO */', '/* @@MODELOS-FIM */')}
     ${trecho('/* @@MAGIA-INICIO', '/* @@MAGIA-FIM */')}
     CAT.bosses = normalizarBosses(BOSSES);
     return { calibracaoStatusInt, calibracaoHtmlInt, montarPlano, partyInt, contextoInt, simularParty, decidirTroca, preverModeloInt, registrarAplicacaoInt, zerarInt, avaliarPartyInt, ordenarInt, okInt,
              slotMorto, lureMax, magiasDaVocacao, invalidarPlanos, suportesPermitidos, membroInt, danoBaseInt, alvosForma, barraValida, escSig,
-             FRACAO_FORMA, N_MAX_SIM, N_MAX_PARTY, _intParty, CAT, MEM, RAZAO, ESTADO_WS, E, LOOT_CACHE, BESTIARIO };
+             FRACAO_FORMA, N_MAX_SIM, N_MAX_PARTY, _intParty, _intMostrado, CAT, MEM, RAZAO, ESTADO_WS, E, LOOT_CACHE, BESTIARIO };
 `)(SPELLS, POTIONS, BOSSES);
 
 let n = 0;
@@ -52,7 +53,7 @@ function semear(L) {
     zerar();
 }
 function zerar() {
-    M.invalidarPlanos(); M._intParty.clear();
+    M.invalidarPlanos(); M._intParty.clear(); M._intMostrado.clear();
     for (const k of ['kit_int', 'int_aplicado', 'escada', 'int_modo']) delete M.MEM[k];
     M.ESTADO_WS.huntId = null; for (const k of Object.keys(M.RAZAO.vitais)) delete M.RAZAO.vitais[k];
     M.RAZAO.tomado = { total: 0, corpo: 0 }; M.E.scan = {};
@@ -62,7 +63,7 @@ Object.assign(M.BESTIARIO, le('testes/fixtures/bestiario.json').criaturas); // a
 const H = (id) => { const h = HUNTS.find(x => x.id === id); assert(h, 'hunt ' + id); return h; };
 const VH = 50, BANSHEE = 187, DL = 46;
 const RITMO_VH = { id: VH, razao: { ondas: { n: 20, matar: 4.019, timer: 9.524 } } }; // medido ao vivo (TIBIDLE.md 2.11.12)
-const buscar = (id, opc) => { M.invalidarPlanos(); M._intParty.clear(); const r = M.partyInt(H(id), true, opc); assert(r, 'sem resultado'); return r; };
+const buscar = (id, opc) => { M.invalidarPlanos(); M._intParty.clear(); M._intMostrado.clear(); const r = M.partyInt(H(id), true, opc); assert(r, 'sem resultado'); return r; };
 const kit = (esc) => esc ? esc.plano.map(p => p.av.m.name + '≥' + p.minimo).join(' > ') + (esc.pocao ? ' +poção' : '') + ((esc.sups || []).length ? ' +' + esc.sups.join('+') : '') : '—';
 const nomes = (esc) => esc.plano.map(p => p.av.m.name);
 /* ligar a medição do livro-razão neste mapa */
@@ -123,6 +124,50 @@ t('2.13.4 — cura cobra o tempo vivo: kit que mata mais devagar deixa mais mons
     assert(fraco.met.curaH > forte.met.curaH && forte.met.curaH > 0, `cura ${fraco.met.curaH} × ${forte.met.curaH}`);
     ctx.curaPorVivo = 0; ctx.memo.clear();
     assert.strictEqual(M.avaliarPartyInt(ctx, r.final.esc, null).met.curaH, 0, 'sem Scan não cobra');
+});
+t('2.13.5 — medidas que mexem pouco não trocam o kit mostrado: troca só com ganho real (> 1 % de xp ou lucro claramente maior)', () => {
+    /* ao vivo (01/10, Vampire hell): 3 cliques em 3 s deram 56,8k → 58,4k → 58,4k com kits diferentes; no node, espera 9,5–10,2 s
+     * e regen do Knight 7–7,5 alternam kits com xp e lucro IGUAIS (só a ordem Energy Wave/Fire Wave do Feiticeiro) */
+    zerar();
+    const h = H(VH), trocas = [], regenAntes = M.MEM.regen_KNIGHT;
+    try {
+        let ant = null;
+        for (const [E, reg] of [[9.5, 7], [9.5, 7.5], [9.8, 7], [9.8, 7.5], [10, 7], [10, 7.5], [10.2, 7], [10.2, 7.5], [9.8, 7]]) {
+            M.E.scan = { vh: { id: VH, razao: { ondas: { n: 20, matar: 1.3, timer: E } } } };
+            M.MEM.regen_KNIGHT = { n: 60, v: reg };
+            M.invalidarPlanos(); // como a tela: o cache do contexto (1,5 s) vence, a memória do kit mostrado fica
+            const r = M.partyInt(h, true);
+            if (ant && r.final.sig !== ant.sig) {
+                const x = r.final.met, a = M.avaliarPartyInt(r.ctx, ant.esc, null).met;
+                const ganhoXp = x.xpH / a.xpH - 1, ganhoLucro = x.lucroH - a.lucroH;
+                if (!(ganhoXp > 0.01 || (ganhoXp > -0.005 && ganhoLucro > Math.max(1000, 0.03 * Math.abs(a.lucroH))))) trocas.push(`E=${E} reg=${reg}: xp ${(ganhoXp * 100).toFixed(2)} %, lucro ${Math.round(ganhoLucro)}`);
+            }
+            ant = r.final;
+        }
+        assert.deepStrictEqual(trocas, [], 'trocou de kit sem ganho');
+        /* "replanejar do zero" esquece o kit mostrado */
+        M.zerarInt(h);
+        assert.strictEqual(M._intMostrado.size, 0);
+    } finally {
+        if (regenAntes === undefined) delete M.MEM.regen_KNIGHT; else M.MEM.regen_KNIGHT = regenAntes;
+        zerar();
+    }
+});
+t('2.13.5 — o kit mostrado volta com os suportes do dono de AGORA (ele trocou depois do 1º cálculo)', () => {
+    zerar();
+    try {
+        const h = H(VH);
+        M.partyInt(h, true); // sem perfil do dono: a busca escolhe os suportes
+        M.E.dono = { KNIGHT: { supports: ['Train Party', null] }, PALADIN: { supports: ['Protect Party', null] }, SORCERER: { supports: ['Enchant Party', null] }, DRUID: { supports: ['Heal Party', null] } };
+        M.invalidarPlanos();
+        const r = M.partyInt(h, true);
+        for (const v of VOCS) if (r.final.esc[v]) assert.deepStrictEqual(r.final.esc[v].sups, M.E.dono[v].supports.filter(Boolean), v + ': ' + kit(r.final.esc[v]) + ' (' + r.decisao.acao + ')');
+        /* o dono TIRA o Train Party do Knight: o kit guardado (com ele) não pode voltar com o suporte que saiu */
+        M.E.dono = Object.assign({}, M.E.dono, { KNIGHT: { supports: [null, null] } });
+        M.invalidarPlanos();
+        const r3 = M.partyInt(h, true);
+        assert.deepStrictEqual(r3.final.esc.KNIGHT.sups, [], 'Knight voltou com ' + JSON.stringify(r3.final.esc.KNIGHT.sups) + ' (' + r3.decisao.acao + ')');
+    } finally { M.E.dono = null; zerar(); }
 });
 t('2 — determinismo: 10 chamadas seguidas dão o mesmo resultado', () => {
     zerar(); M.E.scan = { vh: RITMO_VH };

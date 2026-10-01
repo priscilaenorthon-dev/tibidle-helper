@@ -451,6 +451,23 @@ t('vm: ATUALIZAR só LÊ (catálogo, ordens, caixa, média) e monta a lista com 
     assert(!M.W.errosTimer.length, 'timer estourou: ' + M.W.errosTimer.join(' | '));
 });
 
+t('vm (2.13.5): "suas ordens" vêm em páginas de 50 — o ATUALIZAR lê todas (01/10: 55 abertas, o helper via 50)', async () => {
+    const minhas = Array.from({ length: 55 }, (_, i) => ({ id: 'o' + i, side: 'SELL', asset: 'ITEM', itemName: i === 54 ? 'refine fragment t1' : 'item ' + i, unitPrice: 100 + i,
+        quantityTotal: 1, quantityRemaining: 1, escrowGold: 0, creationFeePaid: 5, status: 'OPEN', expiresAt: 1790000000000 + i }));
+    const M = await mundoMercado({ bag: { 'small ruby': 3 }, catalogo: CAT_BASE, minhas,
+        interceptar: (o) => {
+            if (o.type !== 'market_my_orders') return undefined;
+            const p = Number(o.data && o.data.page) || 0;
+            return { type: 'market_my_orders_result', data: { orders: minhas.slice(p * 50, p * 50 + 50), page: p } };
+        } });
+    await M.atualizar();
+    const pedidos = M.S.tipos('market_my_orders').map(x => Number(x.o.data && x.o.data.page) || 0);
+    igual(pedidos, [0, 1]);
+    assert.strictEqual(M.W.H.MERCADO.minhas.length, 55, 'ordens lidas: ' + M.W.H.MERCADO.minhas.length);
+    assert(M.W.H.MERCADO.minhas.some(x => x.itemName === 'refine fragment t1'), 'a ordem da página 2 ficou de fora');
+    assert(/id="tb-mk-sub-meus"[^>]*>Meus anúncios <b>55<\/b>/.test(M.W.porId.get('tb-corpo').innerHTML), 'contador de Meus anúncios');
+    assert.strictEqual(M.S.tipos(...ESCRITA).length, 0);
+});
 t('vm: nada é enviado sem o 2º toque (e o 1º toque expira em 4 s)', async () => {
     const M = await mundoMercado({ bag: { 'small ruby': 3 }, catalogo: CAT_BASE });
     await M.atualizar();

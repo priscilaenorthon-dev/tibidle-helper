@@ -12,7 +12,7 @@ const SRC = fs.readFileSync(path.join(raiz, 'tibidle-helper.user.js'), 'utf8');
 const le = (p) => JSON.parse(fs.readFileSync(path.join(raiz, p), 'utf8'));
 const trecho = (a, b) => { const i = SRC.indexOf(a), f = SRC.indexOf(b); assert(i > 0 && f > i, 'marcador ausente: ' + a); return SRC.slice(i, f); };
 const P = new Function(`${trecho('/* @@TELAS-API-INICIO', '/* @@TELAS-API-FIM */')}
-    return { tpHpXpMedio, tpLootAbate, tpValorItem, tpCalibrar, tpRisco, tpEstimar, tpNotaParty, tpOrdenar, tpDeltaAnalisador, tpRaro,
+    return { tpHpXpMedio, tpLootAbate, tpValorItem, tpCalibrar, tpRisco, tpEstimar, tpNotaParty, tpOrdenar, tpDeltaAnalisador, tpTrechoAntes, tpRaro,
              tpAvaliarAlerta, tpAlertaDevido, tpCombos, tpDiaChave, tpAcumularDia, tpPodarDias, tpResumoDia, tpCompararDias, tpTextoRelatorio, tpDeltaResumo, tpTituloResumo, tpAbatesResumo,
              TP_FATOR_LOOT_PADRAO, TP_DIAS_MAX };`)();
 const MKP = new Function(`${trecho('/* @@MERCADO-INICIO', '/* @@MERCADO-PURO-FIM */')}\n return { mkTaxa };`)();
@@ -122,6 +122,16 @@ t('tpEstimar: Scan limpo manda (fonte medido, estimativa ao lado); sujo ou de ou
     assert.strictEqual(P.tpEstimar(entBase({ medido: Object.assign({}, m, { suja: true }) })).fonte, 'estimado');
     assert.strictEqual(P.tpEstimar(entBase({ medido: Object.assign({}, m, { nivel: 50 }) })).fonte, 'estimado');
 });
+t('tpEstimar (2.13.5): ouro/h do medido é o ESTÁVEL do Scan (sem sorte); a sorte fica ao lado; Scan antigo sem estável usa o bruto', () => {
+    /* Vampire hell, Inteligente, 01/10: bruto +18.819/h por black pearl + spike sword + demonic skeletal hand; estável −1.445/h */
+    const m = { abatesH: 1967, xpH: 70271, xpRawH: 65086, lootH: 31336, supH: 12517, ouroH: 18819, estavelH: -1445, sorteH: 20265, nivel: 62, t: 1 };
+    const r = P.tpEstimar(entBase({ medido: m }));
+    assert.strictEqual(r.ouroH, -1445, 'ouro/h com sorte: ' + r.ouroH);
+    assert.strictEqual(r.lootH, -1445 + 12517, 'loot/h sem a sorte');
+    assert.strictEqual(r.sorteH, 20265);
+    const velho = P.tpEstimar(entBase({ medido: Object.assign({}, m, { estavelH: undefined, sorteH: undefined }) }));
+    assert.strictEqual(velho.ouroH, 18819, 'Scan sem estável');
+});
 t('tpEstimar: motor null dá "sem dano"; motor v3 falso com abH e custoH é usado sem a fórmula', () => {
     const r = P.tpEstimar(entBase({ motor: null }));
     assert.strictEqual(r.xpH, null); assert.strictEqual(r.ouroH, null); assert(r.notas.some(x => /sem dano/.test(x)));
@@ -179,6 +189,24 @@ t('tpDeltaAnalisador: hunt_started no mesmo mapa — analisador que não zerou v
     assert.strictEqual(r.delta.xp, 0, 'não pode contar a caçada antiga');
     const r2 = P.tpDeltaAnalisador({ huntId: 34, an: null, novo: true }, { elapsedMs: 1000, xp: 100, kills: 3, lootGold: 50 }, 34);
     assert.strictEqual(r2.delta.xp, 100, 'caçada nova conta desde o zero');
+});
+t('tpTrechoAntes (2.13.5): página aberta no meio da caçada — o que o analisador já tinha entra; mesma caçada, recomeço e começo não', () => {
+    const agora = 1790891000000;
+    const an = { elapsedMs: 12720000, xp: 220000, xpRaw: 200000, kills: 6600, lootGold: 52000, suppliesGold: 40000, drops: { 'spike sword': 3 } };
+    /* sem base nenhuma (a página abriu às 18:44 numa caçada de 3h32) */
+    assert.deepStrictEqual(P.tpTrechoAntes(null, an, 50, agora), { seg: 12720, xp: 220000, xpRaw: 200000, kills: 6600, loot: 52000, sup: 40000, drops: { 'spike sword': 3 } });
+    /* hunt_started visto: caçada nova (o 1º frame com > 5 s é o analisador antigo que não zerou) — nada */
+    assert.strictEqual(P.tpTrechoAntes({ huntId: 50, an: null, novo: true }, an, 50, agora), null, 'recomeço no mesmo mapa');
+    /* F5 no meio: a base guardada é desta caçada (mesmo início, ±5 min) — os frames dão o delta, nada à parte */
+    const mesma = { huntId: 50, t: agora - 600000, an: { elapsedMs: an.elapsedMs - 600000, xp: 200000, xpRaw: 180000, kills: 6000, loot: 47000, sup: 36000, drops: {} } };
+    assert.strictEqual(P.tpTrechoAntes(mesma, an, 50, agora), null, 'F5 no meio da mesma caçada');
+    /* base de OUTRA caçada no mesmo mapa (começou 5 h antes): o analisador inteiro é trecho não visto */
+    const outra = { huntId: 50, t: agora - 5 * 3600000, an: { elapsedMs: 3600000, xp: 60000, xpRaw: 50000, kills: 1800, loot: 9000, sup: 7000, drops: {} } };
+    assert.strictEqual(P.tpTrechoAntes(outra, an, 50, agora).xp, 220000, 'base velha de outra caçada');
+    /* base de outro mapa (a caçada trocou com a página fechada) */
+    assert.strictEqual(P.tpTrechoAntes({ huntId: 34, t: agora - 1000, an: mesma.an }, an, 50, agora).kills, 6600, 'outro mapa');
+    /* começo de caçada (< 1 min): é só a base */
+    assert.strictEqual(P.tpTrechoAntes(null, Object.assign({}, an, { elapsedMs: 40000 }), 50, agora), null, 'menos de 1 min');
 });
 t('tpRaro: item de chance baixa mas barato não é raro', () => {
     assert.strictEqual(P.tpRaro({ chance: 500 }, 15, 20), false, 'corncob');
@@ -531,7 +559,8 @@ const responderMercado = (W, reg) => {
     W.FakeWS.responder = (ws, o) => {
         reg.push({ t: W.agora, tipo: o.type });
         const d = o.type === 'market_catalog' ? { type: 'market_catalog_result', data: { items: [{ name: 'dragon ham', sellOrders: 3, minSell: 130, maxBuy: 0, trades30d: 9 }, { name: 'mana potion', sellOrders: 9, minSell: 40, trades30d: 90 }, { name: ITEM_MAL, sellOrders: 1, minSell: 5, trades30d: 1 }] } }
-            : o.type === 'market_stats' ? { type: 'market_stats_result', data: { itemName: o.data.itemName, stats: { avg: 100, min: 90, max: 140, samples: 20 } } } : null;
+            : o.type === 'market_stats' ? { type: 'market_stats_result', data: { itemName: o.data.itemName, stats: { avg: 100, min: 90, max: 140, samples: 20 } } }
+            : o.type === 'market_my_orders' ? { type: 'market_my_orders_result', data: { orders: [], page: 0 } } : null;
         if (d) W.setTimeout_(() => ws.emitir(d), 150);
     };
 };
@@ -551,7 +580,9 @@ t('Radar/Alertas: vigiar LIGADO — 1 leitura a cada ≥ 15 min (mesmo com min 5
     const ws = await conectar(W);
     await W.avancar(2 * 3600000);
     const tipos = new Set(enviados(ws).map(o => o.type));
-    assert([...tipos].every(x => x === 'market_catalog' || x === 'market_stats'), 'tipos: ' + [...tipos]);
+    assert([...tipos].every(x => x === 'market_catalog' || x === 'market_stats' || x === 'market_my_orders'), 'tipos: ' + [...tipos]); // 2.13.5: suas ordens (leitura) para a regra "o menor é o seu"
+    const ordens = enviados(ws).filter(o => o.type === 'market_my_orders').length;
+    assert(ordens >= 1 && ordens <= 5, 'suas ordens lidas ' + ordens + '× em 2 h (vale 30 min)');
     const cats = reg.filter(x => x.tipo === 'market_catalog').map(x => x.t);
     assert(cats.length >= 6 && cats.length <= 8, cats.length + ' leituras em 2 h');
     for (let i = 1; i < cats.length; i++) assert(cats[i] - cats[i - 1] >= 15 * 60000, 'intervalo de ' + (cats[i] - cats[i - 1]) / 60000 + ' min');
@@ -561,6 +592,34 @@ t('Radar/Alertas: vigiar LIGADO — 1 leitura a cada ≥ 15 min (mesmo com min 5
     assert.strictEqual((L.match(/mana potion: barato: 40/g) || []).length, 1, L);
     assert.strictEqual(W.H.RADAR.alertas.naoVistos, 0, 'aba Alertas aberta: o contador zera');
     semXss(W.html(), 'Alertas');
+});
+t('Radar/Alertas (2.13.5): o CONFERIR lê as SUAS ordens (todas as páginas) — sem abrir o Mercado, o anúncio mais barato sendo o seu não vira "vale anunciar"', async () => {
+    /* 01/10: MK.minhas estava null (Mercado não lido na sessão) e a regra da 2.13.2 ficava desligada */
+    const W = criarMundo({ ls: comAba('alertas', ALERTAS(false)) });
+    await W.avancar(0);
+    const reg = []; responderMercado(W, reg);
+    const resp0 = W.FakeWS.responder;
+    const minhas = Array.from({ length: 50 }, (_, i) => ({ id: 'm' + i, side: 'SELL', asset: 'ITEM', itemName: 'item ' + i, unitPrice: 10, quantityRemaining: 1, status: 'OPEN' }));
+    W.FakeWS.responder = (ws, o) => {
+        if (o.type === 'market_catalog') { // só você vende dragon ham (1 ordem, a sua, a 130)
+            reg.push({ t: W.agora, tipo: o.type });
+            return W.setTimeout_(() => ws.emitir({ type: 'market_catalog_result', data: { items: [{ name: 'dragon ham', sellOrders: 1, minSell: 130, maxBuy: 0, trades30d: 9 }] } }), 150);
+        }
+        if (o.type !== 'market_my_orders') return resp0(ws, o);
+        reg.push({ t: W.agora, tipo: o.type, page: (o.data && o.data.page) || 0 });
+        const p = (o.data && o.data.page) || 0;
+        const orders = p === 0 ? minhas : [{ id: 'eu', side: 'SELL', asset: 'ITEM', itemName: 'dragon ham', unitPrice: 130, quantityRemaining: 1, status: 'OPEN' }];
+        W.setTimeout_(() => ws.emitir({ type: 'market_my_orders_result', data: { orders, page: p } }), 150);
+    };
+    await conectar(W);
+    W.el('rd-al-conferir').click();
+    await W.avancar(120000);
+    assert.deepStrictEqual(reg.filter(x => x.tipo === 'market_my_orders').map(x => x.page), [0, 1], 'não leu as suas ordens (as 2 páginas)');
+    assert(!/vale anunciar/.test(logTxt(W)), 'alertou o seu próprio anúncio: ' + logTxt(W));
+    /* lidas há pouco: o 2º CONFERIR não lê de novo */
+    W.el('rd-al-conferir').click();
+    await W.avancar(120000);
+    assert.strictEqual(reg.filter(x => x.tipo === 'market_my_orders').length, 2, 'releu as ordens sem precisar');
 });
 t('Radar/Alertas: sem Premium o CONFERIR não lê nada e diz por quê', async () => {
     const W = criarMundo({ ls: comAba('alertas', ALERTAS(false)) });
@@ -640,6 +699,29 @@ t('Radar/Loot e Dia (2.13.1): recomeçar no mesmo mapa zera a sessão; resumo co
     await W.avancar(2000);
     assert.strictEqual(W.H.RADAR.lv.sessao.loot, 90, 'resume zerou a sessão: ' + W.H.RADAR.lv.sessao.loot);
 });
+t('Radar/Loot (2.13.5): tabela de loot baixada pelo Scan/Magia também vai para a gaveta comum — depois do F5 o Loot tem valor e raro', async () => {
+    /* 01/10: 69 de 70 tabelas guardadas, faltava justo Vampire hell (veio pelo Scan, que só guardava em memória) */
+    const W = criarMundo({ ls: comAba('loot') });
+    await W.avancar(0);
+    await conectar(W);
+    await W.avancar(1000);
+    const tab = await W.H.lootTabela(34);
+    assert(Array.isArray(tab) && tab.length, 'lootTabela não baixou');
+    assert(W.store.has('tb_helper_comum_loot_tab_orc_fortress'), 'a tabela do Scan não foi guardada');
+    /* F5: a sessão de Orc Fortress volta e o Loot acha a tabela sem rede */
+    const ws = await conectar(W);
+    ws.emitir({ type: 'hunt_started', data: { huntId: 34, state: { party: party4() } } });
+    ws.emitir(frame({ elapsedMs: 1000, xp: 10, xpRaw: 10, killsTotal: 1, lootGold: 5, drops: {} }));
+    ws.emitir(frame({ elapsedMs: 2000, xp: 20, xpRaw: 20, killsTotal: 2, lootGold: 2005, drops: { 'broken helmet': 1 } }));
+    await W.avancar(61000);
+    ws.emitir(frame({ elapsedMs: 63000, xp: 30, xpRaw: 30, killsTotal: 3, lootGold: 2010, drops: { 'broken helmet': 1 } })); // grava a sessão (1×/min)
+    await W.avancar(1000);
+    const W2 = criarMundo({ ls: Object.fromEntries(W.store) });
+    await W2.avancar(1000);
+    const h2 = W2.html();
+    assert(!/sem a tabela de loot deste mapa/.test(h2), 'depois do F5 o Loot ficou sem a tabela');
+    assert(/broken helmet/.test(h2), 'o drop da sessão sumiu: ' + h2.slice(0, 300));
+});
 t('Radar/Dia: caçada fechada com a página fechada entra pelo resumo (offline); a mesma caçada não conta duas vezes', async () => {
     const W = criarMundo({ ls: comAba('dia') });
     await W.avancar(0);
@@ -648,6 +730,36 @@ t('Radar/Dia: caçada fechada com a página fechada entra pelo resumo (offline);
     await W.avancar(0);
     const d = W.H.RADAR.dias[hojeDe(W)];
     assert.deepStrictEqual([Math.round(d.xp), d.loot, d.offline, d.mortes], [40000, 9000, 1, 0]);
+});
+t('Radar/Dia (2.13.5): página aberta no meio de uma caçada de 3h32 — o trecho anterior entra 1× (offline), e o fim com a página aberta não soma de novo', async () => {
+    const W = criarMundo({ ls: comAba('dia') });
+    await W.avancar(0);
+    const ws = await conectar(W);
+    /* 01/10 18:44: a party caçava desde as 15:12; a página abre (resume), nenhum hunt_started, nenhuma base guardada */
+    const el = 12720000;
+    ws.emitir({ type: 'resume', data: { huntId: 50, state: { party: party4() } } });
+    ws.emitir(frame({ elapsedMs: el, xp: 220000, xpRaw: 200000, killsTotal: 6600, lootGold: 52000, suppliesGold: 40000, drops: { 'gold coin': 9000 } }));
+    await W.avancar(1000);
+    ws.emitir(frame({ elapsedMs: el + 1000, xp: 220100, xpRaw: 200090, killsTotal: 6602, lootGold: 52030, suppliesGold: 40010, drops: { 'gold coin': 9030 } }));
+    await W.avancar(240000);
+    ws.emitir(frame({ elapsedMs: el + 241000, xp: 224000, xpRaw: 203600, killsTotal: 6730, lootGold: 52900, suppliesGold: 40800, drops: { 'gold coin': 9900 } }));
+    await W.avancar(1000);
+    /* 18:48: o dono encerra com a página aberta */
+    ws.emitir({ type: 'ended', data: { summary: { huntId: 50, title: 'Vampire hell', reason: 'stop', elapsedSec: (el + 242000) / 1000, xpPerHour: 224000 / ((el + 242000) / 3600000), lootGold: 52900, suppliesGold: 40800, killsTotal: 6730 } } });
+    await W.avancar(1000);
+    const d = W.H.RADAR.dias[hojeDe(W)];
+    assert(Math.abs(d.xp - 224000) < 50, 'xp do dia: ' + d.xp);
+    assert.strictEqual(d.loot, 52900, 'loot do dia: ' + d.loot);
+    assert.strictEqual(d.kills, 6730, 'abates do dia: ' + d.kills);
+    assert.strictEqual(d.offline, 1, 'o trecho de antes da página conta como 1 caçada fora da página');
+    /* F5 logo depois de abrir: a base guardada é a desta caçada — nada entra de novo */
+    const W2 = criarMundo({ ls: Object.fromEntries(W.store) });
+    await W2.avancar(0);
+    const ws2 = await conectar(W2);
+    ws2.emitir({ type: 'hunt_started', data: { huntId: 50, state: { party: party4() } } });
+    ws2.emitir(frame({ elapsedMs: 1000, xp: 100, xpRaw: 90, killsTotal: 2, lootGold: 20, drops: {} }));
+    await W2.avancar(1000);
+    assert.strictEqual(W2.H.RADAR.dias[hojeDe(W2)].offline, 1, 'caçada nova (hunt_started) não é trecho anterior');
 });
 
 rodar();
