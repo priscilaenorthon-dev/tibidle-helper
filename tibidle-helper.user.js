@@ -1886,8 +1886,8 @@
     function calibracaoHtmlInt(hunt) {
         const c = calibracaoStatusInt(hunt);
         if (c.pronto) return `<div class="tb-ok" style="margin:4px 0">✓ Inteligente calibrado neste mapa</div>`;
-        return `<div class="tb-cx tb-av" role="status" style="margin:4px 0"><b>⏳ CALIBRANDO o Inteligente neste mapa</b> — por enquanto ele usa estimativa e pode errar. ` +
-            `Para calibrar: aba <b>Scan</b> → marque só este mapa, modelo <b>Em área</b>, 5 min → Iniciar. Depois volte aqui e clique CALCULAR.` +
+        return `<div class="tb-cx tb-av" role="status" style="margin:4px 0"><b>⏳ CALIBRANDO o Inteligente neste mapa</b> — já pode usar: ele calcula com estimativa (erro típico de ±10 %) e nunca escolhe nada pior que o Em área na conta dele. ` +
+            `Para afinar (opcional, uma vez por mapa): aba <b>Scan</b> → só este mapa, modelo <b>Em área</b>, 5 min → Iniciar; depois CALCULAR de novo.` +
             c.itens.map(i => `<div class="${i.ok ? 'tb-ok' : 'tb-mut'}">${i.ok ? '✓' : '·'} ${escHtml(i.txt)}</div>`).join('') + `</div>`;
     }
     /* v2.13.1 — a regeneração de cada um na aba Magia (o roteiro 2.13 pedia e ela só
