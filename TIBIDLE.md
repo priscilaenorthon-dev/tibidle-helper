@@ -4343,3 +4343,7 @@ mapas (Vampire hell 32,5k × 58,0k do Em área; Banshee 27,7k × 49,6k) e ainda 
 - Teste novo em `inteligente.test.js` com o kit fraco da 2.13.0 guardado. Nas fixtures a busca já achava um kit bom
   mesmo partindo do fraco (o teste passa com e sem a correção) — o defeito ao vivo depende das medições da conta;
   conferir no item 1 do roteiro 2.13.1.
+- **Aviso "⏳ CALIBRANDO o Inteligente neste mapa"** na aba Magia (dono: "tenho que ficar 10 min no Em área e
+  depois trocar? bota um aviso"). Mostra o que falta e como fazer: regeneração de mana dos 4 (x/30, mede sozinha
+  caçando em qualquer mapa), Scan ≥ 2 min do mapa com Em área (calibra abates/h e gasto), loot medido (Scan com
+  ≥ 100 abates) e dano das magias no mapa. Com tudo medido: "✓ Inteligente calibrado neste mapa".

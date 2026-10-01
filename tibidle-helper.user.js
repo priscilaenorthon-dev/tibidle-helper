@@ -1860,6 +1860,36 @@
         const x = ler('regen_' + voc, null);
         return x && x.n >= 30 && x.v > 0 ? Math.round(x.v) : null;
     }
+    /* v2.13.2 — CALIBRANDO (dono, 01/10: "tenho que ficar no mapa 10 min usando Em área e depois trocar?
+     * Se for assim, bota um aviso"). O que o Inteligente precisa para sair do chute neste mapa:
+     *   1. regeneração de mana dos 4 (30 janelas de 3 s sem lançar; vale para todos os mapas);
+     *   2. um Scan ≥ 2 min neste mapa com um modelo comum (Em área…): calibra abates/h e o gasto;
+     *   3. loot medido: esse Scan com ≥ 100 abates;
+     *   4. dano por alvo das magias neste mapa (vem do mesmo Scan ou de caçar aqui).
+     * Sem isso ele funciona, mas com estimativa: o aviso diz o que falta e como fazer. */
+    function calibracaoStatusInt(hunt) {
+        const itens = [];
+        const ab = { KNIGHT: 'Cav', PALADIN: 'Pal', SORCERER: 'Fei', DRUID: 'Dru' };
+        const reg = VOCS_INT.map(v => { const x = ler('regen_' + v, null); return { v, n: x && x.n > 0 ? x.n : 0 }; });
+        const regOk = reg.every(x => x.n >= 30);
+        itens.push({ ok: regOk, txt: regOk ? 'regeneração de mana dos 4 medida' : 'regeneração de mana: ' + reg.map(x => `${ab[x.v]} ${Math.min(30, x.n)}/30`).join(' · ') + ' (mede sozinha caçando, em qualquer mapa)' });
+        let sc = null;
+        try { for (const r of Object.values(scanResultados())) if (r && r.id === hunt.id && r.abatesH > 0 && r.seg >= 120 && MODELOS[r.modelo] && r.modelo !== 'inteligente' && r.modelo !== 'boss' && (!sc || r.seg > sc.seg)) sc = r; } catch { }
+        itens.push({ ok: !!sc, txt: sc ? `Scan deste mapa com ${nomeModelo(sc.modelo)} (${Math.round(sc.seg / 60)} min)` : 'falta um Scan deste mapa com Em área (≥ 2 min; 5 min é o ideal)' });
+        const loot = lootMedidoInt(hunt) != null;
+        itens.push({ ok: loot, txt: loot ? 'loot por abate medido' : 'loot por abate: precisa de um Scan com ≥ 100 abates' });
+        let nMed = 0;
+        try { nMed = Object.values(indiceMedicoes(hunt)).filter(x => x.hits > 0).length; } catch { }
+        itens.push({ ok: nMed >= 3, txt: nMed ? `dano medido de ${nMed} magia(s) neste mapa` : 'dano das magias neste mapa: ainda não medido' });
+        return { pronto: itens.every(i => i.ok), itens };
+    }
+    function calibracaoHtmlInt(hunt) {
+        const c = calibracaoStatusInt(hunt);
+        if (c.pronto) return `<div class="tb-ok" style="margin:4px 0">✓ Inteligente calibrado neste mapa</div>`;
+        return `<div class="tb-cx tb-av" role="status" style="margin:4px 0"><b>⏳ CALIBRANDO o Inteligente neste mapa</b> — por enquanto ele usa estimativa e pode errar. ` +
+            `Para calibrar: aba <b>Scan</b> → marque só este mapa, modelo <b>Em área</b>, 5 min → Iniciar. Depois volte aqui e clique CALCULAR.` +
+            c.itens.map(i => `<div class="${i.ok ? 'tb-ok' : 'tb-mut'}">${i.ok ? '✓' : '·'} ${escHtml(i.txt)}</div>`).join('') + `</div>`;
+    }
     /* v2.13.1 — a regeneração de cada um na aba Magia (o roteiro 2.13 pedia e ela só
      * existia no localStorage): medida com ≥ 30 janelas, senão a da tabela */
     function regenTexto() {
@@ -6943,14 +6973,14 @@
             `<button type="button" class="tb-bt mini" id="tb-int-zerar" ${ocupado ? 'disabled' : ''} title="esquece o kit aplicado neste mapa e a trava de 10 min: a próxima conta parte do zero">replanejar do zero</button>` +
             `<label class="tb-l" style="margin-left:auto" title="ε = 0,5 %: fica com o de mais XP mesmo que custe bem mais ouro (o padrão, 3 %, prefere o mais barato entre os quase iguais)"><input type="checkbox" id="tb-int-xp" ${modoXp ? 'checked' : ''}> XP absoluto</label></div>`;
         if (modelo === 'inteligente' && r.pendente) {
-            return corpo + intCtl + `<div class="tb-mut">o Inteligente simula a party inteira (≈ 0,1–0,3 s) — só quando você clica. Nada é aplicado sozinho.</div>`;
+            return corpo + calibracaoHtmlInt(h) + intCtl + `<div class="tb-mut">o Inteligente simula a party inteira (≈ 0,1–0,3 s) — só quando você clica. Nada é aplicado sozinho.</div>`;
         }
         const vp = r.viab ? viabilidadeParty(modelo, h) : null;
         corpo += `<button type="button" class="tb-bt pri tb-larga tb-grande" id="tb-aplicar-todos" ${ocupado ? 'disabled' : ''} style="margin-top:6px">${_aplicando ? 'APLICANDO…' : _aprendendo ? 'MEDINDO O DANO…' : 'APLICAR NOS 4'}</button>`;
         if (modelo === 'inteligente' && r.int) {
             const it = r.int, m = it.met, dec = { NOVO: 'kit novo', IGUAL: 'o kit aplicado já é o melhor', MANTER: 'mantém o kit aplicado', TROCAR: 'TROCAR: o novo é melhor', ESPERAR: 'mantém (menos de 10 min desde o APLICAR)' }[it.decisao] || it.decisao;
             const ganho = it.ganho != null && it.decisao !== 'IGUAL' && it.decisao !== 'NOVO' ? ` (novo ${it.ganho >= 0 ? '+' : ''}${Math.round(it.ganho * 1000) / 10} %)` : '';
-            corpo += intCtl + `<div class="tb-ver ${it.aviso ? 'ruim' : 'ok'}"><b>${escHtml(dec)}</b>${escHtml(ganho)}${it.desatualizado ? ' <span class="tb-av">(as medidas mudaram — recalcule)</span>' : ''}` +
+            corpo += calibracaoHtmlInt(h) + intCtl + `<div class="tb-ver ${it.aviso ? 'ruim' : 'ok'}"><b>${escHtml(dec)}</b>${escHtml(ganho)}${it.desatualizado ? ' <span class="tb-av">(as medidas mudaram — recalcule)</span>' : ''}` +
                 `<div class="tb-mut">previsto: ${milBR(m.xpH)} xp/h · ${numBR(Math.round(m.abH))} abates/h · lucro ${m.lucroH >= 0 ? '+' : ''}${milBR(m.lucroH)}/h (garantido ${milBR(m.LCB)}) · gasto em poção/runa ${milBR(m.ouroH)}/h</div>` +
                 `<div class="tb-mut">${regenTexto()}</div>` +
                 `<div class="tb-mut">defesa: degrau ${it.escada.degrau} (${escHtml(it.escada.motivo)})${it.escada.degrau >= 4 ? ' <span class="tb-ruim">⚠ mapa acima da party</span>' : ''} · ${numBR(it.cont.sim)} triagens + ${numBR(it.cont.party)} parties em ${numBR(it.ms)} ms</div>` +
