@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.13.2
+// @version      2.13.3
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.13.2';
+    const VERSAO = '2.13.3';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -6981,7 +6981,7 @@
             const it = r.int, m = it.met, dec = { NOVO: 'kit novo', IGUAL: 'o kit aplicado já é o melhor', MANTER: 'mantém o kit aplicado', TROCAR: 'TROCAR: o novo é melhor', ESPERAR: 'mantém (menos de 10 min desde o APLICAR)' }[it.decisao] || it.decisao;
             const ganho = it.ganho != null && it.decisao !== 'IGUAL' && it.decisao !== 'NOVO' ? ` (novo ${it.ganho >= 0 ? '+' : ''}${Math.round(it.ganho * 1000) / 10} %)` : '';
             corpo += calibracaoHtmlInt(h) + intCtl + `<div class="tb-ver ${it.aviso ? 'ruim' : 'ok'}"><b>${escHtml(dec)}</b>${escHtml(ganho)}${it.desatualizado ? ' <span class="tb-av">(as medidas mudaram — recalcule)</span>' : ''}` +
-                `<div class="tb-mut">previsto: ${milBR(m.xpH)} xp/h · ${numBR(Math.round(m.abH))} abates/h · lucro ${m.lucroH >= 0 ? '+' : ''}${milBR(m.lucroH)}/h (garantido ${milBR(m.LCB)}) · gasto em poção/runa ${milBR(m.ouroH)}/h</div>` +
+                `<div class="tb-mut">previsto: ${milBR(m.xpH)} xp/h · ${numBR(Math.round(m.abH))} abates/h${m.T != null ? ` · onda limpa em ${numBR(Math.round(m.T * 10) / 10, 1)} s (${tpCombos(m.T) === 1 ? '⚡ 1 combo' : tpCombos(m.T) + ' combos'})` : ''} · lucro ${m.lucroH >= 0 ? '+' : ''}${milBR(m.lucroH)}/h (garantido ${milBR(m.LCB)}) · gasto em poção/runa ${milBR(m.ouroH)}/h</div>` +
                 `<div class="tb-mut">${regenTexto()}</div>` +
                 `<div class="tb-mut">defesa: degrau ${it.escada.degrau} (${escHtml(it.escada.motivo)})${it.escada.degrau >= 4 ? ' <span class="tb-ruim">⚠ mapa acima da party</span>' : ''} · ${numBR(it.cont.sim)} triagens + ${numBR(it.cont.party)} parties em ${numBR(it.ms)} ms</div>` +
                 (it.aviso ? `<div class="tb-ruim">${escHtml(it.aviso)}</div>` : '') + `</div>`;
@@ -9708,7 +9708,7 @@
         else if (h.premium === true && ent.premium === false) bloqueio = 'premium';
         let T = null, abH = null, custoH = null;
         if (motor && (motor.abH > 0 || motor.danoS > 0)) {
-            T = motor.danoS > 0 ? L * hp / motor.danoS : null;
+            T = motor.T > 0 ? motor.T : motor.danoS > 0 ? L * hp / motor.danoS : null;
             abH = motor.abH > 0 ? motor.abH : calib.kAbates * L * 3600 / (T + E + 0.5 * L);
             custoH = motor.custoH != null ? motor.custoH : motor.custoPorAbate != null ? abH * motor.custoPorAbate : null;
         } else notas.push('sem dano: o planejador não montou kit (dano das magias não medido?)');
@@ -9742,6 +9742,9 @@
                                    lootH: m.lootH != null ? Math.round(m.lootH) : r.lootH, custoH: m.supH != null ? Math.round(m.supH) : r.custoH,
                                    ouroH: m.ouroH != null ? Math.round(m.ouroH) : r.ouroH,
                                    medido: { t: m.t || null, nivel: m.nivel || null, minutos: m.minutos || null, tomadoH: m.tomadoH != null ? m.tomadoH : null, modelo: m.modelo || null } });
+            /* v2.13.3 — o tempo de limpar a onda medido no Scan manda sobre o simulado */
+            const ondaMed = m.razao && m.razao.ondas && tpNum(m.razao.ondas.matar);
+            if (ondaMed != null && ondaMed >= 0) r.T = Math.round(ondaMed * 10) / 10;
             if (r.lootHMerc != null && r.est && r.lootH != null && lootH > 0) r.lootHMerc = Math.round(r.lootH * lootHMerc / lootH);
             r.ouroHMerc = r.lootHMerc != null && r.custoH != null ? r.lootHMerc - r.custoH : null;
         }
@@ -9773,6 +9776,15 @@
 
     /* Ordem: 'xp' | 'ouro' | 'dois' (xp/xpMax + ouro/ouroMax − 0,15·pts).
      * filtro.esconder tira risco alto e bloqueados. Desempate pelo título. */
+    /* v2.13.3 — COMBOS PARA LIMPAR A ONDA (dono, 01/10: "toda hunt tem tempo de volta fixo; a ideia é
+     * matar o bicho num hit só — o pessoal acha o mapa em que mata a onda com um combo"). A fila do jogo
+     * dispara a cada 2 s (recarga do grupo): a 1ª rajada sai em t = 0, a 2ª em t = 2 s… Então a onda
+     * limpa em T segundos precisou de floor(T / 2) + 1 rajadas. 1 combo = o mapa rende o máximo que o
+     * tempo de volta dele permite: o próximo passo é subir de mapa (mais xp por monstro). */
+    function tpCombos(T) {
+        const t = T == null || T === '' ? null : tpNum(T);
+        return t == null || t < 0 ? null : Math.floor(t / 2) + 1;
+    }
     function tpOrdenar(linhas, modo, filtro) {
         let v = (linhas || []).filter(Boolean);
         if (filtro && filtro.esconder) v = v.filter(l => !l.bloqueio && !(l.risco && (l.risco.nivel === 'alto' || l.risco.nivel === 'bloqueado')));
@@ -9780,6 +9792,7 @@
         const xpMax = Math.max(1, ...ok.map(l => l.xpH || 0)), ouroMax = Math.max(1, ...ok.map(l => l.ouroH || 0));
         const nota = (l) => {
             if (modo === 'ouro') return l.ouroH;
+            if (modo === 'combo') { const c = tpCombos(l.T); return c == null || l.xpH == null ? null : -c * 1e9 + l.xpH; } // menos combos primeiro; empate: mais xp
             if (modo === 'dois') return l.xpH == null ? null : l.xpH / xpMax + (l.ouroH || 0) / ouroMax - 0.15 * Math.min(10, (l.risco && l.risco.pts) || 0);
             return l.xpH;
         };
@@ -10022,7 +10035,7 @@
             if (!m || !(m.abH > 0)) return null;
             const porVoc = {};
             for (const v of VOCS_INT) { const e = res.final.esc[v]; porVoc[v] = e ? { magia: e.plano[0] ? e.plano[0].av.m.name : '', kit: e.plano.map(p => p.av.m.name).join(' · ') } : null; }
-            return { abH: m.abH, xpH: m.xpH, custoH: m.custoH, lucroH: m.lucroH, danoS: null, porVoc };
+            return { abH: m.abH, xpH: m.xpH, custoH: m.custoH, lucroH: m.lucroH, danoS: null, T: m.T, porVoc };
         }
     };
     /* o v3 registra fn(h, nome) → { abH, xpH, custoH, lucroH, danoS, porVoc } */
@@ -10165,7 +10178,7 @@
             RADAR.rank = rank;
             guardar('radar_rank', rank);
             const top = tpOrdenar(linhas, cfg.ordem, { esconder: true })[0];
-            avisar('radar', `radar: ${linhas.length} mapas calculados${RADAR.parar ? ' (interrompido)' : ''}` + (top ? ` — 1º por ${cfg.ordem === 'ouro' ? 'ouro' : cfg.ordem === 'dois' ? 'xp e ouro' : 'xp'}: ${top.title}` : ''), 'ok');
+            avisar('radar', `radar: ${linhas.length} mapas calculados${RADAR.parar ? ' (interrompido)' : ''}` + (top ? ` — 1º por ${cfg.ordem === 'ouro' ? 'ouro' : cfg.ordem === 'dois' ? 'xp e ouro' : cfg.ordem === 'combo' ? 'menos combos' : 'xp'}: ${top.title}` : ''), 'ok');
         } catch (e) { falhou('radar (ranking)', e); avisar('radar', 'radar: o ranking parou — ' + e.message, 'erro'); }
         finally { RADAR.rodando = false; RADAR.parar = false; RADAR.prog = null; renderizar(); }
     }
@@ -10416,7 +10429,7 @@
             (RADAR.rodando ? `<button type="button" class="tb-bt mini" id="rd-parar">parar</button>` : '') +
             `<select id="rd-modelo" aria-label="modelo do motor">${modelos.map(([k, n]) => `<option value="${escHtml(k)}"${k === cfg.modelo ? ' selected' : ''}>${escHtml(n)}</option>`).join('')}</select></div>`;
         if (RADAR.prog) h += `<div class="tb-mut" role="status">${escHtml(RADAR.prog.fase)} ${numBR(RADAR.prog.i + 1)}/${numBR(RADAR.prog.n)}${RADAR.prog.nome ? ' — ' + escHtml(RADAR.prog.nome) : ''}</div>`;
-        h += `<div class="tb-seg" role="group" aria-label="ordem">` + [['xp', 'XP'], ['ouro', 'Ouro'], ['dois', 'Os dois']].map(([k, n]) => `<button type="button" data-rd-ordem="${k}" aria-pressed="${cfg.ordem === k}">${n}</button>`).join('') + `</div>`;
+        h += `<div class="tb-seg" role="group" aria-label="ordem">` + [['xp', 'XP'], ['ouro', 'Ouro'], ['dois', 'Os dois'], ['combo', '⚡ 1 combo']].map(([k, n]) => `<button type="button" data-rd-ordem="${k}" aria-pressed="${cfg.ordem === k}">${n}</button>`).join('') + `</div>`;
         h += `<div class="tb-linha">${rdSw('rd-merc', cfg.mercado, 'preço do mercado')}${rdSw('rd-esconder', cfg.esconder, 'esconder risco alto e bloqueados')}</div>`;
         if (!rank || !Array.isArray(rank.linhas)) {
             return h + `<div class="rd-cx tb-mut">Nenhum ranking ainda. CALCULAR baixa a tabela de loot de cada mapa até o nível ${numBR(nivel + 5)} (uma leitura pública a cada 0,3 s, guardada) e roda o planejador de magias com o dano medido dos 4 em cada um. Não entra em mapa nenhum.</div>`;
@@ -10432,6 +10445,7 @@
         h += `<div class="rd-cab"><span>mapa</span><span>xp/h</span><span>ouro/h</span><span>risco</span></div>`;
         for (const l of linhas) {
             const tags = [l.fonte === 'medido' ? `<span class="tb-tag tb-ok" title="o melhor Scan limpo deste mapa">medido${l.medido && l.medido.modelo ? ' · ' + escHtml(nomeModelo(l.medido.modelo)) : ''}</span>` : '<span class="tb-tag">estimado</span>',
+                          (c => c === 1 ? '<span class="tb-tag tb-ok" title="a party limpa a onda na 1ª rajada">⚡ 1 combo</span>' : c ? `<span class="tb-tag" title="rajadas (a cada 2 s) para limpar a onda">${c} combos</span>` : '')(tpCombos(l.T)),
                           l.bloqueio && /^nível/.test(l.bloqueio) ? `<span class="tb-tag tb-ruim">${escHtml(l.bloqueio)}</span>` : '',
                           l.premium ? '<span class="tb-tag tb-av">premium</span>' : ''].join('');
             const o = ouroDe(l);
@@ -10439,7 +10453,7 @@
             const xpReal = l.xpHBonus || l.xpH;
             h += `<details class="rd-det" data-k="rd-${escHtml(String(l.id))}"><summary><span>${escHtml(l.title)} ${tags}</span><span>${rdK(l.xpH)}</span><span class="${o > 0 ? 'tb-ok' : o < 0 ? 'tb-ruim' : ''}">${rdSinal(o)}</span>` +
                  `<span><span class="rd-r ${escHtml(l.risco.nivel)}">${escHtml(l.risco.nivel)}</span></span></summary><div>` +
-                 `<div>lure ${numBR(l.L)} · ${l.abH != null ? numBR(l.abH) + ' abates/h' : 'sem abates'}${l.T != null ? ` · onda em ${numBR(l.T, 1)} s` : ''}${xpReal && falta ? ` · próximo nível em ${escHtml(fmtHoras(falta / xpReal))}` : ''}</div>` +
+                 `<div>lure ${numBR(l.L)} · ${l.abH != null ? numBR(l.abH) + ' abates/h' : 'sem abates'}${l.T != null ? ` · onda limpa em ${numBR(l.T, 1)} s (${tpCombos(l.T)} combo${tpCombos(l.T) > 1 ? 's' : ''})` : ''}${xpReal && falta ? ` · próximo nível em ${escHtml(fmtHoras(falta / xpReal))}` : ''}</div>` +
                  `<div>loot ${rdK(l.lootH)}/h${l.lootHMerc != null && l.lootHMerc !== l.lootH ? ` (mercado ${rdK(l.lootHMerc)})` : ''} · gasto ${rdK(l.custoH)}/h${l.xpHBonus ? ` · xp com bônus ${rdK(l.xpHBonus)}/h` : ''}</div>` +
                  (l.est && l.fonte === 'medido' ? `<div class="tb-mut">est.: ${rdK(l.est.xpH)} xp/h · ${rdSinal(l.est.ouroH)} ouro/h</div>` : '') +
                  (l.nota != null ? `<div>nota da party contra o mapa: ${numBR(l.nota)}</div>` : '') + pv +

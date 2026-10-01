@@ -4354,3 +4354,13 @@ mapas (Vampire hell 32,5k × 58,0k do Em área; Banshee 27,7k × 49,6k) e ainda 
   - caçada fechada com a página fechada (offline) é repartida entre os dias que cruza (antes entrava toda no dia do
     resumo).
 - Revisão geral: os 66 avisos do ESLint são todos `catch (e)` sem uso (inofensivos).
+
+## 2.13.3 (01/10) — "1 combo": em que mapa a party limpa a onda na 1ª rajada
+- Dono: "toda hunt tem tempo de volta fixo; a ideia é matar o bicho num hit só — o pessoal acha o mapa em que mata
+  com um combo". abates/h = lure × 3600 ÷ (T + espera): com a espera fixa do mapa, o que dá para ganhar é T → 0 e,
+  quando T já é ~0, subir para o mapa de mais xp por monstro em que ainda se limpa na 1ª rajada.
+- `tpCombos(T)` = floor(T / 2) + 1 (a fila dispara a cada 2 s). O motor Inteligente do Radar passa o T da simulação
+  da party; mapa medido usa a onda medida no Scan (`razao.ondas.matar`).
+- Radar → Mapas: etiqueta "⚡ 1 combo" / "N combos", detalhe "onda limpa em X s", e ordem nova **⚡ 1 combo**
+  (menos rajadas primeiro; empate, mais xp). Aba Magia (Inteligente): o previsto mostra o mesmo.
+- Ex. medido 30/09: Vampire hell Em área limpa em 2,3 s = 2 combos (e espera 10,2 s).
