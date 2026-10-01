@@ -4364,3 +4364,14 @@ mapas (Vampire hell 32,5k × 58,0k do Em área; Banshee 27,7k × 49,6k) e ainda 
 - Radar → Mapas: etiqueta "⚡ 1 combo" / "N combos", detalhe "onda limpa em X s", e ordem nova **⚡ 1 combo**
   (menos rajadas primeiro; empate, mais xp). Aba Magia (Inteligente): o previsto mostra o mesmo.
 - Ex. medido 30/09: Vampire hell Em área limpa em 2,3 s = 2 combos (e espera 10,2 s).
+
+## 2.13.4 (01/10) — a cura entra na conta: bicho vivo bate e custa poção
+- Dono: "quanto mais o bicho fica vivo, mais ele bate e gasta tudo — por isso tem que ser insta kill; é por isso que o
+  pessoal usa tantas magias". O simulador cobrava a mana dos ataques, mas não a cura do dano tomado.
+- `simularParty` soma **monstro·s vivo por onda** (`vivosOnda`). `calibrarPorScan` separa a poção de VIDA medida no
+  Scan do mapa (`supVoc.itens` × preço do catálogo, `ouroVidaItens`) do custo de ataque (`cVoc` agora só com o
+  resto) e calcula `curaPorVivo` = ouro de cura/h ÷ (vivos por onda da party do Scan × ondas/h).
+- `metricasInt` cobra `curaH = curaPorVivo × vivosOnda × ondas/h` no gasto e no lucro: um kit que mata mais rápido
+  (menos vivos) paga menos cura — inclusive o Knight com mais magias, se ele encurtar a onda. Na party do Scan o
+  total fica igual ao medido. Sem Scan do mapa, 0 (comportamento antigo).
+- Aba Magia: "gasto em poção/runa X/h (cura Y/h pelo tempo que os bichos ficam vivos)".
