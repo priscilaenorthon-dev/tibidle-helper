@@ -145,6 +145,26 @@ mapa medido usa o T do Scan (1,3 s).
   preenchia — no teste estava `null`, então a regra estava desligada. **2.13.5:** o CONFERIR lê as suas ordens (só
   leitura, todas as páginas) quando não lidas ou com > 30 min.
 
+## Verificação ao vivo das correções (2.13.5 → 2.13.6, 19:50–20:20)
+| Correção | Ao vivo |
+|---|---|
+| Mercado: todas as páginas de "suas ordens" | ✅ "Meus anúncios **55**", "55 aberta(s)", o refine fragment t1 (a 949) agora aparece |
+| Inteligente: histerese do kit mostrado | ✅ 5 chamadas seguidas = "mantém o kit calculado antes (o novo quase não ganha) (novo +0 %)": a busca achava um kit **empatado** (Groundshaker × Front Sweep, 63.628 xp/h e 15.711 de lucro/h nos dois) e o helper segurou o mostrado |
+| Radar: ouro estável no mapa medido | ✅ Vampire hell −1,4k/h, "sorte no Scan +20,3k/h (fora do ouro: raro não se repete)" |
+| Loot: tabela guardada de qualquer caminho | ✅ Vampire hell na gaveta comum (17 itens); depois do F5 o Loot veio com os valores e líquido/h +19,6k ↔ +19,5k do jogo |
+| Dia: caçada anterior à página | ✅ nos testes do `vm`; ao vivo, os F5 seguintes não lançaram nada |
+
+**❌ Regressão da 2.13.5, achada na hora e corrigida na 2.13.6:** o 1º F5 com a 2.13.5 lançou a caçada em andamento
+como "offline" **duas vezes** (Dia: offline 0 → 2, xp 77k → 139k). Depois do F5 o jogo manda `frame` antes do
+`resume`; com `huntId` ainda `null`, a base guardada parecia de outra caçada. A 2.13.6 ignora o analisador até
+conhecer a caçada (teste no `vm` com o frame antes do `resume`). Com a 2.13.6, dois F5 (um deles caiu no lobby):
+offline continuou 0 e o xp subiu só o normal.
+**Dia de 01/10 consertado à mão** no navegador do Playwright: tirados os 2 lançamentos falsos (cada um = o analisador
+da caçada naquele instante: 1.690 s, 30.824 de xp, 856 abates, 18.332 de loot, 8.414 de gasto; proporção do
+analisador atual da mesma caçada). Conferência: o Dia ficou com 83.350 de xp desde 18:44 e o personagem subiu 82.730
+(0,7 % — atraso da amostra). ⚠ O Chrome do dono tem o seu próprio Dia: se a 2.13.5 rodou lá com um F5 no meio de
+uma caçada, o dia dele tem o mesmo erro (atualizar para a 2.13.6 evita daqui em diante).
+
 ## O que mudou na conta
 - Presets: aplicados Em área/Inteligente pelo Scan e o Inteligente pelo APLICAR; **devolvidos** à foto do começo
   (Knight Berserk + Groundshaker · Pal Divine Caldera · Fei Energy Wave + Great Fire Wave · Dru Strong Ice Wave + Ice Wave,
