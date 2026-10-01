@@ -1,4 +1,7 @@
-# Roteiro de teste ao vivo — 2.13.1 (para 01/10)
+# Roteiro de teste ao vivo — 2.13.1 + 2.13.2 (para 01/10)
+
+> **Atualizado para a 2.13.2**: o item 0 já foi corrigido (a busca sempre avalia o Em área). Instale a **v2.13.2**
+> e comece pelo item 1. Itens novos da 2.13.2 marcados com **(2.13.2)**.
 
 A 2.13.1 já está no GitHub e instalada no Playwright. Ela recalibrou o Inteligente (dano por alvo, alvos por forma,
 golpe básico, vida por criatura), mantém os suportes e as curas do dono e corrigiu 3 defeitos do Radar
@@ -8,7 +11,7 @@ Testes curtos: nada de esperar 30 min à toa.
 **Antes de começar**
 - [ ] Anote os presets dos 4 (Status → DIAGNÓSTICO, ou a foto em `.playwright-mcp/presets-antes-2.13.json`).
 
-## 0. Defeito achado no fim do dia 30/09 (corrigir ANTES de testar o Inteligente)
+## 0. Defeito achado no fim do dia 30/09 — ✅ CORRIGIDO na 2.13.2 (só conferir no item 1)
 - [ ] **A busca não compara com o Em área quando existe um kit do Inteligente guardado para o mapa** (`kit_int`).
       Ao vivo em Vampire hell: o Inteligente escolheu 57,6k xp/h e +21,8k de lucro previstos, e o Em área, no mesmo
       simulador, dava 59,4k e +38,5k. Causa provável: `buscarParty` parte de `ctx.inicial` = o vigente (o kit fraco da
@@ -19,6 +22,8 @@ Testes curtos: nada de esperar 30 min à toa.
       mínima do Knight medida agora é 56 %) — ele desce sozinho só depois de 30 min.
 
 ## 1. Inteligente (aba Magia)
+- [ ] **(2.13.2)** Com o Inteligente escolhido, aparece "⏳ CALIBRANDO o Inteligente neste mapa" (com a lista do que falta)
+      ou "✓ Inteligente calibrado neste mapa". Em Vampire hell (já tem Scan) deveria estar calibrado ou quase.
 - [ ] "replanejar do zero" em Vampire hell → CALCULAR: o previsto tem que ser ≥ ao do Em área (xp −3 % no máximo).
 - [ ] Os suportes e as curas do dono continuam iguais depois do APLICAR (Train Party, Protect Party, Enchant Party,
       Heal Party; curas com os % do dono). Protector só se houver slot livre.
@@ -38,11 +43,16 @@ Testes curtos: nada de esperar 30 min à toa.
 - [ ] Dia: depois de um Scan, nenhuma linha "[object Object]" e "caçando" ≈ tempo real (sem "caçadas fechadas fora da
       página" com a página aberta). XP do dia ≈ diferença de xp do personagem.
 
+- [ ] **(2.13.2)** Alertas: com um item que só você anuncia, NÃO aparece "vale anunciar"; nem quando o líquido fica
+      abaixo do NPC.
+- [ ] **(2.13.2)** Dia: uma caçada que cruzou a meia-noite com a página fechada aparece dividida entre os dois dias.
+
 ## 4. Pendentes antigos
-- [ ] Auto Hunt "nunca vender": a conta está com `nvEquip: false` (vende equipamento de propósito?). Perguntar ao
-      dono antes de ligar só para testar.
+- [x] Auto Hunt "nunca vender": PULAR — o dono confirmou (01/10) que vende equipamento de propósito (`nvEquip: false`).
 - [ ] Mercado: um anúncio barato (precisa estar na cidade: os itens estão no depósito). O jogo aceita peça Incomum.
 
 ## 5. Fim
 - [ ] Devolver os presets anotados, se algo ficou diferente.
 - [ ] Resultado em `docs/resultado-2.13.1.md`.
+- [ ] Se o Inteligente passar no Scan A/B: avisar — próximas melhorias combinadas: calcular ao escolher o mapa,
+      calibrar caçando (sem Scan) e mostrar o kit no ranking do Radar.
