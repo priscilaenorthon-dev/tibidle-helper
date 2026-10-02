@@ -4410,3 +4410,99 @@ mapas (Vampire hell 32,5k × 58,0k do Em área; Banshee 27,7k × 49,6k) e ainda 
   sem `huntId`. Teste no `vm` com o frame antes do `resume`. O Dia de 01/10 do dono foi consertado à mão (os 2
   lançamentos falsos tirados).
 
+## 2.14.0 (02/10) — kit enxuto e kits da comunidade no Inteligente
+- **Origem**: dois setups do Discord testados ao vivo pelo dono no nível 76 ("tá perfeito, muito bom"). Bog Raiders
+  lure 4: Druida Strong Ice Wave ≥2 · thunderstorm ≥2 · Energy Strike ≥1 + Heal Friend 70 %; Paladino thunderstorm ≥2
+  · Ethereal Spear ≥1; Feiticeiro Energy Wave ≥2 · thunderstorm ≥2 · Energy Strike ≥1; Knight Groundshaker ≥2 ·
+  Berserk ≥2 · Lesser Front Sweep ≥1. Vampire hell: Strong Ice Wave / Divine Caldera / Energy Wave ≥2 + avalanche ≥2
+  nos magos, Knight Berserk ≥2 · Lesser Front Sweep ≥1 — **67k xp/h e +13k/h** (3,5 min; em 29/09 o mapa dava −12k/h).
+  Nos dois: **nenhum suporte, nenhuma cura por magia** (só o Sio no Bog) e Mana Potion 30 % nos 4.
+- **Por que o Inteligente não chegava nisso**: (1) ele nunca mexe nos suportes/curas do dono (regra) e Train/Protect/
+  Enchant Party drenam mana ×3 no simulador; (2) o desempate prefere menos poção; (3) `barraValida` exige uma magia ≥1
+  por personagem — no kit de Vampire hell três personagens não têm; (4) sem Scan do mapa o loot é o do catálogo.
+- **Kit enxuto** (checkbox na aba Magia, `int_enxuto`, desligado por padrão — desligado nada muda): tira os suportes e
+  as curas por magia do dono e devolve a cura por uma **escada** (`escadaEnxuta`): 0 só poções · 1 + Heal Friend 70 % no
+  Druida · 2 + Wound Cleansing 50 % no Knight e Divine Healing 40 % no Paladino · 3 o kit completo do dono. Cada
+  degrau reserva a mana da cura no simulador (`RESERVA_ENX`). As poções de vida do dono ficam (sem nenhuma: a melhor a
+  45 %). Mapa sem medida e sem kit da comunidade começa no 3. Sobe um degrau com alguém < 30 % ou morte; desce um com
+  todos ≥ 60 %, só com degrau aplicado pelo helper há ≥ 5 min (a medida é do próprio kit enxuto), ≥ 120 amostras.
+  Nada muda sozinho: o degrau novo vale no próximo APLICAR; a aba Magia avisa ao vivo (< 35 %).
+- **Kits da comunidade** (`KITS_COMUNIDADE`: 151 Bog Raiders degrau 1, 50 Vampire hell degrau 0) entram na busca como
+  party candidata inteira, como o Em área, e a escolha é global — o Inteligente nunca sai pior que eles pela conta
+  dele. Fora de `barraValida`; magia que não existe no nível ou slot morto: fica o Em área daquele personagem.
+- `kitHashConfig` inclui as curas por magia (degraus 0–2 só mudam as curas: a vida medida tem que ser por degrau).
+  A calibração pelo Scan e o A/B (`escolhaDoModelo(…, comoJogou)`) reproduzem a party com os suportes do dono.
+  A poção de segurança do Druida (escada antiga, degrau ≥ 2) não vale no enxuto.
+- **No node** (nível 67, catálogo): Vampire hell enxuto — o Inteligente empata em xp com o kit do Discord (58,8k; o
+  spawn limita) e fica com um mais barato. Bog Raiders — o kit do Discord prevê −33k/h com o loot do catálogo (8,4 o
+  por abate) e perde para um de 29k xp/h; ao vivo o mapa rendeu bem mais: **falta um Scan de 5 min com ≥ 100 abates**
+  para o loot medido entrar. 7 testes novos em `testes/inteligente.test.js` (251 no total).
+
+## 2.14.1 (02/10) — o pacote inteiro dos kits da comunidade (conta principal, nível 81)
+- Dono: "na minha outra conta principal já estou no nível 81 — são essas combinações que estou falando: nossa automação ter
+  xp e ouro". Entram em `KITS_COMUNIDADE` três posts de nível 80: **105 Giant Spiders POH**, **49 Pits of Inferno Entrance**
+  e **199 Hive Queen Chamber** (degrau 2). Pits de Inferno sem Exori Flam e sem burst arrow (Dragon Lord é imune a fogo).
+- Campos novos por kit: `pocao` (número ou {VOC: fração}), `curas`, `vida`, `sups` (os buffs do post — Train Party,
+  Sharpshooter, Enchant Party: só o kit da comunidade leva suporte no modo enxuto) e `ammo`. `extrasInt` aplica o pacote
+  do post quando o personagem fica com o kit da comunidade (`esc.com`): curas em ordem crescente de gatilho, poção de vida
+  do post (se o nível e a vocação permitem), buffs e munição (só se o tipo da arma combina). A marca `com` vai para
+  `kit_int` e volta no vigente com os buffs (`supsGuardado`); entra na assinatura (`escSig`).
+- Magia que o nível ainda não libera sai do kit (Fierce Berserk é nível 90) e o resto fica.
+- Degrau 2 da escada enxuta ganha a Intense Healing 70 % no Feiticeiro (os três posts põem cura nos quatro).
+- Simulado no node com o dano medido (nível 80, lure 8): o Inteligente empata ou passa em xp nos três (Giant Spiders
+  75,8k = 75,8k; Pits 86,8k × 82,8k; Hive 94,6k × 85,9k). 5 testes novos.
+
+## 2.14.2 (02/10) — ranking do Radar sem os suportes do perfil
+- Print do dono (Radar, conta principal): todos os mapas com ouro/h de −167k a −247k e 9–11 combos. Causa, reproduzida no
+  node: o motor Inteligente do ranking usava o perfil do dono — o Protector do Knight (200 de mana a cada 20 s) e os buffs de
+  grupo (×3) deixam a regeneração útil dele em −4,5 mana/s, então ele bebe 1.000 a 1.400 Mana Potions/h em TODO mapa
+  (−57k a −77k/h por mapa só dele). Com o kit enxuto o Yalahar Worker Golem cai para 0/h de gasto.
+- O ranking agora roda o Inteligente com `{ enxuto: true, degrauEnx: 2 }` (`RADAR_OPC_INT`): `contextoInt` aceita
+  `degrauEnx` para fixar o degrau (mapa nunca caçado não tem medida e a escada cairia no 3 = kit do dono). O cabeçalho do
+  ranking diz "kit enxuto, degrau 2"; ranking antigo calculado com os suportes pede recálculo. Sem nada novo enviado ao jogo.
+- Lembrete: o ranking simula a lure MÁXIMA de cada mapa; sem Scan o loot é o do catálogo × 0,35 (estimado). Para aplicar o
+  mesmo kit no mapa, ligar "kit enxuto" na aba Magia. 1 teste novo (257).
+
+## 2.14.3 (02/10) — Radar: pacote inteiro por mapa e Scan rápido com o kit do ranking
+- Dono: "simula todas as melhores combinações de magias e runas, ataque, defesa, suporte, mana e poção … onde eu desse play
+  ele fazia um scan bem rápido". O ranking já simulava a party inteira com a lure MÁXIMA de cada mapa; agora cada mapa mostra
+  o pacote todo por personagem: magias com o mínimo de criaturas, curas e poção de vida, Mana Potion (%), suportes e munição
+  (`extrasInt` → `extrasTxtCru`, guardado em `radar_rank`).
+- "▶ medir 3 min" em cada mapa e "▶ Scan rápido dos 10 primeiros" (na ordem e no filtro da tela), 2 toques: é o Scan de
+  sempre (devolve mapa, lure e kits no fim), com `scanIniciar(over)` — minutos, lure máximo e o kit do ranking por cima da
+  configuração guardada do Scan, que não muda (`scanCfgRodada`). O kit aplicado é o MESMO que o ranking simulou: as opções
+  da busca (`RADAR_OPC_INT`) passam por `aplicarEmTodos(modelo, hunt, opcInt)` → `montarPlano(…, { opcInt })` →
+  `planejarInteligente(…, opc)` → `partyInt(…, opc)`. O resultado volta ao Radar como "medido · Inteligente".
+- 3 min dão o xp/h e os abates/h; para o loot medido entrar na calibração do Inteligente o Scan precisa de ≥ 100 abates
+  (Scan normal de 5 min com Em área). 1 teste novo (258).
+
+## 2.14.4 (02/10) — teste ao vivo do Scan rápido do Radar
+- Conta u2tag, nível 77 (Playwright, 2.14.3 injetada no início da página com o Tampermonkey desligado): CALCULAR do Radar em
+  8 s para 70 mapas, ouro estimado positivo (+10k a +39k/h; antes −700 a −900 com os suportes do perfil). "▶ medir 3 min" em
+  Djinns Marid Territory: aplicou nos 4 exatamente o kit mostrado, mediu 46,4k xp/h raw e +13,0k/h estável (estimado 51,6k e
+  +17,1k; depois do recálculo, com o Scan novo na calibração, 47,0k e +11,8k), onda de 7 morta em 0,6 s (1 combo), e voltou
+  para Dragon Lair (lure 8) com os 4 kits devolvidos.
+- Defeito achado: a linha só virava "medido" no próximo CALCULAR. Agora `scanGravar` chama `radarAtualizarLinha` (refaz só a
+  linha daquele mapa com a calibração guardada, sem rede).
+- 2º Scan rápido (Orc Fortress, 2.14.4 numa aba nova): a linha virou "medido" sozinha (40,0k xp/h, +8,0k/h; estimado
+  43,5k e +6,1k). Mas o Feiticeiro e o Druida saíram com "plano vazio" e mediram com o kit de Dragon Lair.
+
+## 2.14.5 (02/10) — o APLICAR do Inteligente não perde a conta no meio
+- Causa (reproduzida com o gancho de depuração): o catálogo /ammo é baixado na 1ª vez que alguém escolhe munição
+  (`extrasInt` do Paladino, dentro do próprio APLICAR); quando ele chegava, `montarPlano` via "catálogo novo" e limpava
+  `_intParty`; o Feiticeiro e o Druida pediam o kit sem poder calcular (`buscar` falso) e recebiam nada.
+- Correções: (1) `_aplicarEmTodos` passa a party já calculada (`resInt`) para os 4 — eles saem da mesma conta que vai para
+  `registrarAplicacaoInt`; (2) só magias, preços, poções e bosses derrubam a conta do Inteligente; munição só limpa o cache
+  dos modelos antigos. 1 teste novo (259).
+
+## 2.14.6 (02/10) — Radar: risco pelo que a party já aguentou
+- Dono, 02/10: "acabei de morrer … a simulação me jogou para mapas muito difíceis" (conta principal, nível 81, escolheu um
+  mapa do topo do Radar). Conferido na u2tag (nível 77): os 70 mapas saíam "risco baixo, 0 pontos" — Hellspawns e Yalahar
+  Worker Golem (nível 70) inclusive. O dano tomado era estimado pelo xp por abate, que quase não muda (Orc 26, Vampire 33,
+  Dragon 38, Hellspawn 41,5); a vida do monstro separa (234 · 577 · 1.282 · 1.520).
+- `tpEnvelope`: o mapa mais forte em que a party já caçou sem morrer (Scans sem erro com o Knight ≥ 40 %, sessões do
+  Analisador de ≥ 10 min, a caçada de agora com ≥ 10 min; mapa com morte registrada fica fora). `tpRisco`: vida do monstro
+  > 1,15× a do envelope +2, > 1,5× +4; nível mínimo acima do maior já caçado +2; sem nada caçado +2 ("força desconhecida").
+  Mapa medido limpo conta como testado. Etiqueta "⚠ nunca testado" na linha.
+- Scan rápido e "▶ medir" nunca entram em mapa de risco alto; ranking calculado antes da 2.14.6 (risco antigo) pede
+  recalcular e não deixa o Scan rápido rodar. "Esconder risco alto" vem ligado por padrão. 1 teste novo (260).

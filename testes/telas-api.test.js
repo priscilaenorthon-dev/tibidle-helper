@@ -12,7 +12,7 @@ const SRC = fs.readFileSync(path.join(raiz, 'tibidle-helper.user.js'), 'utf8');
 const le = (p) => JSON.parse(fs.readFileSync(path.join(raiz, p), 'utf8'));
 const trecho = (a, b) => { const i = SRC.indexOf(a), f = SRC.indexOf(b); assert(i > 0 && f > i, 'marcador ausente: ' + a); return SRC.slice(i, f); };
 const P = new Function(`${trecho('/* @@TELAS-API-INICIO', '/* @@TELAS-API-FIM */')}
-    return { tpHpXpMedio, tpLootAbate, tpValorItem, tpCalibrar, tpRisco, tpEstimar, tpNotaParty, tpOrdenar, tpDeltaAnalisador, tpTrechoAntes, tpRaro,
+    return { tpEnvelope, tpHpXpMedio, tpLootAbate, tpValorItem, tpCalibrar, tpRisco, tpEstimar, tpNotaParty, tpOrdenar, tpDeltaAnalisador, tpTrechoAntes, tpRaro,
              tpAvaliarAlerta, tpAlertaDevido, tpCombos, tpDiaChave, tpAcumularDia, tpPodarDias, tpResumoDia, tpCompararDias, tpTextoRelatorio, tpDeltaResumo, tpTituloResumo, tpAbatesResumo,
              TP_FATOR_LOOT_PADRAO, TP_DIAS_MAX };`)();
 const MKP = new Function(`${trecho('/* @@MERCADO-INICIO', '/* @@MERCADO-PURO-FIM */')}\n return { mkTaxa };`)();
@@ -155,6 +155,23 @@ t('tpRisco: cada motivo e cada faixa', () => {
     assert.deepStrictEqual([m.pts, m.nivel], [3, 'médio']);
     assert.strictEqual(P.tpRisco(Object.assign({}, base, { mortes: 1, T: 30 })).nivel, 'alto');
     assert(P.tpRisco(Object.assign({}, base, { imunes: ['fogo'] })).motivos.some(x => /imunes: fogo/.test(x)));
+});
+t('2.14.6 — mapa com monstro mais forte que o que a party já aguentou sai de risco alto (morte do dono, 02/10)', () => {
+    /* u2tag, nível 77: Scans em Orc (234), Djinns (430) e Vampire hell (577); horas em Dragon Lair (1.282) */
+    const env = P.tpEnvelope([{ title: 'Orc Fortress', hp: 234, levelMin: 35, ok: true }, { title: 'Vampire hell', hp: 577, levelMin: 50, ok: true },
+                              { title: 'Dragon Lair', hp: 1282, levelMin: 60, ok: true }, { title: 'Mapa da morte', hp: 5000, levelMin: 75, ok: false }]);
+    assert.deepStrictEqual([env.hp, env.title, env.lvl, env.n], [1282, 'Dragon Lair', 60, 3], 'mapa com morte não entra no envelope');
+    assert.strictEqual(P.tpEnvelope([]), null);
+    const base = { nivel: 77, levelMin: 50, L: 8, xpAbate: 40, T: 5, notaParty: 90, envelope: env };
+    const hell = P.tpRisco(Object.assign({}, base, { hp: 1520, levelMin: 70 }));
+    assert.strictEqual(hell.nivel, 'alto', 'Hellspawns: 1,19× a vida e nível 70 > 60');
+    assert(hell.novo && hell.motivos.some(x => /nunca testado/.test(x)));
+    assert.strictEqual(P.tpRisco(Object.assign({}, base, { hp: 2000, levelMin: 55 })).nivel, 'alto', '1,56× a vida');
+    const dl = P.tpRisco(Object.assign({}, base, { hp: 1282, levelMin: 60 }));
+    assert.deepStrictEqual([dl.nivel, dl.novo], ['baixo', false], 'Dragon Lair já foi caçado');
+    assert.strictEqual(P.tpRisco(Object.assign({}, base, { hp: 3000, levelMin: 70, testado: true })).pts, 0, 'medido limpo = testado');
+    const sem = P.tpRisco(Object.assign({}, base, { hp: 600, envelope: null }));
+    assert.deepStrictEqual([sem.nivel, sem.novo], ['médio', true], 'sem nada caçado: força desconhecida');
 });
 t('tpOrdenar: xp, ouro, os dois; filtro e desempate pelo título', () => {
     const L = [{ title: 'B', xpH: 50, ouroH: 100, risco: { nivel: 'baixo', pts: 0 } }, { title: 'Aa', xpH: 100, ouroH: 10, risco: { nivel: 'baixo', pts: 0 } },
@@ -486,7 +503,7 @@ const conectar = async (W) => {
     return ws;
 };
 const hojeDe = (W) => P.tpDiaChave(W.agora);
-const GETS_OK = /^(\/hunts\/select|\/spells|\/assets\/v\d+\/spell-areas\.json|\/buy-prices|\/bosses\/select|\/potions|\/hunt\/lootTable\?huntId=\d+|\/bestiary\/creature\?name=[^&]+|\/auth\/me|\/spell-numbers.*|raw)$/;
+const GETS_OK = /^(\/hunts\/select|\/spells|\/assets\/v\d+\/spell-areas\.json|\/buy-prices|\/bosses\/select|\/potions|\/ammo|\/hunt\/lootTable\?huntId=\d+|\/bestiary\/creature\?name=[^&]+|\/auth\/me|\/spell-numbers.*|raw)$/;
 const caminhoGet = (u) => u.includes('raw.githubusercontent') ? 'raw' : u.replace('https://play.tibidle.com', '');
 
 t('Radar: ícone antes do Log, as 4 sub-abas desenham com o rodapé "só leitura"', async () => {

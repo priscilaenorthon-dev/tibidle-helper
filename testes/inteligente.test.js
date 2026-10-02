@@ -32,7 +32,8 @@ const M = new Function('SPELLS', 'POTIONS', 'BOSSES', `
     CAT.bosses = normalizarBosses(BOSSES);
     return { calibracaoStatusInt, calibracaoHtmlInt, montarPlano, partyInt, contextoInt, simularParty, decidirTroca, preverModeloInt, registrarAplicacaoInt, zerarInt, avaliarPartyInt, ordenarInt, okInt,
              slotMorto, lureMax, magiasDaVocacao, invalidarPlanos, suportesPermitidos, membroInt, danoBaseInt, alvosForma, barraValida, escSig,
-             FRACAO_FORMA, N_MAX_SIM, N_MAX_PARTY, _intParty, _intMostrado, CAT, MEM, RAZAO, ESTADO_WS, E, LOOT_CACHE, BESTIARIO };
+             FRACAO_FORMA, N_MAX_SIM, N_MAX_PARTY, _intParty, _intMostrado, CAT, MEM, RAZAO, ESTADO_WS, E, LOOT_CACHE, BESTIARIO,
+             escadaEnxuta, KITS_COMUNIDADE, extrasInt };
 `)(SPELLS, POTIONS, BOSSES);
 
 let n = 0;
@@ -54,7 +55,8 @@ function semear(L) {
 }
 function zerar() {
     M.invalidarPlanos(); M._intParty.clear(); M._intMostrado.clear();
-    for (const k of ['kit_int', 'int_aplicado', 'escada', 'int_modo']) delete M.MEM[k];
+    for (const k of ['kit_int', 'int_aplicado', 'escada', 'int_modo', 'int_enxuto', 'escada_enx']) delete M.MEM[k];
+    M.E.dono = null;
     M.ESTADO_WS.huntId = null; for (const k of Object.keys(M.RAZAO.vitais)) delete M.RAZAO.vitais[k];
     M.RAZAO.tomado = { total: 0, corpo: 0 }; M.E.scan = {};
 }
@@ -418,4 +420,183 @@ t('15 — oráculo: nos 10 mapas do combo-KP, a busca podada fica a ≤1 % do xp
     assert(ruins.length <= 1, ruins.join('\n'));
 });
 
+/* ===================== v2.14.0 — kit enxuto e kits da comunidade ===================== */
+const BOG = 151;
+/* o perfil do dono como estava ao vivo em 02/10 (curas, suportes e poções dele) */
+const DONO = {
+    KNIGHT: { heals: [{ name: 'Strong Health Potion', percent: 45 }, { name: 'Wound Cleansing', percent: 50 }, null, null, null], manaPotion: { percent: 0 }, skills: ['Berserk', null, null, null], minCreatures: {}, supports: ['Train Party', null] },
+    PALADIN: { heals: [{ name: 'Divine Healing', percent: 40 }, { name: 'Strong Health Potion', percent: 45 }, { name: 'Light Healing', percent: 60 }, null, null], manaPotion: { percent: 0 }, skills: [], minCreatures: {}, supports: ['Protect Party', null], ammo: 'arrow' },
+    SORCERER: { heals: [{ name: 'Health Potion', percent: 35 }, { name: 'Ultimate Healing', percent: 40 }, { name: 'Light Healing', percent: 60 }, null, null], manaPotion: { percent: 0 }, skills: [], minCreatures: {}, supports: ['Enchant Party', 'Magic Shield'] },
+    DRUID: { heals: [{ name: 'Ultimate Healing', percent: 40 }, { name: 'Health Potion', percent: 60 }, { name: 'Heal Friend', percent: 60 }, null, null], manaPotion: { name: 'Mana Potion', percent: 20 }, skills: [], minCreatures: {}, supports: ['Heal Party', 'Magic Shield'] }
+};
+const extras = (id, voc) => { M.invalidarPlanos(); M._intParty.clear(); M._intMostrado.clear(); const r = M.montarPlano('inteligente', H(id), voc, { buscar: true }); assert(r && !r.erro && r.extras, 'sem extras'); return r.extras; };
+const curasMagia = (x) => x.heals.filter(h => h && !/potion/i.test(h.name)).map(h => h.name + ' ' + h.percent);
+
+t('2.14 — escada do kit enxuto: mapa novo sem medida → 3 (o kit do dono); com kit da comunidade → o degrau dele', () => {
+    zerar();
+    assert.strictEqual(M.escadaEnxuta(H(DL)).degrau, 3, 'Dragon Lair sem medida');
+    assert.strictEqual(M.escadaEnxuta(H(VH)).degrau, 0, 'Vampire hell: setup do Discord sem cura');
+    assert.strictEqual(M.escadaEnxuta(H(BOG)).degrau, 1, 'Bog Raiders: setup do Discord com Sio');
+});
+t('2.14 — escada do kit enxuto: sobe com vida < 30 % ou morte (sempre); desce com todos ≥ 60 % só 5 min depois do APLICAR do degrau', () => {
+    zerar();
+    const agora = 1e12;
+    M.MEM.escada_enx = { [VH]: { d: 1, t: agora - 10 * 60000 } };
+    for (const v of VOCS) vitais(VH, v, 0.7, 150);
+    assert.strictEqual(M.escadaEnxuta(H(VH), agora).degrau, 0, 'todos 70 % há 10 min → desce');
+    M.MEM.escada_enx = { [VH]: { d: 1, t: agora - 2 * 60000 } };
+    assert.strictEqual(M.escadaEnxuta(H(VH), agora).degrau, 1, '2 min depois do APLICAR → fica');
+    vitais(VH, 'KNIGHT', 0.25, 150);
+    const s = M.escadaEnxuta(H(VH), agora);
+    assert.strictEqual(s.degrau, 2, 'Knight a 25 % → sobe'); assert(s.alerta, 'avisa');
+    vitais(VH, 'KNIGHT', 0, 150);
+    M.MEM.escada_enx = { [VH]: { d: 3, t: agora } };
+    assert.strictEqual(M.escadaEnxuta(H(VH), agora).degrau, 3, 'morte no degrau 3 → fica no 3 (teto)');
+    vitais(VH, 'KNIGHT', 0.25, 40);
+    M.MEM.escada_enx = { [VH]: { d: 1, t: agora } };
+    assert.strictEqual(M.escadaEnxuta(H(VH), agora).degrau, 1, 'poucas amostras (40) → não decide');
+});
+t('2.14 — kit enxuto DESLIGADO: suportes e curas do dono ficam (o comportamento de antes)', () => {
+    zerar(); M.E.dono = DONO;
+    const r = buscar(VH);
+    assert(!r.ctx.enxAtivo);
+    for (const v of VOCS) if (r.final.esc[v]) assert.deepStrictEqual(r.final.esc[v].sups, DONO[v].supports.filter(Boolean), v + ' sem os suportes do dono');
+    const x = extras(VH, 'SORCERER');
+    assert.deepStrictEqual(x.supports, ['Enchant Party', 'Magic Shield']);
+    assert.deepStrictEqual(curasMagia(x), ['Ultimate Healing 40', 'Light Healing 60']);
+});
+t('2.14 — kit enxuto em Vampire hell (degrau 0): sem suporte, sem cura por magia, as poções de vida do dono ficam', () => {
+    zerar(); M.E.dono = DONO; M.MEM.int_enxuto = true;
+    const r = buscar(VH);
+    assert(r.ctx.enxAtivo && r.ctx.escEnx.degrau === 0);
+    for (const v of VOCS) if (r.final.esc[v]) assert.deepStrictEqual(r.final.esc[v].sups, [], v + ' com suporte');
+    for (const v of VOCS) {
+        const x = extras(VH, v);
+        assert.deepStrictEqual(x.supports, [null, null], v);
+        assert.deepStrictEqual(curasMagia(x), [], v + ' com cura por magia');
+        assert(x.heals.some(h => h && /potion/i.test(h.name)), v + ' sem poção de vida');
+    }
+    assert.strictEqual(extras(VH, 'KNIGHT').heals[0].name, 'Strong Health Potion');
+    console.log('      enxuto VH: ' + VOCS.map(v => v[0] + ' ' + kit(r.final.esc[v])).join(' · ') + ` → ${Math.round(r.final.met.xpH)} xp/h, ${Math.round(r.final.met.lucroH)}/h`);
+});
+t('2.14 — kit enxuto em Bog Raiders (degrau 1): Heal Friend 70 % só no Druida, com a mana dele reservada', () => {
+    zerar(); M.E.dono = DONO; M.MEM.int_enxuto = true;
+    const r = buscar(BOG);
+    assert.strictEqual(r.ctx.escEnx.degrau, 1);
+    assert.strictEqual(r.ctx.voc.DRUID.reserva, 6); assert.strictEqual(r.ctx.voc.KNIGHT.reserva, 0);
+    assert.deepStrictEqual(curasMagia(extras(BOG, 'DRUID')), ['Heal Friend 70']);
+    for (const v of ['KNIGHT', 'PALADIN', 'SORCERER']) assert.deepStrictEqual(curasMagia(extras(BOG, v)), [], v);
+});
+t('2.14 — degrau 2 põe a cura do Knight e do Paladino; degrau 3 = o kit do dono inteiro', () => {
+    zerar(); M.E.dono = DONO; M.MEM.int_enxuto = true;
+    M.MEM.escada_enx = { [VH]: { d: 2, t: Date.now() } };
+    assert.deepStrictEqual(curasMagia(extras(VH, 'KNIGHT')), ['Wound Cleansing 50']);
+    assert.deepStrictEqual(curasMagia(extras(VH, 'PALADIN')), ['Divine Healing 40']);
+    assert.deepStrictEqual(curasMagia(extras(VH, 'DRUID')), ['Heal Friend 70']);
+    M.MEM.escada_enx = { [VH]: { d: 3, t: Date.now() } };
+    const x = extras(VH, 'SORCERER');
+    assert.deepStrictEqual(x.supports, ['Enchant Party', 'Magic Shield'], 'degrau 3 devolve os suportes do dono');
+});
+t('2.14 — o kit da comunidade concorre: a escolha nunca sai pior que ele pela conta do Inteligente', () => {
+    for (const [id, enx] of [[VH, true], [BOG, true], [VH, false]]) {
+        zerar(); M.E.dono = DONO; if (enx) M.MEM.int_enxuto = true;
+        const r = buscar(id), ctx = r.ctx;
+        assert(ctx.comunidade, 'sem kit da comunidade em ' + id);
+        const com = M.avaliarPartyInt(ctx, ctx.comunidade, null);
+        const ord = M.ordenarInt([r.novo, com], ctx.eps);
+        assert(ord[0] === r.novo || ord[0].sig === r.novo.sig, `${H(id).title}: comunidade ${Math.round(com.met.xpH)}/${Math.round(com.met.lucroH)} ganhou do escolhido ${Math.round(r.novo.met.xpH)}/${Math.round(r.novo.met.lucroH)}`);
+        console.log(`      ${H(id).title}${enx ? ' (enxuto)' : ''}: comunidade ${Math.round(com.met.xpH)} xp/h ${Math.round(com.met.lucroH)}/h · escolhido ${Math.round(r.novo.met.xpH)} xp/h ${Math.round(r.novo.met.lucroH)}/h`);
+    }
+});
+
+/* ===================== v2.14.1 — pacote inteiro dos kits da comunidade (nível 80+) ===================== */
+const GS = 105, POI = 49, HIVE = 199;
+t('2.14.1 — degrau 2 também põe a Intense Healing 70 % no Feiticeiro (os 3 posts de nível 80)', () => {
+    zerar(); M.E.dono = DONO; M.MEM.int_enxuto = true;
+    M.MEM.escada_enx = { [VH]: { d: 2, t: Date.now() } };
+    assert.deepStrictEqual(curasMagia(extras(VH, 'SORCERER')), ['Intense Healing 70']);
+});
+t('2.14.1 — Hive Queen no nível 81: Fierce Berserk (nível 90) sai do kit do Knight e o resto fica; poção por personagem', () => {
+    semear(81); M.E.dono = DONO; M.MEM.int_enxuto = true;
+    const r = buscar(HIVE), c = r.ctx.comunidade;
+    assert(c, 'sem kit da comunidade');
+    assert.deepStrictEqual(nomes(c.KNIGHT), ['Berserk', 'Groundshaker', 'Front Sweep']);
+    assert.strictEqual(c.DRUID.pocao, 0.5); assert.strictEqual(c.SORCERER.pocao, 0.2); assert.strictEqual(c.KNIGHT.pocao, 0.3);
+    assert.deepStrictEqual(c.SORCERER.sups, ['Enchant Party'], 'buff do post no Feiticeiro');
+    assert.strictEqual(c.KNIGHT.com, HIVE);
+    semear(90); M.E.dono = DONO; M.MEM.int_enxuto = true;
+    assert.deepStrictEqual(nomes(buscar(HIVE).ctx.comunidade.KNIGHT), ['Fierce Berserk', 'Berserk', 'Groundshaker', 'Front Sweep'], 'no 90 o Fierce Berserk volta');
+    semear(67);
+});
+t('2.14.1 — kit da comunidade escolhido → vai o pacote do post: curas em ordem de gatilho, poção de vida, buffs e burst arrow', () => {
+    semear(81); M.E.dono = DONO; M.MEM.int_enxuto = true;
+    const r = buscar(HIVE), c = r.ctx.comunidade, h = H(HIVE);
+    const x = (v) => M.extrasInt(v, c[v], r, h);
+    assert.deepStrictEqual(curasMagia(x('DRUID')), ['Intense Healing 70', 'Heal Friend 75']);
+    assert.deepStrictEqual(curasMagia(x('SORCERER')), ['Ultimate Healing 40', 'Intense Healing 70'], 'a forte (gatilho baixo) na frente');
+    assert.strictEqual(x('KNIGHT').heals[0].name, 'Great Health Potion'); assert.strictEqual(x('KNIGHT').heals[0].percent, 55);
+    assert.deepStrictEqual(x('KNIGHT').supports, ['Train Party', null]);
+    assert.deepStrictEqual(x('SORCERER').supports, ['Enchant Party', null]);
+    assert.strictEqual(x('PALADIN').ammo, 'burst arrow');
+    assert.strictEqual(x('DRUID').manaPotion.percent, 50);
+    /* o kit que a busca inventa continua sem suporte no enxuto */
+    const busca = { plano: c.SORCERER.plano, pocao: 0.3, sups: [] };
+    assert.deepStrictEqual(M.extrasInt('SORCERER', busca, r, h).supports, [null, null]);
+    semear(67);
+});
+t('2.14.1 — Pits of Inferno: o kit da comunidade não tem fogo (Dragon Lord é imune) nem burst arrow; Druida com Mass Healing', () => {
+    const k = M.KITS_COMUNIDADE[POI];
+    for (const v of Object.keys(k.kits)) assert(!k.kits[v].some(([n]) => /flame|fire/i.test(n)), v + ' com magia de fogo');
+    assert(!(k.ammo && k.ammo.PALADIN), 'burst arrow (explosão de fogo) no mapa imune a fogo');
+    assert(k.curas.DRUID.some(([n]) => n === 'Mass Healing'));
+});
+t('2.14.1 — o kit da comunidade aplicado volta da memória com a marca e os buffs (kit_int → vigente)', () => {
+    semear(81); M.E.dono = DONO; M.MEM.int_enxuto = true;
+    const h = H(GS), r = buscar(GS), c = r.ctx.comunidade;
+    M.registrarAplicacaoInt(h, { final: { esc: c }, escada: r.escada, escEnx: r.escEnx });
+    assert.strictEqual(M.MEM.kit_int[GS + '|SORCERER'].com, GS);
+    M.invalidarPlanos(); M._intParty.clear();
+    const ctx = M.contextoInt(h);
+    assert.strictEqual(ctx.vigente.SORCERER.com, GS);
+    assert.deepStrictEqual(ctx.vigente.SORCERER.sups, ['Enchant Party']);
+    semear(67);
+});
+/* ===================== v2.14.2 — ranking do Radar com o kit enxuto no degrau fixo ===================== */
+t('2.14.2 — degrauEnx fixa o degrau: mapa sem medida não cai no kit do dono (sem suportes, sem defesa)', () => {
+    zerar(); M.E.dono = DONO;
+    const h = H(DL);
+    const sem = M.contextoInt(h, { enxuto: true });
+    assert.strictEqual(sem.escEnx.degrau, 3, 'sem medida e sem kit da comunidade: degrau 3 (kit do dono)');
+    assert.strictEqual(sem.enxAtivo, false);
+    const fix = M.contextoInt(h, { enxuto: true, degrauEnx: 2 });
+    assert.strictEqual(fix.escEnx.degrau, 2);
+    assert.strictEqual(fix.enxAtivo, true);
+    for (const v of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(fix.defesa[v], [], v + ' com suporte de defesa');
+    assert.notStrictEqual(fix.carimbo, sem.carimbo);
+    const r = M.partyInt(h, true, { enxuto: true, degrauEnx: 2 });
+    for (const v of Object.keys(r.final.esc)) assert.deepStrictEqual(r.final.esc[v].sups, [], v + ' com os suportes do dono no ranking');
+});
+t('2.14.3 — o APLICAR e o Scan rápido passam as opções da busca até a party (o kit do ranking do Radar)', () => {
+    zerar(); M.E.dono = DONO;
+    const h = H(DL), opc = { enxuto: true, degrauEnx: 2 };
+    const r = M.montarPlano('inteligente', h, 'SORCERER', { buscar: true, opcInt: opc });
+    assert(r.int && r.int.escEnx, 'sem escada enxuta');
+    assert.strictEqual(r.int.escEnx.degrau, 2);
+    assert.deepStrictEqual(r.int.sups, [], 'suporte do dono no kit do ranking');
+    const semOpc = M.montarPlano('inteligente', h, 'SORCERER', { buscar: true });
+    assert.strictEqual(semOpc.int.escEnx, null, 'sem opções o Inteligente segue o perfil do dono (enxuto desligado)');
+});
+t('2.14.5 — o catálogo de munição chegando no meio do APLICAR não apaga a party (os 4 saem da mesma conta)', () => {
+    zerar(); M.E.dono = DONO;
+    const h = H(DL), opc = { enxuto: true, degrauEnx: 2 };
+    const res = M.partyInt(h, true, opc);
+    M.CAT.municao = [{ name: 'arrow', cost: 0 }];
+    for (const v of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) {
+        const p = M.montarPlano('inteligente', h, v, { opcInt: opc });
+        assert(p.plano.length > 0, v + ' saiu sem kit depois do /ammo chegar');
+        const q = M.montarPlano('inteligente', h, v, { opcInt: opc, resInt: res });
+        assert.deepStrictEqual(q.plano.map(s => s.av.m.name), res.final.esc[v].plano.map(s => s.av.m.name), v + ' fora da conta do APLICAR');
+    }
+    delete M.CAT.municao;
+});
 console.log(`\n${n} testes ok`);
