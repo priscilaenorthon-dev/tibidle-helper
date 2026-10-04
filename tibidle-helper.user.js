@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.14.9
+// @version      2.14.10
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.14.9';
+    const VERSAO = '2.14.10';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -6032,6 +6032,73 @@
     /* v2.14.9 — DESMANCHE (criador do jogo, 04/10): o que o NPC não compra (Incomum ou melhor, ou refinada) e ninguém usa
      * vira fragmento na Forja — a única fonte de gemas. Só mochila (bag) e depósito (depot); o corpo nunca. */
     const vendivelNpc = p => !((p.forja && p.forja.raridade) > 0) && !((p.forja && p.forja.refino) > 0);
+    /* v2.14.10 — PLANO DE FORJA (dono, 04/10: "não sei usar a forja: me indica o que fazer e quais atributos
+     * encontrar"). Regras do jogo (cliente, 04/10) e da wiki /forja: potência atual = base + 50 × refino; faixas a
+     * cada 200 (I 1–199 … VI 1000+) e o VALOR das linhas é sorteado no range da faixa; encaixes = raridade (Comum 0,
+     * Incomum 1, Raro 2, Épico 3, Lendário 4, Mítico 5); encaixes de defesa (escudo, elmo, armadura, calça, bota, anel)
+     * e de ataque (arma, colar) são grupos separados. Gemas: Refino T1 (+1..+4, falha não cai) e T2 (+5..+10, falha
+     * cai 1; Garantia T1 segura), Raridade T1 (até Lendário; falhar só gasta a gema) e T2 (Mítico), Atributo T1
+     * (escreve uma linha aleatória no 1º encaixe vazio), Limpeza T1 (apaga TODAS) e T2 (só a ÚLTIMA), Refazer T1
+     * (re-sorteia o valor de todas) e T2 (só do último), Ordem T2 (embaralha a ordem). Valores típicos por faixa:
+     * regen 1,1→5,2 · skill +1→+3 · dano 1,2→9,8 % (wiki); o resto é nominal, só para ordenar. */
+    const FAIXA_LIMIAR = [1, 200, 400, 600, 800, 1000];
+    const ENCAIXES_POR_RARIDADE = [0, 1, 2, 3, 4, 5];
+    const RAR_PT = ['Comum', 'Incomum', 'Raro', 'Épico', 'Lendário', 'Mítico'];
+    const ATAQUE_IDS = ['nivel_magico', 'corpo_a_corpo', 'distancia', 'dano_fisico', 'dano_magico', 'critico_chance', 'critico_dano', 'roubo_vida_chance', 'roubo_vida_quantia'].concat(ELEM.map(e => 'dano_elem_' + e));
+    const DEFESA_IDS = ['regen_mana', 'regen_vida', 'resist_fisica', 'protecao_magica', 'escudo', 'max_hp', 'max_mana', 'capacidade', 'cura_propria', 'chance_de_loot'].concat(ELEM.map(e => 'resist_' + e));
+    function faixaPotencia(pot) { let f = 1; for (let i = 1; i < FAIXA_LIMIAR.length; i++) if (pot >= FAIXA_LIMIAR[i]) f = i + 1; return f; }
+    function valorTipico(id, faixa) {
+        const f = Math.max(1, Math.min(6, faixa)) - 1;
+        if (/^regen_/.test(id)) return [1.1, 1.9, 2.7, 3.5, 4.3, 5.2][f];
+        if (id === 'nivel_magico' || id === 'corpo_a_corpo' || id === 'distancia') return [1, 1, 2, 2, 3, 3][f];
+        if (/^dano_/.test(id)) return [1.2, 2.9, 4.6, 6.3, 8.0, 9.8][f];
+        const nominal = { resist_fisica: 1.5, protecao_magica: 1.5, escudo: 2, max_hp: 30, max_mana: 40, capacidade: 60, cura_propria: 2, chance_de_loot: 0.3,
+                          critico_chance: 3, critico_dano: 10, roubo_vida_chance: 3, roubo_vida_quantia: 10 };
+        return (nominal[id] != null ? nominal[id] : /^resist_/.test(id) ? 1.5 : 1) * (0.7 + 0.15 * f);
+    }
+    /* peca = {slot, attrs, forja{raridade, refino, potenciaBase, atributos}}; vocs = candidatas; porVoc = resultado do
+     * distribuirEquip (opcional, para dizer o que a vocação veste hoje). Devolve o plano, sem custo de gema (quem
+     * conhece o preço é pgRefino, fora deste bloco). */
+    function planoForja(peca, vocs, ctx, porVoc) {
+        const f = (peca && peca.forja) || {}, slot = normalizarSlot(peca.slot);
+        const ataque = slot === 'weapon' || slot === 'necklace';
+        const ids = ataque ? ATAQUE_IDS : DEFESA_IDS;
+        const refino = Number(f.refino) || 0, pot = (Number(f.potenciaBase) || 0) + 50 * refino, faixa = faixaPotencia(pot);
+        let proxima = null;
+        if (faixa < 6 && refino < 10) {
+            const limiar = FAIXA_LIMIAR[faixa], refinos = Math.ceil((limiar - pot) / 50);
+            if (refino + refinos <= 10) proxima = { faixa: faixa + 1, limiar, refinos, refinoAlvo: refino + refinos };
+        }
+        const faixaAlvo = proxima ? proxima.faixa : faixa;
+        const podem = (vocs || VOCS_EQUIP).filter(v => vocacaoPode(peca.attrs, v));
+        const cands = podem.length ? podem : (vocs || VOCS_EQUIP);
+        let voc = cands[0], melhorPt = -1, pesos = null;
+        for (const v of cands) {
+            const P = pesosDaVoc(v, ctx);
+            const top = Math.max(0, ...ids.map(id => (P[id] || 0) * valorTipico(id, faixaAlvo)));
+            if (top > melhorPt) { melhorPt = top; voc = v; pesos = P; }
+        }
+        if (!pesos) pesos = pesosDaVoc(voc, ctx);
+        const linhasAlvo = ids.map(id => ({ id, rotulo: rotulo(id), pt: Math.round((pesos[id] || 0) * valorTipico(id, faixaAlvo) * 10) / 10 }))
+            .filter(x => x.pt > 0).sort((a, b) => b.pt - a.pt).slice(0, 4);
+        const corte = linhasAlvo.length ? linhasAlvo[0].pt * 0.4 : 0;
+        const boas = new Set(linhasAlvo.filter(x => x.pt >= corte).map(x => x.id));
+        const linhasAtuais = (Array.isArray(f.atributos) ? f.atributos : []).map(a => ({ id: a.id, rotulo: rotulo(a.id), valor: a.valor, boa: boas.has(a.id) }));
+        const raridade = Number(f.raridade) || 0, encaixes = ENCAIXES_POR_RARIDADE[raridade] || 0;
+        const raridadeAlvo = Math.max(raridade, 3);
+        const veste = porVoc && porVoc[voc] && porVoc[voc][slot] && porVoc[voc][slot].melhor ? porVoc[voc][slot].melhor : null;
+        const ruins = linhasAtuais.filter(x => !x.boa).length;
+        const passos = [];
+        passos.push(proxima
+            ? `Refino primeiro: +${refino} → +${proxima.refinoAlvo} (${proxima.refinos} refino${proxima.refinos > 1 ? 's' : ''} com Refino ${proxima.refinoAlvo <= 4 ? 'T1' : 'T2'}${proxima.refinoAlvo >= 5 ? ', e Garantia T1 a partir do +5: sem ela a falha derruba um nível' : '; até o +4 a falha não derruba'}). Potência ${pot} → ${proxima.limiar}: faixa ${faixa} → ${proxima.faixa}. O valor das linhas é sorteado no range da faixa, então refine ANTES de mexer nas linhas.${ataque ? ' Arma ganha ataque a cada refino (varinha e rod só ganham potência).' : ' Armadura ganha defesa a cada refino.'}`
+            : `Refino: ${refino >= 10 ? 'já está no +10' : 'já na faixa máxima (potência ' + pot + ')'} — pule.`);
+        if (raridade < raridadeAlvo) passos.push(`Raridade: ${RAR_PT[raridade]} (${encaixes} encaixe${encaixes === 1 ? '' : 's'}) → suba até ${RAR_PT[raridadeAlvo]} (${ENCAIXES_POR_RARIDADE[raridadeAlvo]} encaixes) com Raridade T1 — Raro → Épico 20 %, Épico → Lendário 10 %; falhar só gasta a gema, não rebaixa. Mais encaixes = mais chances de cair a linha certa.`);
+        else passos.push(`Raridade: ${RAR_PT[raridade]}, ${encaixes} encaixes — já serve${raridade < 4 ? ' (Lendário daria 4, a 10 % por tentativa)' : ''}.`);
+        passos.push(`Linhas: Atributo T1 escreve uma linha aleatória no 1º encaixe vazio. Aqui vale procurar: ${linhasAlvo.map(x => x.rotulo).join(', ') || '—'}. Veio ruim? Limpeza T2 apaga só a ÚLTIMA linha (a que acabou de cair) e você tenta de novo. ${ruins >= 2 ? 'As linhas de hoje (' + linhasAtuais.filter(x => !x.boa).map(x => x.rotulo).join(', ') + ') não valem para o ' + voc.toLowerCase() + ': Limpeza T1 apaga TODAS e recomeça do zero.' : 'Limpeza T1 apaga todas — só se a maioria for ruim.'} Ordem T2 embaralha a ordem: tire a linha boa do fim antes de uma Limpeza T2.`);
+        passos.push('Valores: com as linhas certas, Refazer T1 re-sorteia o VALOR de todas no range da faixa (por isso o refino vem antes); Refazer T2 só o do último encaixe.');
+        passos.push('Antes de gastar: a Bancada de Testes da Forja simula refino, raridade e atributos de graça. Gema = 100 fragmentos + ouro (lastreado na coin); fragmentos vêm do Desmanche (botão acima) e dos raid tokens da invasão (NPC Ravena).');
+        return { voc, slot, ataque, pot, faixa, proxima, encaixes, raridade, raridadeAlvo, linhasAlvo, linhasAtuais, veste: veste ? { nome: veste.nome, pt: Math.round(pontuarPeca(veste, voc, ctx).pontos * 10) / 10 } : null, passos };
+    }
     function pecasDesmanche(res) {
         const ORIG = { 'mochila': 'bag', 'depósito': 'depot' };
         return ((res && res.dispensaveis) || []).filter(p => p && p.iid && ORIG[p.origem] && !vendivelNpc(p)).map(p => ({ iid: p.iid, origem: ORIG[p.origem], nome: p.nome }));
@@ -7784,8 +7851,24 @@
             (disp.length > 60 ? `<div class="tb-mut">… e mais ${disp.length - 60}</div>` : ''), `sobrando (${disp.length} · comuns ${numBR(soma)} o)`);
         const bases = R.bases || [];
         const potTxt = p => { const v = potenciaDe(p); return v ? ` · potência ${numBR(v)}` : ''; };
+        /* v2.14.10 — plano de forja por peça (planoForja no bloco puro; o custo das gemas vem do pgRefino do Progresso) */
+        const planoForjaHtml = (p, res) => {
+            let pl; try { pl = planoForja(p, VOCS, EQUIP.ctx, res && res.porVoc); } catch (e) { falhou('plano de forja', e); return ''; }
+            let custo = '';
+            if (pl.proxima) { try { const r = pgRefino(pl.proxima.refinoAlvo - pl.proxima.refinos, pl.proxima.refinoAlvo, 'melhor'); custo = ` · custo esperado ~${numBR(Math.round(r.total.tentativas * 10) / 10)} gema(s) de refino${r.total.G > 0.05 ? ' + ' + numBR(Math.round(r.total.G * 10) / 10) + ' de garantia' : ''} ≈ ${milBR(Math.round(r.total.ouro))} de ouro`; } catch (e) { custo = ''; } }
+            const atuais = pl.linhasAtuais.length ? pl.linhasAtuais.map(x => `<span class="${x.boa ? 'tb-ok' : 'tb-ruim'}">${escHtml(x.rotulo)} ${escHtml(String(x.valor))}${x.boa ? ' ✓' : ' ✗'}</span>`).join(' · ') : 'nenhuma (sem encaixe preenchido)';
+            return `<details class="tb-aj" data-k="eq-plano-${escHtml(String(p.iid))}"><summary>plano de forja · ${escHtml(VOC_ROTULO[pl.voc] || pl.voc)} · faixa ${pl.faixa}${pl.proxima ? ' → ' + pl.proxima.faixa + ' em ' + pl.proxima.refinos + ' refino' + (pl.proxima.refinos > 1 ? 's' : '') : ''}</summary><div class="tb-mut">` +
+                `<div><b>Para quem:</b> ${escHtml(VOC_ROTULO[pl.voc] || pl.voc)}, ${escHtml(slotPt(pl.slot))}${pl.veste ? ` — hoje usa ${escHtml(pl.veste.nome)} (${numBR(pl.veste.pt)} pt)` : ''}.</div>` +
+                `<div><b>Potência:</b> ${numBR(pl.pot)} = faixa ${pl.faixa}${pl.proxima ? ` · próxima faixa (${pl.proxima.limiar}) em ${pl.proxima.refinos} refino${pl.proxima.refinos > 1 ? 's' : ''} (+${pl.proxima.refinoAlvo - pl.proxima.refinos} → +${pl.proxima.refinoAlvo})${custo}` : ' · faixa máxima'}.</div>` +
+                `<div><b>Linhas que valem aqui</b> (1 pt ≈ 1 % do dano da party, valor típico da faixa ${pl.proxima ? pl.proxima.faixa : pl.faixa}): ${pl.linhasAlvo.map(x => escHtml(x.rotulo) + ' ' + numBR(x.pt) + ' pt').join(' · ') || '—'}.</div>` +
+                `<div><b>Linhas de hoje:</b> ${atuais}.</div>` +
+                `<ol style="margin:4px 0 0 16px;padding:0">${pl.passos.map(x => '<li>' + escHtml(x) + '</li>').join('')}</ol></div></details>`;
+        };
         if (bases.length) { h += aj('eq-bases', `<div class="tb-mut tb-eq-nota">Ninguém usa, mas vale pela Forja: Épico ou melhor (3+ encaixes: trocar o encaixe ruim sai mais barato que subir a raridade) ou potência ≥ ${POTENCIA_BASE_FORJA} com encaixe de ML, distância ou corpo a corpo (cada refino dá +50 de potência e a cada 200 a linha pode subir um ponto). Nunca entram nas sobras.</div>` +
-            bases.map(p => `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)} <span class="tb-mut">${escHtml(slotPt(p.slot))} · ${escHtml(p.origem)}${potTxt(p)} · ${escHtml(((p.forja && p.forja.atributos) || []).map(a => rotulo(a.id) + ' ' + a.valor).join(', '))}</span></span></div>`).join(''), `bases de forja (${bases.length})`); }
+            `<div class="tb-mut tb-eq-nota">Cada peça abaixo tem um <b>plano</b>: para quem, quantos refinos até a próxima faixa, quais linhas procurar e a ordem das gemas.</div>` +
+            bases.map(p => `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)} <span class="tb-mut">${escHtml(slotPt(p.slot))} · ${escHtml(p.origem)}${potTxt(p)} · ${escHtml(((p.forja && p.forja.atributos) || []).map(a => rotulo(a.id) + ' ' + a.valor).join(', '))}</span></span></div>` + planoForjaHtml(p, R)).join('') +
+            aj('eq-forja-gl', `<b>As gemas, uma a uma</b> (100 fragmentos + ouro cada; o ouro acompanha a coin): <b>Refino T1</b> +1 a +4 (falha não derruba) · <b>Refino T2</b> +5 a +10 (falha derruba 1) · <b>Garantia T1</b> protege a tentativa do +5 em diante · <b>Raridade T1</b> sobe um grau até Lendário (falhar só gasta a gema) · <b>Raridade T2</b> Mítico · <b>Atributo T1</b> escreve uma linha aleatória no 1º encaixe vazio · <b>Limpeza T1</b> apaga TODAS as linhas · <b>Limpeza T2</b> apaga só a ÚLTIMA · <b>Refazer T1</b> re-sorteia o valor de todas no range da faixa · <b>Refazer T2</b> só do último encaixe · <b>Ordem T2</b> embaralha a ordem. Potência = base + 50 por refino; faixas I–VI a cada 200 (1–199, 200–399, 400–599, 600–799, 800–999, 1000+) e cada faixa sobe o valor que a linha pode ter (regen 1,1 → 5,2 · skill +1 → +3 · dano 1,2 → 9,8 %). Encaixes = raridade (Incomum 1, Raro 2, Épico 3, Lendário 4). Comum não desmancha e não tem encaixe.`, '? como a Forja funciona'),
+            `bases de forja (${bases.length})`); }
         const nobres = R.nobres || [];
         if (nobres.length) { h += aj('eq-nobres', `<div class="tb-mut tb-eq-nota">Encaixe que a comunidade guarda (wiki /forja): regen. de mana ou de vida nas peças de defesa; corpo a corpo, distância, nível mágico, dano físico ou mágico na arma e no colar. O encaixe dela supera o da peça que alguém que a veste vai usar, mas a nota total perdeu: fica guardada, fora das sobras e do Mercado. Quando todos já vestem encaixe igual ou melhor, ela volta para as sobras e dá para vender.</div>` +
             nobres.map(p => `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)} <span class="tb-mut">${escHtml(slotPt(p.slot))} · ${escHtml(p.origem)} · ${escHtml(((p.forja && p.forja.atributos) || []).map(a => rotulo(a.id) + ' ' + a.valor).join(', '))}</span></span></div>`).join(''), `guardar: encaixe bom (${nobres.length})`); }

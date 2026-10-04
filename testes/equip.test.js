@@ -7,7 +7,7 @@ const raiz = path.join(__dirname, '..');
 const src = fs.readFileSync(path.join(raiz, 'tibidle-helper.user.js'), 'utf8');
 const ini = src.indexOf('/* @@EQUIP-PURO-INICIO */'), fim = src.indexOf('/* @@EQUIP-PURO-FIM */');
 assert(ini > 0 && fim > ini, 'marcadores @@EQUIP-PURO não encontrados');
-const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, pesosDaVoc, candidatosEquip, distribuirEquip, pecasDesmanche };')();
+const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, pesosDaVoc, candidatosEquip, distribuirEquip, pecasDesmanche, planoForja, faixaPotencia };')();
 const le = (p) => { try { return JSON.parse(fs.readFileSync(path.join(raiz, p), 'utf8')); } catch (e) { return null; } };
 const base = {};
 for (const [nome, it] of Object.entries(le('testes/fixtures/itens.json').itens)) base[nome] = { id: it.id, attrs: it.attrs || {}, sell: it.sell || 0, equipPreview: it.equipPreview || null };
@@ -269,6 +269,30 @@ t('pecasDesmanche: só sobras que o NPC não compra (Incomum+ ou refinada), da m
     const d = M.pecasDesmanche(res);
     assert.deepStrictEqual(d.map(x => x.iid + ':' + x.origem), ['incomum:bag', 'refinada:depot']);
     assert.deepStrictEqual(M.pecasDesmanche(null), []);
+});
+t('planoForja: faixa pela potência, refinos até a próxima faixa, linhas-alvo por vocação e espaço, passos em ordem', () => {
+    /* dono (04/10): "não sei usar a forja — me indica o que fazer e quais atributos encontrar" */
+    assert.deepStrictEqual([M.faixaPotencia(1), M.faixaPotencia(199), M.faixaPotencia(200), M.faixaPotencia(312), M.faixaPotencia(400), M.faixaPotencia(812), M.faixaPotencia(1000)], [1, 1, 2, 2, 3, 5, 6]);
+    /* rod ML+1 com potência 312 (TV de Souza): faixa 2 → faixa 3 em 2 refinos (400); linha-alvo do mago na arma = nível mágico */
+    const rod = { iid: 'r', nome: 'snakebite rod', slot: 'weapon', attrs: { vocation: 'sorcerer' }, origem: 'depósito', forja: { raridade: 1, refino: 0, potenciaBase: 312, atributos: [{ id: 'nivel_magico', valor: 1 }] } };
+    const pr = M.planoForja(rod, ['SORCERER'], null, null);
+    assert.strictEqual(pr.voc, 'SORCERER');
+    assert.strictEqual(pr.faixa, 2); assert.strictEqual(pr.proxima.limiar, 400); assert.strictEqual(pr.proxima.refinos, 2); assert.strictEqual(pr.proxima.refinoAlvo, 2);
+    assert.strictEqual(pr.linhasAlvo[0].id, 'nivel_magico', 'arma do mago: nível mágico primeiro — veio ' + pr.linhasAlvo.map(x => x.id));
+    assert(pr.linhasAtuais[0].id === 'nivel_magico' && pr.linhasAtuais[0].boa, 'a linha ML+1 que já tem é boa');
+    assert.strictEqual(pr.encaixes, 1); assert.strictEqual(pr.raridadeAlvo, 3, 'subir até Épico (3 encaixes)');
+    assert(pr.passos.length >= 4 && /refin/i.test(pr.passos[0]) && /raridade/i.test(pr.passos[1]), 'ordem: refino → raridade → atributos: ' + pr.passos.join(' | '));
+    /* anel épico de resistências (Knight): linhas-alvo de defesa = regen. de mana e regen. de vida; as resistências atuais não são nobres */
+    const anel = { iid: 'a', nome: 'crystal ring', slot: 'ring', attrs: {}, origem: 'mochila', forja: { raridade: 3, refino: 0, potenciaBase: 152, atributos: [{ id: 'resist_energia', valor: 1.1 }, { id: 'resist_gelo', valor: 0.9 }, { id: 'resist_sagrado', valor: 0.9 }] } };
+    const pa = M.planoForja(anel, ['KNIGHT'], null, null);
+    assert(['regen_mana', 'regen_vida'].includes(pa.linhasAlvo[0].id) && ['regen_mana', 'regen_vida'].includes(pa.linhasAlvo[1].id), 'anel do Knight: regen primeiro — veio ' + pa.linhasAlvo.map(x => x.id));
+    assert(!pa.linhasAlvo.some(x => /^dano|corpo_a_corpo|nivel_magico|distancia/.test(x.id)), 'linha de ataque não existe em peça de defesa');
+    assert(pa.linhasAtuais.every(x => !x.boa), 'resistência não é linha nobre do Knight');
+    assert.strictEqual(pa.proxima.limiar, 200); assert.strictEqual(pa.proxima.refinos, 1);
+    assert(/Limpeza T1/.test(pa.passos.join(' ')), 'três linhas ruins: apagar tudo com Limpeza T1');
+    /* +10 e 1000+: não há próxima faixa */
+    const topo = { iid: 't', nome: 'magic sword', slot: 'weapon', attrs: {}, origem: 'depósito', forja: { raridade: 4, refino: 10, potenciaBase: 520, atributos: [] } };
+    assert.strictEqual(M.planoForja(topo, ['KNIGHT'], null, null).proxima, null);
 });
 t('2.11.6: épico nunca sobra (base de forja); resistência sobrevive ao cenário de mapa mágico', () => {
     const anel = (iid, dono, r, ...at) => ({ iid, nome: 'crystal ring', slot: 'ring', attrs: {}, origem: dono ? 'corpo' : 'depósito', dono, forja: F(r, ...at) });

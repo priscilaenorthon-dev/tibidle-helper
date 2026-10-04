@@ -4621,3 +4621,17 @@ mapas (Vampire hell 32,5k × 58,0k do Em área; Banshee 27,7k × 49,6k) e ainda 
   27,35), o mesmo botão desmanchou 1 leather boots Incomum (potência 1): "1 de 1 peça(s) viraram fragmento", peça
   sumiu do depósito. O helper não anda pelo personagem (`city_move` existe no jogo, não usado): o aviso diz para
   abrir a Forja e tocar de novo. Outros erros do jogo: `not_in_city`, `insufficient_item`, `invalid_forge`.
+
+## 2.14.10 (04/10) — plano de forja por peça nas "bases de forja" do Equip
+- Dono: "não sei usar a forja — me indica o que devo fazer, quais atributos encontrar, detalhadamente". Cada base de
+  forja ganhou um `<details>` "plano de forja · vocação · faixa N → N+1 em K refinos" com: para quem (e o que essa
+  vocação veste hoje, em pt), potência atual (= base + 50 × refino) e faixa, refinos até a próxima faixa com o custo
+  esperado em gemas e ouro (`pgRefino`), as 4 linhas que mais valem naquele espaço para aquela vocação (peso do Equip ×
+  valor típico da faixa-alvo), as linhas de hoje marcadas ✓/✗ e os passos em ordem: refino → raridade → linhas
+  (Atributo T1; Limpeza T2 apaga só a última; Limpeza T1 tudo) → valores (Refazer T1/T2) → Bancada de Testes.
+  Glossário "? como a Forja funciona" com as 11 gemas do cliente (04/10): Refino T1/T2, Garantia T1, Raridade T1/T2,
+  Atributo T1, Limpeza T1/T2, Refazer T1/T2, Ordem T2.
+- `planoForja(peca, vocs, ctx, porVoc)` e `faixaPotencia(pot)` no bloco EQUIP-PURO. Regras usadas: faixas I–VI a cada
+  200 (1–199 … 1000+); encaixes = raridade (Comum 0 … Lendário 4, Mítico 5); grupos de ataque (arma, colar) e defesa
+  (o resto); valores típicos por faixa regen 1,1→5,2 · skill +1→+3 · dano 1,2→9,8 % (wiki), o resto nominal só para
+  ordenar; a vocação escolhida é a que mais ganha com a melhor linha possível. 1 teste (269).
