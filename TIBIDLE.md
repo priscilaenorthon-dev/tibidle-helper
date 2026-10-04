@@ -4410,3 +4410,17 @@ mapas (Vampire hell 32,5k × 58,0k do Em área; Banshee 27,7k × 49,6k) e ainda 
   sem `huntId`. Teste no `vm` com o frame antes do `resume`. O Dia de 01/10 do dono foi consertado à mão (os 2
   lançamentos falsos tirados).
 
+
+## 2.13.7 (04/10) — update 1.1.0 do jogo: assets em versão nova
+- Patch 1.1.0 (4 ilhas novas no NPC Silas, hunts novas em Tibidle Island e Pits of Inferno, marcos do bestiário de
+  Quara's Domain Yalahar, Energy Ring fora da Thunderscar Peak, equipamentos que vinham como "Tools").
+- **Quebrava o helper**: os assets foram de `/assets/v167/` para `/assets/v170/` e o código pedia v167 fixo —
+  `imbuements.json` e `items-by-name.json` davam 404. Efeitos: o "nunca vender" do Auto Hunt não montava (o ciclo
+  parava sem vender e desligava), o Equip não achava os ids dos itens, a calculadora de imbuement e o
+  `spell-areas.json` (v100, já 404) ficavam sem dado.
+- Agora `buscarAsset(arquivo)` tenta as versões em ordem: a que a página do jogo está usando (recursos já carregados),
+  a dos catálogos (cena dos bosses, atlas das hunts), a última que funcionou e `v170`; guarda a que responder.
+- Versão nova detectada → `novaVersaoDoJogo`: catálogos rebaixados no próximo boot (hunts novas), ficha dos itens
+  (`equip_base`) e tabelas de loot do Radar recomeçam. Só leitura.
+- Hunts e marcos do bestiário vêm da API (`/hunts/select`), nada fixo no código; o catálogo também se renova a cada 24 h
+  e no botão de rebaixar do Status.
