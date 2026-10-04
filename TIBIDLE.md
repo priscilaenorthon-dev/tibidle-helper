@@ -4527,3 +4527,57 @@ mapas (Vampire hell 32,5k × 58,0k do Em área; Banshee 27,7k × 49,6k) e ainda 
   código da 2.14 ainda pedia `/assets/v167/` fixo (o único "v167" restante é o comentário que explica o 404).
 - Conferido depois do merge: `node --check`, 260 testes em node, ESLint com 0 erros. Nada de comportamento novo além da
   soma das duas linhas.
+
+## Teste ao vivo 04/10 (2.14.7, conta u2tag nível 83) — roteiro da 2.13.7
+- Resultado completo em `docs/resultado-2.13.7.md`. Passou: catálogos 109 hunts, Equip (127 peças, items-by-name), calculadora
+  de imbuement (14), Thunderscar sem Energy Ring, Radar 109 mapas em 14 s, Scan 5 min Em área em Vampire hell
+  (**74,7k xp/h raw 69,1k · +24,7k ouro/h · 2.074 abates/h**), presets devolvidos iguais ao backup, Inteligente "✓ calibrado"
+  com onda limpa em 0,3 s (1 combo). Não feito: Venda rápida com material (mochila sem material), Scan A/B.
+- **O jogo já está em `/assets/v185/`** (não v170). v170 ainda serve items-by-name (9.074 itens; v185 tem 9.168) e
+  spell-areas, mas `v170/imbuements.json` já é 404. A versão muda a cada poucos dias e as velhas ficam no ar um tempo.
+- **Defeito**: no boot `buscarAsset` não tem como saber a versão (performance vazia, `CAT.bosses` ainda não baixado) e
+  pega a conhecida v170; o Equip depois acha v185 e `novaVersaoDoJogo` dispara um rebaixamento falso. Só os bosses
+  (`scene`) trazem `/assets/vN/`; as hunts do `/hunts/select` não têm `atlas`.
+- **Defeito**: o shell do jogo tem `unlockedIslands` (u2tag: só `yalahar`); o helper ignora, e o Radar mostra mapas de
+  Zao, Gray Island, Pits of Inferno e das ilhas novas (Forgotten Knowledge, Otherworld, The Inquisition, Warzone) como
+  "risco médio/alto" em vez de bloqueado.
+- Calibração do Radar/Inteligente só aceita Scans no nível ±2 (`tpCalibrar`): subir de 77 para 83 zerou os 6 Scans.
+- Itens do jogo trazem `forja: {fonte, raridade, potenciaBase, refino, atributos[{id, valor}]}` (ex.: crystal ring raro,
+  potência 152, resist_energia 1,1). O helper lê `forja` mas **não usa `potenciaBase` em nada** (0 ocorrências).
+
+## Vídeos 04/10 — o que dá para aproveitar (Storming "Como a galera tem farmado" 13 min · TV de Souza "Guia de itens e forja" 46 min)
+- **Potência** (criador do jogo): drop de caçada vem com 0–350, elite 50–420, boss 250+. Cada refino +1 = **+50 de
+  potência**. Faixas a cada 200 (1–199, 200–399, 400–599, 600–799, 800+ "colossal", 1.000 "godlike") e cada faixa
+  sobe o teto das linhas (ML/distância/corpo a corpo: faixa 1 → +1, faixa 2 → +1–2, faixa 3 → +1–3). Itens de 800+
+  valem muito no mercado (Hive Bow +8 lendário, Magic Sword +6). **Ideia 1 (Equip)**: mostrar a potência e a faixa nas
+  "bases de forja" e nunca mandar para venda/desmanche peça com potência ≥ 300 e linha útil (ML, distância, melee).
+- **Ordem na forja** (os dois): refino primeiro (arma ganha ataque, armadura ganha defesa, varinha/rod só ganha
+  potência), raridade depois (só dá linhas), atributos por último; Garantia a partir do +4 (erro cai um nível).
+  Gema de limpeza T1 apaga todas as linhas; "refazer T1" rerrola os valores de todas; outra rerrola só a última.
+  Gema = 100 fragmentos + ouro **lastreado no preço médio da coin nas últimas 6 h**. **Ideia 2 (Progresso → Forja)**:
+  a calculadora de refino já existe; faltam a potência-alvo (quantos refinos até a próxima faixa) e o preço da gema
+  pela coin.
+- **Desmanche** (criador): item selado deixado no auto-sell perde a chance de purificar e **desmanchar em fragmentos**
+  (12 fragmentos de um lote). O Auto Hunt já purifica tudo; **Ideia 3**: no ciclo de venda, oferecer "desmanchar o que
+  é Comum sem linha boa" em vez de vender no NPC — depende de achar o comando de desmanche no socket (ainda não mapeado).
+- **Invasão (NPC Ravena)**: inscrever todo dia dá raid tokens mesmo em posição ruim; tokens → fragmentos (100 por
+  troca) vendidos a ~2k no mercado = ~200k "de graça". **Ideia 4 (Alertas/Dia)**: lembrete só leitura "ainda não se
+  inscreveu na invasão de hoje" (o helper já conhece `invasao-modal`, §13).
+- **Prey/Wild cards** (TV de Souza): rerrolar os grátis todo dia até os 4 terem buff de dano, travar os 4 e aí caçar
+  por horas o mapa do item (Water Elementals nível 50 → Heroic Axe). **Ideia 5 (Progresso → Prey)**: marcar quando
+  os 4 estão com dano e sugerir travar; avisar quando o buff expira.
+- **Itemização por fase**: Knight = armadura e arma de maior dano (Spike Sword 10k → Knight Axe 2k → Heroic Axe
+  (Water Elementals) → Onyx Flail (boss Worker Golem) → Magic Sword (boss Hero Fortress) → **Stonecutter 50 base**);
+  Paladino = Paladin Armor (Bog Raiders, Gear Wheel vende 100k) → Hive Bow (boss GS) → Mycological Bow (boss Zao);
+  magos = mana regen cedo, depois **tudo que der ML** (Hat of the Mad, colar de Gargoyles Meriana, Snakebite Rod de
+  Djinns com ML+1 e potência ≥ 300 → +3 de refino → rerrolar para ML+2). Itens de plasma (+3 skill, temporários).
+  Guardar Stone Skin Amulet (PvP futuro) e itens de movement speed. **Ideia 6**: conferir se `PESOS_EQUIP` dá peso a
+  mana regen nos magos/Paladino e a ML acima de tudo nos magos.
+- **Setup do TV de Souza em Dragon Lords (POI, 100k xp/h, +45k/h)**: Knight Berserk ≥3 · Front Sweep ≥1, sem mana pot;
+  Paladino Divine Caldera ≥3 · avalanche ≥2 · burst arrow, poção 50 %; Feiticeiro Energy Wave ≥3 · avalanche ≥1 ·
+  Enchant Party, curas 50/70/85; Druida Strong Ice Wave ≥3 · avalanche ≥1, mana pot 34 % ("a cura do Druida segura o
+  Knight de beber poção"). Candidato a `KITS_COMUNIDADE` para a conta principal (hunt 49, nível 100).
+- **Boss (invasão)**: mago na borda do alcance da SD, Ultimate Strike + Energy Wave, Thunderstorm na runa; buffs pagos
+  de slow e do elemento do boss. Coin tende a subir no fim de semana; o TV de Souza compra coins com 30 % do lucro de
+  cada caçada.
+- Eventos mensais (50 % de skill no treino; double treino sexta–domingo). Venda de itens por coin dentro do jogo "em breve".
