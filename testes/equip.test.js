@@ -237,6 +237,26 @@ t('2.11.11: nunca tira peça de um personagem para dar a outro — só depósito
     assert(p && p.iid !== 'dru', 'o Paladino não pode pegar a do Druida: ' + (p && p.iid));
     for (const v of Object.keys(d.porVoc)) for (const x of Object.values(d.porVoc[v])) assert(!x.melhor || x.melhor.origem !== 'corpo' || x.melhor.dono === v, v + ' pegou peça de ' + (x.melhor && x.melhor.dono));
 });
+t('potência ≥ 300 com encaixe de skill é base de forja, não sobra (vídeos de 04/10)', () => {
+    /* TV de Souza: Snakebite Rod ML+1 com potência ≥ 300 → +3 de refino (400+) → rerrolar para ML+2; o item "ruim" vira o bis */
+    const anel = (iid, dono, r, pot, ...at) => ({ iid, nome: 'crystal ring', slot: 'ring', attrs: {}, origem: dono ? 'corpo' : 'depósito', dono, forja: Object.assign(F(r, ...at), { potenciaBase: pot }) });
+    const pcs = [
+        anel('k', 'KNIGHT', 1, 100, ['regen_vida', 2.4]), anel('p', 'PALADIN', 1, 100, ['regen_mana', 3]),
+        anel('s', 'SORCERER', 1, 100, ['regen_mana', 3]), anel('d', 'DRUID', 1, 100, ['regen_mana', 3]),
+        anel('ml', null, 1, 312, ['nivel_magico', 1]),     // Incomum, ML+1, potência 312: base de forja
+        anel('fraco', null, 1, 140, ['nivel_magico', 1]),  // mesma linha, potência baixa: sobra
+        anel('semlinha', null, 0, 340)                      // potência alta sem linha: Comum, vende
+    ];
+    const d = M.distribuirEquip(pcs, undefined, { party: { fisico: 0.95, tomadoS: 25 } });
+    assert(d.bases.some(p => p.iid === 'ml'), 'ML+1 com potência 312 deveria ser base de forja');
+    assert(!d.dispensaveis.some(p => p.iid === 'ml'), 'ML+1 com potência 312 foi para as sobras');
+    /* os dois podem virar reserva (2 por espaço), mas nunca base de forja */
+    for (const iid of ['fraco', 'semlinha']) {
+        assert(!d.usadas.has(iid), iid + ' foi vestida (o teste ficaria vazio)');
+        assert(!d.bases.some(p => p.iid === iid), iid + ' não deveria ser base de forja');
+        assert(d.reservas.has(iid) || d.dispensaveis.some(p => p.iid === iid), iid + ' sumiu da conta');
+    }
+});
 t('2.11.6: épico nunca sobra (base de forja); resistência sobrevive ao cenário de mapa mágico', () => {
     const anel = (iid, dono, r, ...at) => ({ iid, nome: 'crystal ring', slot: 'ring', attrs: {}, origem: dono ? 'corpo' : 'depósito', dono, forja: F(r, ...at) });
     const pcs = [

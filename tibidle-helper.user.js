@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.14.7
+// @version      2.14.8
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.14.7';
+    const VERSAO = '2.14.8';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -562,14 +562,19 @@
      * do Auto Hunt não monta e o Equip não acha os ids). Candidatas, nesta ordem: a que a página do jogo
      * está usando (recursos já carregados), a dos catálogos (cena dos bosses/atlas das hunts), a última
      * que funcionou e a conhecida. A primeira que responde fica guardada. */
-    const ASSETS_CONHECIDA = 'v170';
+    /* v2.14.8 — 04/10: o jogo já estava em v185 (v167 → v170 → v185 em dias) e as versões velhas continuam no ar
+     * por um tempo (v170 ainda servia items-by-name e spell-areas, mas imbuements já dava 404). Então: (1) só uma
+     * versão MAIS NOVA que a guardada conta como patch — uma velha que respondeu não rebaixa nada; (2) os bosses
+     * são baixados antes do spell-areas, porque a cena deles é a única pista de versão que o catálogo dá. */
+    const ASSETS_CONHECIDA = 'v185', ASSETS_ANTIGA = 'v170'; // antiga = último recurso: um arquivo que sumiu da versão nova pode seguir na velha
+    const numAssets = v => Number(String(v || '').replace(/\D/g, '')) || 0;
     function versoesAssets() {
         const vs = [];
         const pega = (txt) => { const m = String(txt || '').match(/\/assets\/(v\d+)\//); if (m) vs.push(m[1]); };
         try { for (const e of performance.getEntriesByType('resource')) pega(e.name); } catch { }
         try { for (const b of (CAT.bosses || [])) pega(b && b.scene); for (const h of (CAT.hunts || [])) pega(h && h.atlas && h.atlas.image); } catch { }
         const ord = [...new Set(vs)].sort((a, b) => Number(b.slice(1)) - Number(a.slice(1))); // a mais nova primeiro
-        return [...new Set(ord.concat([lerComum('assets_ver', null), ASSETS_CONHECIDA, 'v167']).filter(Boolean))];
+        return [...new Set(ord.concat([lerComum('assets_ver', null), ASSETS_CONHECIDA, lerComum('assets_ver_antes', null), ASSETS_ANTIGA]).filter(Boolean))];
     }
     /* patch novo do jogo: o que foi guardado da versão velha pode ter mudado (1.1.0: hunts novas, Energy Ring fora
      * da Thunderscar Peak, equipamentos que vinham como "Tools") — os catálogos são baixados de novo no próximo
@@ -588,7 +593,7 @@
             try {
                 const j = await buscarJSON('/assets/' + v + '/' + arquivo);
                 const antes = lerComum('assets_ver', null);
-                if (antes !== v) { guardarComum('assets_ver', v); if (antes) novaVersaoDoJogo(antes, v); }
+                if (!antes || numAssets(v) > numAssets(antes)) { guardarComum('assets_ver', v); if (antes) { guardarComum('assets_ver_antes', antes); novaVersaoDoJogo(antes, v); } }
                 return j;
             } catch (e) { ultimo = e; }
         }
@@ -619,12 +624,15 @@
         }
         try {
             log('baixando catálogos do jogo…');
-            const [hunts, magias, areas, precos, bosses, pocoes] = await Promise.all([
+            /* v2.14.8 — bosses ANTES do spell-areas: no boot a página ainda não carregou recurso nenhum e as hunts
+             * não têm atlas; a cena dos bosses (/assets/vN/…) é o que diz a versão certa para buscarAsset */
+            const bosses = await buscarJSON(CAT_ARQ.bosses).catch(() => null);
+            if (bosses) CAT.bosses = normalizarBosses(bosses);
+            const [hunts, magias, areas, precos, pocoes] = await Promise.all([
                 buscarJSON(CAT_ARQ.hunts),
                 buscarJSON(CAT_ARQ.magias),
                 buscarAsset(CAT_ARQ.areas).catch(() => null),
                 buscarJSON(CAT_ARQ.precos).catch(() => null),
-                buscarJSON(CAT_ARQ.bosses).catch(() => null),
                 buscarJSON(CAT_ARQ.pocoes).catch(() => null)
             ]);
             if (!Array.isArray(hunts) || !Array.isArray(magias)) throw new Error('catálogo de hunts/magias veio num formato inesperado');
@@ -6016,6 +6024,11 @@
      * escudo fica vazio e a arma vira a de 2 mãos.
      * → {porVoc:{VOC:{slot:{atual, atualPt, melhor, melhorPt, ganho, candidatos[]}}}, reservas:Set(iid), dispensaveis:[peça+motivo], usadas:Set} */
     const EQUIP_TOPK = 6, EQUIP_RESERVAS = 2, RARIDADE_BASE_FORJA = 3;
+    /* v2.14.8 — potência (vídeos de 04/10, criador do jogo + TV de Souza): cada refino dá +50 e a cada 200 a peça
+     * sobe de faixa (1–199, 200–399, 400–599, 600–799, 800+); a faixa é o teto das linhas de skill (ML, distância,
+     * corpo a corpo: faixa 2 → até +2, faixa 3 → até +3). Uma Snakebite Rod ML+1 com 300+ vira ML+3 na forja. */
+    const POTENCIA_BASE_FORJA = 300, SKILL_FORJA = ['nivel_magico', 'distancia', 'corpo_a_corpo'];
+    const potenciaDe = p => Number(p && p.forja && p.forja.potenciaBase) || 0;
     /* v2.11.2 — TROCA TEM CUSTO. Com 0,05 de bônus para ficar, o otimizador
      * tirava o anel do Feiticeiro (5,1 pt) para o Paladino (+1,4) e dava ao
      * Feiticeiro um do depósito (−1,2, sem aparecer na tela): 3 trocas por
@@ -6152,7 +6165,8 @@
          * (wiki /forja: Raro → Épico 20 % por Rarity Gem de 30.000 + 7 coins; com
          * Limpeza T2 + Atributo T1 troca-se o encaixe ruim). A pontuação mede o
          * que a peça dá HOJE; o valor dela é o que dá para fazer com ela. */
-        const baseDeForja = p => ((p.forja && p.forja.raridade) || 0) >= RARIDADE_BASE_FORJA;
+        const baseDeForja = p => ((p.forja && p.forja.raridade) || 0) >= RARIDADE_BASE_FORJA
+            || (potenciaDe(p) >= POTENCIA_BASE_FORJA && ((p.forja && p.forja.atributos) || []).some(a => SKILL_FORJA.includes(a.id) && Number(a.valor) > 0));
         const bases = pecas.filter(p => !usadas.has(p.iid) && !ehTemporaria(p) && baseDeForja(p));
         /* v2.11.19 — dono, 30/09: "caso todos já estejam equipados com itens bons quero ter a opção de vender".
          * A peça de encaixe nobre só é guardada se o encaixe dela SUPERA o da peça que alguma vocação que a
@@ -7728,11 +7742,12 @@
         const disp = R.dispensaveis, vendivel = p => !((p.forja && p.forja.raridade) > 0) && !((p.forja && p.forja.refino) > 0);
         const soma = disp.filter(vendivel).reduce((n, p) => n + (p.sell || 0), 0);
         h += aj('eq-disp', `<div class="tb-mut tb-eq-nota">não são a melhor nem uma das 2 reservas de ninguém, pela conta de hoje (1 pt = 1 % do dano da party). Comum: vende no NPC. Incomum ou melhor não vende em lugar nenhum (wiki /forja): ou fica guardada, ou vira fragmento no Desmanche — antes de desmanchar, confira você mesmo. Encaixes de imbuement não pontuam.</div>` +
-            disp.slice(0, 60).map(p => `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)}<span class="tb-tag">${escHtml(p.origem)}</span> <span class="tb-mut tb-eq-nota">${escHtml(p.motivo)}</span></span><span>${vendivel(p) ? numBR(p.sell || 0) : 'desmanche'}</span></div>`).join('') +
+            disp.slice(0, 60).map(p => `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)}<span class="tb-tag">${escHtml(p.origem)}</span> <span class="tb-mut tb-eq-nota">${escHtml(p.motivo)}${potenciaDe(p) >= POTENCIA_BASE_FORJA ? ' · potência ' + numBR(potenciaDe(p)) : ''}</span></span><span>${vendivel(p) ? numBR(p.sell || 0) : 'desmanche'}</span></div>`).join('') +
             (disp.length > 60 ? `<div class="tb-mut">… e mais ${disp.length - 60}</div>` : ''), `sobrando (${disp.length} · comuns ${numBR(soma)} o)`);
         const bases = R.bases || [];
-        if (bases.length) { h += aj('eq-bases', `<div class="tb-mut tb-eq-nota">Épico ou melhor que ninguém usa: 3+ encaixes valem pela Forja (trocar o encaixe ruim sai mais barato que subir a raridade). Nunca entram nas sobras.</div>` +
-            bases.map(p => `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)} <span class="tb-mut">${escHtml(slotPt(p.slot))} · ${escHtml(p.origem)} · ${escHtml(((p.forja && p.forja.atributos) || []).map(a => rotulo(a.id) + ' ' + a.valor).join(', '))}</span></span></div>`).join(''), `bases de forja (${bases.length})`); }
+        const potTxt = p => { const v = potenciaDe(p); return v ? ` · potência ${numBR(v)}` : ''; };
+        if (bases.length) { h += aj('eq-bases', `<div class="tb-mut tb-eq-nota">Ninguém usa, mas vale pela Forja: Épico ou melhor (3+ encaixes: trocar o encaixe ruim sai mais barato que subir a raridade) ou potência ≥ ${POTENCIA_BASE_FORJA} com encaixe de ML, distância ou corpo a corpo (cada refino dá +50 de potência e a cada 200 a linha pode subir um ponto). Nunca entram nas sobras.</div>` +
+            bases.map(p => `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)} <span class="tb-mut">${escHtml(slotPt(p.slot))} · ${escHtml(p.origem)}${potTxt(p)} · ${escHtml(((p.forja && p.forja.atributos) || []).map(a => rotulo(a.id) + ' ' + a.valor).join(', '))}</span></span></div>`).join(''), `bases de forja (${bases.length})`); }
         const nobres = R.nobres || [];
         if (nobres.length) { h += aj('eq-nobres', `<div class="tb-mut tb-eq-nota">Encaixe que a comunidade guarda (wiki /forja): regen. de mana ou de vida nas peças de defesa; corpo a corpo, distância, nível mágico, dano físico ou mágico na arma e no colar. O encaixe dela supera o da peça que alguém que a veste vai usar, mas a nota total perdeu: fica guardada, fora das sobras e do Mercado. Quando todos já vestem encaixe igual ou melhor, ela volta para as sobras e dá para vender.</div>` +
             nobres.map(p => `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)} <span class="tb-mut">${escHtml(slotPt(p.slot))} · ${escHtml(p.origem)} · ${escHtml(((p.forja && p.forja.atributos) || []).map(a => rotulo(a.id) + ' ' + a.valor).join(', '))}</span></span></div>`).join(''), `guardar: encaixe bom (${nobres.length})`); }
@@ -10028,6 +10043,9 @@
         let bloqueio = null;
         if (h.levelMin && ent.nivel && h.levelMin > ent.nivel) bloqueio = 'nível ' + h.levelMin;
         else if (h.premium === true && ent.premium === false) bloqueio = 'premium';
+        /* v2.14.8 — ilha que a conta não destravou (shell.unlockedIslands; Tibidle Island é de todos). Lista
+         * desconhecida (null) não bloqueia, como o premium desconhecido. */
+        else if (h.island && h.island !== 'tibidle_island' && Array.isArray(ent.ilhas) && !ent.ilhas.includes(h.island)) bloqueio = 'ilha fechada';
         let T = null, abH = null, custoH = null;
         if (motor && (motor.abH > 0 || motor.danoS > 0)) {
             T = motor.T > 0 ? motor.T : motor.danoS > 0 ? L * hp / motor.danoS : null;
@@ -10078,6 +10096,7 @@
                             aTomado: calib.aTomado, tetoTomado: calib.tetoTomadoSeguro, hpMinK, mortes: ent.mortes || 0,
                             hp, envelope: ent.envelope || null, testado: !!limpo && (hpMinK == null || hpMinK >= 40) });
         if (bloqueio === 'premium') r.risco = { nivel: 'bloqueado', pts: 99, motivos: ['mapa premium e a conta está sem Premium'] };
+        if (bloqueio === 'ilha fechada') r.risco = { nivel: 'bloqueado', pts: 99, motivos: ['ilha ' + String(h.island).replace(/_/g, ' ') + ' não destravada nesta conta (as ilhas abrem no NPC Silas)'] };
         return r;
     }
 
@@ -10433,6 +10452,10 @@
     }
     /* v2.14.6 — mapas em que a party JÁ caçou sem morrer (tpEnvelope): Scans sem erro (Knight ≥ 40 % quando medido), sessões
      * do Analisador de ≥ 10 min e a caçada de agora com ≥ 10 min. Mapa com morte registrada não conta. */
+    /* v2.14.8 — ilhas abertas na conta (shell.unlockedIslands; u2tag em 04/10: só yalahar). null = shell não lido. */
+    function ilhasDestravadas() {
+        try { const sh = lerShellFibra(); return sh && Array.isArray(sh.unlockedIslands) ? sh.unlockedIslands.map(String) : null; } catch (e) { return null; }
+    }
     function radarEnvelope() {
         const vistos = new Map();
         const por = (id, ok) => {
@@ -10488,7 +10511,8 @@
         const ent = { hunt: h, nivel: opc.nivel || nivelAtual(), premium: mkPremiumAgora(), motor, loot, ritmo: { E: rit.esperaS },
                       calib: opc.calib || (RADAR.rank && RADAR.rank.calib) || null, medido: opc.semMedido ? null : radarScanDoMapa(h.id), extras: {},
                       taxaXp: lerTaxaXp(), mortes: radarMortes(h.id), imunes: ne ? Object.keys(ne.vetos).map(rotuloElem) : [],
-                      envelope: opc.envelope !== undefined ? opc.envelope : radarEnvelope() };
+                      envelope: opc.envelope !== undefined ? opc.envelope : radarEnvelope(),
+                      ilhas: opc.ilhas !== undefined ? opc.ilhas : ilhasDestravadas() };
         return opc.entrada ? ent : tpEstimar(ent);
     }
     /* o que vai para radar_rank (resumido: ~20 KB para 70 mapas) */
@@ -10889,7 +10913,7 @@
         for (const l of linhas) {
             const tags = [l.fonte === 'medido' ? `<span class="tb-tag tb-ok" title="o melhor Scan limpo deste mapa">medido${l.medido && l.medido.modelo ? ' · ' + escHtml(nomeModelo(l.medido.modelo)) : ''}</span>` : '<span class="tb-tag">estimado</span>',
                           (c => c === 1 ? '<span class="tb-tag tb-ok" title="a party limpa a onda na 1ª rajada">⚡ 1 combo</span>' : c ? `<span class="tb-tag" title="rajadas (a cada 2 s) para limpar a onda">${c} combos</span>` : '')(tpCombos(l.T)),
-                          l.bloqueio && /^nível/.test(l.bloqueio) ? `<span class="tb-tag tb-ruim">${escHtml(l.bloqueio)}</span>` : '',
+                          l.bloqueio && /^(nível|ilha)/.test(l.bloqueio) ? `<span class="tb-tag tb-ruim">${escHtml(l.bloqueio)}</span>` : '',
                           l.premium ? '<span class="tb-tag tb-av">premium</span>' : '',
                           l.risco && l.risco.novo ? '<span class="tb-tag tb-ruim" title="monstros mais fortes que qualquer mapa onde a party já caçou sem morrer">⚠ nunca testado</span>' : ''].join('');
             const o = ouroDe(l);

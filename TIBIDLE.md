@@ -4581,3 +4581,17 @@ mapas (Vampire hell 32,5k × 58,0k do Em área; Banshee 27,7k × 49,6k) e ainda 
   de slow e do elemento do boss. Coin tende a subir no fim de semana; o TV de Souza compra coins com 30 % do lucro de
   cada caçada.
 - Eventos mensais (50 % de skill no treino; double treino sexta–domingo). Venda de itens por coin dentro do jogo "em breve".
+
+## 2.14.8 (04/10) — versão dos assets pelo jogo, ilha fechada é "bloqueado", potência vale como base de forja
+- **Assets**: `ASSETS_CONHECIDA` = v185. Só uma versão **mais nova** que a guardada conta como patch (`numAssets`); uma
+  velha que ainda responde não rebaixa nada nem dispara "jogo atualizado". No `carregarCatalogos` os bosses vêm antes do
+  `spell-areas.json` (a cena deles é a única pista de versão do catálogo; no boot a página ainda não carregou recurso
+  nenhum). Último recurso: a versão anterior ao patch (`assets_ver_antes`) e a v170 — um arquivo que some da versão nova
+  pode seguir na velha. 3 testes no `fumaca.test.js` (boot com a velha no ar; velha não rebaixa; patch de verdade avisa).
+- **Radar**: `tpEstimar` recebe `ilhas` (shell `unlockedIslands`, via `ilhasDestravadas()`); hunt de ilha fora da lista
+  (menos `tibidle_island`) sai `bloqueio = 'ilha fechada'`, risco bloqueado com o motivo "ilha X não destravada nesta
+  conta (as ilhas abrem no NPC Silas)", etiqueta na linha, fora do Scan rápido e do "esconder". Lista desconhecida (shell
+  não lido) não bloqueia, como o premium desconhecido. Nível mínimo vem antes da ilha. 1 teste em `telas-api`.
+- **Equip**: `baseDeForja` também aceita potência ≥ 300 (`POTENCIA_BASE_FORJA`) com encaixe de ML, distância ou corpo
+  a corpo (`SKILL_FORJA`) — a peça "ruim" que a forja transforma (TV de Souza: Snakebite Rod ML+1 300+ → +3 → ML+2/+3).
+  As listas de bases e de sobras mostram a potência. 1 teste em `equip.test.js`. Total 265.

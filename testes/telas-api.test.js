@@ -113,6 +113,17 @@ t('tpEstimar: nível abaixo do mínimo bloqueia; premium sem Premium bloqueia', 
     assert.strictEqual(p.bloqueio, 'premium'); assert.strictEqual(p.risco.nivel, 'bloqueado');
     assert.strictEqual(P.tpEstimar(entBase({ hunt: Object.assign({}, ORC, { premium: true }), premium: null })).bloqueio, null, 'premium desconhecido não bloqueia');
 });
+t('tpEstimar: ilha não destravada bloqueia (unlockedIslands do shell); Tibidle Island nunca; lista desconhecida não bloqueia', () => {
+    /* 04/10: u2tag só tem ["yalahar"] e o Radar mostrava Hive Entrance (gray_island) como "risco médio" */
+    const zao = Object.assign({}, ORC, { island: 'zao' });
+    const r = P.tpEstimar(entBase({ hunt: zao, ilhas: ['yalahar'] }));
+    assert.strictEqual(r.bloqueio, 'ilha fechada'); assert.strictEqual(r.risco.nivel, 'bloqueado');
+    assert(/zao/i.test(r.risco.motivos.join(' ')), 'motivo sem o nome da ilha: ' + r.risco.motivos);
+    assert.strictEqual(P.tpEstimar(entBase({ hunt: Object.assign({}, ORC, { island: 'yalahar' }), ilhas: ['yalahar'] })).bloqueio, null, 'ilha destravada');
+    assert.strictEqual(P.tpEstimar(entBase({ hunt: Object.assign({}, ORC, { island: 'tibidle_island' }), ilhas: [] })).bloqueio, null, 'Tibidle Island é de todo mundo');
+    assert.strictEqual(P.tpEstimar(entBase({ hunt: zao, ilhas: null })).bloqueio, null, 'sem a lista (shell não lido) não bloqueia');
+    assert.strictEqual(P.tpEstimar(entBase({ hunt: Object.assign({}, ORC, { island: 'zao', levelMin: 90 }), ilhas: ['yalahar'] })).bloqueio, 'nível 90', 'nível vem antes da ilha');
+});
 t('tpEstimar: Scan limpo manda (fonte medido, estimativa ao lado); sujo ou de outro nível não', () => {
     const m = { abatesH: 1500, xpH: 60000, xpRawH: 45000, lootH: 12000, supH: 4000, ouroH: 8000, nivel: 62, t: 1, razao: { porVoc: { KNIGHT: { hpMin: 35 } } } };
     const r = P.tpEstimar(entBase({ medido: m }));

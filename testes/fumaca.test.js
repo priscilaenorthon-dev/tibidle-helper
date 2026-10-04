@@ -188,6 +188,33 @@ t('catálogos na gaveta COMUM; cópias por gaveta e equip_ids somem', async () =
     for (const k of ['tb_helper_cat_hunts', 'tb_helper_abc123_cat_magias', 'tb_helper_equip_ids', 'tb_helper_abc123_equip_ids']) assert(!W.store.has(k), 'sobrou ' + k);
 });
 
+t('assets: a versão vem do catálogo de bosses (v185), não da conhecida, mesmo com a velha ainda no ar', async () => {
+    /* 04/10: no boot a performance está vazia e os bosses ainda não tinham chegado; o helper pegava a v170 conhecida
+     * (que ainda respondia) e, quando o Equip achou a v185, disparava um "jogo atualizado" falso. */
+    const rotas = Object.assign({}, ROTAS_OK, { '/bosses/select': [{ name: 'Renegade Orc', health: 3000, scene: '/assets/v185/bosses/orc.png' }],
+        '/assets/v185/spell-areas.json': { marco: 'v185' }, '/assets/v170/spell-areas.json': { marco: 'v170' } });
+    const W = criarMundo({ ls: Object.assign({}, DEBUG), rotas });
+    await W.avancar(0);
+    assert.strictEqual(W.lsGet('tb_helper_comum_assets_ver'), 'v185');
+    assert.strictEqual(W.H.CAT.areas && W.H.CAT.areas.marco, 'v185');
+    assert(!/jogo atualizado/.test(logTxt(W)), 'rebaixamento falso no 1º boot');
+});
+t('assets: versão velha que ainda responde não rebaixa a guardada nem dispara "jogo atualizado"', async () => {
+    const rotas = Object.assign({}, ROTAS_OK, { '/assets/v170/spell-areas.json': { marco: 'v170' } }); // a v185 some (404) e os bosses não têm cena
+    const W = criarMundo({ ls: Object.assign({}, DEBUG, { tb_helper_comum_assets_ver: '"v185"' }), rotas });
+    await W.avancar(0);
+    assert.strictEqual(W.lsGet('tb_helper_comum_assets_ver'), 'v185', 'guardada rebaixada');
+    assert.strictEqual(W.H.CAT.areas && W.H.CAT.areas.marco, 'v170', 'a velha ainda vale como dado');
+    assert(!/jogo atualizado/.test(logTxt(W)), '"jogo atualizado" para trás');
+});
+t('assets: patch de verdade (guardada v170, jogo em v185) avisa e relê', async () => {
+    const rotas = Object.assign({}, ROTAS_OK, { '/bosses/select': [{ name: 'Renegade Orc', health: 3000, scene: '/assets/v185/bosses/orc.png' }], '/assets/v185/spell-areas.json': { marco: 'v185' } });
+    const W = criarMundo({ ls: Object.assign({}, DEBUG, { tb_helper_comum_assets_ver: '"v170"' }), rotas });
+    await W.avancar(0);
+    assert.strictEqual(W.lsGet('tb_helper_comum_assets_ver'), 'v185');
+    assert(/jogo atualizado \(assets v170 → v185\)/.test(logTxt(W)), 'sem o aviso: ' + logTxt(W).split('\n').slice(0, 6).join(' | '));
+});
+
 t('rede fora: catálogo velho (vencido) vale em vez de CAT null', async () => {
     const ls = Object.assign({}, DEBUG, { tb_helper_comum_cat_era: '"2026-09-wipe"', tb_helper_comum_cat_ts: String(1759150000000 - 3 * 864e5),
         tb_helper_comum_cat_hunts: JSON.stringify(HUNTS), tb_helper_comum_cat_magias: JSON.stringify(SPELLS) });
