@@ -4506,3 +4506,24 @@ mapas (Vampire hell 32,5k × 58,0k do Em área; Banshee 27,7k × 49,6k) e ainda 
   Mapa medido limpo conta como testado. Etiqueta "⚠ nunca testado" na linha.
 - Scan rápido e "▶ medir" nunca entram em mapa de risco alto; ranking calculado antes da 2.14.6 (risco antigo) pede
   recalcular e não deixa o Scan rápido rodar. "Esconder risco alto" vem ligado por padrão. 1 teste novo (260).
+
+## 2.13.7 (04/10) — update 1.1.0 do jogo: assets em versão nova
+- Patch 1.1.0 (4 ilhas novas no NPC Silas, hunts novas em Tibidle Island e Pits of Inferno, marcos do bestiário de
+  Quara's Domain Yalahar, Energy Ring fora da Thunderscar Peak, equipamentos que vinham como "Tools").
+- **Quebrava o helper**: os assets foram de `/assets/v167/` para `/assets/v170/` e o código pedia v167 fixo —
+  `imbuements.json` e `items-by-name.json` davam 404. Efeitos: o "nunca vender" do Auto Hunt não montava (o ciclo
+  parava sem vender e desligava), o Equip não achava os ids dos itens, a calculadora de imbuement e o
+  `spell-areas.json` (v100, já 404) ficavam sem dado.
+- Agora `buscarAsset(arquivo)` tenta as versões em ordem: a que a página do jogo está usando (recursos já carregados),
+  a dos catálogos (cena dos bosses, atlas das hunts), a última que funcionou e `v170`; guarda a que responder.
+- Versão nova detectada → `novaVersaoDoJogo`: catálogos rebaixados no próximo boot (hunts novas), ficha dos itens
+  (`equip_base`) e tabelas de loot do Radar recomeçam. Só leitura.
+- Hunts e marcos do bestiário vêm da API (`/hunts/select`), nada fixo no código; o catálogo também se renova a cada 24 h
+  e no botão de rebaixar do Status.
+
+## 2.14.7 (04/10) — merge: 2.13.7 (assets em versão dinâmica) + 2.14.0–2.14.6 (kit enxuto, kits da comunidade, Radar)
+- A 2.13.7 foi feita no GitHub (sessão web) a partir da 2.13.6, em paralelo às 2.14.x locais. O merge só conflitou nas
+  duas linhas de versão e nesta seção do histórico; `buscarAsset` / `novaVersaoDoJogo` entraram inteiros e nenhum
+  código da 2.14 ainda pedia `/assets/v167/` fixo (o único "v167" restante é o comentário que explica o 404).
+- Conferido depois do merge: `node --check`, 260 testes em node, ESLint com 0 erros. Nada de comportamento novo além da
+  soma das duas linhas.
