@@ -111,7 +111,11 @@ Presets dos 4 anotados em `.playwright-mcp/backup-presets-2026-10-04.json` antes
       ao lado da Forja: "2 de 2 peça(s) viraram fragmento", as duas sumiram, Forja fechada.
 - [x] **Linha "cura X/h" do Inteligente**: existe (`m.curaH > 0`) e não apareceu porque o Scan de Vampire hell não gastou
       poção de VIDA (supVoc: só 10 avalanche e 2 thunderstorm; "poção 1.144/h" é o total de suprimentos). Não é defeito.
-- [ ] **Venda rápida com material de imbuement**: impossível hoje — a conta não tem NENHUM dos 42 materiais de
+- [x] **Venda rápida com material de imbuement** (20:48, depois: o dono apontou 84 metal spike na mochila, caçando em Vampire hell):
+      "ciclo de venda (venda) iniciado — mochila 78 % livre" → caçada encerrada (resumo fechado) → "todos os 2 selados
+      purificados" → **"nunca vender: metal spike (material de imbuement) — total 51.375 → 24.495"** → "vendido no NPC:
+      24.495 ouro" → "depot: mochila 395,4 → 0 oz · depot 111 de 300" → "ciclo de venda terminado", conta na cidade. Nenhum
+      "não consegui montar a lista nunca vender". (Antes, às 19:00, era impossível: a conta não tinha material — a conta não tem NENHUM dos 42 materiais de
       `imbuements.json` (vampire teeth, bloody pincers…) nem na mochila nem no depósito (que tem Wild Honey, Abyssal Pearl,
       Dark Wool, Yalahar Soul Fragment, Yalahari Cogwheel, fragmentos e chaves).
 - [x] **Scan A/B em Vampire hell, 4 min cada, lure 6**: Em área 65,9k xp/h raw (real 71,2k) · +19,7k ouro/h estável (3 raros em 4 min: sorte +23,8k) · 1.964 abates/h × Inteligente 62,0k raw (real 66,9k) · +5,2k estável · 1.870 abates/h · tomou 1.410/h. **Inteligente perdeu por 6 % em xp (critério: ≥ Em área −3 %) e muito em ouro.** Ele previu 70,2k para o próprio kit (o preset do dono, 1 magia por personagem) e mediu 62,0k; depois do A/B continuou em "mantém (menos de 10 min desde o APLICAR)" com os mesmos 70,2k. DEFEITO a tratar: no nível 83 em Vampire hell o modelo superestima o kit mínimo (~13 %) e a histerese segura a troca. Kits devolvidos e party na cidade no fim.
