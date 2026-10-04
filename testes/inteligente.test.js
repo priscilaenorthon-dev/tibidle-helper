@@ -108,6 +108,40 @@ t('2.13.2 — kit fraco guardado (kit_int) não impede o Em área: a busca nunca
     assert(r.final.met.xpH >= ref.met.xpH * 0.97, `escolhido ${Math.round(r.final.met.xpH)} xp/h × Em área ${Math.round(ref.met.xpH)}`);
     delete M.MEM.kit_int;
 });
+t('2.14.11 — kit MEDIDO abaixo do previsto: a medida vale mais que a simulação (Vampire hell 04/10: previsto 70,2k, medido 62,0k)', () => {
+    zerar(); M.E.scan = { vh: RITMO_VH };
+    const h = H(VH);
+    const r0 = buscar(VH), prev = r0.final.met.xpH;
+    M.registrarAplicacaoInt(h, r0); M.MEM.int_aplicado[VH] = Date.now() - 11 * 60000; // o kit escolhido é o aplicado (vigente), fora da trava de 10 min
+    /* Scan Inteligente deste mapa com EXATAMENTE as magias do kit escolhido, medindo 85 % do previsto */
+    const magias = []; for (const v of VOCS) for (const p of (r0.final.esc[v] ? r0.final.esc[v].plano : [])) magias.push({ voc: v, nome: p.av.m.name, runa: !!p.av.m.isRune, casts: 40 }); // só os nomes: sem dano medido, a calibração não muda
+    M.E.scan = { vh: RITMO_VH, ab: { id: VH, modelo: 'inteligente', t: Date.now(), nivel: M.E.nivel, seg: 240, suja: false, erro: null, abatesH: 1800, xpRawH: Math.round(prev * 0.85), xpH: Math.round(prev * 0.9), razao: { magias } } };
+    M.invalidarPlanos(); // o contexto é cacheado por 1,5 s: o Scan novo tem que entrar
+    const ctx = M.contextoInt(h);
+    const vig = M.avaliarPartyInt(ctx, ctx.vigente, { sim: 0, party: 0 }); // o vigente deste contexto (as magias de r0 apontam para o contexto antigo)
+    assert(vig.met.medido && Math.abs(vig.met.medido.f - 0.85) < 0.01 && Math.abs(vig.met.xpH - prev * 0.85) < prev * 0.01, 'o kit medido tem que sair com a medida: ' + JSON.stringify(vig.met.medido));
+    assert(vig.met.lucroH < r0.final.met.lucroH, 'a receita cai com a medida (o custo fica)');
+    /* um kit com uma magia a menos no Feiticeiro não é o medido: sem penalidade */
+    const outro = Object.assign({}, ctx.vigente);
+    const sorc = outro.SORCERER; if (sorc && sorc.plano.length > 1) outro.SORCERER = Object.assign({}, sorc, { plano: sorc.plano.slice(0, 1) });
+    const o = M.avaliarPartyInt(ctx, outro, { sim: 0, party: 0 });
+    if (sorc && sorc.plano.length > 1) {
+        const bruto = o.met.medido ? o.met.medido.previsto : o.met.xpH;
+        /* a simulação põe o medido (prev) acima ou empatado (±1 %) com este kit → herda a medida dele (0,85 prev);
+         * se a simulação põe este kit acima de todos os medidos → 99 % do melhor medido */
+        const teto = bruto <= prev / 0.99 ? prev * 0.85 : prev * 0.85 * 0.99;
+        if (bruto > teto) assert(o.met.medido && o.met.medido.banda && Math.abs(o.met.xpH - teto) < prev * 0.005, 'kit não medido herda a medida do medido logo acima: ' + JSON.stringify(o.met.medido) + ' teto ' + Math.round(teto));
+        else assert(!o.met.medido, 'kit já abaixo do teto não é tocado');
+    }
+    /* a busca inteira: nada não medido passa do teto; o medido sai com a medida e ganha o empate */
+    const r1 = buscar(VH);
+    assert(r1.final.met.xpH <= prev * 0.85 + 1, `escolhido ${Math.round(r1.final.met.xpH)} acima do melhor medido ${Math.round(prev * 0.85)}`);
+    assert(r1.final.met.medido, 'o escolhido tem que carregar a medida (exata ou teto)');
+    /* Scan de outro nível (±2) ou sujo não conta */
+    M.E.scan.ab = Object.assign({}, M.E.scan.ab, { nivel: M.E.nivel + 5 }); M.invalidarPlanos();
+    { const c2 = M.contextoInt(h); assert(!M.avaliarPartyInt(c2, c2.vigente, { sim: 0, party: 0 }).met.medido, 'nível longe não vale'); }
+    zerar();
+});
 t('2.13.2 — aviso CALIBRANDO: sem regen nem Scan do mapa mostra o que falta; com tudo medido, "calibrado"', () => {
     zerar();
     for (const v of VOCS) delete M.MEM['regen_' + v];

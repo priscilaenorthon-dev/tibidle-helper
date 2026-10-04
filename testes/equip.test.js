@@ -294,6 +294,14 @@ t('planoForja: faixa pela potência, refinos até a próxima faixa, linhas-alvo 
     const topo = { iid: 't', nome: 'magic sword', slot: 'weapon', attrs: {}, origem: 'depósito', forja: { raridade: 4, refino: 10, potenciaBase: 520, atributos: [] } };
     assert.strictEqual(M.planoForja(topo, ['KNIGHT'], null, null).proxima, null);
 });
+t('pecasDesmanche: peça com negócio no Mercado fica fora do desmanche (Incomum anuncia: u2tag tinha leather boots Incomum a 2.299)', () => {
+    const sobra = (iid, nome, r) => ({ iid, nome, slot: 'ring', origem: 'mochila', forja: { raridade: r, refino: 0 }, motivo: 'x' });
+    const res = { dispensaveis: [sobra('a', 'crystal ring', 1), sobra('b', 'simple dress', 1), sobra('c', 'cape', 1)] };
+    const temNegocio = (nome) => nome === 'crystal ring' || nome === 'cape';
+    assert.deepStrictEqual(M.pecasDesmanche(res, temNegocio).map(x => x.iid), ['b']);
+    assert.deepStrictEqual(M.pecasDesmanche(res).map(x => x.iid), ['a', 'b', 'c'], 'sem o filtro, vai tudo');
+    assert.deepStrictEqual(M.pecasDesmanche(res, temNegocio, true).map(x => x.iid), ['a', 'b', 'c'], 'incluir = ignora o filtro');
+});
 t('2.11.6: épico nunca sobra (base de forja); resistência sobrevive ao cenário de mapa mágico', () => {
     const anel = (iid, dono, r, ...at) => ({ iid, nome: 'crystal ring', slot: 'ring', attrs: {}, origem: dono ? 'corpo' : 'depósito', dono, forja: F(r, ...at) });
     const pcs = [

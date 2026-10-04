@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.14.10
+// @version      2.14.11
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.14.10';
+    const VERSAO = '2.14.11';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -2516,6 +2516,58 @@
         return r;
     }
     const scoreInt = (x) => x ? x.met.xpH * (okInt(x) ? 1 : 0.5) : 0;
+    /* v2.14.11 — A MEDIDA VALE MAIS QUE A SIMULAÇÃO. Vampire hell, 04/10, nível 83: o Inteligente previu 70,2k xp/h para
+     * o kit mínimo (1 magia por personagem), o Scan A/B mediu 62,0k com esse kit e 65,9k com o Em área — e o modelo seguia
+     * no kit mínimo (a calibração só lê Scans de outros modelos). Agora todo Scan Inteligente limpo deste mapa (nível ±2,
+     * ≥ 2 min) vira uma medida do kit que ele usou — reconhecido pelas magias e runas lançadas (razao.magias) — e, se
+     * mediu ABAIXO do previsto, o kit sai da simulação com a medida: xp, abates e receita × f (o custo fica). Só para baixo:
+     * medida acima do previsto não infla ninguém. A busca então prefere outro kit, e a histerese compara contra o medido. */
+    /* a assinatura ignora RUNAS: uma runa com mínimo 2 pode não ser lançada num Scan de 4 min e a mesma party sairia
+     * com outra assinatura (ao vivo o Em área medido não casou com o Em área simulado por causa do thunderstorm) */
+    const sigNomesInt = (esc) => VOCS_INT.map(v => { const n = esc[v] ? esc[v].plano.filter(p => !p.av.m.isRune).map(p => String(p.av.m.name).toLowerCase()).sort() : []; return v[0] + ':' + (n.length ? n.join(',') : '-'); }).join(';');
+    function sigNomesScan(r) {
+        const por = {};
+        for (const m of ((r && r.razao && r.razao.magias) || [])) { if (!m || m.runa || !(m.casts >= 1) || !m.voc || !m.nome) continue; (por[m.voc] = por[m.voc] || new Set()).add(String(m.nome).toLowerCase()); }
+        return VOCS_INT.map(v => v[0] + ':' + (por[v] && por[v].size ? [...por[v]].sort().join(',') : '-')).join(';');
+    }
+    /* kit ↔ Scan: igual primeiro; senão, o Scan cujas magias LANÇADAS cabem no kit com no máximo uma magia por
+     * personagem sem lançamento (Front Sweep ≥2 e Eternal Winter ≥2 do Em área não saíram em 5 min de Vampire hell e o
+     * Em área medido a 69,1k ficava sem dono). Empate: o que deixa menos magias sem lançamento; depois o mais recente. */
+    const setsDaSig = (sig) => sig.split(';').map(parte => new Set(parte.slice(2) === '-' ? [] : parte.slice(2).split(',')));
+    function medidaDoKitInt(ctx, esc) {
+        if (!ctx.medidoKit) return null;
+        const sig = sigNomesInt(esc), exato = ctx.medidoKit[sig];
+        if (exato) return exato;
+        const kit = setsDaSig(sig);
+        let melhor = null, faltam = Infinity;
+        for (const [k, m] of Object.entries(ctx.medidoKit)) {
+            const sc = setsDaSig(k);
+            let total = 0, ok = true;
+            for (let i = 0; i < kit.length && ok; i++) {
+                for (const n of sc[i]) if (!kit[i].has(n)) { ok = false; break; }
+                const f = kit[i].size - sc[i].size;
+                if (f > 1 || (sc[i].size === 0 && kit[i].size > 0)) ok = false;
+                total += f;
+            }
+            if (ok && (total < faltam || (total === faltam && (m.t || 0) > (melhor.t || 0)))) { melhor = m; faltam = total; }
+        }
+        return melhor;
+    }
+    function medidasPorKitInt(hunt) {
+        const out = {};
+        if (!hunt || hunt.boss) return out;
+        const nv = nivelAtual();
+        try {
+            for (const r of Object.values(scanResultados())) {
+                if (!r || r.id !== hunt.id || r.modelo === 'boss' || r.suja || r.erro || !(r.seg >= 120)) continue;
+                if (nv && r.nivel && Math.abs(r.nivel - nv) > 2) continue;
+                const xp = Number(r.xpRawH != null ? r.xpRawH : r.xpH); if (!(xp > 0)) continue;
+                const k = sigNomesScan(r); if (/^(.:-;?)+$/.test(k)) continue;
+                if (!out[k] || (r.t || 0) > out[k].t) out[k] = { xpRawH: Math.round(xp), t: r.t || 0 };
+            }
+        } catch (e) { }
+        return out;
+    }
     const escSig = (esc) => VOCS_INT.map(v => esc[v] ? v[0] + ':' + assinaturaPlano(esc[v].plano) + '|p' + (esc[v].pocao || 0) + '|' + (esc[v].sups || []).join('+') + (esc[v].com != null ? '|c' + esc[v].com : '') : v[0] + ':-').join(' ');
 
     /* a party inteira, 360 s. `regenMul` = {voc: ×regen} (cenários do passo E) */
@@ -2528,6 +2580,16 @@
         const sim = simularParty(membros, { L: ctx.L, hp: ctx.hp, E: ctx.E, seg: SIM_INT_SEG });
         const r = { esc: Object.assign({}, esc), sim, met: metricasInt(ctx, sim), seguro: seguroInt(ctx, membros, sim), membros, cenario: !!regenMul,
                     nSlots: VOCS_INT.reduce((s, v) => s + (esc[v] ? esc[v].plano.length : 0), 0), nPocao: VOCS_INT.filter(v => esc[v] && esc[v].pocao > 0).length, sig: escSig(esc) };
+        if (!ctx._semMedida && ctx.medidoKit && r.met.xpH > 0) {
+            const exato = medidaDoKitInt(ctx, esc);
+            let med = exato || null;
+            if (!med && ctx.tetoDe) { const teto = ctx.tetoDe(r.met.xpH); if (teto != null && r.met.xpH > teto) med = { xpRawH: teto, t: 0 }; }
+            if (med && med.xpRawH < r.met.xpH) {
+                const m = r.met, f = med.xpRawH / m.xpH;
+                r.met = Object.assign({}, m, { xpH: m.xpH * f, abH: m.abH * f, receitaH: m.receitaH * f, lucroH: m.receitaH * f - m.custoH, LCB: m.LCB - (1 - f) * m.receitaH,
+                                               medido: { xpRawH: med.xpRawH, previsto: Math.round(m.xpH), f: Math.round(f * 1000) / 1000, t: med.t, banda: !exato } });
+            }
+        }
         ctx.memo.set(chave, r);
         return r;
     }
@@ -2789,11 +2851,45 @@
             if (n) ctx.comunidade = esc;
         }
         calibrarPorScan(ctx);
+        /* v2.14.11 — kits medidos (qualquer modelo) e o que a simulação prevê para cada um: a BANDA DE EMPATE. Ao vivo o
+         * modelo contornou a medida exata trocando só a magia do Druida (Ice Wave por Strong Ice Wave) e previu os mesmos
+         * 70,2k. Kit não medido que a simulação não distingue (±3 %) de um medido herda a PIOR medida da banda. */
+        ctx.medidoKit = medidasPorKitInt(hunt); // v2.14.11 (o previsto de cada kit medido entra depois, com o vigente e os modelos)
         ctx.tudoMedido = VOCS_INT.every(v => ctx.voc[v].regenMedida) && ctx.lootMedido;
         const aplic = (ler('int_aplicado', {}) || {})[hunt.id] || null;
         ctx.tAplicar = aplic;
+        /* v2.14.11 — o que a simulação prevê para cada kit MEDIDO: só com o kit real (o vigente, o Em área ou outro modelo
+         * com as mesmas magias). Reconstruir pelos nomes subestimava (mínimo 1, sem poção). Se algum medido ficou ABAIXO do
+         * previsto, a simulação é otimista neste mapa: nenhum kit não medido passa de 99 % do melhor medido (o 1 % deixa o
+         * medido ganhar o empate). Ao vivo o modelo contornou a medida exata com Ice Wave (70,2k) e depois com
+         * Berserk+Groundshaker/Chill Out (67,9k) contra 65,9k do Em área medido. */
+        {
+            const cands = [];
+            if (Object.keys(ctx.vigente).length) cands.push(ctx.vigente);
+            if (ctx.area && Object.keys(ctx.area).length) cands.push(ctx.area);
+            for (const mod of ['equilibrado', 'economica']) { try { const e = {}; for (const v of VOCS_INT) { const x = escolhaDoModelo(mod, hunt, v, ctx); if (x && x.plano.length) e[v] = x; } if (Object.keys(e).length) cands.push(e); } catch (e) { } }
+            for (const m of Object.values(ctx.medidoKit)) delete m.previsto;
+            ctx._semMedida = true;
+            for (const esc of cands) {
+                const m = medidaDoKitInt(ctx, esc);
+                if (!m || m.previsto) continue;
+                try { const x = avaliarPartyInt(ctx, esc, { sim: 0, party: 0 }); if (x && x.met.xpH > 0) m.previsto = Math.round(x.met.xpH); } catch (e) { }
+            }
+            ctx._semMedida = false;
+            ctx.memo.clear();
+            const otimista = Object.values(ctx.medidoKit).some(m => m.previsto > 0 && m.xpRawH < m.previsto);
+            ctx.medidoTeto = otimista ? Math.max(...Object.values(ctx.medidoKit).map(m => m.xpRawH)) * 0.99 : null;
+            /* kit não medido herda a medida do kit medido que a simulação põe logo acima dele (ou empatado, ±1 %): a
+             * ordem da simulação vale, o tamanho não. Acima de todos os medidos: 99 % do melhor medido. */
+            ctx.tetoDe = (xpSim) => {
+                if (!(ctx.medidoTeto > 0)) return null;
+                let teto = null;
+                for (const m of Object.values(ctx.medidoKit)) if (m.previsto > 0 && m.previsto >= xpSim * 0.99 && (teto == null || m.xpRawH < teto)) teto = m.xpRawH;
+                return teto != null ? teto : ctx.medidoTeto;
+            };
+        }
         const danosK = VOCS_INT.map(v => Object.keys(danosPorVoc[v]).sort().map(k => k + q5pct((danosPorVoc[v][k].min + danosPorVoc[v][k].max) / 2)).join(',')).join(';');
-        ctx.carimbo = _hash(JSON.stringify([nivelAtual(), _hash(danosK), L, ctx.E, ctx.loot, ctx.lootMedido, ctx.fForma, calib.kVoc, calib.kMagia, ctx.fracao, ctx.eps, escada.degrau, ctx.defesa, ctx.kCalib, ctx.cVoc, ctx.curaPorVivo,
+        ctx.carimbo = _hash(JSON.stringify([nivelAtual(), _hash(danosK), _hash(JSON.stringify(ctx.medidoKit || {})), L, ctx.E, ctx.loot, ctx.lootMedido, ctx.fForma, calib.kVoc, calib.kMagia, ctx.fracao, ctx.eps, escada.degrau, ctx.defesa, ctx.kCalib, ctx.cVoc, ctx.curaPorVivo,
             VOCS_INT.map(v => [ctx.voc[v].manaMax, ctx.voc[v].regen, ctx.voc[v].reserva, mlAtual(v), ctx.cands[v].map(a => a.m.name + ':' + Math.round(a.porLancInt)).join(',')]),
             escSig(ctx.vigente), aplic != null && Date.now() - aplic < HISTERESE_INT.esperaMs, JSON.stringify(opc),
             VOCS_INT.map(v => suportesDono(v)), // v2.13.5 — o dono trocou os suportes: a conta guardada não vale mais
@@ -3002,7 +3098,7 @@
                           runasS: plano.reduce((t, p, i) => t + (p.av.m.isRune ? (s.disparos[i] || 0) : 0), 0) / res.final.sim.seg, disparos: s.disparos } : null;
         return { plano, ranking: res.ctx.av[voc] || [], info: res.ctx.info, hunt, modelo: 'inteligente', cortadas: 0, viab: LOOT_CACHE[hunt.id] != null ? { loot: LOOT_CACHE[hunt.id] } : null,
                  naoCabe: !okInt(res.final), extras: extrasInt(voc, esc, res, hunt), sim, mortos: [], bebe: !!(esc && esc.pocao) || (!res.ctx.enxAtivo && res.escada.degrau >= 2 && voc === 'DRUID'),
-                 int: { decisao: res.decisao.acao, ganho: res.decisao.ganho, met: res.final.met, aviso: res.aviso, escada: res.escada, escEnx: res.escEnx || null, ms: res.ms, cont: res.cont, desatualizado: !!res.desatualizado,
+                 int: { decisao: res.decisao.acao, ganho: res.decisao.ganho, met: res.final.met, aviso: res.aviso, medidoVig: res.decisao.vigente && res.decisao.vigente.met.medido || null, escada: res.escada, escEnx: res.escEnx || null, ms: res.ms, cont: res.cont, desatualizado: !!res.desatualizado,
                         sups: esc ? esc.sups || [] : [], pocao: esc ? esc.pocao || 0 : 0 } };
     }
     /* veredito do grupo no Inteligente: o lucro/h da party simulada */
@@ -6099,9 +6195,13 @@
         passos.push('Antes de gastar: a Bancada de Testes da Forja simula refino, raridade e atributos de graça. Gema = 100 fragmentos + ouro (lastreado na coin); fragmentos vêm do Desmanche (botão acima) e dos raid tokens da invasão (NPC Ravena).');
         return { voc, slot, ataque, pot, faixa, proxima, encaixes, raridade, raridadeAlvo, linhasAlvo, linhasAtuais, veste: veste ? { nome: veste.nome, pt: Math.round(pontuarPeca(veste, voc, ctx).pontos * 10) / 10 } : null, passos };
     }
-    function pecasDesmanche(res) {
+    /* v2.14.11 — Incomum ANUNCIA no Mercado (04/10: a u2tag tinha leather boots Incomum a 2.299 em ordem aberta; a nota
+     * antiga da wiki dizia que não). temNegocio(nome) = o Mercado teve negócio em 30 dias com esse nome: fica fora do
+     * desmanche, a não ser que `incluir` seja true (checkbox na aba). */
+    function pecasDesmanche(res, temNegocio, incluir) {
         const ORIG = { 'mochila': 'bag', 'depósito': 'depot' };
-        return ((res && res.dispensaveis) || []).filter(p => p && p.iid && ORIG[p.origem] && !vendivelNpc(p)).map(p => ({ iid: p.iid, origem: ORIG[p.origem], nome: p.nome }));
+        return ((res && res.dispensaveis) || []).filter(p => p && p.iid && ORIG[p.origem] && !vendivelNpc(p) && (incluir || typeof temNegocio !== 'function' || !temNegocio(p.nome)))
+            .map(p => ({ iid: p.iid, origem: ORIG[p.origem], nome: p.nome }));
     }
     /* v2.11.2 — TROCA TEM CUSTO. Com 0,05 de bônus para ficar, o otimizador
      * tirava o anel do Feiticeiro (5,1 pt) para o Paladino (+1,4) e dava ao
@@ -7346,6 +7446,8 @@
             corpo += calibracaoHtmlInt(h) + intCtl + `<div class="tb-ver ${it.aviso ? 'ruim' : 'ok'}"><b>${escHtml(dec)}</b>${escHtml(ganho)}${it.desatualizado ? ' <span class="tb-av">(as medidas mudaram — recalcule)</span>' : ''}` +
                 `<div class="tb-mut">previsto: ${milBR(m.xpH)} xp/h · ${numBR(Math.round(m.abH))} abates/h${m.T != null ? ` · onda limpa em ${numBR(Math.round(m.T * 10) / 10, 1)} s (${tpCombos(m.T) === 1 ? '⚡ 1 combo' : tpCombos(m.T) + ' combos'})` : ''} · lucro ${m.lucroH >= 0 ? '+' : ''}${milBR(m.lucroH)}/h (garantido ${milBR(m.LCB)}) · gasto em poção/runa ${milBR(m.ouroH)}/h${m.curaH > 0 ? ` (cura ${milBR(m.curaH)}/h pelo tempo que os bichos ficam vivos)` : ''}</div>` +
                 `<div class="tb-mut">${regenTexto()}</div>` +
+                (m.medido ? `<div class="tb-av">${m.medido.banda ? 'a simulação já se mostrou otimista neste mapa: kit não medido vale o que o kit medido logo acima dele rendeu' : 'este kit foi MEDIDO aqui'}: ${milBR(m.medido.xpRawH)} xp/h (previsto ${milBR(m.medido.previsto)}) — a medida vale mais que a simulação</div>` : '') +
+                (it.medidoVig && !m.medido ? `<div class="tb-av">o kit aplicado foi medido aqui a ${milBR(it.medidoVig.xpRawH)} xp/h (previsto ${milBR(it.medidoVig.previsto)}): por isso a troca</div>` : '') +
                 (it.escEnx ? `<div class="${it.escEnx.alerta ? 'tb-ruim' : 'tb-mut'}">kit enxuto: degrau <b>${it.escEnx.degrau}</b> — ${escHtml(['só poções', '+ Heal Friend no Druida', '+ cura do Knight e do Paladino', 'o seu kit completo (suportes e curas)'][it.escEnx.degrau])} (${escHtml(it.escEnx.motivo)})${it.escEnx.alerta ? ' ⚠ arriscado: CALCULAR de novo e APLICAR sobe a cura' : ''}</div>` : '') +
                 `<div class="tb-mut">defesa: degrau ${it.escada.degrau} (${escHtml(it.escada.motivo)})${it.escada.degrau >= 4 ? ' <span class="tb-ruim">⚠ mapa acima da party</span>' : ''} · ${numBR(it.cont.sim)} triagens + ${numBR(it.cont.party)} parties em ${numBR(it.ms)} ms</div>` +
                 (it.aviso ? `<div class="tb-ruim">${escHtml(it.aviso)}</div>` : '') + `</div>`;
@@ -7626,7 +7728,8 @@
      * mkPedir, que já casa a resposta pelo requestId e respeita o ritmo). Erro em um lote para tudo. */
     const DESM_LOTE = 10;
     async function desmancharSobras() {
-        const alvos = pecasDesmanche(EQUIP.res);
+        const temNegocio = (nome) => { const c = MK.catalogo && MK.catalogo[mkMin(nome)]; return !!(c && Number(c.trades30d) > 0); };
+        const alvos = pecasDesmanche(EQUIP.res, temNegocio, !!ler('desm_incluir_mercado', false));
         if (!alvos.length || EQUIP.equipando || EQUIP.lendo) return;
         if (emHunt()) { EQUIP.aviso = 'desmanche só na cidade'; renderizar(); return; }
         EQUIP.equipando = true; EQUIP.desm = true; EQUIP.erro = null; EQUIP.aviso = null; renderizar();
@@ -7841,12 +7944,16 @@
          * cidade, no Auto Selling nem no Mercado — só se usa ou se desmancha, e o
          * desmanche é a ÚNICA fonte de fragmentos (gemas). Comum sem refino vende. */
         const disp = R.dispensaveis, vendivel = vendivelNpc;
-        const nd = pecasDesmanche(R).length, podeDesm = nd && !dentro && sock && !EQUIP.equipando && !EQUIP.lendo;
+        const temNegocio = (nome) => { const c = MK.catalogo && MK.catalogo[mkMin(nome)]; return !!(c && Number(c.trades30d) > 0); };
+        const incluirMk = !!ler('desm_incluir_mercado', false);
+        const nd = pecasDesmanche(R, temNegocio, incluirMk).length, nMk = MK.catalogo ? pecasDesmanche(R, null, true).length - pecasDesmanche(R, temNegocio, false).length : 0;
+        const podeDesm = nd && !dentro && sock && !EQUIP.equipando && !EQUIP.lendo;
         const desmArmado = EQUIP.desmConf && Date.now() < EQUIP.desmConf;
         h += `<div class="tb-linha"><button type="button" class="tb-bt ${desmArmado ? 'pri' : ''}" id="tb-eq-desmanchar" ${podeDesm ? '' : 'disabled'} title="${escHtml(!nd ? 'nada para desmanchar: as sobras Incomum+ ou refinadas (o NPC não compra) é que vão' : dentro ? 'só na cidade' : !sock ? 'o socket do jogo não foi capturado — F5 com o helper instalado' : 'manda as sobras que o NPC não compra para o Desmanche da Forja (forge_salvage_batch) — vira fragmento, não volta')}">${EQUIP.desm ? 'DESMANCHANDO…' : desmArmado ? `confirmar: desmanchar ${nd}` : `DESMANCHAR (${nd})`}</button>` +
-             `<span class="tb-mut tb-eq-nota">${desmArmado ? 'toque de novo para confirmar (não volta)' : 'sobras que o NPC não compra → fragmentos (2 toques)'}</span></div>`;
+             `<span class="tb-mut tb-eq-nota">${desmArmado ? 'toque de novo para confirmar (não volta)' : 'sobras que o NPC não compra → fragmentos (2 toques)'}</span></div>` +
+             `<div class="tb-mut tb-eq-nota">${MK.catalogo ? `${nMk} com negócio no Mercado em 30 dias ficam fora ` : 'Mercado não lido (aba Mercado → ATUALIZAR) — não sei quais têm comprador '}<label class="tb-l"><input type="checkbox" id="tb-eq-desm-mk" ${incluirMk ? 'checked' : ''}> incluir as que têm negócio no Mercado</label></div>`;
         const soma = disp.filter(vendivel).reduce((n, p) => n + (p.sell || 0), 0);
-        h += aj('eq-disp', `<div class="tb-mut tb-eq-nota">não são a melhor nem uma das 2 reservas de ninguém, pela conta de hoje (1 pt = 1 % do dano da party). Comum: vende no NPC. Incomum ou melhor não vende em lugar nenhum (wiki /forja): ou fica guardada, ou vira fragmento no Desmanche — antes de desmanchar, confira você mesmo. Encaixes de imbuement não pontuam.</div>` +
+        h += aj('eq-disp', `<div class="tb-mut tb-eq-nota">não são a melhor nem uma das 2 reservas de ninguém, pela conta de hoje (1 pt = 1 % do dano da party). Comum: vende no NPC. Incomum ou melhor: o NPC não compra, mas o Mercado aceita (visto em 04/10) — vale olhar a aba Mercado antes; o que ninguém compra vira fragmento no Desmanche. Encaixes de imbuement não pontuam.</div>` +
             disp.slice(0, 60).map(p => `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)}<span class="tb-tag">${escHtml(p.origem)}</span> <span class="tb-mut tb-eq-nota">${escHtml(p.motivo)}${potenciaDe(p) >= POTENCIA_BASE_FORJA ? ' · potência ' + numBR(potenciaDe(p)) : ''}</span></span><span>${vendivel(p) ? numBR(p.sell || 0) : 'desmanche'}</span></div>`).join('') +
             (disp.length > 60 ? `<div class="tb-mut">… e mais ${disp.length - 60}</div>` : ''), `sobrando (${disp.length} · comuns ${numBR(soma)} o)`);
         const bases = R.bases || [];
@@ -7891,6 +7998,7 @@
         const tudo = $('#tb-eq-tudo'); if (tudo) tudo.onclick = () => { EQUIP.verTudo = !EQUIP.verTudo; renderizar(); };
         const e4 = $('#tb-eq-equipar4'); if (e4) e4.onclick = () => { if (!EQUIP.equipando) equiparTrocas(VOCS); };
         const e1 = $('#tb-eq-equipar1'); if (e1) e1.onclick = () => { if (!EQUIP.equipando) equiparTrocas([EQUIP.voc]); };
+        const dmk = $('#tb-eq-desm-mk'); if (dmk) dmk.onchange = () => { guardar('desm_incluir_mercado', dmk.checked); EQUIP.desmConf = null; renderizar(); };
         const ds = $('#tb-eq-desmanchar'); if (ds) ds.onclick = () => { const agora = Date.now(); if (EQUIP.desmConf && agora < EQUIP.desmConf) { EQUIP.desmConf = null; desmancharSobras(); } else { EQUIP.desmConf = agora + 8000; renderizar(); } };
         const gd = $('#tb-eq-guardar'); if (gd) gd.onchange = () => guardar('equip_guardar', gd.checked);
     }
