@@ -215,6 +215,39 @@ t('assets: patch de verdade (guardada v170, jogo em v185) avisa e relê', async 
     assert(/jogo atualizado \(assets v170 → v185\)/.test(logTxt(W)), 'sem o aviso: ' + logTxt(W).split('\n').slice(0, 6).join(' | '));
 });
 
+t('lembretes 2.14.9: prey com os 4 em DANO vai para o Log uma vez; buff vencendo sem trava avisa; invasão lida do ícone da cidade', async () => {
+    const W = criarMundo({ ls: Object.assign({}, DEBUG) });
+    await W.avancar(0);
+    const ws = new W.window.WebSocket('wss://jogo');
+    const buff = (tipo, locked, msLeft) => ({ bonus: { type: tipo, tier: 5 }, locked, msLeft });
+    const meta = { wildcards: 10, preyBuffs: { KNIGHT: buff('damage', false, 7e6), PALADIN: buff('damage', false, 7e6), SORCERER: buff('damage', false, 7e6), DRUID: buff('damage', false, 7e6) } };
+    ws.emitir({ type: 'welcome', data: { account: { name: 'T' }, meta } });
+    await W.avancar(70000);
+    ws.emitir({ type: 'frame', data: { state: {} } });
+    await W.avancar(0);
+    const l1 = logTxt(W);
+    assert(/prey: os 4 com DANO/.test(l1), 'prey não foi para o Log: ' + l1.split('\n').slice(0, 5).join(' | '));
+    assert.strictEqual((l1.match(/prey: os 4 com DANO/g) || []).length, 1, 'prey logado mais de uma vez');
+    /* buff vencendo sem trava (20 min) → aviso, uma vez */
+    ws.emitir({ type: 'meta_result', data: { meta: Object.assign({}, meta, { preyBuffs: Object.assign({}, meta.preyBuffs, { KNIGHT: buff('xp', false, 20 * 60000) }) }) } });
+    await W.avancar(70000);
+    ws.emitir({ type: 'frame', data: { state: {} } });
+    await W.avancar(0);
+    assert(/prey: Cavaleiro: EXP acaba em 20 min sem trava/.test(logTxt(W)), 'aviso de buff vencendo ausente: ' + logTxt(W).split('\n').slice(0, 3).join(' | '));
+    /* invasão: o ícone da cidade com inscrições abertas e sem inscrição → Log 1× por dia */
+    const ic = W.plantar('invasao-icone', ''); ic.setAttribute('data-estado', 'abertas');
+    const topo = W.plantar('invasao-icone-topo', 'Inscreva-se'); topo.setAttribute('data-topo', 'nao');
+    W.plantar('invasao-icone-contagem', '01:30:00');
+    await W.avancar(70000);
+    ws.emitir({ type: 'frame', data: { state: {} } });
+    await W.avancar(0);
+    const l2 = logTxt(W);
+    assert(/invasão: Invasão de hoje: você ainda não se inscreveu — janela em 01:30:00/.test(l2), 'invasão ausente: ' + l2.split('\n').slice(0, 3).join(' | '));
+    await W.avancar(70000);
+    ws.emitir({ type: 'frame', data: { state: {} } });
+    await W.avancar(0);
+    assert.strictEqual((logTxt(W).match(/invasão: Invasão de hoje/g) || []).length, 1, 'invasão logada mais de uma vez no dia');
+});
 t('rede fora: catálogo velho (vencido) vale em vez de CAT null', async () => {
     const ls = Object.assign({}, DEBUG, { tb_helper_comum_cat_era: '"2026-09-wipe"', tb_helper_comum_cat_ts: String(1759150000000 - 3 * 864e5),
         tb_helper_comum_cat_hunts: JSON.stringify(HUNTS), tb_helper_comum_cat_magias: JSON.stringify(SPELLS) });

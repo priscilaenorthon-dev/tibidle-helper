@@ -97,3 +97,24 @@ Presets dos 4 anotados em `.playwright-mcp/backup-presets-2026-10-04.json` antes
    `spell-areas.json` depois do `/bosses/select`, cuja cena traz `/assets/vN/`, ou observar o `fetch` do jogo).
 3. Cabeçalho do Radar: dizer que os Scans antigos saíram por nível ("6 Scans fora: nível 76–77, você está no 83").
 4. A linha "cura X/h" do Inteligente não apareceu com o Scan que gastou poção (item 3).
+
+## Fechamento dos testes de 04/10 (2.14.8 a 2.14.10, conta u2tag nível 83) — o que faltava
+- [x] **Patch de verdade (2.14.8)**: `assets_ver` forçado para v170 e boot: catálogos vieram do cache (sem pedir asset);
+      no 1º asset pedido (Equip → ATUALIZAR) o Log mostrou "jogo atualizado (assets v170 → v185): catálogos, ficha dos
+      itens e tabelas de loot serão relidos", `assets_ver` = v185, `assets_ver_antes` = v170, `cat_ts` = 0.
+- [x] **Invasão "não inscrito" (2.14.9)**: simulado no DOM (`data-estado=abertas`, `data-topo=nao`, sem cancelar a
+      inscrição): aviso "⚠ Invasão de hoje: você ainda não se inscreveu — janela em 02:03" em todas as sub-abas do
+      Progresso e no Log 1× (chave `prog_lemb_inv` = dia). Ícone devolvido como estava (inscrito).
+- [x] **Prey "buff vencendo"**: não dá para forçar ao vivo; coberto por teste de fumaça no vm (welcome com os 4 em DANO →
+      "prey: os 4 com DANO" 1×; buff do Cavaleiro com 20 min sem trava → aviso; invasão pelo ícone plantado → Log 1× por dia).
+- [x] **Desmanche com 2 peças num lote**: leather boots Incomum (potência 50) e brass armor Incomum (56), do depósito,
+      ao lado da Forja: "2 de 2 peça(s) viraram fragmento", as duas sumiram, Forja fechada.
+- [x] **Linha "cura X/h" do Inteligente**: existe (`m.curaH > 0`) e não apareceu porque o Scan de Vampire hell não gastou
+      poção de VIDA (supVoc: só 10 avalanche e 2 thunderstorm; "poção 1.144/h" é o total de suprimentos). Não é defeito.
+- [ ] **Venda rápida com material de imbuement**: impossível hoje — a conta não tem NENHUM dos 42 materiais de
+      `imbuements.json` (vampire teeth, bloody pincers…) nem na mochila nem no depósito (que tem Wild Honey, Abyssal Pearl,
+      Dark Wool, Yalahar Soul Fragment, Yalahari Cogwheel, fragmentos e chaves).
+- [x] **Scan A/B em Vampire hell, 4 min cada, lure 6**: Em área 65,9k xp/h raw (real 71,2k) · +19,7k ouro/h estável (3 raros em 4 min: sorte +23,8k) · 1.964 abates/h × Inteligente 62,0k raw (real 66,9k) · +5,2k estável · 1.870 abates/h · tomou 1.410/h. **Inteligente perdeu por 6 % em xp (critério: ≥ Em área −3 %) e muito em ouro.** Ele previu 70,2k para o próprio kit (o preset do dono, 1 magia por personagem) e mediu 62,0k; depois do A/B continuou em "mantém (menos de 10 min desde o APLICAR)" com os mesmos 70,2k. DEFEITO a tratar: no nível 83 em Vampire hell o modelo superestima o kit mínimo (~13 %) e a histerese segura a troca. Kits devolvidos e party na cidade no fim.
+- [x] **Alertas do Radar**: CONFERIR só roda fora de Scan ("alertas não conferidos — Scan em andamento", correto). Depois: "Wild Honey: vale anunciar — menor anúncio 951 (267 % acima da média 30 d)" — o anúncio de 951 não é da u2tag (REVISAR: 55 ordens abertas, nenhuma de Wild Honey), então o pendente "item que só você anuncia" segue sem caso para testar. Achado colateral: a u2tag tem ordens abertas de leather boots INCOMUM a 2.299 — Incomum anuncia no Mercado, ao contrário do que a nota das sobras diz; antes de DESMANCHAR, vale olhar o Mercado.
+- Não feitos (fora do alcance): conta principal, atualização pelo Tampermonkey (é o dono quem instala), Dia cruzando a
+  meia-noite, Dia do Chrome do dono.
