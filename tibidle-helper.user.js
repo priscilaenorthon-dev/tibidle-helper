@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.13.6
+// @version      2.13.7
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.13.6';
+    const VERSAO = '2.13.7';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -557,7 +557,44 @@
     /* v2.11 — catálogos na gaveta COMUM (LS_COMUM), com selo de era próprio,
      * e rede fora ≠ catálogo nulo: se o download falha, a cópia local vale
      * mesmo vencida (CAT null = lista de hunts vazia e nenhum plano). */
-    const CAT_ARQ = { hunts: '/hunts/select', magias: '/spells', areas: '/assets/v100/spell-areas.json', precos: '/buy-prices', bosses: '/bosses/select', pocoes: '/potions' };
+    /* v2.13.7 — VERSÃO DOS ASSETS MUDA A CADA PATCH (update 1.1.0, 04/10: v167 → v170, e o
+     * /assets/v167/imbuements.json e o items-by-name.json passaram a dar 404 — sem eles o "nunca vender"
+     * do Auto Hunt não monta e o Equip não acha os ids). Candidatas, nesta ordem: a que a página do jogo
+     * está usando (recursos já carregados), a dos catálogos (cena dos bosses/atlas das hunts), a última
+     * que funcionou e a conhecida. A primeira que responde fica guardada. */
+    const ASSETS_CONHECIDA = 'v170';
+    function versoesAssets() {
+        const vs = [];
+        const pega = (txt) => { const m = String(txt || '').match(/\/assets\/(v\d+)\//); if (m) vs.push(m[1]); };
+        try { for (const e of performance.getEntriesByType('resource')) pega(e.name); } catch { }
+        try { for (const b of (CAT.bosses || [])) pega(b && b.scene); for (const h of (CAT.hunts || [])) pega(h && h.atlas && h.atlas.image); } catch { }
+        const ord = [...new Set(vs)].sort((a, b) => Number(b.slice(1)) - Number(a.slice(1))); // a mais nova primeiro
+        return [...new Set(ord.concat([lerComum('assets_ver', null), ASSETS_CONHECIDA, 'v167']).filter(Boolean))];
+    }
+    /* patch novo do jogo: o que foi guardado da versão velha pode ter mudado (1.1.0: hunts novas, Energy Ring fora
+     * da Thunderscar Peak, equipamentos que vinham como "Tools") — os catálogos são baixados de novo no próximo
+     * boot, a ficha dos itens (equip_base) e as tabelas de loot do Radar recomeçam. Nada é enviado ao jogo. */
+    function novaVersaoDoJogo(antes, agora) {
+        try {
+            guardarComum('cat_ts', 0);
+            guardar('equip_base', {});
+            for (const k of Object.keys(localStorage)) if (k.startsWith(LS_COMUM + 'loot_tab_')) localStorage.removeItem(k);
+            log(`jogo atualizado (assets ${antes} → ${agora}): catálogos, ficha dos itens e tabelas de loot serão relidos`, 'info');
+        } catch (e) { falhou('nova versão do jogo', e); }
+    }
+    async function buscarAsset(arquivo) {
+        let ultimo = null;
+        for (const v of versoesAssets()) {
+            try {
+                const j = await buscarJSON('/assets/' + v + '/' + arquivo);
+                const antes = lerComum('assets_ver', null);
+                if (antes !== v) { guardarComum('assets_ver', v); if (antes) novaVersaoDoJogo(antes, v); }
+                return j;
+            } catch (e) { ultimo = e; }
+        }
+        throw ultimo || new Error('/assets/…/' + arquivo + ' não encontrado');
+    }
+    const CAT_ARQ = { hunts: '/hunts/select', magias: '/spells', areas: 'spell-areas.json', precos: '/buy-prices', bosses: '/bosses/select', pocoes: '/potions' };
     function catalogosDoCache() {
         if (lerComum('cat_era', null) !== ERA) return false;
         const c = {};
@@ -585,7 +622,7 @@
             const [hunts, magias, areas, precos, bosses, pocoes] = await Promise.all([
                 buscarJSON(CAT_ARQ.hunts),
                 buscarJSON(CAT_ARQ.magias),
-                buscarJSON(CAT_ARQ.areas).catch(() => null),
+                buscarAsset(CAT_ARQ.areas).catch(() => null),
                 buscarJSON(CAT_ARQ.precos).catch(() => null),
                 buscarJSON(CAT_ARQ.bosses).catch(() => null),
                 buscarJSON(CAT_ARQ.pocoes).catch(() => null)
@@ -4131,7 +4168,7 @@
         if (a.slot === 'ammo' || a.weaponType === 'ammunition' || /ammunition/i.test(a.primarytype || '')) return false;
         return !!(a.slot || a.slotType || a.weaponType || TIPOS_EQUIP.test(a.primarytype || ''));
     }
-    /* materiais de imbuement = todo item pedido em /assets/v167/imbuements.json */
+    /* materiais de imbuement = todo item pedido em /assets/<versão>/imbuements.json (buscarAsset) */
     const materiaisDoCatalogo = j => [...new Set(((j && j.imbuements) || []).flatMap(i => (i.items || []).map(x => normNomeItem(x && x.name))).filter(Boolean))];
     /* O que DESMARCAR no painel de venda. linhas: [{nome, ...}] (nome = o que
      * vem depois de "sell-check-"); o: {equip, imbu, lista, materiais,
@@ -4379,7 +4416,7 @@
     const lerOuroNum = () => parseInt(((tid('hud-gold') || {}).textContent || '').replace(/\D/g, '')) || 0;
 
     /* @@AUTOHUNT-VENDA-INICIO */
-    /* v2.11 — NUNCA VENDER. Materiais de imbuement: /assets/v167/imbuements.json
+    /* v2.11 — NUNCA VENDER. Materiais de imbuement: /assets/<versão>/imbuements.json
      * (cache 7 dias). Equipamento: /item/info pelo nome (basePorNome/idsPorNome
      * da área Equip, que já guardam cache). */
     let _materiaisImbu = null;
@@ -4387,7 +4424,7 @@
         if (_materiaisImbu) return _materiaisImbu;
         const c = ler('imbu_materiais', null);
         if (c && c.t && Date.now() - c.t < 7 * 864e5 && Array.isArray(c.m) && c.m.length) return (_materiaisImbu = c.m);
-        const m = materiaisDoCatalogo(await buscarJSON('/assets/v167/imbuements.json'));
+        const m = materiaisDoCatalogo(await buscarAsset('imbuements.json'));
         if (!m.length) throw new Error('imbuements.json veio sem materiais');
         _materiaisImbu = m; guardar('imbu_materiais', { t: Date.now(), m });
         return m;
@@ -5437,14 +5474,14 @@
         return { erro };
     }
     /* atributos base por nome. Cache em localStorage (equip_base) por 7 dias;
-     * id por nome vem de /assets/v167/items-by-name.json.
+     * id por nome vem de /assets/<versão>/items-by-name.json.
      * v2.11 — equip_ids (221 KB, todos os itens do jogo) só em MEMÓRIA: era a
      * maior chave do localStorage, repetida por conta, e é rebaixada em
      * milissegundos quando o Equip precisa. */
     let _idsPorNome = null;
     async function idsPorNome() {
         if (_idsPorNome) return _idsPorNome;
-        const m = await buscarJSON('/assets/v167/items-by-name.json');
+        const m = await buscarAsset('items-by-name.json');
         if (!m || typeof m !== 'object') throw new Error('items-by-name.json veio vazio');
         _idsPorNome = m;
         return m;
@@ -7593,7 +7630,7 @@
     ];
     /* /forja, aba GEMAS: ouro + coins por gema (mais 100 fragmentos do tipo) */
     const PG_GEMAS = { T1: { nome: 'Refine Gem T1', ouro: 10000, coins: 5 }, T2: { nome: 'Refine Gem T2', ouro: 35000, coins: 8 }, G: { nome: 'Guarantee Gem T1', ouro: 15000, coins: 5 } };
-    /* /imbuements (e /assets/v167/imbuements.json → bases): taxa, proteção, chance */
+    /* /imbuements (e /assets/<versão>/imbuements.json → bases): taxa, proteção, chance */
     const PG_IMBU_BASES = [
         { id: 1, nome: 'Basic', taxa: 5000, protecao: 10000, chance: 0.9 },
         { id: 2, nome: 'Intricate', taxa: 30000, protecao: 30000, chance: 0.7 },
@@ -8592,12 +8629,8 @@
         if (PROG.imbu || PROG.imbuPedido) return;
         PROG.imbuPedido = true;
         /* a versão dos assets muda com o patch (v100 já dá 404): pega a do catálogo de bosses */
-        const cena = (CAT.bosses || []).map(b => b && b.scene).find(s => /\/assets\/v\d+\//.test(s || ''));
-        const vers = [...new Set([cena ? cena.match(/\/assets\/(v\d+)\//)[1] : null, 'v167'].filter(Boolean))];
-        for (const v of vers) {
-            try { const j = await buscarJSON('/assets/' + v + '/imbuements.json'); if (j && Array.isArray(j.imbuements)) { PROG.imbu = j; PROG.imbuErro = null; break; } }
-            catch (e) { PROG.imbuErro = e.message; }
-        }
+        try { const j = await buscarAsset('imbuements.json'); if (j && Array.isArray(j.imbuements)) { PROG.imbu = j; PROG.imbuErro = null; } } // v2.13.7: versão dinâmica
+        catch (e) { PROG.imbuErro = e.message; }
         if (!PROG.imbu && !PROG.imbuErro) PROG.imbuErro = 'formato inesperado';
         if (ABA === 'progresso') renderizar();
     }

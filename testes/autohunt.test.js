@@ -209,6 +209,7 @@ function montarVenda(itens, opc) {
         const dorme = async () => {}; const log = (m, tipo) => J.logs.push((tipo || 'info') + ': ' + m);
         const ler = (k, p) => (k in MEM ? MEM[k] : p), guardar = (k, v) => { MEM[k] = v; };
         const buscarJSON = async (c) => { if (opc.semRede) throw new Error('offline'); if (/imbuements/.test(c)) return IMBU; throw new Error('404 ' + c); };
+        const buscarAsset = (arq) => buscarJSON("/assets/v170/" + arq);
         const idsPorNome = async () => { if (opc.semRede) throw new Error('offline'); return IDS; };
         const basePorNome = async (nomes) => BASE;
         const cliqueCompleto = (e) => e.click();
