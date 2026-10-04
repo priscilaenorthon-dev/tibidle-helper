@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.14.8
+// @version      2.14.9
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.14.8';
+    const VERSAO = '2.14.9';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -6029,6 +6029,13 @@
      * corpo a corpo: faixa 2 → até +2, faixa 3 → até +3). Uma Snakebite Rod ML+1 com 300+ vira ML+3 na forja. */
     const POTENCIA_BASE_FORJA = 300, SKILL_FORJA = ['nivel_magico', 'distancia', 'corpo_a_corpo'];
     const potenciaDe = p => Number(p && p.forja && p.forja.potenciaBase) || 0;
+    /* v2.14.9 — DESMANCHE (criador do jogo, 04/10): o que o NPC não compra (Incomum ou melhor, ou refinada) e ninguém usa
+     * vira fragmento na Forja — a única fonte de gemas. Só mochila (bag) e depósito (depot); o corpo nunca. */
+    const vendivelNpc = p => !((p.forja && p.forja.raridade) > 0) && !((p.forja && p.forja.refino) > 0);
+    function pecasDesmanche(res) {
+        const ORIG = { 'mochila': 'bag', 'depósito': 'depot' };
+        return ((res && res.dispensaveis) || []).filter(p => p && p.iid && ORIG[p.origem] && !vendivelNpc(p)).map(p => ({ iid: p.iid, origem: ORIG[p.origem], nome: p.nome }));
+    }
     /* v2.11.2 — TROCA TEM CUSTO. Com 0,05 de bônus para ficar, o otimizador
      * tirava o anel do Feiticeiro (5,1 pt) para o Paladino (+1,4) e dava ao
      * Feiticeiro um do depósito (−1,2, sem aparecer na tela): 3 trocas por
@@ -7547,6 +7554,33 @@
         }
         return P;
     }
+    /* v2.14.9 — DESMANCHE pelo socket: forge_salvage_batch {requestId, alvos:[{iid, origem:'bag'|'depot'}]} →
+     * forge_salvage_batch_result {requestId, iids, …} (o cliente do jogo manda em lotes; aqui 10 por pedido, pelo
+     * mkPedir, que já casa a resposta pelo requestId e respeita o ritmo). Erro em um lote para tudo. */
+    const DESM_LOTE = 10;
+    async function desmancharSobras() {
+        const alvos = pecasDesmanche(EQUIP.res);
+        if (!alvos.length || EQUIP.equipando || EQUIP.lendo) return;
+        if (emHunt()) { EQUIP.aviso = 'desmanche só na cidade'; renderizar(); return; }
+        EQUIP.equipando = true; EQUIP.desm = true; EQUIP.erro = null; EQUIP.aviso = null; renderizar();
+        let feitas = 0, parou = null;
+        try {
+            for (let i = 0; i < alvos.length && !parou; i += DESM_LOTE) {
+                const lote = alvos.slice(i, i + DESM_LOTE);
+                const r = await mkPedir('forge_salvage_batch', { requestId: mkRid(), alvos: lote.map(a => ({ iid: a.iid, origem: a.origem })) });
+                if (r.erro) { parou = r.erro; break; }
+                feitas += Array.isArray(r.data && r.data.iids) ? r.data.iids.length : lote.length;
+            }
+            const MOTIVO = { too_far: 'o personagem precisa estar ao lado da Forja: abra NAVEGAÇÃO › Forja no jogo (ele anda até lá) e toque de novo',
+                             not_in_city: 'só na cidade', insufficient_item: 'a peça já não estava mais lá (relido)', invalid_forge: 'o jogo recusou o lote (invalid_forge)' };
+            if (parou) EQUIP.aviso = 'desmanche parou: ' + (MOTIVO[parou] || parou);
+            log(`desmanche: ${feitas} de ${alvos.length} peça(s) viraram fragmento${parou ? ' — parou: ' + (MOTIVO[parou] || parou) : ''}`, parou ? 'erro' : 'ok');
+        } catch (e) { falhou('desmanche', e); }
+        EQUIP.equipando = false; EQUIP.desm = false; EQUIP.desmConf = null;
+        const aviso = EQUIP.aviso;
+        try { await equipAtualizar(); } catch (e) { renderizar(); }
+        if (aviso) { EQUIP.aviso = aviso; renderizar(); }
+    }
     async function equipAtualizar() {
         if (EQUIP.lendo) return;
         EQUIP.lendo = true; EQUIP.erro = null; EQUIP.aviso = null; renderizar();
@@ -7739,7 +7773,11 @@
         /* v2.11.6 — wiki /forja: peça Incomum ou melhor (ou refinada) NÃO vende na
          * cidade, no Auto Selling nem no Mercado — só se usa ou se desmancha, e o
          * desmanche é a ÚNICA fonte de fragmentos (gemas). Comum sem refino vende. */
-        const disp = R.dispensaveis, vendivel = p => !((p.forja && p.forja.raridade) > 0) && !((p.forja && p.forja.refino) > 0);
+        const disp = R.dispensaveis, vendivel = vendivelNpc;
+        const nd = pecasDesmanche(R).length, podeDesm = nd && !dentro && sock && !EQUIP.equipando && !EQUIP.lendo;
+        const desmArmado = EQUIP.desmConf && Date.now() < EQUIP.desmConf;
+        h += `<div class="tb-linha"><button type="button" class="tb-bt ${desmArmado ? 'pri' : ''}" id="tb-eq-desmanchar" ${podeDesm ? '' : 'disabled'} title="${escHtml(!nd ? 'nada para desmanchar: as sobras Incomum+ ou refinadas (o NPC não compra) é que vão' : dentro ? 'só na cidade' : !sock ? 'o socket do jogo não foi capturado — F5 com o helper instalado' : 'manda as sobras que o NPC não compra para o Desmanche da Forja (forge_salvage_batch) — vira fragmento, não volta')}">${EQUIP.desm ? 'DESMANCHANDO…' : desmArmado ? `confirmar: desmanchar ${nd}` : `DESMANCHAR (${nd})`}</button>` +
+             `<span class="tb-mut tb-eq-nota">${desmArmado ? 'toque de novo para confirmar (não volta)' : 'sobras que o NPC não compra → fragmentos (2 toques)'}</span></div>`;
         const soma = disp.filter(vendivel).reduce((n, p) => n + (p.sell || 0), 0);
         h += aj('eq-disp', `<div class="tb-mut tb-eq-nota">não são a melhor nem uma das 2 reservas de ninguém, pela conta de hoje (1 pt = 1 % do dano da party). Comum: vende no NPC. Incomum ou melhor não vende em lugar nenhum (wiki /forja): ou fica guardada, ou vira fragmento no Desmanche — antes de desmanchar, confira você mesmo. Encaixes de imbuement não pontuam.</div>` +
             disp.slice(0, 60).map(p => `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)}<span class="tb-tag">${escHtml(p.origem)}</span> <span class="tb-mut tb-eq-nota">${escHtml(p.motivo)}${potenciaDe(p) >= POTENCIA_BASE_FORJA ? ' · potência ' + numBR(potenciaDe(p)) : ''}</span></span><span>${vendivel(p) ? numBR(p.sell || 0) : 'desmanche'}</span></div>`).join('') +
@@ -7770,6 +7808,7 @@
         const tudo = $('#tb-eq-tudo'); if (tudo) tudo.onclick = () => { EQUIP.verTudo = !EQUIP.verTudo; renderizar(); };
         const e4 = $('#tb-eq-equipar4'); if (e4) e4.onclick = () => { if (!EQUIP.equipando) equiparTrocas(VOCS); };
         const e1 = $('#tb-eq-equipar1'); if (e1) e1.onclick = () => { if (!EQUIP.equipando) equiparTrocas([EQUIP.voc]); };
+        const ds = $('#tb-eq-desmanchar'); if (ds) ds.onclick = () => { const agora = Date.now(); if (EQUIP.desmConf && agora < EQUIP.desmConf) { EQUIP.desmConf = null; desmancharSobras(); } else { EQUIP.desmConf = agora + 8000; renderizar(); } };
         const gd = $('#tb-eq-guardar'); if (gd) gd.onchange = () => guardar('equip_guardar', gd.checked);
     }
 
@@ -8164,6 +8203,40 @@
         return r;
     }
 
+    /* v2.14.9 — PREY (TV de Souza, 04/10): rerrolar os grátis até os 4 terem DANO, travar os 4 (🔒) e caçar o mapa do
+     * item por horas; buff vencendo sem trava some em 2 h de caçada. Só leitura: quem trava é o dono. */
+    const PG_TIPO_PREY_TXT = { xp: 'EXP', loot: 'LOOT', dano: 'DANO', defesa: 'DEFESA' };
+    const PG_PREY_VENCENDO_MS = 30 * 60000;
+    function pgAlertaPrey(prey) {
+        if (!prey || !prey.buffs) return null;
+        const b = prey.buffs;
+        const comDano = PG_VOCS.filter(v => b[v] && b[v].tipo === 'dano' && b[v].msLeft !== 0);
+        if (comDano.length === 4) {
+            const soltos = PG_VOCS.filter(v => !b[v].locked);
+            return { nivel: 'ok', texto: 'os 4 com DANO' + (soltos.length ? ' — trave ' + soltos.map(v => PG_VOC[v]).join(', ') + ' (🔒, 1 wildcard a cada 2 h) e cace o mapa do item por horas' : ', todos travados: cace o mapa do item por horas') };
+        }
+        const venc = PG_VOCS.filter(v => b[v] && b[v].tipo && !b[v].locked && b[v].msLeft != null && b[v].msLeft > 0 && b[v].msLeft < PG_PREY_VENCENDO_MS);
+        if (venc.length) {
+            const cauda = prey.wildcards > 0 ? ` — travar custa 1 wildcard (tem ${pgInt(prey.wildcards)})` : ' — sem wildcard para travar';
+            return { nivel: 'aviso', texto: venc.map(v => `${PG_VOC[v]}: ${PG_TIPO_PREY_TXT[b[v].tipo] || b[v].tipo} acaba em ${Math.ceil(b[v].msLeft / 60000)} min sem trava`).join(' · ') + cauda };
+        }
+        return null;
+    }
+    /* v2.14.9 — INVASÃO (criador do jogo, 04/10): inscrever todo dia rende raid tokens mesmo em posição ruim; tokens viram
+     * fragmentos no NPC Ravena (~2k cada no mercado). Lido do ícone da cidade: [data-testid=invasao-icone][data-estado]
+     * (sem_invasao · abertas · inscrito · preparando · rodando · rodando_assistir · encerrada), invasao-icone-topo
+     * [data-topo] (nao · inscrito · convite) e invasao-icone-contagem. Só leitura: quem se inscreve é o dono. */
+    function pgAvisoInvasao(ic) {
+        if (!ic || !ic.estado) return null;
+        const e = ic.estado, c = ic.contagem ? String(ic.contagem).trim() : '';
+        if (e === 'abertas' || (e === 'preparando' && ic.tom === 'nao')) return { nivel: 'aviso', texto: `Invasão de hoje: você ainda não se inscreveu${c ? ' — janela em ' + c : ''}. Inscrever rende raid tokens mesmo em posição ruim (tokens → fragmentos no NPC Ravena).` };
+        if (e === 'inscrito' || (e === 'preparando' && ic.tom === 'inscrito')) return { nivel: 'ok', texto: `Invasão: inscrito${c ? ' · janela em ' + c : ''}` };
+        if (e === 'rodando' || e === 'rodando_assistir') return { nivel: 'info', texto: 'Invasão ao vivo agora' };
+        if (e === 'encerrada') return { nivel: 'info', texto: `Invasão de hoje encerrada${c ? ' · inscrições reabrem em ' + c : ''}` };
+        if (e === 'sem_invasao') return { nivel: 'info', texto: 'Sem invasão hoje' };
+        return null;
+    }
+
     /* ---- 5. FORJA E IMBUEMENT ----------------------------------------------- */
     /* Refino esperado de `de` até `ate`. C[k] = custo esperado (em gemas) de k → k+1:
      *   alvo ≤ +4: 1/p gemas T1 (falha não cai);
@@ -8305,6 +8378,7 @@
     }
     function observarProgresso(o) {
         if (!o || typeof o !== 'object' || !o.type || o.type === 'pong') return;
+        try { pgLembretes(); } catch (e) { falhou('lembretes (prey/invasão)', e); }
         const d = o.data;
         if (!d || typeof d !== 'object') return;
         const tipo = o.type, st = d.state && typeof d.state === 'object' ? d.state : null;
@@ -8743,7 +8817,7 @@
     function pgTelaPrey() {
         const p = PROG.prey;
         let h = '';
-        const tipoTxt = { xp: 'EXP', loot: 'LOOT', dano: 'DANO', defesa: 'DEFESA' };
+        const tipoTxt = PG_TIPO_PREY_TXT;
         if (!p) h += `<div class="pg-cx pg-mut">Estado da prey não disponível — o jogo manda ao conectar ou ao mexer na Prey. A sugestão abaixo vale do mesmo jeito.</div>`;
         else {
             h += `<div class="pg-lin"><span>Wildcards</span><span>${p.wildcards != null ? pgInt(p.wildcards) : '—'}</span></div>`;
@@ -8756,6 +8830,8 @@
                     : `<span class="pg-mut">sem bônus${b.piso ? ' (piso ★' + pgInt(b.piso) + ')' : ''}</span>`;
                 return `<div class="pg-lin"><span>${PG_VOC[v]}</span><span>${txt}${b && b.gratis ? '<div class="tb-ok pg-peq">sorteio grátis hoje</div>' : ''}</span></div>`;
             }).join('');
+            const ap = pgAlertaPrey(p);
+            if (ap) h += `<div class="${ap.nivel === 'aviso' ? 'pg-atencao' : 'pg-cx tb-ok'}">${ap.nivel === 'aviso' ? '⚠ ' : '✓ '}${escHtml(ap.texto)}</div>`;
             const tv = pgTravasPrey(p);
             if (tv && tv.travadas) {
                 h += `<div class="${tv.horasTravas != null && tv.horasTravas < 4 ? 'pg-atencao' : 'pg-cx'}">${tv.travadas} seção(ões) travada(s) gastam ${tv.travadas} wildcard(s) a cada 2 h de caçada.` +
@@ -8830,6 +8906,25 @@
 
     /* v2.11 — ABA PROGRESSO. Sub-abas para caber nos 300 px da gaveta; o
      * aviso de mochila de chaves cheia aparece em todas. */
+    function pgLerInvasaoDom() {
+        try {
+            const ic = tid('invasao-icone'); if (!ic) return null;
+            const topo = tid('invasao-icone-topo'), cont = tid('invasao-icone-contagem');
+            return { estado: ic.getAttribute('data-estado') || null, tom: topo ? topo.getAttribute('data-topo') : null, contagem: cont ? cont.textContent : '' };
+        } catch (e) { return null; }
+    }
+    /* v2.14.9 — lembretes no Log, 1× por dia (invasão) e 1× por estado (prey); checados a cada minuto pelas mensagens do jogo */
+    function pgLembretes() {
+        const agora = Date.now();
+        if (PROG.lembT && agora - PROG.lembT < 60000) return;
+        PROG.lembT = agora;
+        const dia = new Date(agora).toISOString().slice(0, 10);
+        const inv = pgAvisoInvasao(pgLerInvasaoDom());
+        if (inv && inv.nivel === 'aviso' && ler('prog_lemb_inv', null) !== dia) { guardar('prog_lemb_inv', dia); log('invasão: ' + inv.texto, 'info'); }
+        const ap = pgAlertaPrey(PROG.prey);
+        const ass = ap ? ap.nivel + ':' + ap.texto.replace(/\d+ min/g, 'min') : null;
+        if (ass && ler('prog_lemb_prey', null) !== ass) { guardar('prog_lemb_prey', ass); log('prey: ' + ap.texto, ap.nivel === 'aviso' ? 'erro' : 'ok'); }
+    }
     function telaProgresso() {
         pgGarantirCss();
         pgSincronizarBestiario();
@@ -8842,6 +8937,11 @@
             `<button class="pg-aba${k === sub ? ' on' : ''}" data-pg-sub="${k}" role="tab" aria-selected="${k === sub}">${n}${k === 'chaves' && av && av.nivel === 'cheia' ? ' <b class="tb-ruim">!</b>' : ''}</button>`).join('') + `</div>`;
         /* texto inteiro na sub-aba Chaves; nas outras, uma linha (não empurra o conteúdo para baixo) */
         if (av && av.nivel === 'cheia') h += `<div class="pg-alerta" role="alert">⚠ ${sub === 'chaves' ? escHtml(av.texto) : `mochila de chaves cheia (${pgInt(kb.usadas)}/${pgInt(maxKb)}): chave nova será PERDIDA`}</div>`;
+        /* v2.14.9 — invasão (ícone da cidade) e prey: o aviso aparece em todas as sub-abas; o estado tranquilo só na de Chaves */
+        const inv = pgAvisoInvasao(pgLerInvasaoDom());
+        if (inv && (inv.nivel === 'aviso' || sub === 'chaves')) h += `<div class="${inv.nivel === 'aviso' ? 'pg-atencao' : 'pg-cx'} pg-peq">${inv.nivel === 'aviso' ? '⚠ ' : inv.nivel === 'ok' ? '✓ ' : ''}${escHtml(inv.texto)}</div>`;
+        const ap = sub === 'prey' ? null : pgAlertaPrey(PROG.prey);
+        if (ap && ap.nivel === 'aviso') h += `<div class="pg-atencao pg-peq">⚠ prey — ${escHtml(ap.texto)}</div>`;
         h += sub === 'bestiario' ? pgTelaBestiario() : sub === 'offline' ? pgTelaOffline() : sub === 'prey' ? pgTelaPrey() : sub === 'forja' ? pgTelaForja() : pgTelaChaves();
         return h + `<div class="pg-rodape">Só leitura: nada nesta aba envia comando ao jogo.</div></div>`;
     }
@@ -9227,7 +9327,7 @@
     const MK_RESPOSTA = { market_catalog: 'market_catalog_result', market_my_orders: 'market_my_orders_result', market_inbox: 'market_inbox_result',
                           market_list: 'market_list_result', market_stats: 'market_stats_result', market_copies: 'market_copies_result',
                           market_create: 'market_create_result', market_cancel: 'market_cancel_result', market_claim: 'market_claim_result',
-                          depot_withdraw: 'depot_result' };
+                          depot_withdraw: 'depot_result', forge_salvage_batch: 'forge_salvage_batch_result' };
     const MK_PRAZO_MS = 8000; // sem resposta nisso = para (um anúncio pode ter passado: conferir antes de repetir)
     const MK_GRACA_ERRO_MS = 1200; // erro sem requestId: espera o resultado de verdade chegar antes de acreditar
     const MK_PAUSA_LIMITE_MS = 20000; // rate_limited: pausa e tenta de novo UMA vez

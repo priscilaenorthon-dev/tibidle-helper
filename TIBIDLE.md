@@ -4595,3 +4595,29 @@ mapas (Vampire hell 32,5k × 58,0k do Em área; Banshee 27,7k × 49,6k) e ainda 
 - **Equip**: `baseDeForja` também aceita potência ≥ 300 (`POTENCIA_BASE_FORJA`) com encaixe de ML, distância ou corpo
   a corpo (`SKILL_FORJA`) — a peça "ruim" que a forja transforma (TV de Souza: Snakebite Rod ML+1 300+ → +3 → ML+2/+3).
   As listas de bases e de sobras mostram a potência. 1 teste em `equip.test.js`. Total 265.
+
+## 2.14.9 (04/10) — desmanche por botão no Equip, lembrete da invasão e aviso do prey (as três ideias dos vídeos)
+- **Desmanche** (Equip, botão "DESMANCHAR (N)", 2 toques, só na cidade): manda para a Forja as sobras que o NPC não
+  compra — Incomum ou melhor, ou refinada (`vendivelNpc` falso), da mochila ou do depósito, nunca do corpo
+  (`pecasDesmanche(res)` → `[{iid, origem:'bag'|'depot', nome}]`). Comando mapeado no cliente do jogo:
+  `forge_salvage_batch {requestId, alvos:[{iid, origem}]}` → `forge_salvage_batch_result {requestId, iids, …}` (o jogo
+  também tem `forge_salvage {iid, origem}` unitário, `forge_quote`, `forge_refine`, `forge_rarity`, `forge_attr`,
+  `forge_craft`, `forge_lastro`, `forge_simulate`; erros `invalid_forge`, `insufficient_item`). Lotes de 10 pelo
+  `mkPedir` (casa a resposta pelo requestId e respeita o ritmo do Mercado); erro num lote para tudo; depois relê o Equip.
+  Nada automático: o Auto Hunt continua vendendo só Comum sem refino no NPC.
+- **Invasão** (Progresso, só leitura): o ícone da cidade diz tudo — `[data-testid=invasao-icone][data-estado]`
+  (sem_invasao · abertas · inscrito · preparando · rodando · rodando_assistir · encerrada), `invasao-icone-topo`
+  `[data-topo]` (nao · inscrito · convite) e `invasao-icone-contagem`. `pgAvisoInvasao` → aviso "você ainda não se
+  inscreveu" (abertas, ou preparando sem inscrição) em todas as sub-abas e no Log 1× por dia; "inscrito · janela em X"
+  só na sub-aba Chaves. Comandos do jogo (não usados): `invasion_today {}` → `invasion_today_data`, `invasion_join
+  {requestId}`, `invasion_leave`, `invasion_windows`, `invasion_ranking`, `invasion_watch {windowId, sinceMs}`,
+  `invasion_buff_buy {buffId}`, `raid_shop_buy`.
+- **Prey** (`pgAlertaPrey`): os 4 com DANO → "trave X, Y (🔒) e cace o mapa do item por horas"; buff vencendo em < 30 min
+  sem trava → aviso com o custo em wildcard. Na sub-aba Prey e, se for aviso, em todas; no Log 1× por estado.
+- Ao vivo (u2tag): "✓ Invasão: inscrito · janela em 02:23", prey "os 4 com DANO — trave Cavaleiro, Paladino, Feiticeiro,
+  Druida", DESMANCHAR (58). 3 testes novos (268).
+- **Desmanche exige o personagem ao lado da Forja**: o 1º envio voltou `too_far` (erro tratado: nada destruído, Log e
+  aviso na aba). Depois de NAVEGAÇÃO › UZGOD (Forja) no jogo (ele anda até lá e abre `window-forja`; posição 34,33 →
+  27,35), o mesmo botão desmanchou 1 leather boots Incomum (potência 1): "1 de 1 peça(s) viraram fragmento", peça
+  sumiu do depósito. O helper não anda pelo personagem (`city_move` existe no jogo, não usado): o aviso diz para
+  abrir a Forja e tocar de novo. Outros erros do jogo: `not_in_city`, `insufficient_item`, `invalid_forge`.

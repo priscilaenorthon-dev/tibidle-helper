@@ -12,12 +12,37 @@ const M = new Function(src.slice(ini, fim) + `
     return { PG_WIKI, PG_REFINO, PG_IMBU_BASES, pgNum, pgHoras, pgLerChaves, pgTierDaMochila, pgAvisoChaves, pgChaveDaHunt, pgInfoChave,
              pgResumoElite, pgFatorLootPrey, pgChavesHora, pgLinhasChaves, pgAbatesPorHunt, pgMesclarBestiario, pgEstagio, pgBonusConta,
              pgLinhasBestiario, pgTaxas, pgPlanoOffline, pgXpFalta, pgTipoPrey, pgLerPrey, pgTravasPrey, pgSugestaoPrey, pgRefino,
-             pgBasesImbu, pgNomesImbu, pgMateriaisImbu, pgProtecao, pgPlanoBestiario, pgFilaBestiario, PG_ABATES_POR_LURE };`)();
+             pgBasesImbu, pgNomesImbu, pgMateriaisImbu, pgProtecao, pgPlanoBestiario, pgFilaBestiario, PG_ABATES_POR_LURE, pgAlertaPrey, pgAvisoInvasao };`)();
+
 const FX = JSON.parse(fs.readFileSync(path.join(raiz, 'testes/fixtures/progresso.json'), 'utf8'));
 const hunt = (t) => FX.hunts.find(h => h.title === t);
 
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
+
+t('pgAlertaPrey: os 4 com DANO → travar; buff vencendo sem trava avisa; nada a dizer = null', () => {
+    /* TV de Souza (04/10): rerrolar os grátis até os 4 terem DANO, travar os 4 e caçar o mapa do item por horas */
+    const b = (tipo, locked, msLeft) => ({ tipo, tier: 8, pct: 32, locked, msLeft });
+    const quatro = { buffs: { KNIGHT: b('dano', true, 7e6), PALADIN: b('dano', true, 7e6), SORCERER: b('dano', false, 7e6), DRUID: b('dano', true, 7e6) }, wildcards: 12 };
+    const a = M.pgAlertaPrey(quatro);
+    assert(a && a.nivel === 'ok' && /4 com DANO/.test(a.texto) && /Feiticeiro/.test(a.texto), 'os 4 com dano e um sem trava: ' + JSON.stringify(a));
+    const vencendo = { buffs: { KNIGHT: b('xp', false, 20 * 60000), PALADIN: b('loot', true, 7e6), SORCERER: null, DRUID: b('xp', true, 7e6) }, wildcards: 3 };
+    const v = M.pgAlertaPrey(vencendo);
+    assert(v && v.nivel === 'aviso' && /Cavaleiro/.test(v.texto) && /20 min/.test(v.texto), 'buff vencendo sem trava: ' + JSON.stringify(v));
+    assert.strictEqual(M.pgAlertaPrey({ buffs: { KNIGHT: b('xp', true, 7e6) }, wildcards: 3 }), null, 'sem motivo → null');
+    assert.strictEqual(M.pgAlertaPrey(null), null);
+});
+t('pgAvisoInvasao: estado do ícone do jogo → lembrete só leitura', () => {
+    /* ícone da cidade: [data-testid=invasao-icone][data-estado] + invasao-icone-topo (data-topo: nao | inscrito | convite) + contagem */
+    const nao = M.pgAvisoInvasao({ estado: 'abertas', tom: 'nao', contagem: '02:31:05' });
+    assert(nao && nao.nivel === 'aviso' && /não se inscreveu/.test(nao.texto) && /02:31:05/.test(nao.texto), JSON.stringify(nao));
+    assert.strictEqual(M.pgAvisoInvasao({ estado: 'preparando', tom: 'nao', contagem: '' }).nivel, 'aviso', 'preparando sem inscrição ainda dá para entrar');
+    const sim = M.pgAvisoInvasao({ estado: 'inscrito', tom: 'inscrito', contagem: '02:31:05' });
+    assert(sim && sim.nivel === 'ok' && /inscrito/i.test(sim.texto), JSON.stringify(sim));
+    assert.strictEqual(M.pgAvisoInvasao({ estado: 'encerrada', tom: 'convite', contagem: '14h 31m' }).nivel, 'info');
+    assert.strictEqual(M.pgAvisoInvasao({ estado: 'sem_invasao' }).nivel, 'info');
+    assert.strictEqual(M.pgAvisoInvasao(null), null, 'ícone não lido (fora da cidade) → null');
+});
 const perto = (a, b, tol, msg) => assert(Math.abs(a - b) <= tol, `${msg || ''} esperado ~${b}, veio ${a}`);
 const H = 3600000;
 

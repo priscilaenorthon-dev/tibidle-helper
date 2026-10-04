@@ -7,7 +7,7 @@ const raiz = path.join(__dirname, '..');
 const src = fs.readFileSync(path.join(raiz, 'tibidle-helper.user.js'), 'utf8');
 const ini = src.indexOf('/* @@EQUIP-PURO-INICIO */'), fim = src.indexOf('/* @@EQUIP-PURO-FIM */');
 assert(ini > 0 && fim > ini, 'marcadores @@EQUIP-PURO não encontrados');
-const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, pesosDaVoc, candidatosEquip, distribuirEquip };')();
+const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, pesosDaVoc, candidatosEquip, distribuirEquip, pecasDesmanche };')();
 const le = (p) => { try { return JSON.parse(fs.readFileSync(path.join(raiz, p), 'utf8')); } catch (e) { return null; } };
 const base = {};
 for (const [nome, it] of Object.entries(le('testes/fixtures/itens.json').itens)) base[nome] = { id: it.id, attrs: it.attrs || {}, sell: it.sell || 0, equipPreview: it.equipPreview || null };
@@ -256,6 +256,19 @@ t('potência ≥ 300 com encaixe de skill é base de forja, não sobra (vídeos 
         assert(!d.bases.some(p => p.iid === iid), iid + ' não deveria ser base de forja');
         assert(d.reservas.has(iid) || d.dispensaveis.some(p => p.iid === iid), iid + ' sumiu da conta');
     }
+});
+t('pecasDesmanche: só sobras que o NPC não compra (Incomum+ ou refinada), da mochila ou do depósito, nunca do corpo', () => {
+    /* criador do jogo (04/10): item selado deixado no auto-sell perde o desmanche; o desmanche é a única fonte de fragmentos */
+    const sobra = (iid, origem, r, refino, pot) => ({ iid, nome: 'crystal ring', slot: 'ring', origem, forja: Object.assign(F(r), { refino, potenciaBase: pot }), motivo: 'x' });
+    const res = { dispensaveis: [
+        sobra('comum', 'depósito', 0, 0, 100),      // Comum sem refino: o NPC compra, não desmancha
+        sobra('incomum', 'mochila', 1, 0, 100),     // Incomum: não vende em lugar nenhum → desmanche
+        sobra('refinada', 'depósito', 0, 2, 100),   // Comum +2: não vende → desmanche
+        sobra('corpo', 'corpo', 1, 0, 100)          // vestida: nunca
+    ] };
+    const d = M.pecasDesmanche(res);
+    assert.deepStrictEqual(d.map(x => x.iid + ':' + x.origem), ['incomum:bag', 'refinada:depot']);
+    assert.deepStrictEqual(M.pecasDesmanche(null), []);
 });
 t('2.11.6: épico nunca sobra (base de forja); resistência sobrevive ao cenário de mapa mágico', () => {
     const anel = (iid, dono, r, ...at) => ({ iid, nome: 'crystal ring', slot: 'ring', attrs: {}, origem: dono ? 'corpo' : 'depósito', dono, forja: F(r, ...at) });
