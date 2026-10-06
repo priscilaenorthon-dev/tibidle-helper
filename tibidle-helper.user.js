@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.14.11
+// @version      2.14.12
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.14.11';
+    const VERSAO = '2.14.12';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -9185,6 +9185,10 @@
      *        anunciado por CÓPIA (quantity 1 + iid); a resposta não diz a qual
      *        pedido responde, por isso a fila manda UM pedido de cada vez
      *    market_my_orders {} · market_inbox {} · market_claim {entryId, requestId}
+     *    market_history {page, type?: created|buy|sell|cancelled|expired, period?: all|24h|7d|30d, item?} →
+     *        market_history_result {query, entries:[{id, type, side, asset, itemName, quantity, unitPrice,
+     *        total, fee, at}], pageSize, total} — o HISTÓRICO do próprio jogador (lido do cliente em 06/10;
+     *        a ordem fechada SOME de market_my_orders, que só traz OPEN)
      *    market_create {side:'SELL', asset:'ITEM', itemName, unitPrice, quantity,
      *        requestId, iid?} → market_create_result {requestId, order, bag…}
      *    market_cancel {orderId, requestId} → market_cancel_result
@@ -9198,8 +9202,9 @@
      *  na Caixa de entrada e só entra na carteira com "retirar"; só Premium;
      *  item empilhável precisa estar na MOCHILA para anunciar.
      *
-     *  Regras do DONO: mesmo item = mesmo nome (forjado: mesma raridade e mesmo
-     *  refino); preço = menor anúncio de OUTRO vendedor − 1 (se o menor já é
+     *  Regras do DONO: mesmo item = mesmo nome (forjado: mesma raridade, mesmo
+     *  refino e os mesmos atributos nos encaixes — 06/10, o encaixe faz o
+     *  preço); preço = menor anúncio de OUTRO vendedor − 1 (se o menor já é
      *  seu, fica o seu); sem concorrente, a média dos últimos 30 dias; sem
      *  histórico, o dono digita (sem preço não anuncia).
      *  PROTEÇÕES: nunca abaixo do NPC (líquido da venda ≤ o que o NPC paga pelo
@@ -9264,7 +9269,20 @@
      * cópias (vy): na peça que eu anuncio, ausente = 0; na anunciada, ausente = −1 */
     const mkRar = (f, pad) => (f && f.raridade != null ? Number(f.raridade) : pad);
     const mkRef = (f, pad) => (f && f.refino != null ? Number(f.refino) : pad);
-    const mkMesmoCorte = (minha, outra) => mkRar(outra, -1) === mkRar(minha, 0) && mkRef(outra, -1) === mkRef(minha, 0);
+    const mkMesmoCorteSemEncaixe = (minha, outra) => mkRar(outra, -1) === mkRar(minha, 0) && mkRef(outra, -1) === mkRef(minha, 0);
+    /* v2.14.12 — O ENCAIXE FAZ O PREÇO (dono, 06/10: "itens com status têm mais valor"). Ao vivo, dark armor Incomum +0:
+     * com regen. de mana saía de 250 a 500 mil; com resistência, de 9 a 94 mil. Comparando só raridade e refino, o helper
+     * pôs 32 cópias da conta a 9.999 — a de regen. de mana junto. Agora "mesmo corte" = mesma raridade, mesmo refino E os
+     * MESMOS atributos (ids normalizados, em qualquer ordem; o valor da linha não entra). Anúncio sem a lista de atributos
+     * só casa com peça sem atributos: na dúvida, não serve de referência. */
+    const mkIdAtr = (a) => String((a && a.id) || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+    const mkAtrIds = (f) => (f && Array.isArray(f.atributos) ? f.atributos.map(mkIdAtr).filter(Boolean).sort() : []);
+    const mkMesmoCorte = (minha, outra) => mkMesmoCorteSemEncaixe(minha, outra) && mkAtrIds(minha).join('|') === mkAtrIds(outra).join('|');
+    const MK_RAR = ['comum', 'incomum', 'raro', 'épico', 'lendário', 'mítico'];
+    const mkCorteTxt = (f) => (MK_RAR[mkRar(f, 0)] || 'raridade ' + mkRar(f, 0)) + ' +' + mkRef(f, 0);
+    /* "regen mana 1,3 + resist gelo 0,8" — o que a peça tem escrito nos encaixes ('' = nenhum) */
+    const mkEncaixeTxt = (f) => (f && Array.isArray(f.atributos) ? f.atributos : []).map(a => { const id = mkIdAtr(a).replace(/_/g, ' '); const v = a && a.valor != null ? String(a.valor).replace('.', ',') : ''; return id ? id + (v ? ' ' + v : '') : ''; }).filter(Boolean).join(' + ');
+    const mkFmt = (n) => (n == null || !Number.isFinite(Number(n)) ? '—' : Math.round(Number(n)).toLocaleString('pt-BR'));
     const mkAbertaVenda = (o) => !!(o && o.status === 'OPEN' && o.side === 'SELL' && (o.asset == null || o.asset === 'ITEM') && Number(o.quantityRemaining) > 0);
     const mkChaveCopias = (d) => (d && d.category ? 'cat:' + d.category : 'item:' + mkMin(d && d.itemName));
     const mkPremium = (ate, agora) => (ate === undefined ? null : !ate ? false : (Number.isFinite(Date.parse(ate)) && Date.parse(ate) > agora));
@@ -9327,22 +9345,30 @@
         const c = e.catalogo[n] || null;
         const minhasDoItem = minhas.filter(o => mkMin(o.itemName) === n && o.forja);
         const meus = minhasDoItem.filter(o => mkMesmoCorte(x.forja, o.forja)).map(o => o.unitPrice);
-        let outros = [], pendente = null;
+        let outros = [], parecidas = [], pendente = null;
         if (c && (Number(c.copyOrders) || 0) > minhasDoItem.length) {
             const data = cat ? { category: cat } : { itemName: x.nome }, k = mkChaveCopias(data);
             const cp = e.copias && e.copias[k];
             if (cp && !cp.erro) {
-                outros = (cp.copies || []).filter(y => y && (mkMin(y.itemName) === n || mkMin(y.instance && y.instance.name) === n)
-                    && !meusIds.has(y.orderId) && mkMesmoCorte(x.forja, y.instance && y.instance.forja)).map(y => y.unitPrice);
+                const doItem = (cp.copies || []).filter(y => y && (mkMin(y.itemName) === n || mkMin(y.instance && y.instance.name) === n) && !meusIds.has(y.orderId));
+                outros = doItem.filter(y => mkMesmoCorte(x.forja, y.instance && y.instance.forja)).map(y => y.unitPrice);
+                /* mesma raridade e refino com OUTROS encaixes: só para a nota (nunca para o preço) */
+                parecidas = doItem.filter(y => mkMesmoCorteSemEncaixe(x.forja, y.instance && y.instance.forja)).map(y => Number(y.unitPrice)).filter(v => v > 0);
             } else pendente = { tipo: 'market_copies', data, chave: k, cache: 'copias', alvo: k, rotulo: 'cópias de ' + (cat ? (MK_CATS[cat] || cat) : x.nome), erro: cp ? cp.erro : null };
         }
         /* v2.11.8 — SEM MÉDIA PARA CÓPIA. A média de 30 dias é do item inteiro e
          * mistura todas as raridades: ao vivo (29/09) o simple dress COMUM saía a
          * 104.790 e o crystal ring comum a 83.778 (o incomum estava a 399) — anúncio
          * que nunca vende e cuja taxa de ~5 % não volta. Sem cópia do mesmo corte à
-         * venda, fica sem sugestão: o dono digita. */
-        const nota = !pendente && !outros.length && !meus.length ? 'nenhuma cópia desta raridade e refino à venda — digite o preço (a média de 30 dias mistura todas as raridades)' : null;
-        return { ref: { outros, meus, media: null }, pendente, nota };
+         * venda, fica sem sugestão: o dono digita. v2.14.12 — "mesmo corte" inclui o
+         * encaixe; a nota diz a faixa dos outros encaixes da mesma raridade, para o
+         * dono ter por onde começar. */
+        const encaixe = mkEncaixeTxt(x.forja);
+        const nota = !pendente && !outros.length && !meus.length
+            ? `nenhuma cópia ${mkCorteTxt(x.forja)}${encaixe ? ' com ' + encaixe : ' sem encaixe'} à venda — digite o preço` +
+              (parecidas.length ? ` (outros encaixes ${mkCorteTxt(x.forja)}: de ${mkFmt(Math.min(...parecidas))} a ${mkFmt(Math.max(...parecidas))})` : ' (a média de 30 dias mistura todas as raridades)')
+            : null;
+        return { ref: { outros, meus, media: null }, pendente, nota, encaixe: encaixe || null };
     }
     function mkLinha(b, r, e, marcados) {
         const dig = e.digitados ? e.digitados[b.chave] : undefined;
@@ -9364,7 +9390,7 @@
             : !ok ? 'preço inválido (inteiro ≥ 1, total até 2 bilhões)'
             : abaixo ? 'vender no NPC' : null;
         const nota = [r.nota, r.compra != null && preco != null && r.compra >= preco ? `há COMPRA aberta a ${r.compra} — aceitar no mercado do jogo é na hora e sem taxa` : null].filter(Boolean).join(' · ') || null;
-        return Object.assign(b, { sug, preco, origem, nota, compra: r.compra != null ? r.compra : null, taxa, liquido, npc, npcTotal: npc != null ? npc * b.qtd : null,
+        return Object.assign(b, { sug, preco, origem, nota, encaixe: r.encaixe || null, compra: r.compra != null ? r.compra : null, taxa, liquido, npc, npcTotal: npc != null ? npc * b.qtd : null,
                                   abaixoNpc: abaixo, bloqueio, marcado: !bloqueio && marcados.has(b.chave) });
     }
     /* A LISTA. e = {bag {nome: qtd}, bagInst [{iid,name,forja,wear,imbuements}],
@@ -9508,9 +9534,28 @@
             const menor = outros && outros.length ? Math.min(...outros) : null;
             const situacao = pendente ? (pendente.erro ? 'erro' : 'pendente') : menor == null ? 'sozinho' : o.unitPrice < menor ? 'menor' : o.unitPrice === menor ? 'empate' : 'barato';
             const novo = menor != null && situacao !== 'menor' ? Math.max(1, menor - 1) : null;
-            return Object.assign(b, { situacao, menor, novo, taxaNova: novo != null ? mkTaxa(novo, b.qtd, e.taxa) : null });
+            return Object.assign(b, { situacao, menor, novo, taxaNova: novo != null ? mkTaxa(novo, b.qtd, e.taxa) : null,
+                                      encaixe: o.forja ? mkEncaixeTxt(o.forja) || null : null, folga: menor != null && o.unitPrice < menor ? menor - o.unitPrice : null });
         });
         return { linhas, pendencias: [...pend.values()] };
+    }
+    /* v2.14.12 — VENDIDOS (dono, 06/10: "para eu saber quais itens foram vendidos que eu anunciei"). market_my_orders só
+     * traz ordens OPEN: a vendida some. O histórico do jogador (market_history, type 'sell') diz item, quantidade, preço,
+     * total, taxa e hora — sem a forja (uma dark armor vendida é "dark armor"). Agrupa por item e preço, a mais recente
+     * primeiro. periodoMs (opcional) corta o que é mais velho que agora − periodoMs. */
+    function mkVendas(entries, agora, periodoMs) {
+        const v = (entries || []).filter(x => x && x.type === 'sell' && x.itemName && !(periodoMs > 0 && agora > 0 && Number(x.at) > 0 && agora - Number(x.at) > periodoMs));
+        const por = new Map();
+        for (const x of v) {
+            const k = mkMin(x.itemName) + '|' + (Number(x.unitPrice) || 0);
+            const g = por.get(k) || { nome: String(x.itemName), n: mkMin(x.itemName), preco: Number(x.unitPrice) || 0, qtd: 0, total: 0, taxa: 0, vezes: 0, ultimo: 0 };
+            g.qtd += Number(x.quantity) || 0; g.total += Number(x.total) || 0; g.taxa += Number(x.fee) || 0; g.vezes++;
+            g.ultimo = Math.max(g.ultimo, Number(x.at) || 0);
+            por.set(k, g);
+        }
+        const linhas = [...por.values()].sort((a, b) => b.ultimo - a.ultimo || b.total - a.total);
+        const soma = (k) => linhas.reduce((t, l) => t + l[k], 0);
+        return { linhas, n: v.length, unidades: soma('qtd'), total: soma('total'), taxa: soma('taxa') };
     }
     /* @@MERCADO-PURO-FIM */
 
@@ -9518,6 +9563,7 @@
     const MK_RESPOSTA = { market_catalog: 'market_catalog_result', market_my_orders: 'market_my_orders_result', market_inbox: 'market_inbox_result',
                           market_list: 'market_list_result', market_stats: 'market_stats_result', market_copies: 'market_copies_result',
                           market_create: 'market_create_result', market_cancel: 'market_cancel_result', market_claim: 'market_claim_result',
+                          market_history: 'market_history_result',
                           depot_withdraw: 'depot_result', forge_salvage_batch: 'forge_salvage_batch_result' };
     const MK_PRAZO_MS = 8000; // sem resposta nisso = para (um anúncio pode ter passado: conferir antes de repetir)
     const MK_GRACA_ERRO_MS = 1200; // erro sem requestId: espera o resultado de verdade chegar antes de acreditar
@@ -9544,9 +9590,9 @@
                  taxa: null, taxaWiki: false, tradeable: null, npc: null, restErro: null,
                  catalogo: null, catalogo_t: 0, minhas: null, minhas_t: 0, inbox: null, inbox_t: 0, livros: {}, copias: {}, stats: {},
                  envios: [], ultimoEnvio: 0, pausaAte: 0, pend: null, ocupado: null, progresso: null, parar: false, erro: null, t: 0,
-                 digitados: {}, marcados: new Set(), conf: null, foco: null, pintadas: [], ordPintadas: [], revisao: null };
+                 digitados: {}, marcados: new Set(), conf: null, foco: null, pintadas: [], ordPintadas: [], revisao: null,
+                 vendas: null, vendas_t: 0, vendasErro: null }; // v2.14.12 — histórico de vendas (market_history, type sell)
     const mkRid = () => ((window.crypto && typeof crypto.randomUUID === 'function') ? crypto.randomUUID() : 'tb-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10));
-    const mkFmt = (n) => (n == null || !Number.isFinite(Number(n)) ? '—' : Math.round(Number(n)).toLocaleString('pt-BR'));
     function mkAnotarProt(alvo, nomes, iids) {
         if (Array.isArray(nomes)) alvo.nomes = nomes.filter(x => typeof x === 'string');
         if (Array.isArray(iids)) alvo.iids = iids.filter(x => typeof x === 'string');
@@ -9831,6 +9877,24 @@
         avisar('mercado', `mercado: ${res.ok} anunciado(s) · taxa paga ${mkFmt(res.taxa)}` + (res.falha ? ` · ${res.falha} não anunciado(s) (ver Log)` : '') + (res.parou ? ` · fila parada: ${res.parou}` : ''),
                res.falha || res.parou ? 'erro' : 'ok');
     }
+    /* v2.14.12 — SUAS VENDAS dos últimos 30 dias: market_history {page, type:'sell', period:'30d'}, página a página
+     * (pageSize vem na resposta; no máximo 10 páginas). Só leitura, no ritmo da fila. Erro não derruba a revisão. */
+    const MK_HIST_PAGINAS = 10;
+    async function mkLerVendas() {
+        const entries = [];
+        for (let pg = 0; pg < MK_HIST_PAGINAS; pg++) {
+            if (pg && MK.parar) break;
+            MK.progresso = 'suas vendas (30 dias' + (pg ? ', página ' + (pg + 1) : '') + ')…'; renderizar();
+            const r = await mkPedir('market_history', { page: pg, type: 'sell', period: '30d' });
+            if (r.erro) { MK.vendasErro = mkErroTexto(r.erro); log('mercado: histórico de vendas não lido — ' + MK.vendasErro, 'erro'); return false; }
+            const d = r.data || {}, e = Array.isArray(d.entries) ? d.entries : [];
+            entries.push(...clonar(e));
+            const tam = Number(d.pageSize) || e.length || 0;
+            if (!e.length || e.length < tam || (Number(d.total) > 0 && entries.length >= Number(d.total))) break;
+        }
+        MK.vendas = entries; MK.vendas_t = Date.now(); MK.vendasErro = null;
+        return true;
+    }
     async function mkRevisar() {
         if (MK.ocupado) return;
         if (!socketAberto()) { avisar('mercado', 'mercado: socket do jogo não está à mão — dê F5 com o helper instalado', 'erro'); return; }
@@ -9839,9 +9903,11 @@
             await mkCarregarRest();
             MK.livros = {}; MK.copias = {};
             if (await mkLerBase([['market_my_orders', 'suas ordens'], ['market_catalog', 'preços do mercado']])) await mkBuscarPendencias(() => mkRevisaoAtual().pendencias, 'revisão');
+            if (!MK.parar) await mkLerVendas();
             MK.revisao = { t: Date.now() };
             const rv = mkRevisaoAtual().linhas, baratos = rv.filter(l => l.situacao === 'barato' || l.situacao === 'empate').length;
-            avisar('mercado', `mercado: ${rv.length} ordem(ns) aberta(s) · ${baratos ? baratos + ' com alguém mais barato ou empatado' : 'nenhuma com concorrente mais barato'}`, 'ok');
+            const abaixo = rv.filter(l => l.folga > 0).length, vd = MK.vendas ? mkVendas(MK.vendas, Date.now()) : null;
+            avisar('mercado', `mercado: ${rv.length} ordem(ns) aberta(s) · ${baratos ? baratos + ' com alguém mais barato ou empatado' : 'nenhuma com concorrente mais barato'}${abaixo ? ` · ${abaixo} abaixo do menor de outro com o mesmo encaixe` : ''}${vd ? ` · ${vd.n} venda(s) em 30 dias (${mkFmt(vd.total)} ouro)` : ''}`, 'ok');
         } catch (e) { MK.erro = e.message; avisar('mercado', 'mercado: ' + e.message, 'erro'); }
         finally { MK.ocupado = null; MK.progresso = null; MK.parar = false; renderizar(); }
     }
@@ -9942,6 +10008,8 @@
         return 'expira em ' + (ms < 3600000 ? Math.max(1, Math.round(ms / 60000)) + ' min' : ms < 86400000 ? Math.round(ms / 3600000) + ' h' : Math.round(ms / 86400000) + ' d');
     }
     const mkCorte = (f) => (f ? `<span class="tb-rar r${mkRar(f, 0)}">${RAR_NOME[mkRar(f, 0)] || mkRar(f, 0)}${mkRef(f, 0) ? ' +' + mkRef(f, 0) : ''}</span>` : '');
+    /* v2.14.12 — o encaixe e a potência da peça, ao lado do corte: é o que faz o preço */
+    const mkPecaTxt = (f) => { if (!f) return ''; const e = mkEncaixeTxt(f), pot = Number(f.potenciaBase) || 0; return e || pot ? ` <span class="tb-mut">${escHtml([e, pot ? 'pot ' + mkFmt(pot) : ''].filter(Boolean).join(' · '))}</span>` : ''; };
     function mkTelaAnunciar(v) {
         const ocup = !!MK.ocupado;
         let h = '';
@@ -9956,13 +10024,13 @@
             const c = l.cat || 'outros';
             if (c !== catAtual) { catAtual = c; const n = v.linhas.filter(x => (x.cat || 'outros') === c).length; h += `<div class="mk-cat">${escHtml(MK_CATS[c] || 'Outros')} (${n})</div>`; }
             const onde = l.deposito && l.mochila ? `${l.mochila} mochila + ${l.deposito} dep.` : l.deposito ? 'no depósito' : 'na mochila';
-            const org = l.origem === 'menor' ? `menor −1 (outro a ${mkFmt(l.sug.ref)})` : MK_ORIGEM[l.origem] || l.origem;
+            const org = l.origem === 'menor' ? `menor −1 (outro${l.forja ? ' com o mesmo encaixe' : ''} a ${mkFmt(l.sug.ref)})` : MK_ORIGEM[l.origem] || l.origem;
             const npcTxt = l.npc == null ? 'NPC ?' : !(l.npc > 0) ? 'NPC não compra' : l.qtd ? 'NPC ' + mkFmt(l.npcTotal) : 'NPC ' + mkFmt(l.npc) + '/un';
             const blq = l.bloqueio ? (l.bloqueio === 'vender no NPC' ? `<b class="tb-av">vender no NPC</b> (o mercado daria ${mkFmt(l.liquido)} líquido)` : `<span class="tb-ruim">${escHtml(l.bloqueio)}</span>`) : '';
             const valor = l.origem === 'digitado' ? MK.digitados[l.chave] : l.preco;
             h += `<div class="mk-it${l.bloqueio ? ' bloq' : ''}">
                 <label title="${escHtml(l.bloqueio || 'marcar para anunciar')}"><input type="checkbox" id="tb-mk-c-${i}" ${l.marcado ? 'checked' : ''} ${l.bloqueio || ocup ? 'disabled' : ''} aria-label="anunciar ${escHtml(l.nome)}"></label>
-                <div class="mk-nome"><b>${escHtml(l.nome)}</b> <span class="tb-mut">${!l.qtd && l.deposito ? `${mkFmt(l.deposito)} no depósito` : '×' + mkFmt(l.qtd)}</span>${mkCorte(l.forja)}</div>
+                <div class="mk-nome"><b>${escHtml(l.nome)}</b> <span class="tb-mut">${!l.qtd && l.deposito ? `${mkFmt(l.deposito)} no depósito` : '×' + mkFmt(l.qtd)}</span>${mkCorte(l.forja)}${mkPecaTxt(l.forja)}</div>
                 <input class="tb-in mk-preco" id="tb-mk-p-${i}" type="number" min="1" step="1" inputmode="numeric" placeholder="preço" value="${escHtml(valor == null ? '' : valor)}" aria-label="preço unitário de ${escHtml(l.nome)}" ${ocup ? 'disabled' : ''}>
                 <div class="mk-info"><span class="mk-org ${escHtml(l.origem)}">${escHtml(org)}</span> · ${escHtml(onde)}${l.liquido != null ? ' · líq. ' + mkFmt(l.liquido) : ''} · ${npcTxt}${l.nota ? ` · <span class="tb-av">${escHtml(l.nota)}</span>` : ''}${blq ? '<br>' + blq : ''}</div>
               </div>`;
@@ -9987,18 +10055,29 @@
         MK.ordPintadas = rv;
         let h = `<div class="tb-linha"><button type="button" class="tb-bt" id="tb-mk-revisar" ${ocup ? 'disabled' : ''}>REVISAR MEUS ANÚNCIOS</button>
             <span class="tb-mut" style="font-size:10.5px">${MK.minhas ? rv.length + ' aberta(s)' + (MK.revisao ? ' · revisado ' + mkHora(MK.revisao.t) : '') : 'ainda não lido'}</span></div>`;
-        if (!MK.minhas) return h + `<div class="tb-cx tb-mut">REVISAR lê suas ordens abertas e, para cada uma, o menor preço de outro vendedor (mesmo item; forjado, mesma raridade e refino) e quanto custaria refazer. Nada é refeito sozinho: cancelar pede 2 toques, e anunciar de novo é pela lista.</div>`;
+        if (!MK.minhas) return h + `<div class="tb-cx tb-mut">REVISAR lê suas ordens abertas e, para cada uma, o menor preço de outro vendedor (mesmo item; forjado, mesma raridade, mesmo refino e os MESMOS atributos — o encaixe faz o preço) e quanto custaria refazer; lê também o que você vendeu nos últimos 30 dias. Nada é refeito sozinho: cancelar pede 2 toques, e anunciar de novo é pela lista.</div>`;
         const SIT = { menor: '<span class="tb-ok">você é o menor</span>', sozinho: '<span class="tb-ok">sem concorrente</span>', empate: '<span class="tb-av">empatado com outro</span>',
                       barato: '<span class="tb-ruim">alguém está mais barato</span>', pendente: '<span class="tb-mut">não revisado — REVISAR</span>', erro: '<span class="tb-ruim">não consegui ler o livro</span>',
                       compra: '<span class="tb-mut">ordem de compra</span>', vazia: '<span class="tb-mut">—</span>' };
         rv.forEach((l, i) => {
             const conf = mkConfAtiva('cancelar:' + l.id);
             const refazer = l.novo != null ? `<br>refazer a ${mkFmt(l.novo)}: taxa nova ${mkFmt(l.taxaNova)}${l.taxaPaga != null ? ` + a taxa já paga (${mkFmt(l.taxaPaga)}) não volta` : ''}` : '';
-            h += `<div class="mk-ord"><div><b>${escHtml(l.nome)}</b>${mkCorte(l.forja)} <span class="tb-mut">×${mkFmt(l.qtd)} @ ${mkFmt(l.preco)}</span></div>
+            h += `<div class="mk-ord"><div><b>${escHtml(l.nome)}</b>${mkCorte(l.forja)}${mkPecaTxt(l.forja)} <span class="tb-mut">×${mkFmt(l.qtd)} @ ${mkFmt(l.preco)}</span></div>
                 <button type="button" class="tb-bt mini${conf ? ' tb-conf' : ''}" id="tb-mk-x-${i}" ${ocup ? 'disabled' : ''} aria-label="cancelar a ordem de ${escHtml(l.nome)}">${conf ? 'confirmar?' : 'cancelar'}</button>
-                <div class="mk-info">${SIT[l.situacao] || escHtml(l.situacao)}${l.menor != null ? ` · menor de outro: ${mkFmt(l.menor)}` + (l.preco > l.menor ? ` (o seu está ${mkFmt(l.preco - l.menor)} acima)` : '') : ''} · ${escHtml(mkExpira(l.expira))}${refazer}</div></div>`;
+                <div class="mk-info">${SIT[l.situacao] || escHtml(l.situacao)}${l.menor != null ? ` · menor de outro${l.forja ? ' com o mesmo encaixe' : ''}: ${mkFmt(l.menor)}` + (l.preco > l.menor ? ` (o seu está ${mkFmt(l.preco - l.menor)} acima)` : l.folga ? ` <span class="tb-av">(o seu está ${mkFmt(l.folga)} ABAIXO — cancele e anuncie de novo se quiser)</span>` : '') : ''} · ${escHtml(mkExpira(l.expira))}${refazer}</div></div>`;
         });
         if (!rv.length) h += `<div class="tb-mut" style="margin:6px 0">nenhuma ordem aberta.</div>`;
+        /* v2.14.12 — o que você vendeu nos últimos 30 dias (histórico do jogo; a ordem vendida some das abertas) */
+        const vd = MK.vendas ? mkVendas(MK.vendas, Date.now()) : null;
+        h += `<div class="mk-cat">Vendidos nos últimos 30 dias${vd ? ` (${mkFmt(vd.n)})` : ''}</div>`;
+        if (!MK.vendas) h += `<div class="tb-mut">${MK.vendasErro ? 'não consegui ler o histórico de vendas: ' + escHtml(MK.vendasErro) : 'REVISAR lê o histórico de vendas do jogo.'}</div>`;
+        else if (!vd.n) h += `<div class="tb-mut">nenhuma venda nos últimos 30 dias (histórico lido ${mkHora(MK.vendas_t)}).</div>`;
+        else {
+            const quando = (t) => (t ? new Date(t).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
+            h += `<div class="tb-mut" style="font-size:10.5px">${mkFmt(vd.unidades)} unidade(s) · ${mkFmt(vd.total)} ouro${vd.taxa ? ' · taxa ' + mkFmt(vd.taxa) : ''} · lido ${mkHora(MK.vendas_t)}. Peça forjada aparece só pelo nome: o histórico do jogo não traz o encaixe.</div>`;
+            vd.linhas.slice(0, 60).forEach(l => { h += `<div class="tb-lin"><span><b>${escHtml(l.nome)}</b> ×${mkFmt(l.qtd)}${l.vezes > 1 ? ` <span class="tb-mut">(${l.vezes} vendas)</span>` : ''}<br><span class="tb-mut" style="font-size:10.5px">${escHtml(quando(l.ultimo))}</span></span><span>@ ${mkFmt(l.preco)}<br><span class="tb-ok">${mkFmt(l.total)}</span></span></div>`; });
+            if (vd.linhas.length > 60) h += `<div class="tb-mut">… e mais ${vd.linhas.length - 60} linha(s)</div>`;
+        }
         return h;
     }
     function mkTelaCaixa() {
@@ -10032,7 +10111,7 @@
         const abas = [['anunciar', 'Anunciar', v ? v.plano.n : null], ['meus', 'Meus anúncios', nMinhas], ['caixa', 'Caixa', nCaixa]];
         h += `<div class="tb-sub" role="tablist">${abas.map(([k, n, c]) => `<button type="button" id="tb-mk-sub-${k}" class="${k === sub ? 'on' : ''}" role="tab" aria-selected="${k === sub}">${n}${c ? ` <b>${c}</b>` : ''}</button>`).join('')}</div>`;
         h += sub === 'meus' ? mkTelaMeus() : sub === 'caixa' ? mkTelaCaixa() : mkTelaAnunciar(v || { linhas: [], fora: [], plano: { n: 0, itens: [], taxa: 0, liquido: 0 } });
-        h += aj('mk-ajuda', 'Preço sugerido: menor anúncio de OUTRO vendedor −1 (as suas ordens não contam; se o menor já é seu, fica o seu); sem concorrente, a média dos últimos 30 dias; sem histórico, digite. Forjado: só cópias da mesma raridade e do mesmo refino. Nunca abaixo do NPC: se o que sobra depois da taxa não passa do que o NPC paga, a linha vira "vender no NPC". Fora da lista: selado, imbuído, protegido, usado, o melhor e a reserva de cada personagem (aba Equip) e a sua lista "nunca vender" do Auto Hunt. Taxa de 5 % paga ao anunciar e que NUNCA volta; ordem vale 3 dias; o mercado não cruza ordens; o ouro da venda cai na Caixa. Ritmo: 1 pedido a cada 3,5 s (limite do jogo: 20 ações/min). Anunciar: retira do depósito → confere a mochila → cria a ordem → próximo.');
+        h += aj('mk-ajuda', 'Preço sugerido: menor anúncio de OUTRO vendedor −1 (as suas ordens não contam; se o menor já é seu, fica o seu); sem concorrente, a média dos últimos 30 dias; sem histórico, digite. Forjado: só cópias da mesma raridade, do mesmo refino e com os MESMOS atributos escritos nos encaixes (uma dark armor com regen. de mana vale 30× uma com resistência); sem cópia igual à venda, a linha mostra a faixa dos outros encaixes e você digita. Nunca abaixo do NPC: se o que sobra depois da taxa não passa do que o NPC paga, a linha vira "vender no NPC". Fora da lista: selado, imbuído, protegido, usado, o melhor e a reserva de cada personagem (aba Equip) e a sua lista "nunca vender" do Auto Hunt. Taxa de 5 % paga ao anunciar e que NUNCA volta; ordem vale 3 dias; o mercado não cruza ordens; o ouro da venda cai na Caixa. Ritmo: 1 pedido a cada 3,5 s (limite do jogo: 20 ações/min). Anunciar: retira do depósito → confere a mochila → cria a ordem → próximo.');
         return h + '</div>';
     }
     function ligarMercado() {
@@ -11607,7 +11686,7 @@
         get ERROS() { return ERROS; }, get SESSAO() { return SESSAO; }, lerAbates, lerExpTotal,
         verificarAtualizacao, get NOVA_VERSAO() { return NOVA_VERSAO; },
         // v2.11 — Mercado (modelo puro e o estado lido)
-        mkMontar, mkSugerir, mkTaxa, mkRevisao, get MERCADO() { return MK; },
+        mkMontar, mkSugerir, mkTaxa, mkRevisao, mkVendas, get MERCADO() { return MK; },
         // v2.13.0 — Radar (estimativa e calibração; só leitura)
         estimarMapa, tpEstimar, tpCalibrar, registrarMotorRanking, get RADAR() { return RADAR; }
     }; }

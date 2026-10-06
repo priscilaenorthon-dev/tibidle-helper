@@ -4656,3 +4656,24 @@ mapas (Vampire hell 32,5k × 58,0k do Em área; Banshee 27,7k × 49,6k) e ainda 
   avisa. Nota das sobras corrigida. 1 teste (272).
 - Ao vivo: Vampire hell, nível 83: antes "mantém o kit aplicado" prevendo 70,2k; agora "TROCAR: o novo é melhor (+11,5 %)" para o kit medido a 69,1k (Berserk · Divine Caldera · Energy Wave + Rage of the Skies · Strong Ice Wave — o que o Em área de 5 min de fato lançou), com a linha "este kit foi MEDIDO aqui: 69,1k (previsto 70,2k)"; o aplicado aparece medido a 62,0k. Três brechas fechadas no caminho: (1) o modelo contornava a medida exata trocando uma magia (Ice Wave) — kit não medido herda a medida do kit medido que a simulação põe logo acima dele (`tetoDe`), ou 99 % do melhor medido se a simulação o põe acima de todos; (2) o previsto de cada kit medido vem do kit REAL (vigente, Em área ou outro modelo), não da reconstrução pelos nomes; (3) a assinatura ignora runas e casa por inclusão com até 1 magia por personagem sem lançamento (Front Sweep ≥2 e Eternal Winter ≥2 não saíram em 5 min). Equip: DESMANCHAR (0) com 49 peças com negócio no Mercado fora, checkbox para incluir.
 - Venda rápida com material (20:48, 84 metal spike na mochila): "nunca vender: metal spike (material de imbuement) — total 51.375 → 24.495", vendido 24.495, depot 111/300, cidade. O último item do roteiro da 2.13.7 fechou.
+
+## 2.14.12 (06/10) — o encaixe faz o preço; vendidos em "Meus anúncios"
+- **Defeito (dono, 06/10: "vc tá vendendo meus itens muito abaixo do mercado… itens com status têm mais valor")**: a regra
+  "mesmo corte" do Mercado comparava só raridade e refino. Ao vivo, dark armor Incomum +0: cópias com regen. de mana de
+  250 a 500 mil (Netonesz 250k pot 306, Lordtui 280k pot 59, Oteug 300k, goblog kapeta 450k pot 46, Sangria 500k); com
+  resistência, de 8.999 (RexNFTYT, regen vida 1,7) a 94 mil. O helper tinha posto 32 cópias da u2tag a 9.999 — regen vida
+  2,0 pot 338 e tudo o mais no mesmo preço; a Dark Armor regen mana 1,3 da mochila ia sair a 8.998.
+- `mkMesmoCorte(minha, outra)` agora exige também os MESMOS atributos (ids normalizados como no `normForja`, em qualquer
+  ordem; o valor não entra). Anúncio sem a lista de atributos só casa com peça sem atributos. `mkMesmoCorteSemEncaixe` é a
+  regra antiga e só serve à nota: sem cópia igual à venda, "nenhuma cópia incomum +0 com regen mana 1,3 à venda — digite o
+  preço (outros encaixes incomum +0: de 8.999 a 450.000)". A linha ganha `encaixe` ("regen mana 1,3") e a tela mostra o
+  encaixe e a potência ao lado do corte; a origem diz "menor −1 (outro com o mesmo encaixe a 250.000)".
+- Revisão: `menor` só conta cópias com o mesmo encaixe; `folga` = quanto a SUA ordem está abaixo dele (tela: "o seu está
+  85.001 ABAIXO — cancele e anuncie de novo se quiser"). Nada é refeito sozinho.
+- **Vendidos** (dono: "para eu saber quais itens foram vendidos que eu anunciei"): `market_my_orders` só traz OPEN; a ordem
+  vendida some. Lido do cliente em 06/10: `market_history {page, type?: created|buy|sell|cancelled|expired, period?:
+  all|24h|7d|30d, item?}` → `{query, entries:[{id, type, side, asset, itemName, quantity, unitPrice, total, fee, at}],
+  pageSize, total}` (há também `market_statement {page?}` → `{entries, page}`, não usado). REVISAR lê `type:'sell',
+  period:'30d'` página a página (`mkLerVendas`, ≤ 10 páginas) e `mkVendas(entries, agora, periodoMs?)` agrupa por item e
+  preço, o mais recente primeiro; seção "Vendidos nos últimos 30 dias" em Meus anúncios (sem a forja: o histórico só traz o
+  nome). 3 testes novos (275).

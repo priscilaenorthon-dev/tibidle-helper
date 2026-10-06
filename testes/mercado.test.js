@@ -40,7 +40,7 @@ const ordem = (id, item, preco, x) => Object.assign({ id, side: 'SELL', asset: '
 
 /* ======================================================= 1) funções puras */
 const P = new Function(`${trecho('/* @@MERCADO-INICIO', '/* @@MERCADO-PURO-FIM */')}
-    return { mkTaxa, mkSugerir, mkMontar, mkRevisao, mkAbaixoDoNpc, mkEsperaNecessaria, mkMesmoCorte, mkPremium, mkAcoesNoMinuto, MK_ESPACO_MS };`)();
+    return { mkTaxa, mkSugerir, mkMontar, mkRevisao, mkAbaixoDoNpc, mkEsperaNecessaria, mkMesmoCorte, mkPremium, mkAcoesNoMinuto, mkVendas, MK_ESPACO_MS };`)();
 const base = (x) => Object.assign({ tradeable: TRAD, npc: NPC, taxa: 0.05, catalogo: {}, minhas: [], livros: {}, copias: {}, stats: {},
     prot: { nomes: [], iids: [] }, nunca: [], equip: { usadas: [], reservas: [] }, naCidade: true, digitados: {}, marcados: [] }, x || {});
 const linha = (r, chave) => r.linhas.find(l => l.chave === chave);
@@ -147,6 +147,72 @@ t('cópia forjada: só mesma raridade E mesmo refino; minha cópia não conta; 1
     r = P.mkMontar(base(Object.assign({}, e, { copias, equip: null })));
     assert(/ATUALIZAR no Equip/.test(linha(r, 'i:b1').bloqueio));
     assert(P.mkMesmoCorte({ raridade: 0 }, { raridade: 0, refino: 0 }) && !P.mkMesmoCorte({ raridade: 0 }, { refino: 0 }), 'corte ausente do anúncio = −1 (como o cliente)');
+});
+
+t('2.14.12 — cópia forjada: o ENCAIXE faz o preço — só cópias com os mesmos atributos contam (06/10: dark armor regen mana 250k × resist 9k)', () => {
+    const catalogo = { 'plate armor': { name: 'plate armor', sellOrders: 0, minSell: null, copyOrders: 9, trades30d: 85 } };
+    const fj = (rar, atrs, pot) => ({ fonte: 'drop', raridade: rar, refino: 0, potenciaBase: pot || 100, atributos: atrs.map(([id, valor]) => ({ id, valor })) });
+    const cp = (orderId, preco, forja) => ({ orderId, itemName: 'plate armor', unitPrice: preco, sellerName: 'x', instance: { iid: 'i' + orderId, name: 'plate armor', forja }, expiresAt: 1 });
+    const copias = { 'cat:armaduras': { copies: [
+        cp('c1', 850, fj(0, [], 292)), cp('c2', 8999, fj(1, [['regen_vida', 1.7]], 194)), cp('c3', 9999, fj(1, [['resist_gelo', 0.9]], 9)),
+        cp('c4', 250000, fj(1, [['regen_mana', 1.2]], 306)), cp('c5', 280000, fj(1, [['regen_mana', 1.2]], 59)), cp('c6', 450000, fj(1, [['Regen-Mana', '1,2']], 46)),
+        cp('c7', 14999, fj(2, [['resist_gelo', 0.6], ['max_mana', 36]], 186)), cp('c8', 450000, fj(2, [['resist_sagrado', 0.8], ['regen_mana', 1.2]], 62)),
+        cp('c9', 94000, fj(1, [['resist_morte', 1]], 193)) ] } };
+    const e = { bagInst: [
+        { iid: 'a1', name: 'plate armor', forja: fj(1, [['regen_mana', 1.3]], 34) },
+        { iid: 'a2', name: 'plate armor', forja: fj(1, [['resist_gelo', 1.2]], 220) },
+        { iid: 'a3', name: 'plate armor', forja: fj(1, [['max_hp', 17]], 171) },
+        { iid: 'a4', name: 'plate armor', forja: fj(2, [['regen_mana', 1.1], ['resist_sagrado', 0.9]], 80) },
+        { iid: 'a5', name: 'plate armor', forja: fj(0, [], 292) } ], bag: { 'plate armor': 5 }, catalogo, copias };
+    const r = P.mkMontar(base(e));
+    const a1 = linha(r, 'i:a1');
+    assert.strictEqual(a1.preco, 249999, 'regen mana: menor regen mana de outro (250.000) −1 — não o resist a 8.999: ' + JSON.stringify(a1.sug));
+    assert.strictEqual(a1.sug.ref, 250000); assert.strictEqual(a1.origem, 'menor');
+    assert(/regen mana/.test(a1.encaixe || ''), 'a linha diz qual encaixe serviu de referência: ' + a1.encaixe);
+    assert.strictEqual(linha(r, 'i:a2').preco, 9998, 'resist gelo: só a c3 (resist gelo) conta');
+    const a3 = linha(r, 'i:a3');
+    assert.strictEqual(a3.preco, null); assert.strictEqual(a3.origem, 'vazio'); assert(/digite/.test(a3.bloqueio));
+    assert(/max hp/.test(a3.nota) && /8\.999|8999/.test(a3.nota) && /450\.000|450000/.test(a3.nota), 'sem igual: a nota diz o encaixe e a faixa dos outros encaixes incomum +0: ' + a3.nota);
+    assert.strictEqual(linha(r, 'i:a4').preco, 449999, 'raro: os mesmos 2 atributos em qualquer ordem (c8), nunca a c7');
+    assert.strictEqual(linha(r, 'i:a5').preco, 849, 'comum: sem atributos, como antes');
+    // a minha ordem só conta como "meu" se tiver o mesmo encaixe
+    let r2 = P.mkMontar(base(Object.assign({}, e, { minhas: [ordem('m1', 'plate armor', 240000, { forja: fj(1, [['regen_mana', 2]], 300) })] })));
+    assert.strictEqual(linha(r2, 'i:a1').preco, 240000); assert.strictEqual(linha(r2, 'i:a1').origem, 'meu');
+    r2 = P.mkMontar(base(Object.assign({}, e, { minhas: [ordem('m1', 'plate armor', 9999, { forja: fj(1, [['regen_vida', 2]], 300) })] })));
+    assert.strictEqual(linha(r2, 'i:a1').preco, 249999, 'minha ordem de OUTRO encaixe (regen vida) não é "meu" para a regen mana');
+    // mkMesmoCorte
+    assert(P.mkMesmoCorte(fj(1, [['regen_mana', 1.3]]), fj(1, [['Regen Mana', '1,2']])), 'mesmo id normalizado, valor diferente = mesmo encaixe');
+    assert(!P.mkMesmoCorte(fj(1, [['regen_mana', 1.3]]), fj(1, [['regen_vida', 1.3]])));
+    assert(!P.mkMesmoCorte(fj(1, [['regen_mana', 1.3]]), { raridade: 1, refino: 0 }), 'anúncio incomum SEM a lista de atributos não serve de referência');
+    assert(P.mkMesmoCorte({ raridade: 2, refino: 3 }, { raridade: 2, refino: 3 }), 'sem lista dos dois lados: raridade e refino bastam');
+    assert(!P.mkMesmoCorte(fj(2, [['a', 1], ['b', 1]]), fj(2, [['a', 1], ['c', 1]])));
+});
+
+t('2.14.12 — revisão: menor de outro só com o MESMO encaixe; ordem minha abaixo dele mostra a folga', () => {
+    const fj = (rar, atrs, pot) => ({ raridade: rar, refino: 0, potenciaBase: pot || 100, atributos: atrs.map(([id, valor]) => ({ id, valor })) });
+    const cp = (orderId, preco, forja) => ({ orderId, itemName: 'plate armor', unitPrice: preco, instance: { name: 'plate armor', forja } });
+    const copias = { 'cat:armaduras': { copies: [cp('d1', 9999, fj(1, [['regen_vida', 2]], 338)), cp('x1', 8999, fj(1, [['resist_gelo', 0.9]], 9)), cp('x2', 95000, fj(1, [['regen_vida', 2.4]], 239))] } };
+    const r = P.mkRevisao(base({ catalogo: { 'plate armor': { name: 'plate armor', copyOrders: 3, sellOrders: 0 } }, copias,
+        minhas: [ordem('d1', 'plate armor', 9999, { forja: fj(1, [['regen_vida', 2]], 338) })] }));
+    const l = r.linhas[0];
+    assert.strictEqual(l.menor, 95000, 'o resist a 8.999 não é concorrente da regen vida: ' + JSON.stringify(l));
+    assert.strictEqual(l.situacao, 'menor'); assert.strictEqual(l.folga, 85001, 'quanto a minha está ABAIXO do menor de outro com o mesmo encaixe');
+    assert(/regen vida/.test(l.encaixe || ''));
+});
+
+t('2.14.12 — vendidos: market_history type sell agrupado por item e preço, o mais recente primeiro; compra e criação ficam de fora', () => {
+    const e = (id, type, itemName, quantity, unitPrice, at, extra) => Object.assign({ id, type, side: 'SELL', asset: 'ITEM', itemName, quantity, unitPrice, total: quantity * unitPrice, fee: Math.floor(quantity * unitPrice * 0.05), at }, extra || {});
+    const hist = [e('1', 'sell', 'dark armor', 1, 9999, 1000), e('2', 'sell', 'dark armor', 1, 9999, 3000), e('3', 'sell', 'Wild Honey', 8, 799, 2000),
+                  e('4', 'created', 'dark armor', 1, 9999, 4000), e('5', 'buy', 'small ruby', 3, 250, 5000, { side: 'BUY' }), e('6', 'cancelled', 'crowbar', 1, 999, 6000),
+                  e('7', 'sell', 'dark armor', 1, 14999, 500)];
+    const v = P.mkVendas(hist, 10000);
+    assert.strictEqual(v.n, 4); assert.strictEqual(v.unidades, 11);
+    assert.strictEqual(v.total, 9999 * 2 + 8 * 799 + 14999); assert.strictEqual(v.taxa, 499 * 2 + Math.floor(8 * 799 * 0.05) + 749);
+    igual(v.linhas.map(l => [l.nome, l.qtd, l.preco, l.vezes, l.ultimo]), [['dark armor', 2, 9999, 2, 3000], ['Wild Honey', 8, 799, 1, 2000], ['dark armor', 1, 14999, 1, 500]]);
+    // período: só o que cabe na janela
+    assert.strictEqual(P.mkVendas(hist, 10000, 8000).n, 2, 'as vendas de at=500 e at=1000 (há 9.500 e 9.000) ficam fora de uma janela de 8.000; at=2000 (há 8.000) fica');
+    igual(P.mkVendas([], 1), { linhas: [], n: 0, unidades: 0, total: 0, taxa: 0 });
+    igual(P.mkVendas(null, 1).linhas, []);
 });
 
 t('piso do NPC: líquido ≤ NPC × qtd vira "vender no NPC" e não entra no plano', () => {

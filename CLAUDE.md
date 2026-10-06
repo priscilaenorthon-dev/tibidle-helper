@@ -37,5 +37,6 @@ Confirmado com a conta logada (Status → DIAGNÓSTICO): perfis do servidor, wor
 venda (`sell-check-<nome>` = `<span class="s-sellp-check">✓</span>`). Itens 0–5 do roteiro ok.
 **Falta**: item 6 (Auto Hunt com um equipamento na mochila — o Log tem que mostrar "nunca vender: desmarquei"),
 item 7 (Scan 2 mapas × 2 min, volta ao mapa/lure/presets) e item 8 (um anúncio barato no Mercado; o dono tem Premium).
-Regras do Mercado decididas pelo dono: mesmo item; preço = menor anúncio de outro vendedor − 1; sem concorrente = média de
-30 dias; nunca abaixo do NPC após a taxa de 5 %; nada re-anuncia sozinho.
+Regras do Mercado decididas pelo dono: mesmo item (forjado: mesma raridade, refino E os mesmos atributos nos encaixes —
+06/10, "itens com status têm mais valor"); preço = menor anúncio de outro vendedor − 1; sem concorrente = média de 30 dias
+(só empilhável; cópia sem igual = o dono digita); nunca abaixo do NPC após a taxa de 5 %; nada re-anuncia sozinho.
