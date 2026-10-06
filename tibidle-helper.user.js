@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.14.13
+// @version      2.14.14
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.14.13';
+    const VERSAO = '2.14.14';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -7664,6 +7664,13 @@
     const slotPt = (s) => SLOT_PT[s] || s;
     /* 28/09: com 0,5 ele sugeria trocar um bonelord shield por outro quase igual (+0,55). */
     const GANHO_MIN = 1; // abaixo disso é empate técnico: não vale a troca
+    /* v2.14.14 — o contador da aba, o Log e as linhas usam a MESMA regra: troca com ganho real, escudo que sai por arma de
+     * 2 mãos, ou peça que vale menos que nada no mapa (ao vivo, 06/10: a snakebite rod do Druida em Petrified Hollow, terra
+     * imune, só gasta mana — a aba dizia "Dru 1" e não mostrava linha nenhuma). */
+    const eqTroca = (x) => !!(x && x.ganho >= GANHO_MIN && x.melhor && (!x.atual || x.melhor.iid !== x.atual.iid));
+    const eqTirar = (x) => !!(x && !x.melhor && x.atual && x.ganho < 0); // arma de 2 mãos venceu: o escudo sai
+    const eqSoGasta = (x) => !!(x && !x.melhor && x.atual && x.ganho >= GANHO_MIN); // a peça vale menos que o espaço vazio aqui
+    const eqMexer = (x) => eqTroca(x) || eqTirar(x) || eqSoGasta(x);
     const EQUIP = { voc: 'KNIGHT', abertos: new Set(), base: null, res: null, lendo: false, erro: null, aviso: null, t: 0, verReservas: false, verTudo: false, equipando: false, ctx: null };
     const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     const rarTag = (p) => { const r = (p.forja && p.forja.raridade) || 0; return `<span class="tb-rar r${r}">${RAR_NOME[r] || r}</span>`; };
@@ -7778,7 +7785,7 @@
             EQUIP.ctx = Object.assign({ notas: nz ? nz.notas : null, mapa: hz ? hz.title : null }, contextoEquip(roster));
             EQUIP.res = distribuirEquip(pecas, undefined, EQUIP.ctx);
             EQUIP.t = Date.now();
-            const trocas = Object.values(EQUIP.res.porVoc).reduce((n, v) => n + Object.values(v).filter(x => x.ganho >= GANHO_MIN).length, 0);
+            const trocas = Object.values(EQUIP.res.porVoc).reduce((n, v) => n + Object.values(v).filter(eqMexer).length, 0);
             log(`equip: ${pecas.length} peças lidas · ${trocas} trocas sugeridas · ${EQUIP.res.dispensaveis.length} dispensáveis`, 'ok');
         } catch (e) { EQUIP.erro = e.message; log('equip: ' + e.message, 'erro'); }
         EQUIP.lendo = false; renderizar();
@@ -7917,7 +7924,7 @@
         if (EQUIP.aviso) h += `<div class="tb-cx tb-av">${escHtml(EQUIP.aviso)}</div>`;
         if (!R) return h + aj('eq-ajuda', 'ATUALIZAR lê o corpo dos 4, a mochila e o depósito, busca os atributos base e ranqueia por vocação e slot. Nada é equipado nem descartado sem o botão EQUIPAR. Raridade não pontua: um épico com atributos que a vocação não usa perde para um incomum com o atributo certo.');
         h += `<div class="tb-sub tb-eq-vocs" role="group" aria-label="vocação">${VOCS.map(x => {
-            const n = Object.values(R.porVoc[x] || {}).filter(y => y.ganho >= GANHO_MIN).length;
+            const n = Object.values(R.porVoc[x] || {}).filter(eqMexer).length;
             const rot = VOC_ROTULO[x] + (n ? ` — ${n} troca${n > 1 ? 's' : ''}` : '');
             return `<button type="button" class="${x === v ? 'on' : ''}" data-voc="${x}" aria-pressed="${x === v}" title="${rot}" aria-label="${rot}">${VOC_CURTO[x]}${n ? ` <b>${n}</b>` : ''}</button>`;
         }).join('')}</div>
@@ -7928,19 +7935,19 @@
         let linhas = 0;
         for (const s of SLOTS_EQUIP) {
             const x = R.porVoc[v][s]; if (!x) continue;
-            const troca = x.ganho >= GANHO_MIN && x.melhor && (!x.atual || x.melhor.iid !== x.atual.iid);
-            const tirar = !x.melhor && x.atual && x.ganho < 0;
-            if (!troca && !tirar && !EQUIP.verTudo) continue;
+            const troca = eqTroca(x), tirar = eqTirar(x), soGasta = eqSoGasta(x);
+            if (!troca && !tirar && !soGasta && !EQUIP.verTudo) continue;
             linhas++;
             const chave = v + '|' + s, aberto = EQUIP.abertos.has(chave);
             const mot = troca ? pontuarPeca(x.melhor, v, EQUIP.ctx).motivos.join(' · ') : '';
             const direita = troca ? nomePeca(x.melhor, v) + `<small><span class="g">+${pt(x.ganho)}</span> · ${escHtml(decBR(mot))}</small>`
                 : tirar ? '<span class="tb-av">tirar (arma de 2 mãos)</span>'
+                : soGasta ? `<span class="tb-av">vale menos que nada neste mapa (${pt(x.atualPt)}: só gasta mana) — tire à mão se quiser; em outro mapa pode valer</span>`
                 : !x.atual ? '<span class="tb-mut">nada melhor no estoque</span>' : '<span class="tb-mut">já é o melhor</span>';
             h += `<div class="tb-eq" data-k="${chave}" role="button" tabindex="0" aria-expanded="${aberto}" aria-label="${slotPt(s)} do ${VOC_ROTULO[v]}: detalhes">
                 <span class="s">${slotPt(s)}</span>
                 <span>${nomePeca(x.atual, v)}${x.atual ? `<small>${pt(x.atualPt)}</small>` : ''}</span>
-                <span class="tb-mut" aria-hidden="true">${troca || tirar ? '→' : '='}</span>
+                <span class="tb-mut" aria-hidden="true">${troca || tirar || soGasta ? '→' : '='}</span>
                 <span>${direita}</span>
                 ${aberto ? `<div class="tb-det"><div><b>atual:</b> ${det(x.atual, v) || '—'}</div>${troca ? `<div style="margin-top:3px"><b>melhor:</b> ${det(x.melhor, v)}</div>` : ''}</div>` : ''}
               </div>`;

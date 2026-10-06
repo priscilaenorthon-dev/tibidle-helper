@@ -4689,3 +4689,13 @@ mapas (Vampire hell 32,5k × 58,0k do Em área; Banshee 27,7k × 49,6k) e ainda 
   valor dos marcos de regen. de mana no "Completar marcos" estavam errados.
 - Correção: `razaoNovo` ganha `tFim` (gravado no `ended`) e `tUlt` (último frame, em `razaoVitais`); `razaoFim(L)` = tFim,
   ou tUlt se o frame parou há > 5 s (queda de conexão), ou agora. `partyMedida` diz "última caçada" fora da caçada.
+
+## 2.14.14 (06/10) — contador do Equip igual às linhas
+- Com o relógio certo (2.14.13), em Petrified Hollow (terra imune) a snakebite rod do Druida fica negativa (−1,3 pt: 2 de
+  mana por tiro a 0,18 tiro/s, dano 0 no mapa) e o otimizador prefere "nada" — a aba mostrava "Dru 1" sem linha. Agora
+  `eqMexer` = troca com ganho ≥ 1, escudo que sai por arma de 2 mãos ou peça que "vale menos que nada neste mapa" (linha
+  nova, só informativa: o helper não tira peça; em outro mapa ela pode valer). O Log do ATUALIZAR conta igual.
+- Conferência da análise do corpo × mochila/depósito (06/10, nível 91, 2 min de livro-razão em Petrified Hollow):
+  nenhuma troca real nos 4; pesos medidos — dano/s 744, Knight 13 %, Paladino 18 %, Feiticeiro 36 %, Druida 33 %; Knight
+  toma 68,7/s com ~1 golpe/s (por isso defesa 21 do knight axe = 56 pt e o vampire shield 101 pt); regen. de mana por
+  unidade: Knight 4,5 (piso do dono), Paladino 0,54, Feiticeiro 1,85, Druida 4,8 (bebe poção).
