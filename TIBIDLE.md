@@ -4677,3 +4677,15 @@ mapas (Vampire hell 32,5k × 58,0k do Em área; Banshee 27,7k × 49,6k) e ainda 
   period:'30d'` página a página (`mkLerVendas`, ≤ 10 páginas) e `mkVendas(entries, agora, periodoMs?)` agrupa por item e
   preço, o mais recente primeiro; seção "Vendidos nos últimos 30 dias" em Meus anúncios (sem a forja: o histórico só traz o
   nome). 3 testes novos (275).
+
+## 2.14.13 (06/10) — o relógio do livro-razão para quando a caçada para
+- Pedido do dono: "vê a análise do inventário com o corpo do personagem, tá tudo certo?". Conferido ao vivo (nível 91,
+  Petrified Hollow): nenhuma troca sugerida nos 4 e a lista bate com o corpo (tudo que veste tem regen. de mana maior que
+  o do depósito/mochila; a dark armor regen. de mana 1,3 da mochila é reserva; 4 bases de forja; 17 sobras).
+- Defeito achado: `razaoResumo` media `seg = agora − t0` mesmo depois do `ended`. Na cidade, 9 min após o fim, o dano/s
+  da party saía 18,5 (real 727) e `partyMedida` ("caçada atual") alimentava o Equip com esse número: regen. de mana 2,3
+  valia 175 pt no Feiticeiro (= 175 % do dano da party), o "−42,7 pt" das sobras e os pesos do bestiário (pesosBestiario)
+  inflavam ~40×. O ranking entre peças não mudou (regen. de mana × regen. de mana), mas a nota, as conversões em ouro/h e o
+  valor dos marcos de regen. de mana no "Completar marcos" estavam errados.
+- Correção: `razaoNovo` ganha `tFim` (gravado no `ended`) e `tUlt` (último frame, em `razaoVitais`); `razaoFim(L)` = tFim,
+  ou tUlt se o frame parou há > 5 s (queda de conexão), ou agora. `partyMedida` diz "última caçada" fora da caçada.

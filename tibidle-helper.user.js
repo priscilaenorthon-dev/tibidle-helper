@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.14.12
+// @version      2.14.13
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.14.12';
+    const VERSAO = '2.14.13';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -4047,8 +4047,12 @@
      *  a cada ~9,5 s de espera, mortas em ~2,5 s — o spawn limita, dano extra
      *  não vira xp, e vale a build mais barata que ainda limpa a onda.
      * ====================================================================== */
-    const razaoNovo = () => ({ t0: Date.now(), magias: {}, auto: {}, tomado: { total: 0, golpes: 0, corpo: 0, golpesCorpo: 0 }, kills: 0, ondas: { n: 0, tam: 0, timer: 0, matar: 0, tOnda: 0 }, vitais: {}, hpAntes: {},
+    /* v2.14.13 — tFim (o `ended`) e tUlt (último frame): o relógio do livro PARA quando a caçada para. Antes seg = agora − t0
+     * seguia correndo na cidade: 9 min depois do fim, o dano/s da party saía 18 em vez de 727 e o Equip dava 175 pt (175 % do
+     * dano da party!) para regen. de mana 2,3 — a nota do ranking, o "−42 pt" das sobras e os pesos do bestiário inflavam ~40×. */
+    const razaoNovo = () => ({ t0: Date.now(), tFim: 0, tUlt: 0, magias: {}, auto: {}, tomado: { total: 0, golpes: 0, corpo: 0, golpesCorpo: 0 }, kills: 0, ondas: { n: 0, tam: 0, timer: 0, matar: 0, tOnda: 0 }, vitais: {}, hpAntes: {},
                                vitaisPorKit: {}, kitVital: {} });
+    const razaoFim = (L) => L.tFim || (L.tUlt && Date.now() - L.tUlt > FRAME_FRESCO_MS ? L.tUlt : Date.now());
     let RAZAO = razaoNovo();
     /* v2.12.0 — também a mana MÍNIMA (escada defensiva: Druida) e a
      * REGENERAÇÃO de cada um: janela de ≥ 3 s (até 10 s) em que ele não lançou
@@ -4058,6 +4062,7 @@
     const _regenJan = {}, _regenLista = {};
     function razaoVitais(L, party, eventos) {
         const agora = Date.now();
+        L.tUlt = agora;
         const lancou = new Set(); let cura = false;
         for (const e of (Array.isArray(eventos) ? eventos : [])) {
             if (!e || e.kind !== 'cast') continue;
@@ -4134,7 +4139,7 @@
     /* → { seg, danoTotal, porVoc{VOC:{dano,pct,dps,mana,ouro,manaMedia,hpMedia,hpMin}}, magias[por dano],
      *     ondas{n,tam,timer,matar,ciclo,spawnLimita}, tomado, tomadoH, kills } */
     function razaoResumo(L) {
-        const seg = Math.max(1, (Date.now() - L.t0) / 1000);
+        const seg = Math.max(1, (razaoFim(L) - L.t0) / 1000);
         const porVoc = {}; let danoTotal = 0;
         const add = (voc, dano, mana, ouro) => { const v = porVoc[voc] || (porVoc[voc] = { dano: 0, mana: 0, ouro: 0 }); v.dano += dano; v.mana += mana; v.ouro += ouro; danoTotal += dano; };
         const magias = Object.values(L.magias).map(m => {
@@ -4341,6 +4346,7 @@
                  * Auto Hunt viam "ainda na hunt X" depois de uma morte). O que
                  * acabou fica em ultimoEnded para quem precisar do motivo. */
                 ESTADO_WS.ultimoEnded = { t: Date.now(), huntId: sm.huntId != null ? sm.huntId : ESTADO_WS.huntId, reason: sm.reason || null, boss: ESTADO_WS.boss };
+                if (RAZAO && !RAZAO.tFim) RAZAO.tFim = Date.now(); // v2.14.13 — o relógio do livro-razão para aqui
                 ESTADO_WS.boss = null; ESTADO_WS.ultimoStart = null; ESTADO_WS.frame = null; ESTADO_WS.party = []; ESTADO_WS.huntId = null;
                 if (sm.huntId != null && sm.huntId !== HUNT_ID_BOSS && huntNoCatalogo(sm.huntId)) { guardar('hunt_id', sm.huntId); guardar('hunt_manual', sm.huntId); }
             }
@@ -7695,7 +7701,7 @@
     function partyMedida() {
         let rz = null, fonte = null;
         const vivo = razaoResumo(RAZAO);
-        if (vivo && vivo.seg >= 120 && vivo.danoTotal > 0) { rz = vivo; fonte = 'caçada atual'; }
+        if (vivo && vivo.seg >= 120 && vivo.danoTotal > 0) { rz = vivo; fonte = emHunt() ? 'caçada atual' : 'última caçada'; }
         else {
             const sc = Object.values(scanResultados()).filter(r => r && r.razao && r.razao.danoTotal > 0).sort((a, b) => (b.t || 0) - (a.t || 0))[0];
             if (sc) { rz = sc.razao; fonte = 'Scan ' + sc.title; }
