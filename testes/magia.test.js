@@ -34,7 +34,7 @@ const M = new Function('SPELLS', 'POTIONS', 'BOSSES', `
     ${trecho('/* @@MAGIA-INICIO', '/* @@MAGIA-FIM */')}
     CAT.bosses = normalizarBosses(BOSSES);
     return { montarPlano, melhorPocao, viabilidadeParty, simularFila, slotMorto, notasElementos, planoExtras, melhorMunicao, custoMunicao,
-             danosConhecidos, valorFormula, mlDaMedida, huntDeBoss, magiasDaVocacao, invalidarPlanos, pedirReleituraDeDanos, avaliar, lureMax, slotsParaSimular, manaDoPersonagem,
+             danosConhecidos, valorFormula, mlDaMedida, cartaoDaVocacao, skillsDaVoc, huntDeBoss, magiasDaVocacao, invalidarPlanos, pedirReleituraDeDanos, avaliar, lureMax, slotsParaSimular, manaDoPersonagem,
              RUNA_SEMENTE, BESTIARIO, TIMERS, CAT, MEM, RAZAO, ESTADO_WS, E, LOOT_CACHE };
 `)(SPELLS, POTIONS, BOSSES);
 
@@ -363,6 +363,44 @@ t('item 13 — pedirReleituraDeDanos: invalida o cache e relê /spell-numbers UM
     assert(vivos.length === 1 && vivos[0].ms >= 1000, 'uma leitura só, com espera para o servidor aplicar: ' + JSON.stringify(vivos.map(x => x.ms)));
     vivos[0].fn();
     return Promise.resolve().then(() => Promise.resolve()).then(() => assert(M.E.rest === 1, 'aprenderDanosPorRest chamado ' + M.E.rest + '×'));
+});
+
+t('2.14.15 — cartaoDaVocacao: o cartão de /spell-numbers é de um personagem só; magos e Paladino saem pela fórmula com o ML/distância deles', () => {
+    const por = (nome) => SPELLS.find(m => m.name === nome);
+    // Great Fire Wave, Feiticeiro ML 46 no nível 91: ((91/5) + 46×2,8 + 16) = 163 · ((91/5) + 46×4,4 + 28) = 249 — o cartão do servidor dizia 62–90 (ML ≈ 10)
+    const gfw = M.cartaoDaVocacao(por('Great Fire Wave'), 'SORCERER', 91, { ml: 46 });
+    assert(gfw && gfw.min === 163 && gfw.max === 249 && gfw.ml === 46, 'Great Fire Wave ML 46: ' + JSON.stringify(gfw));
+    // runa 3×3 com o ML do Druida (50): 18,2 + 60 + 7 = 85 · 18,2 + 140 + 17 = 175
+    const gfb = M.cartaoDaVocacao(por('great fireball rune'), 'DRUID', 91, { ml: 50 });
+    assert(gfb && gfb.min === 85 && gfb.max === 175, 'great fireball ML 50: ' + JSON.stringify(gfb));
+    // Paladino: Caldera por ML (20) e Strong Ethereal Spear pela distância (62; o ataque entra como ÷2500 e é desprezado)
+    const cal = M.cartaoDaVocacao(por('Divine Caldera'), 'PALADIN', 91, { ml: 20, dist: 62 });
+    assert(cal && cal.min === 98 && cal.max === 138, 'Caldera ML 20: ' + JSON.stringify(cal));
+    const spear = M.cartaoDaVocacao(por('Strong Ethereal Spear'), 'PALADIN', 91, { ml: 20, dist: 62 });
+    assert(spear && spear.min === 310 && spear.max === 440 && spear.skill === 62, 'Strong Ethereal Spear dist 62: ' + JSON.stringify(spear));
+    // Knight: skill × ataque da arma — o cartão do servidor é dele, fica como veio
+    assert(M.cartaoDaVocacao(por('Berserk'), 'KNIGHT', 91, { ml: 11, melee: 57 }) === null, 'Berserk fica com o cartão');
+    // sem skill lida, fica o cartão
+    assert(M.cartaoDaVocacao(por('Great Fire Wave'), 'SORCERER', 91, null) === null && M.cartaoDaVocacao(por('Great Fire Wave'), 'SORCERER', 91, { dist: 13 }) === null, 'sem ML fica o cartão');
+    // skillsDaVoc: do frame, senão do guardado
+    M.ESTADO_WS.sk = { SORCERER: { ml: 46 } }; M.MEM.skills_vistas = { DRUID: { ml: 50 } };
+    assert(M.skillsDaVoc('SORCERER').ml === 46 && M.skillsDaVoc('DRUID').ml === 50 && M.skillsDaVoc('KNIGHT') === null, 'skillsDaVoc');
+    M.ESTADO_WS.sk = {}; delete M.MEM.skills_vistas;
+});
+
+t('2.14.15 — Equilibrado: a "forte" é de rotação (recarga < 30 s); a ultimate de 40 s não toma a vaga da onda', () => {
+    // dano com o cartão certo: Hell's Core (40 s) muito acima da Great Fire Wave por lançamento
+    const antes = M.MEM.danos_SORCERER;
+    M.MEM.danos_SORCERER = Object.assign({}, antes, { "Hell's Core": d(478, 662), 'Great Fire Wave': d(163, 249), 'Scorch': d(28, 39), 'Fire Wave': d(75, 114) });
+    M.invalidarPlanos();
+    const h = mapa(8); // monstro neutro (Dragon Lair é imune a fogo)
+    const r = M.montarPlano('equilibrado', h, 'SORCERER');
+    const nomes = r.plano.map(p => p.av.m.name);
+    assert(!nomes.includes("Hell's Core"), 'Hell\'s Core fora do Equilibrado: ' + nomes.join(', '));
+    assert(nomes.includes('Great Fire Wave'), 'a onda forte de rotação fica: ' + nomes.join(', '));
+    const a = M.montarPlano('area', h, 'SORCERER').plano.map(p => p.av.m.name);
+    assert(a.includes("Hell's Core"), 'no Em área a ultimate continua: ' + a.join(', '));
+    M.MEM.danos_SORCERER = antes; M.invalidarPlanos();
 });
 
 Promise.all(pendentes).then(() => console.log(`\n${n} testes ok`));

@@ -41,7 +41,9 @@ const falhou = (nome, e) => { console.log('FAIL', nome, '\n   ', e.stack.split('
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { falhou(nome, e); } };
 
 const VOCS = ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'];
-const STATS = { KNIGHT: { ml: 3, skill: 21, attack: 31 }, PALADIN: { ml: 7, skill: 27, attack: 30 }, SORCERER: { ml: 7, skill: 10, attack: 0 }, DRUID: { ml: 7, skill: 10, attack: 0 } };
+/* 2.14.15 — o cartão é o de CADA personagem (cartaoDaVocacao): no nível 67 os magos tinham ML ~25 e o Paladino ~12 (é o que
+ * os fatores 2,2 e 1,5 do K_VIVO antigo significavam — o cartão vinha com o ML 7 do Knight). O Knight segue skill + ataque. */
+const STATS = { KNIGHT: { ml: 3, skill: 21, attack: 31 }, PALADIN: { ml: 12, skill: 27, attack: 30 }, SORCERER: { ml: 25, skill: 10, attack: 0 }, DRUID: { ml: 25, skill: 10, attack: 0 } };
 const ev = (e, L, st) => Function('level', 'maglevel', 'skill', 'attack', 'return ' + e)(L, st.ml, st.skill, st.attack);
 function semear(L) {
     M.E.nivel = L;

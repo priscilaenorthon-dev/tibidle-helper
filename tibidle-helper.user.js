@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.14.14
+// @version      2.14.15
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.14.14';
+    const VERSAO = '2.14.15';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -1197,6 +1197,44 @@
         const x = sk && sk[voc];
         return x && Number(x.ml) > 0 ? Number(x.ml) : null;
     }
+    /* v2.14.15 — O CARTÃO DE /spell-numbers É DE UM PERSONAGEM SÓ. O servidor devolve min–max calculados para UM
+     * personagem da conta (aqui o Knight: ML ≈ 10, skill 52–57; `?vocation=`, `?profile=`, `?slot=` são ignorados —
+     * conferido em 06/10) e o helper gravava a MESMA tabela para as quatro vocações. Para os magos (ML 46/50) e o Paladino
+     * (ML 20, distância 62) o dano ficava 1,6–3× abaixo do medido, e o plano misturava escalas: a magia medida neste mapa
+     * entrava com o dano real e a não medida com um terço dele. A fórmula de /spells com o ML do próprio personagem (ficha:
+     * valor + bônus, lido do frame) bate com o livro-razão em ±2 % (Petrified Hollow, nível 91, por alvo: Great Fire Wave
+     * 222 × 224 medido, Strong Ice Wave 312 × 317, great fireball 132 × 133, Divine Caldera 89 × 90, Hell's Core 616 × 635).
+     * Regra: fórmula só de ML → recalcula com o ML da vocação; fórmula de skill do Paladino (o ataque só entra como ÷2500,
+     * desprezível) → recalcula com a distância dele; o resto (Knight: skill × ataque da arma — os números do servidor são
+     * dele) e quem não tem skill lida ainda → o cartão como veio. null = fica o cartão. */
+    const ataqueDesprezivel = (expr) => !/attack/.test(String(expr).replace(/attack\s*\/\s*\d+(?:\.\d+)?/g, ''));
+    function cartaoDaVocacao(m, voc, lvl, sk) {
+        const f = m && m.formula;
+        if (!f || typeof f.min !== 'string' || typeof f.max !== 'string' || !(lvl > 0) || !sk) return null;
+        const calc = (vars) => {
+            const mn = valorFormula(f.min, vars), mx = valorFormula(f.max, vars);
+            return Number.isFinite(mn) && Number.isFinite(mx) && mx > 0 ? { min: Math.max(1, Math.round(mn)), max: Math.max(1, Math.round(mx)) } : null;
+        };
+        if (formulaDeML(m)) {
+            const ml = Number(sk.ml) > 0 ? Number(sk.ml) : null;
+            if (ml == null) return null;
+            const r = calc({ level: lvl, maglevel: ml, skill: 0, attack: 0 });
+            return r ? Object.assign(r, { ml }) : null;
+        }
+        if (voc === 'PALADIN' && /skill/.test(f.min + f.max) && ataqueDesprezivel(f.min + f.max)) {
+            const dist = Number(sk.dist) > 0 ? Number(sk.dist) : null;
+            if (dist == null) return null;
+            const r = calc({ level: lvl, maglevel: 0, skill: dist, attack: 0 });
+            return r ? Object.assign(r, { skill: dist }) : null;
+        }
+        return null;
+    }
+    /* skills vistas da vocação ({ml, dist, melee}) — do frame, ou do que ficou guardado da última sessão */
+    function skillsDaVoc(voc) {
+        let sk = ESTADO_WS.sk;
+        if (!sk || !sk[voc]) sk = ler('skills_vistas', {});
+        return (sk && sk[voc]) || null;
+    }
     function anotarDano(nome, min, max, mana, casas) {
         const d = ler(chaveDano(), {});
         d[nome] = { min, max, mana, casas, nivel: nivelAtual(), ts: Date.now() };
@@ -1865,7 +1903,10 @@
      * área): com a fração de alvos pela metade dava certo no Em área (−12 %/−2 %
      * de abates) e inflava 3–10× o alvo único — o kit do Inteligente previa 4,3 s
      * por onda e matou em 11,4 s (+80 % de abates previstos; Banshee +92 %). */
-    const K_VIVO = { KNIGHT: 0.9, PALADIN: 1.5, SORCERER: 2.2, DRUID: 2.2 };
+    /* v2.14.15 — o 1,5 / 2,2 / 2,2 ERA o cartão errado: /spell-numbers vinha com o ML do Knight (~10) para todo mundo
+     * (cartaoDaVocacao). Com o cartão da própria vocação a razão medido ÷ cartão fica em 1,0 (±2 % em Petrified Hollow,
+     * nível 91) — e crescia com o ML (2,8–3,0 no nível 91 contra 2,2 no 71). O Knight continua 0,9 (armadura). */
+    const K_VIVO = { KNIGHT: 0.9, PALADIN: 1, SORCERER: 1, DRUID: 1 };
     /* golpe do Knight / tiro do Paladino: a fórmula (nível/5 + ataque × skill −
      * armadura) dá ~50; o medido é ~15 por golpe (auto-ataque = 1–13 % do dano
      * da party nos 4 Scans). A 2.12.0 multiplicava pelo K_VIVO: ~160 de dano/s
@@ -2603,12 +2644,16 @@
         const memo = ref.tri || (ref.tri = new Map());
         const chave = voc + '|' + assinaturaPlano(plano) + '|' + pocao + '|' + (sups || []).join('+');
         if (memo.has(chave)) return memo.get(chave);
+        /* v2.14.15 — o teto vale por simulação: a comparação "sem poção" abaixo é uma a mais, e as voltas do chamador só
+         * conferem o teto ANTES de chamar (saía 6.001 com N_MAX_SIM = 6.000). */
+        if (cont.sim >= N_MAX_SIM) return null;
         /* poção que nunca seria bebida (sem ela a mana não desce da marca e o
          * gasto médio cabe na regeneração — senão desceria depois dos 120 s) = a
          * mesma barra: não simula */
         if (pocao > 0) {
-            const sem = triagemInt(ctx, voc, plano, 0, sups, ref, cont), x = sem.sim.por[voc];
+            const sem = triagemInt(ctx, voc, plano, 0, sups, ref, cont), x = sem && sem.sim.por[voc];
             if (x && x.manaMinFrac >= pocao && x.manaS <= sem.regenUtil + 1e-9) { memo.set(chave, null); return null; }
+            if (cont.sim >= N_MAX_SIM) return null;
         }
         cont.sim++;
         const train = voc === 'KNIGHT' ? (sups || []).includes('Train Party') : !!(ref.esc.KNIGHT && (ref.esc.KNIGHT.sups || []).includes('Train Party'));
@@ -2843,6 +2888,9 @@
                 /* v2.14.1 — magia que o nível ainda não libera sai do kit (as outras ficam) */
                 const k = (sem.kits[v] || []).filter(([nome]) => ctx.porNome[v][nome]);
                 const plano = k.length ? k.map(([nome, mi]) => ({ av: ctx.porNome[v][nome], minimo: Math.max(1, Math.min(mi, L)) })) : null;
+                /* v2.14.15 — kit do post só com ≥2 (ou que ficou assim depois do filtro): com 1 monstro vivo nada
+                 * dispararia — a última cai para ≥1, como no planejar */
+                if (plano && !plano.some(p => p.minimo <= 1)) plano[plano.length - 1].minimo = 1;
                 /* no enxuto o kit da comunidade leva os buffs do post; fora dele, os suportes do dono como sempre */
                 const sups = ctx.enxAtivo ? ((sem.sups && sem.sups[v]) || []).filter(x => temMagia(x, v, lvlS)).slice(0, 2) : supsDoCtx(ctx, v);
                 if (plano && !plano.some((p, j) => slotMorto(plano, j, L))) { esc[v] = { plano, pocao: ctx.semPocao ? 0 : pocaoDoKit(sem, v), sups, com: hunt.id }; n++; }
@@ -2903,6 +2951,10 @@
     function escolhaDoModelo(modelo, hunt, voc, ctx, comoJogou) {
         const r = montarPlano(modelo, hunt, voc);
         const plano = r && !r.erro ? r.plano.filter(p => ctx.porNome[voc][p.av.m.name]).map(p => ({ av: ctx.porNome[voc][p.av.m.name], minimo: p.minimo })) : [];
+        /* v2.14.15 — o filtro pelas candidatas pode tirar justamente o slot ≥1 do plano (Pits of Inferno, Druida: Strong
+         * Ice Wave ≥2 > avalanche ≥2 sem a de alvo único) — com 1 monstro vivo nada dispararia. Mesma regra do planejar:
+         * sem nenhuma ≥1, a última cai para ≥1. */
+        if (plano.length && !plano.some(p => p.minimo <= 1)) plano[plano.length - 1].minimo = 1;
         return { plano, pocao: manaPotionLigada(voc) ? 0.3 : 0, sups: comoJogou ? suportesDono(voc) || [] : supsDoCtx(ctx, voc) };
     }
     /* c_voc (gasto medido ÷ simulado, [0,2; 1,5]) e k_calib (abates medidos ÷
@@ -3350,7 +3402,12 @@
         if (modelo === 'economica') {
             escolhidas = pega(porEfic(magias), 2);
         } else if (modelo === 'equilibrado') {
-            escolhidas = pega(porEfic(magias), 1).concat(pega(porDano(magias), 1), pega(porDano(runas), 1));
+            /* v2.14.15 — a "forte" do Equilibrado é de ROTAÇÃO (recarga < 30 s). Com o cartão certo (ML do próprio mago,
+             * cartaoDaVocacao) a ultimate de 40 s passa a ter o maior dano por lançamento (Hell's Core ~4.900 × Great Fire
+             * Wave 1.700) e tomaria a única vaga de forte — 36 de cada 40 s só com a barata e a runa. A ultimate continua
+             * entrando no Em área (2 de área) e no Inteligente, que simulam o ciclo inteiro. */
+            const rotacao = magias.filter(a => (a.m.cooldownMs || 2000) < 30000);
+            escolhidas = pega(porEfic(magias), 1).concat(pega(porDano(rotacao.length ? rotacao : magias), 1), pega(porDano(runas), 1));
         } else if (modelo === 'area') {
             const mA = pega(porDano(magias.filter(ehArea)), 2);
             const mB = mA.length < 2 ? pega(porDano(magias), 2 - mA.length) : [];
@@ -4001,18 +4058,22 @@
             }, PRAZO_REDE_MS);
         } catch (e) { return { erro: '/spell-numbers falhou: ' + e.message }; }
         if (!nums || typeof nums !== 'object') return { erro: '/spell-numbers veio vazio' };
-        let n = 0; const lvl = nivelAtual();
+        let n = 0, recalc = 0; const lvl = nivelAtual();
         for (const voc of VOCS) {
             const d = ler('danos_' + voc, {});
+            const sk = skillsDaVoc(voc);
             for (const m of magiasDaVocacao(voc)) {
                 const x = m.file && nums[m.file];
                 if (!x || x.kind !== 'damage' || x.min == null) continue;
-                d[m.name] = { min: x.min, max: x.max, mana: m.mana || 0, casas: casasDaMagia(m), nivel: lvl, ts: Date.now(), fonte: 'rest' };
+                /* v2.14.15 — o cartão é de um personagem só: recalcula com o ML/skill desta vocação (cartaoDaVocacao) */
+                const c = cartaoDaVocacao(m, voc, lvl, sk);
+                if (c) recalc++;
+                d[m.name] = Object.assign({ min: x.min, max: x.max }, c || {}, { mana: m.mana || 0, casas: casasDaMagia(m), nivel: lvl, ts: Date.now(), fonte: 'rest' });
                 n++;
             }
             guardar('danos_' + voc, d);
         }
-        if (!silencioso || n) log(`dano real de ${n} magias/runas lido de /spell-numbers (nível ${lvl}, sem abrir janela)`, 'ok');
+        if (!silencioso || n) log(`dano real de ${n} magias/runas lido de /spell-numbers (nível ${lvl}; ${recalc} recalculadas com o ML/skill de cada personagem)`, 'ok');
         renderizar();
         return { ok: true, n };
     }
@@ -4191,6 +4252,7 @@
     let _skillsT = 0;
     function anotarSkills(party) {
         if (!ESTADO_WS.sk) ESTADO_WS.sk = ler('skills_vistas', {}) || {};
+        let mudou = false;
         for (const p of party) {
             if (!p || !p.vocation || !p.skills) continue;
             const x = { dist: _skill(p, ['distance']), melee: _skill(p, ['melee', 'sword', 'axe', 'club', 'fist']), ml: _skill(p, ['magicLevel', 'magic', 'maglevel']) };
@@ -4198,9 +4260,13 @@
             /* v2.11 — frame sem as skills (ou com nome que o helper não conhece)
              * dava {} e APAGAVA o que já tinha sido visto; agora só soma. */
             if (!Object.keys(bons).length) continue;
-            ESTADO_WS.sk[p.vocation] = Object.assign({}, ESTADO_WS.sk[p.vocation], bons);
+            const antes = ESTADO_WS.sk[p.vocation] || {};
+            if ((bons.ml != null && bons.ml !== antes.ml) || (bons.dist != null && bons.dist !== antes.dist)) mudou = true;
+            ESTADO_WS.sk[p.vocation] = Object.assign({}, antes, bons);
         }
         if (Date.now() - _skillsT > 60000) { _skillsT = Date.now(); guardar('skills_vistas', ESTADO_WS.sk); }
+        /* v2.14.15 — o cartão de cada vocação é recalculado com o ML/distância dela (cartaoDaVocacao): skill nova → relê */
+        if (mudou) pedirReleituraDeDanos('ML/skill mudou');
     }
     function observarEnviado(o) {
         if (!o || !o.type) return;

@@ -4699,3 +4699,38 @@ mapas (Vampire hell 32,5k × 58,0k do Em área; Banshee 27,7k × 49,6k) e ainda 
   nenhuma troca real nos 4; pesos medidos — dano/s 744, Knight 13 %, Paladino 18 %, Feiticeiro 36 %, Druida 33 %; Knight
   toma 68,7/s com ~1 golpe/s (por isso defesa 21 do knight axe = 56 pt e o vampire shield 101 pt); regen. de mana por
   unidade: Knight 4,5 (piso do dono), Paladino 0,54, Feiticeiro 1,85, Druida 4,8 (bebe poção).
+
+## 2.14.15 (06/10) — o cartão de /spell-numbers é de um personagem só
+- Pedido do dono: "as magias (Econômica, Equilibrado, Área, Inteligente, Boss) estão certas com os danos dos bichos e boss
+  dos mapas?". Conferido ao vivo em Petrified Hollow (nível 91, 7 min de livro-razão, 184 abates): as NOTAS de elemento
+  batem (Wyvern terra 100 / energia 20 / gelo 10; Massive Earth Elemental terra 100 / energia 90 / fogo −15 / sagrado 50 /
+  morte 45 → fogo 108, gelo 88, físico 90, morte 78, sagrado 75, energia 30 com veto (um dos dois toma só 10 %), terra 0).
+  Fogo é o melhor elemento do mapa e os planos escolhem fogo (Feiticeiro) e gelo (Druida) — certo.
+- **Defeito achado**: `/spell-numbers` devolve min–max calculados para UM personagem da conta — o Knight (ML ≈ 10, skill
+  52–57). `?vocation=`, `?profile=`, `?slot=`… são ignorados (testado). O helper gravava a MESMA tabela para as 4
+  vocações. Dano por alvo medido ÷ cartão: Feiticeiro 2,8–3,1 (Great Fire Wave 224 × 72), Druida 2,7–3,0 (Strong Ice Wave
+  317 × 106), Paladino 1,4–1,5 (Caldera 90 × 63), Knight 0,75–0,9 (armadura). A fórmula de /spells com o ML da própria
+  ficha (frame, valor + bônus: K 11 · P 20 · S 46 · D 50) bate em ±2 %: GFW 222 × 224, SIW 312 × 317, great fireball 132 ×
+  133, Caldera 89 × 90, Hell's Core 616 × 635. Consequência: a magia medida no mapa entrava com o dano real e a não medida
+  (Fire Wave, Ice Wave, Hell's Core, Eternal Winter, strikes, sudden death) com um terço — ranking misturado. O K_VIVO
+  do Inteligente (1,5 / 2,2 / 2,2) era exatamente esse erro (e crescia com o ML: 2,2 no 71, 3,0 no 91).
+- Correção: `cartaoDaVocacao(m, voc, lvl, sk)` — fórmula só de ML → recalcula com o ML da vocação (`ml` gravado na
+  entrada; `escalarPorML` passa a usar o ML certo); fórmula de skill do Paladino (o ataque só entra como ÷2500) →
+  recalcula com a distância dele (310–440 para a Strong Ethereal Spear, o cartão dizia 264–374 com a skill 52 do Knight);
+  Knight (skill × ataque da arma — os números do servidor são dele) e vocação sem skill lida → o cartão como veio.
+  `anotarSkills` pede releitura quando o ML/distância de alguém muda. `K_VIVO` = {K 0,9, P 1, S 1, D 1}.
+- Equilibrado: a "forte" passa a ser de ROTAÇÃO (recarga < 30 s). Com o cartão certo a ultimate de 40 s tem o maior dano
+  por lançamento (Hell's Core ~4.900 × Great Fire Wave 1.700) e tomaria a única vaga de forte (36 de cada 40 s só com a
+  barata e a runa). Ela continua no Em área (2 de área) e no Inteligente, que simulam o ciclo. **Decisão minha — o dono
+  pode reverter.** Econômica (2 por dano/ouro) não muda de regra; com o cartão certo o Feiticeiro tende a Fire Wave +
+  Great Fire Wave (a Scorch cai abaixo de 10 % do melhor lançamento).
+- Dois defeitos antigos do Inteligente que o cartão novo expôs: (1) o ponto de partida (`escolhaDoModelo`) e o kit da
+  comunidade filtram pelas candidatas e podiam ficar só com slots ≥2 (Pits of Inferno, Druida: Strong Ice Wave ≥2 >
+  avalanche ≥2 — com 1 monstro vivo nada dispara); agora a última cai para ≥1, como no planejar. (2) `triagemInt` com
+  poção simula duas vezes e as voltas conferiam o teto antes de chamar: saía 6.001 com N_MAX_SIM 6.000; o teto agora é
+  conferido dentro.
+- Testes: o do Inteligente semeia o dano com o ML de cada personagem no nível 67 (P 12, S/D 25 — é o que o K_VIVO antigo
+  significava); 2 testes novos em magia.test.js (277).
+- Boss (Genio: fogo 90, energia 60, sagrado 20, gelo −5, morte −8): sudden death no Feiticeiro/Druida, Strong Ethereal
+  Spear + sudden death no Paladino, Brutal Strike + Berserk no Knight (a Fierce Berserk de 340 de mana não cabe na mana
+  dele em 90 s — o simulador do Boss já olha a mana). Certo.
