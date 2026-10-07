@@ -7,7 +7,7 @@ const raiz = path.join(__dirname, '..');
 const src = fs.readFileSync(path.join(raiz, 'tibidle-helper.user.js'), 'utf8');
 const ini = src.indexOf('/* @@EQUIP-PURO-INICIO */'), fim = src.indexOf('/* @@EQUIP-PURO-FIM */');
 assert(ini > 0 && fim > ini, 'marcadores @@EQUIP-PURO não encontrados');
-const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, pesosDaVoc, candidatosEquip, distribuirEquip, pecasDesmanche, planoForja, faixaPotencia };')();
+const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, pesosDaVoc, candidatosEquip, distribuirEquip, pecasDesmanche, planoForja, faixaPotencia, wikiSlug, wikiUrlPeca };')();
 const le = (p) => { try { return JSON.parse(fs.readFileSync(path.join(raiz, p), 'utf8')); } catch (e) { return null; } };
 const base = {};
 for (const [nome, it] of Object.entries(le('testes/fixtures/itens.json').itens)) base[nome] = { id: it.id, attrs: it.attrs || {}, sell: it.sell || 0, equipPreview: it.equipPreview || null };
@@ -384,5 +384,12 @@ t('candidatos: id e valor do encaixe normalizados ("Regen-Mana", "1,9")', () => 
     const c = M.candidatosEquip([], dep, { bota: { attrs: {}, sell: 0 } }, []);
     assert.deepStrictEqual(c[0].forja.atributos.map(a => [a.id, a.valor]), [['regen_mana', 1.9]]);
     assert(M.pontuarPeca(c[0], 'DRUID', null).pontos > 9);
+});
+/* 2.15.0 — link da ficha da peça na wiki oficial */
+t('wikiSlug: minúsculas, sem apóstrofo, espaços viram hífen (link da wiki)', () => {
+    assert.strictEqual(M.wikiSlug("Dragha's Spellbook"), 'draghas-spellbook');
+    assert.strictEqual(M.wikiSlug('dark armor'), 'dark-armor');
+    assert.strictEqual(M.wikiSlug('  Wand of Vortex  '), 'wand-of-vortex');
+    assert.strictEqual(M.wikiUrlPeca('plate armor'), 'https://tibidle.com/wiki/database/equipamentos/plate-armor');
 });
 console.log(`\n${n} testes ok` + (pulados ? ` · ${pulados} pulados (sem o estado da conta em data/)` : ''));

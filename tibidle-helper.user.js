@@ -6212,6 +6212,10 @@
     /* v2.14.9 — DESMANCHE (criador do jogo, 04/10): o que o NPC não compra (Incomum ou melhor, ou refinada) e ninguém usa
      * vira fragmento na Forja — a única fonte de gemas. Só mochila (bag) e depósito (depot); o corpo nunca. */
     const vendivelNpc = p => !((p.forja && p.forja.raridade) > 0) && !((p.forja && p.forja.refino) > 0);
+    /* v2.15.0 — link da ficha na wiki oficial: /wiki/database/equipamentos/<slug>; slug = minúsculas, apóstrofo
+     * removido, qualquer outra coisa que não seja letra/dígito vira um hífen ("Dragha's Spellbook" → draghas-spellbook). */
+    const wikiSlug = (nome) => String(nome == null ? '' : nome).toLowerCase().replace(/['’]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const wikiUrlPeca = (nome) => 'https://tibidle.com/wiki/database/equipamentos/' + wikiSlug(nome);
     /* v2.14.10 — PLANO DE FORJA (dono, 04/10: "não sei usar a forja: me indica o que fazer e quais atributos
      * encontrar"). Regras do jogo (cliente, 04/10) e da wiki /forja: potência atual = base + 50 × refino; faixas a
      * cada 200 (I 1–199 … VI 1000+) e o VALOR das linhas é sorteado no range da faixa; encaixes = raridade (Comum 0,
