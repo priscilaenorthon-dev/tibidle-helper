@@ -406,8 +406,21 @@ t('Equip: escape de itens, slots e vocações em português, "8 slots" como inte
     const MAL = 'knight axe' + XSS(7);
     base[MAL] = base['knight axe'];
     const F = { raridade: 0, atributos: [] };
-    const roster = [{ vocation: 'KNIGHT', equipment: { weapon: { name: 'mace', iid: 'c1', forja: F } } }, { vocation: 'PALADIN', equipment: {} }, { vocation: 'SORCERER', equipment: {} }, { vocation: 'DRUID', equipment: {} }];
-    const depot = { entries: [{ itemName: MAL, iid: 'd1', slot: 'weapon', forja: F }, { itemName: 'plate armor', iid: 'd2', slot: 'armor', forja: F }] };
+    /* 2.15.0 — fixture que enche as 4 caixinhas de destino: duas bases só de uma vocação (vocation = só o Cavaleiro /
+     * só os magos) para a peça de encaixe nobre do Cavaleiro não virar reserva dos magos. Conferido pelo bloco puro:
+     * NPC = d3 (plate armor comum) · Mercado = m1 (leather incomum) · base = b1 (épico) · nobre = n1 (regen. de vida,
+     * supera a fur armor do corpo) · reservas = c1 (mace), d2 (plate armor), r2 (mage robe). */
+    base['knight armor'] = { id: 99001, attrs: { slot: 'armor', armor: 2, vocation: 'knights' }, sell: 300, equipPreview: null };
+    base['mage robe'] = { id: 99002, attrs: { slot: 'armor', armor: 1, vocation: 'sorcerers, druids and paladins' }, sell: 100, equipPreview: null };
+    const FA = (r, ...at) => ({ raridade: r, atributos: at.map(([id, valor]) => ({ id, valor })) });
+    const robe = (iid) => ({ armor: { name: 'blue robe', iid, forja: FA(1, ['regen_mana', 5]) } });
+    const roster = [{ vocation: 'KNIGHT', equipment: { weapon: { name: 'mace', iid: 'c1', forja: F }, armor: { name: 'fur armor', iid: 'c5', forja: F } } },
+                    { vocation: 'PALADIN', equipment: robe('c2') }, { vocation: 'SORCERER', equipment: robe('c3') }, { vocation: 'DRUID', equipment: robe('c4') }];
+    const depot = { entries: [{ itemName: MAL, iid: 'd1', slot: 'weapon', forja: F }, { itemName: 'plate armor', iid: 'd2', slot: 'armor', forja: F },
+        { itemName: 'plate armor', iid: 'd3', slot: 'armor', forja: F }, { itemName: 'mage robe', iid: 'r2', slot: 'armor', forja: FA(1, ['regen_mana', 3]) },
+        { itemName: 'leather armor', iid: 'm1', slot: 'armor', forja: FA(1, ['resist_fogo', 1]) },
+        { itemName: 'leather armor', iid: 'b1', slot: 'armor', forja: FA(3, ['resist_fogo', 1], ['resist_gelo', 1], ['resist_terra', 1]) },
+        { itemName: 'knight armor', iid: 'n1', slot: 'armor', forja: FA(1, ['regen_vida', 1.1]) }] };
     const E = H.EQUIP; E.base = base; E.ctx = { nivel: 62, sk: {}, fracMagica: {}, notas: null, mapa: 'Mapa ' + XSS(8) };
     E.res = H.distribuirEquip(H.candidatosEquip(roster, depot, base, []), undefined, E.ctx); E.t = W.agora; E.voc = 'KNIGHT';
     const ws = new W.window.WebSocket('wss://jogo');
@@ -415,6 +428,15 @@ t('Equip: escape de itens, slots e vocações em português, "8 slots" como inte
     await W.avancar(0);
     let h = W.html();
     semXss(h, 'Equip');
+    /* 2.15.0 — as caixinhas viram destinos com botão: NPC, Mercado, bases, encaixe nobre; links da wiki nas peças */
+    assert(/id="tb-eq-vender-npc"/.test(h), 'botão VENDER NO NPC');
+    assert(/id="tb-eq-anunciar-sobras"/.test(h) && /id="tb-eq-anunciar-nobres"/.test(h) && /id="tb-eq-anunciar-bases"/.test(h), 'botões ANUNCIAR');
+    assert(/href="https:\/\/tibidle\.com\/wiki\/database\/equipamentos\/[a-z0-9-]+"/.test(h), 'link da wiki nas peças');
+    assert(/encaixe que o Mercado paga \(1\)/.test(h) && /vender no NPC \(1 · 400 o\)/.test(h) && /anunciar no Mercado \(1\)/.test(h) && /bases de forja \(1\)/.test(h), 'títulos das caixinhas: ' + (h.match(/<summary>[^<]*<\/summary>/g) || []).join(' '));
+    assert(!/não são a melhor nem uma das 2 reservas/.test(h) && !/guardar: encaixe bom/.test(h), 'texto antigo das caixinhas ainda na tela');
+    assert(/reserva de Cavaleiro · armadura · 12,2 pt \(a do corpo tem 14,3 pt\)/.test(h), 'linha da reserva sem o dono, o slot e os pontos: ' + (h.match(/reserva de[^<]*/g) || []).join(' | '));
+    assert(/ref\. Mercado: aba Mercado → ATUALIZAR/.test(h), 'sem cópias lidas, a referência manda para o ATUALIZAR do Mercado');
+    assert(/href="https:\/\/tibidle\.com\/wiki\/forja"/.test(h), 'link "como forjar" nas bases');
     assert(/knight axe&lt;img/.test(h), 'item malicioso não escapado');
     assert(/Mapa &lt;img/.test(h), 'mapa não escapado');
     assert(/<span class="s">arma<\/span>/.test(h) && !/<span class="s">weapon<\/span>/.test(h), 'slot não traduzido');

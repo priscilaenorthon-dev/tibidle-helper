@@ -7027,6 +7027,7 @@
     #tb-corpo .tb-eq{grid-template-columns:5.6em minmax(0,1fr) 12px minmax(0,1fr)}
     .tb-eq:focus-visible{outline:2px solid var(--tb-ouro);outline-offset:1px}
     .tb-eq-nota{font-size:var(--tb-fmin)}
+    .tb-lk{color:inherit;text-decoration:none;border-bottom:1px dotted currentColor}
     table.tb-an{width:100%;border-collapse:collapse;table-layout:fixed;font-size:var(--tb-fmin);margin:4px 0}
     table.tb-an th,table.tb-an td{padding:3px 2px;border-bottom:1px dotted #1f2531;vertical-align:top;text-align:right;white-space:nowrap;overflow:hidden}
     table.tb-an th{color:var(--tb-mut);font-weight:normal;border-bottom:1px solid var(--tb-borda)}
@@ -7855,6 +7856,9 @@
         try { await equipAtualizar(); } catch (e) { renderizar(); }
         if (aviso) { EQUIP.aviso = aviso; renderizar(); }
     }
+    /* v2.15.0 — provisórios: as Tasks 7 e 8 do plano (docs/plans/2026-10-07-equip-destinos.md) trocam por liberar e vender */
+    function liberarParaMercado() { }
+    async function venderSobrasNpc() { }
     async function equipAtualizar(opts) {
         if (EQUIP.lendo) return;
         /* v2.15.0 — a liberação para o Mercado (MK.liberadas) vale para a foto do Equip em que o dono clicou; nova
@@ -8025,7 +8029,9 @@
             return `<button type="button" class="${x === v ? 'on' : ''}" data-voc="${x}" aria-pressed="${x === v}" title="${rot}" aria-label="${rot}">${VOC_CURTO[x]}${n ? ` <b>${n}</b>` : ''}</button>`;
         }).join('')}</div>
           <button type="button" class="tb-eq-sw" id="tb-eq-tudo" role="switch" aria-checked="${!!EQUIP.verTudo}" title="mostrar os 8 slots, não só os que têm troca"><span class="tb-sw ${EQUIP.verTudo ? 'on' : ''}" tabindex="-1" aria-hidden="true"><i></i></span>mostrar os 8 slots</button>`;
-        const nomePeca = (p, voc) => p ? `${escHtml(p.nome)}${rarTag(p)}${p.origem === 'depósito' ? '<span class="tb-tag">dep.</span>' : p.origem === 'mochila' ? '<span class="tb-tag">mochila</span>' : p.dono && p.dono !== voc ? `<span class="tb-tag" title="${VOC_ROTULO[p.dono] || escHtml(p.dono)}">no ${VOC_CURTO[p.dono] || escHtml(p.dono)}</span>` : ''}` : '<span class="tb-mut">vazio</span>';
+        /* v2.15.0 — o nome da peça leva à ficha dela na wiki oficial (dono, 07/10: "quero ver a peça antes de decidir") */
+        const nomeLink = (p) => `<a class="tb-lk" href="${wikiUrlPeca(p.nome)}" target="_blank" rel="noopener" title="ficha na wiki">${escHtml(p.nome)}</a>`;
+        const nomePeca = (p, voc) => p ? `${nomeLink(p)}${rarTag(p)}${p.origem === 'depósito' ? '<span class="tb-tag">dep.</span>' : p.origem === 'mochila' ? '<span class="tb-tag">mochila</span>' : p.dono && p.dono !== voc ? `<span class="tb-tag" title="${VOC_ROTULO[p.dono] || escHtml(p.dono)}">no ${VOC_CURTO[p.dono] || escHtml(p.dono)}</span>` : ''}` : '<span class="tb-mut">vazio</span>';
         const det = (p, voc) => { if (!p) return ''; const r = pontuarPeca(p, voc, EQUIP.ctx);
             return r.detalhe.map(d => `<span class="${d.pt > 0 ? '' : d.pt < 0 ? 'neg' : 'm'}">${escHtml(rotulo(d.id))} ${escHtml(typeof d.valor === 'number' ? numBR(d.valor, 2) : d.valor)}${d.pt !== 0 ? ` <span class="tb-mut">(${numBR(d.pt, 1)})</span>` : ''}</span>`).join(' · ') + (r.temporario ? ' <span class="tb-tag">temporário</span>' : '') + ` <span class="tb-mut">= ${pt(r.pontos)}</span>`; };
         let linhas = 0;
@@ -8052,7 +8058,6 @@
         /* v2.11.6 — wiki /forja: peça Incomum ou melhor (ou refinada) NÃO vende na
          * cidade, no Auto Selling nem no Mercado — só se usa ou se desmancha, e o
          * desmanche é a ÚNICA fonte de fragmentos (gemas). Comum sem refino vende. */
-        const disp = R.dispensaveis, vendivel = vendivelNpc;
         const temNegocio = (nome) => { const c = MK.catalogo && MK.catalogo[mkMin(nome)]; return !!(c && Number(c.trades30d) > 0); };
         const incluirMk = !!ler('desm_incluir_mercado', false);
         const nd = pecasDesmanche(R, temNegocio, incluirMk).length, nMk = MK.catalogo ? pecasDesmanche(R, null, true).length - pecasDesmanche(R, temNegocio, false).length : 0;
@@ -8061,10 +8066,36 @@
         h += `<div class="tb-linha"><button type="button" class="tb-bt ${desmArmado ? 'pri' : ''}" id="tb-eq-desmanchar" ${podeDesm ? '' : 'disabled'} title="${escHtml(!nd ? 'nada para desmanchar: as sobras Incomum+ ou refinadas (o NPC não compra) é que vão' : dentro ? 'só na cidade' : !sock ? 'o socket do jogo não foi capturado — F5 com o helper instalado' : 'manda as sobras que o NPC não compra para o Desmanche da Forja (forge_salvage_batch) — vira fragmento, não volta')}">${EQUIP.desm ? 'DESMANCHANDO…' : desmArmado ? `confirmar: desmanchar ${nd}` : `DESMANCHAR (${nd})`}</button>` +
              `<span class="tb-mut tb-eq-nota">${desmArmado ? 'toque de novo para confirmar (não volta)' : 'sobras que o NPC não compra → fragmentos (2 toques)'}</span></div>` +
              `<div class="tb-mut tb-eq-nota">${MK.catalogo ? `${nMk} com negócio no Mercado em 30 dias ficam fora ` : 'Mercado não lido (aba Mercado → ATUALIZAR) — não sei quais têm comprador '}<label class="tb-l"><input type="checkbox" id="tb-eq-desm-mk" ${incluirMk ? 'checked' : ''}> incluir as que têm negócio no Mercado</label></div>`;
-        const soma = disp.filter(vendivel).reduce((n, p) => n + (p.sell || 0), 0);
-        h += aj('eq-disp', `<div class="tb-mut tb-eq-nota">não são a melhor nem uma das 2 reservas de ninguém, pela conta de hoje (1 pt = 1 % do dano da party). Comum: vende no NPC. Incomum ou melhor: o NPC não compra, mas o Mercado aceita (visto em 04/10) — vale olhar a aba Mercado antes; o que ninguém compra vira fragmento no Desmanche. Encaixes de imbuement não pontuam.</div>` +
-            disp.slice(0, 60).map(p => `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)}<span class="tb-tag">${escHtml(p.origem)}</span> <span class="tb-mut tb-eq-nota">${escHtml(p.motivo)}${potenciaDe(p) >= POTENCIA_BASE_FORJA ? ' · potência ' + numBR(potenciaDe(p)) : ''}</span></span><span>${vendivel(p) ? numBR(p.sell || 0) : 'desmanche'}</span></div>`).join('') +
-            (disp.length > 60 ? `<div class="tb-mut">… e mais ${disp.length - 60}</div>` : ''), `sobrando (${disp.length} · comuns ${numBR(soma)} o)`);
+        /* v2.15.0 — as sobras viram DESTINOS com botão (dono, 07/10: "não posso ficar guardando item que nunca vou usar"):
+         * comum sem encaixe → VENDER NO NPC (2 toques, venderSobrasNpc); incomum ou melhor → ANUNCIAR NO MERCADO
+         * (liberarParaMercado: abre a aba já marcada; a confirmação, com a taxa escrita, continua lá). Nada dispara sozinho. */
+        const D = destinosSobras(R);
+        const meusIds = new Set((MK.minhas || []).map(o => o.id));
+        const refTxt = (p) => {
+            if (!MK.copias || !Object.keys(MK.copias).length) return '<span class="tb-mut">ref. Mercado: aba Mercado → ATUALIZAR</span>';
+            const r = precoReferencia({ nome: p.nome, forja: p.forja }, MK.copias, meusIds);
+            if (r.origem === 'igual') return `ref. Mercado <b>${mkFmt(r.preco)}</b> <span class="tb-mut">(igual a ${mkFmt(r.ref)})</span>`;
+            if (r.origem === 'parecida') return `ref. Mercado <b>${mkFmt(r.preco)}</b> <span class="tb-mut">(parecida a ${mkFmt(r.ref)})</span>`;
+            if (r.origem === 'faixa') return `<span class="tb-mut">faixa ${mkFmt(r.min)}–${mkFmt(r.max)} — você digita</span>`;
+            return '<span class="tb-mut">sem cópia à venda — você digita</span>';
+        };
+        const encaixeTxt = (p) => { const at = ((p.forja && p.forja.atributos) || []).map(a => rotulo(a.id) + ' ' + a.valor).join(', '); return at ? escHtml(at) : 'sem encaixe'; };
+        const ocupado = EQUIP.equipando || EQUIP.lendo;
+        const linhaMk = (p) => `<div class="tb-lin"><span>${nomeLink(p)}${rarTag(p)}<span class="tb-tag">${escHtml(p.origem)}</span> <span class="tb-mut tb-eq-nota">${encaixeTxt(p)}</span></span><span class="tb-eq-nota">${refTxt(p)}</span></div>`;
+        const btAnunciar = (id, n, oQue) => `<button type="button" class="tb-bt" id="${id}" ${n && !ocupado ? '' : 'disabled'} title="${escHtml(n ? `abre a aba Mercado com ${oQue} já marcadas — nada é anunciado sem os 2 toques de lá` : 'nada nesta lista')}">ANUNCIAR NO MERCADO (${n})</button>`;
+        const podeVender = D.npc.length && !dentro && sock && !ocupado;
+        const vendaArmada = EQUIP.vendaConf && Date.now() < EQUIP.vendaConf;
+        h += aj('eq-npc', `<div class="tb-linha"><button type="button" class="tb-bt ${vendaArmada ? 'pri' : ''}" id="tb-eq-vender-npc" ${podeVender ? '' : 'disabled'} title="${escHtml(!D.npc.length ? 'nada para vender no NPC: só comum sem refino, fora do corpo' : dentro ? 'só na cidade' : !sock ? 'o socket do jogo não foi capturado — F5 com o helper instalado' : 'retira do depósito só estas, abre VENDER, desmarca o resto e confirma (não volta)')}">${EQUIP.vendendo ? 'VENDENDO…' : vendaArmada ? `confirmar: vender ${D.npc.length}` : `VENDER NO NPC (${D.npc.length})`}</button>` +
+            `<span class="tb-mut tb-eq-nota">${vendaArmada ? 'toque de novo para confirmar (não volta)' : '2 toques'}</span></div>` +
+            `<div class="tb-mut tb-eq-nota">comuns sem encaixe: o NPC paga mais que o Mercado líquido; o botão retira do baú só estas, abre VENDER, desmarca o resto e confirma. Nenhuma é a melhor nem a reserva de ninguém (1 pt = 1 % do dano da party).</div>` +
+            D.npc.slice(0, 60).map(p => `<div class="tb-lin"><span>${nomeLink(p)}${rarTag(p)}<span class="tb-tag">${escHtml(p.origem)}</span> <span class="tb-mut tb-eq-nota">${escHtml(p.motivo)}</span></span><span>NPC ${numBR(p.sell || 0)}</span></div>`).join('') +
+            (D.npc.length > 60 ? `<div class="tb-mut">… e mais ${D.npc.length - 60}</div>` : '') +
+            D.corpo.map(p => `<div class="tb-lin"><span>${nomeLink(p)}${rarTag(p)} <span class="tb-mut tb-eq-nota">no corpo do ${VOC_ROTULO[p.dono] || escHtml(p.dono || '?')} — ninguém usa; tire à mão se quiser</span></span><span class="tb-mut">—</span></div>`).join(''),
+            `vender no NPC (${D.npc.length} · ${numBR(D.npcOuro)} o)`);
+        h += aj('eq-mk', `<div class="tb-linha">${btAnunciar('tb-eq-anunciar-sobras', D.mercado.length, 'estas sobras')}</div>` +
+            `<div class="tb-mut tb-eq-nota">incomum ou melhor: o NPC não compra; a aba Mercado abre com estas marcadas e o preço de referência — você confirma lá, com a taxa escrita. O que ninguém compra vira fragmento no DESMANCHAR. Encaixes de imbuement não pontuam.</div>` +
+            D.mercado.slice(0, 60).map(linhaMk).join('') +
+            (D.mercado.length > 60 ? `<div class="tb-mut">… e mais ${D.mercado.length - 60}</div>` : ''), `anunciar no Mercado (${D.mercado.length})`);
         const bases = R.bases || [];
         const potTxt = p => { const v = potenciaDe(p); return v ? ` · potência ${numBR(v)}` : ''; };
         /* v2.14.10 — plano de forja por peça (planoForja no bloco puro; o custo das gemas vem do pgRefino do Progresso) */
@@ -8080,15 +8111,19 @@
                 `<div><b>Linhas de hoje:</b> ${atuais}.</div>` +
                 `<ol style="margin:4px 0 0 16px;padding:0">${pl.passos.map(x => '<li>' + escHtml(x) + '</li>').join('')}</ol></div></details>`;
         };
-        if (bases.length) { h += aj('eq-bases', `<div class="tb-mut tb-eq-nota">Ninguém usa, mas vale pela Forja: Épico ou melhor (3+ encaixes: trocar o encaixe ruim sai mais barato que subir a raridade) ou potência ≥ ${POTENCIA_BASE_FORJA} com encaixe de ML, distância ou corpo a corpo (cada refino dá +50 de potência e a cada 200 a linha pode subir um ponto). Nunca entram nas sobras.</div>` +
-            `<div class="tb-mut tb-eq-nota">Cada peça abaixo tem um <b>plano</b>: para quem, quantos refinos até a próxima faixa, quais linhas procurar e a ordem das gemas.</div>` +
-            bases.map(p => `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)} <span class="tb-mut">${escHtml(slotPt(p.slot))} · ${escHtml(p.origem)}${potTxt(p)} · ${escHtml(((p.forja && p.forja.atributos) || []).map(a => rotulo(a.id) + ' ' + a.valor).join(', '))}</span></span></div>` + planoForjaHtml(p, R)).join('') +
+        if (bases.length) { h += aj('eq-bases', `<div class="tb-linha">${btAnunciar('tb-eq-anunciar-bases', bases.filter(p => p.origem !== 'corpo').length, 'as bases')}</div>` +
+            `<div class="tb-mut tb-eq-nota">raras de 3 encaixes (Épico ou melhor, ou potência ≥ ${POTENCIA_BASE_FORJA} com encaixe de ML, distância ou corpo a corpo): só valem guardar se você for forjar — <a class="tb-lk" href="https://tibidle.com/wiki/forja" target="_blank" rel="noopener">como forjar</a>. Sem forjar, anuncie. Cada peça abaixo tem um <b>plano</b>: para quem, quantos refinos até a próxima faixa, quais linhas procurar e a ordem das gemas.</div>` +
+            bases.map(p => `<div class="tb-lin"><span>${nomeLink(p)}${rarTag(p)} <span class="tb-mut">${escHtml(slotPt(p.slot))} · ${escHtml(p.origem)}${potTxt(p)} · ${encaixeTxt(p)}</span></span><span class="tb-eq-nota">${refTxt(p)}</span></div>` + planoForjaHtml(p, R)).join('') +
             aj('eq-forja-gl', `<b>As gemas, uma a uma</b> (100 fragmentos + ouro cada; o ouro acompanha a coin): <b>Refino T1</b> +1 a +4 (falha não derruba) · <b>Refino T2</b> +5 a +10 (falha derruba 1) · <b>Garantia T1</b> protege a tentativa do +5 em diante · <b>Raridade T1</b> sobe um grau até Lendário (falhar só gasta a gema) · <b>Raridade T2</b> Mítico · <b>Atributo T1</b> escreve uma linha aleatória no 1º encaixe vazio · <b>Limpeza T1</b> apaga TODAS as linhas · <b>Limpeza T2</b> apaga só a ÚLTIMA · <b>Refazer T1</b> re-sorteia o valor de todas no range da faixa · <b>Refazer T2</b> só do último encaixe · <b>Ordem T2</b> embaralha a ordem. Potência = base + 50 por refino; faixas I–VI a cada 200 (1–199, 200–399, 400–599, 600–799, 800–999, 1000+) e cada faixa sobe o valor que a linha pode ter (regen 1,1 → 5,2 · skill +1 → +3 · dano 1,2 → 9,8 %). Encaixes = raridade (Incomum 1, Raro 2, Épico 3, Lendário 4). Comum não desmancha e não tem encaixe.`, '? como a Forja funciona'),
             `bases de forja (${bases.length})`); }
         const nobres = R.nobres || [];
-        if (nobres.length) { h += aj('eq-nobres', `<div class="tb-mut tb-eq-nota">Encaixe que a comunidade guarda (wiki /forja): regen. de mana ou de vida nas peças de defesa; corpo a corpo, distância, nível mágico, dano físico ou mágico na arma e no colar. O encaixe dela supera o da peça que alguém que a veste vai usar, mas a nota total perdeu: fica guardada, fora das sobras e do Mercado. Quando todos já vestem encaixe igual ou melhor, ela volta para as sobras e dá para vender.</div>` +
-            nobres.map(p => `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)} <span class="tb-mut">${escHtml(slotPt(p.slot))} · ${escHtml(p.origem)} · ${escHtml(((p.forja && p.forja.atributos) || []).map(a => rotulo(a.id) + ' ' + a.valor).join(', '))}</span></span></div>`).join(''), `guardar: encaixe bom (${nobres.length})`); }
-        h += aj('eq-res', [...R.reservas].map(iid => { const p = candidatoPorIid(iid); return p ? `<div class="tb-lin"><span>${escHtml(p.nome)}${rarTag(p)} <span class="tb-mut">${escHtml(slotPt(p.slot))} · ${escHtml(p.origem)}</span></span></div>` : ''; }).join(''), `reservas (${R.reservas.size})`);
+        if (nobres.length) { h += aj('eq-nobres', `<div class="tb-linha">${btAnunciar('tb-eq-anunciar-nobres', nobres.filter(p => p.origem !== 'corpo').length, 'estas peças')}</div>` +
+            `<div class="tb-mut tb-eq-nota">regen. de mana/vida nos encaixes é o que o Mercado paga caro (dark armor com regen. de mana 1,1: 300 mil). Você só tem 4 corpos: anuncie o que sobra. O encaixe de cada uma supera o da peça que alguém veste, mas a nota total perdeu — por isso ninguém a usa.</div>` +
+            nobres.map(p => `<div class="tb-lin"><span>${nomeLink(p)}${rarTag(p)} <span class="tb-mut">${escHtml(slotPt(p.slot))} · ${escHtml(p.origem)} · ${encaixeTxt(p)}</span></span><span class="tb-eq-nota">${refTxt(p)}</span></div>`).join(''), `encaixe que o Mercado paga (${nobres.length})`); }
+        /* v2.15.0 — reserva = a 2.ª melhor de cada (vocação, slot), 1 por slot; a linha diz de quem é, o slot e a nota contra a do corpo */
+        const reservaInfo = (iid) => { for (const vv of Object.keys(R.porVoc)) for (const s of Object.keys(R.porVoc[vv])) { const x = R.porVoc[vv][s]; const c = x.candidatos.find(c => c.peca.iid === iid); if (c) return { v: vv, s, pt: c.r.pontos, melhorPt: x.melhorPt != null ? x.melhorPt : x.atualPt }; } return null; };
+        h += aj('eq-res', `<div class="tb-mut tb-eq-nota">a 2.ª melhor de cada slot: seguro contra vender sem querer a única peça boa. 1 lugar por slot.</div>` +
+            [...R.reservas].map(iid => { const p = candidatoPorIid(iid), i = reservaInfo(iid); return p ? `<div class="tb-lin"><span>${nomeLink(p)}${rarTag(p)}<span class="tb-tag">${escHtml(p.origem)}</span></span><span class="tb-mut tb-eq-nota">${i ? `reserva de ${VOC_ROTULO[i.v] || escHtml(i.v)} · ${escHtml(slotPt(i.s))} · ${pt(i.pt)} (a do corpo tem ${pt(i.melhorPt || 0)})` : escHtml(slotPt(p.slot))}</span></div>` : ''; }).join(''), `reservas (${R.reservas.size})`);
         const temp = R.temporarios || [];
         if (temp.length) { h += aj('eq-temp', `<div class="tb-mut tb-eq-nota">acabam por carga ou por tempo de caçada (wiki): não entram nas trocas nem na lista de venda — use à mão (boss, mapa difícil).</div>` +
             temp.slice(0, 40).map(p => {
@@ -8109,6 +8144,12 @@
         const e1 = $('#tb-eq-equipar1'); if (e1) e1.onclick = () => { if (!EQUIP.equipando) equiparTrocas([EQUIP.voc]); };
         const dmk = $('#tb-eq-desm-mk'); if (dmk) dmk.onchange = () => { guardar('desm_incluir_mercado', dmk.checked); EQUIP.desmConf = null; renderizar(); };
         const ds = $('#tb-eq-desmanchar'); if (ds) ds.onclick = () => { const agora = Date.now(); if (EQUIP.desmConf && agora < EQUIP.desmConf) { EQUIP.desmConf = null; desmancharSobras(); } else { EQUIP.desmConf = agora + 8000; renderizar(); } };
+        /* v2.15.0 — destinos das sobras: VENDER NO NPC (2 toques) e os três ANUNCIAR (só marcam na aba Mercado) */
+        const vn = $('#tb-eq-vender-npc'); if (vn) vn.onclick = () => { const agora = Date.now(); if (EQUIP.vendaConf && agora < EQUIP.vendaConf) { EQUIP.vendaConf = null; venderSobrasNpc(destinosSobras(EQUIP.res).npc); } else { EQUIP.vendaConf = agora + 8000; renderizar(); } };
+        const lib = (id, pecas) => { const b = $('#' + id); if (b) b.onclick = () => liberarParaMercado(pecas()); };
+        lib('tb-eq-anunciar-sobras', () => destinosSobras(EQUIP.res).mercado);
+        lib('tb-eq-anunciar-bases', () => (EQUIP.res && EQUIP.res.bases) || []);
+        lib('tb-eq-anunciar-nobres', () => (EQUIP.res && EQUIP.res.nobres) || []);
         const gd = $('#tb-eq-guardar'); if (gd) gd.onchange = () => guardar('equip_guardar', gd.checked);
     }
 
