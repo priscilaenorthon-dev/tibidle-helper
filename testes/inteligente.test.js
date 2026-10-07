@@ -33,7 +33,7 @@ const M = new Function('SPELLS', 'POTIONS', 'BOSSES', `
     return { calibracaoStatusInt, calibracaoHtmlInt, montarPlano, partyInt, contextoInt, simularParty, decidirTroca, preverModeloInt, registrarAplicacaoInt, zerarInt, avaliarPartyInt, ordenarInt, okInt,
              slotMorto, lureMax, magiasDaVocacao, invalidarPlanos, suportesPermitidos, membroInt, danoBaseInt, alvosForma, barraValida, escSig,
              FRACAO_FORMA, N_MAX_SIM, N_MAX_PARTY, _intParty, _intMostrado, CAT, MEM, RAZAO, ESTADO_WS, E, LOOT_CACHE, BESTIARIO,
-             escadaEnxuta, KITS_COMUNIDADE, extrasInt };
+             escadaEnxuta, KITS_COMUNIDADE, extrasInt, seguroInt, sigNomesScan, medidaDoKitInt };
 `)(SPELLS, POTIONS, BOSSES);
 
 let n = 0;
@@ -117,6 +117,8 @@ t('2.14.11 — kit MEDIDO abaixo do previsto: a medida vale mais que a simulaç�
     M.registrarAplicacaoInt(h, r0); M.MEM.int_aplicado[VH] = Date.now() - 11 * 60000; // o kit escolhido é o aplicado (vigente), fora da trava de 10 min
     /* Scan Inteligente deste mapa com EXATAMENTE as magias do kit escolhido, medindo 85 % do previsto */
     const magias = []; for (const v of VOCS) for (const p of (r0.final.esc[v] ? r0.final.esc[v].plano : [])) magias.push({ voc: v, nome: p.av.m.name, runa: !!p.av.m.isRune, casts: 40 }); // só os nomes: sem dano medido, a calibração não muda
+    /* 2.14.17 — o livro-razão também anota suporte e cura; eles não podem impedir o casamento (ao vivo impediam) */
+    magias.push({ voc: 'KNIGHT', nome: 'Train Party', casts: 3 }, { voc: 'SORCERER', nome: 'Enchant Party', casts: 2 }, { voc: 'SORCERER', nome: 'Magic Shield', casts: 2 }, { voc: 'DRUID', nome: 'Heal Party', casts: 4 }, { voc: 'DRUID', nome: 'Heal Friend', casts: 6 });
     M.E.scan = { vh: RITMO_VH, ab: { id: VH, modelo: 'inteligente', t: Date.now(), nivel: M.E.nivel, seg: 240, suja: false, erro: null, abatesH: 1800, xpRawH: Math.round(prev * 0.85), xpH: Math.round(prev * 0.9), razao: { magias } } };
     M.invalidarPlanos(); // o contexto é cacheado por 1,5 s: o Scan novo tem que entrar
     const ctx = M.contextoInt(h);
@@ -379,8 +381,10 @@ t('12 — lucro: com loot/abate = 0 fica o de maior LCB, com o aviso "não se pa
     try {
         const r = buscar(VH), area = M.preverModeloInt('area', H(VH));
         assert(r.aviso && /não se paga/.test(r.aviso), 'aviso: ' + r.aviso);
-        assert(r.final.met.LCB >= area.met.LCB - 1, `maior LCB: ${r.final.met.LCB} contra Em área ${area.met.LCB}`);
-        assert(r.final.met.ouroH <= area.met.ouroH, 'e gasta menos');
+        /* 2.14.17 — seguro (mana sustentável) vem antes do LCB: o Em área sem poção no Feiticeiro deixou de ser seguro
+         * com a folga de mana realista, então só compara o LCB quando os dois estão no mesmo grupo */
+        if (area.seguro === r.final.seguro) { assert(r.final.met.LCB >= area.met.LCB - 1, `maior LCB: ${r.final.met.LCB} contra Em área ${area.met.LCB}`); assert(r.final.met.ouroH <= area.met.ouroH, 'e gasta menos'); }
+        else assert(r.final.seguro && !area.seguro, 'o escolhido é o seguro (o Em área sem poção não sustenta a mana)');
     } finally { M.LOOT_CACHE[VH] = salvo; }
 });
 
@@ -636,3 +640,19 @@ t('2.14.5 — o catálogo de munição chegando no meio do APLICAR não apaga a 
     delete M.CAT.municao;
 });
 console.log(`\n${n} testes ok`);
+
+t('2.14.17 — assinatura do Scan ignora suporte e cura: o kit casa mesmo com Train/Enchant/Heal Party, Magic Shield e Heal Friend lançados', () => {
+    const r = { razao: { magias: [
+        { voc: 'KNIGHT', nome: 'Berserk', casts: 30 }, { voc: 'KNIGHT', nome: 'Train Party', casts: 3 },
+        { voc: 'SORCERER', nome: 'Great Fire Wave', casts: 20 }, { voc: 'SORCERER', nome: 'Enchant Party', casts: 2 }, { voc: 'SORCERER', nome: 'Magic Shield', casts: 2 },
+        { voc: 'DRUID', nome: 'Strong Ice Wave', casts: 25 }, { voc: 'DRUID', nome: 'Heal Party', casts: 4 }, { voc: 'DRUID', nome: 'Heal Friend', casts: 6 },
+        { voc: 'PALADIN', nome: 'avalanche rune', runa: true, casts: 10 } ] } };
+    assert.strictEqual(M.sigNomesScan(r), 'K:berserk;P:-;S:great fire wave;D:strong ice wave');
+});
+t('2.14.17 — seguro: déficit de 3 de mana/s sem poção não passa (a folga é a barra espalhada por 30 min, não pelos segundos simulados)', () => {
+    const memb = [{ voc: 'SORCERER', pocao: 0, regen: 18, dreno: 3, manaMax: 2580 }]; // regen útil 18 = 21 − 3 de suporte
+    const sim = (manaS) => ({ seg: 360, por: { SORCERER: { manaS } } });
+    assert.strictEqual(M.seguroInt({}, memb, sim(24.4)), false, '24,4 + 3 contra 21 (Petrified Hollow, 06/10): não é seguro');
+    assert.strictEqual(M.seguroInt({}, memb, sim(18)), true, '18 + 3 = 21: seguro');
+    assert.strictEqual(M.seguroInt({}, [{ voc: 'SORCERER', pocao: 0.3, regen: 18, dreno: 3, manaMax: 2580 }], sim(40)), true, 'com poção não entra na conta');
+});

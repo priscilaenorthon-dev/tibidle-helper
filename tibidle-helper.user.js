@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.14.16
+// @version      2.14.17
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.14.16';
+    const VERSAO = '2.14.17';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -2513,13 +2513,18 @@
         return { T, abH, xpH: abH * ctx.xpAbate, custoH, ouroH: ouroS * 3600 + curaH, curaH, receitaH, lucroH, LCB, piso };
     }
     /* seguro: quem não bebe não gasta mais mana (ataque + suporte) do que a
-     * regeneração útil (regen − reserva de cura) repõe, com a folga da barra
-     * cheia do começo */
+     * regeneração útil (regen − reserva de cura) repõe.
+     * v2.14.17 — a folga era a barra cheia do começo dividida pelos segundos SIMULADOS (manaMax ÷ 360 na party, ÷ 120 na
+     * triagem): para o Feiticeiro de 2.580 de mana isso liberava 7 a 21 de mana/s de déficit — qualquer kit passava. Ao
+     * vivo (Petrified Hollow, 06/10) o kit sem poção gastava 24,4 + 3,3 de suporte contra 21 de regeneração e o Feiticeiro
+     * ficou a 4 % de mana: 23 % do dano em vez dos 34 % do Em área. A caçada dura horas: a barra do começo vale espalhada
+     * por meia hora (manaMax ÷ 1.800 ≈ 1,4/s), não pelos 2–6 min da simulação. */
+    const SEGURO_FOLGA_SEG = 1800;
     function seguroInt(ctx, membros, sim) {
         for (const m of membros) {
             if (m.pocao > 0) continue;
             const x = sim.por[m.voc]; if (!x) continue;
-            if (x.manaS + m.dreno > Math.max(0, m.regen + m.dreno) * 1.02 + m.manaMax / sim.seg + 0.05) return false;
+            if (x.manaS + m.dreno > Math.max(0, m.regen + m.dreno) * 1.02 + m.manaMax / SEGURO_FOLGA_SEG + 0.05) return false;
         }
         return true;
     }
@@ -2566,9 +2571,14 @@
     /* a assinatura ignora RUNAS: uma runa com mínimo 2 pode não ser lançada num Scan de 4 min e a mesma party sairia
      * com outra assinatura (ao vivo o Em área medido não casou com o Em área simulado por causa do thunderstorm) */
     const sigNomesInt = (esc) => VOCS_INT.map(v => { const n = esc[v] ? esc[v].plano.filter(p => !p.av.m.isRune).map(p => String(p.av.m.name).toLowerCase()).sort() : []; return v[0] + ':' + (n.length ? n.join(',') : '-'); }).join(';');
+    /* v2.14.17 — SÓ MAGIAS DE ATAQUE. O livro-razão anota todo `cast`, inclusive suporte e cura (Train Party, Enchant
+     * Party, Magic Shield, Heal Party, Heal Friend…). Com os suportes do dono ligados a assinatura do Scan trazia esses
+     * nomes, nunca casava com o kit e a medida NUNCA entrava — ao vivo (Petrified Hollow, 06/10) o Inteligente seguia
+     * prevendo 80,5k para o kit que o Scan tinha medido a 67,0k. Magia fora do catálogo continua contando (como antes). */
+    const _ehAtaqueCat = (nome) => { const c = (CAT.magias || []).find(x => x.name === nome); return !c || !c.group || c.group === 'attack'; };
     function sigNomesScan(r) {
         const por = {};
-        for (const m of ((r && r.razao && r.razao.magias) || [])) { if (!m || m.runa || !(m.casts >= 1) || !m.voc || !m.nome) continue; (por[m.voc] = por[m.voc] || new Set()).add(String(m.nome).toLowerCase()); }
+        for (const m of ((r && r.razao && r.razao.magias) || [])) { if (!m || m.runa || !(m.casts >= 1) || !m.voc || !m.nome || !_ehAtaqueCat(m.nome)) continue; (por[m.voc] = por[m.voc] || new Set()).add(String(m.nome).toLowerCase()); }
         return VOCS_INT.map(v => v[0] + ':' + (por[v] && por[v].size ? [...por[v]].sort().join(',') : '-')).join(';');
     }
     /* kit ↔ Scan: igual primeiro; senão, o Scan cujas magias LANÇADAS cabem no kit com no máximo uma magia por

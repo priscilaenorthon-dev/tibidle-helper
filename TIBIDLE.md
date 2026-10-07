@@ -4751,3 +4751,21 @@ mapas (Vampire hell 32,5k × 58,0k do Em área; Banshee 27,7k × 49,6k) e ainda 
   Leitura: o Em área deu 13 % mais xp e o Inteligente gastou metade da poção — o Feiticeiro do Inteligente ficou com 4 % de
   mana (GFW ≥1 > Hell's Core ≥1 > Fire Wave ≥1 sem poção: a mana acaba e ele só auto-ataca). O ouro "estável" do
   Inteligente é maior sobretudo pelo gasto menor. Os dois medidos entram no catálogo de medidas do mapa (medidaDoKitInt).
+
+## 2.14.17 (06/10) — a medida do Scan não casava com o kit (suportes na assinatura); folga de mana realista
+- Achado no teste da 2.14.16 em Petrified Hollow (só conta, sem mandar nada ao jogo): `partyInt(184)` seguia prevendo
+  80,5k xp/h para o kit que o Scan Inteligente tinha acabado de medir a 67,0k, e `medidoKit` tinha as duas medições mas
+  nenhuma casava. Causa: `sigNomesScan` monta a assinatura com TODO `cast` do livro-razão, e com os suportes do dono ligados
+  entram Train Party, Enchant Party, Magic Shield, Heal Party, Heal Friend — a assinatura da party simulada só tem ataque.
+  O "medida vale mais que a simulação" (2.14.11) só tinha funcionado em 04/10 porque o kit era enxuto (sem suporte). Agora
+  a assinatura do Scan fica só com magias do grupo `attack` do catálogo (magia desconhecida continua contando).
+- E a folga de `seguroInt` era `manaMax ÷ segundos simulados` (÷ 360 na party, ÷ 120 na triagem): para o Feiticeiro de
+  2.580 de mana isso liberava 7 a 21 de mana/s de déficit — qualquer kit passava como sustentável. Ao vivo o kit escolhido
+  (GFW ≥1 > Hell's Core ≥1 > Fire Wave ≥1, sem poção) gastava 24,4 + 3,3 de suporte contra 21 de regeneração medida e o
+  Feiticeiro ficou a 4 % de mana (23 % do dano, contra 34 % no Em área) — é a diferença entre os 80,5k previstos e os 67,0k
+  medidos. A folga passa a ser a barra espalhada por 30 min (`manaMax ÷ 1.800` ≈ 1,4/s).
+- Calibração conferida com o cartão novo: `kVoc` 0,9 / 1,05 / 1,0 / 1,05 e `kMagia` entre 0,85 e 1,10 em Petrified
+  Hollow — o medido ÷ cartão está em 1 (era 2,2–3,0 antes da 2.14.15). O Em área simulado deu 73,7k contra 76,9k medido
+  (−4 %).
+- Teste 12 (loot 0) ajustado: "seguro" vem antes do LCB na ordem; o Em área sem poção no Feiticeiro deixou de ser seguro
+  no fixture, então a comparação de LCB só vale no mesmo grupo. 2 testes novos (281).
