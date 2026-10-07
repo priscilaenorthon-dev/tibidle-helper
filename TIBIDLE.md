@@ -4734,3 +4734,20 @@ mapas (Vampire hell 32,5k × 58,0k do Em área; Banshee 27,7k × 49,6k) e ainda 
 - Boss (Genio: fogo 90, energia 60, sagrado 20, gelo −5, morte −8): sudden death no Feiticeiro/Druida, Strong Ethereal
   Spear + sudden death no Paladino, Brutal Strike + Berserk no Knight (a Fierce Berserk de 340 de mana não cabe na mana
   dele em 90 s — o simulador do Boss já olha a mana). Certo.
+
+## 2.14.16 (06/10) — releitura de /spell-numbers no máximo 1× a cada 10 min; Scan de 5 min em Petrified Hollow
+- Efeito colateral da 2.14.15 visto ao vivo: `anotarSkills` pedia releitura de `/spell-numbers` toda vez que o ML ou a
+  distância de alguém mudava — e Train Party (+3 distância) e Enchant Party (+1 ML) ligam e desligam a cada 120 s, com o
+  frame trazendo valor + bônus. Resultado: 4 releituras em 3 min (22:02:13, 22:02:24, 22:02:28, 22:04:24…), cada uma
+  regravando a tabela das 4 vocações e invalidando os planos em cache. Agora a releitura por skill sai no máximo 1× a cada
+  10 min (`_releituraSkT`); nível novo e equipar continuam relendo na hora.
+- Scan pedido pelo dono ("5 minutos em casa, para ver se está funcionando"), Petrified Hollow (184), lure 8, nível 91→92,
+  Playwright, 5 min por modelo, "ao terminar: voltar". Funcionou de ponta a ponta: entrou, aplicou, zerou o analisador,
+  mediu, trocou de kit, mediu, voltou ao mapa com o lure 8 e devolveu os 4 kits do dono.
+  | modelo | xp/h raw | abates/h | ouro/h estável | poção/h | onda de 8 | dano |
+  |---|---|---|---|---|---|---|
+  | Em área | 76,9k | 1.717 | +3,6k (bruto +33,5k, sorte +2,5k) | 103k (Druida 8.030 em 5 min) | 6,8 s + 9,8 s de espera | Cav 13 % · Pal 18 % · Fei 34 % · Dru 35 % |
+  | Inteligente | 67,0k | 1.495 | +40,7k (bruto +209,9k: lightning robe 11k e outros raros, sorte +14,1k) | 48k (Druida 3.408) | 8,2 s + 10,1 s | Cav 12 % · Pal 21 % · Fei 23 % (mana 4 %) · Dru 43 % |
+  Leitura: o Em área deu 13 % mais xp e o Inteligente gastou metade da poção — o Feiticeiro do Inteligente ficou com 4 % de
+  mana (GFW ≥1 > Hell's Core ≥1 > Fire Wave ≥1 sem poção: a mana acaba e ele só auto-ataca). O ouro "estável" do
+  Inteligente é maior sobretudo pelo gasto menor. Os dois medidos entram no catálogo de medidas do mapa (medidaDoKitInt).

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.14.15
+// @version      2.14.16
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.14.15';
+    const VERSAO = '2.14.16';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -4249,7 +4249,7 @@
         for (const n of nomes) { const x = p.skills && p.skills[n]; const val = x == null ? NaN : typeof x === 'number' ? x : Number(x.value) + (Number(x.bonus) || 0); if (Number.isFinite(val) && val > 0 && (v == null || val > v)) v = val; }
         return v;
     };
-    let _skillsT = 0;
+    let _skillsT = 0, _releituraSkT = 0;
     function anotarSkills(party) {
         if (!ESTADO_WS.sk) ESTADO_WS.sk = ler('skills_vistas', {}) || {};
         let mudou = false;
@@ -4265,8 +4265,10 @@
             ESTADO_WS.sk[p.vocation] = Object.assign({}, antes, bons);
         }
         if (Date.now() - _skillsT > 60000) { _skillsT = Date.now(); guardar('skills_vistas', ESTADO_WS.sk); }
-        /* v2.14.15 — o cartão de cada vocação é recalculado com o ML/distância dela (cartaoDaVocacao): skill nova → relê */
-        if (mudou) pedirReleituraDeDanos('ML/skill mudou');
+        /* v2.14.15 — o cartão de cada vocação é recalculado com o ML/distância dela (cartaoDaVocacao): skill nova → relê.
+         * v2.14.16 — no máximo 1× a cada 10 min: Train Party (+3 distância) e Enchant Party (+1 ML) ligam e desligam a
+         * cada 120 s e o frame traz valor + bônus — ao vivo (06/10) o /spell-numbers foi relido 4× em 3 min. */
+        if (mudou && Date.now() - _releituraSkT > 10 * 60000) { _releituraSkT = Date.now(); pedirReleituraDeDanos('ML/skill mudou'); }
     }
     function observarEnviado(o) {
         if (!o || !o.type) return;
