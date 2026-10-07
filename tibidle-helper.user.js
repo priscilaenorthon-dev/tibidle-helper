@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.15.0
+// @version      2.15.1
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.15.0';
+    const VERSAO = '2.15.1';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -4927,8 +4927,9 @@
                 const problema = falhas.length ? 'não consegui desmarcar ' + falhas.join(', ')
                     : ainda.length ? 'continuam marcados: ' + ainda.join(', ')
                     : (semEstado && !(totalDepois != null && totalDepois < totalAntes)) ? `desmarquei ${guardados.length} item(ns) e o total não baixou (${totalAntes} → ${totalDepois})` : null;
-                if (problema) { fecharPainel(); await dorme(400); return { erro: problema + ' — painel fechado, NADA vendido (lista "nunca vender")' }; }
-                log(`nunca vender: ${guardados.map(g => g.nome + ' (' + g.motivo + ')').join(', ')} — total ${totalAntes.toLocaleString('pt-BR')} → ${(totalDepois || 0).toLocaleString('pt-BR')}`, 'info');
+                const rotulo = opts.apenas ? 'sobras do Equip' : 'lista "nunca vender"';
+                if (problema) { fecharPainel(); await dorme(400); return { erro: problema + ` — painel fechado, NADA vendido (${rotulo})` }; }
+                log(`${opts.apenas ? 'fora das sobras' : 'nunca vender'}: ${guardados.map(g => g.nome + ' (' + g.motivo + ')').join(', ')} — total ${totalAntes.toLocaleString('pt-BR')} → ${(totalDepois || 0).toLocaleString('pt-BR')}`, 'info');
             }
         }
         const total = ((tid('sell-total') || {}).textContent || '?').trim();
@@ -7770,7 +7771,8 @@
     const eqTirar = (x) => !!(x && !x.melhor && x.atual && x.ganho < 0); // arma de 2 mãos venceu: o escudo sai
     const eqSoGasta = (x) => !!(x && !x.melhor && x.atual && x.ganho >= GANHO_MIN); // a peça vale menos que o espaço vazio aqui
     const eqMexer = (x) => eqTroca(x) || eqTirar(x) || eqSoGasta(x);
-    const EQUIP = { voc: 'KNIGHT', abertos: new Set(), base: null, res: null, lendo: false, erro: null, aviso: null, t: 0, verReservas: false, verTudo: false, equipando: false, ctx: null };
+    const EQUIP = { voc: 'KNIGHT', abertos: new Set(), base: null, res: null, lendo: false, erro: null, aviso: null, t: 0, verReservas: false, verTudo: false, equipando: false, ctx: null,
+                    vendaConf: null, vendendo: false, desmConf: null, desm: false };
     const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     const rarTag = (p) => { const r = (p.forja && p.forja.raridade) || 0; return `<span class="tb-rar r${r}">${RAR_NOME[r] || r}</span>`; };
     /* v2.9.0 — o que os pesos ofensivos precisam (pesosDaVoc): nível, skills
@@ -7891,17 +7893,20 @@
             const doDep = lista.filter(p => p.origem === 'depósito' && p.iid);
             if (doDep.length) {
                 const r = await mkPedir('depot_withdraw', { items: doDep.map(p => ({ name: p.nome, count: 1, iid: p.iid })), requestId: mkRid() });
-                if (r.erro) throw new Error('retirar do depósito falhou — ' + mkErroTexto(r.erro));
+                /* v2.15.1 — o jogo pode ter retirado parte do lote antes do erro: essas ficam na mochila e a releitura as mostra como sobra de mochila */
+                if (r.erro) throw new Error('retirar do depósito falhou — ' + mkErroTexto(r.erro) + '; o que já saiu ficou na mochila (ATUALIZAR mostra como sobra de mochila) — nada vendido');
                 if (r.data && Array.isArray(r.data.bagInstances)) inst = r.data.bagInstances;
                 await dorme(600);
             }
-            if (!inst) { const b = mkBagAtual(); inst = (b && b.inst) || []; }
+            /* v2.15.1 — sem a foto da mochila (nem do depot_result nem da tela) a checagem da intrusa seria cega: aborta */
+            if (!inst) { const b = mkBagAtual(); if (!b) throw new Error('não vi a mochila depois de retirar do depósito — nada vendido'); inst = b.inst || []; }
             const nomes = new Set(lista.map(p => normNomeItem(p.nome))), iids = new Set(lista.map(p => p.iid));
             const intrusa = inst.find(x => x && nomes.has(normNomeItem(x.name)) && !iids.has(x.iid));
             if (intrusa) throw new Error(`há outra ${intrusa.name} na mochila que não é sobra — guarde-a no depósito antes (nada vendido)`);
             const r = await venderNoNpc({ apenas: nomes });
             if (r.erro) throw new Error(r.erro);
-            log(`sobras: ${lista.length} peça(s) → NPC` + (r.total ? ` · ${numBR(r.total)} ouro` : ' · nada vendido (painel vazio)'), r.vazio ? 'erro' : 'ok');
+            if (r.total > 0) log(`sobras: ${lista.length} peça(s) na lista → NPC · ${numBR(r.total)} ouro`, 'ok');
+            else log('sobras: nada vendido (painel vazio)', 'erro');
         } catch (e) { EQUIP.aviso = 'venda no NPC: ' + e.message; log('sobras: ' + e.message, 'erro'); }
         finally { EQUIP.equipando = false; EQUIP.vendendo = false; EQUIP.vendaConf = null; _travaJogo = null; }
         const aviso = EQUIP.aviso;
@@ -7910,6 +7915,8 @@
     }
     async function equipAtualizar(opts) {
         if (EQUIP.lendo) return;
+        /* v2.15.1 — lista nova, confirmação nova: os 2 toques armados (VENDER NO NPC, DESMANCHAR) caem na releitura */
+        EQUIP.vendaConf = null; EQUIP.desmConf = null;
         /* v2.15.0 — a liberação para o Mercado (MK.liberadas) vale para a foto do Equip em que o dono clicou; nova
          * leitura, nova decisão: cai a liberação e a marca de cada peça liberada. Exceção: a leitura que o ATUALIZAR
          * do Mercado faz por tabela ({ manterLiberadas }) — ela faz parte do próprio fluxo de anunciar o que o Equip
@@ -8122,6 +8129,10 @@
         const meusIds = new Set((MK.minhas || []).map(o => o.id));
         const refTxt = (p) => {
             if (!MK.copias || !Object.keys(MK.copias).length) return '<span class="tb-mut">ref. Mercado: aba Mercado → ATUALIZAR</span>';
+            /* v2.15.1 — cópias são lidas por categoria (mkChaveCopias: 'cat:<cat>' ou 'item:<nome>'), e só das peças que a aba
+             * Mercado tinha na lista: sem a chave desta peça, "não lida" — não "sem cópia à venda" */
+            const n = mkMin(p.nome), cat = MK.tradeable && MK.tradeable[n] && MK.tradeable[n].cat;
+            if (!((cat ? 'cat:' + cat : 'item:' + n) in MK.copias) && !(('item:' + n) in MK.copias)) return '<span class="tb-mut">ref. Mercado: não lida (ANUNCIAR e lá ATUALIZAR)</span>';
             const r = precoReferencia({ nome: p.nome, forja: p.forja }, MK.copias, meusIds);
             if (r.origem === 'igual') return `ref. Mercado <b>${mkFmt(r.preco)}</b> <span class="tb-mut">(igual a ${mkFmt(r.ref)})</span>`;
             if (r.origem === 'parecida') return `ref. Mercado <b>${mkFmt(r.preco)}</b> <span class="tb-mut">(parecida a ${mkFmt(r.ref)})</span>`;

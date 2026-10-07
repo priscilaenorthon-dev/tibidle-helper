@@ -753,5 +753,29 @@ t('vm (2.15.0): uma leitura do Equip pedida pelo dono (não a do ATUALIZAR do Me
     await M.clicar('tb-mk-equip'); await M.W.avancar(1000);
     assert(!MK.liberadas.has('b1') && !MK.marcados.has('i:b1'), 'a leitura do Equip pedida pelo dono manteve a liberação');
 });
+t('vm (2.15.1): VENDER NO NPC das sobras — outra peça de mesmo nome na mochila que não é sobra aborta antes do painel', async () => {
+    /* o painel de venda só conhece o NOME: a plate armor x9 (boa, na mochila) iria junto com a sobra p1 do depósito */
+    const F0 = { raridade: 0, refino: 0, atributos: [] };
+    const M = await mundoMercado({ ls: { tb_helper_ui: JSON.stringify({ aba: 'equip', aberta: true, oculto: false }) },
+        bag: { 'plate armor': 1 }, inst: [{ iid: 'x9', name: 'plate armor', forja: F0 }],
+        depot: [{ itemName: 'plate armor', iid: 'p1', count: 1, slot: 'armor', forja: F0 }] });
+    const E = M.W.H.EQUIP, vazio = { KNIGHT: {}, PALADIN: {}, SORCERER: {}, DRUID: {} };
+    E.res = { porVoc: vazio, usadas: new Set(), reservas: new Set(), temporarios: [], bases: [], nobres: [],
+              dispensaveis: [{ iid: 'p1', nome: 'plate armor', slot: 'armor', origem: 'depósito', sell: 400, forja: F0, attrs: {}, motivo: 'nenhuma vocação usa' }] };
+    E.t = M.W.agora;
+    M.ws.emitir({ type: 'depot_state', data: { entries: [] } });   // repinta a aba Equip com o EQUIP.res plantado
+    await M.W.avancar(0);
+    assert(/vender no NPC \(1 · 400 o\)/.test(M.W.porId.get('tb-corpo').innerHTML), 'a sobra não apareceu na caixinha do NPC');
+    await M.clicar('tb-eq-vender-npc');
+    assert(/confirmar: vender 1/.test(M.W.porId.get('tb-eq-vender-npc').textContent), 'o 1º toque não armou a confirmação');
+    assert.strictEqual(M.S.tipos('depot_withdraw').length, 0, 'retirou do depósito com UM toque');
+    await M.clicar('tb-eq-vender-npc'); await M.W.avancar(30000);
+    igual(M.S.tipos('depot_withdraw').map(x => x.o.data.items), [[{ name: 'plate armor', count: 1, iid: 'p1' }]], 'retirou mais (ou menos) que a sobra');
+    const log = logTxt(M.W);
+    assert(/há outra plate armor na mochila que não é sobra/.test(log), 'o Log não acusou a intrusa: ' + log.split('\n').slice(-4).join(' | '));
+    assert(!/vendido no NPC|actionbar-selling|nada para vender/.test(log), 'tentou o painel de venda mesmo com a intrusa');
+    assert(/há outra plate armor/.test(E.aviso || ''), 'o aviso da aba Equip não ficou depois da releitura: ' + E.aviso);
+    assert(!E.vendendo && !E.equipando && E.vendaConf == null, 'a aba Equip ficou travada');
+});
 
 rodar();

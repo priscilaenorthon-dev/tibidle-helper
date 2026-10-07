@@ -4799,3 +4799,18 @@ mapas (Vampire hell 32,5k × 58,0k do Em área; Banshee 27,7k × 49,6k) e ainda 
   paga; uma hailstorm rod a 999.999 = 50k de taxa perdida). Yalahar Soul Fragment ×18 fica: 100 + 70 Yalahar gear wheel
   abrem Zao/Gray Island no NPC Silas.
 - Testes: equip 37, mercado 32, autohunt 22, telas 16 (fixture do Equip refeita com as 4 caixinhas). eslint 0 erros.
+
+## 2.15.1 (07/10) — revisão da 2.15.0: venda das sobras mais cautelosa, "não lida" ≠ "sem cópia", 2 toques caem no ATUALIZAR
+- `venderSobrasNpc`: sem a foto da mochila depois do `depot_withdraw` (o `depot_result` sem `bagInstances` e nenhuma mochila
+  vista na tela) a venda **aborta** — a checagem da peça intrusa de mesmo nome seria cega. `depot_withdraw` com erro continua
+  abortando, e o aviso diz que o que já saiu ficou na mochila (o ATUALIZAR mostra como sobra de mochila; o próximo VENDER
+  NO NPC as leva). Log de sucesso: "N peça(s) na lista → NPC · X ouro" só com ouro; senão "nada vendido (painel vazio)".
+- Aba Equip, preço de referência: as cópias são lidas por categoria e só das peças que a aba Mercado tinha na lista
+  (`mkChaveCopias`: `cat:<cat>` ou `item:<nome>`). Sem a chave da peça em `MK.copias` a linha diz "ref. Mercado: não lida
+  (ANUNCIAR e lá ATUALIZAR)"; "sem cópia à venda — você digita" só quando a categoria foi consultada e não há cópia.
+- `equipAtualizar` zera `vendaConf` e `desmConf`: lista nova, confirmação nova (os 2 toques armados caem). Os campos
+  `vendaConf/vendendo/desmConf/desm` agora nascem no `EQUIP`.
+- `venderNoNpc({ apenas })`: erro e Log falam em "sobras do Equip" / "fora das sobras: …" (não mais "nunca vender").
+- Testes: mercado 32 → 33 (vm: a intrusa de mesmo nome aborta antes do painel — `depot_withdraw` só da sobra, Log e aviso,
+  aba destravada); autohunt 22 (texto do Log ajustado). Desenho `docs/plans/2026-10-07-equip-destinos-design.md`
+  § "Erros e limites" alinhado (abortar na falha do `depot_withdraw`).

@@ -270,7 +270,7 @@ await t('venderNoNpc({apenas}): desmarca tudo que não está na lista e vende o 
     assert.strictEqual(r.total, 11000, 'o total é só o da sobra (a dragon ham saiu antes do VENDER)');
     assert.deepStrictEqual(r.guardados.map(g => g.nome), ['dragon ham']);
     assert(/não é sobra do Equip/.test(r.guardados[0].motivo), 'motivo: ' + r.guardados[0].motivo);
-    assert(V.J.logs.some(l => /nunca vender: dragon ham/.test(l)), 'o Log não diz o que ficou: ' + V.J.logs.join(' | '));
+    assert(V.J.logs.some(l => /fora das sobras: dragon ham/.test(l)), 'o Log não diz o que ficou: ' + V.J.logs.join(' | '));
     /* sem nada da lista no painel: nada vendido, painel fechado */
     const V2 = montarVenda([{ nome: 'dragon ham', valor: 1 }], { semRede: true });
     const r2 = await V2.venderNoNpc({ apenas: new Set(['lightning robe']) });

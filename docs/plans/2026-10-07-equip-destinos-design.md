@@ -75,8 +75,12 @@ A aba Equip mostra: "ref. Mercado: 449.999 (raro igual a 450.000)" ou "faixa 65.
 - Fora da cidade: botões desligados com título "só na cidade".
 - Socket não capturado: VENDER NO NPC desligado ("F5 com o helper instalado"); ANUNCIAR funciona
   (a aba Mercado já exige o socket na hora de criar a ordem).
-- `depot_withdraw` falha (`insufficient_item`, mochila sem peso): Log diz quais saíram; a venda segue só
-  com o que chegou na mochila; a peça que não saiu continua no baú.
+- `depot_withdraw` falha (`insufficient_item`, mochila sem peso): a venda ABORTA (nada vendido); o aviso e o
+  Log dizem que o que já saiu ficou na mochila — o ATUALIZAR mostra essas peças como sobra de mochila e o
+  próximo VENDER NO NPC as leva; a peça que não saiu continua no baú. (2.15.1: antes o desenho dizia
+  "a venda segue só com o que chegou".)
+- Sem a foto da mochila depois de retirar (o `depot_result` sem `bagInstances` e nenhuma mochila vista na
+  tela): a venda aborta — a checagem da peça intrusa de mesmo nome seria cega (2.15.1).
 - Mercado não lido: linhas sem referência; o botão ANUNCIAR ainda funciona (a aba Mercado faz ATUALIZAR
   ao abrir se `MK.t` for nulo).
 
