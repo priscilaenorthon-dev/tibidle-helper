@@ -9386,6 +9386,39 @@
     /* "regen mana 1,3 + resist gelo 0,8" — o que a peça tem escrito nos encaixes ('' = nenhum) */
     const mkEncaixeTxt = (f) => (f && Array.isArray(f.atributos) ? f.atributos : []).map(a => { const id = mkIdAtr(a).replace(/_/g, ' '); const v = a && a.valor != null ? String(a.valor).replace('.', ',') : ''; return id ? id + (v ? ' ' + v : '') : ''; }).filter(Boolean).join(' + ');
     const mkFmt = (n) => (n == null || !Number.isFinite(Number(n)) ? '—' : Math.round(Number(n)).toLocaleString('pt-BR'));
+    /* v2.15.0 — PREÇO DE REFERÊNCIA de uma peça forjada, para a aba Equip e para a linha do Mercado sem cópia igual.
+     * 1) igual: outro vendedor com o mesmo corte (raridade, refino, mesmos ids de atributo) → menor −1;
+     * 2) parecida: mesma raridade e refino e encaixe do mesmo tipo — se a peça tem encaixe NOBRE (regen, skill, dano,
+     *    loot) a cópia tem de ter TODOS os nobres dela (regen. de mana vale 30× uma resistência: 450k × 15k ao vivo
+     *    em 07/10); sem nobre, basta um atributo em comum → menor −1;
+     * 3) faixa: mesma raridade e refino, outros encaixes → só mín–máx, sem preço (o dono digita);
+     * 4) vazio. As minhas ordens (meusIds) nunca contam. */
+    const MK_ATR_NOBRES = ['regen_mana', 'regen_vida', 'nivel_magico', 'distancia', 'corpo_a_corpo', 'dano_fisico', 'dano_magico', 'chance_de_loot'];
+    function precoReferencia(x, copias, meusIds) {
+        const vazio = { preco: null, origem: 'vazio', ref: null };
+        if (!x || !copias) return vazio;
+        const n = mkMin(x.nome), meus = meusIds || new Set(), doItem = [];
+        for (const cp of Object.values(copias)) {
+            for (const y of ((cp && cp.copies) || [])) {
+                if (!y || meus.has(y.orderId)) continue;
+                if (mkMin(y.itemName || (y.instance && y.instance.name)) !== n) continue;
+                const p = Number(y.unitPrice); if (!(p > 0)) continue;
+                doItem.push({ p, f: y.instance && y.instance.forja });
+            }
+        }
+        if (!doItem.length) return vazio;
+        const menos1 = (lista, origem) => { const m = Math.min(...lista); return { preco: Math.max(1, m - 1), origem, ref: m }; };
+        const iguais = doItem.filter(y => mkMesmoCorte(x.forja, y.f)).map(y => y.p);
+        if (iguais.length) return menos1(iguais, 'igual');
+        const ids = mkAtrIds(x.forja), nobres = ids.filter(id => MK_ATR_NOBRES.includes(id));
+        const casa = (f) => { const o = mkAtrIds(f); return nobres.length ? nobres.every(id => o.includes(id)) : ids.some(id => o.includes(id)); };
+        const mesmoCorte = doItem.filter(y => mkMesmoCorteSemEncaixe(x.forja, y.f));
+        const parecidas = mesmoCorte.filter(y => casa(y.f)).map(y => y.p);
+        if (parecidas.length) return menos1(parecidas, 'parecida');
+        const faixa = mesmoCorte.map(y => y.p);
+        if (faixa.length) return { preco: null, origem: 'faixa', ref: null, min: Math.min(...faixa), max: Math.max(...faixa) };
+        return vazio;
+    }
     const mkAbertaVenda = (o) => !!(o && o.status === 'OPEN' && o.side === 'SELL' && (o.asset == null || o.asset === 'ITEM') && Number(o.quantityRemaining) > 0);
     const mkChaveCopias = (d) => (d && d.category ? 'cat:' + d.category : 'item:' + mkMin(d && d.itemName));
     const mkPremium = (ate, agora) => (ate === undefined ? null : !ate ? false : (Number.isFinite(Date.parse(ate)) && Date.parse(ate) > agora));
@@ -9448,7 +9481,7 @@
         const c = e.catalogo[n] || null;
         const minhasDoItem = minhas.filter(o => mkMin(o.itemName) === n && o.forja);
         const meus = minhasDoItem.filter(o => mkMesmoCorte(x.forja, o.forja)).map(o => o.unitPrice);
-        let outros = [], parecidas = [], pendente = null;
+        let outros = [], parecidas = [], pendente = null, parecida = null;
         if (c && (Number(c.copyOrders) || 0) > minhasDoItem.length) {
             const data = cat ? { category: cat } : { itemName: x.nome }, k = mkChaveCopias(data);
             const cp = e.copias && e.copias[k];
@@ -9457,6 +9490,8 @@
                 outros = doItem.filter(y => mkMesmoCorte(x.forja, y.instance && y.instance.forja)).map(y => y.unitPrice);
                 /* mesma raridade e refino com OUTROS encaixes: só para a nota (nunca para o preço) */
                 parecidas = doItem.filter(y => mkMesmoCorteSemEncaixe(x.forja, y.instance && y.instance.forja)).map(y => Number(y.unitPrice)).filter(v => v > 0);
+                /* v2.15.0 — sem cópia igual: a PARECIDA (encaixe do mesmo tipo) dá o preço; a faixa continua só na nota */
+                parecida = !outros.length ? precoReferencia(x, { [k]: cp }, meusIds) : null;
             } else pendente = { tipo: 'market_copies', data, chave: k, cache: 'copias', alvo: k, rotulo: 'cópias de ' + (cat ? (MK_CATS[cat] || cat) : x.nome), erro: cp ? cp.erro : null };
         }
         /* v2.11.8 — SEM MÉDIA PARA CÓPIA. A média de 30 dias é do item inteiro e
@@ -9467,16 +9502,17 @@
          * encaixe; a nota diz a faixa dos outros encaixes da mesma raridade, para o
          * dono ter por onde começar. */
         const encaixe = mkEncaixeTxt(x.forja);
-        const nota = !pendente && !outros.length && !meus.length
+        const nota = !pendente && !outros.length && !meus.length && !(parecida && parecida.origem === 'parecida')
             ? `nenhuma cópia ${mkCorteTxt(x.forja)}${encaixe ? ' com ' + encaixe : ' sem encaixe'} à venda — digite o preço` +
               (parecidas.length ? ` (outros encaixes ${mkCorteTxt(x.forja)}: de ${mkFmt(Math.min(...parecidas))} a ${mkFmt(Math.max(...parecidas))})` : ' (a média de 30 dias mistura todas as raridades)')
             : null;
-        return { ref: { outros, meus, media: null }, pendente, nota, encaixe: encaixe || null };
+        return { ref: { outros, meus, media: null }, pendente, nota, encaixe: encaixe || null, parecida: parecida && parecida.origem === 'parecida' ? parecida : null };
     }
     function mkLinha(b, r, e, marcados) {
         const dig = e.digitados ? e.digitados[b.chave] : undefined;
         const temDig = dig != null && String(dig).trim() !== '';
-        const sug = r.pendente ? { preco: null, origem: 'pendente', ref: null } : mkSugerir(r.ref);
+        let sug = r.pendente ? { preco: null, origem: 'pendente', ref: null } : mkSugerir(r.ref);
+        if (sug.origem === 'vazio' && r.parecida && r.parecida.preco) sug = { preco: r.parecida.preco, origem: 'parecida', ref: r.parecida.ref };
         const bruto = temDig ? Math.floor(Number(dig)) : sug.preco;
         const preco = Number.isFinite(bruto) ? bruto : null;
         const origem = temDig ? 'digitado' : sug.origem;
@@ -9687,7 +9723,7 @@
         sem_socket: 'socket do jogo não está aberto', sem_dado: 'a resposta não trouxe o dado esperado'
     };
     const mkErroTexto = (c) => MK_ERROS[c] ? MK_ERROS[c] + ' (' + c + ')' : String(c);
-    const MK_ORIGEM = { menor: 'menor −1', meu: 'seu anúncio', media: 'média 30 d', vazio: 'sem referência', digitado: 'digitado', pendente: 'falta ler' };
+    const MK_ORIGEM = { menor: 'menor −1', parecida: 'parecida −1', meu: 'seu anúncio', media: 'média 30 d', vazio: 'sem referência', digitado: 'digitado', pendente: 'falta ler' };
     const MK_MOTIVO_CAIXA = { trade_proceeds: 'venda', order_cancelled: 'ordem cancelada', order_expired: 'ordem expirada', capacity: 'não coube', offline: 'offline' };
     const MK = { premiumAte: undefined, bag: null, bagInst: null, bag_t: 0, protMeta: { nomes: [], iids: [] }, protInv: { nomes: [], iids: [] },
                  taxa: null, taxaWiki: false, tradeable: null, npc: null, restErro: null,
@@ -10127,7 +10163,8 @@
             const c = l.cat || 'outros';
             if (c !== catAtual) { catAtual = c; const n = v.linhas.filter(x => (x.cat || 'outros') === c).length; h += `<div class="mk-cat">${escHtml(MK_CATS[c] || 'Outros')} (${n})</div>`; }
             const onde = l.deposito && l.mochila ? `${l.mochila} mochila + ${l.deposito} dep.` : l.deposito ? 'no depósito' : 'na mochila';
-            const org = l.origem === 'menor' ? `menor −1 (outro${l.forja ? ' com o mesmo encaixe' : ''} a ${mkFmt(l.sug.ref)})` : MK_ORIGEM[l.origem] || l.origem;
+            const org = l.origem === 'menor' ? `menor −1 (outro${l.forja ? ' com o mesmo encaixe' : ''} a ${mkFmt(l.sug.ref)})`
+                : l.origem === 'parecida' ? `parecida −1 (mesma raridade, encaixe do mesmo tipo, a ${mkFmt(l.sug.ref)})` : MK_ORIGEM[l.origem] || l.origem;
             const npcTxt = l.npc == null ? 'NPC ?' : !(l.npc > 0) ? 'NPC não compra' : l.qtd ? 'NPC ' + mkFmt(l.npcTotal) : 'NPC ' + mkFmt(l.npc) + '/un';
             const blq = l.bloqueio ? (l.bloqueio === 'vender no NPC' ? `<b class="tb-av">vender no NPC</b> (o mercado daria ${mkFmt(l.liquido)} líquido)` : `<span class="tb-ruim">${escHtml(l.bloqueio)}</span>`) : '';
             const valor = l.origem === 'digitado' ? MK.digitados[l.chave] : l.preco;

@@ -40,7 +40,7 @@ const ordem = (id, item, preco, x) => Object.assign({ id, side: 'SELL', asset: '
 
 /* ======================================================= 1) funções puras */
 const P = new Function(`${trecho('/* @@MERCADO-INICIO', '/* @@MERCADO-PURO-FIM */')}
-    return { mkTaxa, mkSugerir, mkMontar, mkRevisao, mkAbaixoDoNpc, mkEsperaNecessaria, mkMesmoCorte, mkPremium, mkAcoesNoMinuto, mkVendas, MK_ESPACO_MS };`)();
+    return { mkTaxa, mkSugerir, mkMontar, mkRevisao, mkAbaixoDoNpc, mkEsperaNecessaria, mkMesmoCorte, mkPremium, mkAcoesNoMinuto, mkVendas, MK_ESPACO_MS, precoReferencia };`)();
 const base = (x) => Object.assign({ tradeable: TRAD, npc: NPC, taxa: 0.05, catalogo: {}, minhas: [], livros: {}, copias: {}, stats: {},
     prot: { nomes: [], iids: [] }, nunca: [], equip: { usadas: [], reservas: [] }, naCidade: true, digitados: {}, marcados: [] }, x || {});
 const linha = (r, chave) => r.linhas.find(l => l.chave === chave);
@@ -315,6 +315,37 @@ t('premium: welcome sem o campo = não sei; null = sem; data futura = sim', () =
     assert.strictEqual(P.mkPremium(null, agora), false);
     assert.strictEqual(P.mkPremium('2026-10-20T00:00:00Z', agora), true);
     assert.strictEqual(P.mkPremium('2026-09-01T00:00:00Z', agora), false);
+});
+
+/* 2.15.0 — preço de referência de uma peça forjada (igual / parecida / faixa / vazio) */
+const cp = (item, preco, rar, atrs, orderId) => ({ orderId: orderId || 'o' + preco, itemName: item, unitPrice: preco, sellerName: 'x',
+    instance: { iid: 'i' + preco, name: item, forja: { raridade: rar, refino: 0, atributos: atrs.map(([id, valor]) => ({ id, valor })) } } });
+const F1 = (rar, ...atrs) => ({ raridade: rar, refino: 0, atributos: atrs.map(([id, valor]) => ({ id, valor })) });
+t('precoReferencia: igual (mesmo corte) → menor −1; o meu anúncio não conta', () => {
+    const copias = { 'cat:armaduras': { copies: [cp('dark armor', 300000, 1, [['regen_mana', 1.1]]), cp('dark armor', 450000, 1, [['regen_mana', 1.2]]), cp('dark armor', 9999, 1, [['resist_gelo', 1]]), cp('dark armor', 100, 1, [['regen_mana', 2]], 'meu')] } };
+    igual(P.precoReferencia({ nome: 'dark armor', forja: F1(1, ['regen_mana', 1.4]) }, copias, new Set(['meu'])), { preco: 299999, origem: 'igual', ref: 300000 });
+});
+t('precoReferencia: parecida só com o encaixe nobre em comum (regen. de mana não casa com resistência)', () => {
+    const copias = { 'cat:armaduras': { copies: [cp('dark armor', 450000, 2, [['resist_sagrado', 0.8], ['regen_mana', 1.2]]), cp('dark armor', 14999, 2, [['resist_morte', 1.2], ['resist_gelo', 1]])] } };
+    igual(P.precoReferencia({ nome: 'dark armor', forja: F1(2, ['regen_mana', 1.4], ['resist_morte', 2.1]) }, copias, new Set()), { preco: 449999, origem: 'parecida', ref: 450000 });
+});
+t('precoReferencia: sem nobre, parecida = qualquer atributo em comum; senão faixa; senão vazio', () => {
+    const copias = { 'cat:armaduras': { copies: [cp('plate armor', 65000, 2, [['resist_gelo', 2.1], ['resist_energia', 1.6]]), cp('plate armor', 70000, 2, [['max_mana', 55], ['protecao_magica', 0.4]])] } };
+    igual(P.precoReferencia({ nome: 'plate armor', forja: F1(2, ['resist_sagrado', 1.4], ['resist_energia', 1.9]) }, copias, new Set()), { preco: 64999, origem: 'parecida', ref: 65000 });
+    igual(P.precoReferencia({ nome: 'plate armor', forja: F1(2, ['max_hp', 20], ['cura_propria', 1]) }, copias, new Set()), { preco: null, origem: 'faixa', ref: null, min: 65000, max: 70000 });
+    igual(P.precoReferencia({ nome: 'plate armor', forja: F1(3, ['max_hp', 20]) }, copias, new Set()), { preco: null, origem: 'vazio', ref: null });
+    igual(P.precoReferencia({ nome: 'plate armor', forja: F1(0) }, null, null), { preco: null, origem: 'vazio', ref: null });
+});
+t('mkMontar: cópia sem igual mas com parecida recebe o preço (origem "parecida"); sem parecida continua "digite"', () => {
+    const copias = { 'cat:armaduras': { copies: [cp('plate armor', 65000, 2, [['resist_gelo', 2.1], ['resist_energia', 1.6]])] } };
+    const e = base({ depot: [{ itemName: 'plate armor', count: 1, iid: 'pa1', forja: F1(2, ['resist_sagrado', 1.4], ['resist_energia', 1.9]) }],
+        catalogo: { 'plate armor': { name: 'plate armor', sellOrders: 1, minSell: 65000, trades30d: 5, copyOrders: 1 } }, copias, equip: { usadas: [], reservas: [], sobras: ['pa1'] } });
+    const l = linha(P.mkMontar(e), 'i:pa1');
+    assert.strictEqual(l.preco, 64999); assert.strictEqual(l.origem, 'parecida'); assert.strictEqual(l.bloqueio, null);
+    const e2 = base({ depot: [{ itemName: 'plate armor', count: 1, iid: 'pa2', forja: F1(2, ['max_hp', 20], ['cura_propria', 1]) }],
+        catalogo: { 'plate armor': { name: 'plate armor', sellOrders: 1, minSell: 65000, trades30d: 5, copyOrders: 1 } }, copias, equip: { usadas: [], reservas: [], sobras: ['pa2'] } });
+    const l2 = linha(P.mkMontar(e2), 'i:pa2');
+    assert.strictEqual(l2.preco, null); assert(/digite/.test(l2.bloqueio), 'sem parecida: digite');
 });
 
 /* ============================================ 2) o script inteiro num vm */
