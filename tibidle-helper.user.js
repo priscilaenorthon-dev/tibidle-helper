@@ -7855,8 +7855,13 @@
         try { await equipAtualizar(); } catch (e) { renderizar(); }
         if (aviso) { EQUIP.aviso = aviso; renderizar(); }
     }
-    async function equipAtualizar() {
+    async function equipAtualizar(opts) {
         if (EQUIP.lendo) return;
+        /* v2.15.0 — a liberação para o Mercado (MK.liberadas) vale para a foto do Equip em que o dono clicou; nova
+         * leitura, nova decisão: cai a liberação e a marca de cada peça liberada. Exceção: a leitura que o ATUALIZAR
+         * do Mercado faz por tabela ({ manterLiberadas }) — ela faz parte do próprio fluxo de anunciar o que o Equip
+         * liberou; a peça que a nova foto puser no corpo de alguém o mkMontar barra de qualquer jeito. */
+        if (!(opts && opts.manterLiberadas)) { for (const iid of MK.liberadas) MK.marcados.delete('i:' + iid); MK.liberadas.clear(); }
         EQUIP.lendo = true; EQUIP.erro = null; EQUIP.aviso = null; renderizar();
         try {
             const roster = rosterEquip();
@@ -9389,9 +9394,10 @@
     const mkFmt = (n) => (n == null || !Number.isFinite(Number(n)) ? '—' : Math.round(Number(n)).toLocaleString('pt-BR'));
     /* v2.15.0 — PREÇO DE REFERÊNCIA de uma peça forjada, para a aba Equip e para a linha do Mercado sem cópia igual.
      * 1) igual: outro vendedor com o mesmo corte (raridade, refino, mesmos ids de atributo) → menor −1;
-     * 2) parecida: mesma raridade e refino e encaixe do mesmo tipo — se a peça tem encaixe NOBRE (regen, skill, dano,
-     *    loot) a cópia tem de ter TODOS os nobres dela (regen. de mana vale 30× uma resistência: 450k × 15k ao vivo
-     *    em 07/10); sem nobre, basta um atributo em comum → menor −1;
+     * 2) parecida: mesma raridade e refino e encaixe do mesmo tipo — a cópia tem de ter EXATAMENTE os mesmos nobres
+     *    (regen, skill, dano, loot) da peça, nem mais nem menos (regen. de mana vale 30× uma resistência: 450k × 15k
+     *    ao vivo em 07/10; cópia com um nobre a mais vale mais, peça sem nobre não vale o preço de uma com nobre);
+     *    sem nobre dos dois lados, basta um atributo em comum → menor −1;
      * 3) faixa: mesma raridade e refino, outros encaixes → só mín–máx, sem preço (o dono digita);
      * 4) vazio. As minhas ordens (meusIds) nunca contam. */
     const MK_ATR_NOBRES = ['regen_mana', 'regen_vida', 'nivel_magico', 'distancia', 'corpo_a_corpo', 'dano_fisico', 'dano_magico', 'chance_de_loot'];
@@ -9411,8 +9417,9 @@
         const menos1 = (lista, origem) => { const m = Math.min(...lista); return { preco: Math.max(1, m - 1), origem, ref: m }; };
         const iguais = doItem.filter(y => mkMesmoCorte(x.forja, y.f)).map(y => y.p);
         if (iguais.length) return menos1(iguais, 'igual');
-        const ids = mkAtrIds(x.forja), nobres = ids.filter(id => MK_ATR_NOBRES.includes(id));
-        const casa = (f) => { const o = mkAtrIds(f); return nobres.length ? nobres.every(id => o.includes(id)) : ids.some(id => o.includes(id)); };
+        const ids = mkAtrIds(x.forja), nobresDe = (f) => mkAtrIds(f).filter(id => MK_ATR_NOBRES.includes(id)), nobres = nobresDe(x.forja);
+        /* simétrico: o conjunto de nobres da cópia é igual ao da peça; sem nobre dos dois lados, um atributo em comum basta */
+        const casa = (f) => { const o = mkAtrIds(f); return nobresDe(f).join('|') === nobres.join('|') && (nobres.length > 0 || ids.some(id => o.includes(id))); };
         const mesmoCorte = doItem.filter(y => mkMesmoCorteSemEncaixe(x.forja, y.f));
         const parecidas = mesmoCorte.filter(y => casa(y.f)).map(y => y.p);
         if (parecidas.length) return menos1(parecidas, 'parecida');
@@ -9473,9 +9480,10 @@
          * ordem parada — aceitar a compra no jogo é na hora e sem taxa (wiki) */
         return { ref: { outros, meus, media }, pendente, compra: c && c.maxBuy != null ? mkNum(c.maxBuy) : null };
     }
-    /* Referência de uma CÓPIA forjada: só cópias do mesmo corte (raridade e
-     * refino), tirando as minhas (orderId nas minhas ordens). Um pedido
-     * market_copies por CATEGORIA serve todas as peças dela. */
+    /* Referência de uma CÓPIA forjada: cópias do mesmo corte (raridade, refino
+     * e encaixe), tirando as minhas (orderId nas minhas ordens); sem cópia igual,
+     * a PARECIDA (encaixe do mesmo tipo, precoReferencia) dá a sugestão — v2.15.0.
+     * Um pedido market_copies por CATEGORIA serve todas as peças dela. */
     function mkRefCopia(x, e, minhas, meusIds, cat) {
         const n = x.n;
         if (!e.catalogo) return { ref: {}, pendente: { tipo: null, chave: 'catalogo', rotulo: 'catálogo do mercado' } };
@@ -9503,11 +9511,14 @@
          * encaixe; a nota diz a faixa dos outros encaixes da mesma raridade, para o
          * dono ter por onde começar. */
         const encaixe = mkEncaixeTxt(x.forja);
-        const nota = !pendente && !outros.length && !meus.length && !(parecida && parecida.origem === 'parecida')
-            ? `nenhuma cópia ${mkCorteTxt(x.forja)}${encaixe ? ' com ' + encaixe : ' sem encaixe'} à venda — digite o preço` +
-              (parecidas.length ? ` (outros encaixes ${mkCorteTxt(x.forja)}: de ${mkFmt(Math.min(...parecidas))} a ${mkFmt(Math.max(...parecidas))})` : ' (a média de 30 dias mistura todas as raridades)')
-            : null;
-        return { ref: { outros, meus, media: null }, pendente, nota, encaixe: encaixe || null, parecida: parecida && parecida.origem === 'parecida' ? parecida : null };
+        const temParecida = !!(parecida && parecida.origem === 'parecida');
+        const faixaTxt = parecidas.length ? `outros encaixes ${mkCorteTxt(x.forja)}: de ${mkFmt(Math.min(...parecidas))} a ${mkFmt(Math.max(...parecidas))}` : null;
+        /* com parecida a faixa continua na nota (é por ela que o dono julga o preço sugerido); sem ela, "digite" */
+        const nota = pendente || outros.length || meus.length ? null
+            : temParecida ? (faixaTxt ? 'faixa dos ' + faixaTxt : null)
+            : `nenhuma cópia ${mkCorteTxt(x.forja)}${encaixe ? ' com ' + encaixe : ' sem encaixe'} à venda — digite o preço` +
+              (faixaTxt ? ` (${faixaTxt})` : ' (a média de 30 dias mistura todas as raridades)');
+        return { ref: { outros, meus, media: null }, pendente, nota, encaixe: encaixe || null, parecida: temParecida ? parecida : null };
     }
     function mkLinha(b, r, e, marcados) {
         const dig = e.digitados ? e.digitados[b.chave] : undefined;
@@ -9943,7 +9954,7 @@
              * conseguia marcar nada (30/09). O ATUALIZAR do Mercado já lê o Equip junto — é só leitura. */
             /* v2.11.20 — sempre (não só sem leitura): peça que o Auto Hunt guardou depois da última leitura do Equip
              * ficaria sem avaliação. Com o depósito não lido, o Equip não põe peça do depósito nas sobras. */
-            if (!EQUIP.lendo) { MK.progresso = 'equipamento dos 4 (o melhor e a reserva ficam fora)…'; renderizar(); await equipAtualizar(); }
+            if (!EQUIP.lendo) { MK.progresso = 'equipamento dos 4 (o melhor e a reserva ficam fora)…'; renderizar(); await equipAtualizar({ manterLiberadas: true }); }
             MK.livros = {}; MK.copias = {}; MK.stats = {};
             if (await mkLerBase([['market_catalog', 'preços do mercado'], ['market_my_orders', 'suas ordens'], ['market_inbox', 'caixa de entrada']])) {
                 await mkBuscarPendencias(() => mkVista().pendencias, 'preços');
@@ -10011,7 +10022,7 @@
                 const it = plano.itens[i];
                 MK.progresso = `anunciando ${i + 1}/${plano.n}: ${it.nome}`; renderizar();
                 const r = await mkAnunciarUm(it);
-                if (r.ok) { res.ok++; res.taxa += r.taxa || 0; MK.marcados.delete(it.chave); delete MK.digitados[it.chave]; }
+                if (r.ok) { res.ok++; res.taxa += r.taxa || 0; MK.marcados.delete(it.chave); delete MK.digitados[it.chave]; if (it.iid) MK.liberadas.delete(it.iid); }
                 else res.falha++;
                 if (r.pararTudo) { res.parou = mkErroTexto(r.pararTudo); break; }
             }
@@ -10127,7 +10138,7 @@
     #tb-mk .mk-preco{width:100%;min-height:var(--tb-alvo,28px);box-sizing:border-box;text-align:right;font-size:11px}
     #tb-mk .mk-info{grid-column:2/-1;font-size:var(--tb-fmin,10.5px);color:#9aa4b8;line-height:1.35;padding-bottom:2px}
     #tb-mk .mk-org{font-size:var(--tb-fmin,10.5px);padding:0 5px;border-radius:9px;background:#2b3242;color:#c3cad6;white-space:nowrap}
-    #tb-mk .mk-org.menor{background:#1f4a2c;color:#8ff0a8}#tb-mk .mk-org.media{background:#4a3b14;color:#ffd479}
+    #tb-mk .mk-org.menor{background:#1f4a2c;color:#8ff0a8}#tb-mk .mk-org.media,#tb-mk .mk-org.parecida{background:#4a3b14;color:#ffd479}
     #tb-mk .mk-org.digitado{background:#1d3550;color:#9fd0ff}#tb-mk .mk-org.vazio,#tb-mk .mk-org.pendente{background:#4a1f1f;color:#ff9b93}
     #tb-mk .mk-rodape{position:sticky;bottom:-8px;background:#12151c;padding:6px 0 4px;margin-top:6px;border-top:1px solid #2b3242}
     #tb-mk .mk-rodape .tb-bt.pri{width:100%;font-size:12px;padding:6px}
@@ -10266,7 +10277,8 @@
         const eqb = $('#tb-mk-equip'); if (eqb) eqb.onclick = () => { if (!EQUIP.lendo && !MK.ocupado) equipAtualizar().then(() => renderizar()); };
         (MK.pintadas || []).forEach((l, i) => {
             const c = $('#tb-mk-c-' + i);
-            if (c) c.onchange = () => { if (MK.ocupado || l.bloqueio) return; if (c.checked) MK.marcados.add(l.chave); else MK.marcados.delete(l.chave); MK.conf = null; renderizar(); };
+            /* v2.15.0 — desmarcar uma peça liberada pelo Equip desfaz a liberação (volta à barreira "melhor ou reserva") */
+            if (c) c.onchange = () => { if (MK.ocupado || l.bloqueio) return; if (c.checked) MK.marcados.add(l.chave); else { MK.marcados.delete(l.chave); if (l.iid) MK.liberadas.delete(l.iid); } MK.conf = null; renderizar(); };
             const p = $('#tb-mk-p-' + i);
             if (!p) return;
             /* digitar não repinta (perderia o foco); o total do rodapé muda no change */
@@ -10276,7 +10288,7 @@
             p.onblur = () => { setTimeout(() => { if (MK.foco === p.id && p.isConnected && document.activeElement !== p) MK.foco = null; }, 0); }; // repinte (campo fora da página) não conta
         });
         const todos = $('#tb-mk-todos'); if (todos) todos.onclick = () => { if (MK.ocupado) return; (MK.pintadas || []).forEach(l => { if (!l.bloqueio) MK.marcados.add(l.chave); }); MK.conf = null; renderizar(); };
-        const nenhum = $('#tb-mk-nenhum'); if (nenhum) nenhum.onclick = () => { MK.marcados.clear(); MK.conf = null; renderizar(); };
+        const nenhum = $('#tb-mk-nenhum'); if (nenhum) nenhum.onclick = () => { MK.marcados.clear(); MK.liberadas.clear(); MK.conf = null; renderizar(); };
         const an = $('#tb-mk-anunciar'); if (an) an.onclick = () => { if (MK.ocupado) return; const p = mkVista().plano; if (!p.n) return; mkToque('anunciar', p.assinatura, mkAnunciar); };
         const rev = $('#tb-mk-revisar'); if (rev) rev.onclick = () => mkRevisar();
         (MK.ordPintadas || []).forEach((l, i) => { const b = $('#tb-mk-x-' + i); if (b) b.onclick = () => { if (!MK.ocupado) mkToque('cancelar:' + l.id, l.id + '|' + l.qtd, () => mkCancelar(l)); }; });

@@ -336,12 +336,26 @@ t('precoReferencia: sem nobre, parecida = qualquer atributo em comum; senão fai
     igual(P.precoReferencia({ nome: 'plate armor', forja: F1(3, ['max_hp', 20]) }, copias, new Set()), { preco: null, origem: 'vazio', ref: null });
     igual(P.precoReferencia({ nome: 'plate armor', forja: F1(0) }, null, null), { preco: null, origem: 'vazio', ref: null });
 });
+t('precoReferencia: nobre casa só com o MESMO conjunto de nobres (5b) — peça sem nobre × cópia com nobre = faixa; 1 nobre × 2 nobres = não casa', () => {
+    /* peça só com resistências × cópia com regen. de mana + a mesma resistência (450k): a resistência em comum não a
+     * torna parecida — a cópia vale pelo nobre que a peça não tem → faixa */
+    const semNobre = { 'cat:armaduras': { copies: [cp('dark armor', 450000, 1, [['regen_mana', 1.2], ['resist_gelo', 1]])] } };
+    igual(P.precoReferencia({ nome: 'dark armor', forja: F1(1, ['resist_gelo', 1.1], ['resist_energia', 0.9]) }, semNobre, new Set()), { preco: null, origem: 'faixa', ref: null, min: 450000, max: 450000 });
+    /* peça com 1 nobre × cópia com 2 nobres (900k): não casa → faixa; com uma cópia de nobre igual, essa é a parecida */
+    const doisNobres = { 'cat:armaduras': { copies: [cp('dark armor', 900000, 1, [['regen_mana', 1.2], ['regen_vida', 1.5]])] } };
+    igual(P.precoReferencia({ nome: 'dark armor', forja: F1(1, ['regen_mana', 1.4]) }, doisNobres, new Set()), { preco: null, origem: 'faixa', ref: null, min: 900000, max: 900000 });
+    const mista = { 'cat:armaduras': { copies: [...doisNobres['cat:armaduras'].copies, cp('dark armor', 300000, 1, [['regen_mana', 1.0], ['resist_morte', 1]])] } };
+    igual(P.precoReferencia({ nome: 'dark armor', forja: F1(1, ['regen_mana', 1.4]) }, mista, new Set()), { preco: 299999, origem: 'parecida', ref: 300000 });
+    /* sem cópia da mesma raridade: vazio (não faixa) */
+    igual(P.precoReferencia({ nome: 'dark armor', forja: F1(2, ['regen_mana', 1.4]) }, doisNobres, new Set()), { preco: null, origem: 'vazio', ref: null });
+});
 t('mkMontar: cópia sem igual mas com parecida recebe o preço (origem "parecida"); sem parecida continua "digite"', () => {
     const copias = { 'cat:armaduras': { copies: [cp('plate armor', 65000, 2, [['resist_gelo', 2.1], ['resist_energia', 1.6]])] } };
     const e = base({ depot: [{ itemName: 'plate armor', count: 1, iid: 'pa1', forja: F1(2, ['resist_sagrado', 1.4], ['resist_energia', 1.9]) }],
         catalogo: { 'plate armor': { name: 'plate armor', sellOrders: 1, minSell: 65000, trades30d: 5, copyOrders: 1 } }, copias, equip: { usadas: [], reservas: [], sobras: ['pa1'] } });
     const l = linha(P.mkMontar(e), 'i:pa1');
     assert.strictEqual(l.preco, 64999); assert.strictEqual(l.origem, 'parecida'); assert.strictEqual(l.bloqueio, null);
+    assert(/faixa dos outros encaixes raro \+0: de 65\.000 a 65\.000/.test(l.nota) && !/digite/.test(l.nota), 'com parecida a nota traz a faixa, sem "digite": ' + l.nota);
     const e2 = base({ depot: [{ itemName: 'plate armor', count: 1, iid: 'pa2', forja: F1(2, ['max_hp', 20], ['cura_propria', 1]) }],
         catalogo: { 'plate armor': { name: 'plate armor', sellOrders: 1, minSell: 65000, trades30d: 5, copyOrders: 1 } }, copias, equip: { usadas: [], reservas: [], sobras: ['pa2'] } });
     const l2 = linha(P.mkMontar(e2), 'i:pa2');
@@ -701,6 +715,43 @@ t('vm: caixa de entrada — LER só lê; RESGATAR TUDO manda um market_claim por
     igual(cl.map(x => semRid(x.o.data)), [{ entryId: 'c1' }, { entryId: 'c2' }]);
     assert(cl[1].t - cl[0].t >= 3500, 'resgates fora do ritmo');
     assert(/2 entrega\(s\) resgatada\(s\) · \+4\.495 ouro/.test(logTxt(M.W)), logTxt(M.W).slice(-400));
+});
+
+t('vm (2.15.0): MK.liberadas sobrevive ao ATUALIZAR do Mercado e cai ao desmarcar a peça, no "desmarcar" e depois de anunciar', async () => {
+    const copias = { armas: [{ orderId: 'o1', itemName: 'elvish bow', unitPrice: 2500, sellerName: 'Outro', instance: { iid: 'z1', name: 'elvish bow', forja: { raridade: 1, refino: 0 } }, expiresAt: 1 }] };
+    const mundo = () => mundoMercado({ bag: { 'elvish bow': 1 }, inst: [{ iid: 'b1', name: 'elvish bow', forja: { raridade: 1, refino: 0 } }],
+        catalogo: CAT_BASE, copias, equip: { usadas: [], reservas: ['b1'], sobras: [] } });
+    /* reserva do Equip liberada antes do ATUALIZAR (é o que o botão da caixinha do Equip faz na Task 7) */
+    const M = await mundo(); const MK = M.W.H.MERCADO;
+    MK.liberadas.add('b1'); MK.marcados.add('i:b1');
+    await M.atualizar();
+    assert(MK.liberadas.has('b1'), 'o ATUALIZAR do Mercado (que relê o Equip por tabela) apagou a liberação');
+    const l = MK.pintadas.find(x => x.chave === 'i:b1');
+    assert(l && l.bloqueio === null && l.marcado, 'a reserva liberada não entrou marcada: ' + JSON.stringify(l && l.bloqueio));
+    /* 1) desmarcar a caixa da peça desfaz a liberação */
+    const c = M.W.porId.get('tb-mk-c-' + M.indice('i:b1')); c.checked = false; c.onchange(); await M.W.avancar(0);
+    assert(!MK.liberadas.has('b1') && !MK.marcados.has('i:b1'), 'desmarcar não desfez a liberação');
+    assert(!MK.pintadas.some(x => x.chave === 'i:b1'), 'sem liberação a reserva voltou a entrar na lista');
+    /* 2) "desmarcar" (todos) limpa as liberações */
+    MK.liberadas.add('b1'); MK.marcados.add('i:b1'); await M.clicar('tb-mk-sub-anunciar');
+    assert(M.indice('i:b1') >= 0); await M.clicar('tb-mk-nenhum');
+    assert.strictEqual(MK.liberadas.size, 0, '"desmarcar" não limpou as liberações');
+    /* 3) anunciada: a liberação sai junto com a marca */
+    MK.liberadas.add('b1'); MK.marcados.add('i:b1'); await M.clicar('tb-mk-sub-anunciar');
+    await M.clicar('tb-mk-anunciar'); await M.clicar('tb-mk-anunciar'); await M.W.avancar(30000);
+    const esc = M.S.tipos(...ESCRITA);
+    igual(esc.map(x => semRid(x.o.data)), [{ side: 'SELL', asset: 'ITEM', itemName: 'elvish bow', unitPrice: 2499, quantity: 1, iid: 'b1' }]);
+    assert.strictEqual(MK.liberadas.size, 0, 'anunciou e a liberação ficou'); assert.strictEqual(MK.marcados.size, 0);
+});
+t('vm (2.15.0): uma leitura do Equip pedida pelo dono (não a do ATUALIZAR do Mercado) derruba a liberação e a marca', async () => {
+    /* sem EQUIP.res a linha da cópia fica travada e aparece o botão "ATUALIZAR o Equip agora" (equipAtualizar sem opções) */
+    const M = await mundoMercado({ bag: { 'elvish bow': 1 }, inst: [{ iid: 'b1', name: 'elvish bow', forja: { raridade: 1, refino: 0 } }], catalogo: CAT_BASE, copias: { armas: [] } });
+    const MK = M.W.H.MERCADO;
+    MK.liberadas.add('b1'); MK.marcados.add('i:b1');
+    await M.atualizar();
+    assert(MK.liberadas.has('b1') && MK.marcados.has('i:b1'), 'o ATUALIZAR do Mercado apagou a liberação');
+    await M.clicar('tb-mk-equip'); await M.W.avancar(1000);
+    assert(!MK.liberadas.has('b1') && !MK.marcados.has('i:b1'), 'a leitura do Equip pedida pelo dono manteve a liberação');
 });
 
 rodar();
