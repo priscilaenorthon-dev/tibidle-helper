@@ -6216,6 +6216,15 @@
      * removido, qualquer outra coisa que não seja letra/dígito vira um hífen ("Dragha's Spellbook" → draghas-spellbook). */
     const wikiSlug = (nome) => String(nome == null ? '' : nome).toLowerCase().replace(/['’]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
     const wikiUrlPeca = (nome) => 'https://tibidle.com/wiki/database/equipamentos/' + wikiSlug(nome);
+    /* v2.15.0 — as sobras por destino: comum sem refino → NPC (o NPC não compra Incomum+ nem refinada, visto em 04/10);
+     * o resto → Mercado; peça ainda no corpo de alguém fica à parte (tirar à mão antes). */
+    function destinosSobras(res) {
+        const disp = (res && res.dispensaveis) || [];
+        const corpo = disp.filter(p => p.origem === 'corpo');
+        const fora = disp.filter(p => p.origem !== 'corpo');
+        const npc = fora.filter(vendivelNpc), mercado = fora.filter(p => !vendivelNpc(p));
+        return { npc, mercado, corpo, npcOuro: npc.reduce((s, p) => s + (Number(p.sell) || 0), 0) };
+    }
     /* v2.14.10 — PLANO DE FORJA (dono, 04/10: "não sei usar a forja: me indica o que fazer e quais atributos
      * encontrar"). Regras do jogo (cliente, 04/10) e da wiki /forja: potência atual = base + 50 × refino; faixas a
      * cada 200 (I 1–199 … VI 1000+) e o VALOR das linhas é sorteado no range da faixa; encaixes = raridade (Comum 0,

@@ -7,7 +7,7 @@ const raiz = path.join(__dirname, '..');
 const src = fs.readFileSync(path.join(raiz, 'tibidle-helper.user.js'), 'utf8');
 const ini = src.indexOf('/* @@EQUIP-PURO-INICIO */'), fim = src.indexOf('/* @@EQUIP-PURO-FIM */');
 assert(ini > 0 && fim > ini, 'marcadores @@EQUIP-PURO não encontrados');
-const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, pesosDaVoc, candidatosEquip, distribuirEquip, pecasDesmanche, planoForja, faixaPotencia, wikiSlug, wikiUrlPeca, EQUIP_RESERVAS };')();
+const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, pesosDaVoc, candidatosEquip, distribuirEquip, pecasDesmanche, planoForja, faixaPotencia, wikiSlug, wikiUrlPeca, EQUIP_RESERVAS, destinosSobras };')();
 const le = (p) => { try { return JSON.parse(fs.readFileSync(path.join(raiz, p), 'utf8')); } catch (e) { return null; } };
 const base = {};
 for (const [nome, it] of Object.entries(le('testes/fixtures/itens.json').itens)) base[nome] = { id: it.id, attrs: it.attrs || {}, sell: it.sell || 0, equipPreview: it.equipPreview || null };
@@ -403,5 +403,18 @@ t('reservas: só a 2.ª melhor de cada slot fica; a 3.ª vai para as sobras (don
     assert(R.usadas.has('a'), 'a melhor (2,3) no corpo');
     assert.deepStrictEqual([...R.reservas], ['b'], 'só a 2.ª melhor é reserva');
     assert(R.dispensaveis.some(p => p.iid === 'c'), 'a 3.ª cai nas sobras');
+});
+t('destinosSobras: comum vai ao NPC, incomum+ ao Mercado, peça no corpo fica à parte', () => {
+    const d = M.destinosSobras({ dispensaveis: [
+        { iid: '1', nome: 'lightning robe', origem: 'depósito', sell: 11000, forja: F(0) },
+        { iid: '2', nome: 'blue robe', origem: 'mochila', sell: 3000, forja: F(0) },
+        { iid: '3', nome: 'plate armor', origem: 'depósito', sell: 400, forja: F(2, ['resist_sagrado', 1.4]) },
+        { iid: '4', nome: 'crowbar', origem: 'depósito', sell: 50, forja: { raridade: 0, refino: 2, atributos: [] } },
+        { iid: '5', nome: 'glacial rod', origem: 'corpo', dono: 'DRUID', sell: 6500, forja: F(0) }] });
+    assert.deepStrictEqual(d.npc.map(p => p.iid), ['1', '2'], 'comuns sem refino, fora do corpo');
+    assert.strictEqual(d.npcOuro, 14000);
+    assert.deepStrictEqual(d.mercado.map(p => p.iid), ['3', '4'], 'incomum ou refinada: o NPC não compra');
+    assert.deepStrictEqual(d.corpo.map(p => p.iid), ['5']);
+    assert.deepStrictEqual(M.destinosSobras(null), { npc: [], mercado: [], corpo: [], npcOuro: 0 });
 });
 console.log(`\n${n} testes ok` + (pulados ? ` · ${pulados} pulados (sem o estado da conta em data/)` : ''));
