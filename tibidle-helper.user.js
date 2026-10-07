@@ -7856,8 +7856,20 @@
         try { await equipAtualizar(); } catch (e) { renderizar(); }
         if (aviso) { EQUIP.aviso = aviso; renderizar(); }
     }
-    /* v2.15.0 — provisórios: as Tasks 7 e 8 do plano (docs/plans/2026-10-07-equip-destinos.md) trocam por liberar e vender */
-    function liberarParaMercado() { }
+    /* v2.15.0 — botões ANUNCIAR das caixinhas do Equip: libera as peças para a aba Mercado (MK.liberadas), marca cada uma
+     * ('i:'+iid) e abre a aba. A confirmação continua lá: 2 toques, taxa escrita. Nada é anunciado aqui. */
+    function liberarParaMercado(pecas) {
+        const lista = (pecas || []).filter(p => p && p.iid && p.origem !== 'corpo');
+        if (!lista.length) { EQUIP.aviso = 'nada para anunciar nesta lista'; renderizar(); return; }
+        for (const p of lista) { MK.liberadas.add(p.iid); MK.marcados.add('i:' + p.iid); }
+        MK.conf = null;
+        guardar('mercado_sub', 'anunciar');
+        ABA = 'mercado'; guardarUI({ aba: 'mercado', aberta: true });
+        log(`equip: ${lista.length} peça(s) marcada(s) para anunciar — confirme na aba Mercado (2 toques)`, 'info');
+        renderizar();
+        if (!MK.t && !MK.ocupado && socketAberto()) mkAtualizar();
+    }
+    /* v2.15.0 — provisório: a Task 8 do plano (docs/plans/2026-10-07-equip-destinos.md) troca pela venda das sobras */
     async function venderSobrasNpc() { }
     async function equipAtualizar(opts) {
         if (EQUIP.lendo) return;

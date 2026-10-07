@@ -454,6 +454,17 @@ t('Equip: escape de itens, slots e vocações em português, "8 slots" como inte
     assert(/aria-checked="true"/.test(/<button[^>]*id="tb-eq-tudo"[^>]*>/.exec(h)[0]));
     assert(/<span class="s">anel<\/span>[\s\S]*?nada melhor no estoque/.test(h), 'slot vazio sem nada melhor deveria dizer "nada melhor no estoque"');
     assert(/<span class="s">(elmo|calça|bota|colar|anel|escudo|armadura)<\/span>/.test(h));
+    /* 2.15.0 — ANUNCIAR NO MERCADO só libera e marca (MK.liberadas, 'i:'+iid) e abre a aba Mercado em "anunciar";
+     * a comum (destino NPC) fica de fora; nada é anunciado (a confirmação de 2 toques continua lá) */
+    const MKs = H.MERCADO;
+    W.el('tb-eq-anunciar-sobras').click();
+    await W.avancar(0);
+    assert(MKs.liberadas.has('m1') && MKs.marcados.has('i:m1'), 'a sobra incomum não foi liberada/marcada: ' + [...MKs.liberadas] + ' / ' + [...MKs.marcados]);
+    assert(!MKs.liberadas.has('d3') && !MKs.marcados.has('i:d3'), 'a comum (destino NPC) não deveria ir para o Mercado');
+    assert.strictEqual(W.lsGet('tb_helper_ui').aba, 'mercado', 'não abriu a aba Mercado');
+    assert.strictEqual(W.lsGet('tb_helper_mercado_sub'), 'anunciar', 'a aba Mercado não abriu em "anunciar"');
+    assert(/1 peça\(s\) marcada\(s\) para anunciar/.test(logTxt(W)), 'o Log não diz o que foi marcado: ' + logTxt(W).split('\n').slice(-3).join(' | '));
+    assert(!/anunciado/.test(logTxt(W)), 'nada pode ter sido anunciado');
 });
 
 t('Analisador: escape (sessões, sessão viva, tipos do socket), tabela com colunas fixas', async () => {
