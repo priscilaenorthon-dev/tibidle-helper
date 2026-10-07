@@ -4769,3 +4769,33 @@ mapas (Vampire hell 32,5k × 58,0k do Em área; Banshee 27,7k × 49,6k) e ainda 
   (−4 %).
 - Teste 12 (loot 0) ajustado: "seguro" vem antes do LCB na ordem; o Em área sem poção no Feiticeiro deixou de ser seguro
   no fixture, então a comparação de LCB só vale no mesmo grupo. 2 testes novos (281).
+
+## 2.15.0 (07/10) — as caixinhas do Equip viram destinos com botão (NPC, Mercado, reservas = 1, links da wiki)
+- Dono, 07/10: "Eu só sei que não posso ficar com essas coisas no depósito, guardando item que nunca vou usar" e "quero que
+  nossa automação tenha a capacidade de fazer o que eu quero, e me indicar o que precisa". Ele não entendia os nomes
+  "sobrando", "bases de forja", "guardar: encaixe bom", "reservas" (desenho em `docs/plans/2026-10-07-equip-destinos-design.md`,
+  plano em `docs/plans/2026-10-07-equip-destinos.md`; aprovado por ele na conversa).
+- **sobrando** virou duas caixinhas com botão: **vender no NPC (N · X o)** — só comuns sem refino fora do corpo, botão
+  VENDER NO NPC com 2 toques (`venderSobrasNpc`: `depot_withdraw` pelo socket só dessas peças → confere pelo iid que não
+  há outra peça de mesmo nome na mochila que não seja sobra → `venderNoNpc({ apenas })` desmarca tudo que não é da lista e
+  confirma; sucesso medido pelo ouro) — e **anunciar no Mercado (N)** para incomum+/refinada (`destinosSobras`).
+- **bases de forja**: nota de 1 linha ("raras de 3 encaixes: só valem guardar se você for forjar — como forjar") + botão
+  ANUNCIAR; plano de forja continua atrás de "detalhes". **guardar: encaixe bom** → **encaixe que o Mercado paga (N)** com
+  o preço de referência e botão ANUNCIAR. **reservas**: `EQUIP_RESERVAS` 2 → 1 (a 3.ª melhor cai nas sobras); cada linha diz
+  "reserva de <voc> · <slot> · X pt (a do corpo tem Y pt)".
+- Todo nome de peça é link para `tibidle.com/wiki/database/equipamentos/<slug>` (`wikiSlug`: minúsculas, sem apóstrofo,
+  hífens; nome repetido na wiki ganha sufixo numérico e o link sem sufixo abre a primeira ficha).
+- **Mercado**: `precoReferencia(peça, cópias, meusIds)` — igual (mesmo corte → menor −1) / parecida (mesma raridade e refino
+  e EXATAMENTE os mesmos encaixes nobres: regen, skill, dano, loot; sem nobre dos dois lados, um atributo em comum) / faixa
+  (só mín–máx) / vazio. Ao vivo em 07/10: dark armor incomum com regen. de mana 1,1–1,3 a 300–450k contra 7–10k com
+  resistência; brass armor regen. de mana 1,5–1,7 a 445–760k. A linha do Mercado sem cópia igual usa a parecida (origem
+  `parecida`, âmbar) e mantém a faixa na nota. `MK.liberadas`: iids que os botões ANUNCIAR do Equip liberam — passam a
+  barreira "melhor ou reserva" e a lista branca das sobras; o que está no corpo nunca passa. Limpa ao desmarcar, no
+  "desmarcar", após anunciar e em toda leitura explícita do Equip (o ATUALIZAR do Mercado mantém: `manterLiberadas`).
+  `liberarParaMercado` marca as peças e abre a aba Mercado — a confirmação continua lá, 2 toques, taxa escrita.
+- Conta do dono em 07/10 (nível 94, depósito 65/300 — a wiki /deposito diz 300 para todos): 10 comuns para o NPC
+  (≈ 51,5 mil), 22 para o Mercado (sobras + 5 bases + 9 encaixe bom), 8 reservas. Antes disso o Equip tinha equipado golden
+  armor no Cavaleiro (+2,4 pt) e wand of vortex no Feiticeiro (+6,7 pt). 111 ordens abertas no Mercado (≈ 166k de taxa já
+  paga; uma hailstorm rod a 999.999 = 50k de taxa perdida). Yalahar Soul Fragment ×18 fica: 100 + 70 Yalahar gear wheel
+  abrem Zao/Gray Island no NPC Silas.
+- Testes: equip 37, mercado 32, autohunt 22, telas 16 (fixture do Equip refeita com as 4 caixinhas). eslint 0 erros.
