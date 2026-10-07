@@ -6213,7 +6213,8 @@
      * vira fragmento na Forja — a única fonte de gemas. Só mochila (bag) e depósito (depot); o corpo nunca. */
     const vendivelNpc = p => !((p.forja && p.forja.raridade) > 0) && !((p.forja && p.forja.refino) > 0);
     /* v2.15.0 — link da ficha na wiki oficial: /wiki/database/equipamentos/<slug>; slug = minúsculas, apóstrofo
-     * removido, qualquer outra coisa que não seja letra/dígito vira um hífen ("Dragha's Spellbook" → draghas-spellbook). */
+     * removido, qualquer outra coisa que não seja letra/dígito vira um hífen ("Dragha's Spellbook" → draghas-spellbook).
+     * Nome repetido na wiki ganha sufixo numérico (collar-of-blue-plasma-23542): o link sem sufixo abre a primeira ficha da dupla. */
     const wikiSlug = (nome) => String(nome == null ? '' : nome).toLowerCase().replace(/['’]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
     const wikiUrlPeca = (nome) => 'https://tibidle.com/wiki/database/equipamentos/' + wikiSlug(nome);
     /* v2.15.0 — as sobras por destino: comum sem refino → NPC (o NPC não compra Incomum+ nem refinada, visto em 04/10);
@@ -9535,8 +9536,8 @@
     /* A LISTA. e = {bag {nome: qtd}, bagInst [{iid,name,forja,wear,imbuements}],
      * depot [{itemName,count,iid?,forja?,wear?,imbuements?}], tradeable, npc,
      * taxa, catalogo {nome: item}, minhas [ordens], livros, copias, stats,
-     * prot {nomes, iids}, nunca [nomes], equip {usadas, reservas} | null,
-     * naCidade, digitados {chave: preço}, marcados [chave]}.
+     * prot {nomes, iids}, nunca [nomes], equip {usadas, reservas, sobras} | null,
+     * liberadas [iid] (o Equip liberou para o Mercado), naCidade, digitados {chave: preço}, marcados [chave]}.
      * → {linhas, fora, plano {itens, n, taxa, bruto, liquido, assinatura}, pendencias} */
     function mkMontar(e) {
         e = e || {};
@@ -9545,6 +9546,9 @@
         const protN = new Set(((e.prot && e.prot.nomes) || []).map(mkMin)), protI = new Set((e.prot && e.prot.iids) || []);
         const nunca = new Set((e.nunca || []).map(mkNorm).filter(Boolean));
         const eq = e.equip ? new Set([...(e.equip.usadas || []), ...(e.equip.reservas || [])]) : null;
+        /* v2.15.0 — liberadas: iids que o dono mandou do Equip (botões ANUNCIAR das caixinhas). Tiram a barreira
+         * "melhor ou reserva" e a lista branca das sobras SÓ para esses iids; o que está no corpo nunca entra. */
+        const usadas = new Set((e.equip && e.equip.usadas) || []), lib = new Set(e.liberadas || []);
         /* v2.11.20 — LISTA BRANCA (auditoria 30/09): a cópia de equipamento só pode ser marcada se a última
          * leitura do Equip a pôs nas SOBRAS. Antes o Mercado só barrava o que o Equip conhecia (melhor,
          * reserva): peça que entrou depois da leitura, peça do depósito com o depósito não lido, peça de
@@ -9560,7 +9564,8 @@
             : x.forja && x.forja.selado === true ? 'selado — purifique antes'
             : mkImbuido(x.imbuements) ? 'imbuído'
             : mkUsado(x.wear) ? 'usado (cargas ou tempo gastos)'
-            : eq && x.iid && eq.has(x.iid) ? 'melhor ou reserva no Equip' : null);
+            : usadas.has(x.iid) ? 'no corpo de alguém (tire antes)'
+            : eq && x.iid && eq.has(x.iid) && !lib.has(x.iid) ? 'melhor ou reserva no Equip' : null);
         const pilha = (nome) => {
             const n = mkMin(nome);
             let p = pilhas.get(n);
@@ -9596,7 +9601,7 @@
             if (m) { barrar(x.nome, x.count, m, x.iid); continue; }
             if (trad && trad[x.n] && trad[x.n].forjavel) {
                 if (!x.forja) { barrar(x.nome, 1, 'sem forja — o jogo não anuncia esta peça', x.iid); continue; }
-                if (sobras && !sobras.has(x.iid)) { barrar(x.nome, 1, 'o Equip não pôs nas sobras (melhor, reserva, encaixe bom, base de forja ou peça que ele não avaliou)', x.iid); continue; }
+                if (sobras && !sobras.has(x.iid) && !lib.has(x.iid)) { barrar(x.nome, 1, 'o Equip não pôs nas sobras (melhor, reserva, encaixe bom, base de forja ou peça que ele não avaliou)', x.iid); continue; }
                 copias.push(x);
             } else {
                 const p = pilha(x.nome);
@@ -9729,7 +9734,7 @@
                  taxa: null, taxaWiki: false, tradeable: null, npc: null, restErro: null,
                  catalogo: null, catalogo_t: 0, minhas: null, minhas_t: 0, inbox: null, inbox_t: 0, livros: {}, copias: {}, stats: {},
                  envios: [], ultimoEnvio: 0, pausaAte: 0, pend: null, ocupado: null, progresso: null, parar: false, erro: null, t: 0,
-                 digitados: {}, marcados: new Set(), conf: null, foco: null, pintadas: [], ordPintadas: [], revisao: null,
+                 digitados: {}, marcados: new Set(), liberadas: new Set(), conf: null, foco: null, pintadas: [], ordPintadas: [], revisao: null,
                  vendas: null, vendas_t: 0, vendasErro: null }; // v2.14.12 — histórico de vendas (market_history, type sell)
     const mkRid = () => ((window.crypto && typeof crypto.randomUUID === 'function') ? crypto.randomUUID() : 'tb-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10));
     function mkAnotarProt(alvo, nomes, iids) {
@@ -9857,7 +9862,7 @@
                  tradeable: MK.tradeable, npc: MK.npc, taxa: MK.taxa, catalogo: MK.catalogo, minhas: MK.minhas, livros: MK.livros, copias: MK.copias, stats: MK.stats,
                  prot: mkProtegidos(), nunca: autoHunt().nuncaVender || [], equip: R ? { usadas: [...(R.usadas || [])], reservas: [...(R.reservas || []), ...(R.nobres || []).map(p => p.iid), ...(R.bases || []).map(p => p.iid)],
                                                                          sobras: (R.dispensaveis || []).map(p => p.iid).filter(Boolean) } : null,
-                 naCidade: !emHunt(), digitados: MK.digitados, marcados: [...MK.marcados] };
+                 naCidade: !emHunt(), digitados: MK.digitados, marcados: [...MK.marcados], liberadas: [...MK.liberadas] };
     }
     const mkVista = () => mkMontar(mkEntrada());
     /* premium sem o welcome (helper instalado com o jogo aberto): o estado do

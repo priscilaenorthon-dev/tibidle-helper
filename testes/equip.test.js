@@ -393,6 +393,7 @@ t('wikiSlug: minúsculas, sem apóstrofo, espaços viram hífen (link da wiki)',
     assert.strictEqual(M.wikiSlug("Dragha's Spellbook"), 'draghas-spellbook');
     assert.strictEqual(M.wikiSlug('dark armor'), 'dark-armor');
     assert.strictEqual(M.wikiSlug('  Wand of Vortex  '), 'wand-of-vortex');
+    assert.strictEqual(M.wikiSlug('make-do boots'), 'make-do-boots');
     assert.strictEqual(M.wikiUrlPeca('plate armor'), 'https://tibidle.com/wiki/database/equipamentos/plate-armor');
 });
 t('reservas: só a 2.ª melhor de cada slot fica; a 3.ª vai para as sobras (dono, 07/10)', () => {

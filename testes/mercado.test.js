@@ -252,7 +252,7 @@ t('exclusões: selado, imbuído, usado, protegido (nome e iid), Equip, "nunca ve
     assert(/selado/.test(motivo('plate armor', 'p1')));
     assert.strictEqual(motivo('plate armor', 'p2'), 'imbuído');
     assert(/Equip/.test(motivo('plate armor', 'p3')), 'reserva do Equip entrou na lista');
-    assert(/Equip/.test(motivo('elvish bow', 'e1')), 'melhor do Equip entrou na lista');
+    assert(/corpo/.test(motivo('elvish bow', 'e1')), 'melhor do Equip (no corpo) entrou na lista'); // 2.15.0 — peça no corpo tem motivo próprio
     assert(/protegido/.test(motivo('elvish bow', 'e2')));
     assert(/protegido/.test(motivo('dragon ham')));
     assert(/nunca vender/.test(motivo('wolf paw')), 'lista pessoal "nunca vender" (com hífen e maiúscula) não valeu');
@@ -346,6 +346,17 @@ t('mkMontar: cópia sem igual mas com parecida recebe o preço (origem "parecida
         catalogo: { 'plate armor': { name: 'plate armor', sellOrders: 1, minSell: 65000, trades30d: 5, copyOrders: 1 } }, copias, equip: { usadas: [], reservas: [], sobras: ['pa2'] } });
     const l2 = linha(P.mkMontar(e2), 'i:pa2');
     assert.strictEqual(l2.preco, null); assert(/digite/.test(l2.bloqueio), 'sem parecida: digite');
+});
+t('mkMontar: liberadas tira a barreira "melhor ou reserva" só para o iid liberado; peça no corpo nunca', () => {
+    const dep = [{ itemName: 'plate armor', count: 1, iid: 'res1', forja: F1(1, ['regen_mana', 1.3]) }, { itemName: 'plate armor', count: 1, iid: 'res2', forja: F1(1, ['regen_vida', 1.3]) }];
+    const e = (lib) => base({ depot: dep, catalogo: { 'plate armor': { name: 'plate armor', sellOrders: 0, trades30d: 5 } },
+        equip: { usadas: ['usa1'], reservas: ['res1', 'res2'], sobras: [] }, liberadas: lib });
+    const sem = P.mkMontar(e([]));
+    assert(sem.fora.some(f => f.iid === 'res1' && /melhor ou reserva/.test(f.motivo)), 'sem liberar: fora');
+    const com = P.mkMontar(e(['res1']));
+    assert(linha(com, 'i:res1'), 'liberada entra na lista'); assert(com.fora.some(f => f.iid === 'res2'), 'a outra reserva continua fora');
+    const corpo = P.mkMontar(base({ bagInst: [{ iid: 'usa1', name: 'plate armor', forja: F1(0) }], catalogo: {}, equip: { usadas: ['usa1'], reservas: [], sobras: [] }, liberadas: ['usa1'] }));
+    assert(corpo.fora.some(f => f.iid === 'usa1' && /corpo/.test(f.motivo)), 'o que está no corpo nunca é liberado');
 });
 
 /* ============================================ 2) o script inteiro num vm */
