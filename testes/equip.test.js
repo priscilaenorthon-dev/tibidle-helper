@@ -7,7 +7,7 @@ const raiz = path.join(__dirname, '..');
 const src = fs.readFileSync(path.join(raiz, 'tibidle-helper.user.js'), 'utf8');
 const ini = src.indexOf('/* @@EQUIP-PURO-INICIO */'), fim = src.indexOf('/* @@EQUIP-PURO-FIM */');
 assert(ini > 0 && fim > ini, 'marcadores @@EQUIP-PURO não encontrados');
-const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, pesosDaVoc, candidatosEquip, distribuirEquip, pecasDesmanche, planoForja, faixaPotencia, wikiSlug, wikiUrlPeca };')();
+const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, pesosDaVoc, candidatosEquip, distribuirEquip, pecasDesmanche, planoForja, faixaPotencia, wikiSlug, wikiUrlPeca, EQUIP_RESERVAS };')();
 const le = (p) => { try { return JSON.parse(fs.readFileSync(path.join(raiz, p), 'utf8')); } catch (e) { return null; } };
 const base = {};
 for (const [nome, it] of Object.entries(le('testes/fixtures/itens.json').itens)) base[nome] = { id: it.id, attrs: it.attrs || {}, sell: it.sell || 0, equipPreview: it.equipPreview || null };
@@ -352,11 +352,14 @@ t('encaixe nobre: guardado se supera o vestido; vendável quando todos já veste
     assert.strictEqual(d1.nobres.length, 0, 'nada a guardar: ' + d1.nobres.map(x => x.iid));
     const vend = d1.dispensaveis.filter(x => /^bota-mana-fraca/.test(x.iid));
     assert(vend.length >= 1 && vend.every(x => /já usam igual ou melhor/.test(x.motivo)), JSON.stringify(vend.map(x => x.motivo)));
-    /* o Druida veste bota de loot: a de regen. de mana supera o encaixe dele → guardada (e na verdade vira a melhor) */
+    /* o Druida veste bota de loot: a de regen. de mana supera o encaixe dele → vira a melhor dele. 2.15.0 (reservas = 1):
+     * das 3 iguais, uma é vestida, uma fica de reserva e a 3.ª vai para as sobras (antes, com 2 reservas, nenhuma ia) */
     const mix = ['KNIGHT', 'PALADIN', 'SORCERER'].map(v => p('bota-' + v, 'boots', v, ['regen_mana', 5])).concat([p('bota-DRUID', 'boots', 'DRUID', ['chance_de_loot', 2])]);
     const d2 = M.distribuirEquip(mix.concat(fracas));
-    const sobra2 = new Set(d2.dispensaveis.map(x => x.iid));
-    for (const f of fracas) assert(!sobra2.has(f.iid), f.iid + ' foi para as sobras com o Druida sem regen. de mana');
+    const ehFraca = iid => /^bota-mana-fraca/.test(iid);
+    assert(ehFraca(d2.porVoc.DRUID.boots.melhor.iid), 'o Druida deveria vestir uma bota de regen. de mana');
+    assert.strictEqual([...d2.reservas].filter(ehFraca).length, 1, 'uma só de reserva: ' + [...d2.reservas]);
+    assert.strictEqual(d2.dispensaveis.filter(x => ehFraca(x.iid)).length, 1, 'a 3.ª nas sobras: ' + d2.dispensaveis.map(x => x.iid));
     /* nobre depende da vocação: regen. de vida só no Knight; ML no anel não é nobre */
     const d3 = M.distribuirEquip(bons.concat([p('bota-vida', 'boots', null, ['regen_vida', 1.1]), p('anel-ml', 'ring', null, ['nivel_magico', 1])]));
     assert(!d3.nobres.some(x => x.iid === 'anel-ml'), 'nível mágico no anel não é encaixe de defesa');
@@ -391,5 +394,14 @@ t('wikiSlug: minúsculas, sem apóstrofo, espaços viram hífen (link da wiki)',
     assert.strictEqual(M.wikiSlug('dark armor'), 'dark-armor');
     assert.strictEqual(M.wikiSlug('  Wand of Vortex  '), 'wand-of-vortex');
     assert.strictEqual(M.wikiUrlPeca('plate armor'), 'https://tibidle.com/wiki/database/equipamentos/plate-armor');
+});
+t('reservas: só a 2.ª melhor de cada slot fica; a 3.ª vai para as sobras (dono, 07/10)', () => {
+    assert.strictEqual(M.EQUIP_RESERVAS, 1);
+    const anel = (iid, regen) => ({ iid, nome: 'crystal ring', slot: 'ring', attrs: base['crystal ring'].attrs, equipPreview: null, sell: 250,
+        origem: iid === 'a' ? 'corpo' : 'depósito', dono: iid === 'a' ? 'SORCERER' : null, forja: F(1, ['regen_mana', regen]) });
+    const R = M.distribuirEquip([anel('a', 2.3), anel('b', 1.5), anel('c', 1.1)], ['SORCERER'], null);
+    assert(R.usadas.has('a'), 'a melhor (2,3) no corpo');
+    assert.deepStrictEqual([...R.reservas], ['b'], 'só a 2.ª melhor é reserva');
+    assert(R.dispensaveis.some(p => p.iid === 'c'), 'a 3.ª cai nas sobras');
 });
 console.log(`\n${n} testes ok` + (pulados ? ` · ${pulados} pulados (sem o estado da conta em data/)` : ''));

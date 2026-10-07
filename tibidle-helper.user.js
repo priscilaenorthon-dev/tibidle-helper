@@ -6203,7 +6203,7 @@
      * que vale (melhor 2 mãos − arma de 1 mão escolhida); se ele vence, o
      * escudo fica vazio e a arma vira a de 2 mãos.
      * → {porVoc:{VOC:{slot:{atual, atualPt, melhor, melhorPt, ganho, candidatos[]}}}, reservas:Set(iid), dispensaveis:[peça+motivo], usadas:Set} */
-    const EQUIP_TOPK = 6, EQUIP_RESERVAS = 2, RARIDADE_BASE_FORJA = 3;
+    const EQUIP_TOPK = 6, EQUIP_RESERVAS = 1, RARIDADE_BASE_FORJA = 3;
     /* v2.14.8 — potência (vídeos de 04/10, criador do jogo + TV de Souza): cada refino dá +50 e a cada 200 a peça
      * sobe de faixa (1–199, 200–399, 400–599, 600–799, 800+); a faixa é o teto das linhas de skill (ML, distância,
      * corpo a corpo: faixa 2 → até +2, faixa 3 → até +3). Uma Snakebite Rod ML+1 com 300+ vira ML+3 na forja. */
@@ -6393,9 +6393,8 @@
             if (s === 'weapon' || s === 'shield') continue;
             for (const r of _resolverSlot(porVoc, vocs, s, usadas)) fixar(r.v, s, r.c);
         }
-        /* reservas: os 2 melhores candidatos não usados de cada (voc, slot) com
-         * pontos > 0. v2.11.6 — eram 1: o dono perdia peça boa que era a
-         * segunda melhor de alguém (29/09). */
+        /* reservas: a 2.ª melhor de cada (voc, slot) com pontos > 0. v2.11.6 eram 2; v2.15.0 — dono (07/10): "não posso
+         * ficar guardando item que nunca vou usar" → 1 por slot; a 3.ª melhor vai para as sobras. */
         const reservas = new Set();
         for (const v of vocs) {
             for (const s of Object.keys(porVoc[v])) {
