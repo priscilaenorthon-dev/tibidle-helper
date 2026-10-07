@@ -4878,11 +4878,14 @@
      * ⚠ v2.11 — o formato de sell-check-<item> (nome com espaço? slug?) e
      * como a caixa mostra "marcado" NÃO foram vistos com conta logada: tudo
      * é defensivo. Qualquer dúvida sobre o que ia ser vendido = não vende. */
-    async function venderNoNpc() {
+    /* v2.15.0 — opts.apenas (Set de nomes normalizados, normNomeItem): venda das SOBRAS do Equip — só o que está na
+     * lista fica marcado, todo o resto é desmarcado; a lista "nunca vender" nem é montada (a lista do Equip é a regra). */
+    async function venderNoNpc(opts) {
+        opts = opts || {};
         const abrir = tid('actionbar-selling');
         if (!abrir) return { erro: 'botão VENDER (actionbar-selling) não está na tela — precisa estar na cidade' };
         let prot;
-        try { prot = await protecaoVenda(); }
+        try { prot = opts.apenas ? { equip: false } : await protecaoVenda(); }
         catch (e) { return { erro: 'não consegui montar a lista "nunca vender" (' + e.message + ') — nada vendido' }; }
         abrir.click();
         const painel = await esperarQue(() => tid('sell-panel'), 6000, 150);
@@ -4905,12 +4908,16 @@
         if (totalAntes > 0) {
             const lv = linhasDaVenda();
             if (!lv.linhas.length) { fecharPainel(); await dorme(400); return { erro: 'painel com total ' + totalAntes + ' mas sem linhas (sell-check-*/sell-row-*) — não sei o que ia vender, nada vendido' }; }
-            if (prot.equip) {
-                const reais = lv.linhas.map(l => prot.nomes[normNomeItem(l.nome)]).filter(Boolean);
-                try { prot.base = await basePorNome(reais); } catch (e) { prot.base = {}; }
+            if (opts.apenas) {
+                /* v2.15.0 — venda das SOBRAS do Equip: só o que está em `apenas` (nomes normalizados) fica marcado */
+                guardados = lv.linhas.filter(l => !opts.apenas.has(normNomeItem(l.nome))).map(l => Object.assign({}, l, { motivo: 'não é sobra do Equip' }));
+            } else {
+                if (prot.equip) {
+                    const reais = lv.linhas.map(l => prot.nomes[normNomeItem(l.nome)]).filter(Boolean);
+                    try { prot.base = await basePorNome(reais); } catch (e) { prot.base = {}; }
+                }
+                guardados = escolherDesmarcar(lv.linhas, prot).guardar;
             }
-            const sel = escolherDesmarcar(lv.linhas, prot);
-            guardados = sel.guardar;
             if (guardados.length) {
                 if (!lv.checks) { fecharPainel(); await dorme(400); return { erro: `achei ${guardados.length} item(ns) para NÃO vender (${guardados.map(g => g.nome).join(', ')}) mas o painel não tem as caixas sell-check-* — nada vendido` }; }
                 const falhas = await desmarcarNaVenda(guardados);
@@ -7869,8 +7876,38 @@
         renderizar();
         if (!MK.t && !MK.ocupado && socketAberto()) mkAtualizar();
     }
-    /* v2.15.0 — provisório: a Task 8 do plano (docs/plans/2026-10-07-equip-destinos.md) troca pela venda das sobras */
-    async function venderSobrasNpc() { }
+    /* v2.15.0 — VENDER NO NPC as sobras comuns (botão da aba Equip, 2 toques): retira do depósito só estas (depot_withdraw
+     * pelo socket), confere que não há outra peça de mesmo nome na mochila que NÃO seja sobra (o painel de venda só
+     * conhece o nome: ela iria junto), abre VENDER, desmarca tudo que não é da lista e confirma. Sucesso medido pelo
+     * ouro (venderNoNpc). A mochila conferida é a que o depot_result devolve; sem ela, a última vista (mkBagAtual). */
+    async function venderSobrasNpc(pecas) {
+        const lista = (pecas || []).filter(p => p && p.origem !== 'corpo');
+        if (!lista.length || EQUIP.equipando || EQUIP.lendo) return;
+        if (emHunt()) { EQUIP.aviso = 'vender só na cidade'; renderizar(); return; }
+        if (!socketAberto()) { EQUIP.aviso = 'o socket do jogo não foi capturado — F5 com o helper instalado'; renderizar(); return; }
+        EQUIP.equipando = true; EQUIP.vendendo = true; EQUIP.erro = null; EQUIP.aviso = null; _travaJogo = 'Equip'; renderizar();
+        try {
+            let inst = null;
+            const doDep = lista.filter(p => p.origem === 'depósito' && p.iid);
+            if (doDep.length) {
+                const r = await mkPedir('depot_withdraw', { items: doDep.map(p => ({ name: p.nome, count: 1, iid: p.iid })), requestId: mkRid() });
+                if (r.erro) throw new Error('retirar do depósito falhou — ' + mkErroTexto(r.erro));
+                if (r.data && Array.isArray(r.data.bagInstances)) inst = r.data.bagInstances;
+                await dorme(600);
+            }
+            if (!inst) { const b = mkBagAtual(); inst = (b && b.inst) || []; }
+            const nomes = new Set(lista.map(p => normNomeItem(p.nome))), iids = new Set(lista.map(p => p.iid));
+            const intrusa = inst.find(x => x && nomes.has(normNomeItem(x.name)) && !iids.has(x.iid));
+            if (intrusa) throw new Error(`há outra ${intrusa.name} na mochila que não é sobra — guarde-a no depósito antes (nada vendido)`);
+            const r = await venderNoNpc({ apenas: nomes });
+            if (r.erro) throw new Error(r.erro);
+            log(`sobras: ${lista.length} peça(s) → NPC` + (r.total ? ` · ${numBR(r.total)} ouro` : ' · nada vendido (painel vazio)'), r.vazio ? 'erro' : 'ok');
+        } catch (e) { EQUIP.aviso = 'venda no NPC: ' + e.message; log('sobras: ' + e.message, 'erro'); }
+        finally { EQUIP.equipando = false; EQUIP.vendendo = false; EQUIP.vendaConf = null; _travaJogo = null; }
+        const aviso = EQUIP.aviso;
+        try { await equipAtualizar(); } catch (e) { renderizar(); }
+        if (aviso) { EQUIP.aviso = aviso; renderizar(); }
+    }
     async function equipAtualizar(opts) {
         if (EQUIP.lendo) return;
         /* v2.15.0 — a liberação para o Mercado (MK.liberadas) vale para a foto do Equip em que o dono clicou; nova

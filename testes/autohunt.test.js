@@ -259,6 +259,23 @@ await t('venda: só itens protegidos → nada para vender, ok', async () => {
     const r = await V.venderNoNpc();
     assert(r.ok && r.vazio && !V.J.confirmou && r.guardados.length === 2, JSON.stringify(r));
 });
+/* 2.15.0 — VENDER NO NPC das sobras do Equip: venderNoNpc({ apenas }) desmarca tudo que NÃO está na lista e vende o resto.
+ * A lightning robe é equipamento (a lista "nunca vender" normal a guardaria) e a rede está fora (protecaoVenda falharia):
+ * com `apenas`, nem a proteção é montada — a lista do Equip é a única regra. */
+await t('venderNoNpc({apenas}): desmarca tudo que não está na lista e vende o resto', async () => {
+    const V = montarVenda([{ nome: 'lightning robe', valor: 11000 }, { nome: 'dragon ham', valor: 1 }], { semRede: true });
+    const r = await V.venderNoNpc({ apenas: new Set(['lightning robe']) });
+    assert(r.ok && !r.erro && V.J.confirmou, JSON.stringify(r));
+    assert.deepStrictEqual(V.J.vendidos, ['lightning robe'], 'só a sobra do Equip deveria ser vendida: ' + V.J.vendidos);
+    assert.strictEqual(r.total, 11000, 'o total é só o da sobra (a dragon ham saiu antes do VENDER)');
+    assert.deepStrictEqual(r.guardados.map(g => g.nome), ['dragon ham']);
+    assert(/não é sobra do Equip/.test(r.guardados[0].motivo), 'motivo: ' + r.guardados[0].motivo);
+    assert(V.J.logs.some(l => /nunca vender: dragon ham/.test(l)), 'o Log não diz o que ficou: ' + V.J.logs.join(' | '));
+    /* sem nada da lista no painel: nada vendido, painel fechado */
+    const V2 = montarVenda([{ nome: 'dragon ham', valor: 1 }], { semRede: true });
+    const r2 = await V2.venderNoNpc({ apenas: new Set(['lightning robe']) });
+    assert(r2.ok && r2.vazio && !V2.J.confirmou && !V2.J.aberto, JSON.stringify(r2));
+});
 
 /* --------------------------------- 3. script inteiro no vm: morte no Scan e restauração */
 await (async () => {
