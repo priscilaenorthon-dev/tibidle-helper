@@ -7,7 +7,7 @@ const raiz = path.join(__dirname, '..');
 const src = fs.readFileSync(path.join(raiz, 'tibidle-helper.user.js'), 'utf8');
 const ini = src.indexOf('/* @@EQUIP-PURO-INICIO */'), fim = src.indexOf('/* @@EQUIP-PURO-FIM */');
 assert(ini > 0 && fim > ini, 'marcadores @@EQUIP-PURO não encontrados');
-const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, pesosDaVoc, candidatosEquip, distribuirEquip, pecasDesmanche, planoForja, faixaPotencia, wikiSlug, wikiUrlPeca, EQUIP_RESERVAS, destinosSobras };')();
+const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, pesosDaVoc, candidatosEquip, distribuirEquip, pecasDesmanche, planoForja, faixaPotencia, wikiSlug, wikiUrlPeca, EQUIP_RESERVAS, destinosSobras, chanceLinha, fragmentosDesmanche, escolherDestino, faixaRange, valorTipico, linhasUteis, REGRAS_VOCACAO, FAIXA_NOME };')();
 const le = (p) => { try { return JSON.parse(fs.readFileSync(path.join(raiz, p), 'utf8')); } catch (e) { return null; } };
 const base = {};
 for (const [nome, it] of Object.entries(le('testes/fixtures/itens.json').itens)) base[nome] = { id: it.id, attrs: it.attrs || {}, sell: it.sell || 0, equipPreview: it.equipPreview || null };
@@ -417,5 +417,70 @@ t('destinosSobras: comum vai ao NPC, incomum+ ao Mercado, peça no corpo fica à
     assert.deepStrictEqual(d.mercado.map(p => p.iid), ['3', '4'], 'incomum ou refinada: o NPC não compra');
     assert.deepStrictEqual(d.corpo.map(p => p.iid), ['5']);
     assert.deepStrictEqual(M.destinosSobras(null), { npc: [], mercado: [], corpo: [], npcOuro: 0 });
+});
+t('2.16.0: chance de cada linha por Atributo T1 (wiki /forja: ML cai 1 em 89 na arma, regen. de mana 10 em 132 na defesa)', () => {
+    assert(Math.abs(M.chanceLinha('nivel_magico', 'weapon', []) - 1 / 89) < 1e-9, 'ML na arma = 1/89');
+    assert(Math.abs(M.chanceLinha('regen_mana', 'armor', []) - 10 / 132) < 1e-9, 'regen. de mana na armadura = 10/132');
+    assert(Math.abs(M.chanceLinha('dano_elem_fogo', 'necklace', []) - 10 / 89) < 1e-9, 'fogo no colar = 10/89');
+    assert.strictEqual(M.chanceLinha('regen_mana', 'weapon', []), 0, 'linha de defesa não cai em arma');
+    assert.strictEqual(M.chanceLinha('nivel_magico', 'weapon', [{ id: 'nivel_magico', valor: 1 }]), 0, 'linha que a peça já tem não repete');
+    assert(Math.abs(M.chanceLinha('nivel_magico', 'weapon', [{ id: 'dano_fisico', valor: 2 }]) - 1 / 79) < 1e-9, 'com dano físico já na peça o sorteio é entre 79');
+    /* valores por faixa (wiki): regen 1,1–1,7 na I e 5,2 na VI; skill 1–3 na IV; dano mágico 0,5–1,3 na I */
+    assert.deepStrictEqual(M.faixaRange('regen_mana', 1), [1.1, 1.7]); assert.deepStrictEqual(M.faixaRange('regen_vida', 6), [5.2, 5.2]);
+    assert.deepStrictEqual(M.faixaRange('nivel_magico', 4), [1, 3]); assert.deepStrictEqual(M.faixaRange('dano_magico', 1), [0.5, 1.3]);
+    assert.deepStrictEqual(M.faixaRange('resist_fogo', 3), [1.2, 3.1]); assert.deepStrictEqual(M.faixaRange('resist_fisica', 3), [0.4, 1.0]);
+    assert.strictEqual(M.valorTipico('regen_mana', 1), 1.4);
+    assert.strictEqual(M.FAIXA_NOME[2], 'III Superior');
+});
+t('2.16.0: fragmentos do desmanche pela faixa da potência TOTAL × raridade; destino Mercado × desmanche', () => {
+    const p = (r, pot, refino) => ({ nome: 'x', slot: 'ring', attrs: {}, forja: { raridade: r, refino: refino || 0, potenciaBase: pot, atributos: [] } });
+    assert.deepStrictEqual(M.fragmentosDesmanche(p(3, 271, 3)).n, 21, 'Épico 271 +3 = 421 (faixa III) → 21');
+    assert.strictEqual(M.fragmentosDesmanche(p(0, 500)).n, 0, 'Comum não desmancha');
+    assert.strictEqual(M.fragmentosDesmanche(p(1, 50)).n, 1); assert.strictEqual(M.fragmentosDesmanche(p(5, 1000)).n, 300);
+    const l = M.fragmentosDesmanche(p(4, 850)); assert.strictEqual(l.n, 120); assert.strictEqual(l.t2, 0.25); assert.strictEqual(l.faixa, 5);
+    /* Raro faixa II = 6 fragmentos × 2.000 = 12k: ref. 100k vai ao Mercado (líquido 95k); ref. 10k desmancha; sem ref., o dono decide */
+    const raro = p(2, 250);
+    const a = M.escolherDestino(raro, 100000, null); assert.strictEqual(a.destino, 'mercado'); assert.strictEqual(a.liquido, 95000); assert.strictEqual(a.desmanche, 12000); assert(a.estimado);
+    const b = M.escolherDestino(raro, 10000, 2000); assert.strictEqual(b.destino, 'desmanche'); assert.strictEqual(b.liquido, 9500);
+    assert.strictEqual(M.escolherDestino(raro, null, 2000).destino, 'mercado?');
+    assert.strictEqual(M.escolherDestino(raro, 10000, 1500).desmanche, 9000, 'preço do fragmento lido no Mercado');
+    assert.strictEqual(M.escolherDestino(p(0, 100), 5000, 2000).destino, 'mercado', 'Comum sem fragmento: só o Mercado');
+});
+t('2.16.0: Épico sem linha útil vai para as sobras (não é base de forja); Épico com uma linha boa continua base', () => {
+    /* espada do Knight com 3 linhas mortas nele (dano elemental ×2 e distância): rolar skill cai 1 em 89 — anuncie ou desmanche */
+    const esp = (iid, dono, r, ...at) => ({ iid, nome: 'fire sword', slot: 'weapon', attrs: { weaponType: 'sword', attack: 24 }, origem: dono ? 'corpo' : 'depósito', dono, forja: Object.assign(F(r, ...at), { potenciaBase: 120 }) });
+    const anel = (iid, dono, r, ...at) => ({ iid, nome: 'crystal ring', slot: 'ring', attrs: {}, origem: dono ? 'corpo' : 'depósito', dono, forja: F(r, ...at) });
+    const pcs = [
+        esp('k', 'KNIGHT', 1, ['dano_fisico', 2]),
+        esp('morta', null, 3, ['dano_elem_fogo', 3], ['dano_elem_gelo', 2], ['distancia', 1]),
+        esp('viva', null, 3, ['dano_elem_fogo', 3], ['dano_elem_gelo', 2], ['corpo_a_corpo', 1]),
+        esp('res', null, 1, ['dano_fisico', 1.5]),
+        anel('p', 'PALADIN', 1, ['regen_mana', 1.3]), anel('s', 'SORCERER', 1, ['regen_mana', 1.2]), anel('d', 'DRUID', 1, ['regen_mana', 2.3])
+    ];
+    const d = M.distribuirEquip(pcs, undefined, { party: { fisico: 0.95, tomadoS: 25 } });
+    assert(!d.bases.some(p => p.iid === 'morta'), 'Épico com 3 linhas mortas não é base de forja');
+    const m = d.dispensaveis.find(p => p.iid === 'morta');
+    assert(m, 'Épico sem linha útil deveria estar nas sobras (reservas: ' + [...d.reservas] + ')');
+    assert(/sem linha útil/.test(m.motivo) && /1 em 89/.test(m.motivo), 'motivo deveria explicar: ' + m.motivo);
+    assert(d.bases.some(p => p.iid === 'viva') || d.usadas.has('viva') || d.reservas.has('viva'), 'Épico com corpo a corpo +1 fica (base, uso ou reserva)');
+    assert(!d.dispensaveis.some(p => p.iid === 'viva'), 'Épico com linha boa não sobra');
+    assert.deepStrictEqual(M.linhasUteis(pcs[1], 'KNIGHT', null), [], 'nenhuma linha vale para o Knight');
+    assert.deepStrictEqual(M.linhasUteis(pcs[2], 'KNIGHT', null), ['corpo_a_corpo']);
+    assert.deepStrictEqual(M.linhasUteis(pcs[2], 'SORCERER', null), [], 'Feiticeiro não veste espada');
+    /* planoForja: peça que já tem a linha rara avisa para não apagar; peça sem ela avisa a chance de 1 em 89 */
+    const pv = M.planoForja(pcs[2], ['KNIGHT'], null, null);
+    assert(pv.temRara && /NUNCA apague/.test(pv.passos.join(' ')), 'corpo a corpo +1 é linha rara: não apagar — ' + pv.passos.join(' | '));
+    const pm = M.planoForja(pcs[1], ['KNIGHT'], null, null);
+    assert(!pm.temRara && /1 em 68/.test(pm.passos.join(' ')) && /não role/.test(pm.passos.join(' ')), 'sem a linha rara: avisar a chance (89 − 10 − 10 − 1 = 68 com fogo, gelo e distância já na peça) — ' + pm.passos.join(' | '));
+    assert(pm.linhasAlvo.every(x => typeof x.chance === 'number' && Array.isArray(x.range)), 'linhas-alvo levam chance e range');
+    assert.strictEqual(pm.faixaNome, 'I Simples');
+});
+t('2.16.0: Paladino — mínimo do tiro é 60 % do máximo (update 1.0.13): +1 de distância vale um pouco mais que antes', () => {
+    /* nível 67, distância 36 (REF_SK): antes 0,045·25/(13,4 + 0,045·25·36) = 2,08 % do tiro; agora 0,09·25/(13,4 + 0,09·25·36) = 2,40 % */
+    const P = M.pesosDaVoc('PALADIN', null);
+    const esperado = 0.26 * 0.05 * 100 * (0.09 * 25) / (67 / 5 + 0.09 * 25 * 36);
+    assert(Math.abs(P.distancia - esperado) < 0.01, `distância ${P.distancia} ≠ ${esperado}`);
+    assert(P.distancia > 0.26 * 0.05 * 100 * (0.045 * 25) / (67 / 5 + 0.045 * 25 * 36), 'deveria valer mais que pela fórmula antiga');
+    assert(M.REGRAS_VOCACAO.PALADIN.some(x => /BESTA/.test(x)) && M.REGRAS_VOCACAO.SORCERER.some(x => /NÍVEL MÁGICO/.test(x)), 'regras por vocação em palavras');
 });
 console.log(`\n${n} testes ok` + (pulados ? ` · ${pulados} pulados (sem o estado da conta em data/)` : ''));

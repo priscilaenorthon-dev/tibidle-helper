@@ -4814,3 +4814,90 @@ mapas (Vampire hell 32,5k × 58,0k do Em área; Banshee 27,7k × 49,6k) e ainda 
 - Testes: mercado 32 → 33 (vm: a intrusa de mesmo nome aborta antes do painel — `depot_withdraw` só da sobra, Log e aviso,
   aba destravada); autohunt 22 (texto do Log ajustado). Desenho `docs/plans/2026-10-07-equip-destinos-design.md`
   § "Erros e limites" alinhado (abortar na falha do `depot_withdraw`).
+
+## 2.16.0 (12/10) — Equip atualizado com a wiki de 12/10 e os vídeos de outubro: chance real de cada linha, fragmentos do desmanche, veredito por peça
+Pedido do dono (12/10): "verifica a wiki das novas atualizações, procura no YouTube (tem bastante vídeo sobre equipamentos),
+ajusta a tela de Equip para saber o que é bom realmente para cada personagem e o que não presta para desmanchar ou vender".
+
+**Jogo em 12/10**: updates 1.0.13 (30/09) … 1.1.3 (09/10); wiki em assets v189 com **406 equipamentos** (eram 339), 113 hunts em
+9 ilhas, 113 Elites, 5 bosses. O que importa para o helper:
+- 1.0.13: **flecha/virote: dano mínimo subiu e escala com o dano máximo** → wiki /como-o-dano-e-calculado: mínimo do tiro = 60 % do
+  máximo (era nível/5). Viscous (Elite) agora bate terra. Novos tiers de Key Backpack na loja.
+- 1.0.14: Key Backpack com mais chaves em todo tier; "Item Guarantee Fragment" **saiu do drop** de hunts e Elites; chave de boss
+  cai bem mais nas hunts < 50, Banshee Quest e Behemoth Quest. Evento de skill (10h UTC-3).
+- 1.1.0 (04/10): 4 ilhas novas no Silas (Forgotten Knowledge, Otherworld, The Inquisition, Warzone), hunts novas em Tibidle Island
+  e Pits of Inferno; Energy Ring saiu de Thunderscar Peak. 1.1.1: hunts novas nível 30/40/60/70 em Tibidle Island e Yalahar; **morte
+  só tira XP de nível, não mais skill**. 1.1.2: Holy Portal dropa Spike Sword no lugar da Ice Rapier. 1.1.3 (09/10): **leilão de itens
+  por coins**; Forja (desmanche, equipamentos, criação de gemas, bancada) refinada; vários itens/equipamentos que não trocavam, agora
+  trocam; "alguns itens não listavam no Mercado" corrigido.
+- Wiki /forja (reescrita): raridade = encaixes (Comum 0 … Mítico 5); chance na purificação por fonte (caçada: Comum 86 %, Incomum
+  11 %, Raro 2,5 %, Épico 0,45 %, Lendário 0,05 %; Elite 76/18/5/0,85/0,15; boss 54/30/13/2,6/0,4; Mítico só com Raridade T2);
+  subir raridade 55/35/20/10 % (T1) e 3 % (T2), falhar não rebaixa. **Potência** = base + 50 × refino; base caçada 0–350, Elite 50–420,
+  boss 250–500; faixas I Simples 0–199 · II Notável 200–399 · III Superior 400–599 · IV Formidável 600–799 · V Colossal 800–999 ·
+  VI Godlike 1000. Refino +1…+10 a 80/70/60/50/35/25/20/15/10/5 %; do +5 a falha derruba 1 (Garantia T1 segura, é consumida sempre).
+  **Tabela de valores por faixa** (min–max) para as 17 linhas (FAIXA_VALORES no bloco EQUIP-PURO). **Pesos de sorteio do Atributo T1**:
+  arma/colar (soma 89) — cada elemento 10, dano físico 10, dano mágico 10, roubo 2+2, crítico 1+1, corpo a corpo / distância / ML 1
+  cada; defesa (soma 132) — cada resistência 10, proteção mágica 10, max HP/mana/capacidade 10, regen. vida/mana 10, cura própria 5,
+  roubo 2+2, resist. física / escudo / loot 1. Um atributo nunca repete na peça. Gemas (100 fragmentos do mesmo tipo + ouro; a parte em
+  coin converte pela cotação média de 6 h): Refino T1 10k, Garantia 15k, Limpeza T1 15k, Atributo T1 20k, Refazer T1 20k, Raridade T1
+  30k; Refino T2 35k, Limpeza T2 40k, Refazer T2 40k, Ordem T2 45k, Raridade T2 50k. **Desmanche** (Incomum+, até 100 por vez, peça
+  vestida não): fragmentos pela faixa da potência TOTAL × raridade — I 1/2/4/6/10, II 3/6/11/18/30, III 6/12/21/36/60, IV 12/24/42/72/120,
+  V 20/40/70/120/200, VI 30/60/105/180/300 (Incomum→Mítico); chance de T2 0/0/0/10/25/50 %. Épico não vende a NPC nem no Auto Selling.
+- Wiki /vender: NPC não compra Incomum+ nem refinada; Auto Selling 80 % (free) / 90 % (Premium) e pula peça "com valor de forja".
+  /mercado: forjado anuncia inteiro (raridade, refino, linhas); ordem dura 3 dias; taxa de criação 5 % nunca volta; 60 ações/min.
+- Itens de forja no catálogo: "Attribute Fragment T1", "Cleansing Fragment T1/T2", "Refine Fragment T1", "Guarantee Fragment"…
+  (Crystal/Soul/Token Fragment não são de forja).
+
+**Vídeos lidos (legendas automáticas pelo navegador do Playwright; yt-dlp e a API de transcrição exigem login)**: TV de Souza
+"Guia completo de itens e forja" (02/10, 46 min), "Guia definitivo da forja" (02/10, 22 min), "News + Guia de Invasão + o que mudou"
+(07/10), "Guia do 80+: ZAO ou GREY?" (12/10), "10 coisas que você precisa saber"; NunohS "Qual o foco inicial?" (11/10, top 1 de XP);
+EuSouOGiba "5 dicas Lv40+"; Osfurg "Esse é o meta"; Vida de Knight Neutro "Mana regen fez diferença". O que vale está em
+REGRAS_VOCACAO e aqui:
+- **Knight**: arma de MAIOR ATAQUE (Spike Sword 2 mãos 41 → Knight Axe → Heroic Axe (Water Elementals, com prey de dano) → Onyx Flail
+  (boss Worker Golem, vende 800k–1M) → Magic Sword 48 (Hero Fortress) → Stonecutter 50 (Grey Island, potência ≥ 300) / Shiny Blade
+  +1 melee); "+1 de corpo a corpo numa arma fraca não compensa — nem tudo que brilha é joia"; tudo que dá armadura; resistência em %
+  escala melhor que +1/+2 de armadura; **resistência a FOGO virou BiS** nas hunts altas (Zao, Inquisition) e gelo no portal de gelo;
+  regen. de mana (magias caras, "ele bebe todo o lucro") e de vida; refino só até +4/+5; Magic Sword +2 = Stonecutter — não gaste gema
+  em peça de passagem. Demon Helmet (boss, resist. veneno), Zaoan Helmet/Legs (Shenlong, nível 150), armadura do Jaú (Grey Island,
+  "melhor do jogo"), calça de resistência em % do boss de Lizard City.
+- **Paladino**: **besta** ("Royal Crossbow com bolt: uma delícia, limpando tudo"; TV de Souza migrou do Mycological Bow); distância em
+  tudo (Wood Cape +1 do boss dos Orcs de Edron, Paladin Armor +2 dos Bog Raiders — 400–600k —, Yalahari Legs +2); arco/besta com
+  crítico ou distância; arma primeiro, skill depois; roubo de vida ainda fraco; Hive Bow (boss GS), Jungle Bow / Rift Crossbow
+  (Warzone/Forgotten, Jungle Bow aceita imbuement de crítico), bow do Turion (Warzone) com +1 distância e absorção de veneno.
+- **Magos**: **ML acima de tudo** — "capacete de 2 de regen. de mana sai na hora por um Hat of the Mad"; Fox Cape, spellbook Warding
+  +1 / Mind Control +2 (do boss de Mad Mage), Yalahari Mask +2, livro de ML +2 (hunt nova de Yalahar), colar de Gargoyles (Meriana);
+  wand: Wand of Everblazing +1 ML (Elite dos magos) ou qualquer uma com ML/crítico; Snakebite/Terra Rod ML+1 com potência ≥ 300 →
+  +3 refino (421) → Refazer T1 até ML+2 (e a 600+, ML+3) — o TV de Souza mostrou na Bancada; crítico conta (base 0 %); dano de
+  ENERGIA/FOGO (Fei) e GELO/TERRA (Dru) no colar e na wand/rod (NunohS: 3,5 % de energia na wand "muda muito"); mana regen boa mas
+  "mana se compra com poção, ML não". Regra do criador: Underworld Rod come 13 de mana por tiro.
+- **Forja (TV de Souza, Bancada de Testes)**: refino → raridade → linhas → valores; gema = 100 fragmentos coloridos; não gaste em item
+  de passagem; "uma Mace com 500 de potência é item de noob — desencanta, pega as gemas"; faça o colar/arma de OUTRO personagem
+  até +2 antes de arriscar +3; peça com potência e roll bom "triplica o valor de Mercado". Imbuement é late game (nível 200+).
+- **Economia**: fragmentos ≈ 2k cada no Mercado (04/10); Yalahar Gear Wheel 92–100k; acessos de Warzone 240k cada; itens com
+  resistência a fogo "muito caros"; leilão (1.1.3): livro de ML com regen. de mana e potência "base 100, arremate 3k coins";
+  coin sobe no fim de semana; o TV de Souza compra coins com 30 % do lucro de cada caçada. Prey: DANO 40 % no Feiticeiro é o que
+  mais escala (maior fonte de dano), depois Druida; XP/LOOT somam pela party. Ordem de ataque do jogo: Knight → Sorcerer → Paladin →
+  Druid — a magia do Druida com "≥ 2 criaturas" às vezes não sai; deixar em 1.
+- **Alts (NunohS)**: três alts em Yalahar farmando chaves (gear wheel) e itens de regen. baratos no Mercado (cape 1,6; leather armor
+  1,9 a 200k); o main caça o que dá item; ZAO exige ML 50 + prey + imbuement de fogo no Knight; Grey Island pelo Jaú (5 cabeças do
+  Tanjis + 5 do Obujos) e pelo Stonecutter.
+
+**O que mudou no helper (2.16.0)**:
+- `FAIXA_VALORES`/`faixaRange`/`valorTipico` com os números da wiki (eram nominais); `FAIXA_NOME`.
+- `PESO_LINHA` + `chanceLinha(id, slot, atuais)`: chance de o próximo Atributo T1 cair numa linha (nunca repete as da peça).
+- `FRAG_DESMANCHE`/`FRAG_T2` + `fragmentosDesmanche(peça)` (faixa da potência TOTAL × raridade) e `escolherDestino(peça, refMercado,
+  precoFrag)` → 'mercado' | 'desmanche' | 'mercado?' (líquido = ref − 5 %; fragmento = menor anúncio dos "… Fragment T1/T2" no
+  catálogo, mediana — `precoFragmento()` na tela; sem leitura, 2k "estimado").
+- **Base de forja mudou**: potência ≥ 300 com linha de skill OU Épico+ com pelo menos uma linha que vale para quem pode vestir
+  (`linhasUteis`). Épico com 3 linhas mortas vai para as sobras com o motivo "sem linha útil … rolar skill cai 1 em 89 por gema;
+  anuncie ou desmanche" (antes "Épico nunca sobra", 2.11.6).
+- `planoForja`: cada linha-alvo com chance (%) e range da faixa; passo novo — peça que JÁ tem a linha rara: "NUNCA apague com
+  Limpeza T1; suba a potência e use Refazer"; peça sem ela: "cai 1 em N (≈ N tentativas, X milhões + Y fragmentos): não role,
+  procure a peça que já caiu com a linha"; linha de skill é "boa" sempre que a vocação a usa; nome da faixa.
+- Paladino: `tiroMax = n/5 + 0,09 × atk × dist`, mínimo 60 % → a parte de +1 de distância no tiro sobe (2,08 → 2,40 % no REF_SK).
+- Tela: caixa "? o que é bom para o <vocação>" (`REGRAS_VOCACAO`, com a nota de quando a medida discorda da comunidade e por quê);
+  linha "Estoque: N reservas · N bases · N encaixe que o Mercado paga · sobras: N NPC (X) e N Incomum+ (Y fragmentos)"; cada sobra
+  Incomum+ e cada base mostram "desmanche N frag. ≈ X (p % T2) → Mercado (líq. Y) / DESMANCHAR"; DESMANCHAR diz quantos fragmentos
+  e quanto valem; glossário da Forja com preços das gemas, faixas nomeadas, pesos de sorteio, purificação e tabela do desmanche.
+- Testes: equip 40 → 44 (chance por linha e ranges; fragmentos e destino; Épico sem linha útil × Épico com linha boa + planoForja
+  rara/não rara; fórmula do Paladino e regras em palavras). 276 no total. eslint 0 erros.
