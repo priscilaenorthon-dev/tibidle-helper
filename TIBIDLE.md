@@ -5002,3 +5002,5 @@ adjacente, os três de alcance 7 no miolo, ≥ 2 tiles entre si, desempate pela 
 quando a invasão do dia muda (pede invasion_today a cada 15 min). COMPARAR COM O 1º LUGAR lê o ranking, a melhor janela do 1º e a sua,
 e mostra dano no boss por personagem e por magia, posições e tempo ao alcance. Testes: `testes/invasao.test.js` (5). Suite 265 ok.
 
+## 2.17.1 (13/10) — Invasão ao vivo: Annihilation entra no kit do Knight (melhorKitBoss olha 5 longas), dano das janelas em número
+

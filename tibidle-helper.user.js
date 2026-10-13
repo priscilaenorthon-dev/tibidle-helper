@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.17.0
+// @version      2.17.1
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.17.0';
+    const VERSAO = '2.17.1';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -3209,7 +3209,9 @@
      *  do boss em 90 s com a mana que o personagem tem (poção: sem limite). */
     function melhorKitBoss(cands, ent) {
         const valor = a => a.porLancamento / Math.max(2, a.cd);
-        const longas = cands.filter(a => !enchimento(a)).sort((a, b) => valor(b) - valor(a)).slice(0, 4);
+        /* v2.17.1 — 5 longas (eram 4): na Invasão a Annihilation do Knight (612 a cada 30 s) ficava de fora por dano/segundo e o
+         * simulador nunca a via; com 5 o kit ainda é de 4 e a busca continua pequena */
+        const longas = cands.filter(a => !enchimento(a)).sort((a, b) => valor(b) - valor(a)).slice(0, 5);
         const ench = cands.filter(enchimento).sort((a, b) => b.porLancamento - a.porLancamento);
         const pool = longas.concat(ench.filter(a => a.m.isRune).slice(0, 1), ench.filter(a => !a.m.isRune).slice(0, 2));
         const o = Object.assign({ lure: 1, matarS: 1e6, esperaS: 0, seg: 90, pocao: ent.bebe }, ent.mana);
@@ -9733,7 +9735,7 @@
         if (!d) { invPedirHoje(false); return `<div class="pg-cx pg-mut">Pedindo a invasão de hoje ao jogo… Se nada aparecer em alguns segundos, abra a janela Invasão do jogo uma vez.</div>` + ajuda; }
         const def = d.def || {}, boss = def.boss || {}, lvl = nivelAtual();
         const el = (boss.elements || []).filter(e => e && e.percent).map(e => `${rotuloElem(e.type)} ${e.percent > 0 ? '−' + e.percent + ' %' : '+' + (-e.percent) + ' %'}`).join(' · ') || 'sem resistências';
-        const runs = (d.runs || []).map(r => pgInt(r.bossDamage));
+        const runs = (d.runs || []).map(r => pgInt(Number(r.bossDamage)));
         const P = invPlanoHoje();
         const auto = !!ler('inv_auto', false), salvoId = ler('inv_salvo_id', null), id = d.preset && d.preset.invasionId;
         let h = `<div class="pg-cx"><div class="pg-lin"><b>${escHtml(d.invasionNome || 'Invasão')}</b><span>${escHtml(d.bossName || boss.name || '?')}</span></div>
