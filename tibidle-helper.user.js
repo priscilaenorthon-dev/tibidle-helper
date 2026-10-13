@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.17.2
+// @version      2.17.3
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.17.2';
+    const VERSAO = '2.17.3';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -3211,7 +3211,10 @@
         const valor = a => a.porLancamento / Math.max(2, a.cd);
         /* v2.17.1 — 5 longas (eram 4): na Invasão a Annihilation do Knight (612 a cada 30 s) ficava de fora por dano/segundo e o
          * simulador nunca a via; com 5 o kit ainda é de 4 e a busca continua pequena */
-        const longas = cands.filter(a => !enchimento(a)).sort((a, b) => valor(b) - valor(a)).slice(0, 5);
+        const longas0 = cands.filter(a => !enchimento(a)).sort((a, b) => valor(b) - valor(a)).slice(0, 5);
+        /* v2.17.3 — e as 2 de MAIOR dano por lançamento (Hell's Core 599 a cada 40 s): por dano/segundo elas nunca entravam no pool,
+         * mas na frente de uma runa de 2 s (sempre pronta) só vale o slot que bate mais forte que ela num lançamento só */
+        const longas = longas0.concat(cands.filter(a => !enchimento(a) && !longas0.includes(a)).sort((a, b) => b.porLancamento - a.porLancamento).slice(0, 2));
         const ench = cands.filter(enchimento).sort((a, b) => b.porLancamento - a.porLancamento);
         const pool = longas.concat(ench.filter(a => a.m.isRune).slice(0, 1), ench.filter(a => !a.m.isRune).slice(0, 2));
         const o = Object.assign({ lure: 1, matarS: 1e6, esperaS: 0, seg: 90, pocao: ent.bebe }, ent.mana);

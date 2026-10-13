@@ -5006,3 +5006,5 @@ e mostra dano no boss por personagem e por magia, posições e tempo ao alcance.
 
 ## 2.17.2 (13/10) — Invasão: o servidor devolve os 4 slots de ataque com null nos vazios (a tela e a confirmação do SALVAR quebravam). SALVAR confirmado ao vivo em A maré vermelha.
 
+## 2.17.3 (13/10) — Boss/Invasão: o pool do melhorKitBoss leva também as 2 magias de maior dano por lançamento (Hell's Core, Eternal Winter) — na frente da sudden death só vale quem bate mais forte que ela num lançamento
+
