@@ -4973,3 +4973,32 @@ O que mudou (`@@MERCADO`):
   à Forja com o plano da peça.
 Testes: `testes/mercado.test.js` (34; os de 2.14.12/2.15.0 ajustados à regra do valor e à faixa com preço). Suite 260 ok.
 
+## 2.17.0 (13/10) — Invasão: preset do boss do dia (plano por boss, posições, salvar pelo socket, comparar com o 1º)
+
+Dono, 13/10: "arruma meus personagens com as melhores magias, runas e poções, salvo para sempre para todos esses bosses, para eu conseguir
+melhor classificação; compare com o replay dos primeiros lugares; faça rápido".
+
+**O que a Invasão é (lido ao vivo do socket, conta u2tag, 564º de 2.563 com 42 mil no dia; o 1º fez 172 mil):**
+- Janela Invasão (ícone da cidade): abas HOJE / RANKING / PRESET DA PARTY. Protocolo em `@@INVASAO` (invasion_today, invasion_preset_save
+  sem eco, invasion_ranking, invasion_windows, invasion_watch com o log completo de eventos da janela).
+- 3 janelas por dia (14:00, 18:00, 22:00), 3 waves de mobs e o boss, que entra quando as waves acabam (ou aos 313 s) e atravessa o
+  caminho a 741 ms por célula: ~35–40 s ao alcance. **O que pontua é o dano no boss.** Caixas (loot) pelas waves limpas.
+- Poção de mana e runa NÃO gastam ouro; buffs por janela: Slow 25 % (25 mil), Dano +10 % (20 mil), elemento +25 % (15 mil).
+- O preset é por invasionId (uma por boss: "A maré vermelha" = Edward Teach); o jogo só mostra/edita o da invasão do dia.
+- Rotação vista: Necropharus (06/10) → Zushuka → Arachir → Vozerion → Minotaur Warlord → Thraw → Edward Teach (12/10) → Necropharus.
+  Resistências pelo /bestiary/creature: Edward terra 20/fogo −10/morte −5; Zushuka gelo 100, terra/fogo 50, energia/morte −10;
+  Arachir terra e morte 100 (sudden death não pega!); Vozerion terra/fogo/gelo 100, morte 10; Thraw energia 20, terra/morte −10;
+  Necropharus e Minotaur Warlord neutros.
+- Replay do 1º (SDNunoh, 57,6 mil na janela): magos com sudden death rune a cada 2 s (650–880 por acerto; o nosso cartão dá 291–454),
+  Paladino de besta + Sharpshooter (tiro de 600–1.250 no boss = 14,7 mil) + Strong Ethereal Spear, Knight com Annihilation/Fierce
+  Berserk/Front Sweep, posições x 11–19 y 7–9 (o caminho passa 3 vezes). O nosso (14 mil): Paladino de arco jogando great fireball
+  (área) no boss, Feiticeiro de thunderstorm (área), Druida a 5,9 longe do miolo.
+
+**O helper (sub-aba Progresso › Invasão):** boss do dia com resistências; plano por personagem = `melhorKitBoss` (o simulador do modelo
+Boss da Magia) com a invasão como hunt de um monstro e poção grátis; suporte de ataque (Blood Rage, Sharpshooter, Enchant Party; Druida
+Heal Party), poção de mana mais forte a 70 %; posições por cobertura do caminho (`invPosicoes`: Knight no tile com mais caminho
+adjacente, os três de alcance 7 no miolo, ≥ 2 tiles entre si, desempate pela distância ao caminho). SALVAR PRESET (2 toques) manda
+`invasion_preset_save` e relê o dia para confirmar; chave "automático" (desligada por padrão): com a página aberta, salva sozinho
+quando a invasão do dia muda (pede invasion_today a cada 15 min). COMPARAR COM O 1º LUGAR lê o ranking, a melhor janela do 1º e a sua,
+e mostra dano no boss por personagem e por magia, posições e tempo ao alcance. Testes: `testes/invasao.test.js` (5). Suite 265 ok.
+

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.16.5
+// @version      2.17.0
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.16.5';
+    const VERSAO = '2.17.0';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -4304,6 +4304,7 @@
     }
     function observarRecebido(o) {
         try { observarProgresso(o); } catch { } // v2.11 — aba Progresso: só leitura (chaves, bestiário, prey, plano offline)
+        try { invObservar(o); } catch (e) { falhou('invasão (observar)', e); } // v2.17.0 — invasão do dia e respostas esperadas
         try { diagObservar(o); } catch { } // v2.11 — Diagnóstico: guarda só a FORMA das mensagens
         try { observarMercado(o); } catch (e) { falhou('observarMercado', e); } // v2.11 — aba Mercado: premium, mochila, protegidos, respostas do mercado
         try { radarObservar(o); } catch (e) { falhou('radar (observar)', e); } // v2.13.0 — aba Radar: loot ao vivo e o dia (só leitura)
@@ -5659,6 +5660,7 @@
         if (BEST.ativo) bestPasso().catch(e => falhou('bestiário (completar)', e));
         /* v2.1.0: assim que houver token + catálogo, lê o dano real de tudo (só leitura, sem janela) */
         lerDanosPendentes();
+        try { if (CAT.magias && !_aprendendo && ler('inv_auto', false)) invPedirHoje(false); } catch (e) { falhou('invasão (pedir hoje)', e); } // v2.17.0 — só com "automático" ligado: pede a invasão do dia a cada 15 min (o reset é às 10:00)
         const dentro = emHunt();
         if (!dentro) { _estavaEmHunt = false; _ultimosAbates = null; if (SESSAO) fecharSessao('saiu da caçada'); return; }
 
@@ -8969,6 +8971,96 @@
     /* marcados (ids) → fila [{id, kills, value}] na ordem das linhas; quem não "vale" e foi marcado vai até o fim */
     const pgFilaBestiario = (linhas, marcados) => (linhas || []).filter(l => marcados.has(l.id)).map(l => { const a = l.alvo || l.ultimo; return { id: l.id, kills: a.kills, value: a.value, bonus: l.bonus }; });
     /* @@PROGRESSO-FIM */
+    /* @@INVASAO-INICIO — Invasão (2.17.0): funções puras; testes/invasao.test.js roda este trecho no node. */
+    /* =========================================================================
+     *  ⭐ v2.17.0 — INVASÃO (dono, 13/10: "arruma meus personagens com as melhores magias, runas e poções, salvo para sempre
+     *  para todos esses bosses, para eu conseguir melhor classificação; compare com o replay dos primeiros lugares").
+     *  Protocolo lido ao vivo em 13/10 (conta u2tag): invasion_today {} → invasion_today_data {date, buffs[{id, nome, fator,
+     *  precoGold}], rangePadraoRuna 7, runs[{idx, bossDamage, caixas, waves}], preset{invasionId, membros[{vocation, equipamento,
+     *  ataques[{skill, minCreatures?}], suporte, pocao, pocaoLimiar, pos{x,y}, ammo}]}, def{invasionId, boss{name, health, elements},
+     *  waves, path[{x,y}], partyPositions[{x,y}], durNominalMs, bossEntraMs}}; invasion_preset_save {requestId, preset{invasionId,
+     *  membros[{vocation, pinos{}, ataques, suporte, pocao, pocaoLimiar, pos, ammo}]}} (o servidor não ecoa; o invasion_today
+     *  seguinte traz o preset novo); invasion_ranking {date?} → invasion_ranking_data {linhas[{pos, accountId, name, bossDamage}]};
+     *  invasion_windows {accountId, date} → janelas[{windowId, bossDamage, rodou}]; invasion_watch {windowId, sinceMs 0, accountId}
+     *  → invasion_watch_data {jogador, duracaoMs, elenco[{vocation, pos}], marcas, eventos[{kind: spawn|cast|dano(noBoss)|pocao|
+     *  boss(msPorCelula)|wave|morte|alvo, ator, skill, valor, elemento, t}]}.
+     *  O que pontua é o DANO NO BOSS. Ele entra quando as 3 waves acabam (ou aos 313 s) e anda o caminho a ~741 ms por célula:
+     *  ~35–40 s ao alcance da party. Poção de mana e runa NÃO gastam ouro na Invasão — vale o kit de mais dano por segundo no
+     *  boss, com poção forte a 70 %. O preset é POR INVASÃO (invasionId) e o jogo só mostra o da invasão do dia: o helper
+     *  recalcula e salva a cada dia (botão SALVAR, ou a chave "automático" que o dono liga). Lido no replay do 1º lugar de 12/10
+     *  (SDNunoh, 57,6 mil por janela × 14 mil do dono): magos com sudden death rune a cada 2 s, Paladino de besta com Sharpshooter
+     *  (tiro de 600–1.250 no boss) e Strong Ethereal Spear, Knight com Annihilation/Fierce Berserk/Front Sweep, os quatro no
+     *  miolo do mapa (x 11–19, y 7–9) onde o caminho passa três vezes.
+     * ====================================================================== */
+    const INV_ALCANCE_RUNA = 7, INV_ALCANCE_MELEE = 1, INV_POCAO_LIMIAR = 70, INV_MS_CELULA = 741;
+    const INV_VOCS = ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'];
+    /* suporte de ataque de cada um (o 1º que o nível libera): Blood Rage +35 % físico, Sharpshooter +distância (o tiro de besta é
+     * o maior dano do Paladino no replay do 1º), Enchant Party +1 ML nos 4; o Druida não tem buff de ataque — fica a cura do grupo */
+    const INV_SUPORTE = { KNIGHT: ['Blood Rage', 'Protector'], PALADIN: ['Sharpshooter', 'Protect Party'], SORCERER: ['Enchant Party', 'Magic Shield'], DRUID: ['Heal Party', 'Magic Shield'] };
+    /* a invasão como "hunt de um monstro" para o planejador de Magia (notasElementos → avaliar → melhorKitBoss) */
+    function invHuntDoBoss(def) {
+        const b = def && def.boss; if (!b || !b.name) return null;
+        return { id: 'inv:' + (def.invasionId || b.name), title: 'Invasão ' + b.name, boss: true, levelMin: 1, lureTiers: [{ min: 1, max: 1 }], maxLure: 1,
+                 monsters: [{ name: b.name, health: Number(b.health) || 1, experience: 0, weight: 1, elements: Array.isArray(b.elements) ? b.elements : [] }] };
+    }
+    /* quanto tempo (ms) o boss fica a ≤ alcance (distância de Chebyshev) de cada tile de party, andando o caminho a msPorCelula */
+    function invCobertura(def, alcance, msPorCelula) {
+        const path = (def && Array.isArray(def.path)) ? def.path : [], pos = (def && Array.isArray(def.partyPositions)) ? def.partyPositions : [];
+        const ms = Number(msPorCelula) > 0 ? Number(msPorCelula) : INV_MS_CELULA;
+        return pos.filter(p => p && Number.isFinite(p.x) && Number.isFinite(p.y)).map(p => {
+            let n = 0, dist = 0; for (const c of path) { if (!c) continue; const dd = Math.max(Math.abs(c.x - p.x), Math.abs(c.y - p.y)); if (dd <= alcance) { n++; dist += dd; } }
+            return { x: p.x, y: p.y, celulas: n, ms: n * ms, dist }; // dist: soma das distâncias às células cobertas (desempate: mais perto do caminho)
+        });
+    }
+    /* posição de cada um: Knight (corpo a corpo) no tile com mais caminho adjacente; Paladino, Feiticeiro e Druida (alcance 7, o
+     * padrão da runa) nos tiles de mais cobertura, sem repetir tile e a ≥ 2 tiles um do outro (a área do boss não pega todos).
+     * opc.fixas = {VOC: {x,y}} mantém a posição do dono para essa vocação. */
+    function invPosicoes(def, opc) {
+        opc = opc || {};
+        const ms = opc.msPorCelula || INV_MS_CELULA, alc = opc.alcance || INV_ALCANCE_RUNA, r = {}, usados = [];
+        const livre = (c) => !usados.some(u => u.x === c.x && u.y === c.y);
+        const longe = (c) => usados.every(u => Math.max(Math.abs(u.x - c.x), Math.abs(u.y - c.y)) >= 2);
+        const melhor = (a, filtro) => invCobertura(def, a, ms).filter(c => livre(c) && (!filtro || filtro(c))).sort((x, y) => y.ms - x.ms || x.dist - y.dist || x.x - y.x || x.y - y.y)[0] || null;
+        const fixar = (v, c) => { if (c) { r[v] = { x: c.x, y: c.y, ms: c.ms, celulas: c.celulas }; usados.push({ x: c.x, y: c.y }); } };
+        for (const v of INV_VOCS) { const f = opc.fixas && opc.fixas[v]; if (f && Number.isFinite(f.x)) { const c = invCobertura(def, v === 'KNIGHT' ? INV_ALCANCE_MELEE : alc, ms).find(x => x.x === f.x && x.y === f.y); fixar(v, c || { x: f.x, y: f.y, ms: 0, celulas: 0 }); } }
+        if (!r.KNIGHT) fixar('KNIGHT', melhor(INV_ALCANCE_MELEE));
+        for (const v of ['PALADIN', 'SORCERER', 'DRUID']) if (!r[v]) fixar(v, melhor(alc, longe) || melhor(alc));
+        return r;
+    }
+    /* o preset que vai para o servidor: o plano por cima do preset atual; pinos e munição ficam como estão */
+    function invMontarPreset(atual, plano) {
+        const membros = INV_VOCS.map(v => {
+            const m = ((atual && Array.isArray(atual.membros)) ? atual.membros : []).find(x => x && x.vocation === v) || {};
+            const p = (plano && plano[v]) || {};
+            let pinos = m.pinos && typeof m.pinos === 'object' ? m.pinos : null;
+            if (!pinos) { pinos = {}; for (const [slot, it] of Object.entries(m.equipamento || {})) if (it && it.pinado && it.iid) pinos[slot] = it.iid; }
+            const ataques = (Array.isArray(p.ataques) ? p.ataques : (Array.isArray(m.ataques) ? m.ataques : [])).slice(0, 4).map(a => a && a.minCreatures != null ? { skill: a.skill, minCreatures: Math.max(1, Math.round(a.minCreatures)) } : { skill: a.skill });
+            return { vocation: v, pinos, ataques, suporte: p.suporte !== undefined ? p.suporte : (m.suporte || null), pocao: p.pocao !== undefined ? p.pocao : (m.pocao || null),
+                     pocaoLimiar: p.pocaoLimiar != null ? p.pocaoLimiar : (m.pocaoLimiar != null ? m.pocaoLimiar : INV_POCAO_LIMIAR),
+                     pos: p.pos && Number.isFinite(p.pos.x) ? { x: p.pos.x, y: p.pos.y } : (m.pos || null), ammo: m.ammo != null ? m.ammo : null };
+        });
+        return { invasionId: atual && atual.invasionId ? atual.invasionId : null, membros };
+    }
+    /* resumo de um replay (invasion_watch_data): dano no boss e lançamentos por personagem e por magia, posições, janela do boss */
+    function invResumoReplay(d) {
+        const ev = (d && Array.isArray(d.eventos)) ? d.eventos : [];
+        const r = { jogador: d && d.jogador, dur: d && d.duracaoMs, pos: {}, casts: {}, boss: {}, mob: {}, porSkill: {}, bossIni: null, bossFim: null, msBoss: null, pocoes: {}, totalBoss: 0 };
+        for (const e of ((d && Array.isArray(d.elenco)) ? d.elenco : [])) if (e && e.vocation && e.pos) r.pos[e.vocation] = { x: e.pos.x, y: e.pos.y };
+        const ult = {};
+        for (const e of ev) {
+            if (!e || !e.kind) continue;
+            if (e.kind === 'cast' && e.ator) { ult[e.ator] = e.skill; const k = e.ator + '|' + e.skill; r.casts[k] = (r.casts[k] || 0) + 1; }
+            else if (e.kind === 'pocao' && e.ator) r.pocoes[e.ator] = (r.pocoes[e.ator] || 0) + 1;
+            else if (e.kind === 'boss') { if (Number(e.msPorCelula) > 0) r.msBoss = Number(e.msPorCelula); if (r.bossIni == null) r.bossIni = e.t; }
+            else if (e.kind === 'dano' && e.ator) {
+                const v = Number(e.valor) || 0;
+                if (e.noBoss) { r.boss[e.ator] = (r.boss[e.ator] || 0) + v; r.totalBoss += v; r.bossFim = e.t; const k = e.ator + '|' + (ult[e.ator] || 'Ataque'); r.porSkill[k] = (r.porSkill[k] || 0) + v; }
+                else r.mob[e.ator] = (r.mob[e.ator] || 0) + v;
+            }
+        }
+        return r;
+    }
+    /* @@INVASAO-FIM */
     /* v2.11 — estado da aba Progresso, alimentado SÓ por observarProgresso()
      * (uma linha no começo de observarRecebido). Em memória: o que o jogo
      * manda de novo a cada conexão. Só os contadores do bestiário vão para o
@@ -9536,11 +9628,156 @@
         const ass = ap ? ap.nivel + ':' + ap.texto.replace(/\d+ min/g, 'min') : null;
         if (ass && ler('prog_lemb_prey', null) !== ass) { guardar('prog_lemb_prey', ass); log('prey: ' + ap.texto, ap.nivel === 'aviso' ? 'erro' : 'ok'); }
     }
+    /* ---- Invasão (2.17.0): estado, socket, plano, salvar e tela — só o SALVAR (botão ou a chave "automático") envia algo ---- */
+    const INV = { hoje: null, t: 0, pedidoT: 0, salvando: false, salvoEm: 0, lendo: false, erro: null, aviso: null, topo: null, meu: null, conf: 0, esperas: [] };
+    const INV_PEDIR_MS = 15 * 60000;
+    /* uma linha em observarRecebido: guarda a invasão do dia e atende quem espera resposta (ranking, janelas, replay) */
+    function invObservar(o) {
+        if (!o || typeof o.type !== 'string') return;
+        const d = o.data && typeof o.data === 'object' ? o.data : null;
+        if (INV.esperas.length) { const fica = []; for (const e of INV.esperas) { if (o.type === e.tipo && d && (!e.casa || e.casa(d))) e.res(d); else fica.push(e); } INV.esperas = fica; }
+        if (o.type !== 'invasion_today_data' || !d) return;
+        INV.hoje = clonar(d); INV.t = Date.now();
+        const id = d.preset && d.preset.invasionId;
+        /* "automático" (chave do dono): invasão nova (id diferente do último salvo) → calcula e salva uma vez */
+        if (id && ler('inv_auto', false) && ler('inv_salvo_id', null) !== id && !INV.salvando && CAT.magias) setTimeout(() => invSalvarPreset('automático').catch(e => falhou('invasão (auto)', e)), 1500);
+        if (ABA === 'progresso') renderizar();
+    }
+    function invPedirHoje(forcar) {
+        if (!socketAberto()) return false;
+        if (!forcar && Date.now() - INV.pedidoT < INV_PEDIR_MS) return false;
+        INV.pedidoT = Date.now();
+        try { enviarWS({ type: 'invasion_today', data: {} }); return true; } catch (e) { falhou('invasão (pedir hoje)', e); return false; }
+    }
+    function invPedirResposta(tipo, data, espera, ms, casa) {
+        return new Promise((res) => {
+            const e = { tipo: espera, casa, res };
+            INV.esperas.push(e);
+            setTimeout(() => { const i = INV.esperas.indexOf(e); if (i >= 0) { INV.esperas.splice(i, 1); res(null); } }, ms || 8000);
+            try { enviarWS({ type: tipo, data }); } catch (err) { const i = INV.esperas.indexOf(e); if (i >= 0) INV.esperas.splice(i, 1); res(null); }
+        });
+    }
+    /* o melhor kit de cada um contra o boss do dia: o simulador do modelo Boss (melhorKitBoss), com poção (grátis na Invasão) */
+    function invPlanoHoje() {
+        const d = INV.hoje, def = d && d.def, hunt = invHuntDoBoss(def);
+        if (!hunt || !CAT.magias) return null;
+        const info = notasElementos(hunt); if (!info) return null;
+        const lvl = nivelAtual() || 1, plano = {};
+        const ms = (INV.meu && INV.meu.msBoss) || (INV.topo && INV.topo.msBoss) || INV_MS_CELULA;
+        const pos = invPosicoes(def, { msPorCelula: ms, alcance: Number(d.rangePadraoRuna) > 0 ? Number(d.rangePadraoRuna) : INV_ALCANCE_RUNA });
+        for (const v of INV_VOCS) {
+            const danos = danosConhecidos(v, null, true), ml = mlAtual(v);
+            const avs = magiasDaVocacao(v).map(m => avaliar(m, hunt, info, v, danos))
+                .filter(a => a.confiavel && a.danoEfetivo > 0 && info.vetos[a.m.combatType] == null && !(v === 'KNIGHT' && a.m.isRune) && !(a.m.isRune && a.m.magicLevel > 0 && ml != null && ml < a.m.magicLevel));
+            const kit = avs.length ? melhorKitBoss(avs, { bebe: true, mana: manaDoPersonagem(v) }) : [];
+            const sim = kit.length ? simularFila(slotsParaSimular(kit.map((a, i) => ({ slot: i + 1, av: a, minimo: 1 }))), Object.assign({ lure: 1, matarS: 1e6, esperaS: 0, seg: 40, pocao: true }, manaDoPersonagem(v))) : null;
+            const pocao = listaPocoes('mana').filter(p => p.lvl <= lvl && lvl <= (p.lvlMax || Infinity) && (!p.voc || p.voc.includes(v)) && p.media > 0).sort((a, b) => b.media - a.media)[0] || null;
+            plano[v] = { ataques: kit.map(a => a.casas > 1 ? { skill: a.m.name, minCreatures: 1 } : { skill: a.m.name }),
+                         kit: kit.map(a => ({ nome: a.m.name, porLanc: a.porLancamento, cd: a.cd, runa: !!a.m.isRune, nota: a.nota })),
+                         danoJanela: sim ? Math.round(sim.danoS * 40) : null,
+                         suporte: (INV_SUPORTE[v] || []).find(n => temMagia(n, v, lvl)) || null, pocao: pocao ? pocao.n : null, pocaoLimiar: INV_POCAO_LIMIAR, pos: pos[v] || null };
+        }
+        return { hunt, info, plano, ms };
+    }
+    async function invSalvarPreset(origem) {
+        if (INV.salvando) return;
+        if (!socketAberto()) { INV.aviso = 'o socket do jogo não foi capturado — F5 com o helper instalado'; renderizar(); return; }
+        const P = invPlanoHoje();
+        if (!P || !INV.hoje || !INV.hoje.preset) { INV.aviso = 'sem a invasão de hoje ainda — abra a janela Invasão do jogo uma vez (ou espere o helper pedir)'; renderizar(); return; }
+        INV.salvando = true; INV.erro = null; INV.aviso = null; renderizar();
+        try {
+            const preset = invMontarPreset(INV.hoje.preset, P.plano);
+            if (!preset.invasionId) throw new Error('a invasão de hoje veio sem invasionId');
+            enviarWS({ type: 'invasion_preset_save', data: { requestId: 'tb-inv-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8), preset } });
+            await dorme(700);
+            const t0 = INV.t; invPedirHoje(true);
+            await esperarQue(() => INV.t > t0, 6000, 150);
+            const lido = INV.hoje && INV.hoje.preset ? (INV.hoje.preset.membros || []).map(m => (m.ataques || []).map(a => a.skill).join(',')).join(';') : null;
+            const pedido = preset.membros.map(m => m.ataques.map(a => a.skill).join(',')).join(';');
+            const ok = lido === pedido;
+            INV.salvoEm = Date.now(); guardar('inv_salvo_id', preset.invasionId);
+            log(`invasão: preset ${ok ? 'salvo e confirmado' : 'enviado (a releitura não bateu — confira na janela Invasão do jogo)'} para ${INV.hoje.bossName || preset.invasionId} (${origem}) — ` +
+                INV_VOCS.map(v => VOC_CURTO[v] + ': ' + ((P.plano[v].ataques || []).map(a => a.skill).join(', ') || '—') + (P.plano[v].pos ? ' @' + P.plano[v].pos.x + ',' + P.plano[v].pos.y : '')).join(' · '), ok ? 'ok' : 'erro');
+            if (!ok) INV.aviso = 'enviado, mas a releitura não mostrou o preset novo — abra a janela Invasão do jogo e confira';
+        } catch (e) { INV.erro = e.message; falhou('invasão (salvar)', e); }
+        finally { INV.salvando = false; renderizar(); }
+    }
+    /* LER REPLAYS: o 1º do ranking de hoje e o meu, pela melhor janela de cada um (só leitura) */
+    async function invLerReplays() {
+        if (INV.lendo) return;
+        if (!socketAberto()) { INV.aviso = 'o socket do jogo não foi capturado — F5 com o helper instalado'; renderizar(); return; }
+        INV.lendo = true; INV.erro = null; INV.aviso = null; renderizar();
+        try {
+            const date = INV.hoje && INV.hoje.date; if (!date) throw new Error('sem a invasão de hoje');
+            const rk = await invPedirResposta('invasion_ranking', { date }, 'invasion_ranking_data', 8000, x => x.date === date);
+            const top = rk && Array.isArray(rk.linhas) ? rk.linhas[0] : null;
+            if (!top) throw new Error('ranking de hoje vazio');
+            INV.rankTopo = { nome: top.name, dano: Number(top.bossDamage) || 0, participantes: rk.linhas.length };
+            const lerUm = async (accountId, nome) => {
+                const w = await invPedirResposta('invasion_windows', { accountId, date }, 'invasion_windows_data', 8000, x => x.accountId === accountId);
+                const j = w && Array.isArray(w.janelas) ? w.janelas.filter(x => x && x.rodou && x.windowId).sort((a, b) => (Number(b.bossDamage) || 0) - (Number(a.bossDamage) || 0))[0] : null;
+                if (!j) return null;
+                const r = await invPedirResposta('invasion_watch', { windowId: j.windowId, sinceMs: 0, accountId }, 'invasion_watch_data', 20000, x => x.windowId === j.windowId);
+                return r ? Object.assign(invResumoReplay(r), { nome, janela: j.idx, bossDamageJanela: Number(j.bossDamage) || 0 }) : null;
+            };
+            INV.topo = await lerUm(top.accountId, top.name);
+            INV.meu = CONTA && CONTA.id ? await lerUm(CONTA.id, CONTA.nome) : null;
+            if (!INV.topo) throw new Error('não consegui ler o replay do 1º (' + top.name + ')');
+            log(`invasão: replay do 1º (${top.name}) lido — ${pgInt(INV.topo.totalBoss)} no boss na melhor janela; ${INV.meu ? 'o seu: ' + pgInt(INV.meu.totalBoss) : 'o seu replay não veio'}`, 'ok');
+        } catch (e) { INV.erro = e.message; falhou('invasão (replays)', e); }
+        finally { INV.lendo = false; renderizar(); }
+    }
+    function pgTelaInvasao() {
+        const d = INV.hoje;
+        const ajuda = `<details class="pg-aj" data-k="pg-inv-aj"><summary>? como funciona</summary><div>O que pontua é o dano NO BOSS: ele entra quando as 3 waves acabam (no máximo aos 5 min) e atravessa o caminho em ~35–40 s. Poção de mana e runa não gastam ouro aqui, então o kit é o de mais dano por segundo em alvo único (o simulador do modelo Boss da Magia, com o elemento do boss). Posições: o Cavaleiro no tile com mais caminho ao lado; os outros três onde o caminho passa mais vezes a 7 tiles (alcance da runa). O preset é por invasão e o jogo só mostra o do dia — por isso SALVAR a cada dia (ou a chave automático, que salva sozinha quando o dia muda, com a página aberta). Buffs comprados por janela (Slow 25 %: o boss fica mais tempo no alcance; Dano +10 %; elemento +25 %) são decisão sua, no jogo.</div></details>`;
+        if (!d) { invPedirHoje(false); return `<div class="pg-cx pg-mut">Pedindo a invasão de hoje ao jogo… Se nada aparecer em alguns segundos, abra a janela Invasão do jogo uma vez.</div>` + ajuda; }
+        const def = d.def || {}, boss = def.boss || {}, lvl = nivelAtual();
+        const el = (boss.elements || []).filter(e => e && e.percent).map(e => `${rotuloElem(e.type)} ${e.percent > 0 ? '−' + e.percent + ' %' : '+' + (-e.percent) + ' %'}`).join(' · ') || 'sem resistências';
+        const runs = (d.runs || []).map(r => pgInt(r.bossDamage));
+        const P = invPlanoHoje();
+        const auto = !!ler('inv_auto', false), salvoId = ler('inv_salvo_id', null), id = d.preset && d.preset.invasionId;
+        let h = `<div class="pg-cx"><div class="pg-lin"><b>${escHtml(d.invasionNome || 'Invasão')}</b><span>${escHtml(d.bossName || boss.name || '?')}</span></div>
+            <div class="pg-mut pg-peq">boss: ${escHtml(el)} · entra quando as 3 waves acabam (no máximo ${pgInt(Math.round((def.bossEntraMs || 0) / 1000))} s) · ${pgInt((d.buffs || []).length)} buffs à venda por janela</div>
+            ${runs.length ? `<div class="pg-mut pg-peq">suas janelas de hoje: ${runs.join(' · ')} de dano no boss${INV.rankTopo ? ` · 1º ${escHtml(INV.rankTopo.nome)} ${pgInt(INV.rankTopo.dano)} no dia` : ''}</div>` : ''}</div>`;
+        const btSalvar = `<button type="button" class="tb-bt pri" id="pg-inv-salvar" ${INV.salvando || !P ? 'disabled' : ''} style="flex:1">${INV.salvando ? 'salvando…' : INV.conf > Date.now() ? 'confirmar: salvar o preset?' : 'SALVAR PRESET DE HOJE'}</button>`;
+        h += `<div class="pg-form">${btSalvar}<button type="button" class="tb-chave" id="pg-inv-auto" role="switch" aria-checked="${auto}" title="salva sozinho quando a invasão do dia muda (página aberta)"><span class="tb-sw ${auto ? 'on' : ''}"><i></i></span></button><span class="pg-peq">automático</span></div>`;
+        if (salvoId && id) h += `<div class="pg-mut pg-peq">${salvoId === id ? '✓ preset desta invasão já salvo pelo helper' + (INV.salvoEm ? ' às ' + new Date(INV.salvoEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '') : 'o último salvo foi de outra invasão — salve de novo'}</div>`;
+        if (INV.erro) h += `<div class="pg-alerta">${escHtml(INV.erro)}</div>`;
+        if (INV.aviso) h += `<div class="pg-atencao">${escHtml(INV.aviso)}</div>`;
+        if (!P) h += `<div class="pg-mut">plano ainda não calculado: faltam catálogos ou o dano das magias (/spell-numbers).</div>`;
+        else {
+            const atual = {}; for (const m of ((d.preset && d.preset.membros) || [])) if (m && m.vocation) atual[m.vocation] = m;
+            h += `<div class="pg-tit">Plano por personagem (dano no boss em 40 s, simulado)</div>`;
+            for (const v of INV_VOCS) {
+                const p = P.plano[v], a = atual[v] || {};
+                const kit = p.kit.map(k => `${escHtml(k.nome)}${k.runa ? ' (runa)' : ''} ${pgInt(k.porLanc)}/${pgDec(k.cd, 0)}s`).join(' · ') || '—';
+                const de = (a.ataques || []).map(x => x.skill).join(', ') || '—';
+                h += `<details class="pg-det" data-k="pg-inv-${v}"><summary><span><b>${VOC_ROTULO[v]}</b> <span class="pg-mut pg-peq">${p.danoJanela != null ? '~' + pgInt(p.danoJanela) + ' no boss' : ''}</span></span><span class="pg-mut pg-peq">${p.pos ? 'tile ' + p.pos.x + ',' + p.pos.y + ' · ' + pgDec(p.pos.ms / 1000, 0) + ' s ao alcance' : ''}</span></summary><div>
+                    <div><b>ataques:</b> ${kit}</div><div class="pg-mut">hoje: ${escHtml(de)}${a.pos ? ' @' + a.pos.x + ',' + a.pos.y : ''}</div>
+                    <div><b>suporte:</b> ${escHtml(p.suporte || '—')} <span class="pg-mut">(hoje ${escHtml(a.suporte || '—')})</span> · <b>poção:</b> ${escHtml(p.pocao || '—')} ≤${p.pocaoLimiar} % <span class="pg-mut">(hoje ${escHtml(a.pocao || '—')}${a.pocaoLimiar != null ? ' ≤' + a.pocaoLimiar + ' %' : ''})</span></div></div></details>`;
+            }
+        }
+        h += `<div class="pg-form" style="margin-top:6px"><button type="button" class="tb-bt" id="pg-inv-replays" ${INV.lendo ? 'disabled' : ''}>${INV.lendo ? 'lendo replays…' : 'COMPARAR COM O 1º LUGAR'}</button><span class="pg-mut pg-peq">lê o replay da melhor janela do 1º e a sua (só leitura)</span></div>`;
+        if (INV.topo) {
+            const T = INV.topo, M = INV.meu;
+            const sk = (r, v) => Object.entries(r.porSkill).filter(([k]) => k.startsWith(v + '|')).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, x]) => escHtml(k.split('|')[1]) + ' ' + pgInt(x)).join(', ') || '—';
+            h += `<div class="pg-tit">Dano no boss na melhor janela</div><table><tr><th></th><th style="width:30%">${escHtml(T.nome)} (1º)</th><th style="width:30%">você</th></tr>` +
+                INV_VOCS.map(v => `<tr><td>${VOC_ROTULO[v]}<div class="pg-mut pg-peq">1º: ${sk(T, v)}${T.pos[v] ? ' @' + T.pos[v].x + ',' + T.pos[v].y : ''}</div>${M ? `<div class="pg-mut pg-peq">você: ${sk(M, v)}${M.pos[v] ? ' @' + M.pos[v].x + ',' + M.pos[v].y : ''}</div>` : ''}</td><td>${pgInt(T.boss[v] || 0)}</td><td>${M ? pgInt(M.boss[v] || 0) : '—'}</td></tr>`).join('') +
+                `<tr><td><b>total</b> <span class="pg-mut pg-peq">boss ao alcance: 1º ${T.bossIni != null && T.bossFim != null ? pgDec((T.bossFim - T.bossIni) / 1000, 0) + ' s' : '?'}${M && M.bossIni != null ? ' · você ' + pgDec((M.bossFim - M.bossIni) / 1000, 0) + ' s' : ''}</span></td><td><b>${pgInt(T.totalBoss)}</b></td><td><b>${M ? pgInt(M.totalBoss) : '—'}</b></td></tr></table>`;
+        }
+        if ((d.buffs || []).length) h += `<div class="pg-mut pg-peq" style="margin-top:4px">buffs por janela (no jogo): ${d.buffs.map(b => escHtml(b.nome) + ' ' + pgInt(b.precoGold)).join(' · ')}</div>`;
+        return h + ajuda;
+    }
+    function ligarInvasao() {
+        const sv = $('#pg-inv-salvar'); if (sv) sv.onclick = () => { const agora = Date.now(); if (INV.conf > agora) { INV.conf = 0; invSalvarPreset('botão').catch(e => falhou('invasão (salvar)', e)); } else { INV.conf = agora + 6000; renderizar(); setTimeout(() => { if (INV.conf && Date.now() >= INV.conf) { INV.conf = 0; renderizar(); } }, 6100); } };
+        const au = $('#pg-inv-auto'); if (au) au.onclick = () => { const on = !ler('inv_auto', false); guardar('inv_auto', on); log('invasão: preset automático ' + (on ? 'LIGADO — o helper salva o preset de cada invasão nova (página aberta)' : 'desligado'), on ? 'ok' : 'info'); renderizar(); };
+        const rp = $('#pg-inv-replays'); if (rp) rp.onclick = () => invLerReplays();
+    }
     function telaProgresso() {
         pgGarantirCss();
         pgSincronizarBestiario();
         const sub = ler('prog_sub', 'chaves');
-        const abas = [['chaves', 'Chaves'], ['bestiario', 'Bestiário'], ['offline', 'Offline'], ['prey', 'Prey'], ['forja', 'Forja']];
+        const abas = [['chaves', 'Chaves'], ['bestiario', 'Bestiário'], ['invasao', 'Invasão'], ['offline', 'Offline'], ['prey', 'Prey'], ['forja', 'Forja']];
         const kb = PROG.chaves;
         const maxKb = kb ? pgTierDaMochila(kb, PROG.meta && PROG.meta.keyBags).max : null;
         const av = kb ? pgAvisoChaves(Object.assign({}, kb, { max: maxKb })) : null;
@@ -9553,12 +9790,13 @@
         if (inv && (inv.nivel === 'aviso' || sub === 'chaves')) h += `<div class="${inv.nivel === 'aviso' ? 'pg-atencao' : 'pg-cx'} pg-peq">${inv.nivel === 'aviso' ? '⚠ ' : inv.nivel === 'ok' ? '✓ ' : ''}${escHtml(inv.texto)}</div>`;
         const ap = sub === 'prey' ? null : pgAlertaPrey(PROG.prey);
         if (ap && ap.nivel === 'aviso') h += `<div class="pg-atencao pg-peq">⚠ prey — ${escHtml(ap.texto)}</div>`;
-        h += sub === 'bestiario' ? pgTelaBestiario() : sub === 'offline' ? pgTelaOffline() : sub === 'prey' ? pgTelaPrey() : sub === 'forja' ? pgTelaForja() : pgTelaChaves();
-        return h + `<div class="pg-rodape">Só leitura: nada nesta aba envia comando ao jogo.</div></div>`;
+        h += sub === 'bestiario' ? pgTelaBestiario() : sub === 'invasao' ? pgTelaInvasao() : sub === 'offline' ? pgTelaOffline() : sub === 'prey' ? pgTelaPrey() : sub === 'forja' ? pgTelaForja() : pgTelaChaves();
+        return h + `<div class="pg-rodape">${sub === 'invasao' ? 'Só o SALVAR (ou a chave automático) envia o preset ao jogo; o resto é leitura.' : 'Só leitura: nada nesta aba envia comando ao jogo.'}</div></div>`;
     }
     function ligarProgresso() {
         $$('[data-pg-sub]').forEach(b => { b.onclick = () => { guardar('prog_sub', b.dataset.pgSub); renderizar(); }; });
         ligarBestiario();
+        ligarInvasao(); // v2.17.0
         const muda = (patch) => { guardar('prog_calc', Object.assign(pgCalc(), patch)); renderizar(); };
         const de = $('#pg-de'); if (de) de.onchange = () => { const x = parseInt(de.value) || 0; muda({ de: x, ate: Math.max(x + 1, pgCalc().ate) }); };
         const ate = $('#pg-ate'); if (ate) ate.onchange = () => muda({ ate: parseInt(ate.value) || 1 });
@@ -12226,7 +12464,9 @@
         // v2.11 — Mercado (modelo puro e o estado lido)
         mkMontar, mkSugerir, mkTaxa, mkRevisao, mkVendas, get MERCADO() { return MK; },
         // v2.13.0 — Radar (estimativa e calibração; só leitura)
-        estimarMapa, tpEstimar, tpCalibrar, registrarMotorRanking, get RADAR() { return RADAR; }
+        estimarMapa, tpEstimar, tpCalibrar, registrarMotorRanking, get RADAR() { return RADAR; },
+        // v2.17.0 — Invasão (leituras e o plano; o salvar só pelo botão)
+        invPlanoHoje, invPosicoes, invMontarPreset, invResumoReplay, get INV() { return INV; }
     }; }
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar);
