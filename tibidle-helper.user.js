@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.16.1
+// @version      2.16.2
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.16.1';
+    const VERSAO = '2.16.2';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -6365,11 +6365,14 @@
         const faixaAlvo = proxima ? proxima.faixa : faixa;
         const podem = (vocs || VOCS_EQUIP).filter(v => vocacaoPode(peca.attrs, v));
         const cands = podem.length ? podem : (vocs || VOCS_EQUIP);
-        let voc = cands[0], melhorPt = -1, pesos = null;
+        /* v2.16.2 — "para quem": primeiro quem JÁ aproveita uma linha da peça (linhasUteis), depois quem mais ganharia com a melhor
+         * linha possível. Ao vivo (12/10) uma fur boots com regen. de vida 1,5 (linha do Cavaleiro) ganhava um plano "Druida". */
+        let voc = cands[0], melhorPt = -1, melhorUtil = -1, pesos = null;
         for (const v of cands) {
             const P = pesosDaVoc(v, ctx);
             const top = Math.max(0, ...ids.map(id => (P[id] || 0) * valorTipico(id, faixaAlvo)));
-            if (top > melhorPt) { melhorPt = top; voc = v; pesos = P; }
+            const util = Array.isArray(f.atributos) && f.atributos.length ? linhasUteis(peca, v, ctx).length : 0;
+            if (util > melhorUtil || (util === melhorUtil && top > melhorPt)) { melhorUtil = util; melhorPt = top; voc = v; pesos = P; }
         }
         if (!pesos) pesos = pesosDaVoc(voc, ctx);
         const atuais = Array.isArray(f.atributos) ? f.atributos : [];

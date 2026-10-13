@@ -480,7 +480,12 @@ t('2.16.0: Épico sem linha útil vai para as sobras (não é base de forja); É
     const furRegen = Object.assign({}, fur, { forja: Object.assign(F(3, ['resist_terra', 1], ['capacidade', 76], ['regen_mana', 1.5]), { potenciaBase: 27 }) });
     assert.deepStrictEqual(M.linhasUteis(furRegen, 'DRUID', null), ['regen_mana'], 'regen. de mana 1,5 é a linha útil');
     const dFur = M.distribuirEquip([fur, pcs[4], pcs[5]], undefined, { party: { fisico: 0.95, tomadoS: 25 } });
-    assert(!dFur.bases.some(p => p.iid === 'fur'), 'fur boots Épico sem linha útil não é base de forja');
+    assert(!dFur.bases.some(p => p.iid === 'fur'), 'fur boots Épico sem linha útil (para os magos) não é base de forja');
+    /* 2.16.2 — com o Cavaleiro na conta a mesma bota é base DELE (regen. de vida 1,5 é linha nobre do Knight) e o plano é para ele,
+     * não para o Druida (que só "ganharia mais" com uma regen. de mana que a peça não tem) */
+    assert.deepStrictEqual(M.linhasUteis(fur, 'KNIGHT', null), ['regen_vida']);
+    assert.strictEqual(M.planoForja(fur, undefined, null, null).voc, 'KNIGHT', 'plano para quem já aproveita a linha');
+    assert.strictEqual(M.planoForja(furRegen, undefined, null, null).voc, 'DRUID', 'regen. de mana: quem mais ganha com ela (Druida bebe poção)');
     assert.deepStrictEqual(M.linhasUteis(pcs[2], 'KNIGHT', null), ['corpo_a_corpo']);
     assert.deepStrictEqual(M.linhasUteis(pcs[2], 'SORCERER', null), [], 'Feiticeiro não veste espada');
     /* planoForja: peça que já tem a linha rara avisa para não apagar; peça sem ela avisa a chance de 1 em 89 */

@@ -4910,7 +4910,15 @@ REGRAS_VOCACAO e aqui:
   só 1 em 57 … não role"; o da hailstorm rod (potência 320, dano gelo 3,9 ✓) diz 2 refinos até a faixa III.
 - Defeito visto: fur boots **Épico de potência 27** (resist terra 1, capacidade 76, regen vida 1,5) era "base de forja" do Druida — qualquer
   linha com pt > 0 contava como útil. `linhasUteis` agora exige linha de skill que a vocação usa OU linha que rende ≥ 40 % da melhor
-  linha possível naquele espaço (a régua do planoForja); a fur boots vai para as sobras (4 fragmentos). O teste "2.11.6: épico nunca sobra"
+  linha possível naquele espaço (a régua do planoForja). (Correção na 2.16.2: ao vivo a fur boots está no corpo do Cavaleiro e a regen. de
+  vida 1,5 É linha nobre dele — ela segue como base/reserva do Cavaleiro; o erro de verdade era o plano "para o Druida".) O teste "2.11.6: épico nunca sobra"
   virou "épico só é base com linha útil" e a fixture do telas.test.js ganhou regen. de mana no Épico. Suíte: 298 testes ok (equip 41).
 - "cai 0 %" numa linha que a peça já tem virou "(já tem)" no plano e na lista de linhas-alvo.
+
+## 2.16.2 (12/10) — o plano de forja é de quem JÁ aproveita uma linha da peça
+- `planoForja` escolhia a vocação pela melhor linha POSSÍVEL no espaço (regen. de mana vale mais no Druida, que bebe poção): uma fur boots
+  com regen. de vida 1,5 — linha nobre do Cavaleiro — ganhava um plano "Druida". Agora quem já aproveita mais linhas da peça
+  (`linhasUteis`) vem primeiro; empate decide pela melhor linha possível. Fur boots → Cavaleiro; a mesma bota com regen. de mana → Druida.
+- Ao vivo (2.16.1): 9 bases, 5 sobras Incomum+ (3 Épicos "sem linha útil": steel helmet ×2 e trousers of the ancients com
+  resistências/roubo de vida/escudo; 37 fragmentos se desmanchar todas), 12 reservas, 11 encaixes que o Mercado paga.
 
