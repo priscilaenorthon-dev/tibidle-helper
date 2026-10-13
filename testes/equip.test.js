@@ -49,9 +49,9 @@ t('wand com +1 nível mágico (forja) bate wand mais forte; wand de fogo vale ze
     const vortexML = { nome: 'wand of vortex', slot: 'weapon', attrs: base['wand of vortex'].attrs, forja: { raridade: 1, atributos: [{ id: 'nivel_magico', valor: 1 }] } };
     const inferno = { nome: 'wand of inferno', slot: 'weapon', attrs: base['wand of inferno'].attrs, forja: { raridade: 0, atributos: [] } };
     const a = M.pontuarPeca(vortexML, 'SORCERER').pontos, b = M.pontuarPeca(inferno, 'SORCERER').pontos;
-    /* 2.11.6 — com a mana curta de hoje (tiro ~0,14/s) as duas empatam: a inferno dá +17 de dano por
-     * tiro já descontada a mana, e +1 ML dá ~0,9 % do dano da party */
-    assert(Math.abs(a - b) < 0.3, `vortex +1 ML (${a}) deveria empatar com a inferno (${b})`);
+    /* 2.11.6 — com a mana curta (tiro ~0,14/s) as duas empatavam; 2.16.3 (dono, 13/10, seguindo os vídeos): +1 ML vale pelo
+     * menos uma regen. de mana 2,0 — a vortex ML+1 passa a bater a inferno com folga */
+    assert(a > b + 1, `vortex +1 ML (${a}) deveria bater a inferno (${b})`);
     const dragao = { notas: { COMBAT_FIREDAMAGE: 0, COMBAT_ENERGYDAMAGE: 80 } };
     const c = M.pontuarPeca(inferno, 'SORCERER', dragao);
     assert(c.pontos < 0, 'inferno em mapa imune a fogo deveria pontuar negativo (só custa mana): ' + c.pontos);
@@ -97,12 +97,34 @@ t('Knight: +1 de ataque vale quase o mesmo que +1 de skill (golpe e Berserk são
     assert(P.attack / P.corpo_a_corpo > 0.7 && P.attack / P.corpo_a_corpo < 1.3, `ataque ${P.attack} × skill ${P.corpo_a_corpo}`);
     assert(P.skillaxe === P.corpo_a_corpo);
 });
-t('nível mágico pesa pelo ML atual: com ML 5 vale bem mais que com ML 20', () => {
+t('nível mágico: pela fórmula com ML baixo, e nunca abaixo de uma regen. de mana 2,0 (2.16.3, decisão do dono)', () => {
     const baixo = M.pesosDaVoc('SORCERER', { nivel: 39, sk: { SORCERER: { ml: 5 } } }), alto = M.pesosDaVoc('SORCERER', { nivel: 62, sk: { SORCERER: { ml: 20 } } });
-    assert(baixo.nivel_magico > 2 * alto.nivel_magico, `${baixo.nivel_magico} × ${alto.nivel_magico}`);
-    assert(alto.nivel_magico > 0.7 && alto.nivel_magico < 1.3, 'ML 20: ~1 % do dano da party por ML: ' + alto.nivel_magico);
+    assert(baixo.nivel_magico >= alto.nivel_magico, `${baixo.nivel_magico} × ${alto.nivel_magico}`);
+    assert(Math.abs(alto.nivel_magico - 2 * alto.regen_mana) < 0.01, 'ML 20: o piso é 2,0 de regen. de mana: ' + alto.nivel_magico + ' × regen ' + alto.regen_mana);
+    const dru = M.pesosDaVoc('DRUID', null);
+    assert(Math.abs(dru.nivel_magico - 2 * dru.regen_mana) < 0.01, 'Druida (bebe poção): o piso acompanha a regen. dele');
+    assert(M.pesosDaVoc('PALADIN', null).nivel_magico < 2 * M.pesosDaVoc('PALADIN', null).regen_mana, 'Paladino não ganha o piso');
     const lixo = M.pesosDaVoc('SORCERER', { sk: { SORCERER: { ml: undefined } } });
     assert(lixo.nivel_magico === M.pesosDaVoc('SORCERER', {}).nivel_magico, 'skill ausente cai na referência');
+});
+t('2.16.3: Wand of Everblazing (+1 ML de fábrica) bate a inferno; chance de crítico sozinha conta e é nobre nos magos', () => {
+    /* atributos do catálogo (data/lib-items-2026-09-28.json): magiclevelpoints 1, fogo 75–95, 17 de mana por tiro */
+    const ever = { nome: 'wand of everblazing', slot: 'weapon', attrs: { weaponType: 'wand', shootType: 'fire', magiclevelpoints: 1, mana: 17, fromDamage: 75, toDamage: 95, wandType: 'fire', vocation: 'Sorcerer;true, Master Sorcerer' }, forja: F(0) };
+    const inferno = { nome: 'wand of inferno', slot: 'weapon', attrs: base['wand of inferno'].attrs, forja: F(0) };
+    const e = M.pontuarPeca(ever, 'SORCERER'), i = M.pontuarPeca(inferno, 'SORCERER');
+    assert(e.pontos > i.pontos + 1, `everblazing ${e.pontos} deveria bater a inferno ${i.pontos}`);
+    assert(e.detalhe.some(d => d.id === 'magiclevelpoints' && d.pt >= 2 * M.pesosDaVoc('SORCERER', null).regen_mana - 0.01), 'o +1 ML de fábrica pesa como a linha de forja: ' + JSON.stringify(e.detalhe));
+    const anelRegen = { nome: 'crystal ring', slot: 'ring', attrs: {}, forja: F(1, ['regen_mana', 2.0]) };
+    const wandML = { nome: 'wand of vortex', slot: 'weapon', attrs: base['wand of vortex'].attrs, forja: F(1, ['nivel_magico', 1]) };
+    const mlPt = M.pontuarPeca(wandML, 'SORCERER').detalhe.find(d => d.id === 'nivel_magico').pt;
+    assert(mlPt >= M.pontuarPeca(anelRegen, 'SORCERER').pontos - 0.01, '+1 ML ≥ regen. de mana 2,0');
+    /* crítico: chance 2 % sem linha de dano já rende (base 0 no jogo; dano extra 50 % é premissa) */
+    const colarCrit = { nome: 'wolf tooth chain', slot: 'necklace', attrs: {}, forja: F(1, ['critico_chance', 2]) };
+    const c = M.pontuarPeca(colarCrit, 'SORCERER');
+    assert(c.pontos > 0 && !c.mortos.includes('critico_chance'), 'chance de crítico sozinha deveria pontuar: ' + c.pontos + ' mortos ' + c.mortos);
+    assert(Math.abs(c.pontos - 2 * 50 / 100 * 0.27) < 0.01, '2 % × 50 % do dano do Feiticeiro (27 % da party) = 0,27 pt: ' + c.pontos);
+    const comDano = { nome: 'wolf tooth chain', slot: 'necklace', attrs: {}, forja: F(2, ['critico_chance', 2], ['critico_dano', 10]) };
+    assert(M.pontuarPeca(comDano, 'SORCERER').pontos > c.pontos, 'a linha de dano soma aos 50 %');
 });
 t('peça de carga ou de tempo é marcada temporária (stone skin, might ring, prismatic ring)', () => {
     for (const nome of ['stone skin amulet', 'might ring', 'prismatic ring', 'ring of healing', 'terra amulet']) {
@@ -340,8 +362,10 @@ t('2.11.5: dano elemental só no elemento do mago; crítico conta nos magos; rou
     assert.strictEqual(pt(colar(['dano_elem_energia', 2]), 'DRUID'), 0, 'Druida: energia não conta');
     assert.strictEqual(pt(colar(['dano_elem_fogo', 2]), 'DRUID'), 0, 'Druida: fogo não conta');
     for (const v of ['SORCERER', 'DRUID']) assert(pt(colar(['critico_chance', 2], ['critico_dano', 10]), v) > 0, v + ': crítico conta (em par)');
-    /* 2.11.6 — PAR: crítico e roubo de vida são chance × porcentagem (wiki). Sozinho não faz nada. */
-    assert.strictEqual(pt(colar(['critico_chance', 3]), 'SORCERER'), 0, 'chance de crítico sem dano crítico = 0');
+    /* 2.11.6 — PAR: chance × porcentagem (wiki). 2.16.3 — crítico tem 50 % de dano de base (premissa, dono 13/10): a chance sozinha já
+     * rende; roubo de vida continua precisando do par. */
+    assert(pt(colar(['critico_chance', 3]), 'SORCERER') > 0, 'chance de crítico sozinha rende (base 50 %)');
+    assert.strictEqual(pt(colar(['roubo_vida_chance', 3]), 'KNIGHT'), 0, 'roubo de vida sem quantia = 0');
     assert.strictEqual(pt(colar(['roubo_vida_chance', 3]), 'KNIGHT'), 0, 'chance de roubo sem quantia = 0');
     const comPar = M.pontuarPeca(colar(['critico_chance', 3]), 'SORCERER', { usando: { SORCERER: { ring: { critico_dano: 20 } } } }).pontos;
     assert(comPar > 0, 'com o dano crítico vestido em outro espaço, a chance passa a valer: ' + comPar);

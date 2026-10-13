@@ -4922,3 +4922,18 @@ REGRAS_VOCACAO e aqui:
 - Ao vivo (2.16.1): 9 bases, 5 sobras Incomum+ (3 Épicos "sem linha útil": steel helmet ×2 e trousers of the ancients com
   resistências/roubo de vida/escudo; 37 fragmentos se desmanchar todas), 12 reservas, 11 encaixes que o Mercado paga.
 
+## 2.16.3 (13/10) — decisão do dono: "vamos seguir o que os vídeos falam" — ML dos magos acima da regen. de mana; crítico só com chance já conta
+Pergunta do dono: "nossos equips tão certo? é para dar preferência a regeneração de mana?". Resposta dada: Cavaleiro (regen. de mana/vida,
+armadura, arma de maior ataque) e Paladino (distância; regen. enquanto não há peça de distância) estavam alinhados com os vídeos; nos
+magos não — o modelo dava regen. de mana 2,0 ≈ 3× um +1 ML porque o Feiticeiro vive sem mana (medido), e TV de Souza/NunohS põem ML
+acima de tudo ("mana se compra com poção, ML não"). Dono: "pode fazer… leva em conta que tem Wand e Rod que vem com +1 ML nela (Wand of
+Everblazing)".
+- `ML_REGEN_EQUIV = 2,0`: em Feiticeiro e Druida, `P.nivel_magico` (e `magiclevelpoints`, o ML de fábrica do catálogo — Wand of Everblazing,
+  Hat of the Mad, spellbooks, Yalahari Mask) passa a ser no mínimo `regen_mana × 2,0`. Paladino e Cavaleiro não mudam. Com o REF: Feiticeiro
+  +1 ML 0,8 → 3,7 pt; Druida 1,3 → 9,6 pt (a regen. dele vale poção).
+- Crítico: `CRIT_DANO_BASE = 50` — chance de crítico sem linha de dano já rende (wiki: não há crítico de base; TV de Souza: "qualquer 1 %
+  já te dá a possibilidade"). 50 % de dano extra é o padrão do Tibia; a wiki não dá o número — premissa marcada na tela e no código.
+  `critico_chance` virou encaixe nobre de Paladino e magos (não vai para as sobras se supera o que vestem).
+- Regras na caixa "? o que é bom" e a nota da tela dizem que a decisão é do dono (13/10). Testes: a vortex ML+1 agora BATE a inferno
+  (empatava na 2.11.6); Everblazing +1 ML de fábrica bate a inferno; colar com crítico 2 % = 0,27 pt no Feiticeiro. equip 42.
+

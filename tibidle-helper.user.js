@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.16.2
+// @version      2.16.3
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.16.2';
+    const VERSAO = '2.16.3';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -5934,6 +5934,11 @@
     const VIDA_PT_KNIGHT = 3.6, VIDA_PT_LADO = 0.5;
     /* elemento das magias de cada mago (dono, 29/09): Feiticeiro energia e fogo, Druida gelo e terra */
     const ELEM_DO_MAGO = { SORCERER: ['energia', 'fogo'], DRUID: ['gelo', 'terra'] };
+    const ML_REGEN_EQUIV = 2.0; // v2.16.3 — +1 ML nos magos vale no mínimo 2,0 de regen. de mana (dono, 13/10, seguindo os vídeos)
+    /* v2.16.3 — crítico: o jogo não tem crítico de base (wiki), então QUALQUER chance já acerta crítico (TV de Souza: "qualquer
+     * 1 % já te dá a possibilidade"). Dano extra do crítico sem linha de "crítico (dano)": 50 % (padrão do Tibia; a wiki não
+     * dá o número — premissa marcada). A linha de dano soma a esses 50 %. */
+    const CRIT_DANO_BASE = 50;
     const PARTY_REF = {
         share: { KNIGHT: 0.10, PALADIN: 0.26, SORCERER: 0.27, DRUID: 0.37 }, // fatia de cada um no dano da party
         dps: 270, // dano/s da party
@@ -6016,6 +6021,12 @@
          * mais que a de vida, por unidade — fica na frente de tudo nos encaixes de defesa dele. */
         if (voc === 'KNIGHT') P.regen_mana = _r(Math.max(P.regen_mana, VIDA_PT_KNIGHT * 1.25));
         P.max_mana = 0.001;
+        /* v2.16.3 — decisão do dono (13/10): "vamos seguir o que os vídeos falam" — nos magos, NÍVEL MÁGICO vale pelo menos
+         * uma linha boa de regen. de mana (ML_REGEN_EQUIV = 2,0 de mana/s). A medida sozinha dava regen 2,0 ≈ 3× um +1 ML
+         * (o Feiticeiro vive sem mana); a comunidade (TV de Souza 02/10 e 12/10, NunohS 11/10) põe ML acima de tudo: "mana se
+         * compra com poção, ML não". Vale para a linha de forja E para o ML de fábrica da peça (Wand of Everblazing +1,
+         * Hat of the Mad, spellbooks, Yalahari Mask — magiclevelpoints no catálogo cai no mesmo peso em pontuarPeca). */
+        if (voc === 'SORCERER' || voc === 'DRUID') P.nivel_magico = P.magiclevelpoints = _r(Math.max(P.nivel_magico, P.regen_mana * ML_REGEN_EQUIV));
         /* ---- defesa ---- */
         if (voc === 'KNIGHT') {
             const k1 = R.tomadoS / 100 * VIDA_PT_KNIGHT; // pt por 1 % a menos de TODO o dano que ele toma
@@ -6149,8 +6160,8 @@
         const danoDele = (R.share[voc] || 0) * R.dps;
         const vidaPt = voc === 'KNIGHT' ? VIDA_PT_KNIGHT : VIDA_PT_LADO;
         const ganhoPar = (g, lado) => { // pt da parte "lado" (c ou d) do par g
-            const o = par[g], m = meu[g];
-            const parte = lado === 'c' ? m.c * o.d + m.c * m.d / 2 : m.d * o.c + m.c * m.d / 2;
+            const o = par[g], m = meu[g], B = g === 'critico' ? CRIT_DANO_BASE : 0;
+            const parte = lado === 'c' ? m.c * (o.d + B) + m.c * m.d / 2 : m.d * o.c + m.c * m.d / 2;
             return g === 'critico' ? parte / 100 * (R.share[voc] || 0) // % do dano dele → % da party
                                    : danoDele * parte / 10000 * vidaPt; // vida/s devolvida → pt
         };
@@ -6344,10 +6355,10 @@
         SORCERER: ['NÍVEL MÁGICO acima de tudo: Hat of the Mad, Fox Cape, spellbook (Warding +1, Mind Control +2), Yalahari Mask +2, colar de Gargoyles; "capacete de 2 de regen. de mana sai na hora por um Hat of the Mad"',
                    'wand: a que der ML ou crítico (Wand of Everblazing +1 ML, Elite dos magos); Vortex ML+1 com potência ≥ 300 vira ML+3 na forja; dano de ENERGIA/FOGO no colar e na wand (NunohS: 3,5 % de energia na wand "muda muito")',
                    'crítico conta: a base é 0 %, qualquer 1 % já acerta crítico; dano mágico vale em magia, runa e wand',
-                   'regen. de mana é boa (vive sem mana), mas ML/dano vem antes; mana se compra com poção, ML não'],
+                   'regen. de mana é boa (vive sem mana), mas ML vem antes: desde 13/10 o helper dá a +1 ML (de forja ou de fábrica, como a Wand of Everblazing) pelo menos o valor de uma regen. de mana 2,0 — decisão sua, seguindo os vídeos'],
         DRUID: ['NÍVEL MÁGICO acima de tudo (as mesmas peças do Feiticeiro); Snakebite/Terra Rod com ML+1 e potência ≥ 300 → refino +3 → Refazer até ML+2/+3; Underworld Rod come 13 de mana por tiro e dá prejuízo',
                 'dano de GELO/TERRA no colar e na rod; crítico conta; a cura dele é o que segura o Knight — ML também cura',
-                'regen. de mana vale como poção economizada (ele bebe); max mana não serve a ninguém']
+                'regen. de mana vale como poção economizada (ele bebe), mas ML vem antes: +1 ML (forja ou de fábrica) vale pelo menos uma regen. de mana 2,0 (decisão de 13/10); max mana não serve a ninguém']
     };
     /* peca = {slot, attrs, forja{raridade, refino, potenciaBase, atributos}}; vocs = candidatas; porVoc = resultado do
      * distribuirEquip (opcional, para dizer o que a vocação veste hoje). Devolve o plano, sem custo de gema (quem
@@ -6445,8 +6456,9 @@
      * que a comunidade guarda — não vai para a lista de sobras (nem para o Mercado). */
     /* v2.11.19 — por vocação: regen. de vida só é nobre no Knight; na arma/colar, o que aquela vocação usa. */
     const NOBRE_DEFESA = { KNIGHT: ['regen_mana', 'regen_vida'], PALADIN: ['regen_mana'], SORCERER: ['regen_mana'], DRUID: ['regen_mana'] };
-    const NOBRE_ATAQUE = { KNIGHT: ['corpo_a_corpo', 'dano_fisico'], PALADIN: ['distancia', 'nivel_magico', 'dano_magico', 'dano_fisico'],
-                           SORCERER: ['nivel_magico', 'dano_magico'], DRUID: ['nivel_magico', 'dano_magico'] };
+    /* v2.16.3 — chance de crítico é nobre para Paladino e magos (vídeos: "arma: ML ou crítico"; base 0 % no jogo) */
+    const NOBRE_ATAQUE = { KNIGHT: ['corpo_a_corpo', 'dano_fisico'], PALADIN: ['distancia', 'nivel_magico', 'dano_magico', 'dano_fisico', 'critico_chance'],
+                           SORCERER: ['nivel_magico', 'dano_magico', 'critico_chance'], DRUID: ['nivel_magico', 'dano_magico', 'critico_chance'] };
     const nobresDe = (slot, voc) => ((slot === 'weapon' || slot === 'necklace' ? NOBRE_ATAQUE : NOBRE_DEFESA)[voc] || []);
     function encaixeNobre(p, voc) {
         const at = (p && p.forja && p.forja.atributos) || [];
@@ -8256,7 +8268,7 @@
          * desmanche é a ÚNICA fonte de fragmentos (gemas). Comum sem refino vende. */
         /* v2.16.0 — o que é bom para este personagem, em palavras (regras da comunidade + wiki), ao lado da medida */
         h += aj('eq-regras-' + v, `<ul style="margin:2px 0 0 14px;padding:0">${(REGRAS_VOCACAO[v] || []).map(x => '<li>' + escHtml(x) + '</li>').join('')}</ul>` +
-            `<div class="tb-eq-nota" style="margin-top:4px">A nota em pt é a medida da SUA party (1 pt = 1 % do dano dos 4). Quando ela discordar destas regras — ex.: regen. de mana 2,0 valendo mais que +1 ML no Feiticeiro — é porque hoje ele vive sem mana (medido); a comunidade prefere ML porque mana se compra com poção. Fontes: wiki /forja e /guia-do-${escHtml(VOC_NOME[v])}, TV de Souza (02/10, 12/10), NunohS (11/10).</div>`,
+            `<div class="tb-eq-nota" style="margin-top:4px">A nota em pt é a medida da SUA party (1 pt = 1 % do dano dos 4), com duas regras da comunidade por cima (decisão de 13/10): nos magos +1 ML vale pelo menos uma regen. de mana 2,0, e chance de crítico sozinha já conta (base 0 % no jogo; dano extra de 50 % é premissa). Fontes: wiki /forja e /guia-do-${escHtml(VOC_NOME[v])}, TV de Souza (02/10, 12/10), NunohS (11/10).</div>`,
             `? o que é bom para o ${VOC_ROTULO[v]}`);
         const temNegocio = (nome) => { const c = MK.catalogo && MK.catalogo[mkMin(nome)]; return !!(c && Number(c.trades30d) > 0); };
         const incluirMk = !!ler('desm_incluir_mercado', false);
