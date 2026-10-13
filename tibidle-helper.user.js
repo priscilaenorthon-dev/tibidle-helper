@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.16.3
+// @version      2.16.4
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.16.3';
+    const VERSAO = '2.16.4';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -7909,8 +7909,9 @@
     const eqSoGasta = (x) => !!(x && !x.melhor && x.atual && x.ganho >= GANHO_MIN); // a peça vale menos que o espaço vazio aqui
     const eqMexer = (x) => eqTroca(x) || eqTirar(x) || eqSoGasta(x);
     const EQUIP = { voc: 'KNIGHT', abertos: new Set(), base: null, res: null, lendo: false, erro: null, aviso: null, t: 0, verReservas: false, verTudo: false, equipando: false, ctx: null,
-                    vendaConf: null, vendendo: false, desmConf: null, desm: false };
-    const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+                    vendaConf: null, vendendo: false, desmConf: null, desm: false,
+                    pular: new Set() }; // v2.16.4 — trocas que o dono vetou nesta sessão ('VOC|slot'); o EQUIPAR as deixa de fora
+    const escHtml =(s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     const rarTag = (p) => { const r = (p.forja && p.forja.raridade) || 0; return `<span class="tb-rar r${r}">${RAR_NOME[r] || r}</span>`; };
     /* v2.9.0 — o que os pesos ofensivos precisam (pesosDaVoc): nível, skills
      * vistas no frame, ataque da arma do Knight (base + refino) e quanto do dano
@@ -8104,6 +8105,7 @@
         const addTroca = (v, s, dependencia) => {
             const x = R.porVoc[v] && R.porVoc[v][s]; if (!x) return;
             const k = v + '|' + s; if (chaves.has(k)) return;
+            if (!dependencia && EQUIP.pular.has(k)) return; // v2.16.4 — vetada pelo dono ("pular" na linha)
             if (x.melhor && (!x.atual || x.melhor.iid !== x.atual.iid) && (dependencia || x.ganho >= GANHO_MIN)) {
                 chaves.add(k); fila.push({ v, s, peca: x.melhor, dependencia: !!dependencia });
                 if (x.melhor.origem === 'corpo' && x.melhor.dono && x.melhor.dono !== v) addTroca(x.melhor.dono, x.melhor.slot, true);
@@ -8245,7 +8247,11 @@
             linhas++;
             const chave = v + '|' + s, aberto = EQUIP.abertos.has(chave);
             const mot = troca ? pontuarPeca(x.melhor, v, EQUIP.ctx).motivos.join(' · ') : '';
-            const direita = troca ? nomePeca(x.melhor, v) + `<small><span class="g">+${pt(x.ganho)}</span> · ${escHtml(decBR(mot))}</small>`
+            /* v2.16.4 — "pular": o dono veta uma troca (ex.: armadura com regen. de mana por outra com só +4 de armadura) e o
+             * EQUIPAR aplica o resto. O veto vale nesta sessão; a linha mostra "pulada" e um "voltar". */
+            const pulada = troca && EQUIP.pular.has(chave);
+            const btPular = troca ? ` <button type="button" class="tb-bt mini" data-eq-pular="${escHtml(chave)}" title="${pulada ? 'voltar a incluir esta troca no EQUIPAR' : 'deixar esta troca de fora do EQUIPAR'}">${pulada ? 'voltar' : 'pular'}</button>` : '';
+            const direita = troca ? nomePeca(x.melhor, v) + `<small><span class="${pulada ? 'tb-mut' : 'g'}">${pulada ? 'pulada por você · ' : ''}+${pt(x.ganho)}</span> · ${escHtml(decBR(mot))}${btPular}</small>`
                 : tirar ? '<span class="tb-av">tirar (arma de 2 mãos)</span>'
                 : soGasta ? `<span class="tb-av">vale menos que nada neste mapa (${pt(x.atualPt)}: só gasta mana) — tire à mão se quiser; em outro mapa pode valer</span>`
                 : !x.atual ? '<span class="tb-mut">nada melhor no estoque</span>' : '<span class="tb-mut">já é o melhor</span>';
@@ -8379,7 +8385,8 @@
         const corpo = $('#tb-corpo');
         const b = $('#tb-eq-atualizar'); if (b) b.onclick = () => { if (!EQUIP.lendo && !EQUIP.equipando) equipAtualizar(); };
         $$('[data-voc]', corpo).forEach(s => { s.onclick = () => { if (EQUIP.voc === s.dataset.voc) return; EQUIP.voc = s.dataset.voc; renderizar(); }; });
-        $$('.tb-eq', corpo).forEach(e => { e.onclick = (ev) => { if (ev.target && ev.target.closest && ev.target.closest('.tb-det')) return; const k = e.dataset.k; if (EQUIP.abertos.has(k)) EQUIP.abertos.delete(k); else EQUIP.abertos.add(k); renderizar(); }; });
+        $$('.tb-eq', corpo).forEach(e => { e.onclick = (ev) => { if (ev.target && ev.target.closest && ev.target.closest('.tb-det, button, a')) return; const k = e.dataset.k; if (EQUIP.abertos.has(k)) EQUIP.abertos.delete(k); else EQUIP.abertos.add(k); renderizar(); }; });
+        $$('[data-eq-pular]', corpo).forEach(b => { b.onclick = (ev) => { ev.stopPropagation(); const k = b.dataset.eqPular; if (EQUIP.pular.has(k)) EQUIP.pular.delete(k); else EQUIP.pular.add(k); renderizar(); }; });
         const tudo = $('#tb-eq-tudo'); if (tudo) tudo.onclick = () => { EQUIP.verTudo = !EQUIP.verTudo; renderizar(); };
         const e4 = $('#tb-eq-equipar4'); if (e4) e4.onclick = () => { if (!EQUIP.equipando) equiparTrocas(VOCS); };
         const e1 = $('#tb-eq-equipar1'); if (e1) e1.onclick = () => { if (!EQUIP.equipando) equiparTrocas([EQUIP.voc]); };

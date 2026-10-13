@@ -4937,3 +4937,13 @@ Everblazing)".
 - Regras na caixa "? o que é bom" e a nota da tela dizem que a decisão é do dono (13/10). Testes: a vortex ML+1 agora BATE a inferno
   (empatava na 2.11.6); Everblazing +1 ML de fábrica bate a inferno; colar com crítico 2 % = 0,27 pt no Feiticeiro. equip 42.
 
+## 2.16.4 (13/10) — "pular" por linha no Equip (o EQUIPAR aplica o resto)
+- Dono: "equipa como você achar melhor, de acordo com os vídeos". As 3 trocas sugeridas: Cavaleiro colar (wolf tooth chain Lendária 0,3 pt →
+  platinum amulet +2 armadura, 6,6 pt), Cavaleiro armadura (dark armor Incomum com regen. de mana 2,4 → golden armor Comum +4 de armadura,
+  +2,4 pt) e Druida arma (hailstorm rod Épica −10,3 pt → snakebite rod ML+1, +17,9 pt). A da armadura contraria a regra do dono (30/09:
+  "o Knight tem que ter regen. de mana como principal") e o TV de Souza de 12/10 ("sentindo falta de mana regen no Knight"): ganho de 5 %
+  trocando uma peça nobre por uma Comum. Por isso cada linha de troca ganhou um botão **pular** ("pulada por você · voltar"): `EQUIP.pular`
+  (Set 'VOC|slot', só nesta sessão) e `slotsTrocas` deixa a troca vetada fora do EQUIPAR (a dependência — peça que outro precisa liberar —
+  não é vetada). Clicar no botão não abre/fecha a linha.
+- Depósito conferido ao vivo: nenhum spellbook/peça de ML para os magos, nenhuma besta para o Paladino — só as 3 trocas acima.
+
