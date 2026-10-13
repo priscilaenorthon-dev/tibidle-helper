@@ -4947,3 +4947,29 @@ Everblazing)".
   não é vetada). Clicar no botão não abre/fecha a linha.
 - Depósito conferido ao vivo: nenhum spellbook/peça de ML para os magos, nenhuma besta para o Paladino — só as 3 trocas acima.
 
+## 2.16.5 (13/10) — Mercado: o VALOR da linha faz o preço; todo item sai com preço; "puxar p/ mochila" nas bases de forja
+
+Dono, 13/10: "tenho itens muito bons de regen. de mana e de vida que valem uma grana, e itens inferiores a eles estão sendo vendidos";
+"todos os itens têm que ter um preço; mesmo sem item parecido, cheque um inferior e ajuste para o preço justo; preciso levantar dinheiro";
+"nas bases de forja, um link para puxar o item para a mochila e eu entender o que fazer com ele".
+
+Ao vivo (conta u2tag, 45 ordens abertas, ≈ 14,7 M pedidos, ≈ 735 mil de taxa já paga; vendas de 30 dias ≥ 6,65 M em 200 lançamentos):
+- black shield regen. de mana 1,1 a 25 mil · 2,0 a 450 mil · 2,2 a 850 mil; dark armor 1,3 a 250 mil · 1,4 a 300 mil · 1,7 a 700 mil;
+  brass armor 1,2 a 190 mil · 1,6 a 350 mil → com o mesmo encaixe o preço cresce com o valor numa potência ≈ 4.
+- A revisão (2.14.12) comparava só o id da linha: o black shield 1,4 do dono a 100 mil saía "caro" contra o de 1,1 e sugeria 24.999.
+
+O que mudou (`@@MERCADO`):
+- `mkRazaoValor(minha, outra)`: média geométrica de valor(outra) ÷ valor(minha) nas linhas NOBRES (regen, skill, dano, loot) que as duas
+  têm. `mkIgual` = mesmo encaixe e razão em ±10 %; `mkMesmoCorte` (igual ou melhor, ≥ 90 %) é o que a revisão usa para "barato";
+  `mkInferior` = mesmo encaixe com valor menor — piso, nunca referência.
+- `precoReferencia` (também a `ref. Mercado` do Equip) agora SEMPRE tenta dar preço: 1) cópias com os mesmos ids: igual → menor −1;
+  senão `mkJustoDe` interpola entre a inferior mais próxima e a melhor mais barata (expoente medido entre as duas; só uma, 4, travado
+  em ×3 / ÷3), nunca acima da melhor −1 nem abaixo da inferior +1 → origem 'justo'; 2) o mesmo com as parecidas (mesmas nobres);
+  3) 'faixa' = a mais barata da mesma raridade e refino −1, ou a mais cara da raridade abaixo × 1,25; 4) vazio. A nota da linha diz de
+  onde veio (inferior a X, melhor a Y, % do seu valor). Empilhável sem negócio em 30 dias e que o NPC compra vira "vender no NPC".
+- Revisão: `inferior` (piso) e `justo` por ordem; situação nova 'acima' (sem igual e > 1,3 × justo → refazer no justo); "barato" refaz
+  no justo da MINHA linha, não na menor −1 da melhor.
+- Equip: cada base de forja no depósito ganha "puxar p/ mochila" (`puxarBaseParaMochila` → `retirarDoDepot`, só na cidade) para levar
+  à Forja com o plano da peça.
+Testes: `testes/mercado.test.js` (34; os de 2.14.12/2.15.0 ajustados à regra do valor e à faixa com preço). Suite 260 ok.
+
