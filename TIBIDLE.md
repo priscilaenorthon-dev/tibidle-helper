@@ -5004,3 +5004,5 @@ e mostra dano no boss por personagem e por magia, posições e tempo ao alcance.
 
 ## 2.17.1 (13/10) — Invasão ao vivo: Annihilation entra no kit do Knight (melhorKitBoss olha 5 longas), dano das janelas em número
 
+## 2.17.2 (13/10) — Invasão: o servidor devolve os 4 slots de ataque com null nos vazios (a tela e a confirmação do SALVAR quebravam). SALVAR confirmado ao vivo em A maré vermelha.
+

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.17.1
+// @version      2.17.2
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.17.1';
+    const VERSAO = '2.17.2';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -9036,7 +9036,8 @@
             const p = (plano && plano[v]) || {};
             let pinos = m.pinos && typeof m.pinos === 'object' ? m.pinos : null;
             if (!pinos) { pinos = {}; for (const [slot, it] of Object.entries(m.equipamento || {})) if (it && it.pinado && it.iid) pinos[slot] = it.iid; }
-            const ataques = (Array.isArray(p.ataques) ? p.ataques : (Array.isArray(m.ataques) ? m.ataques : [])).slice(0, 4).map(a => a && a.minCreatures != null ? { skill: a.skill, minCreatures: Math.max(1, Math.round(a.minCreatures)) } : { skill: a.skill });
+            /* v2.17.2 — o servidor devolve os 4 slots e preenche os vazios com null */
+            const ataques = (Array.isArray(p.ataques) ? p.ataques : (Array.isArray(m.ataques) ? m.ataques : [])).filter(a => a && a.skill).slice(0, 4).map(a => a.minCreatures != null ? { skill: a.skill, minCreatures: Math.max(1, Math.round(a.minCreatures)) } : { skill: a.skill });
             return { vocation: v, pinos, ataques, suporte: p.suporte !== undefined ? p.suporte : (m.suporte || null), pocao: p.pocao !== undefined ? p.pocao : (m.pocao || null),
                      pocaoLimiar: p.pocaoLimiar != null ? p.pocaoLimiar : (m.pocaoLimiar != null ? m.pocaoLimiar : INV_POCAO_LIMIAR),
                      pos: p.pos && Number.isFinite(p.pos.x) ? { x: p.pos.x, y: p.pos.y } : (m.pos || null), ammo: m.ammo != null ? m.ammo : null };
@@ -9694,7 +9695,7 @@
             await dorme(700);
             const t0 = INV.t; invPedirHoje(true);
             await esperarQue(() => INV.t > t0, 6000, 150);
-            const lido = INV.hoje && INV.hoje.preset ? (INV.hoje.preset.membros || []).map(m => (m.ataques || []).map(a => a.skill).join(',')).join(';') : null;
+            const lido = INV.hoje && INV.hoje.preset ? (INV.hoje.preset.membros || []).map(m => (m.ataques || []).filter(a => a && a.skill).map(a => a.skill).join(',')).join(';') : null;
             const pedido = preset.membros.map(m => m.ataques.map(a => a.skill).join(',')).join(';');
             const ok = lido === pedido;
             INV.salvoEm = Date.now(); guardar('inv_salvo_id', preset.invasionId);
@@ -9753,7 +9754,7 @@
             for (const v of INV_VOCS) {
                 const p = P.plano[v], a = atual[v] || {};
                 const kit = p.kit.map(k => `${escHtml(k.nome)}${k.runa ? ' (runa)' : ''} ${pgInt(k.porLanc)}/${pgDec(k.cd, 0)}s`).join(' · ') || '—';
-                const de = (a.ataques || []).map(x => x.skill).join(', ') || '—';
+                const de = (a.ataques || []).filter(x => x && x.skill).map(x => x.skill).join(', ') || '—';
                 h += `<details class="pg-det" data-k="pg-inv-${v}"><summary><span><b>${VOC_ROTULO[v]}</b> <span class="pg-mut pg-peq">${p.danoJanela != null ? '~' + pgInt(p.danoJanela) + ' no boss' : ''}</span></span><span class="pg-mut pg-peq">${p.pos ? 'tile ' + p.pos.x + ',' + p.pos.y + ' · ' + pgDec(p.pos.ms / 1000, 0) + ' s ao alcance' : ''}</span></summary><div>
                     <div><b>ataques:</b> ${kit}</div><div class="pg-mut">hoje: ${escHtml(de)}${a.pos ? ' @' + a.pos.x + ',' + a.pos.y : ''}</div>
                     <div><b>suporte:</b> ${escHtml(p.suporte || '—')} <span class="pg-mut">(hoje ${escHtml(a.suporte || '—')})</span> · <b>poção:</b> ${escHtml(p.pocao || '—')} ≤${p.pocaoLimiar} % <span class="pg-mut">(hoje ${escHtml(a.pocao || '—')}${a.pocaoLimiar != null ? ' ≤' + a.pocaoLimiar + ' %' : ''})</span></div></div></details>`;

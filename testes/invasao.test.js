@@ -47,7 +47,7 @@ t('invPosicoes: Knight no tile de mais caminho adjacente; os outros três no mio
 t('invMontarPreset: plano por cima do preset atual; pinos dos equipamentos pinados; munição e o que não foi calculado ficam', () => {
     const atual = { invasionId: 'a_mare_vermelha', membros: [
         { vocation: 'KNIGHT', equipamento: { weapon: { name: 'heroic axe', pinado: true, iid: 'w1' }, armor: { name: 'dark armor', pinado: false, iid: 'a1' } }, ataques: [{ skill: 'Berserk', minCreatures: 1 }], suporte: 'Blood Rage', pocao: 'Strong Mana Potion', pocaoLimiar: 70, pos: { x: 19, y: 7 }, ammo: null },
-        { vocation: 'PALADIN', equipamento: {}, ataques: [{ skill: 'Divine Missile' }], suporte: 'Sharpshooter', pocao: 'Strong Mana Potion', pos: { x: 14, y: 7 }, ammo: 'bolt' } ] };
+        { vocation: 'PALADIN', equipamento: {}, ataques: [{ skill: 'Divine Missile' }, null, null, null], suporte: 'Sharpshooter', pocao: 'Strong Mana Potion', pos: { x: 14, y: 7 }, ammo: 'bolt' } ] }; // 2.17.2: o servidor devolve os slots vazios como null
     const plano = { KNIGHT: { ataques: [{ skill: 'Annihilation' }, { skill: 'Fierce Berserk', minCreatures: 1 }], suporte: 'Blood Rage', pocao: 'Strong Mana Potion', pocaoLimiar: 70, pos: { x: 19, y: 7, ms: 5000 } },
                     SORCERER: { ataques: [{ skill: 'sudden death rune' }], suporte: 'Enchant Party', pocao: 'Great Mana Potion', pocaoLimiar: 70, pos: { x: 13, y: 7 } } };
     const p = M.invMontarPreset(atual, plano);
