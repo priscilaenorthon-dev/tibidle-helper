@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.17.3
+// @version      2.17.4
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.17.3';
+    const VERSAO = '2.17.4';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -5665,7 +5665,7 @@
         if (BEST.ativo) bestPasso().catch(e => falhou('bestiário (completar)', e));
         /* v2.1.0: assim que houver token + catálogo, lê o dano real de tudo (só leitura, sem janela) */
         lerDanosPendentes();
-        try { if (CAT.magias && !_aprendendo && ler('inv_auto', false)) invPedirHoje(false); } catch (e) { falhou('invasão (pedir hoje)', e); } // v2.17.0 — só com "automático" ligado: pede a invasão do dia a cada 15 min (o reset é às 10:00)
+        try { if (CAT.magias && !_aprendendo && ler('inv_auto', false)) { invPedirHoje(false); if (INV.hoje && Date.now() - (INV.aprendeuT || 0) > 10 * 60000) { INV.aprendeuT = Date.now(); invAprenderAuto().catch(e => falhou('invasão (aprender)', e)); } } } catch (e) { falhou('invasão (pedir hoje)', e); } // v2.17.0/2.17.4 — só com "automático" ligado: pede a invasão do dia a cada 15 min e aprende com o 1º depois de cada janela
         const dentro = emHunt();
         if (!dentro) { _estavaEmHunt = false; _ultimosAbates = null; if (SESSAO) fecharSessao('saiu da caçada'); return; }
 
@@ -9066,6 +9066,44 @@
         }
         return r;
     }
+    /* v2.17.4 — MODELO DO 1º LUGAR (dono, 13/10: "quero algo que já fique automático, o posicionamento e todas as magias corretas").
+     * Do resumo do replay do 1º saem as posições e, por personagem, as magias/runas que ele usou NO BOSS (as de mais dano
+     * primeiro; 'Ataque' e os suportes ficam de fora) e o suporte que ele lançou. */
+    const INV_SUPORTES_CONHECIDOS = ['Blood Rage', 'Sharpshooter', 'Enchant Party', 'Heal Party', 'Protector', 'Protect Party', 'Magic Shield', 'Train Party'];
+    function invTemplateDoReplay(r) {
+        if (!r || !r.porSkill) return null;
+        const t = { de: r.nome || r.jogador || null, pos: {}, skills: {}, sups: {}, dano: r.boss || {}, total: r.totalBoss || 0 };
+        for (const v of INV_VOCS) if (r.pos && r.pos[v]) t.pos[v] = { x: r.pos[v].x, y: r.pos[v].y };
+        for (const v of INV_VOCS) {
+            t.skills[v] = Object.entries(r.porSkill).filter(([k]) => k.startsWith(v + '|')).map(([k, d]) => [k.slice(v.length + 1), d])
+                .filter(([n]) => n && n !== 'Ataque' && !INV_SUPORTES_CONHECIDOS.includes(n)).sort((a, b) => b[1] - a[1]).map(([n]) => n).slice(0, 4);
+            const sup = Object.keys(r.casts || {}).filter(k => k.startsWith(v + '|')).map(k => k.slice(v.length + 1)).find(n => INV_SUPORTES_CONHECIDOS.includes(n));
+            if (sup) t.sups[v] = sup;
+        }
+        return t;
+    }
+    /* o plano com o modelo por cima: posições do 1º; magias dele que o personagem TEM (podeUsar), na ordem do jogo (recarga longa
+     * primeiro, as de 2 s por último), completadas com as do plano até 4; suporte dele se existe para a vocação */
+    function invAplicarTemplate(plano, tpl, podeUsar, infoSkill) {
+        if (!plano || !tpl) return plano;
+        const out = {};
+        for (const v of INV_VOCS) {
+            const p = Object.assign({}, plano[v] || {});
+            if (tpl.pos && tpl.pos[v]) p.pos = Object.assign({}, p.pos || {}, { x: tpl.pos[v].x, y: tpl.pos[v].y, modelo: true });
+            const deles = (tpl.skills && tpl.skills[v] ? tpl.skills[v] : []).filter(n => podeUsar(v, n));
+            const nomes = []; for (const n of deles) if (!nomes.includes(n)) nomes.push(n);
+            for (const a of (p.ataques || [])) if (a && a.skill && !nomes.includes(a.skill) && nomes.length < 4) nomes.push(a.skill);
+            const info = (n) => (infoSkill && infoSkill(v, n)) || { cd: 2, casas: 1, porLanc: 0 };
+            const longas = nomes.filter(n => info(n).cd > 2), curtas = nomes.filter(n => info(n).cd <= 2);
+            const ord = (a, b) => info(b).porLanc - info(a).porLanc;
+            const final = longas.sort(ord).concat(curtas.sort(ord)).slice(0, 4);
+            p.ataques = final.map(n => info(n).casas > 1 ? { skill: n, minCreatures: 1 } : { skill: n });
+            p.modeloSkills = deles.length;
+            if (tpl.sups && tpl.sups[v] && podeUsar(v, tpl.sups[v])) p.suporte = tpl.sups[v];
+            out[v] = p;
+        }
+        return out;
+    }
     /* @@INVASAO-FIM */
     /* v2.11 — estado da aba Progresso, alimentado SÓ por observarProgresso()
      * (uma linha no começo de observarRecebido). Em memória: o que o jogo
@@ -9143,7 +9181,8 @@
     const PG_CSS = `
     #tb-prog{font-size:11.5px}
     #tb-prog .pg-sub{display:flex;flex-wrap:wrap;gap:3px;margin:0 0 6px}
-    #tb-prog .pg-aba{flex:1 1 auto;min-height:28px;padding:3px 4px;border-radius:14px;background:#1a1f29;color:#c3cad6;border:1px solid #2b3242;cursor:pointer;font:inherit;font-size:11px}
+    #tb-prog .pg-sub{flex-wrap:nowrap}
+    #tb-prog .pg-aba{flex:1 1 0;min-width:0;min-height:28px;padding:3px 2px;border-radius:14px;background:#1a1f29;color:#c3cad6;border:1px solid #2b3242;cursor:pointer;font:inherit;font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     #tb-prog .pg-aba:hover{background:#232936;color:#fff}
     #tb-prog .pg-aba.on{background:#2c5c3a;color:#fff;border-color:#4a9a63}
     #tb-prog button:focus-visible,#tb-prog select:focus-visible,#tb-prog input:focus-visible,#tb-prog summary:focus-visible{outline:2px solid #ffd479;outline-offset:1px}
@@ -9664,6 +9703,15 @@
         });
     }
     /* o melhor kit de cada um contra o boss do dia: o simulador do modelo Boss (melhorKitBoss), com poção (grátis na Invasão) */
+    /* modelos guardados por invasão (inv_modelos: {invasionId: {t, de, pos, skills, sups, dano, total, janelas}}) */
+    const invModelos = () => ler('inv_modelos', {}) || {};
+    const invModeloDeHoje = () => { const id = INV.hoje && INV.hoje.preset && INV.hoje.preset.invasionId; return id ? invModelos()[id] || null : null; };
+    function invGuardarModelo(id, tpl, janelas) {
+        if (!id || !tpl) return;
+        const m = invModelos(); m[id] = Object.assign({}, tpl, { t: Date.now(), janelas: janelas || 0 });
+        const ks = Object.keys(m); if (ks.length > 30) for (const k of ks.sort((a, b) => (m[a].t || 0) - (m[b].t || 0)).slice(0, ks.length - 30)) delete m[k];
+        guardar('inv_modelos', m);
+    }
     function invPlanoHoje() {
         const d = INV.hoje, def = d && d.def, hunt = invHuntDoBoss(def);
         if (!hunt || !CAT.magias) return null;
@@ -9683,7 +9731,34 @@
                          danoJanela: sim ? Math.round(sim.danoS * 40) : null,
                          suporte: (INV_SUPORTE[v] || []).find(n => temMagia(n, v, lvl)) || null, pocao: pocao ? pocao.n : null, pocaoLimiar: INV_POCAO_LIMIAR, pos: pos[v] || null };
         }
-        return { hunt, info, plano, ms };
+        /* v2.17.4 — o modelo do 1º (desta invasão, guardado) por cima da simulação: posições e magias dele que a vocação tem */
+        const tpl = invModeloDeHoje();
+        const porNome = {}; for (const v of INV_VOCS) porNome[v] = {};
+        for (const v of INV_VOCS) for (const m of magiasDaVocacao(v)) porNome[v][m.name] = m;
+        const podeUsar = (v, n) => !!porNome[v][n] || temMagia(n, v, lvl);
+        const infoSkill = (v, n) => { const m = porNome[v][n]; if (!m) return null; const x = danosConhecidos(v)[n]; return { cd: (m.cooldownMs || 2000) / 1000, casas: casasDaMagia(m), porLanc: x ? (x.min + x.max) / 2 : 0 }; };
+        const planoFinal = tpl ? invAplicarTemplate(plano, tpl, podeUsar, infoSkill) : plano;
+        return { hunt, info, plano: planoFinal, ms, modelo: tpl ? { de: tpl.de, t: tpl.t, total: tpl.total, janelas: tpl.janelas } : null };
+    }
+    /* v2.17.4 — APRENDER COM O 1º, sozinho (chave automático): a cada janela fechada do dia (runs do próprio dono crescem), lê o
+     * replay do 1º do ranking; se o modelo desta invasão mudou (outro jogador ou janela nova), guarda e salva o preset de novo.
+     * Nunca durante uma janela em curso (as batalhas começam em startAtMs; o replay só existe depois). */
+    async function invAprenderAuto() {
+        if (INV.lendo || INV.salvando || !socketAberto() || !INV.hoje || !ler('inv_auto', false)) return;
+        const id = INV.hoje.preset && INV.hoje.preset.invasionId; if (!id) return;
+        const nRuns = (INV.hoje.runs || []).filter(r => r && Number(r.bossDamage) >= 0).length;
+        const m = invModelos()[id];
+        if (m && (m.janelas || 0) >= nRuns && m.de) return; // já aprendido para este número de janelas
+        if (!nRuns && m) return; // sem janela nova hoje e já há modelo: nada a fazer
+        const chave = id + '|' + nRuns;
+        if (INV.aprendeuChave === chave) return;
+        INV.aprendeuChave = chave;
+        await invLerReplays(true);
+        const tpl = INV.topo ? invTemplateDoReplay(INV.topo) : null;
+        if (!tpl || !Object.keys(tpl.pos).length) return;
+        const antes = m ? JSON.stringify([m.pos, m.skills, m.sups]) : null;
+        invGuardarModelo(id, tpl, nRuns);
+        if (antes !== JSON.stringify([tpl.pos, tpl.skills, tpl.sups]) || ler('inv_salvo_id', null) !== id) await invSalvarPreset('automático: modelo do 1º (' + (tpl.de || '?') + ')');
     }
     async function invSalvarPreset(origem) {
         if (INV.salvando) return;
@@ -9709,9 +9784,9 @@
         finally { INV.salvando = false; renderizar(); }
     }
     /* LER REPLAYS: o 1º do ranking de hoje e o meu, pela melhor janela de cada um (só leitura) */
-    async function invLerReplays() {
+    async function invLerReplays(silencioso) {
         if (INV.lendo) return;
-        if (!socketAberto()) { INV.aviso = 'o socket do jogo não foi capturado — F5 com o helper instalado'; renderizar(); return; }
+        if (!socketAberto()) { if (!silencioso) { INV.aviso = 'o socket do jogo não foi capturado — F5 com o helper instalado'; renderizar(); } return; }
         INV.lendo = true; INV.erro = null; INV.aviso = null; renderizar();
         try {
             const date = INV.hoje && INV.hoje.date; if (!date) throw new Error('sem a invasão de hoje');
@@ -9730,7 +9805,9 @@
             INV.meu = CONTA && CONTA.id ? await lerUm(CONTA.id, CONTA.nome) : null;
             if (!INV.topo) throw new Error('não consegui ler o replay do 1º (' + top.name + ')');
             log(`invasão: replay do 1º (${top.name}) lido — ${pgInt(INV.topo.totalBoss)} no boss na melhor janela; ${INV.meu ? 'o seu: ' + pgInt(INV.meu.totalBoss) : 'o seu replay não veio'}`, 'ok');
-        } catch (e) { INV.erro = e.message; falhou('invasão (replays)', e); }
+            /* v2.17.4 — o replay lido vira o modelo desta invasão (posições e magias do 1º), guardado para quando o boss voltar */
+            if (!silencioso) { const tpl = invTemplateDoReplay(INV.topo); const id = INV.hoje && INV.hoje.preset && INV.hoje.preset.invasionId; if (tpl && id && Object.keys(tpl.pos).length) { invGuardarModelo(id, tpl, (INV.hoje.runs || []).length); log(`invasão: modelo de ${top.name} guardado para ${INV.hoje.bossName || id} — SALVAR aplica as posições e magias dele`, 'ok'); } }
+        } catch (e) { if (!silencioso) INV.erro = e.message; falhou('invasão (replays)', e); }
         finally { INV.lendo = false; renderizar(); }
     }
     function pgTelaInvasao() {
@@ -9753,12 +9830,14 @@
         if (!P) h += `<div class="pg-mut">plano ainda não calculado: faltam catálogos ou o dano das magias (/spell-numbers).</div>`;
         else {
             const atual = {}; for (const m of ((d.preset && d.preset.membros) || [])) if (m && m.vocation) atual[m.vocation] = m;
+            h += P.modelo ? `<div class="pg-cx"><b>modelo do 1º lugar em uso:</b> ${escHtml(P.modelo.de || '?')} (${pgInt(P.modelo.total)} no boss, lido ${new Date(P.modelo.t).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}) — posições e magias dele que seus personagens têm; o resto vem da simulação.</div>`
+                : `<div class="pg-mut pg-peq">sem modelo do 1º para esta invasão ainda: plano pela simulação. COMPARAR COM O 1º LUGAR guarda o modelo dele; com "automático" ligado o helper aprende sozinho depois de cada janela.</div>`;
             h += `<div class="pg-tit">Plano por personagem (dano no boss em 40 s, simulado)</div>`;
             for (const v of INV_VOCS) {
                 const p = P.plano[v], a = atual[v] || {};
-                const kit = p.kit.map(k => `${escHtml(k.nome)}${k.runa ? ' (runa)' : ''} ${pgInt(k.porLanc)}/${pgDec(k.cd, 0)}s`).join(' · ') || '—';
+                const kit = p.modeloSkills ? (p.ataques || []).map(a => escHtml(a.skill)).join(' · ') || '—' : (p.kit || []).map(k => `${escHtml(k.nome)}${k.runa ? ' (runa)' : ''} ${pgInt(k.porLanc)}/${pgDec(k.cd, 0)}s`).join(' · ') || '—';
                 const de = (a.ataques || []).filter(x => x && x.skill).map(x => x.skill).join(', ') || '—';
-                h += `<details class="pg-det" data-k="pg-inv-${v}"><summary><span><b>${VOC_ROTULO[v]}</b> <span class="pg-mut pg-peq">${p.danoJanela != null ? '~' + pgInt(p.danoJanela) + ' no boss' : ''}</span></span><span class="pg-mut pg-peq">${p.pos ? 'tile ' + p.pos.x + ',' + p.pos.y + ' · ' + pgDec(p.pos.ms / 1000, 0) + ' s ao alcance' : ''}</span></summary><div>
+                h += `<details class="pg-det" data-k="pg-inv-${v}"><summary><span><b>${VOC_ROTULO[v]}</b> <span class="pg-mut pg-peq">${p.modeloSkills ? p.modeloSkills + ' magia(s) do 1º' : p.danoJanela != null ? '~' + pgInt(p.danoJanela) + ' no boss' : ''}</span></span><span class="pg-mut pg-peq">${p.pos ? 'tile ' + p.pos.x + ',' + p.pos.y + (p.pos.modelo ? ' (do 1º)' : ' · ' + pgDec((p.pos.ms || 0) / 1000, 0) + ' s ao alcance') : ''}</span></summary><div>
                     <div><b>ataques:</b> ${kit}</div><div class="pg-mut">hoje: ${escHtml(de)}${a.pos ? ' @' + a.pos.x + ',' + a.pos.y : ''}</div>
                     <div><b>suporte:</b> ${escHtml(p.suporte || '—')} <span class="pg-mut">(hoje ${escHtml(a.suporte || '—')})</span> · <b>poção:</b> ${escHtml(p.pocao || '—')} ≤${p.pocaoLimiar} % <span class="pg-mut">(hoje ${escHtml(a.pocao || '—')}${a.pocaoLimiar != null ? ' ≤' + a.pocaoLimiar + ' %' : ''})</span></div></div></details>`;
             }
@@ -12472,7 +12551,7 @@
         // v2.13.0 — Radar (estimativa e calibração; só leitura)
         estimarMapa, tpEstimar, tpCalibrar, registrarMotorRanking, get RADAR() { return RADAR; },
         // v2.17.0 — Invasão (leituras e o plano; o salvar só pelo botão)
-        invPlanoHoje, invPosicoes, invMontarPreset, invResumoReplay, get INV() { return INV; }
+        invPlanoHoje, invPosicoes, invMontarPreset, invResumoReplay, invTemplateDoReplay, invAplicarTemplate, invModelos, get INV() { return INV; }
     }; }
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar);

@@ -5008,3 +5008,14 @@ e mostra dano no boss por personagem e por magia, posições e tempo ao alcance.
 
 ## 2.17.3 (13/10) — Boss/Invasão: o pool do melhorKitBoss leva também as 2 magias de maior dano por lançamento (Hell's Core, Eternal Winter) — na frente da sudden death só vale quem bate mais forte que ela num lançamento
 
+## 2.17.4 (13/10) — Invasão: o MODELO DO 1º LUGAR vira o preset (posições e magias), guardado por invasão e reaprendido sozinho
+
+Dono, 13/10: "tá tudo errado o posicionamento e as magias; quero algo que já fique automático, o posicionamento e todas as magias
+corretas". Em vez de confiar na simulação, o helper copia o que comprovadamente pontua: `invTemplateDoReplay` tira do replay do 1º as
+posições dos 4 e, por personagem, as magias/runas usadas NO BOSS (mais dano primeiro; 'Ataque' e suportes fora) e o suporte lançado;
+`invAplicarTemplate` põe isso por cima da simulação (só magias que a vocação TEM, ordem do jogo: recarga longa por dano, as de 2 s por
+último, completando até 4 com a simulação; suporte dele se existe). O modelo fica em `inv_modelos` por invasionId (30 mais recentes) e é
+reusado na hora quando o boss volta. Com "automático" ligado, a cada janela fechada (runs do dono crescem) o helper lê o replay do 1º do
+ranking (`invAprenderAuto`, no máximo a cada 10 min) e, se o modelo mudou, salva o preset de novo. COMPARAR COM O 1º também guarda o
+modelo. Abas do Progresso numa linha só (6 abas: a Forja estava quebrando para baixo). Testes: invasao.test.js 7. Suite 267 ok.
+

@@ -5,7 +5,7 @@ const raiz = path.join(__dirname, '..');
 const src = fs.readFileSync(path.join(raiz, 'tibidle-helper.user.js'), 'utf8');
 const ini = src.indexOf('/* @@INVASAO-INICIO'), fim = src.indexOf('/* @@INVASAO-FIM */');
 assert(ini > 0 && fim > ini, 'marcadores @@INVASAO não encontrados');
-const M = new Function(src.slice(ini, fim) + ' return { INV_VOCS, invHuntDoBoss, invCobertura, invPosicoes, invMontarPreset, invResumoReplay };')();
+const M = new Function(src.slice(ini, fim) + ' return { INV_VOCS, invHuntDoBoss, invCobertura, invPosicoes, invMontarPreset, invResumoReplay, invTemplateDoReplay, invAplicarTemplate };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 /* o caminho e os tiles de party de "A maré vermelha" (invasion_today_data.def, 13/10) */
@@ -74,5 +74,37 @@ t('invResumoReplay: dano no boss por personagem e por magia (noBoss), mobs à pa
     assert.strictEqual(r.porSkill['DRUID|sudden death rune'], 1573); assert.strictEqual(r.casts['DRUID|sudden death rune'], 2);
     assert.strictEqual(r.msBoss, 741); assert.strictEqual(r.bossIni, 115500); assert.strictEqual(r.bossFim, 158600); assert.deepStrictEqual(r.pos.DRUID, { x: 11, y: 9 }); assert.strictEqual(r.pocoes.KNIGHT, 1);
     assert.strictEqual(M.invResumoReplay(null).totalBoss, 0);
+});
+t('2.17.4 — invTemplateDoReplay: posições e magias do 1º NO BOSS (sem Ataque e sem suporte), suporte lançado', () => {
+    const r = { nome: 'SDNunoh', totalBoss: 57773, boss: { DRUID: 15402, PALADIN: 20584, SORCERER: 16403, KNIGHT: 5384 },
+        pos: { KNIGHT: { x: 19, y: 7 }, PALADIN: { x: 13, y: 9 }, SORCERER: { x: 13, y: 7 }, DRUID: { x: 11, y: 9 } },
+        porSkill: { 'KNIGHT|Annihilation': 1834, 'KNIGHT|Ataque': 1319, 'KNIGHT|Whirlwind Throw': 964, 'KNIGHT|Fierce Berserk': 692, 'KNIGHT|Front Sweep': 635,
+                    'PALADIN|Ataque': 13648, 'PALADIN|Strong Ethereal Spear': 4491, 'PALADIN|Ethereal Spear': 2445, 'SORCERER|sudden death rune': 14244, 'SORCERER|Ataque': 2159, 'DRUID|sudden death rune': 13323, 'DRUID|Ataque': 2079 },
+        casts: { 'KNIGHT|Blood Rage': 9, 'PALADIN|Sharpshooter': 9, 'SORCERER|Enchant Party': 2, 'DRUID|sudden death rune': 63 } };
+    const t = M.invTemplateDoReplay(r);
+    assert.strictEqual(t.de, 'SDNunoh'); assert.deepStrictEqual(t.pos.KNIGHT, { x: 19, y: 7 });
+    assert.deepStrictEqual(t.skills.KNIGHT, ['Annihilation', 'Whirlwind Throw', 'Fierce Berserk', 'Front Sweep']);
+    assert.deepStrictEqual(t.skills.PALADIN, ['Strong Ethereal Spear', 'Ethereal Spear']); assert.deepStrictEqual(t.skills.SORCERER, ['sudden death rune']);
+    assert.deepStrictEqual(t.sups, { KNIGHT: 'Blood Rage', PALADIN: 'Sharpshooter', SORCERER: 'Enchant Party' });
+    assert.strictEqual(M.invTemplateDoReplay(null), null);
+});
+t('2.17.4 — invAplicarTemplate: posições do 1º; magias dele que o personagem tem primeiro, completadas com o plano, na ordem do jogo', () => {
+    const plano = { KNIGHT: { ataques: [{ skill: 'Annihilation' }, { skill: 'Fierce Berserk', minCreatures: 1 }, { skill: 'Front Sweep', minCreatures: 1 }, { skill: 'Berserk', minCreatures: 1 }], suporte: 'Blood Rage', pos: { x: 5, y: 9, ms: 5187 } },
+                    PALADIN: { ataques: [{ skill: 'Strong Ethereal Spear' }, { skill: 'sudden death rune' }], suporte: 'Sharpshooter', pos: { x: 11, y: 7 } },
+                    SORCERER: { ataques: [{ skill: 'sudden death rune' }], suporte: 'Enchant Party', pos: { x: 11, y: 9 } }, DRUID: { ataques: [{ skill: 'sudden death rune' }], suporte: 'Heal Party', pos: { x: 13, y: 7 } } };
+    const tpl = { de: 'X', pos: { KNIGHT: { x: 19, y: 7 }, PALADIN: { x: 13, y: 9 }, SORCERER: { x: 13, y: 7 }, DRUID: { x: 11, y: 9 } },
+                  skills: { KNIGHT: ['Annihilation', 'Whirlwind Throw', 'Fierce Berserk', 'Front Sweep'], PALADIN: ['Strong Ethereal Spear', 'Ethereal Spear'], SORCERER: ['sudden death rune'], DRUID: ['Exotic Spell'] }, sups: { KNIGHT: 'Blood Rage', DRUID: 'Exotic Buff' } };
+    const info = { Annihilation: { cd: 30, casas: 1, porLanc: 612 }, 'Whirlwind Throw': { cd: 6, casas: 1, porLanc: 112 }, 'Fierce Berserk': { cd: 6, casas: 8, porLanc: 343 }, 'Front Sweep': { cd: 6, casas: 3, porLanc: 221 }, Berserk: { cd: 4, casas: 8, porLanc: 132 },
+                   'Strong Ethereal Spear': { cd: 8, casas: 1, porLanc: 386 }, 'Ethereal Spear': { cd: 2, casas: 1, porLanc: 82 }, 'sudden death rune': { cd: 2, casas: 1, porLanc: 180 } };
+    const pode = (v, n) => !!info[n]; const infoSkill = (v, n) => info[n] || null;
+    const r = M.invAplicarTemplate(plano, tpl, pode, infoSkill);
+    assert.deepStrictEqual(r.KNIGHT.pos, { x: 19, y: 7, ms: 5187, modelo: true });
+    assert.deepStrictEqual(r.KNIGHT.ataques.map(a => a.skill), ['Annihilation', 'Fierce Berserk', 'Front Sweep', 'Whirlwind Throw'], 'as 4 do 1º, recarga longa por dano; Berserk do plano fica de fora');
+    assert.deepStrictEqual(r.KNIGHT.ataques[1], { skill: 'Fierce Berserk', minCreatures: 1 }, 'área leva mínimo 1');
+    assert.deepStrictEqual(r.PALADIN.ataques.map(a => a.skill), ['Strong Ethereal Spear', 'sudden death rune', 'Ethereal Spear'], 'as dele + a do plano; as de 2 s por último, por dano');
+    assert.deepStrictEqual(r.SORCERER.ataques.map(a => a.skill), ['sudden death rune']);
+    assert.deepStrictEqual(r.DRUID.ataques.map(a => a.skill), ['sudden death rune'], 'magia que o Druida não tem é ignorada; fica o plano'); assert.strictEqual(r.DRUID.suporte, 'Heal Party', 'suporte desconhecido ignorado');
+    assert.strictEqual(r.KNIGHT.suporte, 'Blood Rage'); assert.deepStrictEqual(r.DRUID.pos, { x: 11, y: 9, ms: undefined, modelo: true }.ms === undefined ? r.DRUID.pos : null);
+    assert.strictEqual(M.invAplicarTemplate(plano, null, pode, infoSkill), plano);
 });
 console.log(`${n} testes ok` + (process.exitCode ? ' · FALHARAM' : ''));
