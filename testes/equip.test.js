@@ -302,18 +302,26 @@ t('pecasDesmanche: peça com negócio no Mercado fica fora do desmanche (Incomum
     assert.deepStrictEqual(M.pecasDesmanche(res).map(x => x.iid), ['a', 'b', 'c'], 'sem o filtro, vai tudo');
     assert.deepStrictEqual(M.pecasDesmanche(res, temNegocio, true).map(x => x.iid), ['a', 'b', 'c'], 'incluir = ignora o filtro');
 });
-t('2.11.6: épico nunca sobra (base de forja); resistência sobrevive ao cenário de mapa mágico', () => {
+t('2.11.6 → 2.16.1: épico só é base de forja com linha útil; três resistências de 1 % sobram (anuncie ou desmanche)', () => {
+    /* 2.11.6 dizia "épico nunca sobra"; a wiki de 12/10 (skill cai 1 em 89 por gema) e o TV de Souza ("Mace com 500 de potência é
+     * item de noob — desencanta") mudaram a regra: 3 encaixes só valem se pelo menos um já é uma linha que alguém usa de verdade */
     const anel = (iid, dono, r, ...at) => ({ iid, nome: 'crystal ring', slot: 'ring', attrs: {}, origem: dono ? 'corpo' : 'depósito', dono, forja: F(r, ...at) });
     const pcs = [
         anel('k', 'KNIGHT', 1, ['regen_vida', 2.4]), anel('p', 'PALADIN', 1, ['regen_mana', 1.3]),
         anel('s', 'SORCERER', 1, ['regen_mana', 1.2]), anel('d', 'DRUID', 1, ['regen_mana', 2.3]),
         anel('epico', null, 3, ['resist_energia', 1.1], ['resist_gelo', 0.9], ['resist_sagrado', 0.9]),
+        anel('epicoBom', null, 3, ['resist_energia', 1.1], ['regen_mana', 1.1], ['resist_sagrado', 0.9]),
+        /* reservas de anel já ocupadas (1 por vocação): o épico de resistências não pode se salvar como "2.ª melhor" */
+        anel('resK', null, 1, ['regen_vida', 1.0]), anel('resM', null, 1, ['regen_mana', 1.0]),
         anel('lixo1', null, 1, ['max_mana', 40]), anel('lixo2', null, 1, ['max_mana', 41]), anel('lixo3', null, 1, ['max_mana', 42])
     ];
     /* medido num mapa corpo a corpo: laterais não apanham */
     const d = M.distribuirEquip(pcs, undefined, { party: { fisico: 0.95, tomadoS: 25 } });
-    assert(!d.dispensaveis.some(p => p.iid === 'epico'), 'épico foi para as sobras');
-    assert(d.bases.some(p => p.iid === 'epico'), 'épico deveria aparecer como base de forja');
+    const e = d.dispensaveis.find(p => p.iid === 'epico');
+    assert(e && /sem linha útil/.test(e.motivo), 'épico de 3 resistências de 1 % deveria sobrar com o motivo "sem linha útil": ' + (e ? e.motivo : 'não sobrou'));
+    assert(!d.bases.some(p => p.iid === 'epico'), 'épico sem linha útil não é base de forja');
+    assert(d.bases.some(p => p.iid === 'epicoBom') || d.reservas.has('epicoBom'), 'épico com regen. de mana 1,1 fica (base ou reserva)');
+    assert(!d.dispensaveis.some(p => p.iid === 'epicoBom'), 'épico com linha útil não sobra');
     assert(d.dispensaveis.some(p => /^lixo/.test(p.iid)), 'max mana sem uso deveria sobrar');
 });
 t('2.11.6: a troca do Paladino — anel de max mana sai, regen de mana do depósito entra', () => {
@@ -465,6 +473,14 @@ t('2.16.0: Épico sem linha útil vai para as sobras (não é base de forja); É
     assert(d.bases.some(p => p.iid === 'viva') || d.usadas.has('viva') || d.reservas.has('viva'), 'Épico com corpo a corpo +1 fica (base, uso ou reserva)');
     assert(!d.dispensaveis.some(p => p.iid === 'viva'), 'Épico com linha boa não sobra');
     assert.deepStrictEqual(M.linhasUteis(pcs[1], 'KNIGHT', null), [], 'nenhuma linha vale para o Knight');
+    /* ao vivo (12/10): fur boots Épico de potência 27 com resist terra 1, capacidade 76 e regen vida 1,5 passava como base do Druida — linha
+     * só é útil se rende ≥ 40 % da melhor linha possível no espaço (regen. de mana, no Druida) ou se é skill que a vocação usa */
+    const fur = { iid: 'fur', nome: 'fur boots', slot: 'boots', attrs: {}, origem: 'corpo', dono: 'DRUID', forja: Object.assign(F(3, ['resist_terra', 1], ['capacidade', 76], ['regen_vida', 1.5]), { potenciaBase: 27 }) };
+    assert.deepStrictEqual(M.linhasUteis(fur, 'DRUID', null), [], 'resist 1 %, capacidade 76 e regen vida 1,5 não são linhas úteis no Druida');
+    const furRegen = Object.assign({}, fur, { forja: Object.assign(F(3, ['resist_terra', 1], ['capacidade', 76], ['regen_mana', 1.5]), { potenciaBase: 27 }) });
+    assert.deepStrictEqual(M.linhasUteis(furRegen, 'DRUID', null), ['regen_mana'], 'regen. de mana 1,5 é a linha útil');
+    const dFur = M.distribuirEquip([fur, pcs[4], pcs[5]], undefined, { party: { fisico: 0.95, tomadoS: 25 } });
+    assert(!dFur.bases.some(p => p.iid === 'fur'), 'fur boots Épico sem linha útil não é base de forja');
     assert.deepStrictEqual(M.linhasUteis(pcs[2], 'KNIGHT', null), ['corpo_a_corpo']);
     assert.deepStrictEqual(M.linhasUteis(pcs[2], 'SORCERER', null), [], 'Feiticeiro não veste espada');
     /* planoForja: peça que já tem a linha rara avisa para não apagar; peça sem ela avisa a chance de 1 em 89 */

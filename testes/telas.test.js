@@ -419,7 +419,8 @@ t('Equip: escape de itens, slots e vocações em português, "8 slots" como inte
     const depot = { entries: [{ itemName: MAL, iid: 'd1', slot: 'weapon', forja: F }, { itemName: 'plate armor', iid: 'd2', slot: 'armor', forja: F },
         { itemName: 'plate armor', iid: 'd3', slot: 'armor', forja: F }, { itemName: 'mage robe', iid: 'r2', slot: 'armor', forja: FA(1, ['regen_mana', 3]) },
         { itemName: 'leather armor', iid: 'm1', slot: 'armor', forja: FA(1, ['resist_fogo', 1]) },
-        { itemName: 'leather armor', iid: 'b1', slot: 'armor', forja: FA(3, ['resist_fogo', 1], ['resist_gelo', 1], ['resist_terra', 1]) },
+        /* 2.16.1 — base de forja exige linha útil: regen. de mana 1,2 (3 resistências de 1 % já não seguram um Épico) */
+        { itemName: 'leather armor', iid: 'b1', slot: 'armor', forja: FA(3, ['regen_mana', 1.2], ['resist_gelo', 1], ['resist_terra', 1]) },
         { itemName: 'knight armor', iid: 'n1', slot: 'armor', forja: FA(1, ['regen_vida', 1.1]) }] };
     const E = H.EQUIP; E.base = base; E.ctx = { nivel: 62, sk: {}, fracMagica: {}, notas: null, mapa: 'Mapa ' + XSS(8) };
     E.res = H.distribuirEquip(H.candidatosEquip(roster, depot, base, []), undefined, E.ctx); E.t = W.agora; E.voc = 'KNIGHT';

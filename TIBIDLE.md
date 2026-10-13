@@ -4899,5 +4899,18 @@ REGRAS_VOCACAO e aqui:
   linha "Estoque: N reservas · N bases · N encaixe que o Mercado paga · sobras: N NPC (X) e N Incomum+ (Y fragmentos)"; cada sobra
   Incomum+ e cada base mostram "desmanche N frag. ≈ X (p % T2) → Mercado (líq. Y) / DESMANCHAR"; DESMANCHAR diz quantos fragmentos
   e quanto valem; glossário da Forja com preços das gemas, faixas nomeadas, pesos de sorteio, purificação e tabela do desmanche.
-- Testes: equip 40 → 44 (chance por linha e ranges; fragmentos e destino; Épico sem linha útil × Épico com linha boa + planoForja
-  rara/não rara; fórmula do Paladino e regras em palavras). 276 no total. eslint 0 erros.
+- Testes: equip 37 → 41 públicos (chance por linha e ranges; fragmentos e destino; Épico sem linha útil × Épico com linha boa + planoForja
+  rara/não rara; fórmula do Paladino e regras em palavras). eslint 0 erros.
+
+## 2.16.1 (12/10) — revisão do teste ao vivo da 2.16.0 (conta u2tag, nível 117, The Behemoth Quest, assets v196)
+- Ao vivo: 72 peças lidas, 2 trocas no Cavaleiro (golden armor +2,4 pt; platinum amulet +6,3 pt no lugar da wolf tooth chain Lendária,
+  que vale 0,3 pt nele e 1 pt no Druida), 12 reservas, 12 bases, 11 com encaixe que o Mercado paga, 2 sobras Incomum+ (terra boots
+  regen vida 2 — 3 fragmentos; battle shield regen vida 1,6 — 1 fragmento, ref. 10.000 → Mercado líq. 9.500). Fragmento lido no
+  catálogo: **3,2k** (mediana dos "… Fragment T1/T2" com negócio), não os 2k dos vídeos. O plano da wolf tooth chain diz "nível mágico cai
+  só 1 em 57 … não role"; o da hailstorm rod (potência 320, dano gelo 3,9 ✓) diz 2 refinos até a faixa III.
+- Defeito visto: fur boots **Épico de potência 27** (resist terra 1, capacidade 76, regen vida 1,5) era "base de forja" do Druida — qualquer
+  linha com pt > 0 contava como útil. `linhasUteis` agora exige linha de skill que a vocação usa OU linha que rende ≥ 40 % da melhor
+  linha possível naquele espaço (a régua do planoForja); a fur boots vai para as sobras (4 fragmentos). O teste "2.11.6: épico nunca sobra"
+  virou "épico só é base com linha útil" e a fixture do telas.test.js ganhou regen. de mana no Épico. Suíte: 298 testes ok (equip 41).
+- "cai 0 %" numa linha que a peça já tem virou "(já tem)" no plano e na lista de linhas-alvo.
+

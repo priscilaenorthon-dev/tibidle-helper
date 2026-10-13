@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.16.0
+// @version      2.16.1
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.16.0';
+    const VERSAO = '2.16.1';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -6394,7 +6394,8 @@
         if (raridade < raridadeAlvo) passos.push(`Raridade: ${RAR_PT[raridade]} (${encaixes} encaixe${encaixes === 1 ? '' : 's'}) → suba até ${RAR_PT[raridadeAlvo]} (${ENCAIXES_POR_RARIDADE[raridadeAlvo]} encaixes) com Raridade T1 — Raro → Épico 20 %, Épico → Lendário 10 %; falhar só gasta a gema, não rebaixa. Mais encaixes = mais chances de cair a linha certa.`);
         else passos.push(`Raridade: ${RAR_PT[raridade]}, ${encaixes} encaixes — já serve${raridade < 4 ? ' (Lendário daria 4, a 10 % por tentativa)' : ''}.`);
         const pct = c => (Math.round(c * 1000) / 10).toLocaleString('pt-BR') + ' %';
-        passos.push(`Linhas: Atributo T1 escreve uma linha aleatória no 1º encaixe vazio — com peso (wiki): ${linhasAlvo.map(x => `${x.rotulo} ${pct(x.chance)}`).join(', ') || '—'} por gema. Veio ruim? Limpeza T2 apaga só a ÚLTIMA linha (a que acabou de cair) e você tenta de novo (Atributo T1 + Limpeza T2 ≈ 60 mil + 200 fragmentos por tentativa). ${ruins >= 2 ? 'As linhas de hoje (' + linhasAtuais.filter(x => !x.boa).map(x => x.rotulo).join(', ') + ') não valem para o ' + voc.toLowerCase() + ': Limpeza T1 apaga TODAS e recomeça do zero.' : 'Limpeza T1 apaga todas — só se a maioria for ruim.'} Ordem T2 embaralha a ordem: tire a linha boa do fim antes de uma Limpeza T2.`);
+        const temLinha = new Set(atuais.map(a => a && a.id));
+        passos.push(`Linhas: Atributo T1 escreve uma linha aleatória no 1º encaixe vazio — com peso (wiki): ${linhasAlvo.map(x => `${x.rotulo} ${temLinha.has(x.id) ? '(já tem)' : pct(x.chance)}`).join(', ') || '—'} por gema. Veio ruim? Limpeza T2 apaga só a ÚLTIMA linha (a que acabou de cair) e você tenta de novo (Atributo T1 + Limpeza T2 ≈ 60 mil + 200 fragmentos por tentativa). ${ruins >= 2 ? 'As linhas de hoje (' + linhasAtuais.filter(x => !x.boa).map(x => x.rotulo).join(', ') + ') não valem para o ' + voc.toLowerCase() + ': Limpeza T1 apaga TODAS e recomeça do zero.' : 'Limpeza T1 apaga todas — só se a maioria for ruim.'} Ordem T2 embaralha a ordem: tire a linha boa do fim antes de uma Limpeza T2.`);
         if (temRara) passos.push(`Esta peça já tem a linha rara (${linhasAtuais.filter(x => x.boa).map(x => x.rotulo + ' ' + x.valor).join(', ')}): NUNCA apague com Limpeza T1. Suba a potência (refino) e use Refazer para o valor subir no range da faixa — é assim que ML +1 vira +2/+3 (TV de Souza).`);
         else if (raras.length) passos.push(`${raras.map(x => x.rotulo).join(' / ')} cai só ${raras.map(x => '1 em ' + Math.round(1 / x.chance)).join(' / ')} por Atributo T1 (≈ ${Math.round(1 / raras[0].chance)} tentativas, ${Math.round(60 / raras[0].chance / 1000 * 10) / 10} milhões de ouro + ${Math.round(200 / raras[0].chance).toLocaleString('pt-BR')} fragmentos): não role essa linha — procure a peça que já CAIU com ela (hunt do item) e forje aquela.`);
         passos.push(`Valores: com as linhas certas, Refazer T1 re-sorteia o VALOR de todas no range da faixa ${faixaAlvo} (${linhasAlvo.slice(0, 2).map(x => x.rotulo + ' ' + x.range[0].toLocaleString('pt-BR') + (x.range[1] !== x.range[0] ? '–' + x.range[1].toLocaleString('pt-BR') : '')).join(', ') || '—'}) — por isso o refino vem antes; Refazer T2 só o do último encaixe.`);
@@ -6402,11 +6403,20 @@
         return { voc, slot, ataque, pot, faixa, faixaNome: FAIXA_NOME[faixa - 1], proxima, encaixes, raridade, raridadeAlvo, linhasAlvo, linhasAtuais, temRara, raras,
                  veste: veste ? { nome: veste.nome, pt: Math.round(pontuarPeca(veste, voc, ctx).pontos * 10) / 10 } : null, passos };
     }
-    /* v2.16.0 — linhas de forja da peça que valem (pt > 0) para a vocação; [] se ela não pode vestir */
+    /* v2.16.0 — linhas de forja da peça que valem DE VERDADE para a vocação: linha de skill que ela usa, ou linha que rende
+     * pelo menos 40 % da melhor linha possível naquele espaço (mesma régua do planoForja). Resistência 1 % ou capacidade 76
+     * numa bota Épica de potência 27 não é "linha útil" — ao vivo (12/10) isso segurava a fur boots como base de forja. */
     function linhasUteis(peca, voc, ctx) {
         if (!vocacaoPode(peca.attrs, voc)) return [];
-        const ids = new Set(((peca.forja && peca.forja.atributos) || []).map(a => a && a.id));
-        return pontuarPeca(peca, voc, ctx).detalhe.filter(d => ids.has(d.id) && d.pt > 0).map(d => d.id);
+        const atrs = (peca.forja && peca.forja.atributos) || [];
+        if (!atrs.length) return [];
+        const P = pesosDaVoc(voc, ctx), slot = normalizarSlot(peca.slot);
+        const ids = slot === 'weapon' || slot === 'necklace' ? ATAQUE_IDS : DEFESA_IDS;
+        const faixa = faixaPotencia(potenciaTotal(peca));
+        const melhor = Math.max(0, ...ids.map(id => (P[id] || 0) * valorTipico(id, faixa)));
+        const porId = new Map(pontuarPeca(peca, voc, ctx).detalhe.map(d => [d.id, d.pt]));
+        return atrs.map(a => a && a.id).filter(id => id && porId.has(id) && porId.get(id) > 0
+            && ((SKILL_FORJA.includes(id) && (P[id] || 0) > 0) || porId.get(id) >= 0.4 * melhor));
     }
     /* v2.14.11 — Incomum ANUNCIA no Mercado (04/10: a u2tag tinha leather boots Incomum a 2.299 em ordem aberta; a nota
      * antiga da wiki dizia que não). temNegocio(nome) = o Mercado teve negócio em 30 dias com esse nome: fica fora do
@@ -8318,7 +8328,8 @@
             let custo = '';
             if (pl.proxima) { try { const r = pgRefino(pl.proxima.refinoAlvo - pl.proxima.refinos, pl.proxima.refinoAlvo, 'melhor'); custo = ` · custo esperado ~${numBR(Math.round(r.total.tentativas * 10) / 10)} gema(s) de refino${r.total.G > 0.05 ? ' + ' + numBR(Math.round(r.total.G * 10) / 10) + ' de garantia' : ''} ≈ ${milBR(Math.round(r.total.ouro))} de ouro`; } catch (e) { custo = ''; } }
             const atuais = pl.linhasAtuais.length ? pl.linhasAtuais.map(x => `<span class="${x.boa ? 'tb-ok' : 'tb-ruim'}">${escHtml(x.rotulo)} ${escHtml(String(x.valor))}${x.boa ? ' ✓' : ' ✗'}</span>`).join(' · ') : 'nenhuma (sem encaixe preenchido)';
-            const fx = x => escHtml(x.rotulo) + ' ' + numBR(x.pt, 2) + ' pt <span class="tb-mut">(' + numBR(x.range[0], 1) + (x.range[1] !== x.range[0] ? '–' + numBR(x.range[1], 1) : '') + ', cai ' + (Math.round(x.chance * 1000) / 10).toLocaleString('pt-BR') + ' %)</span>';
+            const jaTem = new Set(((p.forja && p.forja.atributos) || []).map(a => a && a.id));
+            const fx = x => escHtml(x.rotulo) + ' ' + numBR(x.pt, 2) + ' pt <span class="tb-mut">(' + numBR(x.range[0], 1) + (x.range[1] !== x.range[0] ? '–' + numBR(x.range[1], 1) : '') + (jaTem.has(x.id) ? ', já tem' : ', cai ' + (Math.round(x.chance * 1000) / 10).toLocaleString('pt-BR') + ' %') + ')</span>';
             return `<details class="tb-aj" data-k="eq-plano-${escHtml(String(p.iid))}"><summary>plano de forja · ${escHtml(VOC_ROTULO[pl.voc] || pl.voc)} · faixa ${pl.faixa} ${escHtml(pl.faixaNome || '')}${pl.proxima ? ' → ' + pl.proxima.faixa + ' em ' + pl.proxima.refinos + ' refino' + (pl.proxima.refinos > 1 ? 's' : '') : ''}${pl.temRara ? ' · <b>já tem a linha rara</b>' : ''}</summary><div class="tb-mut">` +
                 `<div><b>Para quem:</b> ${escHtml(VOC_ROTULO[pl.voc] || pl.voc)}, ${escHtml(slotPt(pl.slot))}${pl.veste ? ` — hoje usa ${escHtml(pl.veste.nome)} (${numBR(pl.veste.pt)} pt)` : ''}.</div>` +
                 `<div><b>Potência:</b> ${numBR(pl.pot)} = faixa ${pl.faixa} (${escHtml(pl.faixaNome || '')})${pl.proxima ? ` · próxima faixa (${pl.proxima.limiar}) em ${pl.proxima.refinos} refino${pl.proxima.refinos > 1 ? 's' : ''} (+${pl.proxima.refinoAlvo - pl.proxima.refinos} → +${pl.proxima.refinoAlvo})${custo}` : ' · faixa máxima'}.</div>` +
