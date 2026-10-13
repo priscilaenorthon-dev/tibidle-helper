@@ -5019,3 +5019,5 @@ reusado na hora quando o boss volta. Com "automático" ligado, a cada janela fec
 ranking (`invAprenderAuto`, no máximo a cada 10 min) e, se o modelo mudou, salva o preset de novo. COMPARAR COM O 1º também guarda o
 modelo. Abas do Progresso numa linha só (6 abas: a Forja estava quebrando para baixo). Testes: invasao.test.js 7. Suite 267 ok.
 
+## 2.17.5 (13/10) — Invasão: os 4 slots preenchidos (dono: "magias genéricas que dão dano a todos os bosses"): Ultimate Strike na frente quando bate ≥ 90 % do preenchimento; atrás, golpes de 2 s de outros elementos como reserva (só disparam se o da frente não puder). A sudden death continua o motor.
+

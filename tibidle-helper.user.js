@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.17.4
+// @version      2.17.5
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.17.4';
+    const VERSAO = '2.17.5';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -9723,7 +9723,26 @@
             const danos = danosConhecidos(v, null, true), ml = mlAtual(v);
             const avs = magiasDaVocacao(v).map(m => avaliar(m, hunt, info, v, danos))
                 .filter(a => a.confiavel && a.danoEfetivo > 0 && info.vetos[a.m.combatType] == null && !(v === 'KNIGHT' && a.m.isRune) && !(a.m.isRune && a.m.magicLevel > 0 && ml != null && ml < a.m.magicLevel));
-            const kit = avs.length ? melhorKitBoss(avs, { bebe: true, mana: manaDoPersonagem(v) }) : [];
+            const kit0 = avs.length ? melhorKitBoss(avs, { bebe: true, mana: manaDoPersonagem(v) }) : [];
+            /* v2.17.5 — OS 4 SLOTS PREENCHIDOS (dono, 13/10: "deixa magias genéricas, que dão dano considerável a todos os bosses"):
+             * o simulador deixa só o que rende; o dono quer reserva. Na frente, o golpe de 30 s (Ultimate Strike) quando bate ≥ 90 % do
+             * preenchimento de 2 s (empate ou ganho); atrás, golpes de alvo único de 2 s de OUTROS elementos — só disparam se o da frente
+             * não puder, mas cobrem um boss que resista ao elemento principal. Área fica de fora (o boss é alvo único). */
+            const kit = kit0.slice();
+            {
+                const usados = new Set(kit.map(a => a.m.name)), grupos = new Set(kit.map(a => a.m.secondaryGroup).filter(Boolean));
+                const ench = kit.find(a => enchimento(a)), resto = avs.filter(a => !usados.has(a.m.name) && a.casas <= 1);
+                const porDano = (x, y) => y.porLancamento - x.porLancamento;
+                const ult = resto.filter(a => (a.m.cooldownMs || 0) >= 30000 && !(a.m.secondaryGroup && grupos.has(a.m.secondaryGroup)) && ench && a.porLancamento >= 0.9 * ench.porLancamento).sort(porDano)[0];
+                if (ult && kit.length < 4) { kit.unshift(ult); usados.add(ult.m.name); if (ult.m.secondaryGroup) grupos.add(ult.m.secondaryGroup); }
+                const elem = new Set(kit.map(a => a.m.combatType));
+                for (const a of resto.filter(a => !usados.has(a.m.name) && enchimento(a) && !a.m.isRune).sort(porDano)) {
+                    if (kit.length >= 4) break;
+                    if (elem.has(a.m.combatType)) continue;
+                    kit.push(a); elem.add(a.m.combatType); usados.add(a.m.name);
+                }
+                for (const a of resto.filter(a => !usados.has(a.m.name) && enchimento(a)).sort(porDano)) { if (kit.length >= 4) break; kit.push(a); usados.add(a.m.name); }
+            }
             const sim = kit.length ? simularFila(slotsParaSimular(kit.map((a, i) => ({ slot: i + 1, av: a, minimo: 1 }))), Object.assign({ lure: 1, matarS: 1e6, esperaS: 0, seg: 40, pocao: true }, manaDoPersonagem(v))) : null;
             const pocao = listaPocoes('mana').filter(p => p.lvl <= lvl && lvl <= (p.lvlMax || Infinity) && (!p.voc || p.voc.includes(v)) && p.media > 0).sort((a, b) => b.media - a.media)[0] || null;
             plano[v] = { ataques: kit.map(a => a.casas > 1 ? { skill: a.m.name, minCreatures: 1 } : { skill: a.m.name }),
