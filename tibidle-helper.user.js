@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.17.5
+// @version      2.17.6
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.17.5';
+    const VERSAO = '2.17.6';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -9104,6 +9104,25 @@
         }
         return out;
     }
+    /* v2.17.6 — KIT GENÉRICO (dono, 13/10: "não vou arrumar boss por boss; deixa dano considerável alto para todos"): os bosses da
+     * rotação (bestiário, /bestiary/creature, 13/10) viram UMA hunt com peso igual, e a nota de cada elemento é a média nos 7 — sem
+     * veto por um boss só (o Arachir é imune a morte, mas a sudden death é a melhor nos outros 6). O preset sai o mesmo todo dia; só
+     * as posições mudam com o mapa. */
+    const INV_BOSSES = [
+        { name: 'Enraged Necropharus', elements: [] },
+        { name: 'Zushuka', elements: [['ENERGY', -10], ['EARTH', 50], ['FIRE', 50], ['ICE', 100], ['HOLY', 30], ['DEATH', -10]] },
+        { name: 'Arachir the Ancient One', elements: [['PHYSICAL', 1], ['ENERGY', 5], ['EARTH', 100], ['FIRE', -1], ['ICE', 5], ['HOLY', -5], ['DEATH', 100]] },
+        { name: 'Vozerion', elements: [['PHYSICAL', 5], ['EARTH', 100], ['FIRE', 100], ['ICE', 100], ['DEATH', 10]] },
+        { name: 'Minotaur Warlord', elements: [] },
+        { name: 'Thraw, Guerreiro orc', elements: [['ENERGY', 20], ['EARTH', -10], ['HOLY', 10], ['DEATH', -10]] },
+        { name: 'Edward Teach', elements: [['EARTH', 20], ['FIRE', -10], ['ICE', -5], ['HOLY', 10], ['DEATH', -5]] }
+    ];
+    function invHuntGenerica(def) {
+        const lista = INV_BOSSES.map(b => ({ name: b.name, health: 1, experience: 0, weight: 1, elements: b.elements.map(([e, p]) => ({ type: 'COMBAT_' + e + 'DAMAGE', percent: p })) }));
+        const b = def && def.boss;
+        if (b && b.name && !lista.some(x => x.name === b.name)) lista.push({ name: b.name, health: 1, experience: 0, weight: 1, elements: Array.isArray(b.elements) ? b.elements : [] });
+        return { id: 'inv:generico', title: 'Invasão (todos os bosses)', boss: true, levelMin: 1, lureTiers: [{ min: 1, max: 1 }], maxLure: 1, monsters: lista };
+    }
     /* @@INVASAO-FIM */
     /* v2.11 — estado da aba Progresso, alimentado SÓ por observarProgresso()
      * (uma linha no começo de observarRecebido). Em memória: o que o jogo
@@ -9715,13 +9734,17 @@
     function invPlanoHoje() {
         const d = INV.hoje, def = d && d.def, hunt = invHuntDoBoss(def);
         if (!hunt || !CAT.magias) return null;
-        const info = notasElementos(hunt); if (!info) return null;
+        /* v2.17.6 — genérico (padrão): a média dos bosses da rotação, sem o veto de um boss só (as notas "de área" são a média ponderada) */
+        const generico = ler('inv_generico', true) !== false;
+        const huntG = generico ? invHuntGenerica(def) : hunt;
+        const info0 = notasElementos(huntG); if (!info0) return null;
+        const info = generico ? { notas: info0.notasArea, vetos: info0.vetosArea, notasArea: info0.notasArea, vetosArea: info0.vetosArea } : info0;
         const lvl = nivelAtual() || 1, plano = {};
         const ms = (INV.meu && INV.meu.msBoss) || (INV.topo && INV.topo.msBoss) || INV_MS_CELULA;
         const pos = invPosicoes(def, { msPorCelula: ms, alcance: Number(d.rangePadraoRuna) > 0 ? Number(d.rangePadraoRuna) : INV_ALCANCE_RUNA });
         for (const v of INV_VOCS) {
             const danos = danosConhecidos(v, null, true), ml = mlAtual(v);
-            const avs = magiasDaVocacao(v).map(m => avaliar(m, hunt, info, v, danos))
+            const avs = magiasDaVocacao(v).map(m => avaliar(m, huntG, info, v, danos))
                 .filter(a => a.confiavel && a.danoEfetivo > 0 && info.vetos[a.m.combatType] == null && !(v === 'KNIGHT' && a.m.isRune) && !(a.m.isRune && a.m.magicLevel > 0 && ml != null && ml < a.m.magicLevel));
             const kit0 = avs.length ? melhorKitBoss(avs, { bebe: true, mana: manaDoPersonagem(v) }) : [];
             /* v2.17.5 — OS 4 SLOTS PREENCHIDOS (dono, 13/10: "deixa magias genéricas, que dão dano considerável a todos os bosses"):
@@ -9757,7 +9780,7 @@
         const podeUsar = (v, n) => !!porNome[v][n] || temMagia(n, v, lvl);
         const infoSkill = (v, n) => { const m = porNome[v][n]; if (!m) return null; const x = danosConhecidos(v)[n]; return { cd: (m.cooldownMs || 2000) / 1000, casas: casasDaMagia(m), porLanc: x ? (x.min + x.max) / 2 : 0 }; };
         const planoFinal = tpl ? invAplicarTemplate(plano, tpl, podeUsar, infoSkill) : plano;
-        return { hunt, info, plano: planoFinal, ms, modelo: tpl ? { de: tpl.de, t: tpl.t, total: tpl.total, janelas: tpl.janelas } : null };
+        return { hunt, info, plano: planoFinal, ms, generico, modelo: tpl ? { de: tpl.de, t: tpl.t, total: tpl.total, janelas: tpl.janelas } : null };
     }
     /* v2.17.4 — APRENDER COM O 1º, sozinho (chave automático): a cada janela fechada do dia (runs do próprio dono crescem), lê o
      * replay do 1º do ranking; se o modelo desta invasão mudou (outro jogador ou janela nova), guarda e salva o preset de novo.
@@ -9842,7 +9865,9 @@
             <div class="pg-mut pg-peq">boss: ${escHtml(el)} · entra quando as 3 waves acabam (no máximo ${pgInt(Math.round((def.bossEntraMs || 0) / 1000))} s) · ${pgInt((d.buffs || []).length)} buffs à venda por janela</div>
             ${runs.length ? `<div class="pg-mut pg-peq">suas janelas de hoje: ${runs.join(' · ')} de dano no boss${INV.rankTopo ? ` · 1º ${escHtml(INV.rankTopo.nome)} ${pgInt(INV.rankTopo.dano)} no dia` : ''}</div>` : ''}</div>`;
         const btSalvar = `<button type="button" class="tb-bt pri" id="pg-inv-salvar" ${INV.salvando || !P ? 'disabled' : ''} style="flex:1">${INV.salvando ? 'salvando…' : INV.conf > Date.now() ? 'confirmar: salvar o preset?' : 'SALVAR PRESET DE HOJE'}</button>`;
-        h += `<div class="pg-form">${btSalvar}<button type="button" class="tb-chave" id="pg-inv-auto" role="switch" aria-checked="${auto}" title="salva sozinho quando a invasão do dia muda (página aberta)"><span class="tb-sw ${auto ? 'on' : ''}"><i></i></span></button><span class="pg-peq">automático</span></div>`;
+        const generico = ler('inv_generico', true) !== false;
+        h += `<div class="pg-form">${btSalvar}<button type="button" class="tb-chave" id="pg-inv-auto" role="switch" aria-checked="${auto}" title="salva sozinho quando a invasão do dia muda (página aberta)"><span class="tb-sw ${auto ? 'on' : ''}"><i></i></span></button><span class="pg-peq">automático</span>
+            <button type="button" class="tb-chave" id="pg-inv-generico" role="switch" aria-checked="${generico}" title="ligado: as magias são as melhores na MÉDIA dos 7 bosses da rotação (o mesmo preset serve a todos); desligado: as melhores contra o boss do dia"><span class="tb-sw ${generico ? 'on' : ''}"><i></i></span></button><span class="pg-peq">genérico (todos os bosses)</span></div>`;
         if (salvoId && id) h += `<div class="pg-mut pg-peq">${salvoId === id ? '✓ preset desta invasão já salvo pelo helper' + (INV.salvoEm ? ' às ' + new Date(INV.salvoEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '') : 'o último salvo foi de outra invasão — salve de novo'}</div>`;
         if (INV.erro) h += `<div class="pg-alerta">${escHtml(INV.erro)}</div>`;
         if (INV.aviso) h += `<div class="pg-atencao">${escHtml(INV.aviso)}</div>`;
@@ -9851,7 +9876,7 @@
             const atual = {}; for (const m of ((d.preset && d.preset.membros) || [])) if (m && m.vocation) atual[m.vocation] = m;
             h += P.modelo ? `<div class="pg-cx"><b>modelo do 1º lugar em uso:</b> ${escHtml(P.modelo.de || '?')} (${pgInt(P.modelo.total)} no boss, lido ${new Date(P.modelo.t).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}) — posições e magias dele que seus personagens têm; o resto vem da simulação.</div>`
                 : `<div class="pg-mut pg-peq">sem modelo do 1º para esta invasão ainda: plano pela simulação. COMPARAR COM O 1º LUGAR guarda o modelo dele; com "automático" ligado o helper aprende sozinho depois de cada janela.</div>`;
-            h += `<div class="pg-tit">Plano por personagem (dano no boss em 40 s, simulado)</div>`;
+            h += `<div class="pg-tit">Plano por personagem (dano no boss em 40 s, simulado${P.generico ? ' na média dos 7 bosses' : ''})</div>`;
             for (const v of INV_VOCS) {
                 const p = P.plano[v], a = atual[v] || {};
                 const kit = p.modeloSkills ? (p.ataques || []).map(a => escHtml(a.skill)).join(' · ') || '—' : (p.kit || []).map(k => `${escHtml(k.nome)}${k.runa ? ' (runa)' : ''} ${pgInt(k.porLanc)}/${pgDec(k.cd, 0)}s`).join(' · ') || '—';
@@ -9876,6 +9901,7 @@
         const sv = $('#pg-inv-salvar'); if (sv) sv.onclick = () => { const agora = Date.now(); if (INV.conf > agora) { INV.conf = 0; invSalvarPreset('botão').catch(e => falhou('invasão (salvar)', e)); } else { INV.conf = agora + 6000; renderizar(); setTimeout(() => { if (INV.conf && Date.now() >= INV.conf) { INV.conf = 0; renderizar(); } }, 6100); } };
         const au = $('#pg-inv-auto'); if (au) au.onclick = () => { const on = !ler('inv_auto', false); guardar('inv_auto', on); log('invasão: preset automático ' + (on ? 'LIGADO — o helper salva o preset de cada invasão nova (página aberta)' : 'desligado'), on ? 'ok' : 'info'); renderizar(); };
         const rp = $('#pg-inv-replays'); if (rp) rp.onclick = () => invLerReplays();
+        const gn = $('#pg-inv-generico'); if (gn) gn.onclick = () => { const on = !(ler('inv_generico', true) !== false); guardar('inv_generico', on); log('invasão: kit ' + (on ? 'GENÉRICO (a média dos 7 bosses)' : 'do boss do dia'), 'info'); renderizar(); };
     }
     function telaProgresso() {
         pgGarantirCss();

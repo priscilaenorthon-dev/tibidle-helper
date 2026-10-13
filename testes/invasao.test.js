@@ -5,7 +5,7 @@ const raiz = path.join(__dirname, '..');
 const src = fs.readFileSync(path.join(raiz, 'tibidle-helper.user.js'), 'utf8');
 const ini = src.indexOf('/* @@INVASAO-INICIO'), fim = src.indexOf('/* @@INVASAO-FIM */');
 assert(ini > 0 && fim > ini, 'marcadores @@INVASAO não encontrados');
-const M = new Function(src.slice(ini, fim) + ' return { INV_VOCS, invHuntDoBoss, invCobertura, invPosicoes, invMontarPreset, invResumoReplay, invTemplateDoReplay, invAplicarTemplate };')();
+const M = new Function(src.slice(ini, fim) + ' return { INV_VOCS, invHuntDoBoss, invCobertura, invPosicoes, invMontarPreset, invResumoReplay, invTemplateDoReplay, invAplicarTemplate, invHuntGenerica, INV_BOSSES };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 /* o caminho e os tiles de party de "A maré vermelha" (invasion_today_data.def, 13/10) */
@@ -106,5 +106,12 @@ t('2.17.4 — invAplicarTemplate: posições do 1º; magias dele que o personage
     assert.deepStrictEqual(r.DRUID.ataques.map(a => a.skill), ['sudden death rune'], 'magia que o Druida não tem é ignorada; fica o plano'); assert.strictEqual(r.DRUID.suporte, 'Heal Party', 'suporte desconhecido ignorado');
     assert.strictEqual(r.KNIGHT.suporte, 'Blood Rage'); assert.deepStrictEqual(r.DRUID.pos, { x: 11, y: 9, ms: undefined, modelo: true }.ms === undefined ? r.DRUID.pos : null);
     assert.strictEqual(M.invAplicarTemplate(plano, null, pode, infoSkill), plano);
+});
+t('2.17.6 — invHuntGenerica: os 7 bosses da rotação com peso igual (+ o do dia se for outro); Arachir imune a morte está lá', () => {
+    const h = M.invHuntGenerica(DEF);
+    assert.strictEqual(h.monsters.length, 7, 'Edward já está na rotação'); assert(h.boss && h.maxLure === 1);
+    const ar = h.monsters.find(m => /Arachir/.test(m.name)); assert(ar.elements.some(e => e.type === 'COMBAT_DEATHDAMAGE' && e.percent === 100));
+    const h2 = M.invHuntGenerica({ boss: { name: 'Boss Novo', elements: [{ type: 'COMBAT_FIREDAMAGE', percent: 50 }] } });
+    assert.strictEqual(h2.monsters.length, 8); assert.strictEqual(h2.monsters[7].name, 'Boss Novo');
 });
 console.log(`${n} testes ok` + (process.exitCode ? ' · FALHARAM' : ''));

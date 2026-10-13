@@ -5021,3 +5021,5 @@ modelo. Abas do Progresso numa linha só (6 abas: a Forja estava quebrando para 
 
 ## 2.17.5 (13/10) — Invasão: os 4 slots preenchidos (dono: "magias genéricas que dão dano a todos os bosses"): Ultimate Strike na frente quando bate ≥ 90 % do preenchimento; atrás, golpes de 2 s de outros elementos como reserva (só disparam se o da frente não puder). A sudden death continua o motor.
 
+## 2.17.6 (13/10) — Invasão: kit GENÉRICO (padrão): a média dos 7 bosses da rotação (INV_BOSSES, bestiário) sem veto de um boss só — o mesmo preset serve a todos (dono: "não vou arrumar boss por boss"); chave na aba para voltar ao boss do dia.
+
