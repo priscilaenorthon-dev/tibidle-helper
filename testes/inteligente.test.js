@@ -30,7 +30,7 @@ const M = new Function('SPELLS', 'POTIONS', 'BOSSES', `
     ${trecho('/* @@MODELOS-INICIO */', '/* @@MODELOS-FIM */')}
     ${trecho('/* @@MAGIA-INICIO', '/* @@MAGIA-FIM */')}
     CAT.bosses = normalizarBosses(BOSSES);
-    return { calibracaoStatusInt, calibracaoHtmlInt, montarPlano, partyInt, contextoInt, simularParty, decidirTroca, preverModeloInt, registrarAplicacaoInt, zerarInt, avaliarPartyInt, ordenarInt, okInt,
+    return { ajusteFinoInt, escolhaDoModelo, calibracaoStatusInt, calibracaoHtmlInt, montarPlano, partyInt, contextoInt, simularParty, decidirTroca, preverModeloInt, registrarAplicacaoInt, zerarInt, avaliarPartyInt, ordenarInt, okInt,
              slotMorto, lureMax, magiasDaVocacao, invalidarPlanos, suportesPermitidos, membroInt, danoBaseInt, alvosForma, barraValida, escSig,
              FRACAO_FORMA, N_MAX_SIM, N_MAX_PARTY, _intParty, _intMostrado, CAT, MEM, RAZAO, ESTADO_WS, E, LOOT_CACHE, BESTIARIO,
              escadaEnxuta, KITS_COMUNIDADE, extrasInt, seguroInt, sigNomesScan, medidaDoKitInt };
@@ -208,6 +208,39 @@ t('2.13.5 — o kit mostrado volta com os suportes do dono de AGORA (ele trocou 
         const r3 = M.partyInt(h, true);
         assert.deepStrictEqual(r3.final.esc.KNIGHT.sups, [], 'Knight voltou com ' + JSON.stringify(r3.final.esc.KNIGHT.sups) + ' (' + r3.decisao.acao + ')');
     } finally { M.E.dono = null; zerar(); }
+});
+/* 2.19.0 — AJUSTE FINO: parte da barra do dono e só sugere trocas pequenas e seguras */
+const barraDe = (id, modelo, mexe) => { zerar(); const h = H(id), ctx = M.contextoInt(h), b = {};
+    for (const v of VOCS) { const e = M.escolhaDoModelo(modelo, h, v, ctx, true); b[v] = { skills: e.plano.map(p => p.av.m.name).concat([null, null, null, null]).slice(0, 4), minCreatures: Object.fromEntries(e.plano.map(p => [p.av.m.name, p.minimo])), pocao: e.pocao, sups: e.sups || [] }; }
+    if (mexe) mexe(b); return b; };
+t('2.19.0 — ajuste fino: rápido, cada sugestão é barra válida e ganha +2 % de XP ou +3k/h de lucro sem cair a mana', () => {
+    for (const id of [VH, BANSHEE, DL]) {
+        const t0 = Date.now(), r = M.ajusteFinoInt(H(id), barraDe(id, 'area')), ms = Date.now() - t0;
+        assert(r && r.base.xpH > 0, 'sem base em ' + id);
+        assert(ms < 400, `${id}: ${ms} ms`);
+        for (const sg of r.sugestoes) {
+            assert(sg.nomes.length >= 1 && sg.nomes.length <= 4, 'slots: ' + sg.nomes.length);
+            assert(sg.nomes.some(([, m]) => m === 1), 'sem slot ≥1: ' + JSON.stringify(sg.nomes));
+            assert(sg.manaMin >= sg.manaMinAntes - 10, `mana caiu demais: ${sg.manaMinAntes} → ${sg.manaMin}`);
+        }
+        if (r.combinado) assert(r.combinado.xpH >= r.base.xpH * 0.995 && r.combinado.lucroH >= r.base.lucroH - 3000, 'o combinado piorou');
+    }
+});
+t('2.19.0 — ajuste fino: barra fraca do Druida (só Strong Ice Wave) em Dragon Lair recebe sugestão que ganha', () => {
+    const b = barraDe(DL, 'area', (x) => { x.DRUID.skills = ['Strong Ice Wave', null, null, null]; x.DRUID.minCreatures = { 'Strong Ice Wave': 1 }; });
+    const r = M.ajusteFinoInt(H(DL), b);
+    const sg = r.sugestoes.find(x => x.voc === 'DRUID');
+    assert(sg, 'nenhuma sugestão para o Druida: ' + JSON.stringify(r.sugestoes.map(x => x.voc)));
+    assert(sg.dXp >= 2 || sg.dLucro >= 3000, JSON.stringify([sg.dXp, sg.dLucro]));
+    assert(sg.nomes.length > 1, 'devia pôr magia no slot vazio');
+});
+t('2.19.0 — ajuste fino: magia fora da simulação deixa o personagem como está; caçada ao vivo calibra só o número', () => {
+    const b = barraDe(VH, 'area', (x) => { x.KNIGHT.skills = ['Magia Que Nao Existe', 'Berserk', null, null]; });
+    const r = M.ajusteFinoInt(H(VH), b);
+    assert(r.naoSimulavel.includes('KNIGHT') && !r.sugestoes.some(x => x.voc === 'KNIGHT'));
+    const r1 = M.ajusteFinoInt(H(VH), barraDe(VH, 'area')), r2 = M.ajusteFinoInt(H(VH), barraDe(VH, 'area'), { vivo: { abH: r1.base.abH * 1.2, seg: 600 } });
+    assert(r2.kCalibVivo > 1.1, 'kCalib ' + r2.kCalibVivo);
+    assert.strictEqual(JSON.stringify(r2.sugestoes.map(x => x.voc)), JSON.stringify(r1.sugestoes.map(x => x.voc)), 'a calibração mudou a ordem das sugestões');
 });
 t('2 — determinismo: 10 chamadas seguidas dão o mesmo resultado', () => {
     zerar(); M.E.scan = { vh: RITMO_VH };

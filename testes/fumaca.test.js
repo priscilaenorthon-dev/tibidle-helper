@@ -200,11 +200,12 @@ t('assets: a versão vem do catálogo de bosses (v185), não da conhecida, mesmo
     assert(!/jogo atualizado/.test(logTxt(W)), 'rebaixamento falso no 1º boot');
 });
 t('assets: versão velha que ainda responde não rebaixa a guardada nem dispara "jogo atualizado"', async () => {
-    const rotas = Object.assign({}, ROTAS_OK, { '/assets/v170/spell-areas.json': { marco: 'v170' } }); // a v185 some (404) e os bosses não têm cena
-    const W = criarMundo({ ls: Object.assign({}, DEBUG, { tb_helper_comum_assets_ver: '"v185"' }), rotas });
+    /* 2.18.2: conhecida v196, antiga v185 — a v196 some (404), a v185 ainda responde e os bosses não têm cena */
+    const rotas = Object.assign({}, ROTAS_OK, { '/assets/v185/spell-areas.json': { marco: 'v185' } });
+    const W = criarMundo({ ls: Object.assign({}, DEBUG, { tb_helper_comum_assets_ver: '"v196"' }), rotas });
     await W.avancar(0);
-    assert.strictEqual(W.lsGet('tb_helper_comum_assets_ver'), 'v185', 'guardada rebaixada');
-    assert.strictEqual(W.H.CAT.areas && W.H.CAT.areas.marco, 'v170', 'a velha ainda vale como dado');
+    assert.strictEqual(W.lsGet('tb_helper_comum_assets_ver'), 'v196', 'guardada rebaixada');
+    assert.strictEqual(W.H.CAT.areas && W.H.CAT.areas.marco, 'v185', 'a velha ainda vale como dado');
     assert(!/jogo atualizado/.test(logTxt(W)), '"jogo atualizado" para trás');
 });
 t('assets: patch de verdade (guardada v170, jogo em v185) avisa e relê', async () => {

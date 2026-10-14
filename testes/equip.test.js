@@ -537,4 +537,15 @@ t('arco/besta: ataque (composite hornbow 3) e acerto (elvish bow 5) contam no Pa
     assert(pal('elvish bow').detalhe.some(d => d.id === 'hitchance' && d.pt > 0), 'acerto do elvish bow não contou');
     assert(pal('composite hornbow').pontos > pal('bow').pontos && pal('elvish bow').pontos > pal('bow').pontos);
 });
+/* 2.18.2 — dono: "escudo def 18 + regen. mana 2,3 + regen. vida 2 × Vampire Shield 34 sem status" */
+t('defesa do Knight na medida: com a vida mínima ≥ 60 % o escudo com regen. ganha do Vampire Shield 34; sem medida, empate como antes', () => {
+    const meu = { slot: 'shield', attrs: { weaponType: 'shield', defense: 18 }, forja: F(2, ['regen_mana', 2.3], ['regen_vida', 2]) };
+    const vamp = { slot: 'shield', attrs: { weaponType: 'shield', defense: 34 }, forja: F(0) };
+    const pt = (p, ctx) => M.pontuarPeca(p, 'KNIGHT', ctx).pontos;
+    assert(pt(meu, { party: { hpMinK: 70 } }) > pt(vamp, { party: { hpMinK: 70 } }) + 5, 'folgado: o seu tem que ganhar com folga');
+    assert(pt(meu, { party: { hpMinK: 30 } }) < pt(vamp, { party: { hpMinK: 30 } }) + 5, 'apertado: a defesa volta a pesar');
+    /* bloqueio: no máximo ~1 por segundo — com 3 golpes/s a defesa não triplica, a armadura sim */
+    const P = M.pesosDaVoc('KNIGHT', { party: { golpesS: 3 } });
+    assert(P.armor > P.defense * 2.5, 'armadura ' + P.armor + ' × defesa ' + P.defense);
+});
 console.log(`\n${n} testes ok` + (pulados ? ` · ${pulados} pulados (sem o estado da conta em data/)` : ''));
