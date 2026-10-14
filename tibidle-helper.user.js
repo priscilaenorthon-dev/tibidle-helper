@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.18.1
+// @version      2.18.2
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.18.1';
+    const VERSAO = '2.18.2';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -566,7 +566,7 @@
      * por um tempo (v170 ainda servia items-by-name e spell-areas, mas imbuements já dava 404). Então: (1) só uma
      * versão MAIS NOVA que a guardada conta como patch — uma velha que respondeu não rebaixa nada; (2) os bosses
      * são baixados antes do spell-areas, porque a cena deles é a única pista de versão que o catálogo dá. */
-    const ASSETS_CONHECIDA = 'v185', ASSETS_ANTIGA = 'v170'; // antiga = último recurso: um arquivo que sumiu da versão nova pode seguir na velha
+    const ASSETS_CONHECIDA = 'v196', ASSETS_ANTIGA = 'v185'; // antiga = último recurso: um arquivo que sumiu da versão nova pode seguir na velha
     const numAssets = v => Number(String(v || '').replace(/\D/g, '')) || 0;
     function versoesAssets() {
         const vs = [];
@@ -5957,6 +5957,7 @@
         fracSagrado: 0.5, // Paladino: Caldera + Divine Missile
         tiroS: { SORCERER: 0.14, DRUID: 0.14 }, // tiros da wand/rod por segundo (medido: mana curta)
         tomadoS: 30, fisico: 0.65, golpesS: 0.45, // Knight: dano tomado/s, parte corpo a corpo, golpes/s
+        hpMinK: null, // v2.18.2 — vida mínima MEDIDA do Knight (%), quando há; sem medida, a defesa vale cheia
         ladoApanha: 1, // ×defesa dos laterais (4 = mapa de magia de área)
         ouroPorMana: 0.6
     };
@@ -6042,13 +6043,25 @@
             const k1 = R.tomadoS / 100 * VIDA_PT_KNIGHT; // pt por 1 % a menos de TODO o dano que ele toma
             P.regen_vida = VIDA_PT_KNIGHT;
             P.max_hp = 0.04;
-            P.resist_fisica = P.absorbpercentphysical = _r(k1 * R.fisico);
-            P.protecao_magica = _r(k1 * (1 - R.fisico));
-            for (const e of ELEM) P['resist_' + e] = P['absorbpercent' + ELEM_EN[e]] = _r(k1 * (1 - R.fisico) / 4);
+            /* v2.18.2 — DEFESA NA MEDIDA (dono, 14/10: "escudo armadura 18 + regen. mana 2,3 + regen. vida 2 contra um
+             * Vampire Shield 34 sem status: qual é melhor?" — a régua dava empate). Wiki /como-o-dano-e-calculado:
+             *   • bloqueio do escudo "tira um valor entre metade da defesa e a defesa; são até 2 cargas, e volta 1 por
+             *     segundo" → no máximo ~1 bloqueio/s, por mais golpes que cheguem (armadura vale em todo golpe);
+             *   • armadura, bloqueio e resistência só poupam vida quando o Knight está apanhando: medido nos Scans, a vida
+             *     mínima dele ficou em 61–75 % sem poção de vida. Com a vida mínima medida ≥ 60 % a defesa vale metade;
+             *     40–60 %, ¾; abaixo de 40 % (ou sem medida), cheia. Regen. de vida e cura própria ficam como estão
+             *     (regra do dono: regen. de mana em 1º, regen. de vida em 2º; valem também contra magia). */
+            const folga = R.hpMinK == null ? 1 : R.hpMinK >= 60 ? 0.5 : R.hpMinK >= 40 ? 0.75 : 1;
+            const bloqueiosS = Math.min(R.golpesS, 1);
+            P.resist_fisica = P.absorbpercentphysical = _r(k1 * R.fisico * folga);
+            P.protecao_magica = _r(k1 * (1 - R.fisico) * folga);
+            for (const e of ELEM) P['resist_' + e] = P['absorbpercent' + ELEM_EN[e]] = _r(k1 * (1 - R.fisico) / 4 * folga);
             P.absorbpercentpoison = P.resist_terra;
             P.cura_propria = _r(k1 * 0.5); // metade da vida dele volta por poção/cura própria
-            P.armor = P.defense = P.extradef = _r(R.golpesS * 0.75 * VIDA_PT_KNIGHT); // tira 0,5–1× por golpe corpo a corpo
-            P.escudo = P.skillshield = 0.9;
+            P.armor = _r(R.golpesS * 0.75 * VIDA_PT_KNIGHT * folga); // tira 0,5–1× por golpe corpo a corpo
+            P.defense = P.extradef = _r(bloqueiosS * 0.75 * VIDA_PT_KNIGHT * folga); // bloqueio: ≤ 1 por segundo
+            P.escudo = P.skillshield = _r(0.9 * folga);
+            P.folgaDefesa = folga;
         } else {
             const la = R.ladoApanha > 0 ? R.ladoApanha : 1;
             P.regen_vida = _r(VIDA_PT_LADO * la); P.max_hp = _r(0.01 * la);
@@ -8129,6 +8142,8 @@
             if (rz.tirosH && rz.tirosH[v] != null) P.tiroS[v] = rz.tirosH[v] / 3600;
             try { const c = configAtiva(v); if (c) P.bebe[v] = !!(c.manaPotion && c.manaPotion.name && c.manaPotion.percent > 0); } catch (e) { }
         }
+        /* v2.18.2 — vida mínima do Knight na medida: a defesa dele vale menos quando ele não passa aperto */
+        if (rz.porVoc && rz.porVoc.KNIGHT && Number.isFinite(Number(rz.porVoc.KNIGHT.hpMin))) P.hpMinK = Number(rz.porVoc.KNIGHT.hpMin);
         if (rz.tomadoH > 0) {
             P.tomadoS = rz.tomadoH / 3600;
             if (rz.tomadoCorpoH != null && rz.golpesCorpoH != null && rz.golpesCorpoH > 0) { P.fisico = rz.tomadoCorpoH / rz.tomadoH; P.golpesS = rz.golpesCorpoH / 3600; }
@@ -8406,6 +8421,9 @@
           <div class="tb-mut tb-eq-info">${dep ? `depósito ${numBR(dep.used)}/${numBR(dep.total)}` : 'depósito —'}${EQUIP.t ? ` · lido ${new Date(EQUIP.t).toLocaleTimeString('pt-BR')}` : ''}${EQUIP.ctx && EQUIP.ctx.mapa ? ` · wand/rod pelo elemento de ${escHtml(EQUIP.ctx.mapa)}` : ''}${dentro ? ' · <span class="tb-av">equipar só na cidade</span>' : ''}</div>`;
         if (EQUIP.erro) h += `<div class="tb-cx tb-ruim">${escHtml(EQUIP.erro)}</div>`;
         if (EQUIP.aviso) h += `<div class="tb-cx tb-av">${escHtml(EQUIP.aviso)}</div>`;
+        /* v2.18.2 — por que armadura/defesa do Knight valem menos agora (ou cheias) */
+        { const pm = EQUIP.ctx && EQUIP.ctx.party, hp = pm && Number.isFinite(pm.hpMinK) ? pm.hpMinK : null;
+          if (hp != null) h += `<div class="tb-mut" style="font-size:10.5px">Knight: vida mínima medida ${Math.round(hp)} % → armadura, defesa e resistências dele valem ${hp >= 60 ? 'metade' : hp >= 40 ? '¾' : 'cheias'} (${hp >= 40 ? 'ele não está passando aperto' : 'ele está apanhando'}); o bloqueio do escudo conta no máximo 1 por segundo (wiki).</div>`; }
         if (!R) return h + aj('eq-ajuda', 'ATUALIZAR lê o corpo dos 4, a mochila e o depósito, busca os atributos base e ranqueia por vocação e slot. Nada é equipado nem descartado sem o botão EQUIPAR. Raridade não pontua: um épico com atributos que a vocação não usa perde para um incomum com o atributo certo.');
         h += `<div class="tb-sub tb-eq-vocs" role="group" aria-label="vocação">${VOCS.map(x => {
             const n = Object.values(R.porVoc[x] || {}).filter(eqMexer).length;

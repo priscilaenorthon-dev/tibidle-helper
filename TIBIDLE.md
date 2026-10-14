@@ -5057,3 +5057,15 @@ modelo. Abas do Progresso numa linha só (6 abas: a Forja estava quebrando para 
   no dano do tiro. São pesos pequenos porque, medido, ~95 % do dano do Paladino é runa + magia (o nível mágico e o
   dano mágico da forja continuam sendo o que mais pesa na arma dele).
 - Nota: o jogo já está nos assets v196 (o helper acha a versão sozinho pela página).
+
+## 2.18.2 (14/10) — defesa do Knight na medida; assets de reserva v196
+- Dono: "escudo def 18 + regen. mana 2,3 + regen. vida 2 contra um Vampire Shield 34 sem status — qual é melhor?" A régua
+  dava empate (39,4 × 41,3). Wiki /como-o-dano-e-calculado: o bloqueio do escudo tem 2 cargas e volta 1 por segundo, e
+  armadura/bloqueio/resistência só poupam vida quando o Knight está apanhando (nos Scans: vida mínima 61–75 %, sem
+  poção de vida).
+- `pesosDaVoc` (Knight): defesa do escudo conta no máximo 1 bloqueio/s (`min(golpesS, 1)`); armadura, defesa, resistências,
+  proteção mágica e a skill Escudo da forja valem ×0,5 com a vida mínima MEDIDA ≥ 60 %, ×0,75 entre 40 e 60 %, cheias
+  abaixo de 40 % ou sem medida (`partyMedida` passa `hpMinK`). Regen. de vida e cura própria não mudam.
+  Resultado com vida mínima 70 %: o seu escudo 28,5 × Vampire 20,7.
+- Aba Equip mostra a linha "Knight: vida mínima medida X % → armadura, defesa e resistências valem …".
+- `ASSETS_CONHECIDA` v196 (o jogo já está nela), `ASSETS_ANTIGA` v185.
