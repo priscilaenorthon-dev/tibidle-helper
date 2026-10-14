@@ -5023,3 +5023,28 @@ modelo. Abas do Progresso numa linha só (6 abas: a Forja estava quebrando para 
 
 ## 2.17.6 (13/10) — Invasão: kit GENÉRICO (padrão): a média dos 7 bosses da rotação (INV_BOSSES, bestiário) sem veto de um boss só — o mesmo preset serve a todos (dono: "não vou arrumar boss por boss"); chave na aba para voltar ao boss do dia.
 
+
+## 2.18.0 (14/10) — aba Melhorias: o que comprar no Mercado para ficar mais forte
+- Dono: "verificar todos os equipamentos de cada personagem e no mercado itens melhores, com o valor, para eu ter
+  noção do que posso comprar — sem perder mana reg e outros status primordiais; uma tela que me dê segurança. Vou
+  confiar cegamente no cálculo: não me faça errar."
+- Aba nova **Melhorias** (⇧). PROCURAR só lê: o Equip (o que cada um tem, vestido + depósito + mochila), as suas ordens
+  e as cópias à venda das 8 categorias de equipamento (`market_copies {category}`, 1 pedido a cada 3,5 s).
+- A conta (`@@MELHORIAS`, `mlAvaliar`) usa a régua do Equip (`pontuarPeca`) e compara cada cópia com a **melhor peça
+  que o personagem já tem** naquele espaço (não só a vestida). Arma de 2 mãos do Knight concorre com arma + escudo.
+  Refino conta nas duas pontas (+1 armadura por refino; +1 ataque na arma, menos wand/rod).
+- **Recomendada** (só ela tem botão de compra e entra em "Compras recomendadas"):
+  - não perde nenhum encaixe nobre da vocação (regen. de mana em todos, regen. de vida no Knight, ML/skill/dano/crítico
+    na arma e no colar) — `mlPerdas`;
+  - ganho ≥ 0,3 pt e se paga em até 48 h de caçada (1 pt ≈ 450 de ouro/h);
+  - no Knight, o ganho não vem > 60 % de armadura/defesa (a régua ainda superestima defesa: bloqueio tem 2 cargas,
+    1/s, e armadura + bloqueio zeram golpe fraco — wiki /como-o-dano-e-calculado);
+  - a peça atual não está imbuída (o imbuement ficaria na peça velha).
+  As outras aparecem por personagem com o motivo; "mostrar também" inclui as que perdem encaixe (sem botão).
+- Cada oferta mostra preço, ganho, ouro por ponto, horas para se pagar e **de onde vem o ganho** (atributo a atributo).
+- **COMPRAR** (2 toques): relê a categoria e confere que o anúncio ainda está lá pelo MESMO preço, Premium e ouro
+  normal (o Mercado não aceita o travado); marca o anúncio antes de mandar (sem resposta não vira 2ª compra) e manda
+  `market_execute {orderId, quantity: 1, requestId}` (protocolo do cliente público, 14/10). Wiki /mercado: imediato e
+  irreversível, sem taxa para Premium, item na mochila (cheia: depósito). Depois relê o Equip; equipar é na aba Equip.
+- Testes: `testes/melhorias.test.js` (10) e 3 no `vm` do `mercado.test.js` (PROCURAR só lê; 1º toque não compra; anúncio
+  que sumiu na releitura não é comprado).
