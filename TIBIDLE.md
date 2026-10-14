@@ -5069,3 +5069,28 @@ modelo. Abas do Progresso numa linha só (6 abas: a Forja estava quebrando para 
   Resultado com vida mínima 70 %: o seu escudo 28,5 × Vampire 20,7.
 - Aba Equip mostra a linha "Knight: vida mínima medida X % → armadura, defesa e resistências valem …".
 - `ASSETS_CONHECIDA` v196 (o jogo já está nela), `ASSETS_ANTIGA` v185.
+
+## 2.19.0 (14/10) — ajuste fino da Magia Inteligente; comprar × forjar na Melhorias
+- Dono: "até hoje não usei a magia inteligente: ela erra muito, ou demora muito, ou acaba morrendo — tenta fazer algo
+  útil com ela". Em vez de montar a party do zero, a aba Magia (modelo Inteligente) agora mostra primeiro o
+  **Ajuste fino da sua barra** (`ajusteFinoInt`, `@@MAGIA`):
+  - parte da barra que o dono JÁ usa (preset ativo de cada um, `configAtiva` + `normalizarConfig`) e testa só vizinhos de
+    1 passo: tirar, trocar, ±1 no mínimo de criaturas, inverter duas vizinhas, pôr no slot vazio/na frente;
+  - cura, suporte e poção NUNCA mudam (aplicar = `aplicarPlanoSocket` sem extras: só os 4 slots de ataque e os mínimos);
+  - só sugere se a party continua segura, a mana mínima de quem muda não cai > 10 pontos nem fica < 15 %, e o XP sobe
+    ≥ 2 % sem perder lucro (até −3k/h ou 5 % da receita) — ou o mesmo XP com +3k/h de lucro;
+  - descida por coordenadas (até 3 passos por personagem, 2 voltas), 9–70 ms; uma sugestão por personagem (medida sozinha
+    contra a base) e "APLICAR TODOS" (a combinação); cada botão é 2 toques.
+- (D) **Calcula sozinho ao escolher o mapa** (só leitura; guardado por mapa + barra + minuto). O "montar do zero" ficou
+  embaixo, marcado como experimental, e só calcula no clique como antes.
+- (E) **Calibra caçando, sem Scan**: com ≥ 3 min de caçada no mesmo mapa, os abates/h do analisador ao vivo ajustam a
+  simulação (`kCalibVivo`, limitado a 0,6–1,4). Muda o número absoluto; a ordem das sugestões não muda.
+- (F) O ranking do Radar já mostrava o kit do motor Inteligente no detalhe de cada mapa (sem mudança).
+- (H) **Comprar × forjar** na aba Melhorias (`mlForjar`, `@@MELHORIAS`): embaixo de cada espaço com oferta, quanto custa
+  em média pôr uma linha que vale na peça que você já tem — só com encaixe vazio (ou faltando 1 grau de raridade para
+  abrir um: Raridade T1 55/35/20/10 %). Atributo T1 20 mil, Limpeza T2 40 mil por tentativa repetida, Raridade T1 30 mil,
+  100 fragmentos por gema (preço do Mercado ou 2 mil estimado); "linha que vale" = ≥ 0,3 pt com o valor típico da faixa
+  de potência; mostra a chance por gema, a média de tentativas e até quantas em 90 % das vezes. A oferta ganha o aviso
+  "forjar a sua sai mais em conta" só quando a forja sai 1/3 mais barata por ponto (comprar é certo, forja é sorteio).
+  `recomendada` não muda.
+- Testes: 3 em `inteligente.test.js` (ajuste fino) e 2 em `melhorias.test.js` (forja). Roteiro: `docs/teste-ao-vivo-2.18.md`.

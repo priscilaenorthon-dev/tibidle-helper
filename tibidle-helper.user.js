@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.18.2
+// @version      2.19.0
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.18.2';
+    const VERSAO = '2.19.0';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -3162,6 +3162,116 @@
                  naoCabe: !okInt(res.final), extras: extrasInt(voc, esc, res, hunt), sim, mortos: [], bebe: !!(esc && esc.pocao) || (!res.ctx.enxAtivo && res.escada.degrau >= 2 && voc === 'DRUID'),
                  int: { decisao: res.decisao.acao, ganho: res.decisao.ganho, met: res.final.met, aviso: res.aviso, medidoVig: res.decisao.vigente && res.decisao.vigente.met.medido || null, escada: res.escada, escEnx: res.escEnx || null, ms: res.ms, cont: res.cont, desatualizado: !!res.desatualizado,
                         sups: esc ? esc.sups || [] : [], pocao: esc ? esc.pocao || 0 : 0 } };
+    }
+    /* =========================================================================
+     *  ⭐ v2.19.0 — AJUSTE FINO DA SUA BARRA (dono, 14/10: "até hoje não usei a magia inteligente: ela erra muito,
+     *  ou demora muito, ou acaba morrendo — tenta fazer algo útil com ela").
+     *  Em vez de montar a party do zero, parte da barra que o dono JÁ usa (o preset ativo de cada um, que se aguenta
+     *  no mapa) e testa só vizinhos de 1 passo: trocar uma magia, tirar uma, pôr uma num slot vazio, mudar o mínimo de
+     *  criaturas (±1) ou a ordem de duas vizinhas. Cura, suporte e poção NUNCA mudam (o que o mantém vivo fica igual);
+     *  sem a escada defensiva e sem a poção de segurança na simulação (a barra é a do dono). Uma troca só é sugerida se:
+     *    • a party continua "segura" (ninguém gasta mais mana do que a regeneração repõe, se não bebe);
+     *    • a mana mínima simulada de quem muda não cai mais que 10 pontos nem abaixo de 15 %;
+     *    • XP ≥ +2 % sem perder lucro (até −3k/h ou 5 % da receita), OU o mesmo XP (−0,5 %) com +3k/h de lucro.
+     *  barras = {VOC: {skills:[nome|null ×4], minCreatures:{nome:n}, pocao (0–1), sups:[…]}} (o caller lê do jogo);
+     *  opc.vivo = {abH, seg} da caçada atual NESTE mapa (≥ 3 min): calibra os abates/h (só o número absoluto: a
+     *  ordem das sugestões não muda). → {base, sugestoes:[…], combinado, naoSimulavel:[voc], kCalibVivo} | null */
+    const AJ_XP_MIN = 0.02, AJ_LUCRO_TOL = 3000, AJ_LUCRO_SO = 3000, AJ_MANA_QUEDA = 0.10, AJ_MANA_PISO = 0.15;
+    function ajusteFinoInt(hunt, barras, opc) {
+        opc = opc || {};
+        if (!hunt || hunt.boss) return null;
+        const c0 = contextoInt(hunt);
+        if (!c0) return null;
+        const ctx = Object.assign({}, c0, { memo: new Map(), defesa: {}, escada: Object.assign({}, c0.escada, { degrau: 0 }), enxAtivo: true });
+        const L = ctx.L, esc = {}, naoSimulavel = [];
+        for (const v of VOCS_INT) {
+            const b = barras && barras[v];
+            if (!b) continue;
+            const nomes = (b.skills || []).filter(Boolean);
+            const plano = [];
+            let falta = false;
+            for (const n of nomes) {
+                const av = ctx.porNome[v] && ctx.porNome[v][n];
+                if (!av) { falta = true; continue; }
+                plano.push({ av, minimo: Math.max(1, Math.min(L, Math.round(Number((b.minCreatures || {})[n]) || 1))) });
+            }
+            if (falta) naoSimulavel.push(v);
+            if (plano.length) esc[v] = { plano, pocao: Number(b.pocao) > 0 ? Number(b.pocao) : 0, sups: (b.sups || []).filter(Boolean) };
+        }
+        if (!Object.keys(esc).length) return null;
+        let base = avaliarPartyInt(ctx, esc, null);
+        let kCalibVivo = null;
+        if (opc.vivo && opc.vivo.abH > 0 && opc.vivo.seg >= 180 && base.met.abH > 0) {
+            kCalibVivo = Math.round(Math.min(1.4, Math.max(0.6, opc.vivo.abH / (base.met.abH / ctx.kCalib))) * 100) / 100;
+            ctx.kCalib = kCalibVivo; ctx.memo = new Map();
+            base = avaliarPartyInt(ctx, esc, null);
+        }
+        const manaMin = (x, v) => (x.sim.por[v] ? x.sim.por[v].manaMinFrac : 1);
+        const aceita = (x, ref, v) => {
+            if (!x.seguro && ref.seguro) return false;
+            const mm = manaMin(x, v), mr = manaMin(ref, v);
+            if (mm < mr - AJ_MANA_QUEDA || (mm < AJ_MANA_PISO && mm < mr - 0.005)) return false; // mana de quem muda
+            const dXp = ref.met.xpH > 0 ? x.met.xpH / ref.met.xpH - 1 : 0, dL = x.met.lucroH - ref.met.lucroH;
+            const tol = Math.max(AJ_LUCRO_TOL, 0.05 * Math.abs(ref.met.receitaH || 0));
+            return (dXp >= AJ_XP_MIN && dL >= -tol) || (dXp >= -0.005 && dL >= AJ_LUCRO_SO);
+        };
+        const nome = (p) => p.av.m.name;
+        const vizinhos = (v, de) => {
+            const cur = de[v].plano, out = [], cands = (ctx.cands[v] || []).filter(a => !cur.some(p => nome(p) === a.m.name));
+            const minPadrao = (a) => (a.classe === 'unico' ? 1 : Math.min(2, L));
+            const add = (pl, desc) => { if (barraValida(pl, L)) { const g = pl.map(p => p.av.m.secondaryGroup).filter(Boolean); if (new Set(g).size === g.length) out.push({ plano: pl, desc }); } };
+            cur.forEach((p, i) => {
+                if (cur.length > 1) add(cur.filter((_, j) => j !== i), `tirar ${nome(p)}`);
+                for (const a of cands) add(cur.map((q, j) => (j === i ? { av: a, minimo: a.classe === 'unico' ? 1 : Math.min(L, Math.max(q.minimo, 1)) } : q)), `trocar ${nome(p)} por ${a.m.name}`);
+                if (p.minimo > 1) add(cur.map((q, j) => (j === i ? { av: q.av, minimo: q.minimo - 1 } : q)), `${nome(p)}: mínimo ${p.minimo} → ${p.minimo - 1} criaturas`);
+                if (p.minimo < L) add(cur.map((q, j) => (j === i ? { av: q.av, minimo: q.minimo + 1 } : q)), `${nome(p)}: mínimo ${p.minimo} → ${p.minimo + 1} criaturas`);
+                if (i < cur.length - 1) { const pl = cur.slice(); pl[i] = cur[i + 1]; pl[i + 1] = cur[i]; add(pl, `passar ${nome(cur[i + 1])} para antes de ${nome(p)}`); }
+            });
+            if (cur.length < 4) for (const a of cands) { add(cur.concat([{ av: a, minimo: minPadrao(a) }]), `pôr ${a.m.name} no slot vazio`); add([{ av: a, minimo: minPadrao(a) }].concat(cur), `pôr ${a.m.name} na frente`); }
+            return out;
+        };
+        /* descida por coordenadas: até 3 passos por personagem, 2 voltas na party; cada passo é o melhor vizinho que passa
+         * em `aceita` contra a party do momento (assim as trocas de um levam em conta as dos outros) */
+        let atual = esc, ref = base;
+        const passos = {};
+        const melhorVizinho = (v) => {
+            let melhor = null;
+            for (const nb of vizinhos(v, atual)) {
+                const e2 = Object.assign({}, atual, { [v]: Object.assign({}, atual[v], { plano: nb.plano }) });
+                const x = avaliarPartyInt(ctx, e2, null);
+                if (!aceita(x, ref, v)) continue;
+                if (!melhor || x.met.xpH > melhor.x.met.xpH * 1.002 || (x.met.xpH >= melhor.x.met.xpH * 0.998 && x.met.lucroH > melhor.x.met.lucroH)) melhor = { nb, x, e2 };
+            }
+            return melhor;
+        };
+        for (let volta = 0; volta < 2; volta++) {
+            let mudou = false;
+            for (const v of Object.keys(esc)) {
+                if (naoSimulavel.includes(v)) continue;
+                for (let k = 0; k < 3; k++) {
+                    const m = melhorVizinho(v);
+                    if (!m) break;
+                    atual = m.e2; ref = m.x; mudou = true;
+                    (passos[v] || (passos[v] = [])).push(m.nb.desc);
+                }
+            }
+            if (!mudou) break;
+        }
+        /* uma sugestão por personagem: a barra final dele, medida SOZINHA contra a base (o que ganha se aplicar só ela) */
+        const sugestoes = [];
+        for (const v of Object.keys(passos)) {
+            const e1 = Object.assign({}, esc, { [v]: atual[v] });
+            const x = avaliarPartyInt(ctx, e1, null), m = x.met;
+            sugestoes.push({ voc: v, desc: passos[v].join('; '), passos: passos[v].slice(), plano: atual[v].plano, nomes: atual[v].plano.map(p => [nome(p), p.minimo]),
+                             antes: esc[v].plano.map(p => [nome(p), p.minimo]),
+                             dXp: Math.round((m.xpH / base.met.xpH - 1) * 1000) / 10, dLucro: Math.round(m.lucroH - base.met.lucroH),
+                             xpH: Math.round(m.xpH), lucroH: Math.round(m.lucroH), T: m.T, manaMin: Math.round(manaMin(x, v) * 100), manaMinAntes: Math.round(manaMin(base, v) * 100),
+                             sozinhaValida: aceita(x, base, v) });
+        }
+        sugestoes.sort((a, b) => b.dXp - a.dXp || b.dLucro - a.dLucro);
+        const usadas = Object.keys(passos);
+        const fmt = (x) => ({ xpH: Math.round(x.met.xpH), lucroH: Math.round(x.met.lucroH), abH: Math.round(x.met.abH), T: x.met.T, seguro: x.seguro });
+        return { base: fmt(base), sugestoes, combinado: usadas.length ? Object.assign(fmt(ref), { vocs: usadas }) : null, naoSimulavel, kCalibVivo, L };
     }
     /* veredito do grupo no Inteligente: o lucro/h da party simulada */
     function viabilidadeInt(hunt) {
@@ -6719,7 +6829,47 @@
         }
         return out;
     }
-    /* porVoc = EQUIP.res.porVoc (o Equip já sabe a melhor peça de cada um); cands = mlCandidatosMercado; opc = {ouro, verPerdas}
+    /* v2.19.0 — COMPRAR × FORJAR (item H): antes de comprar, quanto custaria pôr uma linha boa na peça que você JÁ tem?
+     * Só quando ela tem encaixe vazio (ou falta 1 grau de raridade para abrir um). Cada Atributo T1 sorteia uma linha do
+     * grupo do espaço (PESO_LINHA, nunca repete); "boa" = rende ≥ ML_GANHO_MIN pt pela régua, com o valor típico da faixa
+     * de potência da peça. Veio ruim → Limpeza T2 apaga a última e tenta de novo (geométrico). Gemas (wiki /forja,
+     * 12/10): Atributo T1 20 mil, Limpeza T2 40 mil, Raridade T1 30 mil (Comum→Incomum 55 %, →Raro 35 %, →Épico 20 %,
+     * →Lendário 10 %), cada uma + 100 fragmentos. É SORTEIO: a conta é a média; "90 %" diz até quantas tentativas. */
+    const ML_GEMA = { atributo: 20000, limpeza2: 40000, raridade: 30000, frag: 100 };
+    const ML_RAR_CHANCE = [0.55, 0.35, 0.20, 0.10];
+    function mlForjar(ref0, voc, ctx, precoFrag) {
+        if (!ref0) return null;
+        const f = normForja(ref0.forja), slot = normalizarSlot(ref0.slot);
+        const rar = Math.max(0, Math.min(5, Number(f.raridade) || 0)), atuais = f.atributos;
+        const livres = (ENCAIXES_POR_RARIDADE[rar] || 0) - atuais.length;
+        const faixa = faixaPotencia(potenciaTotal(ref0));
+        if (livres <= 0 && rar >= 4) return { tipo: 'cheia', faixa, livres: 0, raridade: rar };
+        const ref = mlComRefino(Object.assign({}, ref0, { forja: f })), refPt = pontuarPeca(ref, voc, ctx).pontos;
+        const grupo = PESO_LINHA[slot === 'weapon' || slot === 'necklace' ? 'ataque' : 'defesa'];
+        const linhas = [];
+        for (const id of Object.keys(grupo)) {
+            const chance = chanceLinha(id, slot, atuais);
+            if (!(chance > 0)) continue;
+            const nova = Object.assign({}, ref, { forja: Object.assign({}, ref.forja, { atributos: atuais.concat([{ id, valor: valorTipico(id, faixa) }]) }) });
+            const ganho = Math.round((pontuarPeca(nova, voc, ctx).pontos - refPt) * 100) / 100;
+            if (ganho >= ML_GANHO_MIN) linhas.push({ id, chance, ganho, valor: valorTipico(id, faixa) });
+        }
+        const p = linhas.reduce((a, x) => a + x.chance, 0);
+        const precisaRaridade = livres <= 0 ? { de: rar, chance: ML_RAR_CHANCE[rar] } : null;
+        if (!(p > 0)) return { tipo: 'nada', faixa, livres: Math.max(0, livres), raridade: rar, precisaRaridade };
+        const tentativas = 1 / p, ganhoMedio = Math.round(linhas.reduce((a, x) => a + x.chance * x.ganho, 0) / p * 100) / 100;
+        let ouro = ML_GEMA.atributo + (tentativas - 1) * (ML_GEMA.atributo + ML_GEMA.limpeza2), frag = ML_GEMA.frag * (1 + (tentativas - 1) * 2);
+        if (precisaRaridade) { ouro += ML_GEMA.raridade / precisaRaridade.chance; frag += ML_GEMA.frag / precisaRaridade.chance; }
+        const pf = Number.isFinite(precoFrag) && precoFrag > 0 ? precoFrag : PRECO_FRAG_ESTIMADO;
+        const custo = Math.round(ouro + frag * pf);
+        return { tipo: 'linha', faixa, livres: Math.max(0, livres), raridade: rar, precisaRaridade, chance: Math.round(p * 1000) / 1000,
+                 tentativas: Math.round(tentativas * 10) / 10, ate90: p >= 1 ? 1 : Math.ceil(Math.log(0.1) / Math.log(1 - p)),
+                 ouro: Math.round(ouro), fragmentos: Math.round(frag), precoFrag: pf, custo, ganhoMedio, ouroPorPt: ganhoMedio > 0 ? Math.round(custo / ganhoMedio) : null,
+                 linhas: linhas.sort((a, b) => b.chance * b.ganho - a.chance * a.ganho).slice(0, 4).map(x => Object.assign(x, { chance: Math.round(x.chance * 1000) / 1000 })) };
+    }
+    /* forjar só "ganha" de comprar com folga de 1/3 no ouro por ponto: comprar é certo, a forja é sorteio */
+    const mlForjaMaisBarata = (fj, o) => !!(fj && fj.tipo === 'linha' && fj.ouroPorPt != null && o && fj.ouroPorPt * 1.33 < o.ouroPorPt);
+    /* porVoc = EQUIP.res.porVoc (o Equip já sabe a melhor peça de cada um); cands = mlCandidatosMercado; opc = {ouro, verPerdas, precoFrag}
      * → {porVoc: {VOC: {slot: {ref, refPt, refOrigem, vestida, temMelhorGuardada, ofertas:[…]}}}, top:[…]} */
     function mlAvaliar(porVoc, cands, ctx, opc) {
         opc = opc || {};
@@ -6757,7 +6907,10 @@
                 }
                 /* melhor primeiro: mais ganho; empate (±5 %), o mais barato */
                 ofertas.sort((p, q) => (Math.abs(q.ganho - p.ganho) > 0.05 * Math.max(p.ganho, q.ganho) ? q.ganho - p.ganho : p.preco - q.preco));
-                res.porVoc[v][s] = { ref: ref ? { nome: ref.nome, forja: ref.forja, origem: ref.origem } : null, refPt, refImbuida,
+                /* v2.19.0 — comprar × forjar: só onde há oferta (é a comparação que o dono pediu) */
+                const forja = ofertas.length ? mlForjar(ref0, v, ctx, opc.precoFrag) : null;
+                for (const o of ofertas) o.forjaMaisBarata = mlForjaMaisBarata(forja, o);
+                res.porVoc[v][s] = { ref: ref ? { nome: ref.nome, forja: ref.forja, origem: ref.origem } : null, refPt, refImbuida, forja,
                                      vestida: x.atual ? { nome: x.atual.nome, pt: x.atualPt } : null,
                                      temMelhorGuardada: !!(x.melhor && (!x.atual || x.melhor.iid !== x.atual.iid) && x.melhorPt > (x.atualPt || 0)),
                                      ofertas };
@@ -7851,11 +8004,15 @@
             `<button type="button" class="tb-bt mini" id="tb-int-zerar" ${ocupado ? 'disabled' : ''} title="esquece o kit aplicado neste mapa e a trava de 10 min: a próxima conta parte do zero">replanejar do zero</button>` +
             `<label class="tb-l" style="margin-left:auto" title="ε = 0,5 %: fica com o de mais XP mesmo que custe bem mais ouro (o padrão, 3 %, prefere o mais barato entre os quase iguais)"><input type="checkbox" id="tb-int-xp" ${modoXp ? 'checked' : ''}> XP absoluto</label>` +
             `<label class="tb-l" title="kit enxuto (2.14): sem os seus suportes e curas por magia, toda a mana no ataque e Mana Potion como a conta mandar — como os setups do Discord. A cura volta pela escada (0 só poções · 1 + Heal Friend no Druida · 2 + cura do Knight e do Paladino · 3 o seu kit completo), medida no mapa. Desligado, o Inteligente não mexe nos seus suportes e curas."><input type="checkbox" id="tb-int-enx" ${intEnx ? 'checked' : ''}> kit enxuto</label></div>`;
+        /* v2.19.0 — no Inteligente, o AJUSTE FINO da barra do dono vem primeiro (recomendado); montar do zero fica abaixo */
+        const zeroTit = `<div class="tb-mut" style="margin-top:10px;border-top:1px solid #8884;padding-top:6px"><b>Montar a party do zero</b> (experimental — troca a barra inteira; prefira o ajuste fino acima)</div>`;
+        if (modelo === 'inteligente') corpo += ajusteFinoHtml(h, ocupado);
         if (modelo === 'inteligente' && r.pendente) {
-            return corpo + calibracaoHtmlInt(h) + intCtl + `<div class="tb-mut">o Inteligente simula a party inteira (≈ 0,1–0,3 s) — só quando você clica. Nada é aplicado sozinho.</div>`;
+            return corpo + zeroTit + calibracaoHtmlInt(h) + intCtl + `<div class="tb-mut">o Inteligente simula a party inteira (≈ 0,1–0,3 s) — só quando você clica. Nada é aplicado sozinho.</div>`;
         }
+        if (modelo === 'inteligente') corpo += zeroTit;
         const vp = r.viab ? viabilidadeParty(modelo, h) : null;
-        corpo += `<button type="button" class="tb-bt pri tb-larga tb-grande" id="tb-aplicar-todos" ${ocupado ? 'disabled' : ''} style="margin-top:6px">${_aplicando ? 'APLICANDO…' : _aprendendo ? 'MEDINDO O DANO…' : 'APLICAR NOS 4'}</button>`;
+        corpo += `<button type="button" class="tb-bt pri tb-larga tb-grande" id="tb-aplicar-todos" ${ocupado ? 'disabled' : ''} style="margin-top:6px">${_aplicando ? 'APLICANDO…' : _aprendendo ? 'MEDINDO O DANO…' : modelo === 'inteligente' ? 'APLICAR O KIT DO ZERO NOS 4' : 'APLICAR NOS 4'}</button>`;
         if (modelo === 'inteligente' && r.int) {
             const it = r.int, m = it.met, dec = { NOVO: 'kit novo', IGUAL: 'o kit aplicado já é o melhor', MANTER: 'mantém o kit aplicado', MOSTRADO: 'mantém o kit calculado antes (o novo quase não ganha)', TROCAR: 'TROCAR: o novo é melhor', ESPERAR: 'mantém (menos de 10 min desde o APLICAR)' }[it.decisao] || it.decisao;
             const ganho = it.ganho != null && it.decisao !== 'IGUAL' && it.decisao !== 'NOVO' ? ` (novo ${it.ganho >= 0 ? '+' : ''}${Math.round(it.ganho * 1000) / 10} %)` : '';
@@ -7940,6 +8097,79 @@
         _buscandoMagia.add(chave);
         Promise.resolve().then(fazer).catch(() => { }).finally(() => _buscandoMagia.delete(chave));
     }
+    /* v2.19.0 — AJUSTE FINO (a conta é ajusteFinoInt, @@MAGIA): a barra de hoje vem do jogo (preset ativo de cada um);
+     * calcula sozinho ao escolher o mapa (só leitura, ~10–70 ms, guardado por mapa + barra + minuto); aplicar = 2 toques,
+     * só os 4 slots de ataque e os mínimos daquele personagem (aplicarPlanoSocket sem extras: cura, suporte e poção ficam). */
+    const AJ = { chave: null, res: null, erro: null };
+    function barrasDoJogo() {
+        const b = {};
+        for (const v of VOCS) {
+            let c = null;
+            try { c = configAtiva(v); } catch { c = null; }
+            if (!c) continue;
+            const n = normalizarConfig(c);
+            b[v] = { skills: n.skills.slice(0, 4), minCreatures: n.minCreatures, pocao: n.manaPotion && n.manaPotion.name && n.manaPotion.percent > 0 ? n.manaPotion.percent / 100 : 0,
+                     sups: (n.supports || []).filter(Boolean) };
+        }
+        return Object.keys(b).length ? b : null;
+    }
+    function vivoDaCacada(h) {
+        const a = anAgora();
+        if (!a || ESTADO_WS.huntId !== h.id || !(a.elapsedMs >= 180000) || !(Number(a.kills) > 0)) return null;
+        return { abH: Number(a.kills) / (a.elapsedMs / 3600000), seg: a.elapsedMs / 1000 };
+    }
+    function ajusteDe(h) {
+        const barras = barrasDoJogo();
+        if (!barras) return { semBarra: true };
+        const vivo = vivoDaCacada(h);
+        const chave = h.id + '|' + JSON.stringify(barras) + '|' + Math.floor(Date.now() / 60000) + '|' + (vivo ? Math.round(vivo.abH / 50) : '-');
+        if (AJ.chave !== chave) {
+            AJ.chave = chave; AJ.erro = null;
+            try { AJ.res = ajusteFinoInt(h, barras, { vivo }); } catch (e) { AJ.res = null; AJ.erro = e.message; falhou('ajuste fino', e); }
+        }
+        return AJ.res;
+    }
+    const ajKit = (lista) => (lista || []).map(([n, m]) => `${n} ≥${m}`).join(' > ') || '—';
+    function ajusteFinoHtml(h, ocupado) {
+        if (!h || h.boss) return '';
+        const r = ajusteDe(h);
+        let x = `<div class="tb-cx" style="margin-top:6px"><b>Ajuste fino da sua barra</b> <span class="tb-mut">— parte do que você usa hoje e testa trocas pequenas; nunca mexe em cura, suporte nem poção</span>`;
+        if (r && r.semBarra) return x + `<div class="tb-av">a sua barra ainda não chegou do jogo (perfis do servidor) — dê F5 com o helper instalado</div></div>`;
+        if (!r) return x + `<div class="tb-mut">${AJ.erro ? 'a conta falhou: ' + escHtml(AJ.erro) : 'sem dados deste mapa ainda (catálogo/monstros)'}</div></div>`;
+        const b = r.base, comb = (T) => (T != null ? ` · onda limpa em ${numBR(Math.round(T * 10) / 10, 1)} s (${tpCombos(T) === 1 ? '⚡ 1 combo' : tpCombos(T) + ' combos'})` : '');
+        x += `<div class="tb-mut">sua barra hoje, prevista: <b>${milBR(b.xpH)} xp/h</b> · lucro ${b.lucroH >= 0 ? '+' : ''}${milBR(b.lucroH)}/h${comb(b.T)}${r.kCalibVivo != null ? ` · <span class="tb-ok">abates calibrados por esta caçada (×${numBR(r.kCalibVivo, 2)})</span>` : ''}</div>`;
+        if (r.naoSimulavel.length) x += `<div class="tb-av">${r.naoSimulavel.map(v => escHtml(VOC_ROTULO[v] || v)).join(', ')}: alguma magia da barra não entra na simulação — esse personagem fica como está</div>`;
+        if (!r.sugestoes.length) return x + `<div class="tb-ok" style="margin-top:4px">✓ A sua barra já está no melhor que a simulação acha neste mapa: nenhuma troca dá +2 % de XP (ou +3k/h de lucro com o mesmo XP) sem tirar mana de ninguém.</div></div>`;
+        r.sugestoes.forEach((sg, i) => {
+            x += `<div style="margin-top:6px;border-top:1px dashed #8884;padding-top:4px"><b>${escHtml(VOC_ROTULO[sg.voc] || sg.voc)}</b>: ${escHtml(sg.desc)}` +
+                 `<div class="tb-mut">hoje: ${escHtml(ajKit(sg.antes))}<br>depois: ${escHtml(ajKit(sg.nomes))}</div>` +
+                 `<div><span class="${sg.dXp > 0 ? 'tb-ok' : ''}">${sg.dXp >= 0 ? '+' : ''}${numBR(sg.dXp, 1)} % xp</span> · <span class="${sg.dLucro >= 0 ? 'tb-ok' : 'tb-ruim'}">lucro ${sg.dLucro >= 0 ? '+' : ''}${milBR(sg.dLucro)}/h</span> · <span class="tb-mut">mana mínima ${sg.manaMinAntes} → ${sg.manaMin} %${comb(sg.T)}</span></div>` +
+                 `<button type="button" class="tb-bt pri mini" id="tb-aj-${i}" ${ocupado ? 'disabled' : ''} style="margin-top:3px">APLICAR ESTE AJUSTE (2 toques)</button></div>`;
+        });
+        if (r.combinado && r.sugestoes.length > 1) {
+            const c = r.combinado;
+            x += `<div style="margin-top:6px"><b>Tudo junto:</b> ${milBR(c.xpH)} xp/h (${c.xpH >= b.xpH ? '+' : ''}${numBR((c.xpH / b.xpH - 1) * 100, 1)} %) · lucro ${c.lucroH >= 0 ? '+' : ''}${milBR(c.lucroH)}/h${comb(c.T)}` +
+                 `<button type="button" class="tb-bt mini" id="tb-aj-todos" ${ocupado ? 'disabled' : ''} style="margin-left:6px">APLICAR TODOS</button></div>`;
+        }
+        x += `<div class="tb-mut" style="font-size:10.5px;margin-top:4px">É simulação: confira o resultado na caçada (Analisador) ou num Scan curto. Depois de aplicar, a conta parte da barra nova.</div>`;
+        return x + `</div>`;
+    }
+    async function ajAplicar(lista) {
+        if (!lista || !lista.length) return;
+        if (_aplicando || _aprendendo) { log('ajuste fino: já estou aplicando/medindo — espera terminar', 'info'); return; }
+        if (SCAN.ativo || scanOcupado()) { log('ajuste fino: Scan em andamento — espera terminar', 'erro'); return; }
+        const ocup = travaJogo(); if (ocup) { log('ajuste fino: ' + ocup + ' em andamento — espera terminar', 'erro'); return; }
+        if (!socketAberto()) { log('ajuste fino: socket do jogo não está à mão — dê F5 com o helper instalado', 'erro'); return; }
+        _aplicando = true; renderizar();
+        try {
+            for (const sg of lista) {
+                try {
+                    const r = await aplicarPlanoSocket({ plano: sg.plano }, sg.voc);
+                    log(`ajuste fino: ${VOC_ROTULO[sg.voc] || sg.voc} — ${sg.desc}${r.eco ? ' (servidor confirmou)' : r.cacando ? '' : ' (vale na próxima caçada)'}`, 'ok');
+                } catch (e) { log(`ajuste fino: ${VOC_ROTULO[sg.voc] || sg.voc} não aplicado — ${e.message}`, 'erro'); }
+            }
+        } finally { _aplicando = false; AJ.chave = null; renderizar(); }
+    }
     function ligarMagia() {
         const corpo = $('#tb-corpo');
         $$('[data-modelo]', corpo).forEach(b => { b.onclick = () => { if (ler('modelo', 'equilibrado') === b.dataset.modelo) return; guardar('modelo', b.dataset.modelo); renderizar(); }; });
@@ -7948,6 +8178,12 @@
         $$('[data-usar-palpite]', corpo).forEach(b => { b.onclick = () => { guardar('hunt_id', parseInt(b.dataset.usarPalpite)); renderizar(); }; });
         const selBoss = $('#tb-boss');
         if (selBoss) selBoss.onchange = () => { guardar('boss_nome', selBoss.value || null); renderizar(); };
+        /* v2.19.0 — ajuste fino: 2 toques por sugestão, ou todas */
+        if (AJ.res && AJ.res.sugestoes) {
+            AJ.res.sugestoes.forEach((sg, i) => { const b = $('#tb-aj-' + i); if (b && !b.disabled) ligarDoisToques(b, 'aj-' + sg.voc, `CONFIRMAR: aplicar no ${VOC_ROTULO[sg.voc] || sg.voc}`, () => ajAplicar([sg])); });
+            const bt = $('#tb-aj-todos');
+            if (bt && !bt.disabled && AJ.res.combinado) ligarDoisToques(bt, 'aj-todos', 'CONFIRMAR: aplicar todos', () => ajAplicar(AJ.res.sugestoes.filter(sg => AJ.res.combinado.vocs.includes(sg.voc))));
+        }
         /* v2.12.0 — Inteligente: a busca roda aqui, no clique (síncrona, ~0,1–0,3 s) */
         const calc = $('#tb-int-calc');
         if (calc) {
@@ -12499,7 +12735,8 @@
         const meus = new Set((MK.minhas || []).map(o => o.id));
         const cands = mlCandidatosMercado(copias, EQUIP.base || {}, meus).filter(c => !ML.compradas.has(c.orderId));
         ML.nCands = cands.length;
-        ML.res = mlAvaliar(EQUIP.res.porVoc, cands, EQUIP.ctx, { ouro: mlOuroNormal(), verPerdas: mlCfg().verPerdas });
+        let pf = null; try { const x = precoFragmento(); pf = x.estimado ? null : x.preco; } catch { pf = null; }
+        ML.res = mlAvaliar(EQUIP.res.porVoc, cands, EQUIP.ctx, { ouro: mlOuroNormal(), verPerdas: mlCfg().verPerdas, precoFrag: pf });
     }
     async function mlProcurar() {
         if (ML.lendo || MK.ocupado) { avisar('melhorias', 'melhorias: o Mercado já está ocupado (' + (MK.ocupado || 'lendo') + ') — espera terminar', 'erro'); return; }
@@ -12569,6 +12806,23 @@
         finally { ML.comprando = null; if (MK.ocupado === 'melhorias') MK.ocupado = null; renderizar(); }
     }
     const mlEncaixes = (f) => ((f && f.atributos) || []).map(a => `${rotulo(a.id)} ${numBR(a.valor, 2)}`).join(', ');
+    /* v2.19.0 — comprar × forjar: o caminho da forja na peça que você já tem (mlForjar, @@MELHORIAS) */
+    const mlPct = (c) => numBR(Math.round(c * 1000) / 10, 1) + ' %';
+    function mlForjaHtml(fj, ref) {
+        if (!fj || !ref) return '';
+        const nome = escHtml(ref.nome);
+        if (fj.tipo === 'cheia') return `<div class="tb-mut">⚒ forjar a sua (${nome}): os encaixes já estão todos ocupados — só trocando linha (Limpeza), sem como prever; aqui comprar é o caminho</div>`;
+        if (fj.tipo === 'nada') return `<div class="tb-mut">⚒ forjar a sua (${nome}): nenhuma linha que cai nesse espaço rende ${numBR(ML_GANHO_MIN, 1)} pt para este personagem — comprar é o caminho</div>`;
+        const rar = fj.precisaRaridade ? `primeiro Raridade T1 para abrir um encaixe (${mlPct(fj.precisaRaridade.chance)} por gema), depois ` : `${fj.livres} encaixe${fj.livres > 1 ? 's' : ''} vazio${fj.livres > 1 ? 's' : ''}: `;
+        return `<div class="tb-cx" style="margin:3px 0;padding:4px 6px"><b>⚒ Forjar a sua (${nome})</b> — ${rar}cada Atributo T1 tem <b>${mlPct(fj.chance)}</b> de cair uma linha que vale aqui ` +
+            `(${fj.linhas.map(x => `${escHtml(rotulo(x.id))} ~${numBR(x.valor, 1)}: ${mlPct(x.chance)}, +${numBR(x.ganho, 1)} pt`).join(' · ')}).` +
+            `<div class="tb-mut">≈ ${numBR(fj.tentativas, 1)} tentativa(s) em média (90 % das vezes até ${fj.ate90}) · ≈ ${mkFmt(fj.ouro)} de ouro + ${mkFmt(fj.fragmentos)} fragmentos (a ${mkFmt(fj.precoFrag)} cada ≈ ${mkFmt(fj.custo)} no total) por ~+${numBR(fj.ganhoMedio, 1)} pt → <b>${mkFmt(fj.ouroPorPt)} por ponto</b>, faixa ${fj.faixa} de potência. É sorteio: o azar custa o dobro. Simule antes na Bancada de Testes da Forja (de graça).</div></div>`;
+    }
+    function mlForjaAviso(o) {
+        const x = ML.res && ML.res.porVoc[o.voc] && ML.res.porVoc[o.voc][o.slot], fj = x && x.forja;
+        if (!fj || fj.tipo !== 'linha') return '';
+        return `<div class="tb-av">⚒ forjar a sua peça sai mais em conta por ponto (≈ ${mkFmt(fj.ouroPorPt)} contra ${mkFmt(o.ouroPorPt)} da compra), mas é sorteio — ${numBR(fj.tentativas, 1)} tentativa(s) em média; detalhes no ${escHtml(VOC_ROTULO[o.voc] || o.voc)} · ${escHtml(slotPt(o.slot))} abaixo</div>`;
+    }
     /* os botões de compra pintados nesta tela (índice → oferta): o ligar acha cada um pelo id */
     function mlLinhaOferta(o) {
         const i = ML.botoes.push(o) - 1;
@@ -12584,6 +12838,7 @@
             (o.caro ? `<div class="tb-av">⚠ caro para o que dá: leva mais de ${ML_PAGA_MAX_H} h de caçada para se pagar</div>` : '') +
             (o.refImbuida ? `<div class="tb-av">⚠ a sua peça atual está imbuída: trocando, o imbuement fica na peça velha — troque quando ele acabar</div>` : '') +
             (o.soDefesa ? `<div class="tb-av">⚠ o ganho vem quase todo de armadura/defesa no Knight — a régua ainda superestima isso (o seu Knight não tem passado aperto)</div>` : '') +
+            (o.forjaMaisBarata ? mlForjaAviso(o) : '') +
             `<button type="button" class="tb-bt${o.recomendada ? ' pri' : ''} mini" id="tb-ml-c-${i}" ${pode ? '' : 'disabled'} style="margin-top:3px">${ML.comprando === o.orderId ? 'COMPRANDO…' : o.recomendada ? 'COMPRAR (2 toques)' : 'não recomendada: se quiser, compre pela janela do jogo'}</button></div>`;
     }
     function telaMelhorias() {
@@ -12617,12 +12872,12 @@
                 const ref = x.ref ? `${escHtml(x.ref.nome)}${mlEncaixes(x.ref.forja) ? ' <span class="tb-mut">(' + escHtml(mlEncaixes(x.ref.forja)) + ')</span>' : ''} · ${numBR(x.refPt, 1)} pt` : '<span class="tb-mut">vazio</span>';
                 const guardada = x.temMelhorGuardada ? `<div class="tb-av">você já tem uma melhor guardada (${escHtml(x.ref.nome)}): equipe pela aba Equip antes de comprar</div>` : '';
                 if (!of.length && !guardada) continue;
-                linhas.push(`<div style="margin-top:5px"><b>${escHtml(slotPt(s))}</b>: ${ref}</div>` + guardada + of.map(o => mlLinhaOferta(o)).join(''));
+                linhas.push(`<div style="margin-top:5px"><b>${escHtml(slotPt(s))}</b>: ${ref}</div>` + guardada + of.map(o => mlLinhaOferta(o)).join('') + (of.length ? mlForjaHtml(x.forja, x.ref) : ''));
             }
             const n = Object.values(slots).reduce((a, x) => a + ofertasDe(x.ofertas).length, 0);
             h += `<details class="tb-aj" data-k="ml-${v}"><summary>${escHtml(VOC_ROTULO[v] || v)} — ${n ? n + ' melhoria(s)' : 'nada melhor à venda'}</summary><div>${linhas.join('') || '<div class="tb-mut">Todos os espaços já estão no melhor que o Mercado tem hoje.</div>'}</div></details>`;
         }
-        h += aj('ml-como', `<b>Ponto (pt)</b> é a régua do Equip: 1 pt ≈ +1 % do dano da party ≈ 450 de ouro/h; "paga-se em ~X h" = preço ÷ (ganho × 450). A comparação é com a <b>melhor peça que o personagem já tem</b> naquele espaço (não só a vestida) e pesa tudo o que a peça dá (armadura, regen., resistências, skill, dano, crítico em par). <b>Recomendada</b> = não perde encaixe nobre (regen. de mana em todos, regen. de vida no Knight, nível mágico/skill/dano/crítico na arma e no colar), se paga em até ${ML_PAGA_MAX_H} h de caçada e, no Knight, o ganho não vem quase todo de armadura/defesa (a régua ainda superestima defesa). Só a recomendada tem botão de compra; as outras aparecem por personagem com o motivo. Marcando "mostrar também", aparecem até as que perdem encaixe. O Mercado devolve os anúncios de cada categoria como o jogo manda: se a categoria tiver muitos, pode faltar algum. Arma de 2 mãos do Knight concorre com arma + escudo. O seu próprio anúncio nunca aparece. <b>Comprar</b> (wiki /mercado): é imediato e não pode ser desfeito; Premium não paga taxa; só ouro normal (não o travado); o item vai para a mochila (cheia: depósito). Antes de comprar, o helper relê o anúncio e confere preço e ouro. Depois, equipe pela aba Equip.`, 'como funciona');
+        h += aj('ml-como', `<b>Ponto (pt)</b> é a régua do Equip: 1 pt ≈ +1 % do dano da party ≈ 450 de ouro/h; "paga-se em ~X h" = preço ÷ (ganho × 450). A comparação é com a <b>melhor peça que o personagem já tem</b> naquele espaço (não só a vestida) e pesa tudo o que a peça dá (armadura, regen., resistências, skill, dano, crítico em par). <b>Recomendada</b> = não perde encaixe nobre (regen. de mana em todos, regen. de vida no Knight, nível mágico/skill/dano/crítico na arma e no colar), se paga em até ${ML_PAGA_MAX_H} h de caçada e, no Knight, o ganho não vem quase todo de armadura/defesa (a régua ainda superestima defesa). Só a recomendada tem botão de compra; as outras aparecem por personagem com o motivo. Marcando "mostrar também", aparecem até as que perdem encaixe. O Mercado devolve os anúncios de cada categoria como o jogo manda: se a categoria tiver muitos, pode faltar algum. Arma de 2 mãos do Knight concorre com arma + escudo. O seu próprio anúncio nunca aparece. <b>Comprar</b> (wiki /mercado): é imediato e não pode ser desfeito; Premium não paga taxa; só ouro normal (não o travado); o item vai para a mochila (cheia: depósito). Antes de comprar, o helper relê o anúncio e confere preço e ouro. Depois, equipe pela aba Equip. <b>⚒ Forjar a sua</b> (embaixo de cada espaço com oferta): quanto custaria, em média, pôr uma linha que vale na peça que você já tem — só quando ela tem encaixe vazio (ou falta 1 grau de raridade para abrir um); conta Atributo T1 20 mil + Limpeza T2 40 mil por tentativa repetida, Raridade T1 30 mil, 100 fragmentos por gema (preço do fragmento do Mercado, ou 2 mil estimado) e a chance de sorteio da wiki. A forja só aparece como "mais em conta" quando sai 1/3 mais barata por ponto, porque comprar é certo e a forja é sorteio.`, 'como funciona');
         return h + `<div class="tb-mut" style="margin-top:6px">${ML.nCands} peças à venda conferidas. Só COMPRAR (2 toques) envia comando ao jogo.</div></div>`;
     }
     function ligarMelhorias() {

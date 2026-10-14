@@ -4,7 +4,7 @@ const fs = require('fs'), path = require('path'), assert = require('assert');
 const src = fs.readFileSync(path.join(__dirname, '..', 'tibidle-helper.user.js'), 'utf8');
 const trecho = (a, b) => { const i = src.indexOf(a), f = src.indexOf(b); assert(i > 0 && f > i, 'marcador ausente: ' + a); return src.slice(i, f); };
 const M = new Function(trecho('/* @@EQUIP-PURO-INICIO */', '/* @@EQUIP-PURO-FIM */') + trecho('/* @@MELHORIAS-INICIO', '/* @@MELHORIAS-FIM */') +
-    '\nreturn { mlCandidatosMercado, mlAvaliar, mlPerdas, distribuirEquip, ML_GANHO_MIN };')();
+    '\nreturn { mlCandidatosMercado, mlAvaliar, mlPerdas, distribuirEquip, ML_GANHO_MIN, mlForjar, mlForjaMaisBarata };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 const F = (r, ...at) => ({ raridade: r, atributos: at.map(([id, valor]) => ({ id, valor })) });
@@ -108,5 +108,38 @@ t('peça atual imbuída: a oferta aparece com aviso, mas não é recomendada (o 
     const o = r.porVoc.DRUID.boots.ofertas[0];
     assert(o && o.refImbuida && !o.recomendada, JSON.stringify(o));
     assert(r.porVoc.SORCERER.boots.ofertas[0].recomendada, 'o Feiticeiro (sem imbuement) continua recomendado');
+});
+t('2.19.0 comprar × forjar: bota Incomum com o encaixe ocupado precisa de Raridade (35 %) antes da linha; nunca sorteia a que já tem', () => {
+    const porVoc = cenario(vestidos());
+    const c = M.mlCandidatosMercado({ botas: [copia(100, 'leather boots', 2000, F(1, ['regen_mana', 3.4]))] }, BASE);
+    const r = M.mlAvaliar(porVoc, c, null, {});
+    const fj = r.porVoc.KNIGHT.boots.forja;
+    assert(fj && fj.tipo === 'linha', JSON.stringify(fj));
+    assert.strictEqual(fj.precisaRaridade.chance, 0.35);
+    assert(!fj.linhas.some(x => x.id === 'regen_mana'), 'regen. de mana já está na peça: não cai de novo');
+    assert(fj.linhas.some(x => x.id === 'regen_vida'), 'Knight: regen. de vida é linha boa: ' + JSON.stringify(fj.linhas));
+    /* custo = Raridade 30k/0,35 + Atributo 20k + (t − 1) × (Atributo + Limpeza T2) */
+    const t1 = 1 / fj.chance;
+    assert(Math.abs(fj.ouro - (30000 / 0.35 + 20000 + (t1 - 1) * 60000)) < 0.02 * fj.ouro, fj.ouro + ' vs ' + Math.round(30000 / 0.35 + 20000 + (t1 - 1) * 60000));
+    assert(Math.abs(fj.custo - (fj.ouro + fj.fragmentos * 2000)) <= 2000, 'fragmento sem leitura do Mercado = estimativa de 2 mil');
+    assert(fj.ate90 >= Math.ceil(t1), '90 % precisa de mais tentativas que a média');
+    assert(r.porVoc.KNIGHT.ring.forja === null, 'sem oferta no espaço, não calcula forja');
+});
+t('2.19.0 comprar × forjar: encaixe vazio vai direto ao Atributo; Lendário cheio = "cheia"; preço do fragmento lido entra na conta', () => {
+    const vest = (forja) => vestidos().map(p => p.iid === 'SORCERERb' ? Object.assign({}, p, { forja }) : p);
+    const c = M.mlCandidatosMercado({ botas: [copia(110, 'leather boots', 900000, F(1, ['regen_mana', 4.4]))] }, BASE);
+    const r = M.mlAvaliar(cenario(vest(F(2, ['regen_mana', 2.0]))), c, null, { precoFrag: 500 });
+    const fj = r.porVoc.SORCERER.boots.forja;
+    assert(fj && fj.tipo === 'linha' && fj.livres === 1 && fj.precisaRaridade === null, JSON.stringify(fj));
+    assert.strictEqual(fj.precoFrag, 500);
+    assert(Math.abs(fj.custo - (fj.ouro + fj.fragmentos * 500)) <= 500);
+    const cheia = M.mlAvaliar(cenario(vest(F(4, ['regen_mana', 2.0], ['max_hp', 50], ['capacidade', 300], ['resist_fogo', 2]))), c, null, {}).porVoc.SORCERER.boots.forja;
+    assert.strictEqual(cheia && cheia.tipo, 'cheia');
+    /* forjar só "ganha" com folga de 1/3 no ouro por ponto (comprar é certo, forja é sorteio) */
+    assert.strictEqual(M.mlForjaMaisBarata({ tipo: 'linha', ouroPorPt: 1000 }, { ouroPorPt: 1400 }), true);
+    assert.strictEqual(M.mlForjaMaisBarata({ tipo: 'linha', ouroPorPt: 1000 }, { ouroPorPt: 1300 }), false);
+    assert.strictEqual(M.mlForjaMaisBarata({ tipo: 'cheia' }, { ouroPorPt: 1e9 }), false);
+    const o = r.porVoc.SORCERER.boots.ofertas[0];
+    assert(o && typeof o.forjaMaisBarata === 'boolean' && o.forjaMaisBarata === M.mlForjaMaisBarata(fj, o), JSON.stringify(o && [o.ouroPorPt, fj.ouroPorPt]));
 });
 console.log(`\n${n} testes ok`);
