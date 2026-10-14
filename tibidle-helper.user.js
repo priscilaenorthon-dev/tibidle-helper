@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.17.6
+// @version      2.18.0
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.17.6';
+    const VERSAO = '2.18.0';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -6210,7 +6210,7 @@
             if (!it || !it.name) continue;
             const k = b(it.name);
             const attrs = Object.assign({}, k.attrs, it.attrs || {});
-            out.push({ iid: it.iid || (r.vocation + ':' + slot), nome: it.name, slot: normalizarSlot(slot), attrs, forja: normForja(it.forja),
+            out.push({ iid: it.iid || (r.vocation + ':' + slot), nome: it.name, slot: normalizarSlot(slot), attrs, forja: normForja(it.forja), imbuements: it.imbuements || null, // v2.18.0: a aba Melhorias avisa
                        equipPreview: k.equipPreview, sell: k.sell || it.value || 0, origem: 'corpo', dono: r.vocation, duasMaos: attrs.slotType === 'two-handed' });
         } }
         for (const e of ((depot && depot.entries) || [])) {
@@ -6612,6 +6612,154 @@
         return { porVoc, reservas, dispensaveis, usadas, temporarios, bases, nobres };
     }
     /* @@EQUIP-PURO-FIM */
+    /* @@MELHORIAS-INICIO — v2.18.0: aba Melhorias (funções puras; testes/melhorias.test.js roda EQUIP-PURO + este trecho).
+     *  Dono, 14/10: "verificar todos os equipamentos de cada personagem e verificar no mercado itens melhores, com o
+     *  valor, para eu ter noção do que posso comprar — sem perder mana reg e outros status primordiais".
+     *  A régua é a mesma do Equip (pontuarPeca: 1 pt ≈ +1 % do dano da party ≈ 450 de ouro/h). Cada cópia anunciada é
+     *  comparada com a MELHOR peça que o personagem já tem para aquele espaço (vestida, no depósito ou na mochila):
+     *  comprar só faz sentido se ganha disso. Segurança: nenhum encaixe nobre da vocação pode cair (regen. de mana
+     *  em todos, regen. de vida no Knight, nível mágico/skill/dano na arma e no colar) — oferta que perde fica fora,
+     *  a não ser que o dono peça para ver. */
+    const ML_GANHO_MIN = 0.3; // abaixo disso é ruído da régua: não vale o ouro nem o clique
+    /* dono, 14/10: "vou confiar cegamente — não me faça errar". As "melhores compras" só levam o que é certo:
+     *  • seguro (não perde encaixe nobre);
+     *  • paga-se em até ML_PAGA_MAX_H horas de caçada (1 pt ≈ 450 de ouro/h — a régua do Equip);
+     *  • o ganho NÃO vem quase todo de armadura/defesa no Knight: a wiki diz que o bloqueio do escudo tem 2 cargas
+     *    (1 por segundo) e que armadura + bloqueio já zeram golpe fraco — a régua ainda conta cada ponto inteiro, e
+     *    nos Scans o Knight nunca precisou de poção de vida. Essas ofertas aparecem por personagem, com o aviso. */
+    const ML_PAGA_MAX_H = 48;
+    const ML_IDS_DEFESA = new Set(['armor', 'defense', 'extradef', 'escudo', 'skillshield', 'resist_fisica', 'absorbpercentphysical']);
+    /* refino (wiki /forja): +1 de ataque na arma (wand/rod não) ou +1 de armadura em qualquer outra peça — a régua do Equip
+     * não conta; aqui conta, nas DUAS pontas (senão a sua peça +5 pareceria pior do que é) */
+    function mlComRefino(p) {
+        const r = Number(p && p.forja && p.forja.refino) || 0;
+        if (!p || !(r > 0)) return p;
+        const a = Object.assign({}, p.attrs || {});
+        if (p.slot === 'weapon') { if (!(a.weaponType === 'wand' || a.wandType || a.weaponType === 'rod')) a.attack = (Number(a.attack) || 0) + r; }
+        else a.armor = (Number(a.armor) || 0) + r;
+        return Object.assign({}, p, { attrs: a });
+    }
+    const mlImbuida = (p) => !!(p && (Array.isArray(p.imbuements) ? p.imbuements.some(x => x != null && x !== false) : p.imbuements && typeof p.imbuements === 'object' && Object.keys(p.imbuements).length));
+    /* de onde vem o ganho: diferença de pt por atributo (oferta − referência), maiores primeiro */
+    function mlFontes(oferta, ref, voc, ctx) {
+        const soma = (p) => { const m = {}; if (p) for (const d of pontuarPeca(p, voc, ctx).detalhe) { const x = m[d.id] || (m[d.id] = { pt: 0, valor: 0 }); x.pt += d.pt; x.valor += Number(d.valor) || 0; } return m; };
+        const a = soma(ref), b = soma(oferta);
+        return [...new Set([...Object.keys(a), ...Object.keys(b)])].map(id => ({ id, pt: Math.round(((b[id] ? b[id].pt : 0) - (a[id] ? a[id].pt : 0)) * 100) / 100,
+                                                                                    de: a[id] ? Math.round(a[id].valor * 100) / 100 : 0, para: b[id] ? Math.round(b[id].valor * 100) / 100 : 0 }))
+            .filter(x => Math.abs(x.pt) >= 0.01).sort((x, y) => y.pt - x.pt);
+    }
+    const ML_CAT_SLOT = { armas: 'weapon', escudos: 'shield', elmos: 'head', armaduras: 'armor', pernas: 'legs', botas: 'boots', amuletos: 'necklace', aneis: 'ring' };
+    const mlSlotDaBase = (a, cat) => {
+        a = a || {};
+        if (a.slot) return normalizarSlot(a.slot);
+        const w = a.weaponType || a.weapontype;
+        if (w === 'shield' || w === 'spellbook') return 'shield';
+        if (w) return 'weapon';
+        return (cat && ML_CAT_SLOT[cat]) || null;
+    };
+    /* copias = {cat: [{orderId, unitPrice, sellerName?, itemName?, instance:{iid,name,forja}}]}; base = {nome: {attrs,…}};
+     * meusIds = orderIds do próprio dono (nunca "comprar de si mesmo") → peças do mercado */
+    function mlCandidatosMercado(copias, base, meusIds) {
+        const out = [], vistos = new Set();
+        const meus = meusIds instanceof Set ? meusIds : new Set(meusIds || []);
+        const b = (nome) => (base && (base[nome] || base[String(nome).toLowerCase()])) || null;
+        for (const [cat, lista] of Object.entries(copias || {})) {
+            for (const y of (lista || [])) {
+                if (!y || y.orderId == null || meus.has(y.orderId) || vistos.has(y.orderId)) continue;
+                const nome = (y.instance && y.instance.name) || y.itemName;
+                const preco = Number(y.unitPrice);
+                if (!nome || !(preco > 0)) continue;
+                const k = b(nome);
+                if (!k) continue; // sem ficha do item não dá para pontuar com segurança
+                const attrs = k.attrs || {};
+                const slot = mlSlotDaBase(attrs, cat);
+                if (!slot || !SLOTS_EQUIP.includes(slot)) continue;
+                const peca = { iid: 'm:' + y.orderId, nome, slot, attrs, forja: normForja(y.instance && y.instance.forja), equipPreview: k.equipPreview || null,
+                               origem: 'mercado', orderId: y.orderId, preco, vendedor: y.sellerName || null, cat, duasMaos: attrs.slotType === 'two-handed' };
+                if (ehTemporaria(peca)) continue;
+                vistos.add(y.orderId);
+                out.push(peca);
+            }
+        }
+        return out;
+    }
+    /* pt de cada encaixe/atributo nobre da vocação naquele espaço (base da peça + forja) */
+    function mlNobresPt(peca, voc, ctx) {
+        const r = {};
+        if (!peca) return r;
+        const ids = nobresDe(peca.slot, voc);
+        for (const d of pontuarPeca(peca, voc, ctx).detalhe) if (ids.includes(d.id)) { const x = r[d.id] || (r[d.id] = { pt: 0, valor: 0 }); x.pt += d.pt; x.valor += Number(d.valor) || 0; }
+        return r;
+    }
+    /* o que a oferta PERDE em relação à peça de referência (só nobres): [{id, de, para}] */
+    function mlPerdas(oferta, ref, voc, ctx) {
+        if (!ref) return [];
+        const a = mlNobresPt(ref, voc, ctx), b = mlNobresPt(oferta, voc, ctx), out = [];
+        for (const [id, x] of Object.entries(a)) {
+            const y = b[id] || { pt: 0, valor: 0 };
+            if (x.pt > 0 && y.pt < x.pt - 0.005) out.push({ id, de: Math.round(x.valor * 100) / 100, para: Math.round(y.valor * 100) / 100 });
+        }
+        return out;
+    }
+    /* porVoc = EQUIP.res.porVoc (o Equip já sabe a melhor peça de cada um); cands = mlCandidatosMercado; opc = {ouro, verPerdas}
+     * → {porVoc: {VOC: {slot: {ref, refPt, refOrigem, vestida, temMelhorGuardada, ofertas:[…]}}}, top:[…]} */
+    function mlAvaliar(porVoc, cands, ctx, opc) {
+        opc = opc || {};
+        const res = { porVoc: {}, top: [] };
+        const ouro = Number.isFinite(opc.ouro) ? opc.ouro : null;
+        for (const [v, slots] of Object.entries(porVoc || {})) {
+            res.porVoc[v] = {};
+            for (const [s, x] of Object.entries(slots || {})) {
+                if (!x) continue;
+                const ref0 = x.melhor || x.atual || null, ref = mlComRefino(ref0);
+                const refPt = ref ? pontuarPeca(ref, v, ctx).pontos : 0;
+                const refImbuida = mlImbuida(ref0);
+                /* 2 mãos (Knight): a arma de 2 mãos ocupa também o escudo — a referência é arma + escudo */
+                const esc0 = s === 'weapon' && slots.shield ? (slots.shield.melhor || slots.shield.atual) : null;
+                const escudo = esc0 ? pontuarPeca(mlComRefino(esc0), v, ctx).pontos : 0;
+                const ofertas = [];
+                for (const c0 of (cands || [])) {
+                    if (c0.slot !== s || !vocacaoPode(c0.attrs, v)) continue;
+                    const c = mlComRefino(c0), r = pontuarPeca(c, v, ctx);
+                    const base = refPt + (c.duasMaos && v !== 'PALADIN' && s === 'weapon' ? escudo : 0);
+                    const ganho = Math.round((r.pontos - base) * 100) / 100;
+                    if (!(ganho >= ML_GANHO_MIN)) continue;
+                    const perdas = mlPerdas(c, ref, v, ctx);
+                    if (perdas.length && !opc.verPerdas) continue;
+                    const pagaH = Math.round(c.preco / (ganho * PT_OURO_H) * 10) / 10;
+                    const fontes = mlFontes(c, ref, v, ctx), pos = fontes.filter(f => f.pt > 0), somaPos = pos.reduce((a, f) => a + f.pt, 0);
+                    const defesa = pos.filter(f => ML_IDS_DEFESA.has(f.id)).reduce((a, f) => a + f.pt, 0);
+                    const soDefesa = v === 'KNIGHT' && somaPos > 0 && defesa > 0.6 * somaPos;
+                    const caro = pagaH > ML_PAGA_MAX_H;
+                    ofertas.push({ voc: v, slot: s, orderId: c.orderId, nome: c.nome, cat: c.cat, preco: c.preco, vendedor: c.vendedor, forja: c.forja,
+                                   pontos: r.pontos, ganho, ouroPorPt: Math.round(c.preco / ganho), pagaH, perdas, seguro: !perdas.length,
+                                   cabe: ouro == null ? null : c.preco <= ouro, motivos: r.motivos, duasMaos: !!c.duasMaos,
+                                   fontes: fontes.slice(0, 4), soDefesa, caro, refImbuida, refino: Number(c.forja && c.forja.refino) || 0,
+                                   recomendada: !perdas.length && !soDefesa && !caro && !refImbuida });
+                }
+                /* melhor primeiro: mais ganho; empate (±5 %), o mais barato */
+                ofertas.sort((p, q) => (Math.abs(q.ganho - p.ganho) > 0.05 * Math.max(p.ganho, q.ganho) ? q.ganho - p.ganho : p.preco - q.preco));
+                res.porVoc[v][s] = { ref: ref ? { nome: ref.nome, forja: ref.forja, origem: ref.origem } : null, refPt, refImbuida,
+                                     vestida: x.atual ? { nome: x.atual.nome, pt: x.atualPt } : null,
+                                     temMelhorGuardada: !!(x.melhor && (!x.atual || x.melhor.iid !== x.atual.iid) && x.melhorPt > (x.atualPt || 0)),
+                                     ofertas };
+            }
+        }
+        /* as melhores compras da party: 1 por anúncio (a mesma cópia não serve a dois), pela razão ganho/ouro entre as seguras */
+        const porOrdem = new Map();
+        for (const v of Object.keys(res.porVoc)) {
+            for (const s of Object.keys(res.porVoc[v])) {
+                for (const o of res.porVoc[v][s].ofertas) {
+                    if (!o.recomendada) continue;
+                    const ja = porOrdem.get(o.orderId);
+                    if (!ja || o.ganho > ja.ganho) porOrdem.set(o.orderId, o);
+                }
+            }
+        }
+        res.top = [...porOrdem.values()].sort((p, q) => (q.ganho / q.preco) - (p.ganho / p.preco) || q.ganho - p.ganho).slice(0, 8);
+        return res;
+    }
+    /* @@MELHORIAS-FIM */
 
     /* =========================================================================
      *  TELAS
@@ -6816,7 +6964,7 @@
         return UI;
     };
     const guardarUI = (patch) => { UI = Object.assign(ui(), patch); guardar('ui', UI); };
-    const ICONES = [['estado', '⌂', 'Status'], ['magia', '✦', 'Magia'], ['autohunt', '↻', 'Auto Hunt'], ['scan', '◎', 'Scan'], ['equip', '⛨', 'Equip'], ['analise', '▤', 'Analisador'], ['progresso', '⚑', 'Progresso'], ['mercado', '⚖', 'Mercado'], ['radar', '⌖', 'Radar'], ['log', '≡', 'Log']];
+    const ICONES = [['estado', '⌂', 'Status'], ['magia', '✦', 'Magia'], ['autohunt', '↻', 'Auto Hunt'], ['scan', '◎', 'Scan'], ['equip', '⛨', 'Equip'], ['analise', '▤', 'Analisador'], ['progresso', '⚑', 'Progresso'], ['mercado', '⚖', 'Mercado'], ['melhorias', '⇧', 'Melhorias'], ['radar', '⌖', 'Radar'], ['log', '≡', 'Log']];
     /* "?" com a explicação escondida; data-k preserva aberto/fechado ao repintar */
     const aj = (k, html, rotulo) => `<details class="tb-aj" data-k="${k}"><summary>${rotulo || '?'}</summary><div class="tb-mut">${html}</div></details>`;
 
@@ -6942,7 +7090,7 @@
     }
     function voltarAoPadrao() { _arrasto = null; guardarUI({ livre: false, yCel: null }); posicionarCaixa(); avisar(ABA, 'helper de volta ao lugar padrão', 'ok'); }
     /* rótulo de 9 px sob o ícone no celular; sem entrada aqui, usa o nome de ICONES */
-    const ROTULO_CURTO = { autohunt: 'Auto', analise: 'Análise' };
+    const ROTULO_CURTO = { autohunt: 'Auto', analise: 'Análise', melhorias: 'Melhor' };
     function montarPainel() {
         if ($('#tb-trilho')) return;
         const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
@@ -10466,7 +10614,7 @@
     const MK_RESPOSTA = { market_catalog: 'market_catalog_result', market_my_orders: 'market_my_orders_result', market_inbox: 'market_inbox_result',
                           market_list: 'market_list_result', market_stats: 'market_stats_result', market_copies: 'market_copies_result',
                           market_create: 'market_create_result', market_cancel: 'market_cancel_result', market_claim: 'market_claim_result',
-                          market_history: 'market_history_result',
+                          market_history: 'market_history_result', market_execute: 'market_execute_result',
                           depot_withdraw: 'depot_result', forge_salvage_batch: 'forge_salvage_batch_result' };
     const MK_PRAZO_MS = 8000; // sem resposta nisso = para (um anúncio pode ter passado: conferir antes de repetir)
     const MK_GRACA_ERRO_MS = 1200; // erro sem requestId: espera o resultado de verdade chegar antes de acreditar
@@ -10558,7 +10706,10 @@
             if (!(f && f.closest && f.closest('#tb-mk') && f.tagName === 'INPUT')) renderizar(); // não tira o foco de quem digita
         }
     }
-    const mkCasador = (tipo, data) => (data && data.requestId ? (d) => d.requestId === data.requestId
+    /* v2.18.0 — market_execute: se o resultado vier sem requestId, vale o tipo (um pedido de cada vez) — senão a compra
+     * feita viraria "sem resposta" */
+    const mkCasador = (tipo, data) => (tipo === 'market_execute' ? (d) => !d || !d.requestId || d.requestId === data.requestId
+        : data && data.requestId ? (d) => d.requestId === data.requestId
         : tipo === 'market_list' || tipo === 'market_stats' ? (d) => mkMin(d.itemName) === mkMin(data.itemName) : () => true);
     async function mkEsperarVez(acao) {
         for (let g = 0; g < 600; g++) {
@@ -12294,6 +12445,174 @@
         }
         return h;
     }
+    /* =========================================================================
+     *  ⭐ v2.18.0 — ABA MELHORIAS (dono, 14/10: "verificar todos os equipamentos de cada personagem e no mercado
+     *  itens melhores, com o valor, para eu ter noção de que tem itens melhores sendo vendidos e eu podendo
+     *  comprar — sem perder mana reg e outros status primordiais; uma tela que me dê segurança de comprar").
+     *
+     *  PROCURAR só LÊ: o Equip (o que cada um tem), as suas ordens (para não sugerir o seu próprio anúncio) e as
+     *  cópias à venda das 8 categorias de equipamento (market_copies, 1 pedido a cada 3,5 s). A conta é a do Equip
+     *  (mlAvaliar, @@MELHORIAS): só entra a cópia que ganha da MELHOR peça que o personagem já tem e que não perde
+     *  nenhum encaixe nobre.
+     *  COMPRAR: 2 toques; antes de mandar, relê a categoria e confere que o anúncio ainda está lá pelo MESMO preço,
+     *  que há Premium e ouro normal. Wiki /mercado: aceitar uma ordem de venda é comprar, "a execução é imediata e
+     *  não pode ser desfeita", sem taxa de execução para Premium; o item cai na mochila (cheia: depósito).
+     *  Protocolo (cliente público, 14/10): market_execute {orderId, quantity, requestId} → market_execute_result
+     *  {trade, bag, gold…}. Nada é comprado sozinho, e o item comprado NÃO é equipado sozinho (aba Equip).
+     * ====================================================================== */
+    const ML = { res: null, t: 0, lendo: false, progresso: '', erro: null, comprando: null, compradas: new Set(), nCands: 0, botoes: [], chave: null };
+    const ML_CATS = ['armas', 'escudos', 'elmos', 'armaduras', 'pernas', 'botas', 'amuletos', 'aneis'];
+    const mlCfg = () => Object.assign({ verPerdas: false, soCabe: false }, ler('melhorias_cfg', {}) || {});
+    /* ouro NORMAL (o Mercado não aceita o travado — wiki /mercado): a carteira do jogo; reserva, o frame */
+    function mlOuroNormal() {
+        try { const sh = lerShellFibra(); if (sh && sh.wallet && Number.isFinite(Number(sh.wallet.gold))) return Number(sh.wallet.gold); } catch { }
+        if (PROG.estado && PROG.estado.ouro != null && Date.now() - PROG.estado.t < 10 * 60000) return PROG.estado.ouro - (PROG.estado.trav || 0);
+        return null;
+    }
+    function mlRecalcular() {
+        if (!EQUIP.res) { ML.res = null; return; }
+        const copias = {};
+        for (const c of ML_CATS) { const x = MK.copias['cat:' + c]; if (x && !x.erro) copias[c] = x.copies || []; }
+        const meus = new Set((MK.minhas || []).map(o => o.id));
+        const cands = mlCandidatosMercado(copias, EQUIP.base || {}, meus).filter(c => !ML.compradas.has(c.orderId));
+        ML.nCands = cands.length;
+        ML.res = mlAvaliar(EQUIP.res.porVoc, cands, EQUIP.ctx, { ouro: mlOuroNormal(), verPerdas: mlCfg().verPerdas });
+    }
+    async function mlProcurar() {
+        if (ML.lendo || MK.ocupado) { avisar('melhorias', 'melhorias: o Mercado já está ocupado (' + (MK.ocupado || 'lendo') + ') — espera terminar', 'erro'); return; }
+        if (!socketAberto()) { avisar('melhorias', 'melhorias: socket do jogo não está à mão — dê F5 com o helper instalado', 'erro'); return; }
+        if (mkPremiumAgora() === false) { avisar('melhorias', 'melhorias: a conta está sem Premium — o Mercado é só Premium', 'erro'); return; }
+        ML.lendo = true; ML.erro = null; MK.ocupado = 'melhorias'; MK.parar = false; renderizar();
+        try {
+            ML.progresso = 'equipamento dos 4 (o que cada um já tem)…'; renderizar();
+            if (!EQUIP.res || Date.now() - (EQUIP.t || 0) > 10 * 60000) { MK.ocupado = null; await equipAtualizar({ manterLiberadas: true }); MK.ocupado = 'melhorias'; }
+            if (!EQUIP.res) throw new Error('o Equip não leu o equipamento dos 4' + (EQUIP.erro ? ' (' + EQUIP.erro + ')' : ''));
+            ML.progresso = 'suas ordens (para não sugerir o seu próprio anúncio)…'; renderizar();
+            const rm = await mkLerMinhas();
+            if (rm && rm.erro) throw new Error('suas ordens: ' + mkErroTexto(rm.erro));
+            const nomes = new Set();
+            for (let i = 0; i < ML_CATS.length && !MK.parar; i++) {
+                const cat = ML_CATS[i];
+                ML.progresso = `anúncios de ${MK_CATS[cat] || cat} (${i + 1}/${ML_CATS.length})…`; renderizar();
+                const r = await mkPedir('market_copies', { category: cat });
+                if (r.erro) { MK.copias['cat:' + cat] = { erro: r.erro, t: Date.now() }; log(`melhorias: ${MK_CATS[cat] || cat} não veio — ${mkErroTexto(r.erro)}`, 'erro'); if (MK_PARA_TUDO.has(r.erro)) throw new Error(mkErroTexto(r.erro)); continue; }
+                const x = MK.copias['cat:' + cat];
+                for (const y of ((x && x.copies) || [])) { const n = (y.instance && y.instance.name) || y.itemName; if (n) nomes.add(n); }
+            }
+            ML.progresso = 'ficha dos itens à venda…'; renderizar();
+            const base = await basePorNome([...nomes]);
+            EQUIP.base = Object.assign({}, EQUIP.base || {}, base);
+            mlRecalcular();
+            ML.t = Date.now();
+            const nOf = ML.res ? Object.values(ML.res.porVoc).reduce((s, v) => s + Object.values(v).reduce((a, x) => a + x.ofertas.length, 0), 0) : 0;
+            log(`melhorias: ${ML.nCands} peças à venda conferidas · ${nOf} melhoria(s) segura(s)`, 'ok');
+            avisar('melhorias', `melhorias: ${ML.nCands} peças à venda conferidas — ${nOf ? nOf + ' melhoria(s) encontradas' : 'nada melhor que o que você já tem'}`, nOf ? 'ok' : 'info');
+        } catch (e) { ML.erro = e.message; avisar('melhorias', 'melhorias: ' + e.message, 'erro'); }
+        finally { ML.lendo = false; ML.progresso = ''; if (MK.ocupado === 'melhorias') MK.ocupado = null; renderizar(); }
+    }
+    async function mlComprar(o) {
+        if (!o || ML.comprando) return;
+        if (ML.compradas.has(o.orderId)) { avisar('melhorias', 'melhorias: este anúncio já foi comprado (ou ficou sem resposta) — confira a mochila', 'erro'); return; }
+        const imp = mkImpedimento();
+        if (imp) { avisar('melhorias', 'melhorias: ' + imp, 'erro'); return; }
+        if (MK.ocupado) { avisar('melhorias', 'melhorias: o Mercado está ocupado (' + MK.ocupado + ')', 'erro'); return; }
+        if (!o.recomendada) { avisar('melhorias', 'melhorias: esta oferta não é recomendada (perde encaixe, cara ou ganho só de defesa) — o helper não compra', 'erro'); return; }
+        ML.comprando = o.orderId; MK.ocupado = 'melhorias'; renderizar();
+        try {
+            /* 1. o anúncio ainda está lá, pelo mesmo preço? */
+            const r0 = await mkPedir('market_copies', { category: o.cat });
+            if (r0.erro) throw new Error('não consegui reler o anúncio (' + mkErroTexto(r0.erro) + ') — nada comprado');
+            const x = MK.copias['cat:' + o.cat], y = ((x && x.copies) || []).find(c => c && c.orderId === o.orderId);
+            if (!y) { mlRecalcular(); throw new Error(o.nome + ' não está mais à venda — nada comprado'); }
+            if (Number(y.unitPrice) !== o.preco) { mlRecalcular(); throw new Error(`o preço mudou (${mkFmt(o.preco)} → ${mkFmt(y.unitPrice)}) — nada comprado; confira a lista`); }
+            /* 2. ouro normal */
+            const ouro = mlOuroNormal();
+            if (ouro != null && ouro < o.preco) throw new Error(`ouro normal insuficiente (${mkFmt(ouro)} de ${mkFmt(o.preco)}) — nada comprado`);
+            /* 3. compra: marca ANTES de mandar (sem resposta não vira 2ª compra) */
+            ML.compradas.add(o.orderId);
+            const rid = mkRid();
+            log(`melhorias: comprando ${o.nome} por ${mkFmt(o.preco)} (${VOC_ROTULO[o.voc] || o.voc}, ${slotPt(o.slot)}, +${numBR(o.ganho, 1)} pt)…`, 'info');
+            const r = await mkPedir('market_execute', { orderId: o.orderId, quantity: 1, requestId: rid });
+            if (r.erro) {
+                if (r.erro !== 'sem_resposta') ML.compradas.delete(o.orderId); // recusado pelo servidor: nada saiu da carteira
+                throw new Error(r.erro === 'sem_resposta' ? 'o jogo não respondeu — confira a mochila e o Histórico do Mercado antes de tentar de novo (este anúncio fica bloqueado aqui)' : 'o jogo recusou: ' + mkErroTexto(r.erro));
+            }
+            log(`melhorias: COMPRADO ${o.nome} por ${mkFmt(o.preco)} — está na mochila; equipe pela aba Equip (ATUALIZAR → EQUIPAR)`, 'ok');
+            avisar('melhorias', `melhorias: comprado ${o.nome} por ${mkFmt(o.preco)} — equipe pela aba Equip`, 'ok');
+            mlRecalcular();
+            MK.ocupado = null;
+            try { await equipAtualizar({ manterLiberadas: true }); mlRecalcular(); } catch (e) { falhou('melhorias (reler Equip)', e); }
+        } catch (e) { log('melhorias: ' + e.message, 'erro'); avisar('melhorias', 'melhorias: ' + e.message, 'erro'); }
+        finally { ML.comprando = null; if (MK.ocupado === 'melhorias') MK.ocupado = null; renderizar(); }
+    }
+    const mlEncaixes = (f) => ((f && f.atributos) || []).map(a => `${rotulo(a.id)} ${numBR(a.valor, 2)}`).join(', ');
+    /* os botões de compra pintados nesta tela (índice → oferta): o ligar acha cada um pelo id */
+    function mlLinhaOferta(o) {
+        const i = ML.botoes.push(o) - 1;
+        const pode = o.recomendada && o.cabe !== false && !ML.comprando && !MK.ocupado;
+        const perde = o.perdas.length ? `<div class="tb-ruim">⚠ perde ${o.perdas.map(p => `${escHtml(rotulo(p.id))} ${numBR(p.de, 2)} → ${numBR(p.para, 2)}`).join(', ')}</div>` : '';
+        const enc = mlEncaixes(o.forja);
+        return `<div class="tb-cx" style="margin:3px 0;padding:5px 6px">` +
+            `<div class="tb-lin"><span><b>${escHtml(o.nome)}</b> ${rarTag({ forja: o.forja })}${o.duasMaos ? ' <span class="tb-tag">2 mãos</span>' : ''}</span><span class="${o.cabe === false ? 'tb-ruim' : 'tb-ok'}"><b>${mkFmt(o.preco)}</b> ouro</span></div>` +
+            (enc ? `<div class="tb-mut">${escHtml(enc)}</div>` : '') +
+            `<div>${o.recomendada ? '<b class="tb-ok">✓ RECOMENDADA</b> ' : ''}<span class="tb-ok"><b>+${numBR(o.ganho, 1)} pt</b></span> <span class="tb-mut">(${mkFmt(o.ouroPorPt)} ouro por ponto · paga-se em ~${numBR(o.pagaH, 1)} h de caçada, estimativa)</span></div>` +
+            (o.fontes && o.fontes.length ? `<div class="tb-mut">de onde vem: ${o.fontes.map(f => `${escHtml(rotulo(f.id))} ${numBR(f.de, 2)} → ${numBR(f.para, 2)} (${f.pt > 0 ? '+' : ''}${numBR(f.pt, 1)} pt)`).join(' · ')}</div>` : '') +
+            perde + (o.cabe === false ? `<div class="tb-ruim">falta ouro normal para pagar</div>` : '') +
+            (o.caro ? `<div class="tb-av">⚠ caro para o que dá: leva mais de ${ML_PAGA_MAX_H} h de caçada para se pagar</div>` : '') +
+            (o.refImbuida ? `<div class="tb-av">⚠ a sua peça atual está imbuída: trocando, o imbuement fica na peça velha — troque quando ele acabar</div>` : '') +
+            (o.soDefesa ? `<div class="tb-av">⚠ o ganho vem quase todo de armadura/defesa no Knight — a régua ainda superestima isso (o seu Knight não tem passado aperto)</div>` : '') +
+            `<button type="button" class="tb-bt${o.recomendada ? ' pri' : ''} mini" id="tb-ml-c-${i}" ${pode ? '' : 'disabled'} style="margin-top:3px">${ML.comprando === o.orderId ? 'COMPRANDO…' : o.recomendada ? 'COMPRAR (2 toques)' : 'não recomendada: se quiser, compre pela janela do jogo'}</button></div>`;
+    }
+    function telaMelhorias() {
+        const cfg = mlCfg(), ouro = mlOuroNormal(), prem = mkPremiumAgora();
+        ML.botoes = [];
+        /* ouro e opções mudam a conta (sem rede); recalcula só quando algo mudou */
+        const chave = [ouro, cfg.verPerdas, ML.t, EQUIP.t, ML.compradas.size].join('|');
+        if (ML.res && EQUIP.res && !ML.lendo && ML.chave !== chave) { mlRecalcular(); ML.chave = chave; }
+        const ofertasDe = (lista) => cfg.soCabe ? lista.filter(o => o.cabe !== false) : lista;
+        let h = `<div id="tb-ml">`;
+        h += `<div class="tb-mut">Premium ${prem === true ? '✓' : prem === false ? '<b class="tb-ruim">não</b>' : '?'} · ouro normal ${ouro == null ? '—' : '<b>' + mkFmt(ouro) + '</b>'} · Equip ${EQUIP.t ? 'lido ' + mkHora(EQUIP.t) : 'não lido'} · mercado ${ML.t ? 'lido ' + mkHora(ML.t) : 'não lido'}</div>`;
+        h += `<button type="button" class="tb-bt pri tb-larga" id="tb-ml-procurar" ${ML.lendo || MK.ocupado ? 'disabled' : ''} style="margin:5px 0">${ML.lendo ? 'PROCURANDO…' : 'PROCURAR MELHORIAS NO MERCADO'}</button>`;
+        if (ML.lendo && ML.progresso) h += `<div class="tb-av">${escHtml(ML.progresso)}</div>`;
+        h += `<div class="tb-linha"><label class="tb-l"><input type="checkbox" id="tb-ml-cabe" ${cfg.soCabe ? 'checked' : ''}> só o que cabe no meu ouro</label>` +
+             `<label class="tb-l"><input type="checkbox" id="tb-ml-perdas" ${cfg.verPerdas ? 'checked' : ''}> mostrar também as que perdem encaixe</label></div>`;
+        if (ML.erro) h += `<div class="tb-cx tb-ruim">${escHtml(ML.erro)}</div>`;
+        if (!ML.res) {
+            h += `<div class="tb-mut" style="margin-top:6px">Lê o equipamento dos 4 e todos os equipamentos à venda no Mercado (8 categorias, ~40 s) e mostra só o que é <b>melhor do que a melhor peça que cada um já tem</b> — vestida, no depósito ou na mochila — <b>sem perder</b> regen. de mana (todos), regen. de vida (Knight) nem nível mágico/skill/dano na arma e no colar. Só lê: nada é comprado sem você clicar 2 vezes.</div>`;
+            return h + `</div>`;
+        }
+        const top = ofertasDe(ML.res.top);
+        h += `<h4 style="margin:8px 0 2px">Compras recomendadas <span class="tb-mut">(seguras, que se pagam em até ${ML_PAGA_MAX_H} h; mais ganho por ouro primeiro)</span></h4>`;
+        h += top.length ? top.map(o => `<div class="tb-mut" style="margin-top:4px"><b>${escHtml(VOC_ROTULO[o.voc] || o.voc)} · ${escHtml(slotPt(o.slot))}</b></div>` + mlLinhaOferta(o)).join('')
+            : `<div class="tb-ok">Nada no Mercado agora é melhor (e seguro) do que o que vocês já têm${cfg.soCabe ? ' dentro do seu ouro' : ''}.</div>`;
+        for (const v of VOCS) {
+            const slots = ML.res.porVoc[v] || {};
+            const linhas = [];
+            for (const s of SLOTS_EQUIP) {
+                const x = slots[s]; if (!x) continue;
+                const of = ofertasDe(x.ofertas).slice(0, 3);
+                const ref = x.ref ? `${escHtml(x.ref.nome)}${mlEncaixes(x.ref.forja) ? ' <span class="tb-mut">(' + escHtml(mlEncaixes(x.ref.forja)) + ')</span>' : ''} · ${numBR(x.refPt, 1)} pt` : '<span class="tb-mut">vazio</span>';
+                const guardada = x.temMelhorGuardada ? `<div class="tb-av">você já tem uma melhor guardada (${escHtml(x.ref.nome)}): equipe pela aba Equip antes de comprar</div>` : '';
+                if (!of.length && !guardada) continue;
+                linhas.push(`<div style="margin-top:5px"><b>${escHtml(slotPt(s))}</b>: ${ref}</div>` + guardada + of.map(o => mlLinhaOferta(o)).join(''));
+            }
+            const n = Object.values(slots).reduce((a, x) => a + ofertasDe(x.ofertas).length, 0);
+            h += `<details class="tb-aj" data-k="ml-${v}"><summary>${escHtml(VOC_ROTULO[v] || v)} — ${n ? n + ' melhoria(s)' : 'nada melhor à venda'}</summary><div>${linhas.join('') || '<div class="tb-mut">Todos os espaços já estão no melhor que o Mercado tem hoje.</div>'}</div></details>`;
+        }
+        h += aj('ml-como', `<b>Ponto (pt)</b> é a régua do Equip: 1 pt ≈ +1 % do dano da party ≈ 450 de ouro/h; "paga-se em ~X h" = preço ÷ (ganho × 450). A comparação é com a <b>melhor peça que o personagem já tem</b> naquele espaço (não só a vestida) e pesa tudo o que a peça dá (armadura, regen., resistências, skill, dano, crítico em par). <b>Recomendada</b> = não perde encaixe nobre (regen. de mana em todos, regen. de vida no Knight, nível mágico/skill/dano/crítico na arma e no colar), se paga em até ${ML_PAGA_MAX_H} h de caçada e, no Knight, o ganho não vem quase todo de armadura/defesa (a régua ainda superestima defesa). Só a recomendada tem botão de compra; as outras aparecem por personagem com o motivo. Marcando "mostrar também", aparecem até as que perdem encaixe. O Mercado devolve os anúncios de cada categoria como o jogo manda: se a categoria tiver muitos, pode faltar algum. Arma de 2 mãos do Knight concorre com arma + escudo. O seu próprio anúncio nunca aparece. <b>Comprar</b> (wiki /mercado): é imediato e não pode ser desfeito; Premium não paga taxa; só ouro normal (não o travado); o item vai para a mochila (cheia: depósito). Antes de comprar, o helper relê o anúncio e confere preço e ouro. Depois, equipe pela aba Equip.`, 'como funciona');
+        return h + `<div class="tb-mut" style="margin-top:6px">${ML.nCands} peças à venda conferidas. Só COMPRAR (2 toques) envia comando ao jogo.</div></div>`;
+    }
+    function ligarMelhorias() {
+        const b = $('#tb-ml-procurar'); if (b) b.onclick = () => mlProcurar();
+        const c1 = $('#tb-ml-cabe'); if (c1) c1.onchange = () => { guardar('melhorias_cfg', Object.assign(mlCfg(), { soCabe: c1.checked })); renderizar(); };
+        const c2 = $('#tb-ml-perdas'); if (c2) c2.onchange = () => { guardar('melhorias_cfg', Object.assign(mlCfg(), { verPerdas: c2.checked })); mlRecalcular(); renderizar(); };
+        (ML.botoes || []).forEach((o, i) => {
+            const btn = $('#tb-ml-c-' + i);
+            if (!btn || btn.disabled) return;
+            ligarDoisToques(btn, 'ml-' + o.orderId + '-' + o.voc + '-' + o.slot, `CONFIRMAR: comprar por ${mkFmt(o.preco)}?`, () => mlComprar(o));
+        });
+    }
+
     function telaRadar() {
         rdGarantirCss();
         const sub = ler('radar_sub', 'mapas');
@@ -12461,7 +12780,7 @@
         const mesmaAba = _abaPintada === ABA;
         const html = ABA === 'estado' ? telaEstado() : ABA === 'autohunt' ? telaAutoHunt() : ABA === 'scan' ? telaScan()
             : ABA === 'magia' ? telaMagia() : ABA === 'analise' ? telaAnalise() : ABA === 'equip' ? telaEquip()
-            : ABA === 'progresso' ? telaProgresso() : ABA === 'mercado' ? telaMercado() : ABA === 'radar' ? telaRadar() : `<div id="tb-log"></div>`;
+            : ABA === 'progresso' ? telaProgresso() : ABA === 'mercado' ? telaMercado() : ABA === 'melhorias' ? telaMelhorias() : ABA === 'radar' ? telaRadar() : `<div id="tb-log"></div>`;
         if (mesmaAba && html === _htmlPintado) { if (ABA === 'log') pintarLog(); return; }
         if (mesmaAba) { const f = campoEmUso(c); if (f) { adiarRepinte(f); return; } }
         /* v2.3.0 — trocar o innerHTML zera a rolagem: marcar um mapa no Scan
@@ -12483,6 +12802,7 @@
         if (ABA === 'progresso') ligarProgresso();
         if (ABA === 'mercado') ligarMercado();
         if (ABA === 'radar') ligarRadar(); // v2.13.0
+        if (ABA === 'melhorias') ligarMelhorias(); // v2.18.0
         if (ABA === 'scan') ligarScan(); // v2.11 — handlers do Scan ao lado da tela
         if (ABA === 'autohunt') ligarAutoHunt(); // v2.11 — handlers do Auto Hunt ao lado da tela
     }
@@ -12593,6 +12913,8 @@
         verificarAtualizacao, get NOVA_VERSAO() { return NOVA_VERSAO; },
         // v2.11 — Mercado (modelo puro e o estado lido)
         mkMontar, mkSugerir, mkTaxa, mkRevisao, mkVendas, get MERCADO() { return MK; },
+        // v2.18.0 — Melhorias (modelo puro e o estado lido; comprar NÃO fica exposto)
+        mlAvaliar, mlCandidatosMercado, get MELHORIAS() { return ML; },
         // v2.13.0 — Radar (estimativa e calibração; só leitura)
         estimarMapa, tpEstimar, tpCalibrar, registrarMotorRanking, get RADAR() { return RADAR; },
         // v2.17.0 — Invasão (leituras e o plano; o salvar só pelo botão)

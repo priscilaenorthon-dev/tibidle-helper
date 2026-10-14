@@ -833,4 +833,50 @@ t('vm (2.15.1): VENDER NO NPC das sobras — outra peça de mesmo nome na mochil
     assert(!E.vendendo && !E.equipando && E.vendaConf == null, 'a aba Equip ficou travada');
 });
 
+/* v2.18.0 — aba Melhorias: PROCURAR só lê; COMPRAR = 2 toques, relê o anúncio e manda market_execute {orderId, quantity, requestId} */
+async function mundoMelhorias(extra) {
+    const cop = (orderId, preco, regen) => ({ orderId, unitPrice: preco, sellerName: 'Outro', instance: { iid: 'i-' + orderId, name: 'Leather Boots', forja: { raridade: 1, atributos: [{ id: 'regen_mana', valor: regen }] } } });
+    const copias = { botas: [cop('c1', 1500, 3.4), cop('c2', 100, 1.0), cop('meu', 50, 5)] };
+    const M = await mundoMercado(Object.assign({ catalogo: CAT_BASE, copias, minhas: [{ id: 'meu', side: 'SELL', asset: 'ITEM', itemName: 'Leather Boots', unitPrice: 50, quantityTotal: 1, quantityRemaining: 1, status: 'OPEN', expiresAt: 1790000000000 }],
+        ls: { tb_helper_ui: JSON.stringify({ aba: 'melhorias', aberta: true, oculto: false }) },
+        rotas: { '/assets/v185/items-by-name.json': { 'Leather Boots': 3552 }, '/item/info': [{ id: 3552, name: 'Leather Boots', attrs: { slot: 'feet', armor: 1 }, sell: 2 }] } }, extra || {}));
+    const atual = { iid: 'b-dru', nome: 'Leather Boots', slot: 'boots', attrs: { slot: 'feet', armor: 1 }, forja: { raridade: 1, atributos: [{ id: 'regen_mana', valor: 2 }] }, origem: 'corpo', dono: 'DRUID' };
+    const E = M.W.H.EQUIP;
+    E.res = { porVoc: { DRUID: { boots: { atual, atualPt: M.W.H.pontuarPeca(atual, 'DRUID', null).pontos, melhor: null, melhorPt: 0 } } }, usadas: new Set(), reservas: new Set(), dispensaveis: [], temporarios: [] };
+    E.t = M.W.agora; E.base = {}; E.ctx = null;
+    return M;
+}
+t('vm (2.18.0): Melhorias — PROCURAR só lê (ordens + 8 categorias), acha a bota de regen. 3,4 e nunca o próprio anúncio', async () => {
+    const M = await mundoMelhorias();
+    await M.clicar('tb-ml-procurar'); await M.W.avancar(90000);
+    assert.strictEqual(M.S.tipos(...ESCRITA).length, 0, 'PROCURAR mandou escrita: ' + M.S.tipos(...ESCRITA).map(x => x.o.type));
+    assert.strictEqual(M.S.tipos('market_copies').length, 8, 'as 8 categorias de equipamento');
+    const ML = M.W.H.MELHORIAS, of = ML.res.porVoc.DRUID.boots.ofertas;
+    assert.strictEqual(JSON.stringify(of.map(o => o.orderId)), '["c1"]', JSON.stringify(of.map(o => [o.orderId, o.ganho])));
+    assert(of[0].seguro && of[0].ganho > 0);
+    assert(/PROCURAR MELHORIAS/.test(M.W.porId.get('tb-corpo').innerHTML) && M.W.porId.get('tb-ml-c-0'), 'botão de compra não pintou');
+});
+t('vm (2.18.0): COMPRAR — 1º toque não manda nada; 2º relê o anúncio e manda market_execute {orderId, quantity 1, requestId}', async () => {
+    const M = await mundoMelhorias({ interceptar: (o) => o.type === 'market_execute' ? { type: 'market_execute_result', data: { requestId: o.data.requestId, trade: { id: 't1' }, gold: 1, goldLocked: 0, bag: {}, coins: 0 } } : undefined });
+    await M.clicar('tb-ml-procurar'); await M.W.avancar(90000);
+    const nCopias = M.S.tipos('market_copies').length;
+    await M.clicar('tb-ml-c-0');
+    await M.W.avancar(1000);
+    assert.strictEqual(M.S.tipos('market_execute').length, 0, '1º toque comprou');
+    await M.clicar('tb-ml-c-0'); await M.W.avancar(20000);
+    assert.strictEqual(M.S.tipos('market_copies').length, nCopias + 1, 'não releu o anúncio antes de comprar');
+    const ex = M.S.tipos('market_execute');
+    assert.strictEqual(ex.length, 1);
+    igual(semRid(ex[0].o.data), { orderId: 'c1', quantity: 1 });
+    assert(ex[0].o.data.requestId, 'sem requestId');
+    assert(/COMPRADO Leather Boots por 1\.500/.test(logTxt(M.W)), logTxt(M.W));
+});
+t('vm (2.18.0): COMPRAR — anúncio que sumiu na releitura: nada é comprado', async () => {
+    let n = 0;
+    const M = await mundoMelhorias({ interceptar: (o) => { if (o.type !== 'market_copies' || o.data.category !== 'botas') return undefined; n++; return n === 1 ? undefined : { type: 'market_copies_result', data: { copies: [] } }; } });
+    await M.clicar('tb-ml-procurar'); await M.W.avancar(90000);
+    await M.clicar('tb-ml-c-0'); await M.clicar('tb-ml-c-0'); await M.W.avancar(20000);
+    assert.strictEqual(M.S.tipos('market_execute').length, 0, 'comprou anúncio que sumiu');
+    assert(/não está mais à venda/.test(logTxt(M.W)), logTxt(M.W));
+});
 rodar();
