@@ -528,4 +528,13 @@ t('2.16.0: Paladino — mínimo do tiro é 60 % do máximo (update 1.0.13): +1 d
     assert(P.distancia > 0.26 * 0.05 * 100 * (0.045 * 25) / (67 / 5 + 0.045 * 25 * 36), 'deveria valer mais que pela fórmula antiga');
     assert(M.REGRAS_VOCACAO.PALADIN.some(x => /BESTA/.test(x)) && M.REGRAS_VOCACAO.SORCERER.some(x => /NÍVEL MÁGICO/.test(x)), 'regras por vocação em palavras');
 });
+/* 2.18.1 — dono: "arco e besta têm status e dano também": o ataque e o acerto do arco/besta contam no Paladino */
+t('arco/besta: ataque (composite hornbow 3) e acerto (elvish bow 5) contam no Paladino; arco simples continua 0', () => {
+    const arma = (nome) => ({ nome, slot: 'weapon', attrs: base[nome].attrs, forja: F(0) });
+    const pal = (nome) => M.pontuarPeca(arma(nome), 'PALADIN', null);
+    assert.strictEqual(pal('bow').pontos, 0);
+    assert(pal('composite hornbow').detalhe.some(d => d.id === 'attack' && d.pt > 0), 'ataque do hornbow não contou');
+    assert(pal('elvish bow').detalhe.some(d => d.id === 'hitchance' && d.pt > 0), 'acerto do elvish bow não contou');
+    assert(pal('composite hornbow').pontos > pal('bow').pontos && pal('elvish bow').pontos > pal('bow').pontos);
+});
 console.log(`\n${n} testes ok` + (pulados ? ` · ${pulados} pulados (sem o estado da conta em data/)` : ''));

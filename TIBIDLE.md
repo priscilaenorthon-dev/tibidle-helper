@@ -5048,3 +5048,12 @@ modelo. Abas do Progresso numa linha só (6 abas: a Forja estava quebrando para 
   irreversível, sem taxa para Premium, item na mochila (cheia: depósito). Depois relê o Equip; equipar é na aba Equip.
 - Testes: `testes/melhorias.test.js` (10) e 3 no `vm` do `mercado.test.js` (PROCURAR só lê; 1º toque não compra; anúncio
   que sumiu na releitura não é comprado).
+
+## 2.18.1 (14/10) — arco e besta: ataque e acerto contam no Paladino
+- Dono: "arco e besta têm status e dano também, igual todos os demais itens". Os encaixes da forja já contavam; o
+  ataque e a chance de acerto da própria arma não (peso 0). `/item/info`: composite hornbow attack 3 / acerto 2,
+  elvish bow acerto 5, crossbow (bolt 30) e bow (arrow 25) sem ataque próprio.
+- Paladino: 1 de ataque do arco/besta vale o mesmo que 1 de ataque da munição (soma no tiro); +1 % de acerto ≈ +1,1 %
+  no dano do tiro. São pesos pequenos porque, medido, ~95 % do dano do Paladino é runa + magia (o nível mágico e o
+  dano mágico da forja continuam sendo o que mais pesa na arma dele).
+- Nota: o jogo já está nos assets v196 (o helper acha a versão sozinho pela página).

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.18.0
+// @version      2.18.1
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.18.0';
+    const VERSAO = '2.18.1';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -6015,6 +6015,9 @@
             const tiroMax = n5 + 0.09 * MUNICAO_GRATIS.arrow * sk.dist;
             P.distancia = P.skilldist = _r(s * (1 - fm) * _pct(0.09 * MUNICAO_GRATIS.arrow, tiroMax));
             P.municao_atk = _r(s * (1 - fm) * _pct(0.09 * sk.dist, tiroMax)); // por ponto de ataque da munição grátis
+            /* v2.18.1 — dono, 14/10: "arco e besta têm status e dano também". O ataque do arco/besta (/item/info: composite
+             * hornbow 3) soma ao da munição no tiro — vale o mesmo que 1 ponto de ataque da munição. */
+            P.attack = P.municao_atk;
             P.nivel_magico = P.magiclevelpoints = _r(s * fs * _pct(4, n5 + 4 * sk.ml)); // Caldera/Missile (a runa ignora ML de item)
         } else {
             const onda = voc === 'SORCERER' ? _pct(6.75, n5 + 6.75 * sk.ml) // Energy Wave: n/5 + 4,5–9·ML
@@ -6058,7 +6061,9 @@
         /* ---- conta ---- */
         P.capacidade = 0.004; // 100 oz ≈ 0,4 pt (menos idas à cidade)
         P.chance_de_loot = 0.9; // +1 % de drop ≈ 400 de ouro/h (vale o maior da party)
-        P.hitchance = 0;
+        /* v2.18.1 — chance de acerto do arco/besta (elvish bow 5, hornbow 2): +1 % de acerto ≈ +1,1 % no dano do tiro
+         * (acerto de base ~90 %); só o Paladino atira — nos outros vale 0 */
+        P.hitchance = voc === 'PALADIN' ? _r(s * (1 - fm) * 1.1) : 0;
         return P;
     }
     /* v2.11.6 — PARES (crítico e roubo de vida): o ganho de uma peça depende do
