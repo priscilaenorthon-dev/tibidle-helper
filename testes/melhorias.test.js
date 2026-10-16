@@ -12,9 +12,14 @@ const BASE = {
     'leather boots': { attrs: { slot: 'feet', armor: 1 } },
     'crystal ring': { attrs: { slot: 'ring' } },
     'steel helmet': { attrs: { slot: 'head', armor: 6 } },
-    'wand of vortex': { attrs: { weaponType: 'wand', wandType: 'energy', fromDamage: 8, toDamage: 18, mana: 1, vocation: 'sorcerer' } },
+    'wand of vortex': { attrs: { weaponType: 'wand', wandType: 'energy', level: 6, fromDamage: 8, toDamage: 18, mana: 1, vocation: 'sorcerer' } },
     'two handed sword': { attrs: { weaponType: 'sword', slotType: 'two-handed', attack: 30 } },
-    'stone skin amulet': { attrs: { slot: 'necklace', charges: 5, armor: 3 } }
+    'stone skin amulet': { attrs: { slot: 'necklace', charges: 5, armor: 3 } },
+    /* fichas reais (/item/info, testes/fixtures/itens.json) */
+    'wand of inferno': { attrs: { weaponType: 'wand', level: 33, mana: 8, fromDamage: 56, toDamage: 74, wandType: 'fire', vocation: 'Sorcerer;true, Master Sorcerer', slot: 'hand' } },
+    'snakebite rod': { attrs: { primarytype: 'rods', weaponType: 'wand', level: 6, mana: 2, fromDamage: 8, toDamage: 18, wandType: 'earth', vocation: 'Druid;true, Elder Druid', slot: 'hand' } },
+    'terra rod': { attrs: { primarytype: 'rods', weaponType: 'wand', level: 26, mana: 8, fromDamage: 37, toDamage: 53, wandType: 'earth', vocation: 'Druid;true, Elder Druid', slot: 'hand' } },
+    'underworld rod': { attrs: { primarytype: 'rods', weaponType: 'wand', level: 42, mana: 13, fromDamage: 56, toDamage: 74, wandType: 'death', vocation: 'Druid;true, Elder Druid', slot: 'hand' } }
 };
 const corpo = (iid, nome, slot, dono, forja) => ({ iid, nome, slot, attrs: BASE[nome].attrs, forja: forja || F(0), origem: 'corpo', dono });
 const copia = (orderId, nome, preco, forja, extra) => Object.assign({ orderId, unitPrice: preco, sellerName: 'Outro', instance: { iid: 'i' + orderId, name: nome, forja: forja || F(0) } }, extra || {});
@@ -141,5 +146,53 @@ t('2.19.0 comprar × forjar: encaixe vazio vai direto ao Atributo; Lendário che
     assert.strictEqual(M.mlForjaMaisBarata({ tipo: 'cheia' }, { ouroPorPt: 1e9 }), false);
     const o = r.porVoc.SORCERER.boots.ofertas[0];
     assert(o && typeof o.forjaMaisBarata === 'boolean' && o.forjaMaisBarata === M.mlForjaMaisBarata(fj, o), JSON.stringify(o && [o.ouroPorPt, fj.ouroPorPt]));
+});
+/* 2.19.5 — dono, 16/10: "tá recomendando sempre a primeira rod e wand; eu tô com uma rod e uma wand boas e ele sugere regredir" */
+const magos = (extra) => vestidos().concat([corpo('Sw', 'wand of inferno', 'weapon', 'SORCERER', F(0)), corpo('Dw', 'terra rod', 'weapon', 'DRUID', F(0))], extra || []);
+t('2.19.5 wand/rod nunca regride: vortex e snakebite forjadas com +1 ML ficam de fora (contadas como escondidas)', () => {
+    const porVoc = cenario(magos());
+    const c = M.mlCandidatosMercado({ armas: [copia(200, 'wand of vortex', 900, F(1, ['nivel_magico', 1])), copia(201, 'snakebite rod', 800, F(1, ['nivel_magico', 1]))] }, BASE);
+    /* sem o piso, a régua dava a vortex +1 ML na frente da inferno: o caso do dono */
+    const semPiso = M.mlAvaliar({ SORCERER: { weapon: { atual: null, melhor: { nome: 'x', slot: 'weapon', attrs: BASE['wand of inferno'].attrs, forja: F(0) } } } }, c, null, {});
+    assert(semPiso.porVoc.SORCERER.weapon.ofertas.length === 0, 'a referência sem "atual" também é piso');
+    const r = M.mlAvaliar(porVoc, c, null, {});
+    for (const v of ['SORCERER', 'DRUID']) {
+        const x = r.porVoc[v].weapon;
+        assert.strictEqual(x.ofertas.length, 0, v + ': ' + JSON.stringify(x.ofertas.map(o => [o.nome, o.ganho])));
+        assert.strictEqual(x.escondidas.regride, 1, v);
+    }
+    assert(!r.top.some(o => o.slot === 'weapon'), 'nenhuma wand/rod menor nas compras recomendadas');
+    assert.strictEqual(r.porVoc.SORCERER.weapon.piso.nome, 'wand of inferno');
+    assert.strictEqual(r.porVoc.SORCERER.weapon.piso.nivel, 33);
+});
+t('2.19.5 wand/rod do mesmo nível ou acima continua: underworld rod +1 ML (nível 42) aparece para o Druida da terra rod', () => {
+    const porVoc = cenario(magos());
+    const c = M.mlCandidatosMercado({ armas: [copia(210, 'underworld rod', 50000, F(1, ['nivel_magico', 1])), copia(211, 'terra rod', 9000, F(1, ['nivel_magico', 1]))] }, BASE);
+    const r = M.mlAvaliar(porVoc, c, null, {});
+    const of = r.porVoc.DRUID.weapon.ofertas;
+    assert.deepStrictEqual(JSON.stringify(of.map(o => o.orderId).sort()), JSON.stringify([210, 211]), JSON.stringify(of.map(o => [o.nome, o.ganho])));
+    const u = of.find(o => o.orderId === 210);
+    assert.strictEqual(u.ficha.nivel, 42);
+    assert.strictEqual(r.porVoc.DRUID.weapon.escondidas.regride, 0);
+});
+t('2.19.5 vortex +1 ML guardada no depósito não vira "melhor guardada" de quem veste a inferno', () => {
+    const porVoc = cenario(magos([{ iid: 'dv', nome: 'wand of vortex', slot: 'weapon', attrs: BASE['wand of vortex'].attrs, forja: F(1, ['nivel_magico', 1]), origem: 'depósito', dono: null }]));
+    const x0 = porVoc.SORCERER.weapon;
+    assert.strictEqual(x0.melhor && x0.melhor.nome, 'wand of vortex', 'o Equip (régua) ainda acha a vortex +1 ML melhor — é o que a Melhorias não pode repetir');
+    const c = M.mlCandidatosMercado({ armas: [copia(220, 'wand of inferno', 30000, F(1, ['regen_mana', 3]))] }, BASE);
+    const r = M.mlAvaliar(porVoc, c, null, {});
+    const x = r.porVoc.SORCERER.weapon;
+    assert.strictEqual(x.temMelhorGuardada, false);
+    assert.strictEqual(x.ref.nome, 'wand of inferno', 'a referência é a inferno vestida');
+});
+t('2.19.5 elemento neutro na compra e nível exigido acima do da conta fica de fora', () => {
+    const porVoc = cenario(magos());
+    const c = M.mlCandidatosMercado({ armas: [copia(230, 'underworld rod', 50000, F(1, ['nivel_magico', 1]))] }, BASE);
+    const neutro = M.mlAvaliar(porVoc, c, null, {}), imune = M.mlAvaliar(porVoc, c, { notas: { COMBAT_FIREDAMAGE: 0, COMBAT_DEATHDAMAGE: 0 } }, {});
+    assert.strictEqual(imune.porVoc.SORCERER.weapon.refPt, neutro.porVoc.SORCERER.weapon.refPt, 'mapa imune a fogo não derruba a inferno na compra');
+    assert.strictEqual(imune.porVoc.DRUID.weapon.ofertas.length, neutro.porVoc.DRUID.weapon.ofertas.length);
+    const baixo = M.mlAvaliar(porVoc, c, { nivel: 40 }, {});
+    assert.strictEqual(baixo.porVoc.DRUID.weapon.ofertas.length, 0);
+    assert.strictEqual(baixo.porVoc.DRUID.weapon.escondidas.semNivel, 1);
 });
 console.log(`\n${n} testes ok`);

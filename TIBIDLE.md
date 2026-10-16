@@ -5133,3 +5133,20 @@ modelo. Abas do Progresso numa linha só (6 abas: a Forja estava quebrando para 
   poções 107,7k/h medidos nela" contra o Analisador "EXP RAW/H 93,5k · LUCRO/H −22,6k". Histerese: a mesma sugestão nos
   recálculos de 22:54 e 22:56. As sugestões ainda mudam quando a calibração (abates, loot, poções) muda de minuto para
   minuto — a histerese só segura a anterior enquanto ela passa no corte.
+
+## 2.19.5 (16/10) — Melhorias: wand/rod nunca regride
+- Dono: "tá recomendando sempre a primeira rod e wand; não é isso que eu quero, tem que bloquear; eu tô com uma rod e uma
+  wand boas e ele sugere regredir". Causa: a régua do Equip dá pouco ao tiro da wand/rod (~0,14 tiro/s, mana curta) e
+  cobra a mana de cada tiro; uma vortex/snakebite (nível 6, 1–2 de mana) com +1 ML forjado passava na frente de
+  inferno/terra rod/hailstorm (nível 26–33, 8–13 de mana) — e, por serem baratas, iam para o topo das recomendadas.
+- `mlAvaliar` (`@@MELHORIAS`): no espaço da arma, o **piso** é a maior wand/rod que o personagem já tem (vestida ou a
+  melhor guardada). Oferta com nível exigido menor OU dano médio do tiro menor que o piso fica **de fora** — nem aparece,
+  nem com "mostrar também". A tela conta as escondidas ("🔒 N wand/rod menores que a sua…") e mostra nível, dano,
+  elemento e mana por tiro de cada wand/rod. Uma guardada menor que a vestida não vira referência nem "melhor guardada".
+- Entre as do mesmo nível ou acima, a régua escolhe pelas linhas da forja, o dano e a mana; as linhas nobres (nível
+  mágico, dano…) continuam sem poder cair.
+- Compra = muitos mapas: o elemento da wand/rod conta **neutro** na Melhorias (o mapa de hoje imune a fogo não derruba a
+  inferno), como o Equip já fazia para as sobras. Peça com nível exigido acima do da conta não aparece.
+- A aba Equip não mudou (ainda pode preferir uma vortex +1 ML guardada — decisão de 29/09 e 13/10: "+1 ML vale mais que
+  wand mais forte").
+- Testes: 4 novos em `melhorias.test.js` (falham na 2.19.4).
