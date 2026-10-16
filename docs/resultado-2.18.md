@@ -91,3 +91,18 @@ Backup dos presets dos 4 antes de mexer: `.playwright-mcp/backup-presets-2026-10
    ou só trocar a sugestão quando a nova ganha da anterior por > 1 %.
 3. Régua da defesa do Knight: com 1 bloqueio/s e folga ¾, defesa 34 = 68,9 pt (≈ 69 % do dano da party). Coerente com a
    2.18.2, mas generosa; rever quando houver medida de dano bloqueado no frame.
+
+## Depois do teste: 2.19.2 → 2.19.4 (mesma noite, 22:50–23:05)
+- **Lucro previsto × medido (pendência 1) — resolvido.** Causa: o catálogo dava 3,6 de ouro por abate e o Analisador mede
+  40–49; e as poções custam ~108k/h hoje (poção do Feiticeiro a 30 % + poções de vida) contra 41k/h em 13/10. Agora, com
+  ≥ 3 min e ≥ 100 abates, o loot por abate e as poções/h do Analisador entram na conta (fator até ×3 nas poções de mana e
+  runas; o resto como custo fixo). Conferido na 2.19.3: base **−22,4k/h** contra Analisador **−22,6k/h**; XP 92,9k contra
+  93,5k raw.
+- **Sugestões instáveis (pendência 2) — atenuado.** Histerese: a sugestão anterior fica enquanto passa no corte e a nova
+  não ganha dela por > 1 % de XP. Conferido: 22:54 e 22:56 com a mesma sugestão. Quando a calibração do minuto muda o
+  bastante para a anterior reprovar, a sugestão ainda troca (23:00 → 23:03: Druida "tirar Eternal Winter" saiu).
+- Com o custo real das poções, o simulador passou a valorizar cortar mana: "Druida: tirar Eternal Winter · −0,1 % xp ·
+  +47k/h" apareceu às 23:00 e saiu às 23:03 — não aplicado nem medido. O ajuste do Feiticeiro medido (+31k/h) ficou entre
+  a previsão com fator ×1 (+15k) e a com ×3 (~+45k).
+- Versões: 2.19.1 (nota "só vale em conjunto"), 2.19.2 (loot/poções medidos + histerese), 2.19.3 (custo fixo), 2.19.4
+  (texto da nota). Testes: 42 no `inteligente.test.js`, 14 arquivos ok.

@@ -5125,3 +5125,11 @@ modelo. Abas do Progresso numa linha só (6 abas: a Forja estava quebrando para 
   sobra das poções medidas depois do fator (`supH − custoH`) entra como `ctx.custoFixoH` em `metricasInt`: igual para
   todos os candidatos, não muda nenhuma comparação, e o lucro absoluto bate com o Analisador. A linha da base diz
   "loot 44,5/abate e poções 109k/h medidos nela". Teste ampliado em `inteligente.test.js`.
+
+## 2.19.4 (15/10) — texto da nota "só compensa junto"
+- Ao vivo: "Cavaleiro: Berserk → Lesser Front Sweep · +1,7 % xp · +4,8k/h" veio com a nota "não chega a +2 % nem a +3k/h",
+  mas o que reprovou sozinha foi a segurança da party (`seguro`), não o lucro. A nota agora cita os quatro critérios.
+- Conferido ao vivo na 2.19.3 (Yalahar Worker Golem, 27 min): base "92,9k xp/h · lucro −22,4k/h · loot 44,1/abate e
+  poções 107,7k/h medidos nela" contra o Analisador "EXP RAW/H 93,5k · LUCRO/H −22,6k". Histerese: a mesma sugestão nos
+  recálculos de 22:54 e 22:56. As sugestões ainda mudam quando a calibração (abates, loot, poções) muda de minuto para
+  minuto — a histerese só segura a anterior enquanto ela passa no corte.
