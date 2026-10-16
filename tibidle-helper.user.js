@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.19.6
+// @version      2.20.0
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.19.6';
+    const VERSAO = '2.20.0';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -4437,7 +4437,8 @@
         let mudou = false;
         for (const p of party) {
             if (!p || !p.vocation || !p.skills) continue;
-            const x = { dist: _skill(p, ['distance']), melee: _skill(p, ['melee', 'sword', 'axe', 'club', 'fist']), ml: _skill(p, ['magicLevel', 'magic', 'maglevel']) };
+            const x = { dist: _skill(p, ['distance']), melee: _skill(p, ['melee', 'sword', 'axe', 'club', 'fist']), ml: _skill(p, ['magicLevel', 'magic', 'maglevel']),
+                        escudo: _skill(p, ['shielding', 'shield']) }; // v2.20.0 — a skill Escudo entra no bloqueio oficial
             const bons = Object.fromEntries(Object.entries(x).filter(([, v]) => v != null));
             /* v2.11 — frame sem as skills (ou com nome que o helper não conhece)
              * dava {} e APAGAVA o que já tinha sido visto; agora só soma. */
@@ -6140,7 +6141,71 @@
     }
     /* v2.9.0 — as skills do momento (ctx.sk[VOC] = {melee, atkArma, dist, ml});
      * o que faltar cai na referência. */
-    const REF_SK = { nivel: 67, melee: 33, atkArma: 33, dist: 36, ml: 25 };
+    const REF_SK = { nivel: 67, melee: 33, atkArma: 33, dist: 36, ml: 25, escudo: 33 };
+    /* =========================================================================
+     *  ⭐ v2.20.0 — FÓRMULAS OFICIAIS DO COMBATE (dono, 16/10: "quero um simulador fiel, não achismo").
+     *  Fontes: o código do cliente do jogo (play.tibidle.com/_next/static/chunks — constantes de mitigação por
+     *  vocação, efeitos dos suportes), a wiki /como-o-dano-e-calculado (16/10, com exemplos numéricos) e o servidor
+     *  aberto Canary (opentibiabr/canary, de que o Tibidle deriva: vocations.xml e creature.cpp/player.cpp batem
+     *  número a número com os exemplos da wiki). O que é regra do jogo, não medida:
+     *   • golpe básico a cada 2 s: Knight máx = 0,085·atk·corpo a corpo + nível/5, mín = nível/5; Paladino máx = 0,09·
+     *     (munição + arco)·distância + nível/5, mín = 60 % do máx; wand/rod = dano fixo (skill e nível não entram);
+     *   • golpe corpo a corpo de criatura (sempre no Knight), nesta ordem: proteção do equipamento (%, antes de tudo) →
+     *     bloqueio do escudo (se houver carga: tira entre metade e o total de D, com D = (Escudo/4 + 2,23) × defesa do
+     *     escudo × 0,5 × 0,16, truncado; 2 cargas, volta 1 por segundo) → armadura (acima de 3 tira entre a/2 e
+     *     a − (a mod 2 + 1); 1 a 3 tira 1) → mitigação (% pequena: (Escudo × fator + 2,05 × defesa do escudo)/100 × 0,8);
+     *   • magia de criatura (acerta quem está no quadrado): proteção ao elemento e proteção mágica da forja (compostas,
+     *     teto 100 %) → mitigação. NUNCA passa por escudo nem armadura.
+     *  Exemplos da wiki que os testes conferem: Escudo 10 + Wooden Shield 14 → bloqueio 2–5, mitigação 0,34 %; Escudo 80
+     *  + defesa 30 → 1,33 %; armadura 7 → tira 3–5; Knight nível 8 skill 10 Sword 14 → 1–14; Paladino Bow+Arrow 25 → 14–24.
+     * ====================================================================== */
+    const COMBATE_VOC = { KNIGHT: { mit: 1.3, escudo: 2.05 }, PALADIN: { mit: 1.28, escudo: 2.08 }, SORCERER: { mit: 1.26, escudo: 2 }, DRUID: { mit: 1.26, escudo: 2 } };
+    const MODO_ATAQUE = 0.8; // fator do modo de luta "ataque" (o único no Tibidle); na defesa do bloqueio vale 0,5 (atacando)
+    const SUPORTE_OFICIAL = { protector: { escudo: 2.2, danoCausado: 0.65, danoRecebido: 0.85 }, bloodRage: { corpoACorpo: 1.35, danoRecebido: 1.15, semDefesa: true }, sharpshooter: { distancia: 1.4, semDefesa: true } };
+    function mitigacaoPct(voc, skEscudo, defEscudo) {
+        const c = COMBATE_VOC[voc] || COMBATE_VOC.KNIGHT, d = Number(defEscudo) || 0;
+        return Math.ceil(100 * (((Number(skEscudo) || 0) * c.mit + (d > 0 ? c.escudo : 1) * d) / 100 * MODO_ATAQUE)) / 100;
+    }
+    /* quanto o bloqueio do escudo tira de UM golpe bloqueado: {min, max, medio} */
+    function bloqueioEscudo(skEscudo, defEscudo) {
+        const d = Number(defEscudo) || 0;
+        if (!(d > 0)) return { min: 0, max: 0, medio: 0 };
+        const max = Math.floor(((Number(skEscudo) || 0) / 4 + 2.23) * d * 0.5 * 0.16), min = Math.floor(max / 2);
+        return { min, max, medio: (min + max) / 2 };
+    }
+    /* quanto a armadura total tira de UM golpe corpo a corpo: {min, max, medio} */
+    function reducaoArmadura(armadura) {
+        const a = Math.floor(Number(armadura) || 0);
+        if (a > 3) { const min = Math.floor(a / 2), max = a - (a % 2 + 1); return { min, max, medio: (min + max) / 2 }; }
+        return a > 0 ? { min: 1, max: 1, medio: 1 } : { min: 0, max: 0, medio: 0 };
+    }
+    /* o golpe básico (a cada 2 s) do personagem: {min, max, medio}; magos: dano fixo da wand/rod */
+    function golpeBasico(voc, nivel, skill, atk, wand) {
+        const n5 = (Number(nivel) || 0) / 5;
+        if (voc === 'KNIGHT') { const max = Math.round(0.085 * (Number(atk) || 0) * (Number(skill) || 0) + n5), min = Math.floor(n5); return { min, max, medio: (min + max) / 2 }; }
+        if (voc === 'PALADIN') { const max = Math.round(0.09 * (Number(atk) || 0) * (Number(skill) || 0) + n5), min = Math.floor(max * 0.6); return { min, max, medio: (min + max) / 2 }; }
+        const w = wand || {}, min = Number(w.fromDamage) || 0, max = Number(w.toDamage) || 0;
+        return { min, max, medio: (min + max) / 2 };
+    }
+    /* proteções em % compostas como o jogo faz: (100 − acumulado)/100 × r + acumulado, teto 100 */
+    const protecaoComposta = (lista) => Math.min(100, (lista || []).reduce((t, r) => (100 - t) / 100 * (Number(r) || 0) + t, 0));
+    /* dano ESPERADO de um golpe corpo a corpo de criatura no Knight, pela ordem oficial.
+     * d = {voc, skEscudo, defEscudo, armadura, protFisica (%), cargas (0–1: chance de haver carga de bloqueio), buffRecebido} */
+    function danoRecebidoCorpo(bruto, d) {
+        d = d || {};
+        let x = (Number(bruto) || 0) * (Number(d.buffRecebido) || 1) * (1 - Math.min(100, Number(d.protFisica) || 0) / 100);
+        x -= (d.cargas == null ? 1 : Math.max(0, Math.min(1, d.cargas))) * bloqueioEscudo(d.skEscudo, d.defEscudo).medio;
+        x -= reducaoArmadura(d.armadura).medio;
+        x = Math.max(0, x);
+        return Math.max(0, x - x * mitigacaoPct(d.voc || 'KNIGHT', d.skEscudo, d.defEscudo) / 100);
+    }
+    /* dano ESPERADO de uma magia de criatura em quem está no quadrado: d = {voc, skEscudo, defEscudo, protElem (%), protMagica (%)} */
+    function danoRecebidoMagia(bruto, d) {
+        d = d || {};
+        const prot = protecaoComposta([d.protElem, d.protMagica]);
+        const x = Math.max(0, (Number(bruto) || 0) * (1 - prot / 100));
+        return Math.max(0, x - x * mitigacaoPct(d.voc || 'KNIGHT', d.skEscudo, d.defEscudo) / 100);
+    }
     /* /ammo: as duas munições de custo 0. Besta usa bolt (30), arco usa arrow (25). */
     const MUNICAO_GRATIS = { arrow: 25, bolt: 30 };
     const _pct = (ganho, base) => base > 0 ? 100 * ganho / base : 0;
@@ -6220,15 +6285,29 @@
              *     (regra do dono: regen. de mana em 1º, regen. de vida em 2º; valem também contra magia). */
             const folga = R.hpMinK == null ? 1 : R.hpMinK >= 60 ? 0.5 : R.hpMinK >= 40 ? 0.75 : 1;
             const bloqueiosS = Math.min(R.golpesS, 1);
-            P.resist_fisica = P.absorbpercentphysical = _r(k1 * R.fisico * folga);
+            /* v2.20.0 — PELA REGRA OFICIAL (wiki /como-o-dano-e-calculado + Canary, 16/10), com o que o Knight veste hoje
+             * (ctx.kn: defesa do escudo e armadura total; sem leitura, uma referência) e a skill Escudo vista no frame:
+             *   • bloqueio tira entre D/2 e D, D = (Escudo/4 + 2,23) × defesa × 0,08 → +1 de defesa vale 0,75 × 0,08 ×
+             *     (Escudo/4 + 2,23) por golpe bloqueado (cresce com a skill); +1 de Escudo vale 0,75 × 0,08 × defesa/4;
+             *   • armadura: +1 tira em média 0,75 a mais por golpe (uniforme entre a/2 e a − 1 ou a − 2);
+             *   • mitigação: +1 de defesa = 2,05 × 0,8 / 100 % de TODO o dano; +1 de Escudo = 1,3 × 0,8 / 100 % (pequena);
+             *   • proteção física (anel, colar, forja, imbuement) desconta ANTES do bloqueio e da armadura: vale sobre o
+             *     golpe bruto, que é o que ele toma hoje MAIS o que o escudo e a armadura já tiram. */
+            const kn = (ctx && ctx.kn) || {}, defE = Number(kn.defEscudo) > 0 ? Number(kn.defEscudo) : 30, armE = Number(kn.armadura) >= 0 && kn.armadura != null ? Number(kn.armadura) : 40;
+            const skE = sk.escudo > 0 ? sk.escudo : sk.melee;
+            const bloq = bloqueioEscudo(skE, defE), arm = reducaoArmadura(armE), mit = mitigacaoPct('KNIGHT', skE, defE);
+            const mitPorDef = COMBATE_VOC.KNIGHT.escudo * MODO_ATAQUE / 1e4, mitPorSk = COMBATE_VOC.KNIGHT.mit * MODO_ATAQUE / 1e4; // fração do dano por ponto
+            const brutoCorpoS = R.tomadoS * R.fisico + R.golpesS * arm.medio + bloqueiosS * bloq.medio; // golpe bruto/s estimado
+            P.resist_fisica = P.absorbpercentphysical = _r(brutoCorpoS / 100 * VIDA_PT_KNIGHT * folga);
             P.protecao_magica = _r(k1 * (1 - R.fisico) * folga);
             for (const e of ELEM) P['resist_' + e] = P['absorbpercent' + ELEM_EN[e]] = _r(k1 * (1 - R.fisico) / 4 * folga);
             P.absorbpercentpoison = P.resist_terra;
             P.cura_propria = _r(k1 * 0.5); // metade da vida dele volta por poção/cura própria
             P.armor = _r(R.golpesS * 0.75 * VIDA_PT_KNIGHT * folga); // tira 0,5–1× por golpe corpo a corpo
-            P.defense = P.extradef = _r(bloqueiosS * 0.75 * VIDA_PT_KNIGHT * folga); // bloqueio: ≤ 1 por segundo
-            P.escudo = P.skillshield = _r(0.9 * folga);
+            P.defense = P.extradef = _r((bloqueiosS * 0.75 * 0.08 * (skE / 4 + 2.23) + mitPorDef * R.tomadoS) * VIDA_PT_KNIGHT * folga); // bloqueio ≤ 1/s + mitigação
+            P.escudo = P.skillshield = _r((bloqueiosS * 0.75 * 0.08 * defE / 4 + mitPorSk * R.tomadoS) * VIDA_PT_KNIGHT * folga);
             P.folgaDefesa = folga;
+            P.fichaDefesa = { skEscudo: skE, defEscudo: defE, armadura: armE, bloq, arm, mit, bloqueiosS, golpesS: R.golpesS, tomadoS: R.tomadoS, lido: !!(kn.defEscudo > 0 || kn.armadura != null) };
         } else {
             const la = R.ladoApanha > 0 ? R.ladoApanha : 1;
             P.regen_vida = _r(VIDA_PT_LADO * la); P.max_hp = _r(0.01 * la);
@@ -8480,7 +8559,22 @@
                 usando[r.vocation][normalizarSlot(sl)] = Object.fromEntries((it.forja.atributos || []).map(a => [a.id, Number(a.valor) || 0]));
             }
         }
-        return { nivel: nivelAtual(), sk, party, usando };
+        /* v2.20.0 — o que o Knight veste, para a conta oficial do bloqueio e da armadura (pesosDaVoc): defesa do escudo e
+         * armadura total (elmo, armadura, calça, bota, anel e colar + refino — wiki /como-o-dano-e-calculado) */
+        let kn2 = null;
+        if (kn && kn.equipment) {
+            const b = (nome) => (EQUIP.base && EQUIP.base[nome] && EQUIP.base[nome].attrs) || {};
+            const at = (it, k) => Number((it && it.attrs && it.attrs[k]) != null ? it.attrs[k] : b(it && it.name)[k]) || 0;
+            const ref = (it) => Number(it && it.forja && it.forja.refino) || 0;
+            kn2 = { defEscudo: 0, armadura: 0 };
+            for (const [sl, it] of Object.entries(kn.equipment)) {
+                if (!it || !it.name) continue;
+                const s = normalizarSlot(sl);
+                if (s === 'shield') kn2.defEscudo = at(it, 'defense') + ref(it);
+                else if (s !== 'weapon') kn2.armadura += at(it, 'armor') + ref(it);
+            }
+        }
+        return { nivel: nivelAtual(), sk, party, usando, kn: kn2 };
     }
     function partyMedida() {
         let rz = null, fonte = null;
@@ -8788,7 +8882,10 @@
         if (EQUIP.aviso) h += `<div class="tb-cx tb-av">${escHtml(EQUIP.aviso)}</div>`;
         /* v2.18.2 — por que armadura/defesa do Knight valem menos agora (ou cheias) */
         { const pm = EQUIP.ctx && EQUIP.ctx.party, hp = pm && Number.isFinite(pm.hpMinK) ? pm.hpMinK : null;
-          if (hp != null) h += `<div class="tb-mut" style="font-size:10.5px">Knight: vida mínima medida ${Math.round(hp)} % → armadura, defesa e resistências dele valem ${hp >= 60 ? 'metade' : hp >= 40 ? '¾' : 'cheias'} (${hp >= 40 ? 'ele não está passando aperto' : 'ele está apanhando'}); o bloqueio do escudo conta no máximo 1 por segundo (wiki).</div>`; }
+          /* v2.20.0 — a ficha oficial da defesa do Knight (regras do jogo, com o que ele veste) */
+          let fd = null; try { fd = EQUIP.ctx ? pesosDaVoc('KNIGHT', EQUIP.ctx).fichaDefesa : null; } catch { fd = null; }
+          if (fd) h += `<div class="tb-mut" style="font-size:10.5px">Cavaleiro pela regra do jogo${fd.lido ? '' : ' (referência: sem leitura do que ele veste)'}: bloqueio tira <b>${fd.bloq.min}–${fd.bloq.max}</b> por golpe bloqueado (Escudo ${numBR(fd.skEscudo, 0)} × defesa ${numBR(fd.defEscudo, 0)}; 2 cargas, volta 1/s) · armadura ${numBR(fd.armadura, 0)} tira <b>${fd.arm.min}–${fd.arm.max}</b> por golpe · mitigação <b>${numBR(fd.mit, 2)} %</b> de todo o dano · magia de criatura ignora escudo e armadura (só proteção ao elemento).</div>`;
+          if (hp != null) h += `<div class="tb-mut" style="font-size:10.5px">Knight: vida mínima medida ${Math.round(hp)} % → armadura, defesa e resistências dele valem ${hp >= 60 ? 'metade' : hp >= 40 ? '¾' : 'cheias'} (${hp >= 40 ? 'ele não está passando aperto' : 'ele está apanhando'}).</div>`; }
         if (!R) return h + aj('eq-ajuda', 'ATUALIZAR lê o corpo dos 4, a mochila e o depósito, busca os atributos base e ranqueia por vocação e slot. Nada é equipado nem descartado sem o botão EQUIPAR. Raridade não pontua: um épico com atributos que a vocação não usa perde para um incomum com o atributo certo.');
         h += `<div class="tb-sub tb-eq-vocs" role="group" aria-label="vocação">${VOCS.map(x => {
             const n = Object.values(R.porVoc[x] || {}).filter(eqMexer).length;
