@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.19.5
+// @version      2.19.6
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.19.5';
+    const VERSAO = '2.19.6';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -6940,6 +6940,25 @@
         const lc = Number(c.attrs.level) || 0, lr = Number(ref.attrs.level) || 0;
         return lc < lr || mlDanoTiro(c.attrs) < mlDanoTiro(ref.attrs) - 0.01;
     }
+    /* v2.19.6 — SET SÓ SOBE DE NÍVEL (dono, 16/10: "faz isso para o set também; você pega a mesma linha de equipamento e
+     * só vê se tem regen. melhor; tem que ter armadura melhor; bloquear o nível que já tenho e recomendar nível superior").
+     * Elmo, armadura, calça e bota (e o escudo de verdade, não o spellbook): a oferta só entra se SUBIR de nível em
+     * relação a CADA peça que o personagem já tem naquele espaço (vestida e a melhor guardada) — armadura base maior
+     * (defesa no escudo); empate na armadura: nível exigido maior; ou um bônus de fábrica de nível mágico/skill maior
+     * (Hat of the Mad sobre um steel helmet). A mesma peça com a regen. um pouco maior fica de fora. A armadura base é a do
+     * catálogo (o refino não conta aqui: ele é +1 por nível e não muda o "nível do set"). */
+    const ML_SET = new Set(['head', 'armor', 'legs', 'boots']);
+    const mlNum = (a, k) => Number(a && a[k]) || 0;
+    const mlBaseNobre = (a) => ['magiclevelpoints', 'skillmagic', 'skilldist', 'skillsword', 'skillaxe', 'skillclub'].reduce((t, k) => t + mlNum(a, k), 0);
+    const mlEhSet = (p, s) => !!p && (ML_SET.has(s) || (s === 'shield' && (p.attrs || {}).weaponType === 'shield'));
+    const mlChaveSet = (s) => (s === 'shield' ? 'defense' : 'armor');
+    function mlSetSobe(c, ref, s) {
+        const a = (c && c.attrs) || {}, b = (ref && ref.attrs) || {}, k = mlChaveSet(s);
+        if (mlBaseNobre(a) > mlBaseNobre(b)) return true;
+        const vc = mlNum(a, k), vr = mlNum(b, k);
+        return vc > vr || (vc === vr && mlNum(a, 'level') > mlNum(b, 'level'));
+    }
+    const mlFichaSet = (p, s) => ({ nome: p.nome, k: mlChaveSet(s), valor: mlNum(p.attrs, mlChaveSet(s)), nivel: mlNum(p.attrs, 'level') || null, nobre: mlBaseNobre(p.attrs) });
     const mlFichaVarinha = (p) => (mlEhVarinha(p) ? { nome: p.nome, nivel: Number(p.attrs.level) || null, de: Number(p.attrs.fromDamage) || 0, ate: Number(p.attrs.toDamage) || 0,
                                                        mana: Number(p.attrs.mana) || 0, elemento: p.attrs.wandType || null } : null);
     /* porVoc = EQUIP.res.porVoc (o Equip já sabe a melhor peça de cada um); cands = mlCandidatosMercado; opc = {ouro, verPerdas, precoFrag}
@@ -6963,7 +6982,10 @@
                 const guardadaMenor = !!(s === 'weapon' && x.atual && x.melhor && x.melhor.iid !== x.atual.iid && mlRegride(x.melhor, x.atual));
                 if (guardadaMenor) ref0 = x.atual;
                 const piso = s === 'weapon' ? [x.atual, x.melhor].filter(mlEhVarinha).sort((a, b) => mlRegride(a, b) ? 1 : mlRegride(b, a) ? -1 : 0)[0] || null : null;
-                const escondidas = { regride: 0, semNivel: 0 };
+                /* v2.19.6 — o set: as peças que ele já tem nesse espaço; a oferta tem que subir de nível sobre TODAS */
+                const setDele = [x.atual, x.melhor].filter((p, i, l) => mlEhSet(p, s) && l.findIndex(q => q && q.iid === p.iid) === i);
+                const pisoSet = setDele.slice().sort((a, b) => mlNum(b.attrs, mlChaveSet(s)) - mlNum(a.attrs, mlChaveSet(s)) || mlNum(b.attrs, 'level') - mlNum(a.attrs, 'level'))[0] || null;
+                const escondidas = { regride: 0, semNivel: 0, mesmoNivel: 0 };
                 const ref = mlComRefino(ref0);
                 const refPt = ref ? pontuarPeca(ref, v, ctx).pontos : 0;
                 const refImbuida = mlImbuida(ref0);
@@ -6977,22 +6999,28 @@
                     if (nivelConta != null && Number(c0.attrs && c0.attrs.level) > nivelConta) { escondidas.semNivel++; continue; }
                     /* v2.19.5 — wand/rod MENOR que a maior que ele já tem (nível exigido ou dano do tiro): bloqueada, nunca sugerida */
                     if (piso && mlRegride(c0, piso)) { escondidas.regride++; continue; }
+                    const ehSet = setDele.length > 0 && mlEhSet(c0, s);
+                    if (ehSet && !setDele.every(p => mlSetSobe(c0, p, s))) { escondidas.mesmoNivel++; continue; }
                     const c = mlComRefino(c0), r = pontuarPeca(c, v, ctx);
                     const base = refPt + (c.duasMaos && v !== 'PALADIN' && s === 'weapon' ? escudo : 0);
                     const ganho = Math.round((r.pontos - base) * 100) / 100;
-                    if (!(ganho >= ML_GANHO_MIN)) continue;
+                    /* set de nível superior aparece mesmo sem ganho na régua (a armadura só conta no Knight); o resto, ≥ 0,3 pt */
+                    if (!(ganho >= (ehSet ? -0.05 : ML_GANHO_MIN))) continue;
                     const perdas = mlPerdas(c, ref, v, ctx);
                     if (perdas.length && !opc.verPerdas) continue;
-                    const pagaH = Math.round(c.preco / (ganho * PT_OURO_H) * 10) / 10;
+                    const pagaH = ganho > 0 ? Math.round(c.preco / (ganho * PT_OURO_H) * 10) / 10 : null;
                     const fontes = mlFontes(c, ref, v, ctx), pos = fontes.filter(f => f.pt > 0), somaPos = pos.reduce((a, f) => a + f.pt, 0);
                     const defesa = pos.filter(f => ML_IDS_DEFESA.has(f.id)).reduce((a, f) => a + f.pt, 0);
-                    const soDefesa = v === 'KNIGHT' && somaPos > 0 && defesa > 0.6 * somaPos;
-                    const caro = pagaH > ML_PAGA_MAX_H;
+                    /* no set, armadura melhor é o que o dono pediu: o aviso "só defesa" fica para os outros espaços */
+                    const soDefesa = !ehSet && v === 'KNIGHT' && somaPos > 0 && defesa > 0.6 * somaPos;
+                    const caro = pagaH != null && pagaH > ML_PAGA_MAX_H;
+                    const soArmadura = ehSet && ganho < ML_GANHO_MIN;
                     ofertas.push({ voc: v, slot: s, orderId: c.orderId, nome: c.nome, cat: c.cat, preco: c.preco, vendedor: c.vendedor, forja: c.forja,
-                                   pontos: r.pontos, ganho, ouroPorPt: Math.round(c.preco / ganho), pagaH, perdas, seguro: !perdas.length,
+                                   pontos: r.pontos, ganho, ouroPorPt: ganho > 0 ? Math.round(c.preco / ganho) : null, pagaH, perdas, seguro: !perdas.length,
                                    cabe: ouro == null ? null : c.preco <= ouro, motivos: r.motivos, duasMaos: !!c.duasMaos,
                                    fontes: fontes.slice(0, 4), soDefesa, caro, refImbuida, refino: Number(c.forja && c.forja.refino) || 0, ficha: mlFichaVarinha(c0),
-                                   recomendada: !perdas.length && !soDefesa && !caro && !refImbuida });
+                                   nivelSet: ehSet && pisoSet ? Object.assign(mlFichaSet(c0, s), { de: mlNum(pisoSet.attrs, mlChaveSet(s)) }) : null, soArmadura,
+                                   recomendada: !perdas.length && !soDefesa && !caro && !refImbuida && !soArmadura });
                 }
                 /* melhor primeiro: mais ganho; empate (±5 %), o mais barato */
                 ofertas.sort((p, q) => (Math.abs(q.ganho - p.ganho) > 0.05 * Math.max(p.ganho, q.ganho) ? q.ganho - p.ganho : p.preco - q.preco));
@@ -7002,7 +7030,7 @@
                 res.porVoc[v][s] = { ref: ref ? { nome: ref.nome, forja: ref.forja, origem: ref.origem } : null, refPt, refImbuida, forja,
                                      vestida: x.atual ? { nome: x.atual.nome, pt: x.atualPt } : null,
                                      temMelhorGuardada: !guardadaMenor && !!(x.melhor && (!x.atual || x.melhor.iid !== x.atual.iid) && x.melhorPt > (x.atualPt || 0)),
-                                     piso: piso ? mlFichaVarinha(piso) : null, escondidas,
+                                     piso: piso ? mlFichaVarinha(piso) : null, pisoSet: pisoSet ? mlFichaSet(pisoSet, s) : null, escondidas,
                                      ofertas };
             }
         }
@@ -12907,6 +12935,7 @@
         finally { ML.comprando = null; if (MK.ocupado === 'melhorias') MK.ocupado = null; renderizar(); }
     }
     const mlEncaixes = (f) => ((f && f.atributos) || []).map(a => `${rotulo(a.id)} ${numBR(a.valor, 2)}`).join(', ');
+    const mlSetRot = (k) => (k === 'defense' ? 'defesa' : 'armadura');
     /* v2.19.5 — ficha da wand/rod: nível exigido, dano do tiro, elemento e mana por tiro */
     const mlVarinhaTxt = (f) => (f ? [f.nivel ? 'nível ' + f.nivel : null, f.de || f.ate ? `dano ${f.de}–${f.ate}${f.elemento ? ' ' + f.elemento : ''}` : null, f.mana ? f.mana + ' de mana por tiro' : null].filter(Boolean).join(' · ') : '');
     /* v2.19.0 — comprar × forjar: o caminho da forja na peça que você já tem (mlForjar, @@MELHORIAS) */
@@ -12935,13 +12964,17 @@
         return `<div class="tb-cx" style="margin:3px 0;padding:5px 6px">` +
             `<div class="tb-lin"><span><b>${escHtml(o.nome)}</b> ${rarTag({ forja: o.forja })}${o.duasMaos ? ' <span class="tb-tag">2 mãos</span>' : ''}</span><span class="${o.cabe === false ? 'tb-ruim' : 'tb-ok'}"><b>${mkFmt(o.preco)}</b> ouro</span></div>` +
             (o.ficha ? `<div class="tb-mut">${escHtml(mlVarinhaTxt(o.ficha))}</div>` : '') +
+            (o.nivelSet ? `<div><span class="tb-tag">nível superior</span> <span class="tb-mut">${o.nivelSet.nobre > 0 ? 'nível mágico/skill de fábrica +' + numBR(o.nivelSet.nobre, 0) + ' · ' : ''}${mlSetRot(o.nivelSet.k)} ${numBR(o.nivelSet.de, 0)} → <b>${numBR(o.nivelSet.valor, 0)}</b>${o.nivelSet.nivel ? ' · pede nível ' + o.nivelSet.nivel : ''}</span></div>` : '') +
             (enc ? `<div class="tb-mut">${escHtml(enc)}</div>` : '') +
-            `<div>${o.recomendada ? '<b class="tb-ok">✓ RECOMENDADA</b> ' : ''}<span class="tb-ok"><b>+${numBR(o.ganho, 1)} pt</b></span> <span class="tb-mut">(${mkFmt(o.ouroPorPt)} ouro por ponto · paga-se em ~${numBR(o.pagaH, 1)} h de caçada, estimativa)</span></div>` +
+            `<div>${o.recomendada ? '<b class="tb-ok">✓ RECOMENDADA</b> ' : ''}` +
+            (o.ganho > 0 ? `<span class="tb-ok"><b>+${numBR(o.ganho, 1)} pt</b></span> <span class="tb-mut">(${mkFmt(o.ouroPorPt)} ouro por ponto · paga-se em ~${numBR(o.pagaH, 1)} h de caçada, estimativa)</span>`
+                         : `<span class="tb-mut">${o.ganho < 0 ? numBR(o.ganho, 1) : '±0'} pt na régua</span>`) + `</div>` +
             (o.fontes && o.fontes.length ? `<div class="tb-mut">de onde vem: ${o.fontes.map(f => `${escHtml(rotulo(f.id))} ${numBR(f.de, 2)} → ${numBR(f.para, 2)} (${f.pt > 0 ? '+' : ''}${numBR(f.pt, 1)} pt)`).join(' · ')}</div>` : '') +
             perde + (o.cabe === false ? `<div class="tb-ruim">falta ouro normal para pagar</div>` : '') +
             (o.caro ? `<div class="tb-av">⚠ caro para o que dá: leva mais de ${ML_PAGA_MAX_H} h de caçada para se pagar</div>` : '') +
             (o.refImbuida ? `<div class="tb-av">⚠ a sua peça atual está imbuída: trocando, o imbuement fica na peça velha — troque quando ele acabar</div>` : '') +
             (o.soDefesa ? `<div class="tb-av">⚠ o ganho vem quase todo de armadura/defesa no Knight — a régua ainda superestima isso (o seu Knight não tem passado aperto)</div>` : '') +
+            (o.soArmadura ? `<div class="tb-av">⚠ sobe o nível do set, mas ${o.voc === 'KNIGHT' ? 'o ganho na régua fica abaixo de ' + numBR(ML_GANHO_MIN, 1) + ' pt' : 'para o ' + escHtml(VOC_ROTULO[o.voc] || o.voc) + ' a armadura não muda o dano nem a vida (o corpo a corpo vai todo no Knight — wiki)'}: sem botão de compra; só entra nas recomendadas com linha melhor</div>` : '') +
             (o.forjaMaisBarata ? mlForjaAviso(o) : '') +
             `<button type="button" class="tb-bt${o.recomendada ? ' pri' : ''} mini" id="tb-ml-c-${i}" ${pode ? '' : 'disabled'} style="margin-top:3px">${ML.comprando === o.orderId ? 'COMPRANDO…' : o.recomendada ? 'COMPRAR (2 toques)' : 'não recomendada: se quiser, compre pela janela do jogo'}</button></div>`;
     }
@@ -12964,8 +12997,10 @@
             return h + `</div>`;
         }
         const top = ofertasDe(ML.res.top);
-        const nRegride = Object.values(ML.res.porVoc).reduce((a, sl) => a + Object.values(sl).reduce((b, x) => b + ((x.escondidas && x.escondidas.regride) || 0), 0), 0);
+        const nEsc = (k) => Object.values(ML.res.porVoc).reduce((a, sl) => a + Object.values(sl).reduce((b, x) => b + ((x.escondidas && x.escondidas[k]) || 0), 0), 0);
+        const nRegride = nEsc('regride'), nSet = nEsc('mesmoNivel');
         if (nRegride) h += `<div class="tb-mut" style="margin-top:4px">🔒 ${nRegride} wand/rod à venda menores que as de vocês ficaram de fora (nível exigido ou dano do tiro menor): só entra a do mesmo nível ou acima.</div>`;
+        if (nSet) h += `<div class="tb-mut" style="margin-top:4px">🔒 ${nSet} peça(s) de set à venda do mesmo nível ou abaixo do que vocês já têm ficaram de fora (a mesma peça com a regen. maior também): só entra armadura base maior (defesa no escudo).</div>`;
         h += `<h4 style="margin:8px 0 2px">Compras recomendadas <span class="tb-mut">(seguras, que se pagam em até ${ML_PAGA_MAX_H} h; mais ganho por ouro primeiro)</span></h4>`;
         h += top.length ? top.map(o => `<div class="tb-mut" style="margin-top:4px"><b>${escHtml(VOC_ROTULO[o.voc] || o.voc)} · ${escHtml(slotPt(o.slot))}</b></div>` + mlLinhaOferta(o)).join('')
             : `<div class="tb-ok">Nada no Mercado agora é melhor (e seguro) do que o que vocês já têm${cfg.soCabe ? ' dentro do seu ouro' : ''}.</div>`;
@@ -12979,14 +13014,16 @@
                 const guardada = x.temMelhorGuardada ? `<div class="tb-av">você já tem uma melhor guardada (${escHtml(x.ref.nome)}): equipe pela aba Equip antes de comprar</div>` : '';
                 const esc = x.escondidas || {};
                 const bloq = (esc.regride ? `<div class="tb-mut">🔒 ${esc.regride} wand/rod à venda menor${esc.regride > 1 ? 'es' : ''} que a sua${x.piso ? ' (' + escHtml(x.piso.nome) + ' · ' + escHtml(mlVarinhaTxt(x.piso)) + ')' : ''} — escondida${esc.regride > 1 ? 's' : ''}: o helper nunca sugere regredir</div>` : '') +
+                             (esc.mesmoNivel ? `<div class="tb-mut">🔒 ${esc.mesmoNivel} à venda do mesmo nível ou abaixo do seu${x.pisoSet ? ' (' + escHtml(x.pisoSet.nome) + ', ' + mlSetRot(x.pisoSet.k) + ' ' + numBR(x.pisoSet.valor, 0) + ')' : ''} — escondida${esc.mesmoNivel > 1 ? 's' : ''}: só aparece ${x.pisoSet ? mlSetRot(x.pisoSet.k) : 'armadura'} maior</div>` : '') +
                              (esc.semNivel ? `<div class="tb-mut">${esc.semNivel} peça(s) à venda pedem nível acima do seu — escondida(s)</div>` : '');
                 if (!of.length && !guardada && !bloq) continue;
-                linhas.push(`<div style="margin-top:5px"><b>${escHtml(slotPt(s))}</b>: ${ref}${x.piso && x.ref && x.piso.nome === x.ref.nome ? ' <span class="tb-mut">(' + escHtml(mlVarinhaTxt(x.piso)) + ')</span>' : ''}</div>` + guardada + bloq + of.map(o => mlLinhaOferta(o)).join('') + (of.length ? mlForjaHtml(x.forja, x.ref) : ''));
+                const ficha = x.piso && x.ref && x.piso.nome === x.ref.nome ? mlVarinhaTxt(x.piso) : x.pisoSet && x.ref && x.pisoSet.nome === x.ref.nome ? mlSetRot(x.pisoSet.k) + ' ' + numBR(x.pisoSet.valor, 0) : '';
+                linhas.push(`<div style="margin-top:5px"><b>${escHtml(slotPt(s))}</b>: ${ref}${ficha ? ' <span class="tb-mut">(' + escHtml(ficha) + ')</span>' : ''}</div>` + guardada + bloq + of.map(o => mlLinhaOferta(o)).join('') + (of.length ? mlForjaHtml(x.forja, x.ref) : ''));
             }
             const n = Object.values(slots).reduce((a, x) => a + ofertasDe(x.ofertas).length, 0);
             h += `<details class="tb-aj" data-k="ml-${v}"><summary>${escHtml(VOC_ROTULO[v] || v)} — ${n ? n + ' melhoria(s)' : 'nada melhor à venda'}</summary><div>${linhas.join('') || '<div class="tb-mut">Todos os espaços já estão no melhor que o Mercado tem hoje.</div>'}</div></details>`;
         }
-        h += aj('ml-como', `<b>Ponto (pt)</b> é a régua do Equip: 1 pt ≈ +1 % do dano da party ≈ 450 de ouro/h; "paga-se em ~X h" = preço ÷ (ganho × 450). A comparação é com a <b>melhor peça que o personagem já tem</b> naquele espaço (não só a vestida) e pesa tudo o que a peça dá (armadura, regen., resistências, skill, dano, crítico em par). <b>Recomendada</b> = não perde encaixe nobre (regen. de mana em todos, regen. de vida no Knight, nível mágico/skill/dano/crítico na arma e no colar), se paga em até ${ML_PAGA_MAX_H} h de caçada e, no Knight, o ganho não vem quase todo de armadura/defesa (a régua ainda superestima defesa). Só a recomendada tem botão de compra; as outras aparecem por personagem com o motivo. Marcando "mostrar também", aparecem até as que perdem encaixe. O Mercado devolve os anúncios de cada categoria como o jogo manda: se a categoria tiver muitos, pode faltar algum. Arma de 2 mãos do Knight concorre com arma + escudo. <b>Wand/rod nunca regride</b>: só aparece a do mesmo nível exigido ou acima e com dano do tiro igual ou maior que a maior que o personagem já tem (a vortex/snakebite forjada não passa mais na frente da sua); entre essas, ganham as linhas da forja, o dano e a mana por tiro, e o elemento conta neutro (a compra serve a todos os mapas). Peça que pede nível acima do seu não aparece. O seu próprio anúncio nunca aparece. <b>Comprar</b> (wiki /mercado): é imediato e não pode ser desfeito; Premium não paga taxa; só ouro normal (não o travado); o item vai para a mochila (cheia: depósito). Antes de comprar, o helper relê o anúncio e confere preço e ouro. Depois, equipe pela aba Equip. <b>⚒ Forjar a sua</b> (embaixo de cada espaço com oferta): quanto custaria, em média, pôr uma linha que vale na peça que você já tem — só quando ela tem encaixe vazio (ou falta 1 grau de raridade para abrir um); conta Atributo T1 20 mil + Limpeza T2 40 mil por tentativa repetida, Raridade T1 30 mil, 100 fragmentos por gema (preço do fragmento do Mercado, ou 2 mil estimado) e a chance de sorteio da wiki. A forja só aparece como "mais em conta" quando sai 1/3 mais barata por ponto, porque comprar é certo e a forja é sorteio.`, 'como funciona');
+        h += aj('ml-como', `<b>Ponto (pt)</b> é a régua do Equip: 1 pt ≈ +1 % do dano da party ≈ 450 de ouro/h; "paga-se em ~X h" = preço ÷ (ganho × 450). A comparação é com a <b>melhor peça que o personagem já tem</b> naquele espaço (não só a vestida) e pesa tudo o que a peça dá (armadura, regen., resistências, skill, dano, crítico em par). <b>Recomendada</b> = não perde encaixe nobre (regen. de mana em todos, regen. de vida no Knight, nível mágico/skill/dano/crítico na arma e no colar), se paga em até ${ML_PAGA_MAX_H} h de caçada e, no Knight, o ganho não vem quase todo de armadura/defesa (a régua ainda superestima defesa). Só a recomendada tem botão de compra; as outras aparecem por personagem com o motivo. Marcando "mostrar também", aparecem até as que perdem encaixe. O Mercado devolve os anúncios de cada categoria como o jogo manda: se a categoria tiver muitos, pode faltar algum. Arma de 2 mãos do Knight concorre com arma + escudo. <b>Set só sobe de nível</b> (elmo, armadura, calça, bota e escudo): só aparece a peça com armadura base maior (defesa no escudo) que TODAS as que o personagem já tem naquele espaço — no empate, nível exigido maior; ou com nível mágico/skill de fábrica maior (Hat of the Mad). A mesma peça com regen. um pouco maior fica de fora. Sem perder regen. de mana/vida; nos 3 que não são Knight a armadura não muda o dano (o corpo a corpo vai no Knight), então ali o nível superior só ganha botão com linha melhor. <b>Wand/rod nunca regride</b>: só aparece a do mesmo nível exigido ou acima e com dano do tiro igual ou maior que a maior que o personagem já tem (a vortex/snakebite forjada não passa mais na frente da sua); entre essas, ganham as linhas da forja, o dano e a mana por tiro, e o elemento conta neutro (a compra serve a todos os mapas). Peça que pede nível acima do seu não aparece. O seu próprio anúncio nunca aparece. <b>Comprar</b> (wiki /mercado): é imediato e não pode ser desfeito; Premium não paga taxa; só ouro normal (não o travado); o item vai para a mochila (cheia: depósito). Antes de comprar, o helper relê o anúncio e confere preço e ouro. Depois, equipe pela aba Equip. <b>⚒ Forjar a sua</b> (embaixo de cada espaço com oferta): quanto custaria, em média, pôr uma linha que vale na peça que você já tem — só quando ela tem encaixe vazio (ou falta 1 grau de raridade para abrir um); conta Atributo T1 20 mil + Limpeza T2 40 mil por tentativa repetida, Raridade T1 30 mil, 100 fragmentos por gema (preço do fragmento do Mercado, ou 2 mil estimado) e a chance de sorteio da wiki. A forja só aparece como "mais em conta" quando sai 1/3 mais barata por ponto, porque comprar é certo e a forja é sorteio.`, 'como funciona');
         return h + `<div class="tb-mut" style="margin-top:6px">${ML.nCands} peças à venda conferidas. Só COMPRAR (2 toques) envia comando ao jogo.</div></div>`;
     }
     function ligarMelhorias() {

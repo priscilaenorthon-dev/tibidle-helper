@@ -5150,3 +5150,20 @@ modelo. Abas do Progresso numa linha só (6 abas: a Forja estava quebrando para 
 - A aba Equip não mudou (ainda pode preferir uma vortex +1 ML guardada — decisão de 29/09 e 13/10: "+1 ML vale mais que
   wand mais forte").
 - Testes: 4 novos em `melhorias.test.js` (falham na 2.19.4).
+
+## 2.19.6 (16/10) — Melhorias: o set só sobe de nível
+- Dono: "faz isso para o set também; você pega a mesma linha de equipamento e só vê se tem regen. melhor ou regen. de vida;
+  tem que ter armadura melhor; bloquear o nível que já tenho de set e recomendar nível superior". Ao vivo (15/10) as duas
+  recomendadas eram leather boots (a mesma bota do Knight) com outras linhas.
+- `mlAvaliar` (`@@MELHORIAS`): em elmo, armadura, calça e bota (e no escudo de verdade — o spellbook fica fora), a oferta
+  só entra se **subir de nível sobre CADA peça que o personagem já tem naquele espaço** (vestida e a melhor guardada):
+  armadura base do catálogo maior (defesa no escudo); empate na armadura, nível exigido maior; ou nível mágico/skill de
+  fábrica maior (Hat of the Mad sobre steel helmet). A mesma peça com regen. maior e as de nível igual/abaixo ficam de fora
+  (contadas: "🔒 N do mesmo nível ou abaixo…"). O refino não muda o nível do set.
+- Continua valendo não perder regen. de mana (todos) nem regen. de vida (Knight).
+- Knight: armadura maior conta na régua → a oferta é recomendada (o aviso "ganho só de defesa" saiu do set: subir armadura é
+  o pedido). Paladino/magos: a armadura não muda o dano nem a vida deles (o corpo a corpo vai no Knight — wiki); a peça de
+  nível superior aparece com "nível superior · armadura X → Y", mas sem botão de compra se não trouxer ≥ 0,3 pt (linha
+  melhor). Anel, colar e arma seguem a regra antiga (arma: 2.19.5).
+- Testes: 4 novos em `melhorias.test.js`; as ofertas dos testes antigos viraram steel boots (nível acima); o `vm` da compra
+  compra Steel Boots e conta a Leather Boots do mesmo nível como escondida.
