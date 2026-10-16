@@ -7,7 +7,7 @@ const raiz = path.join(__dirname, '..');
 const src = fs.readFileSync(path.join(raiz, 'tibidle-helper.user.js'), 'utf8');
 const ini = src.indexOf('/* @@EQUIP-PURO-INICIO */'), fim = src.indexOf('/* @@EQUIP-PURO-FIM */');
 assert(ini > 0 && fim > ini, 'marcadores @@EQUIP-PURO não encontrados');
-const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, pesosDaVoc, mitigacaoPct, bloqueioEscudo, reducaoArmadura, golpeBasico, efeitoOficial, protecaoComposta, danoRecebidoCorpo, danoRecebidoMagia, COMBATE_VOC, SUPORTE_OFICIAL, candidatosEquip, distribuirEquip, pecasDesmanche, planoForja, faixaPotencia, wikiSlug, wikiUrlPeca, EQUIP_RESERVAS, destinosSobras, chanceLinha, fragmentosDesmanche, escolherDestino, faixaRange, valorTipico, linhasUteis, REGRAS_VOCACAO, FAIXA_NOME };')();
+const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, pesosDaVoc, mitigacaoPct, bloqueioEscudo, reducaoArmadura, golpeBasico, efeitoOficial, legadoDe, loyaltyBonus, forjaSimular, forjaValorSorteado, forjaLinhaSorteada, FORJA_GEMA_OURO, protecaoComposta, danoRecebidoCorpo, danoRecebidoMagia, COMBATE_VOC, SUPORTE_OFICIAL, candidatosEquip, distribuirEquip, pecasDesmanche, planoForja, faixaPotencia, wikiSlug, wikiUrlPeca, EQUIP_RESERVAS, destinosSobras, chanceLinha, fragmentosDesmanche, escolherDestino, faixaRange, valorTipico, linhasUteis, REGRAS_VOCACAO, FAIXA_NOME };')();
 const le = (p) => { try { return JSON.parse(fs.readFileSync(path.join(raiz, p), 'utf8')); } catch (e) { return null; } };
 const base = {};
 for (const [nome, it] of Object.entries(le('testes/fixtures/itens.json').itens)) base[nome] = { id: it.id, attrs: it.attrs || {}, sell: it.sell || 0, equipPreview: it.equipPreview || null };
@@ -633,5 +633,40 @@ t('2.21.0 elementos medidos: Knight que toma 80 % de fogo dá à proteção de f
     assert(S.elemMedido && Math.abs(S.resist_fogo - 6 / 100 * 0.5) < 0.001 && S.resist_gelo === 0, `Feiticeiro fogo ${S.resist_fogo} (6/s medido), gelo ${S.resist_gelo}`);
     const K0 = M.pesosDaVoc('KNIGHT', {});
     assert(!K0.elemMedido && K0.resist_fogo === K0.resist_gelo, 'sem medida: divisão igual como antes');
+});
+/* 2.22.0 — lido do cliente do jogo (c14): Legado, Loyalty e o simulador da forja com as regras exatas */
+t('2.22.0 Legado: marco a cada 5 de skill treinada acima do limiar (60 melee/dist, 40 ML); bônus n(n+3)/2 %: I +2, II +5, III +9, IV +14, V +20', () => {
+    assert.deepStrictEqual([M.legadoDe('KNIGHT', 59).marco, M.legadoDe('KNIGHT', 60).marco, M.legadoDe('KNIGHT', 64).marco, M.legadoDe('KNIGHT', 65).marco, M.legadoDe('SORCERER', 40).marco, M.legadoDe('DRUID', 62).marco], [0, 1, 1, 2, 1, 5]);
+    assert.deepStrictEqual([1, 2, 3, 4, 5].map(n => M.legadoDe('KNIGHT', 60 + (n - 1) * 5).bonusPct), [2, 5, 9, 14, 20]);
+    const l = M.legadoDe('PALADIN', 73);
+    assert.deepStrictEqual([l.marco, l.bonusPct, l.proximaSkill, l.proximoBonusPct], [3, 9, 75, 14]);
+    assert.strictEqual(M.legadoDe('KNIGHT', 0).marco, 0);
+    assert.deepStrictEqual([0, 1, 3, 6, 9, 15, 40].map(M.loyaltyBonus), [0, 1, 2, 3, 4, 5, 5]);
+    const ctx = { sk: { KNIGHT: { melee: 70 } }, nivel: 126, legado: { KNIGHT: M.legadoDe('KNIGHT', 70) } };
+    const w1 = { slot: 'weapon', attrs: { weaponType: 'axe', attack: 40 }, forja: F(0) }, w2 = { slot: 'weapon', attrs: { weaponType: 'axe', attack: 48 }, forja: F(0) };
+    const g2 = M.golpeBasico('KNIGHT', 126, 70, 48);
+    assert(M.efeitoOficial(w2, w1, 'KNIGHT', ctx).includes(`→ ${Math.round(g2.min * 1.09)}–${Math.round(g2.max * 1.09)} (Corpo a Corpo 70, Legado +9 %)`), M.efeitoOficial(w2, w1, 'KNIGHT', ctx));
+});
+t('2.22.0 simulador da forja: determinístico com semente; valor uniforme nos passos do range; linha nunca repete; raridade antes do Atributo quando não há encaixe', () => {
+    const rnd0 = () => 0, rnd1 = () => 0.999;
+    assert.strictEqual(M.forjaValorSorteado('regen_mana', 2, rnd0), 1.1);
+    assert.strictEqual(M.forjaValorSorteado('regen_mana', 2, rnd1), 2.5);
+    assert.strictEqual(M.forjaValorSorteado('nivel_magico', 4, rnd1), 3);
+    assert.notStrictEqual(M.forjaLinhaSorteada('boots', [{ id: 'regen_mana', valor: 2 }], () => 0.9999), 'regen_mana');
+    const peca = { slot: 'boots', forja: { raridade: 1, refino: 0, potenciaBase: 100, atributos: [{ id: 'regen_mana', valor: 2 }] } };
+    const a = M.forjaSimular(peca, { linha: 'regen_vida' }, { n: 400, seed: 3 }), b = M.forjaSimular(peca, { linha: 'regen_vida' }, { n: 400, seed: 3 });
+    assert.strictEqual(JSON.stringify(a), JSON.stringify(b), 'mesma semente, mesmo resultado');
+    assert(a.sucesso > 0.95 && a.porGema.raridade >= 1 && a.porGema.atributo >= 1 && a.gemas90 >= a.gemas, JSON.stringify(a));
+    /* regen. de vida pesa 10 de 122 no pool sem regen. de mana: ≈ 12 Atributos + 11 Limpezas Maiores + 2,9 Raridades (1/0,35) */
+    assert(a.porGema.atributo > 8 && a.porGema.atributo < 17 && Math.abs(a.porGema.raridade - 1 / 0.35) < 0.6, JSON.stringify(a.porGema));
+    const c = M.forjaSimular(peca, { linhas: ['regen_vida', 'cura_propria', 'resist_fogo'] }, { n: 400, seed: 3 });
+    assert(c.gemas < a.gemas, c.gemas + ' < ' + a.gemas);
+    const d = M.forjaSimular(peca, { linha: 'regen_vida', valorMin: 1.5 }, { n: 400, seed: 3 });
+    assert(d.gemas > a.gemas && d.porGema.refazer_maior > 0, JSON.stringify(d.porGema));
+    assert.strictEqual(M.forjaSimular(peca, { linha: 'regen_vida', valorMin: 2.4 }, { n: 50, seed: 3 }).sucesso, 0, 'valor acima do teto da faixa I (1,7): impossível sem refinar');
+    const e = M.forjaSimular({ slot: 'armor', forja: { raridade: 2, refino: 3, potenciaBase: 100, atributos: [] } }, { refino: 5, garantia: true }, { n: 300, seed: 9, precos: { refino: 12000, refino_maior: 40000, garantia: 16000 } });
+    assert(e.sucesso === 1 && e.porGema.refino > 0 && e.porGema.refino_maior > 0 && Math.abs(e.porGema.garantia - e.porGema.refino_maior) < 0.01, JSON.stringify(e.porGema));
+    assert(Math.abs(e.ouro - (e.porGema.refino * 12000 + e.porGema.refino_maior * 40000 + e.porGema.garantia * 16000)) < 200, 'ouro com os preços dados: ' + e.ouro);
+    assert.strictEqual(M.FORJA_GEMA_OURO.atributo, 20000);
 });
 console.log(`\n${n} testes ok` + (pulados ? ` · ${pulados} pulados (sem o estado da conta em data/)` : ''));

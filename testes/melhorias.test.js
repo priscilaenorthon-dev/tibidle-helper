@@ -128,9 +128,11 @@ t('2.19.0 comprar × forjar: bota Incomum com o encaixe ocupado precisa de Rarid
     assert.strictEqual(fj.precisaRaridade.chance, 0.35);
     assert(!fj.linhas.some(x => x.id === 'regen_mana'), 'regen. de mana já está na peça: não cai de novo');
     assert(fj.linhas.some(x => x.id === 'regen_vida'), 'Knight: regen. de vida é linha boa: ' + JSON.stringify(fj.linhas));
-    /* custo = Raridade 30k/0,35 + Atributo 20k + (t − 1) × (Atributo + Limpeza T2) */
-    const t1 = 1 / fj.chance;
-    assert(Math.abs(fj.ouro - (30000 / 0.35 + 20000 + (t1 - 1) * 60000)) < 0.02 * fj.ouro, fj.ouro + ' vs ' + Math.round(30000 / 0.35 + 20000 + (t1 - 1) * 60000));
+    /* 2.22.0 — custo pelo SIMULADOR com as regras do jogo (600 rodadas): perto da conta analítica Raridade 30k/0,35 +
+     * Atributo 20k + (t − 1) × (Atributo + Limpeza Maior), t = 1/chance — a diferença é o sorteio (±25 %) */
+    const t1 = 1 / fj.chance, analitico = 30000 / 0.35 + 20000 + (t1 - 1) * 60000;
+    assert(Math.abs(fj.ouro - analitico) < 0.25 * analitico, fj.ouro + ' vs ' + Math.round(analitico));
+    assert(fj.sim && fj.sim.n === 600 && fj.sim.gemas90 >= fj.tentativas, 'simulação: ' + JSON.stringify(fj.sim && [fj.sim.gemas, fj.sim.gemas90]));
     assert(Math.abs(fj.custo - (fj.ouro + fj.fragmentos * 2000)) <= 2000, 'fragmento sem leitura do Mercado = estimativa de 2 mil');
     assert(fj.ate90 >= Math.ceil(t1), '90 % precisa de mais tentativas que a média');
     assert(r.porVoc.KNIGHT.ring.forja === null, 'sem oferta no espaço, não calcula forja');
