@@ -4303,7 +4303,6 @@
     /* o elemento do jogo (COMBAT_FIREDAMAGE, "fire", "physical"…) no nome do helper (fogo, fisico…) */
     const ELEM_JOGO = { physical: 'fisico', fire: 'fogo', ice: 'gelo', energy: 'energia', earth: 'terra', poison: 'terra', death: 'morte', holy: 'sagrado', lifedrain: 'drenovida', manadrain: 'drenomana', drown: 'afogamento' };
     const elemDoJogo = (t) => { if (!t) return 'fisico'; const k = String(t).toLowerCase().replace(/^combat_/, '').replace(/damage$/, ''); return ELEM_JOGO[k] || k; };
-    const _acum = (o, k, v) => { const x = o[k] || (o[k] = { n: 0, soma: 0, max: 0 }); x.n++; x.soma += v; if (v > x.max) x.max = v; return x; };
     const _tomadoVoc = (L, voc, el, v) => { const t = L.tomadoVoc[voc] || (L.tomadoVoc[voc] = { total: 0, golpes: 0, elems: {} }); t.total += v; t.golpes++; t.elems[el] = (t.elems[el] || 0) + v; };
     const razaoFim = (L) => L.tFim || (L.tUlt && Date.now() - L.tUlt > FRAME_FRESCO_MS ? L.tUlt : Date.now());
     let RAZAO = razaoNovo();
@@ -4458,18 +4457,22 @@
         if (!ss.length) return null;
         const seg = ss.reduce((t, x) => t + x.seg, 0), w = (x) => x.seg / seg;
         const elemPorVoc = {};
-        for (const x of ss) for (const [v, e] of Object.entries(x.elemPorVoc || {})) {
-            const o = elemPorVoc[v] || (elemPorVoc[v] = { tomadoH: 0, golpesH: 0, frac: {} });
-            o.tomadoH += e.tomadoH * w(x); o.golpesH += e.golpesH * w(x);
-            for (const [el, f] of Object.entries(e.frac || {})) o.frac[el] = (o.frac[el] || 0) + f * e.tomadoH * w(x);
+        for (const x of ss) {
+            for (const [v, e] of Object.entries(x.elemPorVoc || {})) {
+                const o = elemPorVoc[v] || (elemPorVoc[v] = { tomadoH: 0, golpesH: 0, frac: {} });
+                o.tomadoH += e.tomadoH * w(x); o.golpesH += e.golpesH * w(x);
+                for (const [el, f] of Object.entries(e.frac || {})) o.frac[el] = (o.frac[el] || 0) + f * e.tomadoH * w(x);
+            }
         }
         for (const o of Object.values(elemPorVoc)) { const t = Object.values(o.frac).reduce((a, b) => a + b, 0) || 1; for (const el of Object.keys(o.frac)) o.frac[el] = Math.round(o.frac[el] / t * 1000) / 1000; o.tomadoH = Math.round(o.tomadoH); o.golpesH = Math.round(o.golpesH); }
         const crias = {};
-        for (const x of ss) for (const c of (x.crias || [])) {
+        for (const x of ss) {
+          for (const c of (x.crias || [])) {
             const o = crias[c.nome] || (crias[c.nome] = { nome: c.nome, porH: 0, golpes: null, magias: {} });
             o.porH += c.porH * w(x);
             if (c.golpes) { const g = o.golpes || (o.golpes = { n: 0, medio: 0, max: 0, porH: 0 }); g.medio = (g.medio * g.n + c.golpes.medio * c.golpes.n) / (g.n + c.golpes.n); g.n += c.golpes.n; g.max = Math.max(g.max, c.golpes.max); g.porH += c.golpes.porH * w(x); }
             for (const m of (c.magias || [])) { const q = o.magias[m.atk] || (o.magias[m.atk] = { atk: m.atk, el: m.el, n: 0, medio: 0, max: 0, porH: 0 }); q.medio = (q.medio * q.n + m.medio * m.n) / (q.n + m.n); q.n += m.n; q.max = Math.max(q.max, m.max); q.porH += m.porH * w(x); }
+          }
         }
         const lista = Object.values(crias).map(c => Object.assign(c, { porH: Math.round(c.porH), golpes: c.golpes ? Object.assign(c.golpes, { medio: Math.round(c.golpes.medio), porH: Math.round(c.golpes.porH) }) : null,
                                                                    magias: Object.values(c.magias).map(m => Object.assign(m, { medio: Math.round(m.medio), porH: Math.round(m.porH) })).sort((a, b) => b.porH - a.porH) })).sort((a, b) => b.porH - a.porH);
