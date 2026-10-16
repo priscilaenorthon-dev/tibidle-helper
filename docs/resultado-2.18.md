@@ -106,3 +106,50 @@ Backup dos presets dos 4 antes de mexer: `.playwright-mcp/backup-presets-2026-10
   a previsão com fator ×1 (+15k) e a com ×3 (~+45k).
 - Versões: 2.19.1 (nota "só vale em conjunto"), 2.19.2 (loot/poções medidos + histerese), 2.19.3 (custo fixo), 2.19.4
   (texto da nota). Testes: 42 no `inteligente.test.js`, 14 arquivos ok.
+
+## Itens 6–8 do roteiro 2.11 (Auto Hunt, Scan, Mercado), rodados na mesma noite (23:12–23:31) — ✅ os três
+
+### 6. Auto Hunt — ✅
+- Config do dono antes: chave OFF, 50 % livre, hunt memorizada Petrified Hollow (184), "nunca vender equipamento" DESLIGADO
+  (escolha dele), imbuement ligado. Para o teste: memorizei Yalahar Worker Golem (161), limite 98 % livre (a mochila
+  estava 98 % livre → "no limite" na hora), liguei "nunca vender equipamento" e a chave.
+- Ciclo 1 (23:12:31 → 23:12:51, **19 s**): "caçada encerrada (resumo fechado)" → "todos os 2 selados purificados" →
+  **"nunca vender: platinum amulet (equipamento (necklace)), spiked squelcher (equipamento (two-handed)) — total 17.300 →
+  9.800"** → "vendido no NPC: 9.800 ouro · 1.693.117 → 1.702.917" → "depot: mochila 83 → 0 oz · depot 107 de 300" →
+  "hunt 161 fica na ilha yalahar" → "de volta à caçada (id 161)" (lure 4 mantido). Histórico: "23:12 · auto · 19 s · 9.800 ·
+  2 guardado(s) · 91 → 0 · 107/300 · ok".
+- Ciclo 2 (23:17:52): a trava de 5 min venceu com a mochila ainda "no limite" (98 %) e o ciclo disparou de novo; desliguei a
+  chave no meio (23:17:58 "Auto Hunt desligado") e ele **terminou inteiro mesmo assim** (nada para vender, depot 108/300,
+  volta à caçada). Esperado: o ciclo em curso não é interrompido pela chave; a chave só impede o próximo.
+- Devolvi a config do dono (chave OFF, 50 %, hunt 184, equipamento desligado). Não testados: F5 depois de Finalizar manual
+  e mochila no limite durante boss.
+
+### 7. Scan — ✅
+- Antes: Yalahar Worker Golem, lure 4 (tier 4/4), kits dos 4 (Feiticeiro já com Rage of the Skies). Marquei Petrified
+  Hollow + Holy Portal, 2 min, lure máximo, Em área, "estudo de variantes" desligado, fim: voltar. Botão: "Iniciar · 2
+  mapas · ~5 min". Total **4 min 47 s** (23:19:09 → 23:23:56).
+- Log: "aplicando Em área nos 4 personagens … pelo socket" em cada mapa; no fim **"kits de 4 personagem(ns) devolvidos como
+  estavam antes do Scan"** e **"de volta a Yalahar Worker Golem (lure 8 (tier 4/4)), como antes do Scan"**. Conferido:
+  huntId 161, lure 4, skills dos 4 idênticas (Rage of the Skies no Feiticeiro), curas iguais.
+- Cartões: "xp/h sem boost 158,6k · real 174,5k", "ouro/h estável −227.980 · bruto −151.731", selo XP/Ouro, bestiário
+  (46.969/50.000 → +1 distância · ~2h09), lure, abates/h, tomou/h, poção por personagem, dano por personagem, dano/mana.
+  Holy Portal: Knight com vida mínima 48 % e poção 285k/h — mapa caro. Petrified Hollow: +71,4k/h estável, 79,7k xp raw.
+- "ir ›": 1º toque não entra em mapa nenhum (confirmado sem dar o 2º). Morte no Scan: não provocado.
+
+### 8. Mercado — ✅ (de dentro da caçada; o dono lembrou: venda de depósito só na cidade)
+- ATUALIZAR só leu: socket com market_catalog, market_my_orders, market_inbox, market_copies, market_stats — nenhum create/
+  cancel/claim. Status "Premium ✓ até 27/10/2026 · taxa 5% · ações 0/20". Lista: 57 itens, 3 prontos (os da mochila), 52
+  fora; os do depósito vêm "está no depósito — retirar só na cidade"; loot sem comprador em 30 dias vem "vender no NPC"
+  (orichalcum pearl, ancient belt buckle, rhino horn carving, lump of earth). Preços: "menor −1" (small sapphire 278 com o
+  menor de outro a 279), "média 30 d", "faixa da raridade", "ajustado pelo valor da linha", "sem referência — digite".
+- 🔴 Anúncio: small sapphire ×1 a 278. "ANUNCIAR (1) · taxa total 13" → "CONFIRMAR: anunciar 1 · taxa 13 (não volta)" → Log
+  "anunciado 1× small sapphire a 278 (taxa 13, não volta)". No jogo, **MINHAS ORDENS: 1 aberta · VENDA 1× Small Sapphire ·
+  278 · expira em 2 d**. Taxa 13 = 5 % de 278 (o servidor devolveu creationFeePaid 13).
+- REVISAR: "você é o menor · menor de outro: 279 (o seu está 1 ABAIXO)" — bate com o livro do jogo; "200 venda(s) em 30 dias".
+- Cancelar (2 toques: "cancelar" → "confirmar?"): Log "ordem de 1× small sapphire cancelada — os itens voltam para a mochila;
+  a taxa de 13 não volta"; a safira voltou à mochila; no jogo "MINHAS ORDENS: nenhuma aberta". Caixa: "RESGATAR TUDO (0)"
+  desabilitado (nada vendido) — o resgate em si continua sem teste.
+- Observação: no 1º toque do cancelar, a tela só mudou para "confirmar?" na 3ª tentativa (nas duas primeiras o MK.conf
+  ficou armado mas o botão continuou "cancelar"); não reproduzi depois. Fica anotado.
+- Conferir na cidade, quando der: small emerald (média 30 d 158 < NPC 250/un) e yellow gem (100 < NPC 1.000/un) aparecem
+  hoje só com "está no depósito"; na cidade, a regra "nunca abaixo do NPC" tem que trocar isso por "vender no NPC".
