@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.20.1
+// @version      2.21.0
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.20.1';
+    const VERSAO = '2.21.0';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -4293,8 +4293,18 @@
     /* v2.14.13 — tFim (o `ended`) e tUlt (último frame): o relógio do livro PARA quando a caçada para. Antes seg = agora − t0
      * seguia correndo na cidade: 9 min depois do fim, o dano/s da party saía 18 em vez de 727 e o Equip dava 175 pt (175 % do
      * dano da party!) para regen. de mana 2,3 — a nota do ranking, o "−42 pt" das sobras e os pesos do bestiário inflavam ~40×. */
+    /* @@RAZAO-INICIO — testes/razao.test.js roda este trecho no node (stubs: vocDoIndice, CAT, precoRuna, FRAME_FRESCO_MS) */
+    /* v2.21.0 — POR CRIATURA E POR ELEMENTO (dono, 16/10: "quero saber o dano que a gente recebe, sem achismo"). O frame
+     * diz quem bate (spawn {id, name}; mhit {id, amount, hp} = corpo a corpo no membro 0, o Knight; mcast {id, atk, type,
+     * amount, hits[{who, amount, mana}]} = magia de criatura, por personagem e elemento; death {who}). Guardado em
+     * `crias` (por nome: golpes e magias, com média e máximo), `tomadoVoc` (por personagem e elemento) e `mortes`. */
     const razaoNovo = () => ({ t0: Date.now(), tFim: 0, tUlt: 0, magias: {}, auto: {}, tomado: { total: 0, golpes: 0, corpo: 0, golpesCorpo: 0 }, kills: 0, ondas: { n: 0, tam: 0, timer: 0, matar: 0, tOnda: 0 }, vitais: {}, hpAntes: {},
-                               vitaisPorKit: {}, kitVital: {} });
+                               vitaisPorKit: {}, kitVital: {}, nomes: {}, crias: {}, tomadoVoc: {}, mortes: [] });
+    /* o elemento do jogo (COMBAT_FIREDAMAGE, "fire", "physical"…) no nome do helper (fogo, fisico…) */
+    const ELEM_JOGO = { physical: 'fisico', fire: 'fogo', ice: 'gelo', energy: 'energia', earth: 'terra', poison: 'terra', death: 'morte', holy: 'sagrado', lifedrain: 'drenovida', manadrain: 'drenomana', drown: 'afogamento' };
+    const elemDoJogo = (t) => { if (!t) return 'fisico'; const k = String(t).toLowerCase().replace(/^combat_/, '').replace(/damage$/, ''); return ELEM_JOGO[k] || k; };
+    const _acum = (o, k, v) => { const x = o[k] || (o[k] = { n: 0, soma: 0, max: 0 }); x.n++; x.soma += v; if (v > x.max) x.max = v; return x; };
+    const _tomadoVoc = (L, voc, el, v) => { const t = L.tomadoVoc[voc] || (L.tomadoVoc[voc] = { total: 0, golpes: 0, elems: {} }); t.total += v; t.golpes++; t.elems[el] = (t.elems[el] || 0) + v; };
     const razaoFim = (L) => L.tFim || (L.tUlt && Date.now() - L.tUlt > FRAME_FRESCO_MS ? L.tUlt : Date.now());
     let RAZAO = razaoNovo();
     /* v2.12.0 — também a mana MÍNIMA (escada defensiva: Druida) e a
@@ -4355,7 +4365,8 @@
     }
     function razaoEvento(L, e, agora) {
         const k = e.kind;
-        if (k === 'spawn') { L.hpAntes[e.id] = e.maxHp; return; }
+        if (k === 'spawn') { L.hpAntes[e.id] = e.maxHp; if (e.name) L.nomes[e.id] = e.name; return; }
+        if (k === 'death') { L.mortes.push({ voc: vocDoIndice(e.who) || ('#' + e.who), t: agora }); return; }
         if (k === 'cast') {
             const voc = vocDoIndice(e.who) || ('#' + e.who), ch = voc + '|' + e.name;
             const m = L.magias[ch] || (L.magias[ch] = { voc, nome: e.name, runa: !!e.rune, casts: 0, hits: 0, dano: 0, overkill: 0, mortos: 0 });
@@ -4374,7 +4385,28 @@
             if (e.hp <= 0) { a.mortos++; delete L.hpAntes[e.id]; } else L.hpAntes[e.id] = e.hp;
             return;
         }
-        if (k === 'mhit' || k === 'mcast') { L.tomado.total += e.amount || 0; L.tomado.golpes++; if (k === 'mhit') { L.tomado.corpo += e.amount || 0; L.tomado.golpesCorpo++; } return; }
+        if (k === 'mhit') {
+            const v = Number(e.amount) || 0, nome = L.nomes[e.id] || '?';
+            L.tomado.total += v; L.tomado.golpes++; L.tomado.corpo += v; L.tomado.golpesCorpo++;
+            const c = L.crias[nome] || (L.crias[nome] = { golpes: null, magias: {} });
+            c.golpes = c.golpes || { n: 0, soma: 0, max: 0 }; c.golpes.n++; c.golpes.soma += v; if (v > c.golpes.max) c.golpes.max = v;
+            _tomadoVoc(L, vocDoIndice(0) || 'KNIGHT', 'fisico', v);
+            return;
+        }
+        if (k === 'mcast') {
+            const nome = L.nomes[e.id] || '?', el = elemDoJogo(e.type), atk = e.atk || '?';
+            const hits = Array.isArray(e.hits) && e.hits.length ? e.hits : [{ who: 0, amount: Number(e.amount) || 0, mana: Number(e.mana) || 0 }];
+            const c = L.crias[nome] || (L.crias[nome] = { golpes: null, magias: {} });
+            const m = c.magias[atk] || (c.magias[atk] = { el, n: 0, soma: 0, max: 0, alvos: 0 });
+            m.n++;
+            for (const h of hits) {
+                const v = Number(h.amount) || 0; if (!(v > 0)) continue;
+                L.tomado.total += v; L.tomado.golpes++;
+                m.soma += v; m.alvos++; if (v > m.max) m.max = v;
+                _tomadoVoc(L, vocDoIndice(h.who) || ('#' + h.who), el, v);
+            }
+            return;
+        }
         if (k === 'kill') { L.kills++; delete L.hpAntes[e.id]; return; }
         if (k === 'wave') { L.ondas.n++; L.ondas.tOnda = agora; L.ondas.tam = e.count || L.ondas.tam; return; }
         if (k === 'wave_timer') { L.ondas.timer += e.ms || 0; if (L.ondas.tOnda) { L.ondas.matar += agora - L.ondas.tOnda; L.ondas.tOnda = 0; } }
@@ -4402,9 +4434,74 @@
         const o = L.ondas, n = o.n || 0;
         const ondas = n ? { n, tam: o.tam, timer: Math.round(o.timer / n / 100) / 10, matar: Math.round(o.matar / n / 100) / 10 } : null;
         if (ondas) { ondas.ciclo = Math.round((ondas.timer + ondas.matar) * 10) / 10; ondas.spawnLimita = ondas.matar < ondas.timer * 0.5; }
+        /* v2.21.0 — por criatura (as 8 que mais machucam) e por personagem/elemento */
+        const crias = Object.entries(L.crias || {}).map(([nome, c]) => {
+            const g = c.golpes, mg = Object.entries(c.magias || {}).map(([atk, m]) => ({ atk, el: m.el, n: m.n, medio: m.alvos ? Math.round(m.soma / m.alvos) : 0, max: m.max, porH: Math.round(m.soma / seg * 3600) }));
+            const total = (g ? g.soma : 0) + mg.reduce((t, m) => t + m.porH * seg / 3600, 0);
+            return { nome, golpes: g ? { n: g.n, medio: Math.round(g.soma / g.n), max: g.max, porH: Math.round(g.soma / seg * 3600) } : null, magias: mg.sort((a, b) => b.porH - a.porH), porH: Math.round(total / seg * 3600) };
+        }).sort((a, b) => b.porH - a.porH).slice(0, 8);
+        const elemPorVoc = {};
+        for (const [v, t] of Object.entries(L.tomadoVoc || {})) {
+            if (!(t.total > 0)) continue;
+            elemPorVoc[v] = { tomadoH: Math.round(t.total / seg * 3600), golpesH: Math.round(t.golpes / seg * 3600), frac: Object.fromEntries(Object.entries(t.elems).map(([el, x]) => [el, Math.round(x / t.total * 1000) / 1000])) };
+        }
         return { seg: Math.round(seg), danoTotal, porVoc, magias, ondas, tomado: L.tomado.total, tomadoH: Math.round(L.tomado.total / seg * 3600), kills: L.kills,
                  tomadoCorpoH: Math.round((L.tomado.corpo || 0) / seg * 3600), golpesCorpoH: Math.round((L.tomado.golpesCorpo || 0) / seg * 3600),
-                 tirosH: Object.fromEntries(Object.entries(L.auto).map(([v, a]) => [v, Math.round(a.hits / seg * 3600)])) };
+                 tirosH: Object.fromEntries(Object.entries(L.auto).map(([v, a]) => [v, Math.round(a.hits / seg * 3600)])),
+                 crias, elemPorVoc, mortes: (L.mortes || []).length };
+    }
+    /* v2.21.0 — DANO POR MAPA E POR BOSS, guardado (dano_mapa): a cada caçada normal, sem Scan. Chave 'boss:<nome>' ou
+     * 'hunt:<id>'; até 3 sessões por chave (a mais nova substitui a mais velha); a leitura junta as sessões pelo tempo. */
+    const DANO_MAPA_MAX_SESSOES = 3, DANO_MAPA_MIN_SEG = 90;
+    function danoMapaJuntar(sessoes) {
+        const ss = (sessoes || []).filter(x => x && x.seg > 0);
+        if (!ss.length) return null;
+        const seg = ss.reduce((t, x) => t + x.seg, 0), w = (x) => x.seg / seg;
+        const elemPorVoc = {};
+        for (const x of ss) for (const [v, e] of Object.entries(x.elemPorVoc || {})) {
+            const o = elemPorVoc[v] || (elemPorVoc[v] = { tomadoH: 0, golpesH: 0, frac: {} });
+            o.tomadoH += e.tomadoH * w(x); o.golpesH += e.golpesH * w(x);
+            for (const [el, f] of Object.entries(e.frac || {})) o.frac[el] = (o.frac[el] || 0) + f * e.tomadoH * w(x);
+        }
+        for (const o of Object.values(elemPorVoc)) { const t = Object.values(o.frac).reduce((a, b) => a + b, 0) || 1; for (const el of Object.keys(o.frac)) o.frac[el] = Math.round(o.frac[el] / t * 1000) / 1000; o.tomadoH = Math.round(o.tomadoH); o.golpesH = Math.round(o.golpesH); }
+        const crias = {};
+        for (const x of ss) for (const c of (x.crias || [])) {
+            const o = crias[c.nome] || (crias[c.nome] = { nome: c.nome, porH: 0, golpes: null, magias: {} });
+            o.porH += c.porH * w(x);
+            if (c.golpes) { const g = o.golpes || (o.golpes = { n: 0, medio: 0, max: 0, porH: 0 }); g.medio = (g.medio * g.n + c.golpes.medio * c.golpes.n) / (g.n + c.golpes.n); g.n += c.golpes.n; g.max = Math.max(g.max, c.golpes.max); g.porH += c.golpes.porH * w(x); }
+            for (const m of (c.magias || [])) { const q = o.magias[m.atk] || (o.magias[m.atk] = { atk: m.atk, el: m.el, n: 0, medio: 0, max: 0, porH: 0 }); q.medio = (q.medio * q.n + m.medio * m.n) / (q.n + m.n); q.n += m.n; q.max = Math.max(q.max, m.max); q.porH += m.porH * w(x); }
+        }
+        const lista = Object.values(crias).map(c => Object.assign(c, { porH: Math.round(c.porH), golpes: c.golpes ? Object.assign(c.golpes, { medio: Math.round(c.golpes.medio), porH: Math.round(c.golpes.porH) }) : null,
+                                                                   magias: Object.values(c.magias).map(m => Object.assign(m, { medio: Math.round(m.medio), porH: Math.round(m.porH) })).sort((a, b) => b.porH - a.porH) })).sort((a, b) => b.porH - a.porH);
+        return { seg, sessoes: ss.length, t: Math.max(...ss.map(x => x.t || 0)), tomadoH: Math.round(ss.reduce((t, x) => t + (x.tomadoH || 0) * w(x), 0)), mortes: ss.reduce((t, x) => t + (x.mortes || 0), 0), elemPorVoc, crias: lista };
+    }
+    /* @@RAZAO-FIM */
+    const DANO_MAPA = { cache: null };
+    const danoMapaChave = () => (ESTADO_WS.boss ? 'boss:' + ESTADO_WS.boss : ESTADO_WS.huntId != null ? 'hunt:' + ESTADO_WS.huntId : null);
+    function danoMapaGuardar() {
+        const chave = danoMapaChave(); if (!chave || !RAZAO || !RAZAO.t0) return;
+        const rz = razaoResumo(RAZAO);
+        if (!(rz.seg >= DANO_MAPA_MIN_SEG) || !(rz.tomado > 0)) return;
+        const tudo = ler('dano_mapa', {}) || {};
+        const lista = (tudo[chave] || []).filter(x => x && x.t0 !== RAZAO.t0);
+        lista.push({ t0: RAZAO.t0, t: Date.now(), seg: rz.seg, tomadoH: rz.tomadoH, mortes: rz.mortes, elemPorVoc: rz.elemPorVoc, crias: rz.crias });
+        tudo[chave] = lista.sort((a, b) => a.t0 - b.t0).slice(-DANO_MAPA_MAX_SESSOES);
+        guardar('dano_mapa', tudo); DANO_MAPA.cache = null;
+    }
+    /* o que já se mediu num mapa (huntId) ou boss (nome): junta as sessões guardadas */
+    function danoMapa(chave) {
+        if (!chave) return null;
+        const tudo = ler('dano_mapa', {}) || {};
+        return danoMapaJuntar(tudo[chave]);
+    }
+    const danoMapaDaHunt = (hunt) => (hunt ? danoMapa(hunt.boss ? 'boss:' + hunt.boss : 'hunt:' + hunt.id) : null);
+    /* texto curto: "Cav 65 % físico · 20 % fogo; Fei 12/s fogo · Dragon: golpe 40–120, fireball 50–180 (fogo)" */
+    function danoMapaHtml(d, voc) {
+        if (!d || !d.elemPorVoc) return '';
+        const el = (e) => ({ fisico: 'físico' })[e] || e;
+        const vocs = VOCS.filter(v => d.elemPorVoc[v] && (!voc || v === voc)).map(v => { const x = d.elemPorVoc[v]; const top = Object.entries(x.frac).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([e, f]) => `${Math.round(f * 100)} % ${el(e)}`).join(' · '); return `<b>${VOC_CURTO[v]}</b> ${milBR(x.tomadoH)}/h: ${top}`; }).join(' ; ');
+        const crias = (d.crias || []).slice(0, 4).map(c => `${escHtml(c.nome)}${c.golpes ? ` golpe ${c.golpes.medio} (máx ${c.golpes.max})` : ''}${c.magias.slice(0, 2).map(m => ` · ${escHtml(m.atk)} ${m.medio} (máx ${m.max}, ${el(m.el)})`).join('')}`).join(' | ');
+        return `<div class="tb-mut" style="font-size:10.5px">Dano tomado medido${d.sessoes ? ` (${d.sessoes} sessão${d.sessoes > 1 ? 'ões' : ''}, ${numBR(Math.round(d.seg / 60))} min${d.mortes ? ', ' + d.mortes + ' morte' + (d.mortes > 1 ? 's' : '') : ''})` : ''}: ${vocs || '—'}${crias ? `<br>quem bate: ${crias}` : ''}</div>`;
     }
     const VOC_CURTO = { KNIGHT: 'Cav', PALADIN: 'Pal', SORCERER: 'Fei', DRUID: 'Dru' };
     function razaoHtml(rz, curto) {
@@ -4599,6 +4696,7 @@
                  * acabou fica em ultimoEnded para quem precisar do motivo. */
                 ESTADO_WS.ultimoEnded = { t: Date.now(), huntId: sm.huntId != null ? sm.huntId : ESTADO_WS.huntId, reason: sm.reason || null, boss: ESTADO_WS.boss };
                 if (RAZAO && !RAZAO.tFim) RAZAO.tFim = Date.now(); // v2.14.13 — o relógio do livro-razão para aqui
+                try { danoMapaGuardar(); } catch (e) { falhou('dano por mapa', e); } // v2.21.0 — antes de zerar o huntId
                 ESTADO_WS.boss = null; ESTADO_WS.ultimoStart = null; ESTADO_WS.frame = null; ESTADO_WS.party = []; ESTADO_WS.huntId = null;
                 if (sm.huntId != null && sm.huntId !== HUNT_ID_BOSS && huntNoCatalogo(sm.huntId)) { guardar('hunt_id', sm.huntId); guardar('hunt_manual', sm.huntId); }
             }
@@ -6126,6 +6224,7 @@
         tiroS: { SORCERER: 0.14, DRUID: 0.14 }, // tiros da wand/rod por segundo (medido: mana curta)
         tomadoS: 30, fisico: 0.65, golpesS: 0.45, // Knight: dano tomado/s, parte corpo a corpo, golpes/s
         hpMinK: null, // v2.18.2 — vida mínima MEDIDA do Knight (%), quando há; sem medida, a defesa vale cheia
+        elemVoc: null, // v2.21.0 — {VOC: {tomadoS, frac: {fisico, fogo, …}}} medido no mapa; sem medida, a divisão de antes
         ladoApanha: 1, // ×defesa dos laterais (4 = mapa de magia de área)
         ouroPorMana: 0.6
     };
@@ -6133,6 +6232,7 @@
         const p = (ctx && ctx.party) || {}, R = {};
         for (const k of Object.keys(PARTY_REF)) {
             const ref = PARTY_REF[k], v = p[k];
+            if (k === 'elemVoc') { R[k] = v && typeof v === 'object' ? v : null; continue; } // v2.21.0
             if (ref && typeof ref === 'object') { R[k] = Object.assign({}, ref); for (const [kk, vv] of Object.entries(v || {})) if (typeof vv === 'boolean' || Number.isFinite(vv)) R[k][kk] = vv; }
             else R[k] = Number.isFinite(v) && v >= 0 ? v : ref;
         }
@@ -6345,8 +6445,12 @@
             const brutoCorpoS = R.tomadoS * R.fisico + R.golpesS * arm.medio + bloqueiosS * bloq.medio; // golpe bruto/s estimado
             P.resist_fisica = P.absorbpercentphysical = _r(brutoCorpoS / 100 * VIDA_PT_KNIGHT * folga);
             P.protecao_magica = _r(k1 * (1 - R.fisico) * folga);
-            for (const e of ELEM) P['resist_' + e] = P['absorbpercent' + ELEM_EN[e]] = _r(k1 * (1 - R.fisico) / 4 * folga);
+            /* v2.21.0 — resistência por elemento pelo que o Knight TOMA de cada um neste mapa (medido: mhit/mcast por
+             * elemento); sem medida, a magia das criaturas é dividida por igual entre os 4 elementos de antes */
+            const ek = R.elemVoc && R.elemVoc.KNIGHT && R.elemVoc.KNIGHT.frac;
+            for (const e of ELEM) P['resist_' + e] = P['absorbpercent' + ELEM_EN[e]] = _r((ek ? R.tomadoS / 100 * VIDA_PT_KNIGHT * (ek[e] || 0) : k1 * (1 - R.fisico) / 4) * folga);
             P.absorbpercentpoison = P.resist_terra;
+            P.elemMedido = !!ek;
             P.cura_propria = _r(k1 * 0.5); // metade da vida dele volta por poção/cura própria
             P.armor = _r(R.golpesS * 0.75 * VIDA_PT_KNIGHT * folga); // tira 0,5–1× por golpe corpo a corpo
             P.defense = P.extradef = _r((bloqueiosS * 0.75 * 0.08 * (skE / 4 + 2.23) + mitPorDef * R.tomadoS) * VIDA_PT_KNIGHT * folga); // bloqueio ≤ 1/s + mitigação
@@ -6356,9 +6460,13 @@
         } else {
             const la = R.ladoApanha > 0 ? R.ladoApanha : 1;
             P.regen_vida = _r(VIDA_PT_LADO * la); P.max_hp = _r(0.01 * la);
-            P.resist_fisica = P.absorbpercentphysical = _r(0.02 * la); P.protecao_magica = _r(0.15 * la);
-            for (const e of ELEM) P['resist_' + e] = P['absorbpercent' + ELEM_EN[e]] = _r(0.05 * la);
-            P.absorbpercentpoison = _r(0.05 * la);
+            /* v2.21.0 — lateral medido: o que ELE toma por segundo de cada elemento (magia de área de criatura) */
+            const ev = R.elemVoc && R.elemVoc[voc], tS = ev ? ev.tomadoS : 0;
+            P.resist_fisica = P.absorbpercentphysical = _r(ev ? tS / 100 * VIDA_PT_LADO * (ev.frac.fisico || 0) : 0.02 * la);
+            P.protecao_magica = _r(ev ? tS / 100 * VIDA_PT_LADO * (1 - (ev.frac.fisico || 0)) : 0.15 * la);
+            for (const e of ELEM) P['resist_' + e] = P['absorbpercent' + ELEM_EN[e]] = _r(ev ? tS / 100 * VIDA_PT_LADO * (ev.frac[e] || 0) : 0.05 * la);
+            P.absorbpercentpoison = P.resist_terra;
+            P.elemMedido = !!ev;
             P.cura_propria = _r(0.05 * la);
             P.armor = P.defense = P.extradef = P.escudo = P.skillshield = 0; // armadura e escudo só seguram corpo a corpo
         }
@@ -8313,7 +8421,7 @@
                 (mortos.length ? `<div class="tb-mx tb-morto" title="slot que nunca dispararia: fica vazio (não gasta mana)">cortado: ${escHtml(mortos.join(' · '))}</div>` : '') + `</div></div>`;
         }).join('') + `</div>`;
         const linhas = [];
-        if (emHunt() && RAZAO.kills) { const rz = razaoResumo(RAZAO); if (rz.danoTotal) linhas.push(`<div><b>grupo ao vivo</b> — ${numBR(Math.round(rz.seg / 60))} min · ${numBR(rz.kills)} abates · tomou ${milBR(rz.tomadoH)}/h</div>${razaoHtml(rz, false)}`); }
+        if (emHunt() && RAZAO.kills) { const rz = razaoResumo(RAZAO); if (rz.danoTotal) linhas.push(`<div><b>grupo ao vivo</b> — ${numBR(Math.round(rz.seg / 60))} min · ${numBR(rz.kills)} abates · tomou ${milBR(rz.tomadoH)}/h</div>${razaoHtml(rz, false)}${rz.tomado > 0 ? danoMapaHtml(Object.assign({ sessoes: 0 }, rz), null) : ''}`); }
         if (h.bestiary && h.bestiary.stages && h.bestiary.stages.length) linhas.push(`<div><b>bestiário</b>: ${escHtml(h.bestiary.bonus)} <span class="tb-tag">${h.bestiary.stages.map(e => `${numBR(e.kills / 1000, 1)}k → +${escHtml(e.value)}`).join(' · ')}</span></div>`);
         linhas.push(`<div>${MODELOS[modelo] ? escHtml(maisAlvos(MODELOS[modelo].dica)) : ''} Nada é aplicado sozinho. ${socketAberto() && ESTADO_WS.perfisDoServidor ? 'Aplica pelo socket, sem abrir janela.' : 'Aplica pelos diálogos do jogo (só os 4 ataques).'}</div>`);
         corpo += aj('magia-mais', linhas.join(''), 'detalhes');
@@ -8630,8 +8738,20 @@
             const sc = Object.values(scanResultados()).filter(r => r && r.razao && r.razao.danoTotal > 0).sort((a, b) => (b.t || 0) - (a.t || 0))[0];
             if (sc) { rz = sc.razao; fonte = 'Scan ' + sc.title; }
         }
-        if (!rz) return null;
+        /* v2.21.0 — 3ª fonte: o dano guardado do mapa escolhido (caçadas normais), para o Equip acertar na cidade */
+        let dm = null;
+        try { const h = huntAtual(); dm = danoMapaDaHunt(h); if (dm && !rz) fonte = 'dano guardado de ' + (h.title || h.id); } catch { dm = null; }
+        if (!rz && !dm) return null;
         const P = { fonte, share: {}, dpm: {}, mana: {}, bebe: {}, fracMagica: {}, fracMagia: {}, tiroS: {} };
+        /* elementos do dano tomado por personagem (ao vivo/Scan primeiro; senão o guardado do mapa) */
+        const epv = (rz && rz.elemPorVoc && Object.keys(rz.elemPorVoc).length ? rz.elemPorVoc : dm && dm.elemPorVoc) || null;
+        if (epv) { P.elemVoc = {}; for (const [v, x] of Object.entries(epv)) P.elemVoc[v] = { tomadoS: x.tomadoH / 3600, frac: x.frac }; }
+        if (!rz) {
+            if (dm.tomadoH > 0) P.tomadoS = dm.tomadoH / 3600;
+            const k = dm.elemPorVoc && dm.elemPorVoc.KNIGHT;
+            if (k && k.frac) { P.fisico = k.frac.fisico || 0; if (k.golpesH > 0) P.golpesS = k.golpesH / 3600 * (k.frac.fisico || 0); }
+            return P;
+        }
         P.dps = rz.danoTotal / Math.max(1, rz.seg);
         const cat = {}; for (const m of (CAT.magias || [])) cat[m.name] = m;
         for (const v of VOCS) {
@@ -8931,7 +9051,10 @@
           /* v2.20.0 — a ficha oficial da defesa do Knight (regras do jogo, com o que ele veste) */
           let fd = null; try { fd = EQUIP.ctx ? pesosDaVoc('KNIGHT', EQUIP.ctx).fichaDefesa : null; } catch { fd = null; }
           if (fd) h += `<div class="tb-mut" style="font-size:10.5px">Cavaleiro pela regra do jogo${fd.lido ? '' : ' (referência: sem leitura do que ele veste)'}: bloqueio tira <b>${fd.bloq.min}–${fd.bloq.max}</b> por golpe bloqueado (Escudo ${numBR(fd.skEscudo, 0)} × defesa ${numBR(fd.defEscudo, 0)}; 2 cargas, volta 1/s) · armadura ${numBR(fd.armadura, 0)} tira <b>${fd.arm.min}–${fd.arm.max}</b> por golpe · mitigação <b>${numBR(fd.mit, 2)} %</b> de todo o dano · magia de criatura ignora escudo e armadura (só proteção ao elemento).</div>`;
-          if (hp != null) h += `<div class="tb-mut" style="font-size:10.5px">Knight: vida mínima medida ${Math.round(hp)} % → armadura, defesa e resistências dele valem ${hp >= 60 ? 'metade' : hp >= 40 ? '¾' : 'cheias'} (${hp >= 40 ? 'ele não está passando aperto' : 'ele está apanhando'}).</div>`; }
+          if (hp != null) h += `<div class="tb-mut" style="font-size:10.5px">Knight: vida mínima medida ${Math.round(hp)} % → armadura, defesa e resistências dele valem ${hp >= 60 ? 'metade' : hp >= 40 ? '¾' : 'cheias'} (${hp >= 40 ? 'ele não está passando aperto' : 'ele está apanhando'}).</div>`;
+          /* v2.21.0 — o dano tomado medido (ao vivo ou guardado deste mapa): de quem e de que elemento */
+          try { const vivo = emHunt() && RAZAO.tomado.total > 0 ? razaoResumo(RAZAO) : null; const d = vivo && vivo.seg >= 60 ? Object.assign({ sessoes: 0 }, vivo) : danoMapaDaHunt(huntAtual());
+                if (d) h += danoMapaHtml(d, null); else h += `<div class="tb-mut" style="font-size:10.5px">Dano tomado: ainda sem medida neste mapa — cace nele com o helper aberto (qualquer caçada normal conta; 2 min bastam) e as resistências passam a valer pelo elemento certo.</div>`; } catch (e) { falhou('equip (dano do mapa)', e); } }
         if (!R) return h + aj('eq-ajuda', 'ATUALIZAR lê o corpo dos 4, a mochila e o depósito, busca os atributos base e ranqueia por vocação e slot. Nada é equipado nem descartado sem o botão EQUIPAR. Raridade não pontua: um épico com atributos que a vocação não usa perde para um incomum com o atributo certo.');
         h += `<div class="tb-sub tb-eq-vocs" role="group" aria-label="vocação">${VOCS.map(x => {
             const n = Object.values(R.porVoc[x] || {}).filter(eqMexer).length;
@@ -13443,6 +13566,7 @@
         setInterval(() => verificarAtualizacao().catch(() => { }), 30 * 60 * 1000);
         /* v2.13.0 — Radar: o vigiar dos alertas (só age se o dono ligou) e o dia salvo ao sair */
         setInterval(radarVigia, 60000);
+        setInterval(() => { try { if (emHunt()) danoMapaGuardar(); } catch (e) { falhou('dano por mapa', e); } }, 120000); // v2.21.0
         window.addEventListener('beforeunload', () => { try { fecharSessao('página fechada'); } catch (e) { } try { radarSalvarDia(true); } catch { /* sem espaço */ } });
     }
 

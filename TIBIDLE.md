@@ -5220,3 +5220,18 @@ Paladino; 1,26/2,0/1,2 magos), creature.cpp (bloqueio, armadura, 2 cargas que vo
   corpo → "proteção fogo 2,0 → 4,9 %".
 - Aparece na linha "⚔ no jogo:" de cada troca do Equip e de cada oferta da Melhorias. Sem leitura do corpo, avisa "(referência)".
 - Testes: 2 novos em `equip.test.js`.
+
+## 2.21.0 (16/10) — dano tomado por criatura e por elemento, guardado por mapa e boss (passo 2)
+- O livro-razão (`@@RAZAO`, agora com teste próprio `testes/razao.test.js`) lê o que o cliente do jogo recebe: `spawn {id, name}`
+  dá o nome; `mhit {id, amount}` é o golpe corpo a corpo no membro 0 (Knight); `mcast {id, atk, type, amount, hits[{who,
+  amount, mana}]}` é a magia de criatura, por personagem e elemento (`elemDoJogo`: COMBAT_FIREDAMAGE → fogo…); `death {who}`.
+  Sai em `razaoResumo`: `crias` (as 8 que mais machucam: golpe médio/máximo, magias por elemento, dano/h), `elemPorVoc`
+  (por personagem: dano/h, golpes/h e a fração por elemento) e `mortes`.
+- **Guardado por mapa/boss** (`dano_mapa`, chave `hunt:<id>` ou `boss:<nome>`): toda caçada normal com ≥ 90 s grava a
+  sessão (no `ended` e a cada 2 min); até 3 sessões por chave; `danoMapaJuntar` pondera pelo tempo. Nada de Scan.
+- `partyMedida` ganha 3ª fonte: o dano guardado do mapa escolhido (o Equip acerta na cidade) e `elemVoc`.
+- `pesosDaVoc`: resistência por elemento pelo que o Knight TOMA de cada um (ex.: 80 % fogo → proteção de fogo vale 4× a
+  média, gelo vale 0); laterais pelo que cada um toma por segundo de cada elemento. Sem medida, a divisão de antes.
+- Telas: Equip mostra "Dano tomado medido (N sessões, X min): Cav 65 % físico · 20 % fogo; Fei …; quem bate: Dragon golpe
+  76 (máx 112) · fireball 90 (fogo)"; Magia, no "grupo ao vivo", o mesmo.
+- Testes: 4 no `razao.test.js`, 1 no `equip.test.js`.

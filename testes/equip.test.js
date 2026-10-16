@@ -624,4 +624,14 @@ t('2.20.1 "no jogo": golpe do Knight, tiro do Paladino (munição grátis do arc
     assert.strictEqual(M.efeitoOficial(r3, r0, 'SORCERER', ctx), 'proteção fogo 2,0 → 4,9 %');
     assert.strictEqual(M.efeitoOficial(r0, r0, 'SORCERER', ctx), null, 'sem nada a dizer: null');
 });
+t('2.21.0 elementos medidos: Knight que toma 80 % de fogo dá à proteção de fogo muito mais que à de gelo; lateral medido ganha peso de resistência', () => {
+    const party = { tomadoS: 30, fisico: 0.2, golpesS: 0.3, elemVoc: { KNIGHT: { tomadoS: 30, frac: { fisico: 0.2, fogo: 0.8 } }, SORCERER: { tomadoS: 6, frac: { fogo: 1 } } } };
+    const K = M.pesosDaVoc('KNIGHT', { party });
+    assert(K.elemMedido && K.resist_fogo > K.resist_gelo * 20 && K.resist_gelo === 0, `fogo ${K.resist_fogo} × gelo ${K.resist_gelo}`);
+    assert(Math.abs(K.resist_fogo - 30 / 100 * 3.6 * 0.8) < 0.01, 'fogo = tomado/100 × 3,6 × fração: ' + K.resist_fogo);
+    const S = M.pesosDaVoc('SORCERER', { party });
+    assert(S.elemMedido && Math.abs(S.resist_fogo - 6 / 100 * 0.5) < 0.001 && S.resist_gelo === 0, `Feiticeiro fogo ${S.resist_fogo} (6/s medido), gelo ${S.resist_gelo}`);
+    const K0 = M.pesosDaVoc('KNIGHT', {});
+    assert(!K0.elemMedido && K0.resist_fogo === K0.resist_gelo, 'sem medida: divisão igual como antes');
+});
 console.log(`\n${n} testes ok` + (pulados ? ` · ${pulados} pulados (sem o estado da conta em data/)` : ''));
