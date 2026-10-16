@@ -5167,3 +5167,46 @@ modelo. Abas do Progresso numa linha só (6 abas: a Forja estava quebrando para 
   melhor). Anel, colar e arma seguem a regra antiga (arma: 2.19.5).
 - Testes: 4 novos em `melhorias.test.js`; as ofertas dos testes antigos viraram steel boots (nível acima); o `vm` da compra
   compra Steel Boots e conta a Leather Boots do mesmo nível como escondida.
+
+## 16. Fórmulas oficiais do combate (16/10) — o que é regra do jogo, não medida
+Fontes: o código do cliente (play.tibidle.com/_next/static/chunks — constantes de mitigação por vocação, efeitos dos
+suportes, esquemas dos eventos do frame), a wiki /como-o-dano-e-calculado (com exemplos numéricos) e o servidor aberto
+**Canary** (opentibiabr/canary): o Tibidle deriva dele — vocations.xml (mitigação 1,3/2,05/1,25 Knight; 1,28/2,08/1,2
+Paladino; 1,26/2,0/1,2 magos), creature.cpp (bloqueio, armadura, 2 cargas que voltam 1/s) e player.cpp (defesa =
+(Escudo/4 + 2,23) × defesa do escudo × 0,5 × 0,16) batem número a número com os exemplos da wiki.
+- **Golpe básico** (a cada 2 s, todos): Knight máx = 0,085·atk·Corpo a Corpo + nível/5, mín = nível/5 (nível 8, skill 10,
+  Sword 14 → 1–14); Paladino máx = 0,09·(munição + arco)·Distância + nível/5, mín = 60 % do máx (Bow + Arrow 25 → 14–24);
+  wand/rod = dano fixo. Magias: fórmula própria (/spell-numbers dá o número real).
+- **Golpe corpo a corpo de criatura** (sempre no Knight), nesta ordem: acerto → sorteio mín–máx da criatura → **proteção
+  do equipamento (%)** → **bloqueio** (se houver carga: entre D/2 e D, D = (Escudo/4 + 2,23) × defesa × 0,08, truncado;
+  Escudo 10 + Wooden Shield 14 → 2–5) → **armadura** (acima de 3: entre a/2 e a − (a mod 2 + 1); 1–3 tira 1; armadura 7 →
+  3–5) → **mitigação** ((Escudo × fator + 2,05 × defesa)/100 × 0,8 %: 0,34 % no exemplo, 1,33 % com Escudo 80 e defesa
+  30) → Prey. Protector ×0,85; Blood Rage ×1,15 e desliga bloqueio e mitigação.
+- **Magia de criatura** (alvo único no Knight; área em quem está no quadrado): proteção ao elemento + proteção mágica da
+  forja (compostas: (100 − acumulado)/100 × r + acumulado, teto 100 %) → mitigação → Prey → Magic Shield. **Nunca passa por
+  escudo nem armadura.** Dreno de mana: só a Prey reduz.
+- Sem veneno/fogo/paralisia ao longo do tempo; sem crítico de base; velocidade não muda nada.
+- **O que NÃO é público**: o mín–máx de ataque de cada criatura (só no servidor). A wiki só diz "sorteio entre o mínimo e o
+  máximo da criatura". Fica por medição (eventos `mhit`/`mcast` do frame; `ended.summary.deathCause[]` dá o maior golpe
+  por criatura e elemento). Pesquisa de 16/10 (agente): rotas públicas /wiki/items, /wiki/drops?item=, /wiki/origin?item=,
+  /islands, /leaderboard, /online, /item-marks, /item-keys, /hunts, /tradeable, /raid-shop — nenhuma tem ataque; os
+  repositórios da comunidade (kbelludoo/tibidle-bot, brunomrasilva/tibidle-companion-releases, NewAnnLS/Tibidler-Stuff)
+  também não. Canary tem o ataque dos monstros, mas o Tibidle mudou vida (só 44 % iguais) e XP (todos) — não serve.
+
+## 2.20.0 (16/10) — Equip e Melhorias pelas regras oficiais do combate
+- Dono: "tem alguma ferramenta ou API para saber o dano que a gente dá e recebe? Simulador fiel, não achismo". Lido o cliente
+  do jogo, a wiki e o Canary (§16). O que era chute virou regra:
+  - `@@EQUIP-PURO`: `COMBATE_VOC`, `mitigacaoPct`, `bloqueioEscudo`, `reducaoArmadura`, `golpeBasico`, `protecaoComposta`,
+    `danoRecebidoCorpo`, `danoRecebidoMagia`, `SUPORTE_OFICIAL` (Protector escudo ×2,2, causa ×0,65, recebe ×0,85; Blood
+    Rage corpo a corpo ×1,35, recebe ×1,15; Sharpshooter distância ×1,4).
+  - `pesosDaVoc` (Knight): +1 de defesa do escudo = 0,75 × 0,08 × (Escudo/4 + 2,23) por golpe bloqueado (≤ 1/s) + a
+    mitigação; +1 de Escudo (linha da forja) = 0,75 × 0,08 × defesa/4 por bloqueio; a proteção física desconta sobre o
+    golpe BRUTO (o que ele toma + o que escudo e armadura já tiram). Armadura segue 0,75 por ponto (é a inclinação oficial).
+    A folga pela vida mínima medida (2.18.2) continua. `P.fichaDefesa` traz a ficha.
+  - O frame passa a anotar a skill **Escudo** (`shielding`); `contextoEquip` lê a defesa do escudo e a armadura total do
+    Knight (`ctx.kn`). Sem leitura: referência (Escudo = corpo a corpo, defesa 30, armadura 40).
+  - Aba Equip: "Cavaleiro pela regra do jogo: bloqueio tira X–Y por golpe (Escudo S × defesa D) · armadura A tira B–C ·
+    mitigação M % · magia de criatura ignora escudo e armadura".
+- Melhorias e Inteligente usam a mesma régua (pontuarPeca), então herdam.
+- Testes: 6 novos em `equip.test.js` (os exemplos da wiki). Próximo: medir por criatura (`mhit`/`mcast` por nome e lure,
+  `deathCause`) e guardar por mapa e boss.

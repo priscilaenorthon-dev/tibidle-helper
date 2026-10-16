@@ -7,7 +7,7 @@ const raiz = path.join(__dirname, '..');
 const src = fs.readFileSync(path.join(raiz, 'tibidle-helper.user.js'), 'utf8');
 const ini = src.indexOf('/* @@EQUIP-PURO-INICIO */'), fim = src.indexOf('/* @@EQUIP-PURO-FIM */');
 assert(ini > 0 && fim > ini, 'marcadores @@EQUIP-PURO não encontrados');
-const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, pesosDaVoc, candidatosEquip, distribuirEquip, pecasDesmanche, planoForja, faixaPotencia, wikiSlug, wikiUrlPeca, EQUIP_RESERVAS, destinosSobras, chanceLinha, fragmentosDesmanche, escolherDestino, faixaRange, valorTipico, linhasUteis, REGRAS_VOCACAO, FAIXA_NOME };')();
+const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, pesosDaVoc, mitigacaoPct, bloqueioEscudo, reducaoArmadura, golpeBasico, protecaoComposta, danoRecebidoCorpo, danoRecebidoMagia, COMBATE_VOC, SUPORTE_OFICIAL, candidatosEquip, distribuirEquip, pecasDesmanche, planoForja, faixaPotencia, wikiSlug, wikiUrlPeca, EQUIP_RESERVAS, destinosSobras, chanceLinha, fragmentosDesmanche, escolherDestino, faixaRange, valorTipico, linhasUteis, REGRAS_VOCACAO, FAIXA_NOME };')();
 const le = (p) => { try { return JSON.parse(fs.readFileSync(path.join(raiz, p), 'utf8')); } catch (e) { return null; } };
 const base = {};
 for (const [nome, it] of Object.entries(le('testes/fixtures/itens.json').itens)) base[nome] = { id: it.id, attrs: it.attrs || {}, sell: it.sell || 0, equipPreview: it.equipPreview || null };
@@ -547,5 +547,53 @@ t('defesa do Knight na medida: com a vida mínima ≥ 60 % o escudo com regen. g
     /* bloqueio: no máximo ~1 por segundo — com 3 golpes/s a defesa não triplica, a armadura sim */
     const P = M.pesosDaVoc('KNIGHT', { party: { golpesS: 3 } });
     assert(P.armor > P.defense * 2.5, 'armadura ' + P.armor + ' × defesa ' + P.defense);
+});
+/* 2.20.0 — FÓRMULAS OFICIAIS (wiki /como-o-dano-e-calculado, 16/10, com os exemplos numéricos dela; Canary bate) */
+t('2.20.0 oficial: bloqueio do escudo = (Escudo/4 + 2,23) × defesa × 0,08 — Escudo 10 + Wooden Shield 14 tira 2–5 (exemplo da wiki)', () => {
+    assert.deepStrictEqual(M.bloqueioEscudo(10, 14), { min: 2, max: 5, medio: 3.5 });
+    assert.deepStrictEqual(M.bloqueioEscudo(10, 0), { min: 0, max: 0, medio: 0 }, 'sem escudo não há bloqueio');
+    assert(M.bloqueioEscudo(80, 14).max > M.bloqueioEscudo(10, 14).max, 'a skill Escudo aumenta o bloqueio');
+});
+t('2.20.0 oficial: mitigação — Escudo 10 + defesa 14 = 0,34 %; Escudo 80 + defesa 30 = 1,33 % (exemplos da wiki)', () => {
+    assert.strictEqual(M.mitigacaoPct('KNIGHT', 10, 14), 0.34);
+    assert.strictEqual(M.mitigacaoPct('KNIGHT', 80, 30), 1.33);
+    assert.strictEqual(M.COMBATE_VOC.PALADIN.mit, 1.28, 'constantes do cliente do jogo');
+});
+t('2.20.0 oficial: armadura 7 tira 3–5; 1 a 3 tira 1; 0 não tira; a inclinação média é 0,75 por ponto', () => {
+    assert.deepStrictEqual(M.reducaoArmadura(7), { min: 3, max: 5, medio: 4 });
+    assert.deepStrictEqual(M.reducaoArmadura(3), { min: 1, max: 1, medio: 1 });
+    assert.deepStrictEqual(M.reducaoArmadura(0).medio, 0);
+    assert.strictEqual(Math.round((M.reducaoArmadura(40).medio - M.reducaoArmadura(20).medio) / 20 * 100) / 100, 0.75);
+});
+t('2.20.0 oficial: golpe básico — Knight nível 8 skill 10 Sword 14 → 1–14, soco (6) → 1–7; Paladino Bow+Arrow 25 → 14–24; wand fixa', () => {
+    assert.deepStrictEqual([M.golpeBasico('KNIGHT', 8, 10, 14).min, M.golpeBasico('KNIGHT', 8, 10, 14).max], [1, 14]);
+    assert.deepStrictEqual([M.golpeBasico('KNIGHT', 8, 10, 6).min, M.golpeBasico('KNIGHT', 8, 10, 6).max], [1, 7]);
+    assert.deepStrictEqual([M.golpeBasico('PALADIN', 8, 10, 25).min, M.golpeBasico('PALADIN', 8, 10, 25).max], [14, 24]);
+    assert.deepStrictEqual([M.golpeBasico('SORCERER', 8, 10, 0, { fromDamage: 8, toDamage: 18 }).min, M.golpeBasico('SORCERER', 8, 10, 0, { fromDamage: 8, toDamage: 18 }).max], [8, 18]);
+});
+t('2.20.0 oficial: ordem do golpe no Knight — proteção antes do bloqueio e da armadura; magia ignora escudo e armadura', () => {
+    const d = { voc: 'KNIGHT', skEscudo: 10, defEscudo: 14, armadura: 7, protFisica: 0, cargas: 1 };
+    /* 100 bruto → bloqueio 3,5 → armadura 4 → 92,5 → mitigação 0,34 % → 92,19 */
+    assert.strictEqual(Math.round(M.danoRecebidoCorpo(100, d) * 100) / 100, 92.19);
+    assert.strictEqual(Math.round(M.danoRecebidoCorpo(100, Object.assign({}, d, { protFisica: 10 })) * 100) / 100, Math.round((90 - 7.5) * (1 - 0.0034) * 100) / 100, 'a proteção desconta sobre o bruto');
+    assert.strictEqual(Math.round(M.danoRecebidoCorpo(100, Object.assign({}, d, { cargas: 0 })) * 100) / 100, Math.round(96 * (1 - 0.0034) * 100) / 100, 'sem carga não há bloqueio');
+    const m = M.danoRecebidoMagia(100, { voc: 'KNIGHT', skEscudo: 10, defEscudo: 14, protElem: 10, protMagica: 5 });
+    assert.strictEqual(Math.round(m * 100) / 100, Math.round(100 * (1 - 0.145) * (1 - 0.0034) * 100) / 100, 'magia: proteções compostas (10 % + 5 % = 14,5 %) e mitigação; nada de armadura');
+    assert.strictEqual(M.protecaoComposta([50, 50]), 75);
+    assert.strictEqual(M.protecaoComposta([80, 80]), 96);
+});
+t('2.20.0 pesos: +1 de defesa do escudo vale mais com Escudo alto; +1 de Escudo vale mais com escudo forte; proteção física conta sobre o bruto', () => {
+    const P10 = M.pesosDaVoc('KNIGHT', { sk: { KNIGHT: { escudo: 10 } }, kn: { defEscudo: 30, armadura: 40 } });
+    const P80 = M.pesosDaVoc('KNIGHT', { sk: { KNIGHT: { escudo: 80 } }, kn: { defEscudo: 30, armadura: 40 } });
+    assert(P80.defense > P10.defense * 1.5, `defesa: Escudo 80 ${P80.defense} × Escudo 10 ${P10.defense}`);
+    const E14 = M.pesosDaVoc('KNIGHT', { sk: { KNIGHT: { escudo: 60 } }, kn: { defEscudo: 14, armadura: 40 } });
+    const E34 = M.pesosDaVoc('KNIGHT', { sk: { KNIGHT: { escudo: 60 } }, kn: { defEscudo: 34, armadura: 40 } });
+    assert(E34.escudo > E14.escudo * 1.8, `escudo (skill): defesa 34 ${E34.escudo} × 14 ${E14.escudo}`);
+    assert(P80.fichaDefesa && P80.fichaDefesa.lido && P80.fichaDefesa.bloq.max === M.bloqueioEscudo(80, 30).max);
+    /* a proteção física vale sobre o golpe bruto (tomado + o que escudo e armadura já tiram): maior que a conta antiga k1 × físico */
+    const R = { tomadoS: 30, fisico: 0.65, golpesS: 0.45 };
+    const P = M.pesosDaVoc('KNIGHT', { party: R, kn: { defEscudo: 34, armadura: 40 } });
+    assert(P.resist_fisica > 30 / 100 * 3.6 * 0.65, 'proteção física: ' + P.resist_fisica);
+    assert(M.pesosDaVoc('KNIGHT', {}).fichaDefesa.lido === false, 'sem leitura do que veste: referência');
 });
 console.log(`\n${n} testes ok` + (pulados ? ` · ${pulados} pulados (sem o estado da conta em data/)` : ''));
