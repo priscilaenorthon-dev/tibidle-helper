@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.19.1
+// @version      2.19.2
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.19.1';
+    const VERSAO = '2.19.2';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -3176,7 +3176,7 @@
      *  barras = {VOC: {skills:[nome|null ×4], minCreatures:{nome:n}, pocao (0–1), sups:[…]}} (o caller lê do jogo);
      *  opc.vivo = {abH, seg} da caçada atual NESTE mapa (≥ 3 min): calibra os abates/h (só o número absoluto: a
      *  ordem das sugestões não muda). → {base, sugestoes:[…], combinado, naoSimulavel:[voc], kCalibVivo} | null */
-    const AJ_XP_MIN = 0.02, AJ_LUCRO_TOL = 3000, AJ_LUCRO_SO = 3000, AJ_MANA_QUEDA = 0.10, AJ_MANA_PISO = 0.15;
+    const AJ_XP_MIN = 0.02, AJ_LUCRO_TOL = 3000, AJ_LUCRO_SO = 3000, AJ_MANA_QUEDA = 0.10, AJ_MANA_PISO = 0.15, AJ_HISTERESE = 0.01;
     function ajusteFinoInt(hunt, barras, opc) {
         opc = opc || {};
         if (!hunt || hunt.boss) return null;
@@ -3200,11 +3200,25 @@
         }
         if (!Object.keys(esc).length) return null;
         let base = avaliarPartyInt(ctx, esc, null);
-        let kCalibVivo = null;
-        if (opc.vivo && opc.vivo.abH > 0 && opc.vivo.seg >= 180 && base.met.abH > 0) {
-            kCalibVivo = Math.round(Math.min(1.4, Math.max(0.6, opc.vivo.abH / (base.met.abH / ctx.kCalib))) * 100) / 100;
-            ctx.kCalib = kCalibVivo; ctx.memo = new Map();
+        let kCalibVivo = null, lootVivo = null, kCustoVivo = null;
+        const vivo = opc.vivo && opc.vivo.abH > 0 && opc.vivo.seg >= 180 && base.met.abH > 0 ? opc.vivo : null;
+        if (vivo) {
+            kCalibVivo = Math.round(Math.min(1.4, Math.max(0.6, vivo.abH / (base.met.abH / ctx.kCalib))) * 100) / 100;
+            ctx.kCalib = kCalibVivo;
+            /* v2.19.2 — loot e custo também pela caçada (≥ 100 abates). Yalahar Worker Golem, 15/10: o catálogo dava 3,6 de
+             * ouro/abate e o Analisador media 40; as poções custavam 134k/h contra ~49k simulados — o lucro previsto (−42k)
+             * não era comparável ao medido (−59k). O loot medido entra no lugar do catálogo; o custo ganha UM fator (0,5–3)
+             * por cima do cVoc do Scan, para a conta absoluta bater sem mudar a ordem entre personagens. */
+            if (vivo.kills >= 100 && vivo.lootAbate != null && vivo.lootAbate >= 0) { lootVivo = Math.round(vivo.lootAbate * 10) / 10; ctx.loot = lootVivo; ctx.lootMedido = true; }
+            ctx.memo = new Map();
             base = avaliarPartyInt(ctx, esc, null);
+            if (vivo.kills >= 100 && vivo.supH > 0 && base.met.custoH > 100) {
+                kCustoVivo = Math.round(Math.min(3, Math.max(0.5, vivo.supH / base.met.custoH)) * 100) / 100;
+                const cv = {};
+                for (const v of VOCS_INT) cv[v] = ((c0.cVoc && c0.cVoc[v]) || 1) * kCustoVivo;
+                ctx.cVoc = cv; ctx.memo = new Map();
+                base = avaliarPartyInt(ctx, esc, null);
+            }
         }
         const manaMin = (x, v) => (x.sim.por[v] ? x.sim.por[v].manaMinFrac : 1);
         const aceita = (x, ref, v) => {
@@ -3259,19 +3273,56 @@
         }
         /* uma sugestão por personagem: a barra final dele, medida SOZINHA contra a base (o que ganha se aplicar só ela) */
         const sugestoes = [];
+        const montarSg = (v, plano, x, desc, passosV) => {
+            const m = x.met;
+            return { voc: v, desc, passos: passosV, plano, nomes: plano.map(p => [nome(p), p.minimo]), antes: esc[v].plano.map(p => [nome(p), p.minimo]),
+                     dXp: Math.round((m.xpH / base.met.xpH - 1) * 1000) / 10, dLucro: Math.round(m.lucroH - base.met.lucroH),
+                     xpH: Math.round(m.xpH), lucroH: Math.round(m.lucroH), T: m.T, manaMin: Math.round(manaMin(x, v) * 100), manaMinAntes: Math.round(manaMin(base, v) * 100),
+                     sozinhaValida: aceita(x, base, v) };
+        };
         for (const v of Object.keys(passos)) {
-            const e1 = Object.assign({}, esc, { [v]: atual[v] });
-            const x = avaliarPartyInt(ctx, e1, null), m = x.met;
-            sugestoes.push({ voc: v, desc: passos[v].join('; '), passos: passos[v].slice(), plano: atual[v].plano, nomes: atual[v].plano.map(p => [nome(p), p.minimo]),
-                             antes: esc[v].plano.map(p => [nome(p), p.minimo]),
-                             dXp: Math.round((m.xpH / base.met.xpH - 1) * 1000) / 10, dLucro: Math.round(m.lucroH - base.met.lucroH),
-                             xpH: Math.round(m.xpH), lucroH: Math.round(m.lucroH), T: m.T, manaMin: Math.round(manaMin(x, v) * 100), manaMinAntes: Math.round(manaMin(base, v) * 100),
-                             sozinhaValida: aceita(x, base, v) });
+            const x = avaliarPartyInt(ctx, Object.assign({}, esc, { [v]: atual[v] }), null);
+            sugestoes.push(montarSg(v, atual[v].plano, x, passos[v].join('; '), passos[v].slice()));
+        }
+        /* v2.19.2 — HISTERESE: a sugestão que já estava na tela (mesmo mapa, `opc.preferir` = [{voc, nomes, desc}]) só sai se a
+         * nova ganhar dela por > 1 % de XP (ou +3k/h com o mesmo XP) ou se ela deixou de passar no corte. Ao vivo (15/10)
+         * vizinhos quase empatados trocavam de lugar a cada recálculo (Rage of the Skies ↔ Great Fire Wave). */
+        const sig = (pl) => pl.map(q => nome(q) + '≥' + q.minimo).join('|');
+        let mantidas = 0;
+        for (const p of (Array.isArray(opc.preferir) ? opc.preferir : [])) {
+            const v = p && p.voc;
+            if (!v || !esc[v] || naoSimulavel.includes(v) || !Array.isArray(p.nomes) || !p.nomes.length) continue;
+            const plano = [];
+            let ok = true;
+            for (const par of p.nomes) {
+                const av = Array.isArray(par) && ctx.porNome[v] && ctx.porNome[v][par[0]];
+                if (!av) { ok = false; break; }
+                plano.push({ av, minimo: Math.max(1, Math.min(L, Math.round(Number(par[1])) || 1)) });
+            }
+            if (!ok || !barraValida(plano, L) || sig(plano) === sig(esc[v].plano)) continue;
+            const x = avaliarPartyInt(ctx, Object.assign({}, esc, { [v]: Object.assign({}, esc[v], { plano }) }), null);
+            if (!aceita(x, base, v)) continue;
+            const i = sugestoes.findIndex(sg => sg.voc === v);
+            if (i >= 0) {
+                const nova = sugestoes[i];
+                if (sig(nova.plano) === sig(plano)) continue;
+                const ganhaXp = nova.xpH > x.met.xpH * (1 + AJ_HISTERESE);
+                const ganhaLucro = nova.xpH >= x.met.xpH * (1 - 0.005) && nova.lucroH >= x.met.lucroH + AJ_LUCRO_SO;
+                if (ganhaXp || ganhaLucro) continue;
+            }
+            const sg = Object.assign(montarSg(v, plano, x, p.desc || 'manter a sugestão anterior', []), { mantida: true });
+            if (i >= 0) sugestoes[i] = sg; else sugestoes.push(sg);
+            mantidas++;
+        }
+        if (mantidas) { // o combinado parte das sugestões finais, não do fim da descida
+            const eAll = Object.assign({}, esc);
+            for (const sg of sugestoes) eAll[sg.voc] = Object.assign({}, esc[sg.voc], { plano: sg.plano });
+            ref = avaliarPartyInt(ctx, eAll, null);
         }
         sugestoes.sort((a, b) => b.dXp - a.dXp || b.dLucro - a.dLucro);
-        const usadas = Object.keys(passos);
-        const fmt = (x) => ({ xpH: Math.round(x.met.xpH), lucroH: Math.round(x.met.lucroH), abH: Math.round(x.met.abH), T: x.met.T, seguro: x.seguro });
-        return { base: fmt(base), sugestoes, combinado: usadas.length ? Object.assign(fmt(ref), { vocs: usadas }) : null, naoSimulavel, kCalibVivo, L };
+        const usadas = sugestoes.map(sg => sg.voc);
+        const fmt = (x) => ({ xpH: Math.round(x.met.xpH), lucroH: Math.round(x.met.lucroH), custoH: Math.round(x.met.custoH), abH: Math.round(x.met.abH), T: x.met.T, seguro: x.seguro });
+        return { base: fmt(base), sugestoes, combinado: usadas.length ? Object.assign(fmt(ref), { vocs: usadas }) : null, naoSimulavel, kCalibVivo, lootVivo, kCustoVivo, L };
     }
     /* veredito do grupo no Inteligente: o lucro/h da party simulada */
     function viabilidadeInt(hunt) {
@@ -8116,16 +8167,23 @@
     function vivoDaCacada(h) {
         const a = anAgora();
         if (!a || ESTADO_WS.huntId !== h.id || !(a.elapsedMs >= 180000) || !(Number(a.kills) > 0)) return null;
-        return { abH: Number(a.kills) / (a.elapsedMs / 3600000), seg: a.elapsedMs / 1000 };
+        const kills = Number(a.kills), horas = a.elapsedMs / 3600000;
+        /* v2.19.2 — loot por abate e poções/h do Analisador (≥ 100 abates) calibram o lucro do simulador */
+        return { abH: kills / horas, seg: a.elapsedMs / 1000, kills,
+                 lootAbate: kills >= 100 && Number.isFinite(Number(a.lootGold)) ? Number(a.lootGold) / kills : null,
+                 supH: kills >= 100 && Number.isFinite(Number(a.suppliesGold)) ? Number(a.suppliesGold) / horas : null };
     }
     function ajusteDe(h) {
         const barras = barrasDoJogo();
         if (!barras) return { semBarra: true };
         const vivo = vivoDaCacada(h);
-        const chave = h.id + '|' + JSON.stringify(barras) + '|' + Math.floor(Date.now() / 60000) + '|' + (vivo ? Math.round(vivo.abH / 50) : '-');
+        const chave = h.id + '|' + JSON.stringify(barras) + '|' + Math.floor(Date.now() / 60000) + '|' + (vivo ? [Math.round(vivo.abH / 50), vivo.lootAbate != null ? Math.round(vivo.lootAbate) : '-', vivo.supH != null ? Math.round(vivo.supH / 5000) : '-'].join(',') : '-');
         if (AJ.chave !== chave) {
             AJ.chave = chave; AJ.erro = null;
-            try { AJ.res = ajusteFinoInt(h, barras, { vivo }); } catch (e) { AJ.res = null; AJ.erro = e.message; falhou('ajuste fino', e); }
+            /* v2.19.2 — a sugestão da tela anterior (mesmo mapa) só sai se a nova ganhar dela de verdade (histerese) */
+            const preferir = AJ.res && AJ.hunt === h.id && Array.isArray(AJ.res.sugestoes) ? AJ.res.sugestoes.map(sg => ({ voc: sg.voc, nomes: sg.nomes, desc: sg.desc })) : null;
+            AJ.hunt = h.id;
+            try { AJ.res = ajusteFinoInt(h, barras, { vivo, preferir }); } catch (e) { AJ.res = null; AJ.erro = e.message; falhou('ajuste fino', e); }
         }
         return AJ.res;
     }
@@ -8137,11 +8195,11 @@
         if (r && r.semBarra) return x + `<div class="tb-av">a sua barra ainda não chegou do jogo (perfis do servidor) — dê F5 com o helper instalado</div></div>`;
         if (!r) return x + `<div class="tb-mut">${AJ.erro ? 'a conta falhou: ' + escHtml(AJ.erro) : 'sem dados deste mapa ainda (catálogo/monstros)'}</div></div>`;
         const b = r.base, comb = (T) => (T != null ? ` · onda limpa em ${numBR(Math.round(T * 10) / 10, 1)} s (${tpCombos(T) === 1 ? '⚡ 1 combo' : tpCombos(T) + ' combos'})` : '');
-        x += `<div class="tb-mut">sua barra hoje, prevista: <b>${milBR(b.xpH)} xp/h</b> · lucro ${b.lucroH >= 0 ? '+' : ''}${milBR(b.lucroH)}/h${comb(b.T)}${r.kCalibVivo != null ? ` · <span class="tb-ok">abates calibrados por esta caçada (×${numBR(r.kCalibVivo, 2)})</span>` : ''}</div>`;
+        x += `<div class="tb-mut">sua barra hoje, prevista: <b>${milBR(b.xpH)} xp/h</b> · lucro ${b.lucroH >= 0 ? '+' : ''}${milBR(b.lucroH)}/h${comb(b.T)}${r.kCalibVivo != null ? ` · <span class="tb-ok">abates calibrados por esta caçada (×${numBR(r.kCalibVivo, 2)})${r.lootVivo != null ? `; loot ${numBR(r.lootVivo, 1)}/abate e poções ×${numBR(r.kCustoVivo || 1, 2)} medidos</span>` : '</span>'}` : ''}</div>`;
         if (r.naoSimulavel.length) x += `<div class="tb-av">${r.naoSimulavel.map(v => escHtml(VOC_ROTULO[v] || v)).join(', ')}: alguma magia da barra não entra na simulação — esse personagem fica como está</div>`;
         if (!r.sugestoes.length) return x + `<div class="tb-ok" style="margin-top:4px">✓ A sua barra já está no melhor que a simulação acha neste mapa: nenhuma troca dá +2 % de XP (ou +3k/h de lucro com o mesmo XP) sem tirar mana de ninguém.</div></div>`;
         r.sugestoes.forEach((sg, i) => {
-            x += `<div style="margin-top:6px;border-top:1px dashed #8884;padding-top:4px"><b>${escHtml(VOC_ROTULO[sg.voc] || sg.voc)}</b>: ${escHtml(sg.desc)}` +
+            x += `<div style="margin-top:6px;border-top:1px dashed #8884;padding-top:4px"><b>${escHtml(VOC_ROTULO[sg.voc] || sg.voc)}</b>: ${escHtml(sg.desc)}${sg.mantida ? ' <span class="tb-mut">(mantida: a conta nova não ganha dela por 1 %)</span>' : ''}` +
                  `<div class="tb-mut">hoje: ${escHtml(ajKit(sg.antes))}<br>depois: ${escHtml(ajKit(sg.nomes))}</div>` +
                  `<div><span class="${sg.dXp > 0 ? 'tb-ok' : ''}">${sg.dXp >= 0 ? '+' : ''}${numBR(sg.dXp, 1)} % xp</span> · <span class="${sg.dLucro >= 0 ? 'tb-ok' : 'tb-ruim'}">lucro ${sg.dLucro >= 0 ? '+' : ''}${milBR(sg.dLucro)}/h</span> · <span class="tb-mut">mana mínima ${sg.manaMinAntes} → ${sg.manaMin} %${comb(sg.T)}</span></div>` +
                  /* v2.19.1 — a descida aceita cada passo contra a party JÁ ajustada; sozinha, a troca pode não passar no corte

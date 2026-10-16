@@ -5102,3 +5102,18 @@ modelo. Abas do Progresso numa linha só (6 abas: a Forja estava quebrando para 
   base (`sozinhaValida`), a troca não passa — e a tela ignorava a flag.
 - Agora a sugestão com `sozinhaValida === false` vem sem botão e com a nota "só compensa junto com os outros ajustes —
   vai com APLICAR TODOS". O cálculo não mudou. Teste novo em `inteligente.test.js`.
+
+## 2.19.2 (15/10) — ajuste fino: loot e poções medidos na caçada; histerese nas sugestões
+- **Lucro previsto × medido** (pendência 1 do `docs/resultado-2.18.md`): em Yalahar Worker Golem o catálogo dá 3,6 de ouro
+  por abate ("ouro estável") e o Analisador do jogo mede 40; as poções hoje custam 134k/h (poção do Feiticeiro a 30 %)
+  contra ~41k/h nas sessões de 13/10. Por isso −42k previsto × −59k medido no mesmo dia, e +44,7k em 13/10. Agora
+  `vivoDaCacada` manda também `kills`, `lootAbate` (lootGold ÷ abates) e `supH` (suppliesGold/h) e, com ≥ 3 min e ≥ 100
+  abates, `ajusteFinoInt` usa o loot medido no lugar do catálogo (`lootMedido`) e multiplica o custo por um fator único
+  0,5–3 (`kCustoVivo`, por cima do `cVoc` do Scan). A ordem entre personagens não muda; o número absoluto passa a ser
+  comparável ao LUCRO/H do Analisador. A linha da base mostra "loot 40,0/abate e poções ×2,7 medidos".
+- **Histerese** (pendência 2): `ajusteDe` passa as sugestões da tela anterior do mesmo mapa (`opc.preferir`); cada uma é
+  reavaliada no contexto novo e só sai se deixou de passar no corte ou se a nova ganha dela por > 1 % de XP
+  (`AJ_HISTERESE`) ou +3k/h com o mesmo XP. A mantida vem marcada "(mantida: a conta nova não ganha dela por 1 %)" e o
+  "Tudo junto" é recalculado a partir das sugestões finais. Ao vivo, Rage of the Skies ↔ Great Fire Wave trocavam a cada
+  minuto.
+- `fmt` do resultado ganhou `custoH`. Testes: +2 em `inteligente.test.js` (42).

@@ -84,6 +84,7 @@ Backup dos presets dos 4 antes de mexer: `.playwright-mcp/backup-presets-2026-10
 - Jogo deixado aberto, logado e caçando Yalahar Worker Golem (lure Extremo) na janela do Playwright.
 
 ## Pendências que saíram deste teste
+(1 e 2 atendidas na 2.19.2, mesma noite — ver TIBIDLE.md.)
 1. Lucro previsto × medido: −42,1k/h previsto contra +44,7k/h da sessão do dono (02:03) e −58,4k → −27k/h do Analisador
    hoje. O Analisador do jogo e o simulador não contam a mesma coisa (loot na mochila sem vender? poções?). Investigar.
 2. Instabilidade das sugestões entre recálculos (achado 2): vizinhos quase empatados; talvez exigir margem (histerese)

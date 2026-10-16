@@ -251,6 +251,40 @@ t('2.19.1 — ajuste fino: toda sugestão diz se vale sozinha; a que só vale em
         }
     }
 });
+t('2.19.2 — ajuste fino: loot e poções medidos na caçada entram na conta (lucro previsto = loot × abates − poções × fator)', () => {
+    const b = barraDe(VH, 'area');
+    const r0 = M.ajusteFinoInt(H(VH), b);
+    assert(r0.base.custoH > 100, 'base sem custo: ' + JSON.stringify(r0.base));
+    const supH = Math.round(r0.base.custoH * 1.5);
+    const r = M.ajusteFinoInt(H(VH), b, { vivo: { abH: r0.base.abH, seg: 600, kills: 500, lootAbate: 40, supH } });
+    assert.strictEqual(r.lootVivo, 40);
+    assert(Math.abs(r.kCustoVivo - 1.5) < 0.02, 'kCusto ' + r.kCustoVivo);
+    const esperado = r.base.abH * 40 - supH;
+    assert(Math.abs(r.base.lucroH - esperado) <= Math.max(1000, 0.02 * Math.abs(esperado)), JSON.stringify([r.base, esperado]));
+    const r2 = M.ajusteFinoInt(H(VH), b, { vivo: { abH: r0.base.abH, seg: 600, kills: 50, lootAbate: 40, supH } });
+    assert(r2.lootVivo == null && r2.kCustoVivo == null, 'com menos de 100 abates não calibra loot/custo');
+});
+t('2.19.2 — ajuste fino: histerese — a sugestão anterior fica enquanto a nova não ganha dela por > 1 % de XP; a que não passa no corte sai', () => {
+    const b = barraDe(VH, 'area');
+    const r1 = M.ajusteFinoInt(H(VH), b);
+    assert(r1.sugestoes.length, 'sem sugestão na base');
+    const pref = r1.sugestoes.map(s => ({ voc: s.voc, nomes: s.nomes, desc: s.desc }));
+    const r2 = M.ajusteFinoInt(H(VH), b, { vivo: { abH: r1.base.abH * 1.15, seg: 600, kills: 500 }, preferir: pref });
+    for (const p of pref) {
+        const s = r2.sugestoes.find(x => x.voc === p.voc);
+        assert(s, 'sumiu: ' + p.voc);
+        assert.strictEqual(JSON.stringify(s.nomes), JSON.stringify(p.nomes), p.voc + ' trocou de sugestão sem ganhar 1 %');
+    }
+    assert(r2.combinado && r2.combinado.vocs.length === r2.sugestoes.length, 'combinado não cobre as sugestões finais');
+    // qualquer sugestão mantida continua passando no corte sozinha (+2 % de XP, ou +3k/h sem perder XP)
+    for (const nomes of [[['Ice Strike', 1]], [['Strong Ice Wave', 1]], [['Eternal Winter', 2], ['Ice Strike', 1]], [['Terra Wave', 2]]]) {
+        const r3 = M.ajusteFinoInt(H(VH), b, { preferir: [{ voc: 'DRUID', nomes, desc: 'anterior' }] });
+        for (const sg of r3.sugestoes) {
+            if (!sg.mantida) continue;
+            assert(sg.sozinhaValida && (sg.dXp >= 2 || (sg.dXp >= -0.5 && sg.dLucro >= 3000)), 'mantida fora do corte: ' + JSON.stringify([nomes, sg.dXp, sg.dLucro]));
+        }
+    }
+});
 t('2 — determinismo: 10 chamadas seguidas dão o mesmo resultado', () => {
     zerar(); M.E.scan = { vh: RITMO_VH };
     const resumo = (r) => JSON.stringify({ sig: r.final.sig, xp: Math.round(r.final.met.xpH), l: Math.round(r.final.met.lucroH), c: r.cont });
