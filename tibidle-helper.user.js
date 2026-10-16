@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.20.0
+// @version      2.20.1
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.20.0';
+    const VERSAO = '2.20.1';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -6199,6 +6199,51 @@
         x = Math.max(0, x);
         return Math.max(0, x - x * mitigacaoPct(d.voc || 'KNIGHT', d.skEscudo, d.defEscudo) / 100);
     }
+    /* v2.20.1 — O QUE MUDA NO JOGO ao vestir `nova` no lugar de `atual` (dono, 16/10: "com os nossos itens dá para
+     * melhorar a tela de Equip e Melhorias?"). Texto curto em unidades do jogo, pelas regras oficiais acima:
+     *   Knight: escudo → "bloqueio 17–34 → 24–47 por golpe · mitigação 1,10 → 1,33 %"; peça de armadura → "armadura 40 → 43:
+     *   tira 19–38 → 21–41 por golpe"; arma → "golpe 25–118 → 27–126". Paladino: arco → "tiro 90–150 → 95–158 (arrow 25)".
+     *   Magos: wand/rod → "tiro 8–18 energia → 56–74 fogo". Proteção (anel, colar, forja): "proteção fogo 2,1 → 5,2 %".
+     * Usa ctx.sk (skills vistas), ctx.nivel, ctx.kn (defesa do escudo e armadura total do Knight) e ctx.usando (linhas
+     * da forja nos outros espaços). Sem leitura, a referência — e o texto avisa. Devolve null se não há o que dizer. */
+    const _refino = (p) => Number(p && p.forja && p.forja.refino) || 0;
+    const _fx = (a, b) => `${a.min}–${a.max} → ${b.min}–${b.max}`;
+    function efeitoOficial(nova, atual, voc, ctx) {
+        if (!nova) return null;
+        const slot = normalizarSlot(nova.slot || (atual && atual.slot)), a = nova.attrs || {}, b = (atual && atual.attrs) || {};
+        const sk = Object.assign({}, REF_SK, (ctx && ctx.sk && ctx.sk[voc]) || {}), nivel = (ctx && ctx.nivel > 0 && ctx.nivel) || sk.nivel;
+        const kn = (ctx && ctx.kn) || {}, lido = !!(kn.defEscudo > 0 || kn.armadura != null);
+        const partes = [];
+        const ehWand = (x) => x.weaponType === 'wand' || !!x.wandType;
+        if (voc === 'KNIGHT' && slot === 'shield') {
+            const skE = sk.escudo > 0 ? sk.escudo : sk.melee, d1 = (Number(b.defense) || 0) + _refino(atual), d2 = (Number(a.defense) || 0) + _refino(nova);
+            partes.push(`bloqueio ${_fx(bloqueioEscudo(skE, d1), bloqueioEscudo(skE, d2))} por golpe (Escudo ${Math.round(skE)}) · mitigação ${mitigacaoPct('KNIGHT', skE, d1).toFixed(2).replace('.', ',')} → ${mitigacaoPct('KNIGHT', skE, d2).toFixed(2).replace('.', ',')} %`);
+        } else if (voc === 'KNIGHT' && slot !== 'weapon' && (a.armor != null || b.armor != null)) {
+            const total = kn.armadura != null ? Number(kn.armadura) : 40, a1 = (Number(b.armor) || 0) + _refino(atual), a2 = (Number(a.armor) || 0) + _refino(nova);
+            const t1 = total, t2 = Math.max(0, total - a1 + a2);
+            if (t1 !== t2) partes.push(`armadura ${t1} → ${t2}: tira ${_fx(reducaoArmadura(t1), reducaoArmadura(t2))} por golpe${lido ? '' : ' (referência)'}`);
+        } else if (voc === 'KNIGHT' && slot === 'weapon' && !ehWand(a)) {
+            const g1 = golpeBasico('KNIGHT', nivel, sk.melee, (Number(b.attack) || 0) + _refino(atual)), g2 = golpeBasico('KNIGHT', nivel, sk.melee, (Number(a.attack) || 0) + _refino(nova));
+            if (g1.max !== g2.max) partes.push(`golpe ${_fx(g1, g2)} (Corpo a Corpo ${Math.round(sk.melee)})`);
+        } else if (voc === 'PALADIN' && slot === 'weapon') {
+            const mun = (x) => MUNICAO_GRATIS[x.ammotype] != null ? MUNICAO_GRATIS[x.ammotype] : MUNICAO_GRATIS.arrow;
+            const g1 = atual ? golpeBasico('PALADIN', nivel, sk.dist, (Number(b.attack) || 0) + _refino(atual) + mun(b)) : null, g2 = golpeBasico('PALADIN', nivel, sk.dist, (Number(a.attack) || 0) + _refino(nova) + mun(a));
+            if (!g1 || g1.max !== g2.max) partes.push(`tiro ${g1 ? _fx(g1, g2) : g2.min + '–' + g2.max} (Distância ${Math.round(sk.dist)}, ${a.ammotype === 'bolt' ? 'bolt 30' : 'arrow 25'} grátis)`);
+        } else if ((voc === 'SORCERER' || voc === 'DRUID') && slot === 'weapon' && ehWand(a)) {
+            const t = (x) => `${Number(x.fromDamage) || 0}–${Number(x.toDamage) || 0}${x.wandType ? ' ' + x.wandType : ''}`;
+            if (!atual || t(a) !== t(b)) partes.push(`tiro ${atual && ehWand(b) ? t(b) + ' → ' : ''}${t(a)} (${Number(a.mana) || 0} de mana)`);
+        }
+        /* proteção: linhas de resistência da forja (e resist física/proteção mágica), compostas com o resto do corpo */
+        const outras = {}, u = ctx && ctx.usando && ctx.usando[voc];
+        if (u) for (const [sl, at] of Object.entries(u)) if (sl !== slot) for (const [id, v] of Object.entries(at || {})) if (/^resist_|^protecao_magica$/.test(id)) (outras[id] || (outras[id] = [])).push(Number(v) || 0);
+        const linhas = (p) => Object.fromEntries((((p && p.forja && p.forja.atributos) || [])).filter(x => x && /^resist_|^protecao_magica$/.test(x.id)).map(x => [x.id, Number(x.valor) || 0]));
+        const la = linhas(nova), lb = linhas(atual);
+        for (const id of new Set([...Object.keys(la), ...Object.keys(lb)])) {
+            const p1 = protecaoComposta((outras[id] || []).concat(lb[id] ? [lb[id]] : [])), p2 = protecaoComposta((outras[id] || []).concat(la[id] ? [la[id]] : []));
+            if (Math.abs(p1 - p2) >= 0.05) partes.push(`${rotulo(id).replace('resist ', 'proteção ')} ${p1.toFixed(1).replace('.', ',')} → ${p2.toFixed(1).replace('.', ',')} %`);
+        }
+        return partes.length ? partes.join(' · ') : null;
+    }
     /* dano ESPERADO de uma magia de criatura em quem está no quadrado: d = {voc, skEscudo, defEscudo, protElem (%), protMagica (%)} */
     function danoRecebidoMagia(bruto, d) {
         d = d || {};
@@ -7099,6 +7144,7 @@
                                    cabe: ouro == null ? null : c.preco <= ouro, motivos: r.motivos, duasMaos: !!c.duasMaos,
                                    fontes: fontes.slice(0, 4), soDefesa, caro, refImbuida, refino: Number(c.forja && c.forja.refino) || 0, ficha: mlFichaVarinha(c0),
                                    nivelSet: ehSet && pisoSet ? Object.assign(mlFichaSet(c0, s), { de: mlNum(pisoSet.attrs, mlChaveSet(s)) }) : null, soArmadura,
+                                   efeito: efeitoOficial(c0, ref0, v, ctx), // v2.20.1 — o que muda no jogo, pelas regras oficiais
                                    recomendada: !perdas.length && !soDefesa && !caro && !refImbuida && !soArmadura });
                 }
                 /* melhor primeiro: mais ganho; empate (±5 %), o mais barato */
@@ -8910,7 +8956,8 @@
              * EQUIPAR aplica o resto. O veto vale nesta sessão; a linha mostra "pulada" e um "voltar". */
             const pulada = troca && EQUIP.pular.has(chave);
             const btPular = troca ? ` <button type="button" class="tb-bt mini" data-eq-pular="${escHtml(chave)}" title="${pulada ? 'voltar a incluir esta troca no EQUIPAR' : 'deixar esta troca de fora do EQUIPAR'}">${pulada ? 'voltar' : 'pular'}</button>` : '';
-            const direita = troca ? nomePeca(x.melhor, v) + `<small><span class="${pulada ? 'tb-mut' : 'g'}">${pulada ? 'pulada por você · ' : ''}+${pt(x.ganho)}</span> · ${escHtml(decBR(mot))}${btPular}</small>`
+            let efeito = null; if (troca) { try { efeito = efeitoOficial(x.melhor, x.atual, v, EQUIP.ctx); } catch { efeito = null; } }
+            const direita = troca ? nomePeca(x.melhor, v) + `<small><span class="${pulada ? 'tb-mut' : 'g'}">${pulada ? 'pulada por você · ' : ''}+${pt(x.ganho)}</span> · ${escHtml(decBR(mot))}${btPular}</small>` + (efeito ? `<small>⚔ no jogo: ${escHtml(efeito)}</small>` : '')
                 : tirar ? '<span class="tb-av">tirar (arma de 2 mãos)</span>'
                 : soGasta ? `<span class="tb-av">vale menos que nada neste mapa (${pt(x.atualPt)}: só gasta mana) — tire à mão se quiser; em outro mapa pode valer</span>`
                 : !x.atual ? '<span class="tb-mut">nada melhor no estoque</span>' : '<span class="tb-mut">já é o melhor</span>';
@@ -13063,6 +13110,7 @@
             (o.ficha ? `<div class="tb-mut">${escHtml(mlVarinhaTxt(o.ficha))}</div>` : '') +
             (o.nivelSet ? `<div><span class="tb-tag">nível superior</span> <span class="tb-mut">${o.nivelSet.nobre > 0 ? 'nível mágico/skill de fábrica +' + numBR(o.nivelSet.nobre, 0) + ' · ' : ''}${mlSetRot(o.nivelSet.k)} ${numBR(o.nivelSet.de, 0)} → <b>${numBR(o.nivelSet.valor, 0)}</b>${o.nivelSet.nivel ? ' · pede nível ' + o.nivelSet.nivel : ''}</span></div>` : '') +
             (enc ? `<div class="tb-mut">${escHtml(enc)}</div>` : '') +
+            (o.efeito ? `<div>⚔ no jogo: ${escHtml(o.efeito)}</div>` : '') +
             `<div>${o.recomendada ? '<b class="tb-ok">✓ RECOMENDADA</b> ' : ''}` +
             (o.ganho > 0 ? `<span class="tb-ok"><b>+${numBR(o.ganho, 1)} pt</b></span> <span class="tb-mut">(${mkFmt(o.ouroPorPt)} ouro por ponto · paga-se em ~${numBR(o.pagaH, 1)} h de caçada, estimativa)</span>`
                          : `<span class="tb-mut">${o.ganho < 0 ? numBR(o.ganho, 1) : '±0'} pt na régua</span>`) + `</div>` +

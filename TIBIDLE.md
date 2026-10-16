@@ -5210,3 +5210,13 @@ Paladino; 1,26/2,0/1,2 magos), creature.cpp (bloqueio, armadura, 2 cargas que vo
 - Melhorias e Inteligente usam a mesma régua (pontuarPeca), então herdam.
 - Testes: 6 novos em `equip.test.js` (os exemplos da wiki). Próximo: medir por criatura (`mhit`/`mcast` por nome e lure,
   `deathCause`) e guardar por mapa e boss.
+
+## 2.20.1 (16/10) — Equip e Melhorias dizem o que muda NO JOGO
+- Dono: "com os nossos itens dá para melhorar a tela de Equip e Melhorias?" — `efeitoOficial(nova, atual, voc, ctx)`
+  (`@@EQUIP-PURO`) traduz a troca para unidades do jogo, pelas regras da §16: escudo do Knight → "bloqueio 17–34 → 24–47
+  por golpe (Escudo 60) · mitigação 1,10 → 1,33 %"; peça de armadura → "armadura 40 → 45: tira 19–38 → 21–43 por golpe";
+  arma do Knight → "golpe 25–118 → 27–126 (Corpo a Corpo 70)"; arco/besta → "tiro 90–150 → 95–158 (Distância 80, bolt 30
+  grátis)"; wand/rod → "tiro 8–18 energy → 56–74 fire (8 de mana)"; linhas de proteção (forja) compostas com o resto do
+  corpo → "proteção fogo 2,0 → 4,9 %".
+- Aparece na linha "⚔ no jogo:" de cada troca do Equip e de cada oferta da Melhorias. Sem leitura do corpo, avisa "(referência)".
+- Testes: 2 novos em `equip.test.js`.

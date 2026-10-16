@@ -7,7 +7,7 @@ const raiz = path.join(__dirname, '..');
 const src = fs.readFileSync(path.join(raiz, 'tibidle-helper.user.js'), 'utf8');
 const ini = src.indexOf('/* @@EQUIP-PURO-INICIO */'), fim = src.indexOf('/* @@EQUIP-PURO-FIM */');
 assert(ini > 0 && fim > ini, 'marcadores @@EQUIP-PURO não encontrados');
-const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, pesosDaVoc, mitigacaoPct, bloqueioEscudo, reducaoArmadura, golpeBasico, protecaoComposta, danoRecebidoCorpo, danoRecebidoMagia, COMBATE_VOC, SUPORTE_OFICIAL, candidatosEquip, distribuirEquip, pecasDesmanche, planoForja, faixaPotencia, wikiSlug, wikiUrlPeca, EQUIP_RESERVAS, destinosSobras, chanceLinha, fragmentosDesmanche, escolherDestino, faixaRange, valorTipico, linhasUteis, REGRAS_VOCACAO, FAIXA_NOME };')();
+const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, pesosDaVoc, mitigacaoPct, bloqueioEscudo, reducaoArmadura, golpeBasico, efeitoOficial, protecaoComposta, danoRecebidoCorpo, danoRecebidoMagia, COMBATE_VOC, SUPORTE_OFICIAL, candidatosEquip, distribuirEquip, pecasDesmanche, planoForja, faixaPotencia, wikiSlug, wikiUrlPeca, EQUIP_RESERVAS, destinosSobras, chanceLinha, fragmentosDesmanche, escolherDestino, faixaRange, valorTipico, linhasUteis, REGRAS_VOCACAO, FAIXA_NOME };')();
 const le = (p) => { try { return JSON.parse(fs.readFileSync(path.join(raiz, p), 'utf8')); } catch (e) { return null; } };
 const base = {};
 for (const [nome, it] of Object.entries(le('testes/fixtures/itens.json').itens)) base[nome] = { id: it.id, attrs: it.attrs || {}, sell: it.sell || 0, equipPreview: it.equipPreview || null };
@@ -595,5 +595,33 @@ t('2.20.0 pesos: +1 de defesa do escudo vale mais com Escudo alto; +1 de Escudo 
     const P = M.pesosDaVoc('KNIGHT', { party: R, kn: { defEscudo: 34, armadura: 40 } });
     assert(P.resist_fisica > 30 / 100 * 3.6 * 0.65, 'proteção física: ' + P.resist_fisica);
     assert(M.pesosDaVoc('KNIGHT', {}).fichaDefesa.lido === false, 'sem leitura do que veste: referência');
+});
+t('2.20.1 "no jogo": escudo do Knight mostra bloqueio e mitigação antes → depois com a skill Escudo; peça de armadura mostra a armadura total', () => {
+    const ctx = { sk: { KNIGHT: { escudo: 60, melee: 70 } }, nivel: 126, kn: { defEscudo: 14, armadura: 40 } };
+    const e14 = { slot: 'shield', attrs: { weaponType: 'shield', defense: 14 }, forja: F(0) }, e34 = { slot: 'shield', attrs: { weaponType: 'shield', defense: 34 }, forja: F(0) };
+    const t = M.efeitoOficial(e34, e14, 'KNIGHT', ctx);
+    const b1 = M.bloqueioEscudo(60, 14), b2 = M.bloqueioEscudo(60, 34);
+    assert(t && t.includes(`bloqueio ${b1.min}–${b1.max} → ${b2.min}–${b2.max} por golpe (Escudo 60)`), t);
+    assert(/mitigação \d,\d\d → \d,\d\d %/.test(t), t);
+    const h6 = { slot: 'head', attrs: { slot: 'head', armor: 6 }, forja: F(0) }, h9 = { slot: 'head', attrs: { slot: 'head', armor: 9 }, forja: { raridade: 0, refino: 2, atributos: [] } };
+    const a = M.efeitoOficial(h9, h6, 'KNIGHT', ctx);
+    const r1 = M.reducaoArmadura(40), r2 = M.reducaoArmadura(45);
+    assert(a === `armadura 40 → 45: tira ${r1.min}–${r1.max} → ${r2.min}–${r2.max} por golpe`, a);
+    assert(/referência/.test(M.efeitoOficial(h9, h6, 'KNIGHT', { sk: {} })), 'sem leitura do corpo avisa');
+});
+t('2.20.1 "no jogo": golpe do Knight, tiro do Paladino (munição grátis do arco/besta), wand do mago e proteção composta', () => {
+    const ctx = { sk: { KNIGHT: { melee: 70 }, PALADIN: { dist: 80 } }, nivel: 126, usando: { SORCERER: { ring: { resist_fogo: 2 } } } };
+    const w1 = { slot: 'weapon', attrs: { weaponType: 'axe', attack: 40 }, forja: F(0) }, w2 = { slot: 'weapon', attrs: { weaponType: 'axe', attack: 48 }, forja: { raridade: 0, refino: 2, atributos: [] } };
+    const g1 = M.golpeBasico('KNIGHT', 126, 70, 40), g2 = M.golpeBasico('KNIGHT', 126, 70, 50);
+    assert.strictEqual(M.efeitoOficial(w2, w1, 'KNIGHT', ctx), `golpe ${g1.min}–${g1.max} → ${g2.min}–${g2.max} (Corpo a Corpo 70)`);
+    const bow = { slot: 'weapon', attrs: { weaponType: 'distance', ammotype: 'arrow', attack: 0 }, forja: F(0) }, xbow = { slot: 'weapon', attrs: { weaponType: 'distance', ammotype: 'bolt', attack: 3 }, forja: F(0) };
+    const p1 = M.golpeBasico('PALADIN', 126, 80, 25), p2 = M.golpeBasico('PALADIN', 126, 80, 33);
+    assert.strictEqual(M.efeitoOficial(xbow, bow, 'PALADIN', ctx), `tiro ${p1.min}–${p1.max} → ${p2.min}–${p2.max} (Distância 80, bolt 30 grátis)`);
+    const vortex = { slot: 'weapon', attrs: base['wand of vortex'].attrs, forja: F(0) }, inferno = { slot: 'weapon', attrs: base['wand of inferno'].attrs, forja: F(0) };
+    assert.strictEqual(M.efeitoOficial(inferno, vortex, 'SORCERER', ctx), 'tiro 8–18 energy → 56–74 fire (8 de mana)');
+    /* anel com resist fogo 3 entra composto com os 2 % que o outro anel já dá: 2 → 4,9 % */
+    const r0 = { slot: 'necklace', attrs: {}, forja: F(0) }, r3 = { slot: 'necklace', attrs: {}, forja: F(1, ['resist_fogo', 3]) };
+    assert.strictEqual(M.efeitoOficial(r3, r0, 'SORCERER', ctx), 'proteção fogo 2,0 → 4,9 %');
+    assert.strictEqual(M.efeitoOficial(r0, r0, 'SORCERER', ctx), null, 'sem nada a dizer: null');
 });
 console.log(`\n${n} testes ok` + (pulados ? ` · ${pulados} pulados (sem o estado da conta em data/)` : ''));
