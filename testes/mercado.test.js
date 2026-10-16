@@ -835,11 +835,14 @@ t('vm (2.15.1): VENDER NO NPC das sobras — outra peça de mesmo nome na mochil
 
 /* v2.18.0 — aba Melhorias: PROCURAR só lê; COMPRAR = 2 toques, relê o anúncio e manda market_execute {orderId, quantity, requestId} */
 async function mundoMelhorias(extra) {
-    const cop = (orderId, preco, regen) => ({ orderId, unitPrice: preco, sellerName: 'Outro', instance: { iid: 'i-' + orderId, name: 'Leather Boots', forja: { raridade: 1, atributos: [{ id: 'regen_mana', valor: regen }] } } });
-    const copias = { botas: [cop('c1', 1500, 3.4), cop('c2', 100, 1.0), cop('meu', 50, 5)] };
-    const M = await mundoMercado(Object.assign({ catalogo: CAT_BASE, copias, minhas: [{ id: 'meu', side: 'SELL', asset: 'ITEM', itemName: 'Leather Boots', unitPrice: 50, quantityTotal: 1, quantityRemaining: 1, status: 'OPEN', expiresAt: 1790000000000 }],
+    /* 2.19.6: à venda, Steel Boots (armadura 3) — nível acima da Leather Boots (1) que o Druida veste; a Leather Boots com
+     * regen. 5 (c3) é do MESMO nível e não pode aparecer */
+    const cop = (orderId, preco, regen, nome) => ({ orderId, unitPrice: preco, sellerName: 'Outro', instance: { iid: 'i-' + orderId, name: nome || 'Steel Boots', forja: { raridade: 1, atributos: [{ id: 'regen_mana', valor: regen }] } } });
+    const copias = { botas: [cop('c1', 1500, 3.4), cop('c2', 100, 1.0), cop('meu', 50, 5), cop('c3', 200, 5, 'Leather Boots')] };
+    const M = await mundoMercado(Object.assign({ catalogo: CAT_BASE, copias, minhas: [{ id: 'meu', side: 'SELL', asset: 'ITEM', itemName: 'Steel Boots', unitPrice: 50, quantityTotal: 1, quantityRemaining: 1, status: 'OPEN', expiresAt: 1790000000000 }],
         ls: { tb_helper_ui: JSON.stringify({ aba: 'melhorias', aberta: true, oculto: false }) },
-        rotas: { '/assets/v185/items-by-name.json': { 'Leather Boots': 3552 }, '/item/info': [{ id: 3552, name: 'Leather Boots', attrs: { slot: 'feet', armor: 1 }, sell: 2 }] } }, extra || {}));
+        rotas: { '/assets/v185/items-by-name.json': { 'Leather Boots': 3552, 'Steel Boots': 3554 },
+                 '/item/info': [{ id: 3552, name: 'Leather Boots', attrs: { slot: 'feet', armor: 1 }, sell: 2 }, { id: 3554, name: 'Steel Boots', attrs: { slot: 'feet', armor: 3 }, sell: 30 }] } }, extra || {}));
     const atual = { iid: 'b-dru', nome: 'Leather Boots', slot: 'boots', attrs: { slot: 'feet', armor: 1 }, forja: { raridade: 1, atributos: [{ id: 'regen_mana', valor: 2 }] }, origem: 'corpo', dono: 'DRUID' };
     const E = M.W.H.EQUIP;
     E.res = { porVoc: { DRUID: { boots: { atual, atualPt: M.W.H.pontuarPeca(atual, 'DRUID', null).pontos, melhor: null, melhorPt: 0 } } }, usadas: new Set(), reservas: new Set(), dispensaveis: [], temporarios: [] };
@@ -854,6 +857,7 @@ t('vm (2.18.0): Melhorias — PROCURAR só lê (ordens + 8 categorias), acha a b
     const ML = M.W.H.MELHORIAS, of = ML.res.porVoc.DRUID.boots.ofertas;
     assert.strictEqual(JSON.stringify(of.map(o => o.orderId)), '["c1"]', JSON.stringify(of.map(o => [o.orderId, o.ganho])));
     assert(of[0].seguro && of[0].ganho > 0);
+    assert.strictEqual(ML.res.porVoc.DRUID.boots.escondidas.mesmoNivel, 1, 'a Leather Boots (mesmo nível) foi contada como escondida');
     assert(/PROCURAR MELHORIAS/.test(M.W.porId.get('tb-corpo').innerHTML) && M.W.porId.get('tb-ml-c-0'), 'botão de compra não pintou');
 });
 t('vm (2.18.0): COMPRAR — 1º toque não manda nada; 2º relê o anúncio e manda market_execute {orderId, quantity 1, requestId}', async () => {
@@ -869,7 +873,7 @@ t('vm (2.18.0): COMPRAR — 1º toque não manda nada; 2º relê o anúncio e ma
     assert.strictEqual(ex.length, 1);
     igual(semRid(ex[0].o.data), { orderId: 'c1', quantity: 1 });
     assert(ex[0].o.data.requestId, 'sem requestId');
-    assert(/COMPRADO Leather Boots por 1\.500/.test(logTxt(M.W)), logTxt(M.W));
+    assert(/COMPRADO Steel Boots por 1\.500/.test(logTxt(M.W)), logTxt(M.W));
 });
 t('vm (2.18.0): COMPRAR — anúncio que sumiu na releitura: nada é comprado', async () => {
     let n = 0;
