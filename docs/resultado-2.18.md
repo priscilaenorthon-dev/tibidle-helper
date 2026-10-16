@@ -58,5 +58,35 @@ Backup dos presets dos 4 antes de mexer: `.playwright-mcp/backup-presets-2026-10
   Wave; 22:28 Cav Berserk → Lesser Front Sweep (+4,2 %); 22:28:48 (×0,96) Cav → Brutal Strike (+2,4 %), Fei → Rage of the
   Skies, Dru → Terra Wave. Vizinhos quase empatados trocam de lugar; o "Tudo junto" oscilou entre +2,7 % e +8,7 %.
 
-## 4. Aplicar um ajuste e medir
-(preenchido abaixo)
+## 4. Aplicar um ajuste e medir — ✅ passou
+- Base (barra do dono, 22:24:54 → 22:32:35, 7:41 de sessão, 240 abates): Analisador **EXP RAW/H 89,9k** (142,4k com o boost
+  de +50 %) · **LUCRO/H −58,4k** · ouro 1.710.421 → 1.703.475.
+- 22:33: a única sugestão do recálculo era "Feiticeiro: trocar Hell's Core por Rage of the Skies · +0,2 % xp · lucro
+  +15,3k/h · mana mínima 8 → 46 %". APLICAR ESTE AJUSTE: 1º toque → "CONFIRMAR: aplicar no Feiticeiro"; 2º toque → Log
+  **"ajuste fino: Feiticeiro — trocar Hell's Core por Rage of the Skies (servidor confirmou)"**. Conferido no preset ativo
+  (configAtiva dos 4): só `skills` e `minCreatures` do Feiticeiro mudaram; heals, supports e manaPotion iguais nos 4.
+- Depois (Analisador zerado às 22:33:07, 8:00 de sessão, 264 abates): **EXP RAW/H 95,0k** (150,3k com boost) · **LUCRO/H −27k**.
+  → XP **+5,7 %** e lucro **+31k/h** (previsto: +0,2 % e +15,3k). Ninguém morreu; a mana do Feiticeiro parou de zerar
+  (1.162 → 1.296/3.607 no mesmo ponto da onda). Vida do Knight entre 1.255 e 1.998/2.004.
+- Item 3 de novo com a barra nova: a sugestão aplicada não voltou. Às 22:41 vieram "Cavaleiro: pôr Brutal Strike na frente
+  (+2,8 %)" e "Druida: Eternal Winter → Terra Wave (−1,4 % xp · +11,7k/h)" — a segunda é o caso `sozinhaValida = false`.
+  Às 22:44 (já na 2.19.1): "Feiticeiro: trocar Rage of the Skies por Great Fire Wave (+2,3 %)" e "Druida: Strong Ice Wave
+  antes de Eternal Winter (+1,7 % · +3,7k)" — as duas valem sozinhas, então sem nota (achado 2 de novo: a simulação troca
+  de opinião entre Rage e Great Fire Wave).
+
+## 5. Fim
+- Presets: **não devolvidos** — o ajuste do Feiticeiro melhorou XP e lucro, fica. Backup em
+  `.playwright-mcp/backup-presets-2026-10-15.json` se o dono quiser voltar (Hell's Core ≥2 no slot 1).
+- Compra: leather boots raro (cura própria 2,3 + regen. mana 1,5) por 20.000, Knight, +1,3 pt (Melhorias) / 11,0 → 12,7 pt (Equip).
+- 2.19.1 publicada (commit + push; raw entregando 2.19.1; Tampermonkey do Playwright reinstalado pelo raw e o jogo
+  recarregado em caçada: huntId 161, lure 4, 1 painel). A nota "só compensa junto" não pôde ser vista ao vivo porque,
+  no momento da recarga, as duas sugestões valiam sozinhas — coberta pelo teste novo em `inteligente.test.js`.
+- Jogo deixado aberto, logado e caçando Yalahar Worker Golem (lure Extremo) na janela do Playwright.
+
+## Pendências que saíram deste teste
+1. Lucro previsto × medido: −42,1k/h previsto contra +44,7k/h da sessão do dono (02:03) e −58,4k → −27k/h do Analisador
+   hoje. O Analisador do jogo e o simulador não contam a mesma coisa (loot na mochila sem vender? poções?). Investigar.
+2. Instabilidade das sugestões entre recálculos (achado 2): vizinhos quase empatados; talvez exigir margem (histerese)
+   ou só trocar a sugestão quando a nova ganha da anterior por > 1 %.
+3. Régua da defesa do Knight: com 1 bloqueio/s e folga ¾, defesa 34 = 68,9 pt (≈ 69 % do dano da party). Coerente com a
+   2.18.2, mas generosa; rever quando houver medida de dano bloqueado no frame.
