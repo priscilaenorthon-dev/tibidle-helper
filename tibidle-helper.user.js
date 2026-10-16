@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.21.0
+// @version      2.22.0
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.21.0';
+    const VERSAO = '2.22.0';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -4045,7 +4045,9 @@
      * (gaveta sem /auth/me). ultimoEnded: o último `ended` {t, huntId, reason}. */
     const ESTADO_WS = { huntId: null, boss: null, ultimoStart: null, frame: null, hunt_t: 0,
                         worldToken: null, profiles: null, perfisDoServidor: false, battleConfigs: null, roster: [], party: [], eco: {},
-                        rosterFull: null, rosterFull_t: 0, depot: null, depot_t: 0, conta: null, ultimoEnded: null };
+                        rosterFull: null, rosterFull_t: 0, depot: null, depot_t: 0, conta: null, ultimoEnded: null,
+                        /* v2.22.0 — lido do cliente do jogo: Legado ativo, Loyalty, caçada offline, lure salvo por mapa, cooldown dos bosses, relógio das chaves, snapshot do grupo */
+                        legado: null, loyalty: null, offline: null, lureTierByHunt: null, bossCooldowns: null, keyClock: null, snap: null };
     const VOCS = ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'];
     const FRAME_FRESCO_MS = 5000;
     const frameFresco = () => !!(ESTADO_WS.frame && Date.now() - ESTADO_WS.frame.t < FRAME_FRESCO_MS);
@@ -4531,6 +4533,7 @@
         for (const n of nomes) { const x = p.skills && p.skills[n]; const val = x == null ? NaN : typeof x === 'number' ? x : Number(x.value) + (Number(x.bonus) || 0); if (Number.isFinite(val) && val > 0 && (v == null || val > v)) v = val; }
         return v;
     };
+    const _skillT = (p, nomes) => { for (const n of nomes) { const x = p.skills && p.skills[n]; const v = x == null ? NaN : typeof x === 'number' ? x : Number(x.value); if (Number.isFinite(v) && v > 0) return v; } return null; };
     let _skillsT = 0, _releituraSkT = 0;
     function anotarSkills(party) {
         if (!ESTADO_WS.sk) ESTADO_WS.sk = ler('skills_vistas', {}) || {};
@@ -4538,7 +4541,9 @@
         for (const p of party) {
             if (!p || !p.vocation || !p.skills) continue;
             const x = { dist: _skill(p, ['distance']), melee: _skill(p, ['melee', 'sword', 'axe', 'club', 'fist']), ml: _skill(p, ['magicLevel', 'magic', 'maglevel']),
-                        escudo: _skill(p, ['shielding', 'shield']) }; // v2.20.0 — a skill Escudo entra no bloqueio oficial
+                        escudo: _skill(p, ['shielding', 'shield']), // v2.20.0 — a skill Escudo entra no bloqueio oficial
+                        /* v2.22.0 — a skill TREINADA (sem o bônus de item/grupo/loyalty): é a que conta no Legado */
+                        distT: _skillT(p, ['distance']), meleeT: _skillT(p, ['melee', 'sword', 'axe', 'club', 'fist']), mlT: _skillT(p, ['magicLevel', 'magic', 'maglevel']) };
             const bons = Object.fromEntries(Object.entries(x).filter(([, v]) => v != null));
             /* v2.11 — frame sem as skills (ou com nome que o helper não conhece)
              * dava {} e APAGAVA o que já tinha sido visto; agora só soma. */
@@ -4574,6 +4579,10 @@
         /* v2.11 — analisador zerado (botão da janela ou o Scan): a sessão do
          * Analisador fecha aqui — as contas dela partiam do zero antigo. */
         if (o.type === 'analyzer_reset') { if (SESSAO) fecharSessao('analisador zerado'); }
+        /* v2.22.0 — Legado, Loyalty e o snapshot do grupo (dano recebido por elemento, por personagem) */
+        if (o.type === 'legacy_state') { ESTADO_WS.legado = { ativo: d.ativo === true, personagens: Array.isArray(d.personagens) ? clonar(d.personagens) : [] }; return; }
+        if (o.type === 'loyalty_update') { ESTADO_WS.loyalty = { points: Number(d.points) || 0, level: Number(d.level) || 0, bonus: Number(d.bonus) || 0, t: Date.now() }; return; }
+        if (o.type === 'party_snapshot' && Array.isArray(d.members)) { ESTADO_WS.snap = Object.assign({ t: Date.now(), huntId: ESTADO_WS.huntId }, clonar(d)); return; }
     }
     function observarRecebido(o) {
         try { observarProgresso(o); } catch { } // v2.11 — aba Progresso: só leitura (chaves, bestiário, prey, plano offline)
@@ -4594,6 +4603,7 @@
             ESTADO_WS.frame = {
                 t: Date.now(), cap: st.cap || null, balance: st.balance != null ? Number(st.balance) : null,
                 lureTier: st.lureTier != null ? st.lureTier : null,
+                keyClock: st.keyClock && typeof st.keyClock === 'object' ? { item: st.keyClock.item, tierMs: Number(st.keyClock.tierMs) || 0, everyMs: Number(st.keyClock.everyMs) || 0, count: Number(st.keyClock.count) || 0 } : null, // v2.22.0
                 active: Array.isArray(st.active) ? st.active.map(m => m && (m.name || m.nome)).filter(Boolean) : [],
                 nivel: st.character && st.character.level != null ? st.character.level : null,
                 /* v2.2.0 — o analisador do PRÓPRIO jogo, por caçada: é o que o Scan mede */
@@ -4639,6 +4649,13 @@
                 }
             }
             if (typeof d.worldToken === 'string' && d.worldToken) ESTADO_WS.worldToken = d.worldToken;
+            /* v2.22.0 — meta do welcome/resume: lure salvo por mapa, cooldown dos bosses, e o que a conta rendeu offline */
+            try {
+                const meta = d.meta && typeof d.meta === 'object' ? d.meta : null;
+                if (meta && meta.lureTierByHunt && typeof meta.lureTierByHunt === 'object') ESTADO_WS.lureTierByHunt = clonar(meta.lureTierByHunt);
+                if (meta && meta.bossCooldowns && typeof meta.bossCooldowns === 'object') ESTADO_WS.bossCooldowns = clonar(meta.bossCooldowns);
+                if (d.offline && typeof d.offline === 'object' && Number(d.offline.elapsedMs) > 0) ESTADO_WS.offline = { t: Date.now(), elapsedMs: Number(d.offline.elapsedMs) || 0, xp: Number(d.offline.xp) || 0, kills: Number(d.offline.killsTotal) || 0, lootGold: Number(d.offline.lootGold) || 0 };
+            } catch (e) { falhou('welcome (meta)', e); }
             if (d.profiles && typeof d.profiles === 'object') { ESTADO_WS.profiles = clonar(d.profiles); ESTADO_WS.perfisDoServidor = true; }
             if (d.battleConfigs && typeof d.battleConfigs === 'object') ESTADO_WS.battleConfigs = clonar(d.battleConfigs);
             if (Array.isArray(d.roster) && d.roster.length) ESTADO_WS.roster = vocsPorPosicao(d.roster);
@@ -6263,6 +6280,19 @@
      *  + defesa 30 → 1,33 %; armadura 7 → tira 3–5; Knight nível 8 skill 10 Sword 14 → 1–14; Paladino Bow+Arrow 25 → 14–24.
      * ====================================================================== */
     const COMBATE_VOC = { KNIGHT: { mit: 1.3, escudo: 2.05 }, PALADIN: { mit: 1.28, escudo: 2.08 }, SORCERER: { mit: 1.26, escudo: 2 }, DRUID: { mit: 1.26, escudo: 2 } };
+    /* v2.22.0 — LEGADO (código do cliente, c14 `d/c/f/g/y`, 16/10): com a skill TREINADA (sem bônus de item) acima do limiar —
+     * corpo a corpo 60 (Knight), distância 60 (Paladino), nível mágico 40 (magos) — cada 5 pontos é um marco n, e o bônus
+     * permanente de dano é n(n+3)/2 %: I +2, II +5, III +9, IV +14, V +20, VI +27… Vale no golpe da arma, nas magias de
+     * ataque e, no Druida, na cura. Precisa do Legado ativo na conta (legacy_state.ativo). */
+    const LEGADO_LIMIAR = { KNIGHT: 60, PALADIN: 60, SORCERER: 40, DRUID: 40 }, LEGADO_PASSO = 5;
+    const legadoBonusPct = (marco) => (marco > 0 ? marco * (marco + 3) / 2 : 0);
+    function legadoDe(voc, skillTreinada) {
+        const lim = LEGADO_LIMIAR[voc]; if (!lim) return null;
+        const s = Number(skillTreinada) || 0, marco = s >= lim ? Math.floor((s - lim) / LEGADO_PASSO) + 1 : 0;
+        return { voc, skill: s, limiar: lim, marco, bonusPct: legadoBonusPct(marco), proximoMarco: marco + 1, proximaSkill: lim + marco * LEGADO_PASSO, proximoBonusPct: legadoBonusPct(marco + 1) };
+    }
+    /* Loyalty (cliente, c14 `v/x`): pontos ≥ 1/3/6/9/15 → +1/+2/+3/+4/+5 de skill (Knight: corpo a corpo e escudo; Paladino: distância; magos: nível mágico) */
+    const loyaltyBonus = (pontos) => { const p = Number(pontos) || 0; return p >= 15 ? 5 : p >= 9 ? 4 : p >= 6 ? 3 : p >= 3 ? 2 : p >= 1 ? 1 : 0; };
     const MODO_ATAQUE = 0.8; // fator do modo de luta "ataque" (o único no Tibidle); na defesa do bloqueio vale 0,5 (atacando)
     const SUPORTE_OFICIAL = { protector: { escudo: 2.2, danoCausado: 0.65, danoRecebido: 0.85 }, bloodRage: { corpoACorpo: 1.35, danoRecebido: 1.15, semDefesa: true }, sharpshooter: { distancia: 1.4, semDefesa: true } };
     function mitigacaoPct(voc, skEscudo, defEscudo) {
@@ -6316,6 +6346,9 @@
         const slot = normalizarSlot(nova.slot || (atual && atual.slot)), a = nova.attrs || {}, b = (atual && atual.attrs) || {};
         const sk = Object.assign({}, REF_SK, (ctx && ctx.sk && ctx.sk[voc]) || {}), nivel = (ctx && ctx.nivel > 0 && ctx.nivel) || sk.nivel;
         const kn = (ctx && ctx.kn) || {}, lido = !!(kn.defEscudo > 0 || kn.armadura != null);
+        /* v2.22.0 — o Legado multiplica o golpe da arma (wiki: "entra no golpe da arma da trilha") */
+        const lg = ctx && ctx.legado && ctx.legado[voc] && ctx.legado[voc].marco > 0 ? ctx.legado[voc] : null;
+        const comLegado = (g) => (lg ? { min: Math.round(g.min * (1 + lg.bonusPct / 100)), max: Math.round(g.max * (1 + lg.bonusPct / 100)), medio: g.medio * (1 + lg.bonusPct / 100) } : g);
         const partes = [];
         const ehWand = (x) => x.weaponType === 'wand' || !!x.wandType;
         if (voc === 'KNIGHT' && slot === 'shield') {
@@ -6326,12 +6359,12 @@
             const t1 = total, t2 = Math.max(0, total - a1 + a2);
             if (t1 !== t2) partes.push(`armadura ${t1} → ${t2}: tira ${_fx(reducaoArmadura(t1), reducaoArmadura(t2))} por golpe${lido ? '' : ' (referência)'}`);
         } else if (voc === 'KNIGHT' && slot === 'weapon' && !ehWand(a)) {
-            const g1 = golpeBasico('KNIGHT', nivel, sk.melee, (Number(b.attack) || 0) + _refino(atual)), g2 = golpeBasico('KNIGHT', nivel, sk.melee, (Number(a.attack) || 0) + _refino(nova));
-            if (g1.max !== g2.max) partes.push(`golpe ${_fx(g1, g2)} (Corpo a Corpo ${Math.round(sk.melee)})`);
+            const g1 = comLegado(golpeBasico('KNIGHT', nivel, sk.melee, (Number(b.attack) || 0) + _refino(atual))), g2 = comLegado(golpeBasico('KNIGHT', nivel, sk.melee, (Number(a.attack) || 0) + _refino(nova)));
+            if (g1.max !== g2.max) partes.push(`golpe ${_fx(g1, g2)} (Corpo a Corpo ${Math.round(sk.melee)}${lg ? ', Legado +' + lg.bonusPct + ' %' : ''})`);
         } else if (voc === 'PALADIN' && slot === 'weapon') {
             const mun = (x) => MUNICAO_GRATIS[x.ammotype] != null ? MUNICAO_GRATIS[x.ammotype] : MUNICAO_GRATIS.arrow;
-            const g1 = atual ? golpeBasico('PALADIN', nivel, sk.dist, (Number(b.attack) || 0) + _refino(atual) + mun(b)) : null, g2 = golpeBasico('PALADIN', nivel, sk.dist, (Number(a.attack) || 0) + _refino(nova) + mun(a));
-            if (!g1 || g1.max !== g2.max) partes.push(`tiro ${g1 ? _fx(g1, g2) : g2.min + '–' + g2.max} (Distância ${Math.round(sk.dist)}, ${a.ammotype === 'bolt' ? 'bolt 30' : 'arrow 25'} grátis)`);
+            const g1 = atual ? comLegado(golpeBasico('PALADIN', nivel, sk.dist, (Number(b.attack) || 0) + _refino(atual) + mun(b))) : null, g2 = comLegado(golpeBasico('PALADIN', nivel, sk.dist, (Number(a.attack) || 0) + _refino(nova) + mun(a)));
+            if (!g1 || g1.max !== g2.max) partes.push(`tiro ${g1 ? _fx(g1, g2) : g2.min + '–' + g2.max} (Distância ${Math.round(sk.dist)}, ${a.ammotype === 'bolt' ? 'bolt 30' : 'arrow 25'} grátis${lg ? ', Legado +' + lg.bonusPct + ' %' : ''})`);
         } else if ((voc === 'SORCERER' || voc === 'DRUID') && slot === 'weapon' && ehWand(a)) {
             const t = (x) => `${Number(x.fromDamage) || 0}–${Number(x.toDamage) || 0}${x.wandType ? ' ' + x.wandType : ''}`;
             if (!atual || t(a) !== t(b)) partes.push(`tiro ${atual && ehWand(b) ? t(b) + ' → ' : ''}${t(a)} (${Number(a.mana) || 0} de mana)`);
@@ -6740,6 +6773,88 @@
         let soma = 0; for (const [k, w] of Object.entries(grupo)) if (!tem.has(k)) soma += w;
         return soma > 0 ? grupo[id] / soma : 0;
     }
+    /* v2.22.0 — SIMULADOR DA FORJA com as regras EXATAS do cliente do jogo (c14, módulo 41951, 16/10 — a Bancada de
+     * Testes do jogo roda local, com estas mesmas funções e Math.random):
+     *   refino: chance F[próximo] = 80/70/60/50/35/25/20/15/10/5 %; do +5 em diante a falha derruba 1 (a Garantia segura e
+     *   é consumida em toda tentativa, falha ou não); raridade: 55/35/20/10/3 %, falha não cai; Atributo: sorteia uma
+     *   linha do pool do espaço (pesos de PESO_LINHA) sem repetir as da peça, e o valor é UNIFORME nos passos do range da
+     *   faixa de potência; Limpeza Maior apaga a última; Refazer Maior re-sorteia o valor da última; Refazer re-sorteia
+     *   todas; Ordem embaralha. Daqui sai, por Monte Carlo (RNG com semente, determinístico nos testes), o custo esperado
+     *   e o de 90 % para chegar a uma linha com valor mínimo — sem gastar gema. */
+    const FORJA_REFINO_PCT = [80, 70, 60, 50, 35, 25, 20, 15, 10, 5], FORJA_RARIDADE_PCT = [55, 35, 20, 10, 3];
+    const FORJA_GEMA_OURO = { refino: 10000, refino_maior: 35000, garantia: 15000, raridade: 30000, raridade_maior: 50000, atributo: 20000, limpeza: 15000, limpeza_maior: 40000, refazer: 20000, refazer_maior: 40000, ordem: 45000 };
+    const rngSemente = (seed) => { let a = (seed >>> 0) || 1; return () => { a += 0x6D2B79F5; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+    /* valor sorteado de uma linha na faixa (como `ei` do cliente): uniforme nos passos entre mín e máx */
+    function forjaValorSorteado(id, faixa, rnd) {
+        const [u, r] = faixaRange(id, faixa), passo = /^(corpo_a_corpo|distancia|nivel_magico|escudo|max_hp|max_mana|capacidade)$/.test(id) ? 1 : 0.1;
+        if (r <= u) return u;
+        const o = Math.round((r - u) / passo), v = u + Math.min(o, Math.floor(rnd() * (o + 1))) * passo;
+        return Math.round(v * (passo === 1 ? 1 : 10)) / (passo === 1 ? 1 : 10);
+    }
+    /* uma linha nova sorteada pelo peso do pool do espaço, sem repetir (como `ef` do cliente) */
+    function forjaLinhaSorteada(slot, atuais, rnd) {
+        const s = normalizarSlot(slot), grupo = PESO_LINHA[s === 'weapon' || s === 'necklace' ? 'ataque' : 'defesa'], tem = new Set((atuais || []).map(a => a.id));
+        const pool = Object.entries(grupo).filter(([id]) => !tem.has(id));
+        const soma = pool.reduce((t, [, w]) => t + w, 0); let x = rnd() * soma;
+        for (const [id, w] of pool) { x -= w; if (x < 0) return id; }
+        return pool.length ? pool[pool.length - 1][0] : null;
+    }
+    /* peca = {slot, forja{raridade, refino, potenciaBase, atributos}}; alvo = {linha | linhas[] (qualquer uma serve), valorMin?, raridade?, refino?, garantia?};
+     * opc = {n (rodadas, 2000), seed, precos {gema: ouro}, maxGemas (400)} → custo esperado e p90 em gemas, ouro e fragmentos.
+     * Estratégia (a da comunidade e do planoForja): refinar até alvo.refino (Garantia do +5 em diante se alvo.garantia) →
+     * Raridade até alvo.raridade (ou até abrir 1 encaixe) → Atributo; linha errada → Limpeza Maior e repete; linha certa com
+     * valor < valorMin → Refazer Maior até passar. */
+    function forjaSimular(peca, alvo, opc) {
+        opc = opc || {}; alvo = alvo || {};
+        const f = normForja(peca && peca.forja), slot = normalizarSlot(peca && peca.slot);
+        const precos = Object.assign({}, FORJA_GEMA_OURO, opc.precos || {}), n = Math.max(1, Math.min(20000, opc.n || 2000)), maxG = opc.maxGemas || 400;
+        const refAlvo = Math.max(Number(f.refino) || 0, Math.min(10, Number(alvo.refino) || 0));
+        const rar0 = Math.max(0, Math.min(5, Number(f.raridade) || 0));
+        const rodadas = [];
+        for (let i = 0; i < n; i++) {
+            const rnd = rngSemente((opc.seed || 1) * 7919 + i);
+            const g = {}; const gasta = (k) => { g[k] = (g[k] || 0) + 1; return Object.values(g).reduce((a, b) => a + b, 0); };
+            let refino = Number(f.refino) || 0, rar = rar0, at = (f.atributos || []).map(a => ({ id: a.id, valor: a.valor })), total = 0, ok = false;
+            /* refino */
+            while (refino < refAlvo && total < maxG) {
+                const prox = refino + 1, p = FORJA_REFINO_PCT[prox - 1], gar = !!alvo.garantia && prox >= 5;
+                total = gasta(prox <= 4 ? 'refino' : 'refino_maior'); if (gar) total = gasta('garantia');
+                if (rnd() * 100 < p) refino = prox; else if (prox >= 5 && !gar) refino = Math.max(0, refino - 1);
+            }
+            const faixa = faixaPotencia((Number(f.potenciaBase) || 0) + 50 * refino);
+            const rarAlvo = Math.max(rar0, Math.min(5, Number(alvo.raridade) || 0), at.length >= (ENCAIXES_POR_RARIDADE[rar0] || 0) ? Math.min(5, rar0 + 1) : rar0);
+            while (rar < rarAlvo && total < maxG) {
+                total = gasta(rar >= 4 ? 'raridade_maior' : 'raridade');
+                if (rnd() * 100 < FORJA_RARIDADE_PCT[rar]) rar++;
+            }
+            /* linha */
+            const alvos = new Set(Array.isArray(alvo.linhas) && alvo.linhas.length ? alvo.linhas : alvo.linha ? [alvo.linha] : []);
+            /* valor mínimo acima do teto da faixa: impossível nesta potência (refine antes) */
+            if (alvos.size && alvo.valorMin && [...alvos].every(id => faixaRange(id, faixa)[1] < alvo.valorMin)) { rodadas.push({ ok: false, gemas: 0, ouro: 0, g: {} }); continue; }
+            if (alvos.size) {
+                const tem = at.find(a => alvos.has(a.id));
+                if (tem && (!alvo.valorMin || tem.valor >= alvo.valorMin)) ok = true;
+                while (!ok && total < maxG) {
+                    const livres = (ENCAIXES_POR_RARIDADE[rar] || 0) - at.length;
+                    if (livres <= 0) { if (!at.length) break; total = gasta('limpeza_maior'); at = at.slice(0, -1); continue; }
+                    total = gasta('atributo');
+                    const id = forjaLinhaSorteada(slot, at, rnd); if (!id) break;
+                    at = at.concat([{ id, valor: forjaValorSorteado(id, faixa, rnd) }]);
+                    if (!alvos.has(id)) continue;
+                    let tent = 0;
+                    while (alvo.valorMin && at[at.length - 1].valor < alvo.valorMin && total < maxG && tent++ < 60) { total = gasta('refazer_maior'); at[at.length - 1].valor = forjaValorSorteado(id, faixa, rnd); }
+                    ok = !alvo.valorMin || at[at.length - 1].valor >= alvo.valorMin;
+                }
+            } else ok = refino >= refAlvo && rar >= rarAlvo;
+            const ouro = Object.entries(g).reduce((t, [k, q]) => t + q * (precos[k] || 0), 0);
+            rodadas.push({ ok, gemas: total, ouro, g });
+        }
+        const okR = rodadas.filter(r => r.ok), q = (arr, p) => { const a = arr.slice().sort((x, y) => x - y); return a.length ? a[Math.min(a.length - 1, Math.floor(p * a.length))] : 0; };
+        const media = (k) => (okR.length ? okR.reduce((t, r) => t + r[k], 0) / okR.length : 0);
+        const porGema = {}; for (const r of okR) for (const [k, v] of Object.entries(r.g)) porGema[k] = (porGema[k] || 0) + v / okR.length;
+        return { n, sucesso: Math.round(okR.length / n * 1000) / 1000, gemas: Math.round(media('gemas') * 10) / 10, gemas90: q(okR.map(r => r.gemas), 0.9), ouro: Math.round(media('ouro')), ouro90: q(okR.map(r => r.ouro), 0.9),
+                 fragmentos: Math.round(media('gemas') * 100), porGema: Object.fromEntries(Object.entries(porGema).map(([k, v]) => [k, Math.round(v * 100) / 100])), precos };
+    }
     /* v2.16.0 — DESMANCHE (wiki /forja, 12/10): fragmentos devolvidos pela FAIXA DA POTÊNCIA TOTAL (base + 50 × refino)
      * e pela raridade; Comum não desmancha. Chance de o fragmento ser Tier 2: 0 % nas faixas I–III, 10 % IV, 25 % V,
      * 50 % VI. Refino, raridade e linhas se perdem. Até 100 peças por vez. */
@@ -7127,7 +7242,6 @@
      * de potência da peça. Veio ruim → Limpeza T2 apaga a última e tenta de novo (geométrico). Gemas (wiki /forja,
      * 12/10): Atributo T1 20 mil, Limpeza T2 40 mil, Raridade T1 30 mil (Comum→Incomum 55 %, →Raro 35 %, →Épico 20 %,
      * →Lendário 10 %), cada uma + 100 fragmentos. É SORTEIO: a conta é a média; "90 %" diz até quantas tentativas. */
-    const ML_GEMA = { atributo: 20000, limpeza2: 40000, raridade: 30000, frag: 100 };
     const ML_RAR_CHANCE = [0.55, 0.35, 0.20, 0.10];
     function mlForjar(ref0, voc, ctx, precoFrag) {
         if (!ref0) return null;
@@ -7149,13 +7263,16 @@
         const p = linhas.reduce((a, x) => a + x.chance, 0);
         const precisaRaridade = livres <= 0 ? { de: rar, chance: ML_RAR_CHANCE[rar] } : null;
         if (!(p > 0)) return { tipo: 'nada', faixa, livres: Math.max(0, livres), raridade: rar, precisaRaridade };
-        const tentativas = 1 / p, ganhoMedio = Math.round(linhas.reduce((a, x) => a + x.chance * x.ganho, 0) / p * 100) / 100;
-        let ouro = ML_GEMA.atributo + (tentativas - 1) * (ML_GEMA.atributo + ML_GEMA.limpeza2), frag = ML_GEMA.frag * (1 + (tentativas - 1) * 2);
-        if (precisaRaridade) { ouro += ML_GEMA.raridade / precisaRaridade.chance; frag += ML_GEMA.frag / precisaRaridade.chance; }
+        const ganhoMedio = Math.round(linhas.reduce((a, x) => a + x.chance * x.ganho, 0) / p * 100) / 100;
+        /* v2.22.0 — custo pelo SIMULADOR com as regras exatas do jogo (Monte Carlo, 600 rodadas): a melhor linha do grupo como
+         * alvo; preços das gemas do lastro do jogo quando o helper os leu (ctx.precosGema), senão os da wiki */
+        const melhor = linhas.slice().sort((a, b) => b.chance * b.ganho - a.chance * a.ganho)[0];
+        const sim = forjaSimular(ref0, { linhas: linhas.map(x => x.id) }, { n: 600, seed: 7, precos: (ctx && ctx.precosGema) || null });
+        const tentativas = sim.gemas, ouro = sim.ouro, frag = sim.fragmentos;
         const pf = Number.isFinite(precoFrag) && precoFrag > 0 ? precoFrag : PRECO_FRAG_ESTIMADO;
         const custo = Math.round(ouro + frag * pf);
         return { tipo: 'linha', faixa, livres: Math.max(0, livres), raridade: rar, precisaRaridade, chance: Math.round(p * 1000) / 1000,
-                 tentativas: Math.round(tentativas * 10) / 10, ate90: p >= 1 ? 1 : Math.ceil(Math.log(0.1) / Math.log(1 - p)),
+                 tentativas: Math.round(tentativas * 10) / 10, ate90: sim.gemas90, alvoSim: melhor.id, sim,
                  ouro: Math.round(ouro), fragmentos: Math.round(frag), precoFrag: pf, custo, ganhoMedio, ouroPorPt: ganhoMedio > 0 ? Math.round(custo / ganhoMedio) : null,
                  linhas: linhas.sort((a, b) => b.chance * b.ganho - a.chance * a.ganho).slice(0, 4).map(x => Object.assign(x, { chance: Math.round(x.chance * 1000) / 1000 })) };
     }
@@ -7922,6 +8039,15 @@
               ${lin('Lure máx', h ? numBR(lureMax(h)) + ' criaturas' : '—')}
               ${lin('Catálogos', CAT.hunts ? `<span class="tb-ok">${numBR(CAT.hunts.length)} hunts · ${numBR((CAT.magias || []).length)} magias</span>` : '<span class="tb-ruim">não carregados</span>')}
               ${lin('Danos medidos', danos)}
+              ${(() => { /* v2.22.0 — lido do cliente do jogo */
+                const L = legadoDaConta(), lg = L ? VOCS.filter(v => L[v]).map(v => `${VOC_CURTO[v]} ${L[v].marco ? 'marco ' + L[v].marco + ' (+' + numBR(L[v].bonusPct, 0) + ' %)' : 'sem marco'} → próx. no ${L[v].proximaSkill}`).join(' · ') : (ESTADO_WS.legado && !ESTADO_WS.legado.ativo ? 'inativo na conta' : '—');
+                const ly = ESTADO_WS.loyalty ? `${numBR(ESTADO_WS.loyalty.points)} pts → +${loyaltyBonus(ESTADO_WS.loyalty.points)} de skill` : '—';
+                const mx = xpMultiplicador(), kc = ESTADO_WS.frame && ESTADO_WS.frame.keyClock, prox = kc && kc.everyMs > 0 ? Math.ceil((kc.everyMs - (kc.tierMs % kc.everyMs)) / 60000) : null;
+                const off = ESTADO_WS.offline;
+                return lin('Legado', escHtml(lg)) + lin('Loyalty', escHtml(ly)) + lin('XP real ÷ base', mx != null ? '×' + numBR(mx, 2) + ' <span class="tb-mut">(premium + boost + prey + grupo)</span>' : '—') +
+                       lin('Próxima chave', kc ? `${escHtml(kc.item)} em ~${prox} min (${kc.count} por ciclo)` : '—') +
+                       (off ? lin('Enquanto fora', `${numBR(Math.round(off.elapsedMs / 60000))} min · ${milBR(off.xp)} xp · ${numBR(off.kills)} abates · ${milBR(off.lootGold)} de loot`) : '');
+              })()}
             </div>
             <div class="tb-linha">
               <button type="button" class="tb-bt mini" id="tb-recat" ${_rebaixandoCat ? 'disabled' : ''}>${_rebaixandoCat ? 'rebaixando…' : 'Rebaixar catálogos'}</button>
@@ -8731,8 +8857,38 @@
                 else if (s !== 'weapon') kn2.armadura += at(it, 'armor') + ref(it);
             }
         }
-        return { nivel: nivelAtual(), sk, party, usando, kn: kn2 };
+        /* v2.22.0 — Legado por personagem (skill treinada vista no frame), se a conta tem o Legado ativo */
+        const legado = legadoDaConta();
+        return { nivel: nivelAtual(), sk, party, usando, kn: kn2, legado };
     }
+    /* v2.22.0 — lastro da forja (forge_lastro_result {ouroPorGema}): o preço em ouro de cada gema hoje (acompanha a coin) */
+    const FORJA_LASTRO = { ouro: null, t: 0 };
+    const precosGemaAtuais = () => (FORJA_LASTRO.ouro && Date.now() - FORJA_LASTRO.t < 6 * 3600000 ? Object.assign({}, FORJA_GEMA_OURO, Object.fromEntries(Object.entries(FORJA_LASTRO.ouro).filter(([, v]) => Number(v) > 0).map(([k, v]) => [k, Number(v)]))) : null);
+    /* v2.22.0 — {VOC: legadoDe(...)} com a skill treinada do frame; null se o Legado não está ativo ou não há skill */
+    function legadoDaConta() {
+        if (!(ESTADO_WS.legado && ESTADO_WS.legado.ativo)) return null;
+        const sk = ESTADO_WS.sk || ler('skills_vistas', {}) || {}, out = {};
+        for (const v of VOCS) {
+            const s = sk[v] || {}, t = v === 'KNIGHT' ? s.meleeT : v === 'PALADIN' ? s.distT : s.mlT;
+            if (t > 0) out[v] = legadoDe(v, t);
+        }
+        return Object.keys(out).length ? out : null;
+    }
+    /* party_snapshot.members[].stats.taken {COMBAT_X: n} → {VOC: {tomadoH, golpesH, frac}} (mesma forma do livro-razão) */
+    function snapElemPorVoc() {
+        const s = ESTADO_WS.snap;
+        if (!s || !Array.isArray(s.members) || !(s.elapsedSec > 0) || s.huntId !== ESTADO_WS.huntId || Date.now() - s.t > 15 * 60000) return null;
+        const out = {};
+        for (const m of s.members) {
+            const v = m && m.vocation, tk = m && m.stats && m.stats.taken;
+            if (!v || !tk || typeof tk !== 'object') continue;
+            const total = Object.values(tk).reduce((a, b) => a + (Number(b) || 0), 0);
+            if (!(total > 0)) continue;
+            out[v] = { tomadoH: Math.round(total / s.elapsedSec * 3600), golpesH: 0, frac: Object.fromEntries(Object.entries(tk).map(([k, n]) => [elemDoJogo(k), Math.round((Number(n) || 0) / total * 1000) / 1000])) };
+        }
+        return Object.keys(out).length ? out : null;
+    }
+    const xpMultiplicador = () => { const a = ESTADO_WS.frame && ESTADO_WS.frame.an; return a && a.xpRaw > 0 && a.xp > 0 ? Math.round(a.xp / a.xpRaw * 100) / 100 : null; };
     function partyMedida() {
         let rz = null, fonte = null;
         const vivo = razaoResumo(RAZAO);
@@ -8747,7 +8903,8 @@
         if (!rz && !dm) return null;
         const P = { fonte, share: {}, dpm: {}, mana: {}, bebe: {}, fracMagica: {}, fracMagia: {}, tiroS: {} };
         /* elementos do dano tomado por personagem (ao vivo/Scan primeiro; senão o guardado do mapa) */
-        const epv = (rz && rz.elemPorVoc && Object.keys(rz.elemPorVoc).length ? rz.elemPorVoc : dm && dm.elemPorVoc) || null;
+        const snapE = snapElemPorVoc(); // v2.22.0 — o balão do próprio jogo (party_snapshot), quando é desta caçada
+        const epv = snapE || (rz && rz.elemPorVoc && Object.keys(rz.elemPorVoc).length ? rz.elemPorVoc : dm && dm.elemPorVoc) || null;
         if (epv) { P.elemVoc = {}; for (const [v, x] of Object.entries(epv)) P.elemVoc[v] = { tomadoS: x.tomadoH / 3600, frac: x.frac }; }
         if (!rz) {
             if (dm.tomadoH > 0) P.tomadoS = dm.tomadoH / 3600;
@@ -8886,6 +9043,10 @@
         try {
             const roster = rosterEquip();
             if (!roster) throw new Error('não achei o equipamento dos 4 (entre na cidade e tente de novo)');
+            /* v2.22.0 — o balão de dano recebido por elemento do próprio jogo (party_get_snapshot é consulta: não muda nada) */
+            if (emHunt() && socketAberto()) { try { await mkPedir('party_get_snapshot', {}); } catch (e) { falhou('equip (snapshot do grupo)', e); } }
+            /* v2.22.0 — cotação real das gemas (forge_lastro é consulta): o custo da forja deixa de usar os preços fixos da wiki */
+            if (socketAberto() && !MK.ocupado) { try { const r = await mkPedir('forge_lastro', {}); if (r && r.ouroPorGema && typeof r.ouroPorGema === 'object') { FORJA_LASTRO.ouro = clonar(r.ouroPorGema); FORJA_LASTRO.t = Date.now(); } } catch (e) { falhou('equip (lastro da forja)', e); } }
             const d = await lerDepot();
             if (d.erro) { EQUIP.aviso = d.erro + ' — ranqueando só o que está no corpo'; log('equip: ' + EQUIP.aviso, 'erro'); }
             else if (d.aviso) EQUIP.aviso = d.aviso;
@@ -8898,7 +9059,7 @@
             const pecas = candidatosEquip(roster, d.depot || null, EQUIP.base, mochila);
             /* v2.7.3 — elemento da wand/rod contra o mapa atual */
             const hz = huntAtual(); const nz = hz ? notasElementos(hz) : null;
-            EQUIP.ctx = Object.assign({ notas: nz ? nz.notas : null, mapa: hz ? hz.title : null }, contextoEquip(roster));
+            EQUIP.ctx = Object.assign({ notas: nz ? nz.notas : null, mapa: hz ? hz.title : null, precosGema: precosGemaAtuais() }, contextoEquip(roster));
             EQUIP.res = distribuirEquip(pecas, undefined, EQUIP.ctx);
             EQUIP.t = Date.now();
             const trocas = Object.values(EQUIP.res.porVoc).reduce((n, v) => n + Object.values(v).filter(eqMexer).length, 0);
@@ -9053,6 +9214,7 @@
         { const pm = EQUIP.ctx && EQUIP.ctx.party, hp = pm && Number.isFinite(pm.hpMinK) ? pm.hpMinK : null;
           /* v2.20.0 — a ficha oficial da defesa do Knight (regras do jogo, com o que ele veste) */
           let fd = null; try { fd = EQUIP.ctx ? pesosDaVoc('KNIGHT', EQUIP.ctx).fichaDefesa : null; } catch { fd = null; }
+          { const L = EQUIP.ctx && EQUIP.ctx.legado; if (L) h += `<div class="tb-mut" style="font-size:10.5px">Legado (bônus permanente de dano pela skill treinada): ${VOCS.filter(v => L[v]).map(v => `${VOC_ROTULO[v]} ${L[v].marco ? 'marco ' + L[v].marco + ' = +' + numBR(L[v].bonusPct, 0) + ' %' : 'ainda sem marco'} (próximo +${numBR(L[v].proximoBonusPct, 0)} % no ${L[v].proximaSkill})`).join(' · ')}. Linha de skill da forja não conta para o Legado.</div>`; }
           if (fd) h += `<div class="tb-mut" style="font-size:10.5px">Cavaleiro pela regra do jogo${fd.lido ? '' : ' (referência: sem leitura do que ele veste)'}: bloqueio tira <b>${fd.bloq.min}–${fd.bloq.max}</b> por golpe bloqueado (Escudo ${numBR(fd.skEscudo, 0)} × defesa ${numBR(fd.defEscudo, 0)}; 2 cargas, volta 1/s) · armadura ${numBR(fd.armadura, 0)} tira <b>${fd.arm.min}–${fd.arm.max}</b> por golpe · mitigação <b>${numBR(fd.mit, 2)} %</b> de todo o dano · magia de criatura ignora escudo e armadura (só proteção ao elemento).</div>`;
           if (hp != null) h += `<div class="tb-mut" style="font-size:10.5px">Knight: vida mínima medida ${Math.round(hp)} % → armadura, defesa e resistências dele valem ${hp >= 60 ? 'metade' : hp >= 40 ? '¾' : 'cheias'} (${hp >= 40 ? 'ele não está passando aperto' : 'ele está apanhando'}).</div>`;
           /* v2.21.0 — o dano tomado medido (ao vivo ou guardado deste mapa): de quem e de que elemento */
@@ -11273,7 +11435,8 @@
                           market_list: 'market_list_result', market_stats: 'market_stats_result', market_copies: 'market_copies_result',
                           market_create: 'market_create_result', market_cancel: 'market_cancel_result', market_claim: 'market_claim_result',
                           market_history: 'market_history_result', market_execute: 'market_execute_result',
-                          depot_withdraw: 'depot_result', forge_salvage_batch: 'forge_salvage_batch_result' };
+                          depot_withdraw: 'depot_result', forge_salvage_batch: 'forge_salvage_batch_result',
+                          party_get_snapshot: 'party_snapshot', forge_lastro: 'forge_lastro_result' }; // v2.22.0
     const MK_PRAZO_MS = 8000; // sem resposta nisso = para (um anúncio pode ter passado: conferir antes de repetir)
     const MK_GRACA_ERRO_MS = 1200; // erro sem requestId: espera o resultado de verdade chegar antes de acreditar
     const MK_PAUSA_LIMITE_MS = 20000; // rate_limited: pausa e tenta de novo UMA vez
@@ -13218,7 +13381,7 @@
         const rar = fj.precisaRaridade ? `primeiro Raridade T1 para abrir um encaixe (${mlPct(fj.precisaRaridade.chance)} por gema), depois ` : `${fj.livres} encaixe${fj.livres > 1 ? 's' : ''} vazio${fj.livres > 1 ? 's' : ''}: `;
         return `<div class="tb-cx" style="margin:3px 0;padding:4px 6px"><b>⚒ Forjar a sua (${nome})</b> — ${rar}cada Atributo T1 tem <b>${mlPct(fj.chance)}</b> de cair uma linha que vale aqui ` +
             `(${fj.linhas.map(x => `${escHtml(rotulo(x.id))} ~${numBR(x.valor, 1)}: ${mlPct(x.chance)}, +${numBR(x.ganho, 1)} pt`).join(' · ')}).` +
-            `<div class="tb-mut">≈ ${numBR(fj.tentativas, 1)} tentativa(s) em média (90 % das vezes até ${fj.ate90}) · ≈ ${mkFmt(fj.ouro)} de ouro + ${mkFmt(fj.fragmentos)} fragmentos (a ${mkFmt(fj.precoFrag)} cada ≈ ${mkFmt(fj.custo)} no total) por ~+${numBR(fj.ganhoMedio, 1)} pt → <b>${mkFmt(fj.ouroPorPt)} por ponto</b>, faixa ${fj.faixa} de potência. É sorteio: o azar custa o dobro. Simule antes na Bancada de Testes da Forja (de graça).</div></div>`;
+            `<div class="tb-mut">simulado com as regras do jogo (600 rodadas, alvo ${escHtml(rotulo(fj.alvoSim || ''))}): ≈ ${numBR(fj.tentativas, 1)} gema(s) em média (90 % das vezes até ${fj.ate90}) · ≈ ${mkFmt(fj.ouro)} de ouro${fj.sim && fj.sim.precos && FORJA_LASTRO.ouro ? ' (cotação de hoje)' : ''} + ${mkFmt(fj.fragmentos)} fragmentos (a ${mkFmt(fj.precoFrag)} cada ≈ ${mkFmt(fj.custo)} no total) por ~+${numBR(fj.ganhoMedio, 1)} pt → <b>${mkFmt(fj.ouroPorPt)} por ponto</b>, faixa ${fj.faixa} de potência. É sorteio: o azar custa o dobro. Simule antes na Bancada de Testes da Forja (de graça).</div></div>`;
     }
     function mlForjaAviso(o) {
         const x = ML.res && ML.res.porVoc[o.voc] && ML.res.porVoc[o.voc][o.slot], fj = x && x.forja;

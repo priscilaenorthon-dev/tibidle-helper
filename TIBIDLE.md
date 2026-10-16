@@ -5235,3 +5235,31 @@ Paladino; 1,26/2,0/1,2 magos), creature.cpp (bloqueio, armadura, 2 cargas que vo
 - Telas: Equip mostra "Dano tomado medido (N sessões, X min): Cav 65 % físico · 20 % fogo; Fei …; quem bate: Dragon golpe
   76 (máx 112) · fireball 90 (fogo)"; Magia, no "grupo ao vivo", o mesmo.
 - Testes: 4 no `razao.test.js`, 1 no `equip.test.js`.
+
+## 2.22.0 (16/10) — o que o cliente do jogo revelou (2 agentes): Legado, snapshot do grupo, simulador da forja
+Pesquisa profunda nos 22 chunks do cliente (play.tibidle.com/_next/static/chunks; relatórios na sessão). O que entrou:
+- **Legado** (c14 `d/c/f/g/y`): skill TREINADA (sem bônus de item) acima do limiar — corpo a corpo 60 (Knight), distância 60
+  (Paladino), nível mágico 40 (magos) — dá um marco a cada 5 pontos; bônus permanente de dano n(n+3)/2 %: I +2, II +5,
+  III +9, IV +14, V +20. Vale no golpe da arma, nas magias e, no Druida, na cura. `legadoDe(voc, skillTreinada)`;
+  `legacy_state {ativo}` do socket; o frame passa a anotar a skill treinada (`meleeT/distT/mlT`). Aparece no Status e no
+  Equip ("Legado: Cavaleiro marco III = +9 % (próximo +14 % no 75)") e entra no "⚔ no jogo" do golpe e do tiro.
+- **Loyalty** (c14 `v/x`): pontos ≥ 1/3/6/9/15 → +1…+5 de skill (`loyaltyBonus`; `loyalty_update` do socket) — Status.
+- **Snapshot do grupo** (`party_get_snapshot {}` → `party_snapshot.members[].stats.taken {COMBAT_X: n}`): o balão "dano
+  recebido por elemento" do próprio jogo, por personagem. É consulta (external_query), pedida no ATUALIZAR do Equip
+  durante a caçada; `partyMedida` prefere esse dado ao do livro-razão (`snapElemPorVoc`).
+- **Cotação real das gemas** (`forge_lastro {}` → `forge_lastro_result {ouroPorGema}`): lida no ATUALIZAR do Equip; os
+  custos de forja (Melhorias "⚒ Forjar a sua") usam o preço de hoje (`precosGemaAtuais`), válido por 6 h.
+- **Simulador da forja** (`forjaSimular`, `@@EQUIP-PURO`) com as regras exatas do cliente (c14, módulo 41951 — a Bancada
+  de Testes do jogo é local e usa estas funções): refino 80/70/60/50/35/25/20/15/10/5 % (falha do +5 em diante cai 1,
+  Garantia segura e é consumida sempre), raridade 55/35/20/10/3 %, Atributo sorteia no pool do espaço sem repetir e o
+  valor é uniforme nos passos do range da faixa, Limpeza Maior apaga a última, Refazer Maior re-sorteia a última. Monte
+  Carlo com semente (determinístico): gemas e ouro esperados e os de 90 %, por tipo de gema; aceita várias linhas-alvo e
+  valor mínimo (impossível acima do teto da faixa). `mlForjar` usa o simulador (600 rodadas) no lugar da conta analítica.
+- **Status → avançado**: Legado, Loyalty, "XP real ÷ base" (`analyzer.xp/xpRaw` = premium + boost + prey + grupo),
+  próxima chave (`state.keyClock`), e o que a conta rendeu offline (`resume.offline`). `meta.lureTierByHunt` e
+  `meta.bossCooldowns` ficam em ESTADO_WS para as próximas versões.
+- O que a pesquisa confirmou que NÃO está no cliente: dano dos monstros, fórmula de avanço de skill, timer das ondas, HP
+  por fase de boss. Outras mensagens vistas e ainda não usadas: `forge_quote` (chance/statDelta do refino), `market_stats`,
+  `player_profile`, `codex_state`, `eventosProgresso`, `summary.skillGains`, `?probe=1`.
+- Testes: 2 novos em `equip.test.js` (Legado/Loyalty; simulador); o de forja da `melhorias.test.js` compara o simulador à
+  conta analítica (±25 %).
