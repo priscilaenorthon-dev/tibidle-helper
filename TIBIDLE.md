@@ -5117,3 +5117,11 @@ modelo. Abas do Progresso numa linha só (6 abas: a Forja estava quebrando para 
   "Tudo junto" é recalculado a partir das sugestões finais. Ao vivo, Rage of the Skies ↔ Great Fire Wave trocavam a cada
   minuto.
 - `fmt` do resultado ganhou `custoH`. Testes: +2 em `inteligente.test.js` (42).
+
+## 2.19.3 (15/10) — ajuste fino: a poção que o simulador não modela entra como custo fixo
+- Ao vivo com a 2.19.2 (Yalahar Worker Golem, 22 min, 712 abates): loot 44,5/abate medido, fator de poções no teto ×3 e o
+  lucro previsto +19,8k/h contra −21,8k/h do Analisador. O simulador só modela poção de mana e runa; a poção de VIDA do
+  Knight (Great Health Potion 30 %) e do Paladino (Great Spirit Potion) só entra com Scan (`curaPorVivo`). Agora o que
+  sobra das poções medidas depois do fator (`supH − custoH`) entra como `ctx.custoFixoH` em `metricasInt`: igual para
+  todos os candidatos, não muda nenhuma comparação, e o lucro absoluto bate com o Analisador. A linha da base diz
+  "loot 44,5/abate e poções 109k/h medidos nela". Teste ampliado em `inteligente.test.js`.

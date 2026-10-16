@@ -263,6 +263,15 @@ t('2.19.2 — ajuste fino: loot e poções medidos na caçada entram na conta (l
     assert(Math.abs(r.base.lucroH - esperado) <= Math.max(1000, 0.02 * Math.abs(esperado)), JSON.stringify([r.base, esperado]));
     const r2 = M.ajusteFinoInt(H(VH), b, { vivo: { abH: r0.base.abH, seg: 600, kills: 50, lootAbate: 40, supH } });
     assert(r2.lootVivo == null && r2.kCustoVivo == null, 'com menos de 100 abates não calibra loot/custo');
+    // 2.19.3 — poções 5× o simulado (poção de vida sem Scan): o fator para em ×3 e o resto vira custo fixo; o lucro bate mesmo assim
+    const sup5 = Math.round(r0.base.custoH * 5);
+    const r5 = M.ajusteFinoInt(H(VH), b, { vivo: { abH: r0.base.abH, seg: 600, kills: 500, lootAbate: 40, supH: sup5 } });
+    assert.strictEqual(r5.kCustoVivo, 3);
+    assert.strictEqual(r5.supVivo, sup5);
+    const esp5 = r5.base.abH * 40 - sup5;
+    assert(Math.abs(r5.base.lucroH - esp5) <= Math.max(1000, 0.02 * Math.abs(esp5)), JSON.stringify([r5.base, esp5]));
+    // o custo fixo não muda a ordem: as sugestões (nomes) são as mesmas com ×1,5 e com ×5
+    assert.strictEqual(JSON.stringify(r5.sugestoes.map(x => [x.voc, x.nomes])), JSON.stringify(r.sugestoes.map(x => [x.voc, x.nomes])));
 });
 t('2.19.2 — ajuste fino: histerese — a sugestão anterior fica enquanto a nova não ganha dela por > 1 % de XP; a que não passa no corte sai', () => {
     const b = barraDe(VH, 'area');

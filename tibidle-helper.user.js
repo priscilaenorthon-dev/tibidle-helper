@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.19.2
+// @version      2.19.3
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.19.2';
+    const VERSAO = '2.19.3';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -2507,7 +2507,7 @@
         /* v2.13.4 — cura: ouro por monstro·s vivo (calibrado no Scan do mapa: poção de vida medida ÷ vivos
          * da party do Scan) × vivos por onda × ondas/h. Sem Scan, 0 (o kit do Scan custa o mesmo de antes). */
         const curaH = (ctx.curaPorVivo || 0) * (sim.vivosOnda || 0) * ctx.eta * (abH / Math.max(1, ctx.L));
-        const custoH = custoS * 3600 + curaH, receitaH = abH * ctx.loot, lucroH = receitaH - custoH;
+        const custoH = custoS * 3600 + curaH + (ctx.custoFixoH || 0), receitaH = abH * ctx.loot, lucroH = receitaH - custoH; // v2.19.3: custoFixoH = poções medidas que o simulador não modela
         const LCB = lucroH - (0.15 * custoH + (ctx.lootMedido ? 0.05 : 0.20) * receitaH);
         const piso = ctx.lootMedido ? 0 : Math.max(5000, 0.10 * receitaH);
         return { T, abH, xpH: abH * ctx.xpAbate, custoH, ouroH: ouroS * 3600 + curaH, curaH, receitaH, lucroH, LCB, piso };
@@ -3200,7 +3200,7 @@
         }
         if (!Object.keys(esc).length) return null;
         let base = avaliarPartyInt(ctx, esc, null);
-        let kCalibVivo = null, lootVivo = null, kCustoVivo = null;
+        let kCalibVivo = null, lootVivo = null, kCustoVivo = null, supVivo = null;
         const vivo = opc.vivo && opc.vivo.abH > 0 && opc.vivo.seg >= 180 && base.met.abH > 0 ? opc.vivo : null;
         if (vivo) {
             kCalibVivo = Math.round(Math.min(1.4, Math.max(0.6, vivo.abH / (base.met.abH / ctx.kCalib))) * 100) / 100;
@@ -3218,6 +3218,12 @@
                 for (const v of VOCS_INT) cv[v] = ((c0.cVoc && c0.cVoc[v]) || 1) * kCustoVivo;
                 ctx.cVoc = cv; ctx.memo = new Map();
                 base = avaliarPartyInt(ctx, esc, null);
+                /* v2.19.3 — o que ainda sobra (ao vivo: ×3 no teto e o lucro +19,8k contra −21,8k do Analisador — poção de vida do
+                 * Knight e do Paladino, que sem Scan o simulador não modela) entra como custo FIXO por hora: igual para todos os
+                 * candidatos, não muda nenhuma comparação, e o número absoluto passa a bater com o Analisador. */
+                const resto = vivo.supH - base.met.custoH;
+                if (resto > 0) { ctx.custoFixoH = resto; ctx.memo = new Map(); base = avaliarPartyInt(ctx, esc, null); }
+                supVivo = Math.round(vivo.supH);
             }
         }
         const manaMin = (x, v) => (x.sim.por[v] ? x.sim.por[v].manaMinFrac : 1);
@@ -3322,7 +3328,7 @@
         sugestoes.sort((a, b) => b.dXp - a.dXp || b.dLucro - a.dLucro);
         const usadas = sugestoes.map(sg => sg.voc);
         const fmt = (x) => ({ xpH: Math.round(x.met.xpH), lucroH: Math.round(x.met.lucroH), custoH: Math.round(x.met.custoH), abH: Math.round(x.met.abH), T: x.met.T, seguro: x.seguro });
-        return { base: fmt(base), sugestoes, combinado: usadas.length ? Object.assign(fmt(ref), { vocs: usadas }) : null, naoSimulavel, kCalibVivo, lootVivo, kCustoVivo, L };
+        return { base: fmt(base), sugestoes, combinado: usadas.length ? Object.assign(fmt(ref), { vocs: usadas }) : null, naoSimulavel, kCalibVivo, lootVivo, kCustoVivo, supVivo, L };
     }
     /* veredito do grupo no Inteligente: o lucro/h da party simulada */
     function viabilidadeInt(hunt) {
@@ -8195,7 +8201,7 @@
         if (r && r.semBarra) return x + `<div class="tb-av">a sua barra ainda não chegou do jogo (perfis do servidor) — dê F5 com o helper instalado</div></div>`;
         if (!r) return x + `<div class="tb-mut">${AJ.erro ? 'a conta falhou: ' + escHtml(AJ.erro) : 'sem dados deste mapa ainda (catálogo/monstros)'}</div></div>`;
         const b = r.base, comb = (T) => (T != null ? ` · onda limpa em ${numBR(Math.round(T * 10) / 10, 1)} s (${tpCombos(T) === 1 ? '⚡ 1 combo' : tpCombos(T) + ' combos'})` : '');
-        x += `<div class="tb-mut">sua barra hoje, prevista: <b>${milBR(b.xpH)} xp/h</b> · lucro ${b.lucroH >= 0 ? '+' : ''}${milBR(b.lucroH)}/h${comb(b.T)}${r.kCalibVivo != null ? ` · <span class="tb-ok">abates calibrados por esta caçada (×${numBR(r.kCalibVivo, 2)})${r.lootVivo != null ? `; loot ${numBR(r.lootVivo, 1)}/abate e poções ×${numBR(r.kCustoVivo || 1, 2)} medidos</span>` : '</span>'}` : ''}</div>`;
+        x += `<div class="tb-mut">sua barra hoje, prevista: <b>${milBR(b.xpH)} xp/h</b> · lucro ${b.lucroH >= 0 ? '+' : ''}${milBR(b.lucroH)}/h${comb(b.T)}${r.kCalibVivo != null ? ` · <span class="tb-ok">abates calibrados por esta caçada (×${numBR(r.kCalibVivo, 2)})${r.lootVivo != null ? `; loot ${numBR(r.lootVivo, 1)}/abate${r.supVivo != null ? ` e poções ${milBR(r.supVivo)}/h` : ''} medidos nela</span>` : '</span>'}` : ''}</div>`;
         if (r.naoSimulavel.length) x += `<div class="tb-av">${r.naoSimulavel.map(v => escHtml(VOC_ROTULO[v] || v)).join(', ')}: alguma magia da barra não entra na simulação — esse personagem fica como está</div>`;
         if (!r.sugestoes.length) return x + `<div class="tb-ok" style="margin-top:4px">✓ A sua barra já está no melhor que a simulação acha neste mapa: nenhuma troca dá +2 % de XP (ou +3k/h de lucro com o mesmo XP) sem tirar mana de ninguém.</div></div>`;
         r.sugestoes.forEach((sg, i) => {
