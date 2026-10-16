@@ -242,6 +242,15 @@ t('2.19.0 — ajuste fino: magia fora da simulação deixa o personagem como est
     assert(r2.kCalibVivo > 1.1, 'kCalib ' + r2.kCalibVivo);
     assert.strictEqual(JSON.stringify(r2.sugestoes.map(x => x.voc)), JSON.stringify(r1.sugestoes.map(x => x.voc)), 'a calibração mudou a ordem das sugestões');
 });
+t('2.19.1 — ajuste fino: toda sugestão diz se vale sozinha; a que só vale em conjunto nunca vem sem o combinado', () => {
+    for (const id of [VH, DL]) {
+        const r = M.ajusteFinoInt(H(id), barraDe(id, 'area'));
+        for (const sg of r.sugestoes) {
+            assert.strictEqual(typeof sg.sozinhaValida, 'boolean', 'sozinhaValida ausente em ' + sg.voc);
+            if (sg.sozinhaValida === false) assert(r.combinado && r.combinado.vocs.includes(sg.voc), sg.voc + ' só vale em conjunto, mas não há combinado com ele');
+        }
+    }
+});
 t('2 — determinismo: 10 chamadas seguidas dão o mesmo resultado', () => {
     zerar(); M.E.scan = { vh: RITMO_VH };
     const resumo = (r) => JSON.stringify({ sig: r.final.sig, xp: Math.round(r.final.met.xpH), l: Math.round(r.final.met.lucroH), c: r.cont });

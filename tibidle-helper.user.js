@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.19.0
+// @version      2.19.1
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.19.0';
+    const VERSAO = '2.19.1';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -8144,7 +8144,11 @@
             x += `<div style="margin-top:6px;border-top:1px dashed #8884;padding-top:4px"><b>${escHtml(VOC_ROTULO[sg.voc] || sg.voc)}</b>: ${escHtml(sg.desc)}` +
                  `<div class="tb-mut">hoje: ${escHtml(ajKit(sg.antes))}<br>depois: ${escHtml(ajKit(sg.nomes))}</div>` +
                  `<div><span class="${sg.dXp > 0 ? 'tb-ok' : ''}">${sg.dXp >= 0 ? '+' : ''}${numBR(sg.dXp, 1)} % xp</span> · <span class="${sg.dLucro >= 0 ? 'tb-ok' : 'tb-ruim'}">lucro ${sg.dLucro >= 0 ? '+' : ''}${milBR(sg.dLucro)}/h</span> · <span class="tb-mut">mana mínima ${sg.manaMinAntes} → ${sg.manaMin} %${comb(sg.T)}</span></div>` +
-                 `<button type="button" class="tb-bt pri mini" id="tb-aj-${i}" ${ocupado ? 'disabled' : ''} style="margin-top:3px">APLICAR ESTE AJUSTE (2 toques)</button></div>`;
+                 /* v2.19.1 — a descida aceita cada passo contra a party JÁ ajustada; sozinha, a troca pode não passar no corte
+                  * (visto ao vivo em 15/10: Cavaleiro +0,1 % xp e −1,5k/h). Então ela só vai com APLICAR TODOS. */
+                 (sg.sozinhaValida === false
+                     ? `<div class="tb-mut" style="font-size:10.5px">só compensa junto com os outros ajustes (sozinha não chega a +2 % de XP nem a +3k/h) — vai com APLICAR TODOS</div></div>`
+                     : `<button type="button" class="tb-bt pri mini" id="tb-aj-${i}" ${ocupado ? 'disabled' : ''} style="margin-top:3px">APLICAR ESTE AJUSTE (2 toques)</button></div>`);
         });
         if (r.combinado && r.sugestoes.length > 1) {
             const c = r.combinado;

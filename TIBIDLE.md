@@ -5094,3 +5094,11 @@ modelo. Abas do Progresso numa linha só (6 abas: a Forja estava quebrando para 
   "forjar a sua sai mais em conta" só quando a forja sai 1/3 mais barata por ponto (comprar é certo, forja é sorteio).
   `recomendada` não muda.
 - Testes: 3 em `inteligente.test.js` (ajuste fino) e 2 em `melhorias.test.js` (forja). Roteiro: `docs/teste-ao-vivo-2.18.md`.
+
+## 2.19.1 (15/10) — ajuste fino: sugestão que só vale em conjunto não ganha botão próprio
+- Teste ao vivo da 2.19.0 (`docs/resultado-2.18.md`): em Yalahar Worker Golem o ajuste fino listou "Cavaleiro: trocar
+  Berserk por Brutal Strike · +0,1 % xp · lucro −1,5k/h" com o seu APLICAR, embora o corte seja +2 % de XP (ou +3k/h).
+  Causa: a descida por coordenadas aceita cada passo contra a party JÁ ajustada pelos outros; medida sozinha contra a
+  base (`sozinhaValida`), a troca não passa — e a tela ignorava a flag.
+- Agora a sugestão com `sozinhaValida === false` vem sem botão e com a nota "só compensa junto com os outros ajustes —
+  vai com APLICAR TODOS". O cálculo não mudou. Teste novo em `inteligente.test.js`.
