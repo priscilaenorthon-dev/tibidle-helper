@@ -5335,3 +5335,6 @@ deixa de contar como perda a regen. de mana que sai para entrar ML nos magos (o 
 battle shield dele tem regen. 2,3). Também limpei do perfil do Playwright o registro de `dano_mapa` inflado pelo grampo
 duplicado de 17/10 (tomadoH 136M/h), que dava ao Paladino resistência física a 9 pt por 1 %. 2 testes novos em
 `melhorias.test.js`.
+Ao vivo, a 1.ª versão do agrupamento (nome + raridade + refino + todas as linhas) ainda enchia o topo com 7 spirit cloaks
+(comum, incomum com capacidade/cura própria/roubo de vida, raro): a assinatura passou a ser nome + refino + só as linhas que
+valem ≥ 1 pt para a vocação (`linhasQueValem`).

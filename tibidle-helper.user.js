@@ -7278,10 +7278,10 @@
         }
         return out;
     }
-    /* v2.23.2 — a mesma peça (nome, raridade, refino e linhas) anunciada N vezes é UMA oferta: a mais barata, com o total à venda
-     * (dono, 18/10: "recomendando spellbook of mind control várias vezes") */
-    const mlAssinatura = (o) => [o.nome, (o.forja && o.forja.raridade) || 0, (o.forja && o.forja.refino) || 0,
-                                 ((o.forja && o.forja.atributos) || []).map(a => a.id + ':' + a.valor).sort().join(',')].join('|');
+    /* v2.23.2 — a mesma peça anunciada N vezes é UMA oferta: a mais barata, com o total à venda (dono, 18/10: "recomendando
+     * spellbook of mind control várias vezes"). "Mesma" = nome, refino e as linhas que VALEM para a vocação (≥ 1 pt); raridade
+     * e linhas que não contam (capacidade, roubo de vida num mago…) não separam — senão 7 spirit cloaks lotavam a lista. */
+    const mlAssinatura = (o) => [o.nome, (o.forja && o.forja.refino) || 0, (o.linhasQueValem || []).slice().sort().join(',')].join('|');
     function mlUnicas(ofertas) {
         const vistas = new Map(), out = [];
         for (const o of ofertas) { const k = mlAssinatura(o), j = vistas.get(k); if (j) { j.copias++; continue; } o.copias = 1; vistas.set(k, o); out.push(o); }
@@ -7418,7 +7418,9 @@
                     const soDefesa = !ehSet && v === 'KNIGHT' && somaPos > 0 && defesa > 0.6 * somaPos;
                     const caro = pagaH != null && pagaH > ML_PAGA_MAX_H;
                     const soArmadura = ehSet && ganho < ML_GANHO_MIN;
-                    ofertas.push({ voc: v, slot: s, orderId: c.orderId, nome: c.nome, cat: c.cat, preco: c.preco, vendedor: c.vendedor, forja: c.forja,
+                    const idsForja = new Set(((c.forja && c.forja.atributos) || []).map(a => a.id));
+                    const linhasQueValem = r.detalhe.filter(d => idsForja.has(d.id) && Math.abs(d.pt) >= 1).map(d => d.id + ':' + d.valor);
+                    ofertas.push({ voc: v, slot: s, orderId: c.orderId, nome: c.nome, cat: c.cat, preco: c.preco, vendedor: c.vendedor, forja: c.forja, linhasQueValem,
                                    pontos: r.pontos, ganho, ouroPorPt: ganho > 0 ? Math.round(c.preco / ganho) : null, pagaH, perdas, seguro: !perdas.length,
                                    cabe: ouro == null ? null : c.preco <= ouro, motivos: r.motivos, duasMaos: !!c.duasMaos,
                                    fontes: fontes.slice(0, 4), soDefesa, caro, refImbuida, refino: Number(c.forja && c.forja.refino) || 0, ficha: mlFichaVarinha(c0),
@@ -13487,7 +13489,7 @@
         const perde = o.perdas.length ? `<div class="tb-ruim">⚠ perde ${o.perdas.map(p => `${escHtml(rotulo(p.id))} ${numBR(p.de, 2)} → ${numBR(p.para, 2)}`).join(', ')}</div>` : '';
         const enc = mlEncaixes(o.forja);
         return `<div class="tb-cx" style="margin:3px 0;padding:5px 6px">` +
-            `<div class="tb-lin"><span><b>${escHtml(o.nome)}</b> ${rarTag({ forja: o.forja })}${o.duasMaos ? ' <span class="tb-tag">2 mãos</span>' : ''}</span><span class="${o.cabe === false ? 'tb-ruim' : 'tb-ok'}"><b>${mkFmt(o.preco)}</b> ouro${o.copias > 1 ? ` <span class="tb-mut">· ${o.copias} à venda iguais, esta é a mais barata</span>` : ''}</span></div>` +
+            `<div class="tb-lin"><span><b>${escHtml(o.nome)}</b> ${rarTag({ forja: o.forja })}${o.duasMaos ? ' <span class="tb-tag">2 mãos</span>' : ''}</span><span class="${o.cabe === false ? 'tb-ruim' : 'tb-ok'}"><b>${mkFmt(o.preco)}</b> ouro${o.copias > 1 ? ` <span class="tb-mut">· ${o.copias} à venda iguais ou parecidas (outra raridade ou linha que não conta), esta é a mais barata</span>` : ''}</span></div>` +
             (o.ficha ? `<div class="tb-mut">${escHtml(mlVarinhaTxt(o.ficha))}</div>` : '') +
             (o.nivelSet ? `<div><span class="tb-tag">nível superior</span> <span class="tb-mut">${o.nivelSet.nobre > 0 ? 'nível mágico/skill de fábrica +' + numBR(o.nivelSet.nobre, 0) + ' · ' : ''}${mlSetRot(o.nivelSet.k)} ${numBR(o.nivelSet.de, 0)} → <b>${numBR(o.nivelSet.valor, 0)}</b>${o.nivelSet.nivel ? ' · pede nível ' + o.nivelSet.nivel : ''}</span></div>` : '') +
             (enc ? `<div class="tb-mut">${escHtml(enc)}</div>` : '') +
@@ -13519,7 +13521,7 @@
              `<label class="tb-l"><input type="checkbox" id="tb-ml-perdas" ${cfg.verPerdas ? 'checked' : ''}> mostrar também as que perdem encaixe</label></div>`;
         if (ML.erro) h += `<div class="tb-cx tb-ruim">${escHtml(ML.erro)}</div>`;
         if (!ML.res) {
-            h += `<div class="tb-mut" style="margin-top:6px">Lê o equipamento dos 4 e todos os equipamentos à venda no Mercado (8 categorias, ~40 s) e mostra só o que é <b>melhor do que a melhor peça que cada um já tem</b> — vestida, no depósito ou na mochila — <b>sem perder</b> regen. de mana (todos; nos magos ela pode sair para entrar nível mágico), regen. de vida (Knight) nem nível mágico/skill/dano na arma e no colar. A mesma peça anunciada várias vezes aparece uma vez, a mais barata. Só lê: nada é comprado sem você clicar 2 vezes.</div>`;
+            h += `<div class="tb-mut" style="margin-top:6px">Lê o equipamento dos 4 e todos os equipamentos à venda no Mercado (8 categorias, ~40 s) e mostra só o que é <b>melhor do que a melhor peça que cada um já tem</b> — vestida, no depósito ou na mochila — <b>sem perder</b> regen. de mana (todos; nos magos ela pode sair para entrar nível mágico), regen. de vida (Knight) nem nível mágico/skill/dano na arma e no colar. A mesma peça anunciada várias vezes (ou com outra raridade / linha que não conta para a vocação) aparece uma vez, a mais barata. Só lê: nada é comprado sem você clicar 2 vezes.</div>`;
             return h + `</div>`;
         }
         const top = ofertasDe(ML.res.top);

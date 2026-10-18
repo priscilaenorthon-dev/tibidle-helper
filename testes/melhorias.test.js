@@ -79,17 +79,17 @@ t('2.23.2 magos: regen. de mana que sai para entrar nível mágico NÃO é perda
     const r2 = M.mlAvaliar(cenario(p2), M.mlCandidatosMercado({ escudos: [copia(32, 'spellbook of enlightenment', 50000)] }, BASE), null, {});
     assert.strictEqual(r2.porVoc.SORCERER.shield.ofertas.length, 0, 'mesmo ML, menos regen.: escondida');
 });
-t('2.23.2 a mesma peça anunciada N vezes aparece UMA vez (a mais barata) com o total à venda; linhas diferentes continuam separadas', () => {
+t('2.23.2 a mesma peça anunciada N vezes aparece UMA vez (a mais barata) com o total à venda; raridade e linha que não conta não separam, linha que vale separa', () => {
     const pecas = vestidos().concat(['SORCERER', 'DRUID'].map(v => corpo(v + 's', 'dwarven shield', 'shield', v, F(1, ['regen_mana', 2.3]))));
     const porVoc = cenario(pecas);
     const c = M.mlCandidatosMercado({ escudos: [copia(40, 'spellbook of mind control', 300000), copia(41, 'spellbook of mind control', 200000), copia(42, 'spellbook of mind control', 250000),
-                                                 copia(43, 'spellbook of mind control', 260000, F(1, ['max_mana', 52]))] }, BASE);
+                                                 copia(43, 'spellbook of mind control', 260000, F(1, ['max_mana', 52])), copia(44, 'spellbook of mind control', 270000, F(2, ['regen_mana', 2.0]))] }, BASE);
     const r = M.mlAvaliar(porVoc, c, null, {});
     const of = r.porVoc.SORCERER.shield.ofertas;
-    assert.strictEqual(of.length, 2, '3 iguais viram 1 + a de max mana: ' + JSON.stringify(of.map(o => [o.nome, o.preco, o.copias])));
-    const comum = of.find(o => o.copias === 3);
+    assert.strictEqual(of.length, 2, '3 iguais + a de max mana (não conta) viram 1; a de regen. 2,0 (vale) fica separada: ' + JSON.stringify(of.map(o => [o.nome, o.preco, o.copias])));
+    const comum = of.find(o => o.copias === 4);
     assert(comum && comum.preco === 200000 && comum.orderId === 41, 'a mais barata manda: ' + JSON.stringify(comum && [comum.preco, comum.orderId]));
-    assert.strictEqual(of.find(o => o.copias === 1).preco, 260000);
+    assert.strictEqual(of.find(o => o.copias === 1).preco, 270000);
     /* no top, cada anúncio vai para quem mais ganha (o Druida, que cura com ML); sem repetição da mesma peça */
     assert.strictEqual(r.top.filter(o => o.nome === 'spellbook of mind control').length, 2, 'top sem repetição: ' + r.top.map(o => o.voc + ' ' + o.preco).join(', '));
 });
