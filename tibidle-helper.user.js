@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.23.1
+// @version      2.23.2
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.23.1';
+    const VERSAO = '2.23.2';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -7266,10 +7266,25 @@
     function mlPerdas(oferta, ref, voc, ctx) {
         if (!ref) return [];
         const a = mlNobresPt(ref, voc, ctx), b = mlNobresPt(oferta, voc, ctx), out = [];
+        /* v2.23.2 — magos: regen. de mana que sai para entrar NÍVEL MÁGICO não é perda (dono, 13/10 e 17/10: "ML acima de tudo";
+         * TV de Souza: "capacete de 2 de regen. de mana sai na hora por um Hat of the Mad"). A aba escondia o spellbook of mind
+         * control (+2 ML) do Druida porque o battle shield dele tem regen. 2,3. */
+        const mlDe = (p) => pontuarPeca(p, voc, ctx).detalhe.filter(d => d.id === 'nivel_magico' || d.id === 'magiclevelpoints').reduce((t, d) => t + d.pt, 0);
+        const trocaPorML = (voc === 'SORCERER' || voc === 'DRUID') && mlDe(oferta) > mlDe(ref) + 0.005;
         for (const [id, x] of Object.entries(a)) {
+            if (trocaPorML && id === 'regen_mana') continue;
             const y = b[id] || { pt: 0, valor: 0 };
             if (x.pt > 0 && y.pt < x.pt - 0.005) out.push({ id, de: Math.round(x.valor * 100) / 100, para: Math.round(y.valor * 100) / 100 });
         }
+        return out;
+    }
+    /* v2.23.2 — a mesma peça (nome, raridade, refino e linhas) anunciada N vezes é UMA oferta: a mais barata, com o total à venda
+     * (dono, 18/10: "recomendando spellbook of mind control várias vezes") */
+    const mlAssinatura = (o) => [o.nome, (o.forja && o.forja.raridade) || 0, (o.forja && o.forja.refino) || 0,
+                                 ((o.forja && o.forja.atributos) || []).map(a => a.id + ':' + a.valor).sort().join(',')].join('|');
+    function mlUnicas(ofertas) {
+        const vistas = new Map(), out = [];
+        for (const o of ofertas) { const k = mlAssinatura(o), j = vistas.get(k); if (j) { j.copias++; continue; } o.copias = 1; vistas.set(k, o); out.push(o); }
         return out;
     }
     /* v2.19.0 — COMPRAR × FORJAR (item H): antes de comprar, quanto custaria pôr uma linha boa na peça que você JÁ tem?
@@ -7413,14 +7428,15 @@
                 }
                 /* melhor primeiro: mais ganho; empate (±5 %), o mais barato */
                 ofertas.sort((p, q) => (Math.abs(q.ganho - p.ganho) > 0.05 * Math.max(p.ganho, q.ganho) ? q.ganho - p.ganho : p.preco - q.preco));
+                const unicas = mlUnicas(ofertas); // v2.23.2 — N anúncios da mesma peça = 1 oferta (a mais barata), com o total
                 /* v2.19.0 — comprar × forjar: só onde há oferta (é a comparação que o dono pediu) */
-                const forja = ofertas.length ? mlForjar(ref0, v, ctx, opc.precoFrag) : null;
-                for (const o of ofertas) o.forjaMaisBarata = mlForjaMaisBarata(forja, o);
+                const forja = unicas.length ? mlForjar(ref0, v, ctx, opc.precoFrag) : null;
+                for (const o of unicas) o.forjaMaisBarata = mlForjaMaisBarata(forja, o);
                 res.porVoc[v][s] = { ref: ref ? { nome: ref.nome, forja: ref.forja, origem: ref.origem } : null, refPt, refImbuida, forja,
                                      vestida: x.atual ? { nome: x.atual.nome, pt: x.atualPt } : null,
                                      temMelhorGuardada: !guardadaMenor && !!(x.melhor && (!x.atual || x.melhor.iid !== x.atual.iid) && x.melhorPt > (x.atualPt || 0)),
                                      piso: piso ? mlFichaVarinha(piso) : null, pisoSet: pisoSet ? mlFichaSet(pisoSet, s) : null, escondidas,
-                                     ofertas };
+                                     ofertas: unicas };
             }
         }
         /* as melhores compras da party: 1 por anúncio (a mesma cópia não serve a dois), pela razão ganho/ouro entre as seguras */
@@ -13471,7 +13487,7 @@
         const perde = o.perdas.length ? `<div class="tb-ruim">⚠ perde ${o.perdas.map(p => `${escHtml(rotulo(p.id))} ${numBR(p.de, 2)} → ${numBR(p.para, 2)}`).join(', ')}</div>` : '';
         const enc = mlEncaixes(o.forja);
         return `<div class="tb-cx" style="margin:3px 0;padding:5px 6px">` +
-            `<div class="tb-lin"><span><b>${escHtml(o.nome)}</b> ${rarTag({ forja: o.forja })}${o.duasMaos ? ' <span class="tb-tag">2 mãos</span>' : ''}</span><span class="${o.cabe === false ? 'tb-ruim' : 'tb-ok'}"><b>${mkFmt(o.preco)}</b> ouro</span></div>` +
+            `<div class="tb-lin"><span><b>${escHtml(o.nome)}</b> ${rarTag({ forja: o.forja })}${o.duasMaos ? ' <span class="tb-tag">2 mãos</span>' : ''}</span><span class="${o.cabe === false ? 'tb-ruim' : 'tb-ok'}"><b>${mkFmt(o.preco)}</b> ouro${o.copias > 1 ? ` <span class="tb-mut">· ${o.copias} à venda iguais, esta é a mais barata</span>` : ''}</span></div>` +
             (o.ficha ? `<div class="tb-mut">${escHtml(mlVarinhaTxt(o.ficha))}</div>` : '') +
             (o.nivelSet ? `<div><span class="tb-tag">nível superior</span> <span class="tb-mut">${o.nivelSet.nobre > 0 ? 'nível mágico/skill de fábrica +' + numBR(o.nivelSet.nobre, 0) + ' · ' : ''}${mlSetRot(o.nivelSet.k)} ${numBR(o.nivelSet.de, 0)} → <b>${numBR(o.nivelSet.valor, 0)}</b>${o.nivelSet.nivel ? ' · pede nível ' + o.nivelSet.nivel : ''}</span></div>` : '') +
             (enc ? `<div class="tb-mut">${escHtml(enc)}</div>` : '') +
@@ -13503,7 +13519,7 @@
              `<label class="tb-l"><input type="checkbox" id="tb-ml-perdas" ${cfg.verPerdas ? 'checked' : ''}> mostrar também as que perdem encaixe</label></div>`;
         if (ML.erro) h += `<div class="tb-cx tb-ruim">${escHtml(ML.erro)}</div>`;
         if (!ML.res) {
-            h += `<div class="tb-mut" style="margin-top:6px">Lê o equipamento dos 4 e todos os equipamentos à venda no Mercado (8 categorias, ~40 s) e mostra só o que é <b>melhor do que a melhor peça que cada um já tem</b> — vestida, no depósito ou na mochila — <b>sem perder</b> regen. de mana (todos), regen. de vida (Knight) nem nível mágico/skill/dano na arma e no colar. Só lê: nada é comprado sem você clicar 2 vezes.</div>`;
+            h += `<div class="tb-mut" style="margin-top:6px">Lê o equipamento dos 4 e todos os equipamentos à venda no Mercado (8 categorias, ~40 s) e mostra só o que é <b>melhor do que a melhor peça que cada um já tem</b> — vestida, no depósito ou na mochila — <b>sem perder</b> regen. de mana (todos; nos magos ela pode sair para entrar nível mágico), regen. de vida (Knight) nem nível mágico/skill/dano na arma e no colar. A mesma peça anunciada várias vezes aparece uma vez, a mais barata. Só lê: nada é comprado sem você clicar 2 vezes.</div>`;
             return h + `</div>`;
         }
         const top = ofertasDe(ML.res.top);
@@ -13533,7 +13549,7 @@
             const n = Object.values(slots).reduce((a, x) => a + ofertasDe(x.ofertas).length, 0);
             h += `<details class="tb-aj" data-k="ml-${v}"><summary>${escHtml(VOC_ROTULO[v] || v)} — ${n ? n + ' melhoria(s)' : 'nada melhor à venda'}</summary><div>${linhas.join('') || '<div class="tb-mut">Todos os espaços já estão no melhor que o Mercado tem hoje.</div>'}</div></details>`;
         }
-        h += aj('ml-como', `<b>Ponto (pt)</b> é a régua do Equip: 1 pt ≈ +1 % do dano da party ≈ 450 de ouro/h; "paga-se em ~X h" = preço ÷ (ganho × 450). A comparação é com a <b>melhor peça que o personagem já tem</b> naquele espaço (não só a vestida) e pesa tudo o que a peça dá (armadura, regen., resistências, skill, dano, crítico em par). <b>Recomendada</b> = não perde encaixe nobre (regen. de mana em todos, regen. de vida no Knight, nível mágico/skill/dano/crítico na arma e no colar), se paga em até ${ML_PAGA_MAX_H} h de caçada e, no Knight, o ganho não vem quase todo de armadura/defesa (a régua ainda superestima defesa). Só a recomendada tem botão de compra; as outras aparecem por personagem com o motivo. Marcando "mostrar também", aparecem até as que perdem encaixe. O Mercado devolve os anúncios de cada categoria como o jogo manda: se a categoria tiver muitos, pode faltar algum. Arma de 2 mãos do Knight concorre com arma + escudo. <b>Set só sobe de nível</b> (elmo, armadura, calça, bota e escudo): só aparece a peça com armadura base maior (defesa no escudo) que TODAS as que o personagem já tem naquele espaço — no empate, nível exigido maior; ou com nível mágico/skill de fábrica maior (Hat of the Mad). A mesma peça com regen. um pouco maior fica de fora. Sem perder regen. de mana/vida; nos 3 que não são Knight a armadura não muda o dano (o corpo a corpo vai no Knight), então ali o nível superior só ganha botão com linha melhor. <b>Wand/rod nunca regride</b>: só aparece a do mesmo nível exigido ou acima e com dano do tiro igual ou maior que a maior que o personagem já tem (a vortex/snakebite forjada não passa mais na frente da sua); entre essas, ganham as linhas da forja, o dano e a mana por tiro, e o elemento conta neutro (a compra serve a todos os mapas). Peça que pede nível acima do seu não aparece. O seu próprio anúncio nunca aparece. <b>Comprar</b> (wiki /mercado): é imediato e não pode ser desfeito; Premium não paga taxa; só ouro normal (não o travado); o item vai para a mochila (cheia: depósito). Antes de comprar, o helper relê o anúncio e confere preço e ouro. Depois, equipe pela aba Equip. <b>⚒ Forjar a sua</b> (embaixo de cada espaço com oferta): quanto custaria, em média, pôr uma linha que vale na peça que você já tem — só quando ela tem encaixe vazio (ou falta 1 grau de raridade para abrir um); conta Atributo T1 20 mil + Limpeza T2 40 mil por tentativa repetida, Raridade T1 30 mil, 100 fragmentos por gema (preço do fragmento do Mercado, ou 2 mil estimado) e a chance de sorteio da wiki. A forja só aparece como "mais em conta" quando sai 1/3 mais barata por ponto, porque comprar é certo e a forja é sorteio.`, 'como funciona');
+        h += aj('ml-como', `<b>Ponto (pt)</b> é a régua do Equip: 1 pt ≈ +1 % do dano da party ≈ 450 de ouro/h; "paga-se em ~X h" = preço ÷ (ganho × 450). A comparação é com a <b>melhor peça que o personagem já tem</b> naquele espaço (não só a vestida) e pesa tudo o que a peça dá (armadura, regen., resistências, skill, dano, crítico em par). <b>Recomendada</b> = não perde encaixe nobre (regen. de mana em todos — nos magos ela pode dar lugar a nível mágico —, regen. de vida no Knight, nível mágico/skill/dano/crítico na arma e no colar), se paga em até ${ML_PAGA_MAX_H} h de caçada e, no Knight, o ganho não vem quase todo de armadura/defesa (a régua ainda superestima defesa). Só a recomendada tem botão de compra; as outras aparecem por personagem com o motivo. Marcando "mostrar também", aparecem até as que perdem encaixe. O Mercado devolve os anúncios de cada categoria como o jogo manda: se a categoria tiver muitos, pode faltar algum. Arma de 2 mãos do Knight concorre com arma + escudo. <b>Set só sobe de nível</b> (elmo, armadura, calça, bota e escudo): só aparece a peça com armadura base maior (defesa no escudo) que TODAS as que o personagem já tem naquele espaço — no empate, nível exigido maior; ou com nível mágico/skill de fábrica maior (Hat of the Mad). A mesma peça com regen. um pouco maior fica de fora. Sem perder regen. de mana/vida; nos 3 que não são Knight a armadura não muda o dano (o corpo a corpo vai no Knight), então ali o nível superior só ganha botão com linha melhor. <b>Wand/rod nunca regride</b>: só aparece a do mesmo nível exigido ou acima e com dano do tiro igual ou maior que a maior que o personagem já tem (a vortex/snakebite forjada não passa mais na frente da sua); entre essas, ganham as linhas da forja, o dano e a mana por tiro, e o elemento conta neutro (a compra serve a todos os mapas). Peça que pede nível acima do seu não aparece. O seu próprio anúncio nunca aparece. <b>Comprar</b> (wiki /mercado): é imediato e não pode ser desfeito; Premium não paga taxa; só ouro normal (não o travado); o item vai para a mochila (cheia: depósito). Antes de comprar, o helper relê o anúncio e confere preço e ouro. Depois, equipe pela aba Equip. <b>⚒ Forjar a sua</b> (embaixo de cada espaço com oferta): quanto custaria, em média, pôr uma linha que vale na peça que você já tem — só quando ela tem encaixe vazio (ou falta 1 grau de raridade para abrir um); conta Atributo T1 20 mil + Limpeza T2 40 mil por tentativa repetida, Raridade T1 30 mil, 100 fragmentos por gema (preço do fragmento do Mercado, ou 2 mil estimado) e a chance de sorteio da wiki. A forja só aparece como "mais em conta" quando sai 1/3 mais barata por ponto, porque comprar é certo e a forja é sorteio.`, 'como funciona');
         return h + `<div class="tb-mut" style="margin-top:6px">${ML.nCands} peças à venda conferidas. Só COMPRAR (2 toques) envia comando ao jogo.</div></div>`;
     }
     function ligarMelhorias() {

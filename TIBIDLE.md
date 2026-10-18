@@ -5327,3 +5327,11 @@ desfeito: toda wand de dano passava a perder para a Vortex pela mana por tiro, a
 regen. de mana segue como 2.º atributo (4,8/unidade medido), atrás do ML = 3×. Fixture da tela Equip: a base de forja b1 passou a
 regen. de vida 1,5 (com regen. de mana 1,2 o Cavaleiro a vestiria). Ao vivo (12 peças na mochila): dark armor 44,3 × magic plate
 armor 38,6 — o Cavaleiro fica com a dele; as 4 peças com +1 ML continuam indo para os magos.
+
+## 2.23.2 (18/10) — Melhorias: a mesma peça N vezes vira 1 oferta; magos podem trocar regen. de mana por nível mágico
+Dono: "a tela Melhorias recomenda spellbook of mind control várias vezes". Eram 7 anúncios da mesma peça (200–300k), um por
+orderId. `mlUnicas` (assinatura = nome + raridade + refino + linhas) deixa a mais barata com "N à venda iguais". E `mlPerdas`
+deixa de contar como perda a regen. de mana que sai para entrar ML nos magos (o Druida não via o spellbook +2 ML porque o
+battle shield dele tem regen. 2,3). Também limpei do perfil do Playwright o registro de `dano_mapa` inflado pelo grampo
+duplicado de 17/10 (tomadoH 136M/h), que dava ao Paladino resistência física a 9 pt por 1 %. 2 testes novos em
+`melhorias.test.js`.

@@ -60,6 +60,39 @@ t('SEGURANÇA: oferta com mais pontos mas que PERDE a regen. de mana fica fora (
     if (algum.length) assert(algum.every(o => !o.seguro && o.perdas.some(p => p.id === 'regen_mana' && p.de === 1.5)), JSON.stringify(algum[0]));
     assert.strictEqual(tudo.top.length, 0, 'oferta insegura nunca entra nas melhores compras');
 });
+t('2.23.2 magos: regen. de mana que sai para entrar nível mágico NÃO é perda (spellbook +2 ML no lugar do escudo com regen.); sem ML a mais, continua perda', () => {
+    BASE['spellbook of mind control'] = { attrs: { weaponType: 'spellbook', defense: 18, magiclevelpoints: 2, vocation: 'sorcerer, druid' } };
+    BASE['spellbook of enlightenment'] = { attrs: { weaponType: 'spellbook', defense: 18, magiclevelpoints: 1, vocation: 'sorcerer, druid' } };
+    const pecas = vestidos().concat(['SORCERER', 'DRUID', 'KNIGHT'].map(v => corpo(v + 's', 'dwarven shield', 'shield', v, F(1, ['regen_mana', 2.3]))));
+    const porVoc = cenario(pecas);
+    /* 60 mil: na régua sem medida (+2 ML ≈ 11 pt, menos a regen. 2,3) 200 mil levaria > 48 h para se pagar e não seria recomendada */
+    const c = M.mlCandidatosMercado({ escudos: [copia(30, 'spellbook of mind control', 60000), copia(31, 'vampire shield', 100000)] }, BASE);
+    const r = M.mlAvaliar(porVoc, c, null, {});
+    for (const v of ['SORCERER', 'DRUID']) {
+        const of = r.porVoc[v].shield.ofertas;
+        assert.strictEqual(of.length, 1, v + ': o spellbook +2 ML deveria aparecer: ' + JSON.stringify(of.map(o => o.nome)));
+        assert(of[0].nome === 'spellbook of mind control' && of[0].seguro && of[0].recomendada, v + ': ' + JSON.stringify(of[0].perdas));
+    }
+    assert.strictEqual(r.porVoc.KNIGHT.shield.ofertas.length, 0, 'Knight: o vampire shield sem regen. continua escondido (perde regen. de mana)');
+    /* o mesmo spellbook com +1 ML contra um de +1 ML vestido com regen.: sem ML a mais, a regen. que sai é perda */
+    const p2 = vestidos().concat(['SORCERER'].map(v => corpo(v + 's', 'spellbook of enlightenment', 'shield', v, F(1, ['regen_mana', 2.3]))));
+    const r2 = M.mlAvaliar(cenario(p2), M.mlCandidatosMercado({ escudos: [copia(32, 'spellbook of enlightenment', 50000)] }, BASE), null, {});
+    assert.strictEqual(r2.porVoc.SORCERER.shield.ofertas.length, 0, 'mesmo ML, menos regen.: escondida');
+});
+t('2.23.2 a mesma peça anunciada N vezes aparece UMA vez (a mais barata) com o total à venda; linhas diferentes continuam separadas', () => {
+    const pecas = vestidos().concat(['SORCERER', 'DRUID'].map(v => corpo(v + 's', 'dwarven shield', 'shield', v, F(1, ['regen_mana', 2.3]))));
+    const porVoc = cenario(pecas);
+    const c = M.mlCandidatosMercado({ escudos: [copia(40, 'spellbook of mind control', 300000), copia(41, 'spellbook of mind control', 200000), copia(42, 'spellbook of mind control', 250000),
+                                                 copia(43, 'spellbook of mind control', 260000, F(1, ['max_mana', 52]))] }, BASE);
+    const r = M.mlAvaliar(porVoc, c, null, {});
+    const of = r.porVoc.SORCERER.shield.ofertas;
+    assert.strictEqual(of.length, 2, '3 iguais viram 1 + a de max mana: ' + JSON.stringify(of.map(o => [o.nome, o.preco, o.copias])));
+    const comum = of.find(o => o.copias === 3);
+    assert(comum && comum.preco === 200000 && comum.orderId === 41, 'a mais barata manda: ' + JSON.stringify(comum && [comum.preco, comum.orderId]));
+    assert.strictEqual(of.find(o => o.copias === 1).preco, 260000);
+    /* no top, cada anúncio vai para quem mais ganha (o Druida, que cura com ML); sem repetição da mesma peça */
+    assert.strictEqual(r.top.filter(o => o.nome === 'spellbook of mind control').length, 2, 'top sem repetição: ' + r.top.map(o => o.voc + ' ' + o.preco).join(', '));
+});
 t('compara com a MELHOR peça que já é sua (depósito), não só com a vestida', () => {
     const pecas = vestidos().concat([{ iid: 'dep1', nome: 'leather boots', slot: 'boots', attrs: BASE['leather boots'].attrs, forja: F(1, ['regen_mana', 3.4]), origem: 'depósito', dono: null }]);
     const porVoc = cenario(pecas);
