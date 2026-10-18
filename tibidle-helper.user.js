@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.23.2
+// @version      2.23.3
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.23.2';
+    const VERSAO = '2.23.3';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -7283,9 +7283,11 @@
      * e linhas que não contam (capacidade, roubo de vida num mago…) não separam — senão 7 spirit cloaks lotavam a lista. */
     const mlAssinatura = (o) => [o.nome, (o.forja && o.forja.refino) || 0, (o.linhasQueValem || []).slice().sort().join(',')].join('|');
     function mlUnicas(ofertas) {
-        const vistas = new Map(), out = [];
-        for (const o of ofertas) { const k = mlAssinatura(o), j = vistas.get(k); if (j) { j.copias++; continue; } o.copias = 1; vistas.set(k, o); out.push(o); }
-        return out;
+        const grupos = new Map();
+        for (const o of ofertas) { const k = mlAssinatura(o), g = grupos.get(k); if (g) g.push(o); else grupos.set(k, [o]); }
+        /* v2.23.3 — a MAIS BARATA do grupo representa (ao vivo a incomum de 20 mil com capacidade 82 aparecia como "a mais barata"
+         * na frente da comum de 10 mil, porque a ordem era por ganho e a capacidade dava +0,3 pt) */
+        return [...grupos.values()].map(g => { const r = g.slice().sort((a, b) => a.preco - b.preco)[0]; r.copias = g.length; return r; });
     }
     /* v2.19.0 — COMPRAR × FORJAR (item H): antes de comprar, quanto custaria pôr uma linha boa na peça que você JÁ tem?
      * Só quando ela tem encaixe vazio (ou falta 1 grau de raridade para abrir um). Cada Atributo T1 sorteia uma linha do
@@ -7431,6 +7433,7 @@
                 /* melhor primeiro: mais ganho; empate (±5 %), o mais barato */
                 ofertas.sort((p, q) => (Math.abs(q.ganho - p.ganho) > 0.05 * Math.max(p.ganho, q.ganho) ? q.ganho - p.ganho : p.preco - q.preco));
                 const unicas = mlUnicas(ofertas); // v2.23.2 — N anúncios da mesma peça = 1 oferta (a mais barata), com o total
+                unicas.sort((p, q) => (Math.abs(q.ganho - p.ganho) > 0.05 * Math.max(p.ganho, q.ganho) ? q.ganho - p.ganho : p.preco - q.preco));
                 /* v2.19.0 — comprar × forjar: só onde há oferta (é a comparação que o dono pediu) */
                 const forja = unicas.length ? mlForjar(ref0, v, ctx, opc.precoFrag) : null;
                 for (const o of unicas) o.forjaMaisBarata = mlForjaMaisBarata(forja, o);
@@ -7441,14 +7444,17 @@
                                      ofertas: unicas };
             }
         }
-        /* as melhores compras da party: 1 por anúncio (a mesma cópia não serve a dois), pela razão ganho/ouro entre as seguras */
+        /* as melhores compras da party: 1 por anúncio (a mesma cópia não serve a dois), pela razão ganho/ouro entre as seguras.
+         * v2.23.3 — se a peça tem mais cópias à venda (copias ≥ 2), cada vocação leva a sua (o spellbook of mind control do
+         * Druida tirava o do Feiticeiro da lista, com 14 iguais à venda) */
         const porOrdem = new Map();
         for (const v of Object.keys(res.porVoc)) {
             for (const s of Object.keys(res.porVoc[v])) {
                 for (const o of res.porVoc[v][s].ofertas) {
                     if (!o.recomendada) continue;
-                    const ja = porOrdem.get(o.orderId);
-                    if (!ja || o.ganho > ja.ganho) porOrdem.set(o.orderId, o);
+                    const k = o.copias > 1 ? o.orderId + '|' + v : String(o.orderId);
+                    const ja = porOrdem.get(k);
+                    if (!ja || o.ganho > ja.ganho) porOrdem.set(k, o);
                 }
             }
         }

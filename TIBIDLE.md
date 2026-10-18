@@ -5338,3 +5338,10 @@ duplicado de 17/10 (tomadoH 136M/h), que dava ao Paladino resistência física a
 Ao vivo, a 1.ª versão do agrupamento (nome + raridade + refino + todas as linhas) ainda enchia o topo com 7 spirit cloaks
 (comum, incomum com capacidade/cura própria/roubo de vida, raro): a assinatura passou a ser nome + refino + só as linhas que
 valem ≥ 1 pt para a vocação (`linhasQueValem`).
+
+## 2.23.3 (18/10) — Melhorias: a mais barata do grupo representa; com cópias à venda, cada mago leva a sua
+Ao vivo com a 2.23.2: a spirit cloak incomum de 20 mil (capacidade 82, +0,3 pt) aparecia como "a mais barata" na frente da
+comum de 10 mil (a ordem era por ganho antes do agrupamento), e o spellbook of mind control do Druida (+17,8) tirava o do
+Feiticeiro (+14,4) das compras recomendadas por ser "o mesmo anúncio", com 14 iguais à venda. Agora `mlUnicas` escolhe a mais
+barata do grupo e reordena; no topo, peça com `copias ≥ 2` conta por vocação. Resultado conferido: topo = spirit cloak 10 mil
+(Feiticeiro), spellbook of mind control 200 mil (Druida +17,8 e Feiticeiro +14,4), spellbook of enlightenment 50 mil (Druida).

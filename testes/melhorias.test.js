@@ -82,16 +82,22 @@ t('2.23.2 magos: regen. de mana que sai para entrar nível mágico NÃO é perda
 t('2.23.2 a mesma peça anunciada N vezes aparece UMA vez (a mais barata) com o total à venda; raridade e linha que não conta não separam, linha que vale separa', () => {
     const pecas = vestidos().concat(['SORCERER', 'DRUID'].map(v => corpo(v + 's', 'dwarven shield', 'shield', v, F(1, ['regen_mana', 2.3]))));
     const porVoc = cenario(pecas);
-    const c = M.mlCandidatosMercado({ escudos: [copia(40, 'spellbook of mind control', 300000), copia(41, 'spellbook of mind control', 200000), copia(42, 'spellbook of mind control', 250000),
-                                                 copia(43, 'spellbook of mind control', 260000, F(1, ['max_mana', 52])), copia(44, 'spellbook of mind control', 270000, F(2, ['regen_mana', 2.0]))] }, BASE);
+    const c = M.mlCandidatosMercado({ escudos: [copia(40, 'spellbook of mind control', 150000), copia(41, 'spellbook of mind control', 100000), copia(42, 'spellbook of mind control', 125000),
+                                                 copia(43, 'spellbook of mind control', 130000, F(1, ['max_mana', 52])), copia(44, 'spellbook of mind control', 135000, F(2, ['regen_mana', 2.0]))] }, BASE);
     const r = M.mlAvaliar(porVoc, c, null, {});
     const of = r.porVoc.SORCERER.shield.ofertas;
     assert.strictEqual(of.length, 2, '3 iguais + a de max mana (não conta) viram 1; a de regen. 2,0 (vale) fica separada: ' + JSON.stringify(of.map(o => [o.nome, o.preco, o.copias])));
     const comum = of.find(o => o.copias === 4);
-    assert(comum && comum.preco === 200000 && comum.orderId === 41, 'a mais barata manda: ' + JSON.stringify(comum && [comum.preco, comum.orderId]));
-    assert.strictEqual(of.find(o => o.copias === 1).preco, 270000);
-    /* no top, cada anúncio vai para quem mais ganha (o Druida, que cura com ML); sem repetição da mesma peça */
-    assert.strictEqual(r.top.filter(o => o.nome === 'spellbook of mind control').length, 2, 'top sem repetição: ' + r.top.map(o => o.voc + ' ' + o.preco).join(', '));
+    assert(comum && comum.preco === 100000 && comum.orderId === 41, 'a mais barata manda: ' + JSON.stringify(comum && [comum.preco, comum.orderId]));
+    assert.strictEqual(of.find(o => o.copias === 1).preco, 135000);
+    /* 2.23.3 — no top: a cópia única (regen. 2,0) vai para quem mais ganha; a peça com 4 à venda aparece para o Feiticeiro E para o Druida */
+    const topMC = r.top.filter(o => o.nome === 'spellbook of mind control');
+    assert.strictEqual(topMC.filter(o => o.copias === 4).length, 2, 'com cópias à venda, cada mago leva a sua: ' + r.top.map(o => o.voc + ' ' + o.preco + ' ×' + o.copias).join(', '));
+    assert.strictEqual(topMC.filter(o => o.copias === 1).length, 1, 'cópia única só para um');
+    /* 2.23.3 — a mais barata representa, mesmo que outra do grupo tenha uma linha que não conta (max mana) com ganho um tiquinho maior */
+    const c2 = M.mlCandidatosMercado({ escudos: [copia(50, 'spellbook of mind control', 130000, F(1, ['max_mana', 52])), copia(51, 'spellbook of mind control', 100000)] }, BASE);
+    const o2 = M.mlAvaliar(porVoc, c2, null, {}).porVoc.SORCERER.shield.ofertas;
+    assert(o2.length === 1 && o2[0].orderId === 51 && o2[0].copias === 2, 'a de 100 mil representa: ' + JSON.stringify(o2.map(o => [o.orderId, o.preco, o.copias])));
 });
 t('compara com a MELHOR peça que já é sua (depósito), não só com a vestida', () => {
     const pecas = vestidos().concat([{ iid: 'dep1', nome: 'leather boots', slot: 'boots', attrs: BASE['leather boots'].attrs, forja: F(1, ['regen_mana', 3.4]), origem: 'depósito', dono: null }]);
