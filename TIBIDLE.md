@@ -5354,3 +5354,10 @@ NÃO lido (`MK.catalogo` nulo) o filtro não existia e a lista ia inteira. Agora
 vazio, o botão fica desligado com o motivo ("leia o Mercado antes") e só a caixa "incluir" marcada de propósito desmancha
 sem a leitura. Limite que fica: o "tem comprador" é pelo NOME do item no catálogo, não pelas linhas da peça — mas as linhas
 que valem (nobres) nunca chegam às sobras.
+
+## 2.23.5 (18/10) — DESMANCHAR nunca leva peça com linha nobre
+Olhando a lista real das 17 sobras (2.23.3): 11 tinham regen. de vida ou regen. de mana (dark armor regen. vida 2,0, terra
+boots regen. vida 2, plate legs regen. mana 1,6…) — sobram porque todos já vestem igual ou melhor, mas são exatamente as
+peças que o dono disse valer caro no Mercado. `pecasDesmanche` passa a excluir `encaixeNobre(p)` (qualquer vocação), com ou
+sem "incluir": essas vão só para ANUNCIAR NO MERCADO. Ao desmanche ficam as sobras com linhas que ninguém usa (capacidade,
+max mana, resistência fraca, roubo de vida num mago…) e as refinadas sem linha. 1 teste novo em `equip.test.js`.

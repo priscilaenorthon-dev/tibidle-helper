@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.23.4
+// @version      2.23.5
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.23.4';
+    const VERSAO = '2.23.5';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -7019,7 +7019,10 @@
          * têm valor de Mercado?"). Antes, sem o catálogo (temNegocio ausente) a lista ia inteira. Agora só com o catálogo lido
          * (temNegocio) — e aí a peça com negócio em 30 dias fica fora — ou com "incluir" marcado de propósito pelo dono. */
         if (!incluir && typeof temNegocio !== 'function') return [];
-        return ((res && res.dispensaveis) || []).filter(p => p && p.iid && ORIG[p.origem] && !vendivelNpc(p) && (incluir || !temNegocio(p.nome)))
+        /* v2.23.5 — LINHA NOBRE NUNCA VAI PARA O DESMANCHE (dono, 18/10: "itens com regen. de mana + regen. de vida são caríssimos no
+         * Mercado, pois são muito raros"). Uma sobra pode ter regen. de mana/vida, ML, skill, dano ou crítico e ainda assim sobrar
+         * (todos já vestem igual ou melhor): essa vai para ANUNCIAR NO MERCADO, nunca para fragmento — nem com "incluir" marcado. */
+        return ((res && res.dispensaveis) || []).filter(p => p && p.iid && ORIG[p.origem] && !vendivelNpc(p) && !encaixeNobre(p) && (incluir || !temNegocio(p.nome)))
             .map(p => ({ iid: p.iid, origem: ORIG[p.origem], nome: p.nome }));
     }
     /* v2.11.2 — TROCA TEM CUSTO. Com 0,05 de bônus para ficar, o otimizador
@@ -9347,8 +9350,8 @@
         const fragTotal = alvosDesm.reduce((s, a) => { const p = dispPorIid.get(a.iid) || candidatoPorIid(a.iid); return s + (p ? fragmentosDesmanche(p).n : 0); }, 0);
         const podeDesm = nd && !dentro && sock && !EQUIP.equipando && !EQUIP.lendo;
         const desmArmado = EQUIP.desmConf && Date.now() < EQUIP.desmConf;
-        h += `<div class="tb-linha"><button type="button" class="tb-bt ${desmArmado ? 'pri' : ''}" id="tb-eq-desmanchar" ${podeDesm ? '' : 'disabled'} title="${escHtml(semMercado ? 'leia o Mercado antes (aba Mercado → ATUALIZAR): sem o catálogo não sei quais sobras têm comprador, e nada é desmanchado' : !nd ? 'nada para desmanchar: as sobras Incomum+ ou refinadas (o NPC não compra) é que vão' : dentro ? 'só na cidade' : !sock ? 'o socket do jogo não foi capturado — F5 com o helper instalado' : 'manda as sobras que o NPC não compra para o Desmanche da Forja (forge_salvage_batch) — vira fragmento, não volta')}">${EQUIP.desm ? 'DESMANCHANDO…' : desmArmado ? `confirmar: desmanchar ${nd}` : `DESMANCHAR (${nd})`}</button>` +
-             `<span class="tb-mut tb-eq-nota">${desmArmado ? 'toque de novo para confirmar (não volta)' : `sobras que o NPC não compra → ${numBR(fragTotal)} fragmento${fragTotal === 1 ? '' : 's'} ≈ ${milBR(fragTotal * pf.preco)} de ouro${pf.estimado ? ' (fragmento a 2 mil, estimado)' : ' (fragmento a ' + milBR(pf.preco) + ' no Mercado)'} · 2 toques`}</span></div>` +
+        h += `<div class="tb-linha"><button type="button" class="tb-bt ${desmArmado ? 'pri' : ''}" id="tb-eq-desmanchar" ${podeDesm ? '' : 'disabled'} title="${escHtml(semMercado ? 'leia o Mercado antes (aba Mercado → ATUALIZAR): sem o catálogo não sei quais sobras têm comprador, e nada é desmanchado' : !nd ? 'nada para desmanchar: as sobras Incomum+ ou refinadas (o NPC não compra) é que vão' : dentro ? 'só na cidade' : !sock ? 'o socket do jogo não foi capturado — F5 com o helper instalado' : 'manda as sobras que o NPC não compra e que não têm linha nobre (regen., ML, skill, dano, crítico) para o Desmanche da Forja (forge_salvage_batch) — vira fragmento, não volta')}">${EQUIP.desm ? 'DESMANCHANDO…' : desmArmado ? `confirmar: desmanchar ${nd}` : `DESMANCHAR (${nd})`}</button>` +
+             `<span class="tb-mut tb-eq-nota">${desmArmado ? 'toque de novo para confirmar (não volta)' : `sobras sem linha nobre que o NPC não compra → ${numBR(fragTotal)} fragmento${fragTotal === 1 ? '' : 's'} ≈ ${milBR(fragTotal * pf.preco)} de ouro${pf.estimado ? ' (fragmento a 2 mil, estimado)' : ' (fragmento a ' + milBR(pf.preco) + ' no Mercado)'} · 2 toques`}</span></div>` +
              `<div class="tb-mut tb-eq-nota">${MK.catalogo ? `${nMk} com negócio no Mercado em 30 dias ficam fora ` : '<b class="tb-av">Mercado não lido (aba Mercado → ATUALIZAR): sem saber quais têm comprador, nada é desmanchado</b> '}<label class="tb-l"><input type="checkbox" id="tb-eq-desm-mk" ${incluirMk ? 'checked' : ''}> incluir as que têm negócio no Mercado (e desmanchar mesmo sem o Mercado lido)</label></div>`;
         /* v2.15.0 — as sobras viram DESTINOS com botão (dono, 07/10: "não posso ficar guardando item que nunca vou usar"):
          * comum sem encaixe → VENDER NO NPC (2 toques, venderSobrasNpc); incomum ou melhor → ANUNCIAR NO MERCADO

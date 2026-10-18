@@ -328,6 +328,18 @@ t('pecasDesmanche: peça com negócio no Mercado fica fora do desmanche (Incomum
     assert.deepStrictEqual(M.pecasDesmanche(res, null, true).map(x => x.iid), ['a', 'b', 'c'], 'incluir marcado de propósito: vai tudo mesmo sem o Mercado');
     assert.deepStrictEqual(M.pecasDesmanche(res, temNegocio, true).map(x => x.iid), ['a', 'b', 'c'], 'incluir = ignora o filtro');
 });
+t('2.23.5 pecasDesmanche: sobra com linha NOBRE (regen. de mana/vida, ML, skill, dano, crítico) nunca vai para o desmanche, nem com "incluir"', () => {
+    const sobra = (iid, nome, slot, forja) => ({ iid, nome, slot, origem: 'depósito', forja, motivo: 'encaixe bom, mas todos já usam igual ou melhor' });
+    const res = { dispensaveis: [
+        sobra('vida', 'dark armor', 'armor', F(1, ['regen_vida', 2.0])),          // nobre no Knight → Mercado
+        sobra('mana', 'plate legs', 'legs', F(1, ['regen_mana', 1.2])),           // nobre em todos → Mercado
+        sobra('ml', 'wand of vortex', 'weapon', F(1, ['nivel_magico', 1])),       // nobre nos magos → Mercado
+        sobra('lixo', 'dark armor', 'armor', F(1, ['capacidade', 48])),           // linha que ninguém usa → desmanche
+        sobra('resist', 'steel helmet', 'head', F(2, ['resist_gelo', 0.8], ['max_mana', 30])) // idem
+    ] };
+    assert.deepStrictEqual(M.pecasDesmanche(res, () => false).map(x => x.iid), ['lixo', 'resist']);
+    assert.deepStrictEqual(M.pecasDesmanche(res, null, true).map(x => x.iid), ['lixo', 'resist'], 'nem com incluir');
+});
 t('2.11.6 → 2.16.1: épico só é base de forja com linha útil; três resistências de 1 % sobram (anuncie ou desmanche)', () => {
     /* 2.11.6 dizia "épico nunca sobra"; a wiki de 12/10 (skill cai 1 em 89 por gema) e o TV de Souza ("Mace com 500 de potência é
      * item de noob — desencanta") mudaram a regra: 3 encaixes só valem se pelo menos um já é uma linha que alguém usa de verdade */
