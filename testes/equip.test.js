@@ -290,9 +290,10 @@ t('pecasDesmanche: só sobras que o NPC não compra (Incomum+ ou refinada), da m
         sobra('refinada', 'depósito', 0, 2, 100),   // Comum +2: não vende → desmanche
         sobra('corpo', 'corpo', 1, 0, 100)          // vestida: nunca
     ] };
-    const d = M.pecasDesmanche(res);
+    const d = M.pecasDesmanche(res, () => false);
     assert.deepStrictEqual(d.map(x => x.iid + ':' + x.origem), ['incomum:bag', 'refinada:depot']);
-    assert.deepStrictEqual(M.pecasDesmanche(null), []);
+    assert.deepStrictEqual(M.pecasDesmanche(null, () => false), []);
+    assert.deepStrictEqual(M.pecasDesmanche(res), [], '2.23.4: sem o Mercado lido (sem temNegocio) nada é desmanchado');
 });
 t('planoForja: faixa pela potência, refinos até a próxima faixa, linhas-alvo por vocação e espaço, passos em ordem', () => {
     /* dono (04/10): "não sei usar a forja — me indica o que fazer e quais atributos encontrar" */
@@ -323,7 +324,8 @@ t('pecasDesmanche: peça com negócio no Mercado fica fora do desmanche (Incomum
     const res = { dispensaveis: [sobra('a', 'crystal ring', 1), sobra('b', 'simple dress', 1), sobra('c', 'cape', 1)] };
     const temNegocio = (nome) => nome === 'crystal ring' || nome === 'cape';
     assert.deepStrictEqual(M.pecasDesmanche(res, temNegocio).map(x => x.iid), ['b']);
-    assert.deepStrictEqual(M.pecasDesmanche(res).map(x => x.iid), ['a', 'b', 'c'], 'sem o filtro, vai tudo');
+    assert.deepStrictEqual(M.pecasDesmanche(res).map(x => x.iid), [], '2.23.4: sem o Mercado lido nada vai (antes ia tudo)');
+    assert.deepStrictEqual(M.pecasDesmanche(res, null, true).map(x => x.iid), ['a', 'b', 'c'], 'incluir marcado de propósito: vai tudo mesmo sem o Mercado');
     assert.deepStrictEqual(M.pecasDesmanche(res, temNegocio, true).map(x => x.iid), ['a', 'b', 'c'], 'incluir = ignora o filtro');
 });
 t('2.11.6 → 2.16.1: épico só é base de forja com linha útil; três resistências de 1 % sobram (anuncie ou desmanche)', () => {

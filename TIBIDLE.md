@@ -5345,3 +5345,12 @@ comum de 10 mil (a ordem era por ganho antes do agrupamento), e o spellbook of m
 Feiticeiro (+14,4) das compras recomendadas por ser "o mesmo anúncio", com 14 iguais à venda. Agora `mlUnicas` escolhe a mais
 barata do grupo e reordena; no topo, peça com `copias ≥ 2` conta por vocação. Resultado conferido: topo = spirit cloak 10 mil
 (Feiticeiro), spellbook of mind control 200 mil (Druida +17,8 e Feiticeiro +14,4), spellbook of enlightenment 50 mil (Druida).
+
+## 2.23.4 (18/10) — DESMANCHAR só com o Mercado lido
+Dono: "tem certeza que não está desmanchando itens bons, que têm valor de Mercado?". Conferido: o que vai para o desmanche
+são só as sobras (nem melhor, nem reserva, nem base de forja, nem encaixe nobre — regen. de mana/vida, ML, skill, dano,
+crítico) da mochila/baú que o NPC não compra, e a peça com negócio no Mercado em 30 dias fica fora. O buraco: com o Mercado
+NÃO lido (`MK.catalogo` nulo) o filtro não existia e a lista ia inteira. Agora `pecasDesmanche` sem `temNegocio` devolve
+vazio, o botão fica desligado com o motivo ("leia o Mercado antes") e só a caixa "incluir" marcada de propósito desmancha
+sem a leitura. Limite que fica: o "tem comprador" é pelo NOME do item no catálogo, não pelas linhas da peça — mas as linhas
+que valem (nobres) nunca chegam às sobras.
