@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.22.0
+// @version      2.23.0
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.22.0';
+    const VERSAO = '2.23.0';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -4594,6 +4594,7 @@
         const d = (o.data && typeof o.data === 'object') ? o.data : {};
         if (o.type === 'depot_state' && Array.isArray(d.entries)) {
             ESTADO_WS.depot = { entries: clonar(d.entries), used: d.used, total: d.total }; ESTADO_WS.depot_t = Date.now();
+            lembrarDepot(ESTADO_WS.depot); // v2.23.0 — o Equip usa esta foto na caçada (o jogo não responde ao depot_get lá)
             if (ABA === 'equip') renderizar();
             return;
         }
@@ -6126,9 +6127,30 @@
         const sh = lerShellFibra();
         if (sh && sh.depot && Array.isArray(sh.depot.entries)) {
             ESTADO_WS.depot = { entries: clonar(sh.depot.entries), used: sh.depot.used, total: sh.depot.total, daTela: true }; ESTADO_WS.depot_t = Date.now();
+            lembrarDepot(ESTADO_WS.depot);
             return { depot: ESTADO_WS.depot, aviso: erro + ' — depósito lido da tela do jogo' };
         }
+        /* v2.23.0 — NA CAÇADA O JOGO NÃO RESPONDE AO depot_get (dono, 17/10: "tenho que ficar entrando e saindo da hunt
+         * para ele ver no meu baú"). A última foto boa (memória, ou a guardada a cada depot_state) vale até a próxima
+         * leitura na cidade: o ranking enxerga o baú; EQUIPAR continua só na cidade. */
+        const foto = ESTADO_WS.depot && Array.isArray(ESTADO_WS.depot.entries) ? ESTADO_WS.depot : lembrarDepot();
+        if (foto && Array.isArray(foto.entries)) {
+            if (!ESTADO_WS.depot) { ESTADO_WS.depot = foto; ESTADO_WS.depot_t = foto.t || Date.now(); }
+            const quando = new Date(foto.t || ESTADO_WS.depot_t || Date.now()).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+            return { depot: foto, aviso: `baú como estava ${quando} (${foto.entries.filter(e => e && e.forja && e.slot).length} peças)${emHunt() ? ' — na caçada o jogo não manda o baú; na cidade o ATUALIZAR relê' : ' — ' + erro}` };
+        }
         return { erro };
+    }
+    /* v2.23.0 — foto do depósito no localStorage (equip_depot): só as peças de equipamento (forja + slot), que é o que o
+     * Equip ranqueia. VENDER NO NPC / DESMANCHAR / EQUIPAR releem o baú de verdade na cidade antes de agir. */
+    function lembrarDepot(dep) {
+        if (dep && Array.isArray(dep.entries)) {
+            const t = Date.now();
+            guardar('equip_depot', { t, used: dep.used, total: dep.total, entries: dep.entries.filter(e => e && e.forja && e.slot) });
+            return dep;
+        }
+        const g = ler('equip_depot', null);
+        return g && Array.isArray(g.entries) && g.t ? { entries: g.entries, used: g.used, total: g.total, t: g.t, lembrado: true } : null;
     }
     /* atributos base por nome. Cache em localStorage (equip_base) por 7 dias;
      * id por nome vem de /assets/<versão>/items-by-name.json.
@@ -6227,7 +6249,12 @@
     const VIDA_PT_KNIGHT = 3.6, VIDA_PT_LADO = 0.5;
     /* elemento das magias de cada mago (dono, 29/09): Feiticeiro energia e fogo, Druida gelo e terra */
     const ELEM_DO_MAGO = { SORCERER: ['energia', 'fogo'], DRUID: ['gelo', 'terra'] };
-    const ML_REGEN_EQUIV = 2.0; // v2.16.3 — +1 ML nos magos vale no mínimo 2,0 de regen. de mana (dono, 13/10, seguindo os vídeos)
+    /* v2.16.3 — +1 ML nos magos vale no mínimo 2,0 de regen. de mana (dono, 13/10, seguindo os vídeos).
+     * v2.23.0 — 3,0 (dono, 17/10: "é melhor que regen. de mana para eles itens com Magic Level, tanto a wand ou rod quanto
+     * equipamentos"): a melhor linha de regen. de mana da forja é 2,0/s, então +1 ML (de fábrica ou forjado) agora bate
+     * qualquer regen. com folga de 50 %, e +2 ML vale 3 linhas. Medido ao vivo em 17/10: quem mata é Feiticeiro + Druida
+     * (69 % do dano) e a mana se compra com poção a 10 %. */
+    const ML_REGEN_EQUIV = 3.0;
     /* v2.16.3 — crítico: o jogo não tem crítico de base (wiki), então QUALQUER chance já acerta crítico (TV de Souza: "qualquer
      * 1 % já te dá a possibilidade"). Dano extra do crítico sem linha de "crítico (dano)": 50 % (padrão do Tibia; a wiki não
      * dá o número — premissa marcada). A linha de dano soma a esses 50 %. */
@@ -6450,7 +6477,7 @@
          * (o Feiticeiro vive sem mana); a comunidade (TV de Souza 02/10 e 12/10, NunohS 11/10) põe ML acima de tudo: "mana se
          * compra com poção, ML não". Vale para a linha de forja E para o ML de fábrica da peça (Wand of Everblazing +1,
          * Hat of the Mad, spellbooks, Yalahari Mask — magiclevelpoints no catálogo cai no mesmo peso em pontuarPeca). */
-        if (voc === 'SORCERER' || voc === 'DRUID') P.nivel_magico = P.magiclevelpoints = _r(Math.max(P.nivel_magico, P.regen_mana * ML_REGEN_EQUIV));
+        if (voc === 'SORCERER' || voc === 'DRUID') P.nivel_magico = P.magiclevelpoints = _r(Math.max(P.nivel_magico, P.regen_mana * ML_REGEN_EQUIV)); // v2.23.0: 3,0
         /* ---- defesa ---- */
         if (voc === 'KNIGHT') {
             const k1 = R.tomadoS / 100 * VIDA_PT_KNIGHT; // pt por 1 % a menos de TODO o dano que ele toma
@@ -9057,9 +9084,10 @@
             for (const e of mochila) if (e && e.name) nomes.push(e.name);
             EQUIP.base = await basePorNome(nomes);
             const pecas = candidatosEquip(roster, d.depot || null, EQUIP.base, mochila);
-            /* v2.7.3 — elemento da wand/rod contra o mapa atual */
-            const hz = huntAtual(); const nz = hz ? notasElementos(hz) : null;
-            EQUIP.ctx = Object.assign({ notas: nz ? nz.notas : null, mapa: hz ? hz.title : null, precosGema: precosGemaAtuais() }, contextoEquip(roster));
+            /* v2.7.3 — elemento da wand/rod contra o mapa atual.
+             * v2.23.0 — DESLIGADO (dono, 17/10: "o que a hunt interfere no melhor equipamento? Mudo de várias hunts, isso não
+             * tem lógica"): a peça é julgada pelo que ela é, igual em qualquer mapa (notas de elemento neutras). */
+            EQUIP.ctx = Object.assign({ notas: null, mapa: null, precosGema: precosGemaAtuais() }, contextoEquip(roster));
             EQUIP.res = distribuirEquip(pecas, undefined, EQUIP.ctx);
             EQUIP.t = Date.now();
             const trocas = Object.values(EQUIP.res.porVoc).reduce((n, v) => n + Object.values(v).filter(eqMexer).length, 0);
@@ -9207,7 +9235,7 @@
             <button type="button" class="tb-bt pri" id="tb-eq-atualizar" ${EQUIP.lendo || EQUIP.equipando ? 'disabled' : ''} title="lê o corpo dos 4, a mochila e o depósito">${EQUIP.lendo ? 'lendo…' : 'ATUALIZAR'}</button>
             <button type="button" class="tb-bt" id="tb-eq-equipar4" ${podeEquipar && n4 ? '' : 'disabled'} title="${escHtml(porQue)}">${EQUIP.equipando ? 'EQUIPANDO…' : `EQUIPAR (${n4})`}</button>
             <button type="button" class="tb-bt" id="tb-eq-equipar1" ${podeEquipar && nv ? '' : 'disabled'} title="só as trocas do ${VOC_ROTULO[v]} — ${escHtml(porQue)}" aria-label="equipar só o ${VOC_ROTULO[v]} (${nv})">só ${VOC_CURTO[v]} (${nv})</button></div>
-          <div class="tb-mut tb-eq-info">${dep ? `depósito ${numBR(dep.used)}/${numBR(dep.total)}` : 'depósito —'}${EQUIP.t ? ` · lido ${new Date(EQUIP.t).toLocaleTimeString('pt-BR')}` : ''}${EQUIP.ctx && EQUIP.ctx.mapa ? ` · wand/rod pelo elemento de ${escHtml(EQUIP.ctx.mapa)}` : ''}${dentro ? ' · <span class="tb-av">equipar só na cidade</span>' : ''}</div>`;
+          <div class="tb-mut tb-eq-info">${dep ? `depósito ${numBR(dep.used)}/${numBR(dep.total)}${dep.lembrado ? ` <span class="tb-av" title="foto guardada na última leitura na cidade">(foto de ${escHtml(new Date(dep.t).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }))})</span>` : ''}` : 'depósito —'}${EQUIP.t ? ` · lido ${new Date(EQUIP.t).toLocaleTimeString('pt-BR')}` : ''}${EQUIP.ctx && EQUIP.ctx.mapa ? ` · wand/rod pelo elemento de ${escHtml(EQUIP.ctx.mapa)}` : ''}${dentro ? ' · <span class="tb-av">equipar só na cidade (o ranking já vê o baú)</span>' : ''}</div>`;
         if (EQUIP.erro) h += `<div class="tb-cx tb-ruim">${escHtml(EQUIP.erro)}</div>`;
         if (EQUIP.aviso) h += `<div class="tb-cx tb-av">${escHtml(EQUIP.aviso)}</div>`;
         /* v2.18.2 — por que armadura/defesa do Knight valem menos agora (ou cheias) */
@@ -12150,6 +12178,13 @@
      *      pela nota do elemento e pelo que já aconteceu (hp mínimo, morte).
      * ====================================================================== */
     const TP_FATOR_LOOT_PADRAO = 0.35;
+    /* v2.23.0 — Scan (ou a caçada atual) vale como medição e calibração até 8 níveis de distância (era ±2: no nível 130
+     * os Scans guardados eram do 127 → calibração zero e o ranking saiu todo "estimado"; dono, 17/10). */
+    const TP_NIVEL_JANELA = 8;
+    const tpNivelPerto = (a, b) => !a || !b || Math.abs(a - b) <= TP_NIVEL_JANELA;
+    /* v2.23.0 — mapa cujo nível (mínimo ou recomendado) fica mais de 50 abaixo do seu some do ranking (Wasps Dungeons no topo
+     * de "os dois" no nível 130: ouro todo negativo elegia o mapa mais barato) */
+    const TP_NIVEL_BAIXO = 50;
     const TP_DIAS_MAX = 30;
     const TP_ALERTA_MIN_MIN = 15; // vigiar: nunca menos de 15 min entre leituras
     const tpNum = (x) => { const n = Number(x); return Number.isFinite(n) ? n : null; };
@@ -12224,21 +12259,24 @@
      * est = {id: {abH, cat, L, xpAbate}} — abH SEM calibrar (kAbates 1). */
     function tpCalibrar(scans, est, nivel) {
         est = est || {};
-        const limpos = (Array.isArray(scans) ? scans : Object.values(scans || {})).filter(r => r && !r.suja && !r.erro && Number(r.abatesH) > 0 &&
-            (!nivel || !r.nivel || Math.abs(r.nivel - nivel) <= 2));
-        const kA = [], fL = [], aT = [];
+        const limpos = (Array.isArray(scans) ? scans : Object.values(scans || {})).filter(r => r && !r.suja && !r.erro && Number(r.abatesH) > 0 && tpNivelPerto(r.nivel, nivel));
+        const kA = [], fL = [], aT = [], kC = [];
         let teto = null;
         for (const r of limpos) {
             const e = est[r.id];
             if (e && e.abH > 0) kA.push(r.abatesH / e.abH);
             if (e && e.cat > 0 && r.lootH != null) fL.push(r.lootH / (r.abatesH * e.cat));
+            /* v2.23.0 — GASTO: medido por abate ÷ estimado por abate (o motor cobrava poção de mana nos 4 com a curva de
+             * desperdício: Holy Portal −537k/h simulado contra +18k/h medido no nível 130) */
+            if (e && e.abH > 0 && e.custoH > 0 && Number(r.supH) > 0) kC.push((r.supH / r.abatesH) / (e.custoH / e.abH));
             if (e && e.L > 0 && e.xpAbate > 0 && Number(r.tomadoH) > 0) aT.push(r.tomadoH / (e.L * e.xpAbate));
             const k = r.razao && r.razao.porVoc && r.razao.porVoc.KNIGHT;
             if (k && Number(k.hpMin) >= 50 && Number(r.tomadoH) > 0) teto = Math.max(teto || 0, Number(r.tomadoH));
         }
-        const mk = tpMediana(kA), mf = tpMediana(fL), ma = tpMediana(aT);
+        const mk = tpMediana(kA), mf = tpMediana(fL), ma = tpMediana(aT), mc = tpMediana(kC);
         return { kAbates: mk != null ? tpLim(mk, 0.5, 1.5) : 1, fatorLoot: mf != null ? tpLim(mf, 0.15, 1) : TP_FATOR_LOOT_PADRAO,
-                 aTomado: ma, tetoTomadoSeguro: teto, n: limpos.length, nAbates: kA.length, nLoot: fL.length };
+                 kCusto: mc != null ? tpLim(mc, 0.1, 3) : 1,
+                 aTomado: ma, tetoTomadoSeguro: teto, n: limpos.length, nAbates: kA.length, nLoot: fL.length, nCusto: kC.length };
     }
 
     /* v2.14.6 — O QUE A PARTY JÁ AGUENTOU (dono, 02/10: "a simulação me jogou para mapas muito difíceis" — morreu num mapa
@@ -12299,6 +12337,7 @@
             T = motor.T > 0 ? motor.T : motor.danoS > 0 ? L * hp / motor.danoS : null;
             abH = motor.abH > 0 ? motor.abH : calib.kAbates * L * 3600 / (T + E + 0.5 * L);
             custoH = motor.custoH != null ? motor.custoH : motor.custoPorAbate != null ? abH * motor.custoPorAbate : null;
+            if (custoH != null && calib.kCusto > 0 && calib.kCusto !== 1) custoH *= calib.kCusto; // v2.23.0 — gasto calibrado pelo medido
         } else notas.push('sem dano: o planejador não montou kit (dano das magias não medido?)');
         const loot = ent.loot || null;
         if (!loot) notas.push('sem tabela de loot');
@@ -12312,7 +12351,7 @@
         }
         const xpH = abH != null ? abH * xp : null;
         const taxa = tpNum(ent.taxaXp);
-        let r = { id: h.id, title: h.title, levelMin: h.levelMin || 0, premium: h.premium === true, L, hp: Math.round(hp), xpAbate: Math.round(xp * 10) / 10,
+        let r = { id: h.id, title: h.title, levelMin: h.levelMin || 0, rec: Number(h.recommendedLevel) || 0, premium: h.premium === true, L, hp: Math.round(hp), xpAbate: Math.round(xp * 10) / 10,
                   T: T != null ? Math.round(T * 10) / 10 : null, abH: abH != null ? Math.round(abH) : null,
                   xpH: xpH != null ? Math.round(xpH) : null, xpHBonus: xpH != null && taxa > 0 ? Math.round(xpH * taxa / 100) : null,
                   lootH: lootH != null ? Math.round(lootH) : null, lootHMerc: lootHMerc != null ? Math.round(lootHMerc) : null,
@@ -12323,7 +12362,7 @@
                   fonte: 'estimado', medido: null, est: null, bloqueio, notas,
                   confianca: calib.n > 0 ? 'calibrado' : 'baixa' };
         const m = ent.medido;
-        const limpo = m && !m.suja && !m.erro && Number(m.abatesH) > 0 && (!ent.nivel || !m.nivel || Math.abs(m.nivel - ent.nivel) <= 2);
+        const limpo = m && !m.suja && !m.erro && Number(m.abatesH) > 0 && tpNivelPerto(m.nivel, ent.nivel);
         if (limpo) {
             r.est = { xpH: r.xpH, ouroH: r.ouroH, abH: r.abH };
             /* v2.13.5 — o ouro do medido é o ESTÁVEL do Scan (o ranking do Scan também é): o bruto de 4 min
@@ -12381,12 +12420,18 @@
     function tpOrdenar(linhas, modo, filtro) {
         let v = (linhas || []).filter(Boolean);
         if (filtro && filtro.esconder) v = v.filter(l => !l.bloqueio && !(l.risco && (l.risco.nivel === 'alto' || l.risco.nivel === 'bloqueado')));
+        /* v2.23.0 — com "esconder" ligado, mapa de nível muito abaixo do seu também some (filtro.nivel) */
+        if (filtro && filtro.esconder && filtro.nivel > 0) v = v.filter(l => Math.max(Number(l.levelMin) || 0, Number(l.rec) || 0) >= filtro.nivel - TP_NIVEL_BAIXO);
         const ok = v.filter(l => !l.bloqueio);
-        const xpMax = Math.max(1, ...ok.map(l => l.xpH || 0)), ouroMax = Math.max(1, ...ok.map(l => l.ouroH || 0));
+        const xpMax = Math.max(1, ...ok.map(l => l.xpH || 0));
+        /* v2.23.0 — "os dois": a régua do ouro é o maior LUCRO; se nenhum mapa dá lucro, é o maior prejuízo (antes, com
+         * todo ouro negativo, a régua ficava em 1 e o mapa mais barato ganhava, fosse qual fosse o xp) */
+        const ouroPos = Math.max(0, ...ok.map(l => l.ouroH || 0));
+        const ouroRef = Math.max(1, ouroPos > 0 ? ouroPos : Math.max(0, ...ok.map(l => Math.abs(l.ouroH || 0))));
         const nota = (l) => {
             if (modo === 'ouro') return l.ouroH;
             if (modo === 'combo') { const c = tpCombos(l.T); return c == null || l.xpH == null ? null : -c * 1e9 + l.xpH; } // menos combos primeiro; empate: mais xp
-            if (modo === 'dois') return l.xpH == null ? null : l.xpH / xpMax + (l.ouroH || 0) / ouroMax - 0.15 * Math.min(10, (l.risco && l.risco.pts) || 0);
+            if (modo === 'dois') return l.xpH == null ? null : l.xpH / xpMax + (l.ouroH || 0) / ouroRef - 0.15 * Math.min(10, (l.risco && l.risco.pts) || 0);
             return l.xpH;
         };
         return v.map(l => ({ l, n: l.bloqueio ? null : nota(l) })).sort((a, b) => {
@@ -12721,10 +12766,28 @@
     /* v2.13.1 — o MELHOR Scan limpo do mapa (mais xp; empate = o mais novo), não o
      * mais recente: em 30/09 o Inteligente (−44 % de xp) foi medido depois do Em área
      * e o ranking passou a mostrar Vampire hell com 32,5k em vez de 58,0k. */
+    /* v2.23.0 — A CAÇADA ATUAL COMO MEDIÇÃO (dono, 17/10, nível 130: o Radar só aceitava Scan do nível ±2, os guardados
+     * eram do 127 → calibração zero; o motor cobrava poção de mana nos 4 → Holy Portal −537k/h contra +18k/h medido, e
+     * "os dois" elegeu Wasps Dungeons). O analisador do próprio jogo nesta caçada (≥ 3 min e ≥ 50 abates) vira um
+     * registro igual ao do Scan: calibra abates/h, loot e GASTO (kCusto) e é o "medido" deste mapa. Só leitura. */
+    const RADAR_VIVO_MIN_S = 180, RADAR_VIVO_MIN_ABATES = 50;
+    function radarAoVivo() {
+        const h = huntAtual(), an = anDoFrame();
+        if (!h || !an || !emHunt()) return null;
+        const seg = (Number(an.elapsedMs) || 0) / 1000;
+        if (seg < RADAR_VIVO_MIN_S || !(an.kills >= RADAR_VIVO_MIN_ABATES)) return null;
+        const H = 3600 / seg, lootH = Math.round(an.lootGold * H), supH = Math.round(an.suppliesGold * H);
+        let razao = null; try { razao = razaoResumo(RAZAO); } catch (e) { falhou('radar (ao vivo)', e); }
+        return { id: h.id, title: h.title, aoVivo: true, modelo: 'ao vivo', t: Date.now(), nivel: nivelAtual(), minutos: Math.round(seg / 60), seg: Math.round(seg),
+                 abatesH: Math.round(an.kills * H), xpH: Math.round(an.xp * H), xpRawH: an.xpRaw > 0 ? Math.round(an.xpRaw * H) : null,
+                 lootH, supH, ouroH: lootH - supH, tomadoH: an.damageTaken > 0 ? Math.round(an.damageTaken * H) : null, razao };
+    }
     function radarScanDoMapa(id) {
         const nv = nivelAtual();
         const xp = (r) => Number(r.xpRawH != null ? r.xpRawH : r.xpH) || 0;
-        return Object.values(scanResultados() || {}).filter(r => r && r.id === id && !r.suja && !r.erro && Number(r.abatesH) > 0 && (!r.nivel || !nv || Math.abs(r.nivel - nv) <= 2))
+        const vivo = radarAoVivo();
+        if (vivo && vivo.id === id) return vivo; // a caçada de agora manda: é o kit e o lure de hoje
+        return Object.values(scanResultados() || {}).filter(r => r && r.id === id && !r.suja && !r.erro && Number(r.abatesH) > 0 && tpNivelPerto(r.nivel, nv))
             .sort((a, b) => xp(b) - xp(a) || (b.t || 0) - (a.t || 0))[0] || null;
     }
     /* preço de um item pelo que já foi lido (tabela do loot, /prices e o catálogo do mercado) */
@@ -12767,8 +12830,9 @@
     function radarCompacto(r) {
         const pv = {};
         for (const [v, x] of Object.entries(r.porVoc || {})) pv[v] = x ? { magia: x.magia, kit: x.kit, extras: x.extras || null, elem: x.elem || null, nota: x.nota != null ? x.nota : null, pocao: !!x.pocao } : null;
-        return { id: r.id, title: r.title, levelMin: r.levelMin, premium: r.premium, L: r.L, T: r.T, abH: r.abH, xpH: r.xpH, xpHBonus: r.xpHBonus, lootH: r.lootH, lootHMerc: r.lootHMerc,
+        return { id: r.id, title: r.title, levelMin: r.levelMin, rec: r.rec || 0, premium: r.premium, L: r.L, T: r.T, abH: r.abH, xpH: r.xpH, xpHBonus: r.xpHBonus, lootH: r.lootH, lootHMerc: r.lootHMerc,
                  custoH: r.custoH, ouroH: r.ouroH, ouroHMerc: r.ouroHMerc, sorteH: r.sorteH || null, nota: r.nota, imunes: r.imunes, fonte: r.fonte, est: r.est, bloqueio: r.bloqueio,
+                 medido: r.medido ? { t: r.medido.t, nivel: r.medido.nivel, minutos: r.medido.minutos, modelo: r.medido.modelo } : null, // v2.23.0 — a tela diz de onde veio
                  confianca: r.confianca, notas: r.notas, risco: { nivel: r.risco.nivel, pts: r.risco.pts, motivos: r.risco.motivos, novo: !!r.risco.novo }, porVoc: pv };
     }
     /* v2.13.2 — cópia da tabela de loot na gaveta comum com data e era: vale 7 dias e só na era atual
@@ -12854,13 +12918,15 @@
                 brutos.push({ ent, cru });
             }
             const est = {};
-            for (const b of brutos) est[b.ent.hunt.id] = { abH: b.cru.abH, cat: b.ent.loot ? b.ent.loot.cat : null, L: b.cru.L, xpAbate: b.cru.xpAbate };
-            const calib = tpCalibrar(Object.values(scanResultados() || {}), est, nivel);
+            for (const b of brutos) est[b.ent.hunt.id] = { abH: b.cru.abH, cat: b.ent.loot ? b.ent.loot.cat : null, L: b.cru.L, xpAbate: b.cru.xpAbate, custoH: b.cru.custoH };
+            const vivo = radarAoVivo(); // v2.23.0 — a caçada atual calibra junto com os Scans
+            const calib = tpCalibrar(Object.values(scanResultados() || {}).concat(vivo ? [vivo] : []), est, nivel);
+            if (vivo) calib.vivo = { id: vivo.id, title: vivo.title, minutos: vivo.minutos };
             const linhas = brutos.map(b => radarCompacto(tpEstimar(Object.assign({}, b.ent, { calib }))));
             const rank = { t: Date.now(), riscoV: 2, envelope, nivel, modelo: cfg.modelo, enxDeg: cfg.modelo === 'motor:inteligente' ? RADAR_OPC_INT.degrauEnx : null, mercado: !!(cfg.mercado && MK.catalogo), calib, parcial: !!RADAR.parar, n: lista.length, linhas };
             RADAR.rank = rank;
             guardar('radar_rank', rank);
-            const top = tpOrdenar(linhas, cfg.ordem, { esconder: true })[0];
+            const top = tpOrdenar(linhas, cfg.ordem, { esconder: true, nivel })[0];
             avisar('radar', `radar: ${linhas.length} mapas calculados${RADAR.parar ? ' (interrompido)' : ''}` + (top ? ` — 1º por ${cfg.ordem === 'ouro' ? 'ouro' : cfg.ordem === 'dois' ? 'xp e ouro' : cfg.ordem === 'combo' ? 'menos combos' : 'xp'}: ${top.title}` : ''), 'ok');
         } catch (e) { falhou('radar (ranking)', e); avisar('radar', 'radar: o ranking parou — ' + e.message, 'erro'); }
         finally { RADAR.rodando = false; RADAR.parar = false; RADAR.prog = null; renderizar(); }
@@ -13138,9 +13204,9 @@
         const c = rank.calib || {};
         h += `<div class="tb-mut">calculado ${rdHa(rank.t)}, nível ${numBR(rank.nivel)}${rank.enxDeg != null ? ` · kit enxuto, degrau ${rank.enxDeg} (sem os seus suportes; ligue "kit enxuto" na Magia para aplicar o mesmo)` : rank.modelo === 'motor:inteligente' ? ' · <b class="tb-av">calculado com os seus suportes: recalcule</b>' : ''}${rank.parcial ? ' · <span class="tb-av">interrompido</span>' : ''}${rank.mercado ? ' · com preço do mercado' : ''}` +
              (rank.nivel !== nivel && nivel > 1 ? ` · <b class="tb-av">você está no nível ${numBR(nivel)}: recalcule</b>` : '') + `</div>`;
-        h += `<div class="tb-mut">fator de loot ${numBR(c.fatorLoot, 2)} ${c.nLoot ? `(n = ${c.nLoot} Scan${c.nLoot > 1 ? 's' : ''})` : '<span class="tb-av">(padrão, sem Scan: estimado)</span>'} · abates ×${numBR(c.kAbates, 2)}${c.nAbates ? '' : ' (sem calibração)'}` +
-             aj('rd-calib', 'O catálogo de loot superestima 2 a 4× (TIBIDLE §12): o valor absoluto vem da mediana de <b>loot medido ÷ (abates × loot do catálogo)</b> nos Scans limpos do seu nível (±2). Sem Scan, 0,35. Abates/h = lure × 3600 ÷ (T + espera + 0,5 × lure), com T = lure × HP médio ÷ dano/s da party (o planejador de Magia), corrigido pela mediana medido/estimado. <b>medido</b> = Scan limpo manda; <b>estimado</b> = conta. O dano que o monstro dá não existe na API: o risco compara a VIDA do monstro e o nível mínimo do mapa com o mapa mais forte em que a party já caçou sem morrer (Scans e sessões de ≥ 10 min); acima disso é "nunca testado" (risco médio ou alto). Também contam a margem de nível, a nota do elemento, o hp mínimo do Knight e as mortes. Risco alto nunca entra no Scan rápido.') + `</div>`;
-        const linhas = tpOrdenar(rank.linhas, cfg.ordem, { esconder: cfg.esconder });
+        h += `<div class="tb-mut">fator de loot ${numBR(c.fatorLoot, 2)} ${c.nLoot ? `(n = ${c.nLoot} ${c.nLoot > 1 ? 'medições' : 'medição'})` : '<span class="tb-av">(padrão, sem Scan: estimado)</span>'} · abates ×${numBR(c.kAbates, 2)}${c.nAbates ? '' : ' (sem calibração)'} · gasto ×${numBR(c.kCusto != null ? c.kCusto : 1, 2)}${c.nCusto ? '' : ' <span class="tb-av">(sem calibração: o gasto estimado costuma sair alto)</span>'}${c.vivo ? ` · <span class="tb-ok">caçada atual em ${escHtml(c.vivo.title)} (${numBR(c.vivo.minutos)} min) entrou na calibração</span>` : ''}` +
+             aj('rd-calib', 'O catálogo de loot superestima 2 a 4× (TIBIDLE §12): o valor absoluto vem da mediana de <b>loot medido ÷ (abates × loot do catálogo)</b> nos Scans limpos até 8 níveis do seu (e na caçada atual, se ela já tem 3 min e 50 abates). Sem Scan, 0,35. O <b>gasto</b> estimado é corrigido do mesmo jeito (suprimentos medidos por abate ÷ estimados por abate): sem medição ele sai alto, porque a simulação cobra poção de mana nos 4. Abates/h = lure × 3600 ÷ (T + espera + 0,5 × lure), com T = lure × HP médio ÷ dano/s da party (o planejador de Magia), corrigido pela mediana medido/estimado. <b>medido</b> = a caçada atual ou o Scan limpo manda; <b>estimado</b> = conta. Com "esconder" ligado, mapa de nível 50 abaixo do seu some. O dano que o monstro dá não existe na API: o risco compara a VIDA do monstro e o nível mínimo do mapa com o mapa mais forte em que a party já caçou sem morrer (Scans e sessões de ≥ 10 min); acima disso é "nunca testado" (risco médio ou alto). Também contam a margem de nível, a nota do elemento, o hp mínimo do Knight e as mortes. Risco alto nunca entra no Scan rápido.') + `</div>`;
+        const linhas = tpOrdenar(rank.linhas, cfg.ordem, { esconder: cfg.esconder, nivel });
         /* v2.14.3 — SCAN RÁPIDO (dono, 02/10: "onde eu desse play ele fazia um scan bem rápido"): os N primeiros da
          * ordem atual, com o mesmo kit que o ranking simulou, RADAR_SCAN_MIN cada. É o Scan de sempre (devolve o jogo
          * como estava no fim); 2 toques porque troca de mapa. */
@@ -13159,7 +13225,7 @@
         const ouroDe = (l) => rank.mercado && l.ouroHMerc != null ? l.ouroHMerc : l.ouroH;
         h += `<div class="rd-cab"><span>mapa</span><span>xp/h</span><span>ouro/h</span><span>risco</span></div>`;
         for (const l of linhas) {
-            const tags = [l.fonte === 'medido' ? `<span class="tb-tag tb-ok" title="o melhor Scan limpo deste mapa">medido${l.medido && l.medido.modelo ? ' · ' + escHtml(nomeModelo(l.medido.modelo)) : ''}</span>` : '<span class="tb-tag">estimado</span>',
+            const tags = [l.fonte === 'medido' ? `<span class="tb-tag tb-ok" title="${l.medido && l.medido.modelo === 'ao vivo' ? 'a caçada atual, pelo analisador do jogo' : 'o melhor Scan limpo deste mapa'}${l.medido && l.medido.nivel ? ' (nível ' + numBR(l.medido.nivel) + ')' : ''}">medido${l.medido && l.medido.modelo ? ' · ' + (l.medido.modelo === 'ao vivo' ? 'caçada atual' : escHtml(nomeModelo(l.medido.modelo))) : ''}</span>` : '<span class="tb-tag">estimado</span>',
                           (c => c === 1 ? '<span class="tb-tag tb-ok" title="a party limpa a onda na 1ª rajada">⚡ 1 combo</span>' : c ? `<span class="tb-tag" title="rajadas (a cada 2 s) para limpar a onda">${c} combos</span>` : '')(tpCombos(l.T)),
                           l.bloqueio && /^(nível|ilha)/.test(l.bloqueio) ? `<span class="tb-tag tb-ruim">${escHtml(l.bloqueio)}</span>` : '',
                           l.premium ? '<span class="tb-tag tb-av">premium</span>' : '',
@@ -13180,6 +13246,7 @@
                  (podeScan(l) ? `<div class="tb-linha"><button type="button" class="tb-bt mini" data-rd-scan="${escHtml(String(l.id))}"${scanOcup ? ' disabled' : ''} title="entra no mapa, aplica este kit nos 4 e mede ${RADAR_SCAN_MIN} min (pede confirmação)">▶ medir ${RADAR_SCAN_MIN} min</button></div>` : '') + `</div></details>`;
         }
         if (!linhas.length) h += `<div class="rd-cx tb-mut">Nenhum mapa passou no filtro.</div>`;
+        if (cfg.esconder && rank.linhas.length > linhas.length) h += `<div class="tb-mut">${numBR(rank.linhas.length - linhas.length)} mapa(s) escondido(s): risco alto, bloqueados ou nível mais de ${TP_NIVEL_BAIXO} abaixo do seu.</div>`;
         return h;
     }
     function rdTelaLoot() {

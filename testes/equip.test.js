@@ -97,12 +97,12 @@ t('Knight: +1 de ataque vale quase o mesmo que +1 de skill (golpe e Berserk são
     assert(P.attack / P.corpo_a_corpo > 0.7 && P.attack / P.corpo_a_corpo < 1.3, `ataque ${P.attack} × skill ${P.corpo_a_corpo}`);
     assert(P.skillaxe === P.corpo_a_corpo);
 });
-t('nível mágico: pela fórmula com ML baixo, e nunca abaixo de uma regen. de mana 2,0 (2.16.3, decisão do dono)', () => {
+t('nível mágico: pela fórmula com ML baixo, e nunca abaixo de 3,0 de regen. de mana (2.16.3: 2,0; 2.23.0: 3,0, dono 17/10)', () => {
     const baixo = M.pesosDaVoc('SORCERER', { nivel: 39, sk: { SORCERER: { ml: 5 } } }), alto = M.pesosDaVoc('SORCERER', { nivel: 62, sk: { SORCERER: { ml: 20 } } });
     assert(baixo.nivel_magico >= alto.nivel_magico, `${baixo.nivel_magico} × ${alto.nivel_magico}`);
-    assert(Math.abs(alto.nivel_magico - 2 * alto.regen_mana) < 0.01, 'ML 20: o piso é 2,0 de regen. de mana: ' + alto.nivel_magico + ' × regen ' + alto.regen_mana);
+    assert(Math.abs(alto.nivel_magico - 3 * alto.regen_mana) < 0.01, 'ML 20: o piso é 3,0 de regen. de mana: ' + alto.nivel_magico + ' × regen ' + alto.regen_mana);
     const dru = M.pesosDaVoc('DRUID', null);
-    assert(Math.abs(dru.nivel_magico - 2 * dru.regen_mana) < 0.01, 'Druida (bebe poção): o piso acompanha a regen. dele');
+    assert(Math.abs(dru.nivel_magico - 3 * dru.regen_mana) < 0.01, 'Druida (bebe poção): o piso acompanha a regen. dele');
     assert(M.pesosDaVoc('PALADIN', null).nivel_magico < 2 * M.pesosDaVoc('PALADIN', null).regen_mana, 'Paladino não ganha o piso');
     const lixo = M.pesosDaVoc('SORCERER', { sk: { SORCERER: { ml: undefined } } });
     assert(lixo.nivel_magico === M.pesosDaVoc('SORCERER', {}).nivel_magico, 'skill ausente cai na referência');
@@ -118,6 +118,8 @@ t('2.16.3: Wand of Everblazing (+1 ML de fábrica) bate a inferno; chance de cr�
     const wandML = { nome: 'wand of vortex', slot: 'weapon', attrs: base['wand of vortex'].attrs, forja: F(1, ['nivel_magico', 1]) };
     const mlPt = M.pontuarPeca(wandML, 'SORCERER').detalhe.find(d => d.id === 'nivel_magico').pt;
     assert(mlPt >= M.pontuarPeca(anelRegen, 'SORCERER').pontos - 0.01, '+1 ML ≥ regen. de mana 2,0');
+    /* 2.23.0 (dono, 17/10): +1 ML bate a MELHOR regen. de mana da forja (2,0/s) com folga de 50 % */
+    assert(mlPt >= 1.5 * M.pontuarPeca(anelRegen, 'SORCERER').pontos - 0.01, '+1 ML ≥ 1,5 × regen. de mana 2,0: ' + mlPt + ' × ' + M.pontuarPeca(anelRegen, 'SORCERER').pontos);
     /* crítico: chance 2 % sem linha de dano já rende (base 0 no jogo; dano extra 50 % é premissa) */
     const colarCrit = { nome: 'wolf tooth chain', slot: 'necklace', attrs: {}, forja: F(1, ['critico_chance', 2]) };
     const c = M.pontuarPeca(colarCrit, 'SORCERER');

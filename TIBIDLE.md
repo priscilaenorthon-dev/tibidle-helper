@@ -5263,3 +5263,48 @@ Pesquisa profunda nos 22 chunks do cliente (play.tibidle.com/_next/static/chunks
   `player_profile`, `codex_state`, `eventosProgresso`, `summary.skillGains`, `?probe=1`.
 - Testes: 2 novos em `equip.test.js` (Legado/Loyalty; simulador); o de forja da `melhorias.test.js` compara o simulador à
   conta analítica (±25 %).
+
+## 2.23.0 (17/10) — Radar calibrado pela caçada atual, baú lembrado na caçada, Magic Level acima da regen. de mana
+Sessão ao vivo no nível 130 (Holy Portal, lure tier 4 = 8 criaturas; barra dos 4 refeita para mapas 150–180).
+- **O que o jogo confirmou (wiki + modais):** VIDA e DEFESA são uma fila de 5 lida 1 → 5: dispara o primeiro cujo gatilho
+  foi atingido E que pode sair (recarga/sem mana = pulado). Cura forte com gatilho baixo PRIMEIRO, fraca com gatilho alto
+  depois. Mana gasta na ordem ataque → suporte → cura; poções de vida, mana e runa dividem 1 s. Recovery/Intense Recovery
+  não fazem nada em combate. Salvar um slot pela INTERFACE do jogo durante a caçada manda o perfil inteiro guardado e
+  apaga o que o helper aplicou pelo socket — conferir `estadoWS().configs` depois.
+- **Custo da cura por ponto de vida (medido):** Wound Cleansing pago com Mana Potion 0,17 o/HP · com Strong Mana 0,22 ·
+  Heal Friend do Druida 0,41 · Ultimate Healing Potion 0,50. Receita que deu lucro em Holy Portal lure 8: Cav Mana Potion
+  ≤ 50 %, WC ≤ 85 %, UHP ≤ 40 %, ataque só LFS; magos Mana Potion ≤ 10 %, sem ultimates (Rage of the Skies 8 dano/mana e
+  Eternal Winter 3 contra Energy Wave 19 e Strong Ice Wave 13,5), runas ≥ 2. XP 178k/h, lucro +18k/h (antes −117k/h).
+  "4 melhores magias em cada um" piorou (−18 % xp, +73 % gasto): com a mana limitada, magia cara = menos lançamentos.
+  Throne of Pumin e Throne of Bazir (Phantasm/Nightmare se curam mais rápido que a party bate) não compensam.
+- **Radar — defeito visto:** só aceitava Scan do nível ±2 (os guardados eram do 127) → calibração zero; o motor cobrava
+  poção de mana nos 4 → Holy Portal −537k/h contra +18k medido; "os dois" com todo ouro negativo elegia Wasps Dungeons.
+  Correções (`@@TELAS-API`): janela de nível `TP_NIVEL_JANELA = 8` (`tpNivelPerto`) para calibração e "medido";
+  `tpCalibrar` devolve `kCusto` (mediana de suprimentos medidos por abate ÷ estimados por abate, 0,1–3) e `tpEstimar`
+  multiplica o gasto por ele; `radarAoVivo()` transforma o analisador do jogo na caçada atual (≥ 3 min, ≥ 50 abates) num
+  registro igual ao do Scan (`modelo: 'ao vivo'`) que entra na calibração e é o "medido" do mapa; `tpOrdenar` com
+  `{esconder, nivel}` esconde mapa com nível (mínimo ou recomendado, `rec` novo na linha) abaixo de nível − 50
+  (`TP_NIVEL_BAIXO`), e "os dois" normaliza o ouro pelo maior lucro (ou, sem lucro, pelo maior prejuízo). A linha da
+  calibração mostra "gasto ×k" e a caçada que entrou; a tag "medido · caçada atual (nível N)" diz de onde veio.
+- **Equip — baú na caçada:** na caçada o jogo não responde ao `depot_get`; a foto do depósito (só peças com forja + slot)
+  fica guardada em `equip_depot` a cada `depot_state` e o ATUALIZAR usa a última na caçada, com "(foto de dd/mm hh:mm)".
+  EQUIPAR, VENDER NO NPC e DESMANCHAR continuam só na cidade (releem o baú de verdade).
+- **Magic Level:** `ML_REGEN_EQUIV` 2,0 → 3,0: +1 ML (de fábrica — `magiclevelpoints` — ou linha de forja) nos magos vale
+  3,0 de regen. de mana, acima da melhor linha de regen. da forja (2,0/s). Dono, 17/10: "quem mata é Feiticeiro e Druida;
+  ML é melhor que regen. de mana, tanto na wand/rod quanto no equipamento". ML não é atributo de espaço de defesa na
+  forja (`ATAQUE_IDS`), então o peso vale na arma, no colar e no ML de fábrica das peças.
+- **Equip sem o mapa:** dono, 17/10: "o que a hunt interfere no melhor equipamento? Mudo de várias hunts, isso não tem
+  lógica". O contexto do Equip deixa de usar as notas de elemento do mapa atual (`notas: null, mapa: null` em
+  `equipAtualizar`): a wand/rod e as peças são julgadas pelo que são, iguais em qualquer caçada. A medida da party
+  (fatia do dano, mana, tiros/s, dano tomado) continua vindo do livro-razão/Scan.
+- **Testado ao vivo (17/10, Holy Portal lure 4, nível 130):** CALCULAR do Radar → calibração n = 3 (2 Scans do 127 + a
+  caçada atual de 7 min), abates ×1,31, loot 0,44, gasto ×0,18; Holy Portal "medido · caçada atual" 108,9k xp/h,
+  −53,6k ouro/h (a estimativa ao lado: 158k / −88k). ATUALIZAR do Equip dentro da caçada enxergou o baú (104/300, 66
+  peças guardadas em `equip_depot`, 14 KB) e sugeriu só 4 trocas de ≤ 0,5 pt (empates técnicos); wand of vortex +1 ML
+  13,8 pt contra wand of inferno −5,7 (8 de mana por tiro), snakebite rod +1 ML 12,8 contra hailstorm rod −10,4.
+- **Armadilha de teste (não é do helper):** injetar uma 2ª cópia do script na aba viva e "destravar" o grampo zerando
+  `ws.__tbOuvindo` a cada envio adiciona um ouvinte por envio → o livro-razão sai multiplicado (23k de dano/s, 7 tiros/s,
+  wand com −440 pt). Para testar uma versão nova: aba nova com `addInitScript` do arquivo + um getter/setter em
+  `window.__tbHelper` que só aceita a versão nova (a cópia do Tampermonkey roda, mas não toma a API nem o painel).
+- Testes: 2 novos em `telas-api.test.js` (tpCalibrar kCusto/janela; tpOrdenar "os dois" e filtro de nível), ajustes
+  em tpEstimar; `equip.test.js` piso 3,0.

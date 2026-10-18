@@ -14,7 +14,7 @@ const trecho = (a, b) => { const i = SRC.indexOf(a), f = SRC.indexOf(b); assert(
 const P = new Function(`${trecho('/* @@TELAS-API-INICIO', '/* @@TELAS-API-FIM */')}
     return { tpEnvelope, tpHpXpMedio, tpLootAbate, tpValorItem, tpCalibrar, tpRisco, tpEstimar, tpNotaParty, tpOrdenar, tpDeltaAnalisador, tpTrechoAntes, tpRaro,
              tpAvaliarAlerta, tpAlertaDevido, tpCombos, tpDiaChave, tpAcumularDia, tpPodarDias, tpResumoDia, tpCompararDias, tpTextoRelatorio, tpDeltaResumo, tpTituloResumo, tpAbatesResumo,
-             TP_FATOR_LOOT_PADRAO, TP_DIAS_MAX };`)();
+             TP_FATOR_LOOT_PADRAO, TP_DIAS_MAX, TP_NIVEL_JANELA, TP_NIVEL_BAIXO };`)();
 const MKP = new Function(`${trecho('/* @@MERCADO-INICIO', '/* @@MERCADO-PURO-FIM */')}\n return { mkTaxa };`)();
 const FXH = le('testes/fixtures/hunts.json');
 const hunt = (t) => FXH.hunts.find(h => h.title === t);
@@ -83,6 +83,7 @@ t('tpCalibrar: medianas dos Scans limpos, limites, ignora sujos/outro nível, pa
     const est = { 1: { abH: 800, cat: 20, L: 5, xpAbate: 100 }, 2: { abH: 1500, cat: 10, L: 4, xpAbate: 200 } };
     const c = P.tpCalibrar(scans, est, 62);
     assert.strictEqual(c.n, 2);
+    assert.deepStrictEqual([c.kCusto, c.nCusto], [1, 0], 'sem supH não calibra o gasto');
     perto(c.kAbates, (1.25 + 0.8) / 2, 1e-9, 'kAbates'); perto(c.fatorLoot, (0.35 + 4000 / 12000) / 2, 1e-9, 'fatorLoot');
     perto(c.aTomado, 100, 1e-9); assert.strictEqual(c.tetoTomadoSeguro, 50000, 'teto só com o Knight ≥ 50 %');
     const z = P.tpCalibrar([], est, 62);
@@ -91,6 +92,19 @@ t('tpCalibrar: medianas dos Scans limpos, limites, ignora sujos/outro nível, pa
     assert.strictEqual(lim.kAbates, 1.5); assert.strictEqual(lim.fatorLoot, 1);
     const lim2 = P.tpCalibrar([{ id: 1, abatesH: 100, lootH: 1, nivel: 62 }], est, 62);
     assert.strictEqual(lim2.kAbates, 0.5); assert.strictEqual(lim2.fatorLoot, 0.15);
+});
+t('2.23.0 tpCalibrar: janela de nível ±8 (Scan do 127 vale no 130, do 50 não) e kCusto = gasto medido por abate ÷ estimado por abate', () => {
+    assert.strictEqual(P.TP_NIVEL_JANELA, 8);
+    const est = { 1: { abH: 1000, cat: 20, L: 5, xpAbate: 100, custoH: 500000 } };
+    /* a caçada ao vivo de 17/10: 1.455 abates/h e 125k/h de suprimentos contra 500k/h simulados para 1.000 abates/h */
+    const vivo = { id: 1, abatesH: 1455, lootH: 143000, supH: 125000, nivel: 130, modelo: 'ao vivo' };
+    const c = P.tpCalibrar([vivo], est, 130);
+    assert.strictEqual(c.n, 1); assert.strictEqual(c.nCusto, 1);
+    perto(c.kCusto, (125000 / 1455) / (500000 / 1000), 1e-9, 'kCusto por abate');
+    assert.strictEqual(P.tpCalibrar([Object.assign({}, vivo, { nivel: 127 })], est, 130).n, 1, '3 níveis de distância vale');
+    assert.strictEqual(P.tpCalibrar([Object.assign({}, vivo, { nivel: 121 })], est, 130).n, 0, '9 níveis não vale');
+    assert.strictEqual(P.tpCalibrar([Object.assign({}, vivo, { supH: 5 })], est, 130).kCusto, 0.1, 'piso 0,1');
+    assert.strictEqual(P.tpCalibrar([Object.assign({}, vivo, { supH: 9e9 })], est, 130).kCusto, 3, 'teto 3');
 });
 const ORC = hunt('Orc Fortress');
 const entBase = (extra) => Object.assign({ hunt: ORC, nivel: 62, premium: true, motor: { danoS: 1000, custoPorAbate: 3, porVoc: {} }, loot: P.tpLootAbate([{ name: 'gold coin', currency: true, chance: 100000, maxCount: 37.2, value: 1 }], null, {}),
@@ -103,6 +117,11 @@ t('tpEstimar: conta à mão (Orc Fortress, dano 1000/s, espera 10 s)', () => {
     assert.strictEqual(r.fonte, 'estimado'); assert.strictEqual(r.confianca, 'baixa'); assert(r.notas.includes('cura não medida'));
     const k = P.tpEstimar(entBase({ calib: { kAbates: 0.9, fatorLoot: 0.5, n: 3 } }));
     perto(k.abH, ab * 0.9, 0.5, 'kAbates'); perto(k.lootH, ab * 0.9 * 19.1 * 0.5, 1); assert.strictEqual(k.confianca, 'calibrado');
+    /* 2.23.0 — o gasto estimado é corrigido pelo kCusto (sem kCusto na calibração antiga = 1) */
+    const kc = P.tpEstimar(entBase({ calib: { kAbates: 1, fatorLoot: 0.35, n: 1, kCusto: 0.2 } }));
+    perto(kc.custoH, ab * 3 * 0.2, 1, 'custoH × kCusto'); perto(kc.ouroH, ab * 19.1 * 0.35 - ab * 3 * 0.2, 2, 'ouro com o gasto calibrado');
+    assert.strictEqual(r.rec, 0, 'sem recommendedLevel = 0');
+    assert.strictEqual(P.tpEstimar(entBase({ hunt: Object.assign({}, ORC, { recommendedLevel: 45 }) })).rec, 45, 'rec vem do catálogo');
     const b = P.tpEstimar(entBase({ taxaXp: 150 }));
     perto(b.xpHBonus, b.xpH * 1.5, 1, 'xp com bônus = xp raw × taxa');
 });
@@ -132,6 +151,8 @@ t('tpEstimar: Scan limpo manda (fonte medido, estimativa ao lado); sujo ou de ou
     assert(r.risco.motivos.some(x => /Knight já desceu a 35/.test(x)), 'hp mínimo medido entra no risco');
     assert.strictEqual(P.tpEstimar(entBase({ medido: Object.assign({}, m, { suja: true }) })).fonte, 'estimado');
     assert.strictEqual(P.tpEstimar(entBase({ medido: Object.assign({}, m, { nivel: 50 }) })).fonte, 'estimado');
+    assert.strictEqual(P.tpEstimar(entBase({ medido: Object.assign({}, m, { nivel: 56 }) })).fonte, 'medido', '2.23.0: 6 níveis de distância ainda vale');
+    assert.strictEqual(P.tpEstimar(entBase({ medido: Object.assign({}, m, { nivel: 53 }) })).fonte, 'estimado', '9 níveis não');
 });
 t('tpEstimar (2.13.5): ouro/h do medido é o ESTÁVEL do Scan (sem sorte); a sorte fica ao lado; Scan antigo sem estável usa o bruto', () => {
     /* Vampire hell, Inteligente, 01/10: bruto +18.819/h por black pearl + spike sword + demonic skeletal hand; estável −1.445/h */
@@ -192,6 +213,24 @@ t('tpOrdenar: xp, ouro, os dois; filtro e desempate pelo título', () => {
     assert.deepStrictEqual(P.tpOrdenar(L, 'ouro').map(x => x.title), ['B', 'D', 'A', 'Aa', 'C', 'E']);
     assert.deepStrictEqual(P.tpOrdenar(L, 'dois').map(x => x.title).slice(0, 3), ['B', 'A', 'Aa'], 'D perde 0,75 pelo risco');
     assert.deepStrictEqual(P.tpOrdenar(L, 'xp', { esconder: true }).map(x => x.title), ['A', 'Aa', 'B', 'E']);
+});
+t('2.23.0 tpOrdenar: "os dois" com todo ouro negativo não elege o mapa mais barato; mapa 50 níveis abaixo some com esconder + nivel', () => {
+    /* 17/10, nível 130: Holy Portal 178k xp a −100k/h, um mapa médio 120k a −40k/h, Wasps Dungeons 20k a −5k/h ganhava */
+    const b = { nivel: 'baixo', pts: 0 };
+    const L = [{ title: 'Holy Portal', levelMin: 100, rec: 150, xpH: 178000, ouroH: -100000, risco: b },
+               { title: 'Medio', levelMin: 90, rec: 110, xpH: 120000, ouroH: -40000, risco: b },
+               { title: 'Wasps Dungeons', levelMin: 10, rec: 20, xpH: 20000, ouroH: -5000, risco: b }];
+    const d = P.tpOrdenar(L, 'dois').map(x => x.title);
+    assert.notStrictEqual(d[0], 'Wasps Dungeons', 'o mais barato não ganha só por perder pouco: ' + d);
+    assert.strictEqual(d[0], 'Medio', 'perde menos por xp: ' + d);
+    /* com um mapa lucrativo a régua volta a ser o maior lucro */
+    const L2 = L.concat([{ title: 'Lucro', levelMin: 100, rec: 120, xpH: 150000, ouroH: 20000, risco: b }]);
+    assert.strictEqual(P.tpOrdenar(L2, 'dois')[0].title, 'Lucro');
+    assert.deepStrictEqual(P.tpOrdenar(L, 'xp', { esconder: true, nivel: 130 }).map(x => x.title), ['Holy Portal', 'Medio'], 'Wasps (rec 20 < 130 − 50) some');
+    assert.strictEqual(P.tpOrdenar(L, 'xp', { esconder: false, nivel: 130 }).length, 3, 'sem esconder, mostra tudo');
+    assert.strictEqual(P.tpOrdenar(L, 'xp', { esconder: true }).length, 3, 'sem nível, não filtra');
+    assert.strictEqual(P.tpOrdenar([{ title: 'Velho', levelMin: 85, xpH: 1, ouroH: 1, risco: b }], 'xp', { esconder: true, nivel: 130 }).length, 1, 'ranking antigo sem rec usa o levelMin');
+    assert.strictEqual(P.TP_NIVEL_BAIXO, 50);
 });
 t('tpNotaParty: elemento da magia principal × nota do mapa, ponderado pelo dano', () => {
     const ne = { notas: { COMBAT_FIREDAMAGE: 30, COMBAT_ICEDAMAGE: 100 }, notasArea: { COMBAT_FIREDAMAGE: 60, COMBAT_ICEDAMAGE: 100 } };
