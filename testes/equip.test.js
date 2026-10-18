@@ -344,7 +344,8 @@ t('2.11.6 → 2.16.1: épico só é base de forja com linha útil; três resist�
     const e = d.dispensaveis.find(p => p.iid === 'epico');
     assert(e && /sem linha útil/.test(e.motivo), 'épico de 3 resistências de 1 % deveria sobrar com o motivo "sem linha útil": ' + (e ? e.motivo : 'não sobrou'));
     assert(!d.bases.some(p => p.iid === 'epico'), 'épico sem linha útil não é base de forja');
-    assert(d.bases.some(p => p.iid === 'epicoBom') || d.reservas.has('epicoBom'), 'épico com regen. de mana 1,1 fica (base ou reserva)');
+    /* 2.23.1: o Knight (regen. de mana = Wound Cleansing, 2,5 HP por mana) agora VESTE esse épico no lugar do anel de regen. de vida 2,4 */
+    assert(d.bases.some(p => p.iid === 'epicoBom') || d.reservas.has('epicoBom') || Object.values(d.porVoc).some(v => v.ring && v.ring.melhor && v.ring.melhor.iid === 'epicoBom'), 'épico com regen. de mana 1,1 fica (base, reserva ou no corpo)');
     assert(!d.dispensaveis.some(p => p.iid === 'epicoBom'), 'épico com linha útil não sobra');
     assert(d.dispensaveis.some(p => /^lixo/.test(p.iid)), 'max mana sem uso deveria sobrar');
 });
@@ -511,7 +512,7 @@ t('2.16.0: Épico sem linha útil vai para as sobras (não é base de forja); É
      * não para o Druida (que só "ganharia mais" com uma regen. de mana que a peça não tem) */
     assert.deepStrictEqual(M.linhasUteis(fur, 'KNIGHT', null), ['regen_vida']);
     assert.strictEqual(M.planoForja(fur, undefined, null, null).voc, 'KNIGHT', 'plano para quem já aproveita a linha');
-    assert.strictEqual(M.planoForja(furRegen, undefined, null, null).voc, 'DRUID', 'regen. de mana: quem mais ganha com ela (Druida bebe poção)');
+    assert.strictEqual(M.planoForja(furRegen, undefined, null, null).voc, 'KNIGHT', 'regen. de mana: quem mais ganha com ela (2.23.1: o Knight, que a transforma em Wound Cleansing; até 2.23.0 era o Druida)');
     assert.deepStrictEqual(M.linhasUteis(pcs[2], 'KNIGHT', null), ['corpo_a_corpo']);
     assert.deepStrictEqual(M.linhasUteis(pcs[2], 'SORCERER', null), [], 'Feiticeiro não veste espada');
     /* planoForja: peça que já tem a linha rara avisa para não apagar; peça sem ela avisa a chance de 1 em 89 */
@@ -545,7 +546,10 @@ t('defesa do Knight na medida: com a vida mínima ≥ 60 % o escudo com regen. g
     const vamp = { slot: 'shield', attrs: { weaponType: 'shield', defense: 34 }, forja: F(0) };
     const pt = (p, ctx) => M.pontuarPeca(p, 'KNIGHT', ctx).pontos;
     assert(pt(meu, { party: { hpMinK: 70 } }) > pt(vamp, { party: { hpMinK: 70 } }) + 5, 'folgado: o seu tem que ganhar com folga');
-    assert(pt(meu, { party: { hpMinK: 30 } }) < pt(vamp, { party: { hpMinK: 30 } }) + 5, 'apertado: a defesa volta a pesar');
+    /* 2.23.1: com a regen. de mana do Knight valendo 2,5 HP/s por mana/s, as duas linhas (≈ 7,8 HP/s) empatam com os +16 de defesa
+     * (≈ 7,4 HP/s bloqueados a 0,45 golpes/s); o que o teste garante é que a defesa PESA MAIS quando ele anda apertado */
+    const gap = (hp) => pt(meu, { party: { hpMinK: hp } }) - pt(vamp, { party: { hpMinK: hp } });
+    assert(gap(30) < gap(70) - 5, 'apertado: a defesa volta a pesar (vantagem do escudo com regen. cai de ' + gap(70).toFixed(1) + ' para ' + gap(30).toFixed(1) + ')');
     /* bloqueio: no máximo ~1 por segundo — com 3 golpes/s a defesa não triplica, a armadura sim */
     const P = M.pesosDaVoc('KNIGHT', { party: { golpesS: 3 } });
     assert(P.armor > P.defense * 2.5, 'armadura ' + P.armor + ' × defesa ' + P.defense);

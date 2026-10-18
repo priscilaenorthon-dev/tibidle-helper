@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.23.0
+// @version      2.23.1
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.23.0';
+    const VERSAO = '2.23.1';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -6247,6 +6247,7 @@
     const VOCS_EQUIP = ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'];
     const PT_OURO_H = 450;
     const VIDA_PT_KNIGHT = 3.6, VIDA_PT_LADO = 0.5;
+    const WC_HP_POR_MANA = 2.5; // v2.23.1 — HP de Wound Cleansing por mana do Knight que vira defesa (medido 17/10: 95–164 HP / 40 mana ≈ 3,2; ~¼ sobra com a vida cheia)
     /* elemento das magias de cada mago (dono, 29/09): Feiticeiro energia e fogo, Druida gelo e terra */
     const ELEM_DO_MAGO = { SORCERER: ['energia', 'fogo'], DRUID: ['gelo', 'terra'] };
     /* v2.16.3 — +1 ML nos magos vale no mínimo 2,0 de regen. de mana (dono, 13/10, seguindo os vídeos).
@@ -6470,7 +6471,15 @@
         /* v2.11.17 — dono, 30/09: "o Knight tem que ter regen. de mana como principal, depois regen. de vida".
          * A mana dele vive em 16–19 % (Berserk/cura rodam na regeneração): a regen. de mana vale 25 % a
          * mais que a de vida, por unidade — fica na frente de tudo nos encaixes de defesa dele. */
-        if (voc === 'KNIGHT') P.regen_mana = _r(Math.max(P.regen_mana, VIDA_PT_KNIGHT * 1.25));
+        /* v2.23.1 — dono, 17/10: "o Knight tem que defender também; tem que ter regen. de mana E defender". A mana dele vira
+         * Wound Cleansing (95–164 HP por 40 de mana, medido no nível 130 = ~3 HP por mana), a cura mais barata do grupo:
+         * 1 de mana/s vale ~2,5 HP/s de defesa, não 1,25. Com 1,25 a magic plate armor (arm. 17, sem linha) tirava a dark
+         * armor (arm. 10 + regen. mana 2,4) por +4,6 pt; agora a linha de regen. vale ~22 pt contra 16 dos 7 de armadura. Um
+         * escudo MUITO melhor (Vampire 34 × 18 + regen.) ainda ganha quando ele anda apertado (teste 2.18.2). */
+        if (voc === 'KNIGHT') P.regen_mana = _r(Math.max(P.regen_mana, VIDA_PT_KNIGHT * WC_HP_POR_MANA));
+        /* (17/10: o dono também disse que regen. de mana é excelente nas outras classes. Pôr Paladino e magos na mesma régua
+         * do Cavaleiro quebrava a conta da wand — toda wand de dano passava a perder para a Vortex pela mana por tiro, até em
+         * regime de regeneração. Ficou como está: nos magos a regen. de mana já é o 2.º atributo, logo atrás do ML = 3×.) */
         P.max_mana = 0.001;
         /* v2.16.3 — decisão do dono (13/10): "vamos seguir o que os vídeos falam" — nos magos, NÍVEL MÁGICO vale pelo menos
          * uma linha boa de regen. de mana (ML_REGEN_EQUIV = 2,0 de mana/s). A medida sozinha dava regen 2,0 ≈ 3× um +1 ML
@@ -6924,10 +6933,10 @@
         SORCERER: ['NÍVEL MÁGICO acima de tudo: Hat of the Mad, Fox Cape, spellbook (Warding +1, Mind Control +2), Yalahari Mask +2, colar de Gargoyles; "capacete de 2 de regen. de mana sai na hora por um Hat of the Mad"',
                    'wand: a que der ML ou crítico (Wand of Everblazing +1 ML, Elite dos magos); Vortex ML+1 com potência ≥ 300 vira ML+3 na forja; dano de ENERGIA/FOGO no colar e na wand (NunohS: 3,5 % de energia na wand "muda muito")',
                    'crítico conta: a base é 0 %, qualquer 1 % já acerta crítico; dano mágico vale em magia, runa e wand',
-                   'regen. de mana é boa (vive sem mana), mas ML vem antes: desde 13/10 o helper dá a +1 ML (de forja ou de fábrica, como a Wand of Everblazing) pelo menos o valor de uma regen. de mana 2,0 — decisão sua, seguindo os vídeos'],
+                   'regen. de mana é boa (vive sem mana), mas ML vem antes: desde 13/10 o helper dá a +1 ML (de forja ou de fábrica, como a Wand of Everblazing) o valor de 3 regen. de mana (17/10; antes 2,0) — decisão sua, seguindo os vídeos'],
         DRUID: ['NÍVEL MÁGICO acima de tudo (as mesmas peças do Feiticeiro); Snakebite/Terra Rod com ML+1 e potência ≥ 300 → refino +3 → Refazer até ML+2/+3; Underworld Rod come 13 de mana por tiro e dá prejuízo',
                 'dano de GELO/TERRA no colar e na rod; crítico conta; a cura dele é o que segura o Knight — ML também cura',
-                'regen. de mana vale como poção economizada (ele bebe), mas ML vem antes: +1 ML (forja ou de fábrica) vale pelo menos uma regen. de mana 2,0 (decisão de 13/10); max mana não serve a ninguém']
+                'regen. de mana vale como poção economizada (ele bebe), mas ML vem antes: +1 ML (forja ou de fábrica) vale 3 regen. de mana (17/10; antes 2,0); max mana não serve a ninguém']
     };
     /* peca = {slot, attrs, forja{raridade, refino, potenciaBase, atributos}}; vocs = candidatas; porVoc = resultado do
      * distribuirEquip (opcional, para dizer o que a vocação veste hoje). Devolve o plano, sem custo de gema (quem

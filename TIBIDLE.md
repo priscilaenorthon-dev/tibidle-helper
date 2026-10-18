@@ -5308,3 +5308,22 @@ Sessão ao vivo no nível 130 (Holy Portal, lure tier 4 = 8 criaturas; barra dos
   `window.__tbHelper` que só aceita a versão nova (a cópia do Tampermonkey roda, mas não toma a API nem o painel).
 - Testes: 2 novos em `telas-api.test.js` (tpCalibrar kCusto/janela; tpOrdenar "os dois" e filtro de nível), ajustes
   em tpEstimar; `equip.test.js` piso 3,0.
+
+## 2.23.1 (17/10) — regen. de mana do Cavaleiro vale 3 HP/s por mana/s
+Teste do dono com 12 peças na mochila: o Equip acertou 11 (4 peças com +1 ML de fábrica para os magos — spellbook of
+enlightenment, batwing hat, hat of the mad, spirit cloak — e recusou muck rod/springsprout/inferno pela mana por tiro), mas
+propôs magic plate armor (arm. 17, sem linha) no lugar da dark armor (arm. 10 + regen. mana 2,4) do Cavaleiro por +4,6 pt.
+Dono: "o Knight tem que defender também; tem que ter regen. de mana E defender". A mana dele é Wound Cleansing (95–164 HP
+por 40 de mana = ~3,2 HP por mana, medido no 130), a cura mais barata do grupo: `WC_HP_POR_MANA = 2,5` substitui o 1,25
+de 2.11.17 no piso de `regen_mana` do Knight (1 mana/s ≈ 2,5 HP/s de defesa; com 3,0 o escudo com regen. passava por cima
+do Vampire Shield 34 mesmo com o Knight apertado, o que o teste 2.18.2 veta). Com isso a dark armor fica em ~45 pt contra 39.
+Efeitos colaterais assumidos: o Knight passa a ser quem mais ganha com uma linha de regen. de mana (planoForja aponta para ele,
+antes o Druida) e troca regen. de vida 2,4 por regen. de mana 1,1 (1,1 mana/s ≈ 2,75 HP/s de WC > 2,4 HP/s). Com 2,5 as duas linhas
+(mana 2,3 + vida 2) empatam com +16 de defesa de escudo a 0,45 golpes/s; o teste 2.18.2 passou a exigir só que a vantagem do
+escudo com regen. caia quando o Knight anda apertado. 3 testes ajustados em `equip.test.js`.
+Dono, 17/10, depois: "regen. de mana para as outras classes é excelente; o Cavaleiro tem que ter armadura + regen. de mana e vida;
+equipamento é para ficar mais forte, nunca mais fraco". Pôr Paladino e magos na mesma régua (9 pt por mana/s) foi tentado e
+desfeito: toda wand de dano passava a perder para a Vortex pela mana por tiro, até em regime de regeneração (2 testes). Nos magos a
+regen. de mana segue como 2.º atributo (4,8/unidade medido), atrás do ML = 3×. Fixture da tela Equip: a base de forja b1 passou a
+regen. de vida 1,5 (com regen. de mana 1,2 o Cavaleiro a vestiria). Ao vivo (12 peças na mochila): dark armor 44,3 × magic plate
+armor 38,6 — o Cavaleiro fica com a dele; as 4 peças com +1 ML continuam indo para os magos.
