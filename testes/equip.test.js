@@ -735,3 +735,16 @@ t('2.24.0 fase 2: base de forja exige potência ≥ 350 (fase 1: 300)', () => {
     assert.strictEqual(M.potenciaBaseForja({ nivel: 130 }), 350);
     assert.strictEqual(M.potenciaBaseForja(null), 300);
 });
+
+t('2.24.1 arma de 1 mão: a DEFESA da arma não conta (com escudo o jogo usa a defesa do escudo); defesa extra conta; arma de 2 mãos conta a defesa', () => {
+    const umaMao = { nome: 'magic sword', slot: 'weapon', attrs: { weaponType: 'sword', attack: 48, defense: 35, extradef: 3 }, forja: F(0) };
+    const duasMaos = { nome: 'spike sword', slot: 'weapon', attrs: { weaponType: 'sword', slotType: 'two-handed', attack: 41, defense: 20 }, forja: F(0) };
+    const ctx = { nivel: 130 };
+    const d1 = M.pontuarPeca(umaMao, 'KNIGHT', ctx).detalhe, d2 = M.pontuarPeca(duasMaos, 'KNIGHT', ctx).detalhe;
+    const pt = (d, id) => { const x = d.find(y => y.id === id); return x ? x.pt : null; };
+    assert.strictEqual(pt(d1, 'defense'), 0, '1 mão: defesa da arma tem que valer 0 (achei ' + pt(d1, 'defense') + ')');
+    assert(pt(d1, 'extradef') > 0, '1 mão: a defesa extra soma à do escudo (Canary getDefense)');
+    assert(pt(d2, 'defense') > 0, '2 mãos: sem escudo, a defesa da arma é o bloqueio');
+    const escudo = { nome: 'vampire shield', slot: 'shield', attrs: { weaponType: 'shield', defense: 34 }, forja: F(0) };
+    assert(pt(M.pontuarPeca(escudo, 'KNIGHT', ctx).detalhe, 'defense') > 0, 'escudo continua contando');
+});

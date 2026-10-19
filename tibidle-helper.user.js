@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.24.0
+// @version      2.24.1
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.24.0';
+    const VERSAO = '2.24.1';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -6646,6 +6646,11 @@
             if (k === 'managain') { add('regen_mana', v, v * 1000 / (Number(baseAttrs.manaticks) || 2000) * (P.regen_mana || 0)); continue; }
             if (k === 'healthgain') { add('regen_vida', v, v * 1000 / (Number(baseAttrs.healthticks) || 2000) * (P.regen_vida || 0)); continue; }
             if (k === 'skillmagic' || k === 'magiclevelpoints') { add('magiclevelpoints', v, v * (P.magiclevelpoints || 0)); continue; }
+            /* v2.24.1 — a DEFESA de uma arma de 1 mão não conta: com escudo, o jogo usa a defesa do escudo (Canary
+             * Player::getDefense: shield ? shield.defense + weapon.extraDefense : weapon.defense + extraDefense; wiki: "defesa do
+             * escudo"). Só a defesa EXTRA soma. Ao vivo (18/10) a heroic axe levava 84 pt de defesa fantasma e uma magic sword
+             * de 1,8 M aparecia com +46 pt, 38 deles da defesa 35. Arma de 2 mãos (sem escudo) continua contando a defesa. */
+            if (k === 'defense' && a.attack != null && a.weaponType !== 'shield' && a.slotType !== 'two-handed') { add('defense', v, 0); continue; }
             if (k in P) { add(k, v, v * P[k]); }
         }
         /* arco/besta: o ataque da arma é 0 (wiki) — o que muda é a MUNIÇÃO que ela

@@ -5435,3 +5435,10 @@ lido, fase 1 — nada muda para quem está abaixo):
   muda por vocação) aparece antes das regras gerais na caixa "? o que é bom para o …".
 - Testes: 6 novos em `equip.test.js` (fase, dark armor × MPA nas duas fases, folga, fogo padrão × medido, vida do mago, potência da base)
   e 3 em `melhorias.test.js` (Paladino por último, MPA recomendada na fase 2, potência baixa trabalhada). 366 testes, eslint 0 erros.
+
+## 2.24.1 (18/10) — a defesa de uma arma de 1 mão não conta (o escudo manda)
+Ao vivo com a 2.24.0 (nível 133, Petrified Hollow, 384 HP/s tomados, 2,5 golpes/s): a heroic axe aparecia com 94 pt — 84 deles da
+`defense` 24 — e o Mercado mostrava uma magic sword de 1,8 M com +46 pt, 38 deles da defesa 35. Pelo Canary (`Player::getDefense`, de
+que o Tibidle deriva) e pela wiki ("bloqueio do escudo: … × defesa do ESCUDO"), com escudo equipado a defesa da arma é substituída pela
+do escudo; só a `extradef` soma. `pontuarPeca` agora dá 0 à `defense` de arma de 1 mão (fica em "mortos"); arma de 2 mãos e escudo
+continuam. 1 teste novo em `equip.test.js`. Efeito: a arma do Knight volta a ser julgada pelo ATAQUE (vídeos: "a de maior ataque").
