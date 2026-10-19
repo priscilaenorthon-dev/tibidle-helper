@@ -111,9 +111,9 @@ t('fjEstrategias: encaixe novo mira só linhas de peso 10 que valem (nunca skill
     assert(en2 && !en2.alvo.limparTudo, 'regen. de mana 2,0 vale: só Limpeza T2 (a última)');
 });
 t('fjProximoPasso: alvo.limparTudo pede Limpeza T1 com a peça cheia de linha ruim; refazerTudo pede Refazer T1 na última linha', () => {
-    const g = { atributo: 1, limpeza: 1, limpeza_maior: 1, refazer: 1, refazer_maior: 1 };
-    assert.strictEqual(M.fjProximoPasso({ alvo: { linhas: ['regen_mana'], limparTudo: true } }, F(1, 0, 300, ['capacidade', 50]), E(g)).acao, 'limpeza');
-    assert.strictEqual(M.fjProximoPasso({ alvo: { linhas: ['nivel_magico'], valorMin: 2, refazerTudo: true } }, F(1, 3, 271, ['nivel_magico', 1]), E(g)).acao, 'refazer');
+    const est = { estoque: { gemas: { atributo: 1, limpeza: 1, limpeza_maior: 1, refazer: 1, refazer_maior: 1 }, fragmentos: {} }, gasto: 0, orcamento: 2000000, tentativas: 0, maxTentativas: 30 };
+    assert.strictEqual(M.fjProximoPasso({ alvo: { linhas: ['regen_mana'], limparTudo: true } }, F(1, 0, 300, ['capacidade', 50]), est).acao, 'limpeza');
+    assert.strictEqual(M.fjProximoPasso({ alvo: { linhas: ['nivel_magico'], valorMin: 2, refazerTudo: true } }, F(1, 3, 271, ['nivel_magico', 1]), est).acao, 'refazer');
 });
 t('fjEstrategias: peça de entrada (potência 50, Comum) não tem estratégia que valha o mínimo; estoque vazio marca cabe:false com o que falta', () => {
     const es = M.fjEstrategias(ENTRADA, 'KNIGHT', CTX, custos(), { seed: 3, n: 200 });
