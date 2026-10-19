@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.25.3
+// @version      2.25.4
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.25.3';
+    const VERSAO = '2.25.4';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -6924,8 +6924,12 @@
             /* valor mínimo acima do teto da faixa: impossível nesta potência (refine antes) */
             if (alvos.size && alvo.valorMin && [...alvos].every(id => faixaRange(id, faixa)[1] < alvo.valorMin)) { rodadas.push({ ok: false, gemas: 0, ouro: 0, g: {} }); continue; }
             if (alvos.size) {
-                const tem = at.find(a => alvos.has(a.id));
-                if (tem && (!alvo.valorMin || tem.valor >= alvo.valorMin)) ok = true;
+                /* v2.25.4 — alvo.minLinhas (dono: "a Lendária já vem com 4 encaixes"): precisa de n linhas do conjunto; cheia com a última
+                 * linha boa e ainda faltando → Limpeza T1 (apaga tudo e recomeça); valorMin só vale no plano de 1 linha */
+                const nMin = Math.max(1, Math.min(5, Number(alvo.minLinhas) || 1)), bons = () => at.filter(a => alvos.has(a.id)).length;
+                const tem = nMin === 1 ? at.find(a => alvos.has(a.id)) : null;
+                if (nMin > 1 && bons() >= nMin) ok = true;
+                else if (tem && (!alvo.valorMin || tem.valor >= alvo.valorMin)) ok = true;
                 else if (tem && alvo.valorMin) {
                     /* a linha certa já está na peça, com valor baixo: re-sorteia o valor (a última com Refazer T2; as outras só com Refazer T1, que mexe em todas) */
                     let tent = 0;
@@ -6940,12 +6944,13 @@
                 while (!ok && total < maxG) {
                     const livres = (ENCAIXES_POR_RARIDADE[rar] || 0) - at.length;
                     /* alvo.limparTudo: nenhuma linha da peça vale a pena guardar → Limpeza T1 (apaga todas; 15 k + fragmento de 100) no lugar da T2 (40 k + fragmento de 49 k) */
-                    if (livres <= 0) { if (!at.length) break; const gl = alvo.limparTudo ? 'limpeza' : 'limpeza_maior'; if (!pode(gl)) break; total = gasta(gl); at = alvo.limparTudo ? [] : at.slice(0, -1); continue; }
+                    if (livres <= 0) { if (!at.length) break; const ultBoa = nMin > 1 && alvos.has(at[at.length - 1].id); const gl = alvo.limparTudo || ultBoa ? 'limpeza' : 'limpeza_maior'; if (!pode(gl)) break; total = gasta(gl); at = gl === 'limpeza' ? [] : at.slice(0, -1); continue; }
                     if (!pode('atributo')) break;
                     total = gasta('atributo');
                     const id = forjaLinhaSorteada(slot, at, rnd); if (!id) break;
                     at = at.concat([{ id, valor: forjaValorSorteado(id, faixa, rnd) }]);
                     if (!alvos.has(id)) continue;
+                    if (nMin > 1) { ok = bons() >= nMin; continue; }
                     let tent = 0;
                     while (alvo.valorMin && at[at.length - 1].valor < alvo.valorMin && total < maxG && tent++ < 60 && pode(alvo.refazerTudo ? 'refazer' : 'refazer_maior')) { total = gasta(alvo.refazerTudo ? 'refazer' : 'refazer_maior'); if (alvo.refazerTudo) for (const a of at) a.valor = forjaValorSorteado(a.id, faixa, rnd); else at[at.length - 1].valor = forjaValorSorteado(id, faixa, rnd); }
                     ok = !alvo.valorMin || at[at.length - 1].valor >= alvo.valorMin;
@@ -7688,6 +7693,27 @@
                     (livres <= 0 ? [`Raridade T1 até ${RAR_PT[rar + 1]} (${FORJA_RARIDADE_PCT[rar]} % por gema; falhar não rebaixa) para abrir um encaixe`] : [])
                         .concat([`Atributo T1 no encaixe vazio até cair uma linha que vale (${linhas.sort((x, y) => y.ganho - x.ganho).slice(0, 3).map(x => rotulo(x.id)).join(', ')}…: ${Math.round(p * 100)} % por gema); linha ruim → ${alvo.limparTudo ? 'Limpeza T1 (apaga tudo: nada aqui vale guardar)' : 'Limpeza T2 (só a última)'} e tenta de novo`]),
                     { linhas });
+                /* 3b. v2.25.4 — n LINHAS BOAS (dono, 19/10: "a Lendária já vem com 4 encaixes; aí dá para ficar melhor que as que uso"):
+                 * para cada n de 2 até os encaixes da raridade atual, preencher n encaixes com linhas que valem. As boas que já estão na
+                 * peça contam. Limpeza T1 (apaga tudo) quando nada vale guardar ou quando a T2 custa mais que re-rolar o que se perde. */
+                const ptGuard = guardaveis.reduce((t, a) => t + (P[a.id] || 0) * Number(a.valor), 0);
+                const limparMulti = !guardaveis.length || precos.limpeza_maior >= precos.limpeza + guardaveis.length * precos.atributo / Math.max(0.05, p);
+                /* o conjunto-alvo inclui as linhas boas que a peça já tem: se a Limpeza T1 as apaga, elas voltam a ser sorteáveis (e valem);
+                 * se ficam, contam para o n. (2.25.4: sem isso a regen. de mana apagada nunca mais contava e "4 linhas" simulava 200 M) */
+                const cand = linhas.concat(limparMulti ? guardaveis.map(a => ({ id: a.id, ganho: valorTipico(a.id, faixa) * (P[a.id] || 0), chance: chanceLinha(a.id, slot, []) })) : []);
+                const pAceita = cand.reduce((t, x) => t + x.chance, 0), ganhoMedioC = pAceita > 0 ? cand.reduce((t, x) => t + x.chance * x.ganho, 0) / pAceita : 0;
+                const porGanho = cand.slice().sort((x, y) => y.ganho - x.ganho);
+                for (let nL = 2; nL <= enc; nL++) {
+                    const mantidas = limparMulti ? 0 : guardaveis.length, novas = nL - mantidas;
+                    if (novas <= 0 || novas > porGanho.length) continue;
+                    const ganhoNovas = Math.min(novas * ganhoMedioC, porGanho.slice(0, novas).reduce((t, x) => t + x.ganho, 0));
+                    const ganhoN = ganhoNovas - (limparMulti ? ptGuard : 0);
+                    const alvoN = { linhas: linhas.map(x => x.id).concat(guardaveis.map(a => a.id)), minLinhas: nL, limparTudo: limparMulti };
+                    add('encaixes', `${nL} linhas boas`, alvoN, ganhoN,
+                        [(limparMulti && f.atributos.length ? 'Limpeza T1 (apaga as linhas: ' + (guardaveis.length ? 'a T2 custa mais que re-rolar o que se perde' : 'nada aqui vale guardar') + ') → ' : '') +
+                         `Atributo T1 encaixe a encaixe até ter ${nL} linhas que valem (${porGanho.slice(0, 3).map(x => rotulo(x.id)).join(', ')}…: ${Math.round(pAceita * 100)} % por gema); linha ruim → ${limparMulti ? 'Limpeza T1 e recomeça' : 'Limpeza T2 (só a última)'}`],
+                        { linhas: porGanho, mantidas });
+                }
             }
         }
         /* 4. SUBIR VALOR: linha nobre já na peça abaixo da mediana da faixa → Refazer (T2 se é a última, T1 senão) */
@@ -7698,6 +7724,15 @@
             const ult = f.atributos.indexOf(a) === f.atributos.length - 1, rt = refazerTudo(a.id);
             add('valor', `${rotulo(a.id)} ${a.valor} → ${alvoV}`, { linhas: [a.id], valorMin: alvoV, refazerTudo: rt }, (alvoV - Number(a.valor)) * P[a.id],
                 [`${ult && !rt ? 'Refazer T2 (só o último encaixe)' : 'Refazer T1 (re-sorteia o valor de TODAS as linhas)'} até ${rotulo(a.id)} chegar a ${alvoV} (mediana da faixa ${faixaPotencia(pot0)})`], { linha: a.id });
+        }
+        /* 5. COMPLETO (v2.25.4, dono: "fazer as linhas o melhor possível"): o melhor refino padrão (≤ +4) junto com o melhor plano de linha
+         * (encaixe ou valor; "faixa" já inclui o refino). Um alvo só: a máquina de decisão refina, sobe raridade e depois cuida das linhas. */
+        const refinos = out.filter(e => e.id === 'refino' && (Number(e.alvo.refino) || 0) <= refinoMax), linhaPl = out.filter(e => e.id === 'encaixe' || e.id === 'encaixes' || e.id === 'valor');
+        if (refinos.length && linhaPl.length) {
+            /* o plano de linha do Completo: o de maior ganho entre os que rendem pelo menos 3/4 do melhor pt por milhão (a mesma regra do "melhor") */
+            const topL = Math.max(...linhaPl.map(e => e.ptPorMilhao || 0));
+            const r = refinos.reduce((a, b) => (b.ganhoPt > a.ganhoPt ? b : a)), ln = linhaPl.filter(e => (e.ptPorMilhao || 0) >= 0.75 * topL).reduce((a, b) => (b.ganhoPt > a.ganhoPt ? b : a));
+            add('completo', `Completo: ${r.nome} + ${ln.nome}`, Object.assign({}, ln.alvo, { refino: r.alvo.refino, garantia: r.alvo.garantia }), r.ganhoPt + ln.ganhoPt, r.passos.concat(ln.passos), { partes: [r.id, ln.id] });
         }
         return out.sort((x, y) => (y.ptPorMilhao || 0) - (x.ptPorMilhao || 0) || y.ganhoPt - x.ganhoPt);
     }
@@ -7730,15 +7765,29 @@
                 else if (melhor.cabe === false) { selo = 'estoque'; motivo = 'falta ' + melhor.falta; }
                 else if (ouro != null && melhor.custoMedio > ouro) { selo = 'ouro'; motivo = `custo médio ${Math.round(melhor.custoMedio / 1000)} k acima do ouro`; }
                 else selo = 'vale';
-                linhas.push({ peca: x.peca, voc, slot: x.slot || normalizarSlot(x.peca.slot), origem: x.origem || null, bis, melhor, estrategias: es, selo, motivo, lacuna });
+                linhas.push({ peca: x.peca, voc, slot: x.slot || normalizarSlot(x.peca.slot), origem: x.origem || null, bis, melhor, estrategias: es, selo, motivo, lacuna,
+                              vestida: x.atual && x.atual.iid !== x.peca.iid ? { iid: x.atual.iid, nome: x.atual.nome, forja: x.atual.forja } : null, vocs: [voc] });
             }
         }
         const ordem = { vale: 0, estoque: 1, ouro: 2, nao: 3 };
+        /* v2.25.4: a mesma peça do baú é avaliada para cada vocação que pode vesti-la; no ranking fica UMA linha, a que rende mais */
+        let final = linhas;
+        if (opc.umaPorPeca !== false) {
+            const porIid = new Map();
+            for (const l of linhas) {
+                const k = String(l.peca.iid), t = porIid.get(k);
+                if (!t) { porIid.set(k, l); continue; }
+                t.vocs = t.vocs.concat(l.vocs);
+                const melhorQue = ordem[l.selo] < ordem[t.selo] || (ordem[l.selo] === ordem[t.selo] && ((l.melhor && l.melhor.ganhoPt) || 0) > ((t.melhor && t.melhor.ganhoPt) || 0));
+                if (melhorQue) { l.vocs = t.vocs; porIid.set(k, l); }
+            }
+            final = [...porIid.values()];
+        }
         const pot = (l) => potenciaTotal(l.peca), base = (l) => { const at = l.peca.attrs || {}; return Number(at.armor) || Number(at.defense) || Number(at.attack) || 0; }; // a base melhor é a que fica: forja-se a BiS de verdade
         /* v2.25.3: diferença < 5 % em pt/milhão ou em ganho é empate (o Monte Carlo tem ruído de 0,01) — aí a vestida (bis) vem antes da base */
         const ppm = (l) => (l.melhor && l.melhor.ptPorMilhao) || 0, ganho = (l) => (l.melhor && l.melhor.ganhoPt) || 0;
         const dif = (a, b) => (Math.abs(a - b) <= 0.05 * Math.max(Math.abs(a), Math.abs(b)) ? 0 : b - a);
-        return linhas.sort((a, b) => ordem[a.selo] - ordem[b.selo] || dif(ppm(a), ppm(b)) || dif(ganho(a), ganho(b)) || (a.origem === 'bis' ? 0 : 1) - (b.origem === 'bis' ? 0 : 1) || base(b) - base(a) || pot(b) - pot(a));
+        return final.sort((a, b) => ordem[a.selo] - ordem[b.selo] || dif(ppm(a), ppm(b)) || dif(ganho(a), ganho(b)) || (a.origem === 'bis' ? 0 : 1) - (b.origem === 'bis' ? 0 : 1) || base(b) - base(a) || pot(b) - pot(a));
     }
     /* A MÁQUINA DE DECISÃO do botão FORJAR (pura): dado o plano {alvo:{refino, raridade, linhas, valorMin}, garantia}, a peça como está
      * (forja ou instância) e o estado {estoque:{gemas, fragmentos}, gasto, orcamento, tentativas, maxTentativas, ouro, ouroCriar}, devolve
@@ -7773,6 +7822,19 @@
         }
         const alvos = new Set(Array.isArray(a.linhas) ? a.linhas : a.linha ? [a.linha] : []);
         if (!alvos.size) return { acao: 'fim', motivo: 'alvo atingido' };
+        const nMin = Math.max(1, Math.min(5, Number(a.minLinhas) || 1));
+        if (nMin > 1) {
+            /* v2.25.4 — n linhas boas: conta as que já estão; vazio → Atributo; cheia com a última ruim → Limpeza T2 (T1 se limparTudo);
+             * cheia com a última boa e ainda faltando → Limpeza T1 (recomeça do zero) */
+            const bons = at.filter(x => alvos.has(x.id)).length;
+            if (bons >= nMin) return { acao: 'fim', motivo: `${bons} linha(s) boa(s) (${at.filter(x => alvos.has(x.id)).map(x => rotulo(x.id)).join(', ')}): alvo atingido` };
+            const livres = (ENCAIXES_POR_RARIDADE[rar] || 0) - at.length;
+            if (livres > 0) { const p = precisa('atributo'); if (p) return p; return { acao: 'atributo', gema: 'atributo', motivo: `${bons}/${nMin} linha(s) boa(s): linha nova no encaixe vazio` }; }
+            if (!at.length) return { acao: 'parar', motivo: `${RAR_PT[rar]} sem encaixe: suba a raridade antes` };
+            const ultBoa = alvos.has(at[at.length - 1].id), gl = a.limparTudo || ultBoa ? 'limpeza' : 'limpeza_maior';
+            const p = precisa(gl); if (p) return p;
+            return { acao: gl, gema: gl, motivo: gl === 'limpeza' ? (ultBoa && !a.limparTudo ? `cheia, só ${bons}/${nMin} boa(s) e a última é boa: Limpeza T1 apaga tudo e recomeça` : `apagar todas as linhas (${at.map(x => rotulo(x.id)).join(', ')})`) : `apagar ${rotulo(at[at.length - 1].id)} (última linha, não vale)` };
+        }
         const i = at.findIndex(x => alvos.has(x.id));
         if (i >= 0) {
             if (!a.valorMin || Number(at[i].valor) >= a.valorMin) return { acao: 'fim', motivo: `${rotulo(at[i].id)} ${at[i].valor}: alvo atingido` };
@@ -13997,10 +14059,21 @@
                 if (p && !ehTemporaria(p) && !(p.forja && p.forja.selado)) out[v].push({ peca: p, origem: 'bis', slot: s });
             }
         }
-        for (const p of (R.bases || [])) {
-            let pl = null; try { pl = planoForja(p, VOCS, EQUIP.ctx, R.porVoc); } catch (e) { pl = null; }
-            const v = (pl && pl.voc) || VOCS.find(x => vocacaoPode(p.attrs, x));
-            if (v && !out[v].some(x => x.peca.iid === p.iid)) { const s = normalizarSlot(p.slot), vest = R.porVoc[v] && R.porVoc[v][s] && R.porVoc[v][s].atual; out[v].push({ peca: p, origem: 'base', slot: s, atual: vest || null }); }
+        /* v2.25.4 (dono, 19/10: "tenho itens de raridade alta que podem ficar melhores que os que uso"): toda peça Rara ou melhor, mais as
+         * bases e nobres do Equip, entra para CADA vocação que pode vesti-la (os candidatos do Equip já respeitam a vocação e a regra de
+         * não tirar peça de quem veste), medida contra a vestida daquele slot; fjRanking deixa uma linha por peça */
+        const extra = new Set([...(R.bases || []), ...(R.nobres || [])].map(p => p && p.iid));
+        for (const v of VOCS) {
+            for (const s of SLOTS_EQUIP) {
+                const x = R.porVoc[v] && R.porVoc[v][s]; if (!x) continue;
+                for (const c of (x.candidatos || [])) {
+                    const p = c && (c.peca || c); if (!p || !p.iid) continue;
+                    const f = p.forja || {};
+                    if (!((Number(f.raridade) || 0) >= 2 || extra.has(p.iid))) continue;
+                    if (ehTemporaria(p) || f.selado || out[v].some(y => y.peca.iid === p.iid)) continue;
+                    out[v].push({ peca: p, origem: 'base', slot: s, atual: x.atual || null });
+                }
+            }
         }
         return out;
     }
@@ -14224,6 +14297,7 @@
                 `<div class="tb-lin"><span><span class="fj-selo ${l.selo}">${fjSeloTxt[l.selo]}</span> <b>${escHtml(l.peca.nome)}</b> ${rarTag(l.peca)} <span class="tb-mut">${escHtml(VOC_CURTO[l.voc] || l.voc)} · ${escHtml(slotPt(l.slot))} · +${(l.peca.forja && l.peca.forja.refino) || 0} · pot ${numBR(potenciaTotal(l.peca))} · ${l.peca.origem === 'corpo' ? 'vestida' : escHtml(l.peca.origem)} <span title="id da cópia">#${escHtml(String(l.peca.iid).slice(-6))}</span></span></span>` +
                 `<span>${m ? `<b class="tb-ok">+${fjPt(m.ganhoPt)}</b> <span class="tb-mut">· ~${fjK(m.custoMedio)}</span>` : '<span class="tb-mut">—</span>'}</span></div>` +
                 (enc ? `<div class="tb-mut tb-eq-nota">${escHtml(enc)}</div>` : '') +
+                (l.vestida ? `<div class="tb-mut tb-eq-nota">no lugar de ${escHtml(l.vestida.nome)} +${(l.vestida.forja && l.vestida.forja.refino) || 0} que ${escHtml(VOC_CURTO[l.voc] || l.voc)} veste${m ? ` — forjada, passa ${fjPt(m.ganhoPt)} dela` : ''}${l.vocs && l.vocs.length > 1 ? ` · avaliada também para ${l.vocs.filter(v => v !== l.voc).map(v => VOC_CURTO[v] || v).join(', ')}` : ''}</div>` : '') +
                 `<div class="tb-mut tb-eq-nota">${m ? escHtml(m.nome) + ' · ' + Math.round(m.chance * 100) + ' % · ' + numBR(m.gemasMedio, 1) + ' gema(s), 90 %: ' + m.gemas90 + ' · ' : ''}${escHtml(l.motivo || '')}</div>` +
                 `<div class="tb-linha"><button type="button" class="tb-bt mini" data-fj-sel="${escHtml(String(l.peca.iid))}" ${ocup ? 'disabled' : ''}>${ehSel ? '✓ escolhida' : 'escolher'}</button>` +
                 `<button type="button" class="tb-bt mini" data-fj-det="${escHtml(k)}">${aberto ? '− planos' : '+ planos'}</button>` +

@@ -235,9 +235,16 @@ t('fjRanking: uma base do depósito só rende o que passa da peça vestida no me
     const r = M.fjRanking({ KNIGHT: [{ peca: vestida, origem: 'bis', slot: 'legs' }, { peca: bau, origem: 'base', slot: 'legs', atual: vestida }] }, CTX, custos, 1e7, est, { seed: 3, n: 200 });
     const lv = r.find(x => x.peca.iid === 'pl-corpo'), lb = r.find(x => x.peca.iid === 'pl-bau');
     assert(lv.melhor && lv.melhor.ganhoPt > 10, 'a vestida rende: ' + JSON.stringify(lv.melhor && lv.melhor.ganhoPt));
-    assert.strictEqual(lb.selo, 'nao', 'a do baú +4 só empata com a vestida +4: lacuna = ganho → nada a ganhar; ' + JSON.stringify(lb.melhor && lb.melhor.ganhoPt));
-    assert.match(lb.motivo, /vestida/);
+    // a do baú +4 só empata com a vestida +4: todo plano de refino puro some (lacuna = ganho); o que sobra é só a linha nova (Épico tem encaixe vazio) ou o Completo
+    assert(lb.estrategias.every(e => e.id !== 'refino'), 'refino puro não passa da vestida: ' + lb.estrategias.map(e => e.id + ' ' + e.ganhoPt).join(','));
+    assert(!lb.melhor || lb.melhor.ganhoPt < 6, 'o que sobra é o valor da linha nova: ' + JSON.stringify(lb.melhor && [lb.melhor.id, lb.melhor.ganhoPt]));
+    assert.strictEqual(lb.lacuna > 20, true, 'lacuna = 4 pontos de armadura: ' + lb.lacuna);
     assert.strictEqual(r[0].peca.iid, 'pl-corpo');
+    // sem encaixe para preencher (Mítico cheio de linha ruim: nem raridade sobe) e lacuna maior que tudo → "nao" com o motivo da vestida
+    const bauCheio = Object.assign({}, bau, { iid: 'pl-bau2', forja: F(5, 0, 65, ['capacidade', 40], ['resist_gelo', 0.3], ['max_mana', 10], ['resist_sagrado', 0.4], ['resist_energia', 0.2]) });
+    const rc = M.fjRanking({ KNIGHT: [{ peca: bauCheio, origem: 'base', slot: 'legs', atual: vestida }] }, CTX, custos, 1e7, est, { seed: 3, n: 200 });
+    assert.strictEqual(rc[0].selo, 'nao', JSON.stringify(rc[0].melhor && [rc[0].melhor.id, rc[0].melhor.ganhoPt]));
+    assert.match(rc[0].motivo, /vestida/);
     // sem "atual" (a vestida é ela mesma, ou o slot está vazio) nada muda
     const r2 = M.fjRanking({ KNIGHT: [{ peca: bau, origem: 'base', slot: 'legs' }] }, CTX, custos, 1e7, est, { seed: 3, n: 200 });
     assert(r2[0].melhor && r2[0].melhor.ganhoPt > 10);
@@ -252,6 +259,90 @@ t('fjRanking: pt por milhão e ganho a menos de 5 % são empate; aí a peça ves
         const r = M.fjRanking({ KNIGHT: [{ peca: bau, origem: 'base', slot: 'legs' }, { peca: corpo, origem: 'bis', slot: 'armor' }] }, CTX, custos, 1e7, est, { seed, n: 150 });
         assert.strictEqual(r[0].peca.iid, 'mpa-corpo', 'seed ' + seed + ': ' + r.map(x => x.peca.iid + ' ' + (x.melhor && x.melhor.ptPorMilhao)).join(' | '));
     }
+});
+
+/* ===== 2.25.4: plano "Completo" (refino + linhas); uma linha por peça, na vocação em que rende mais ===== */
+t('fjEstrategias: "Completo" junta o melhor refino com o melhor plano de linha (MPA Comum: +4 e Linha nova), ganho = soma, alvo com refino e linhas', () => {
+    const es = M.fjEstrategias(MPA, 'KNIGHT', CTX, custos(), { seed: 3, n: 300 });
+    const c = es.find(e => e.id === 'completo'), r4 = es.find(e => e.id === 'refino' && e.alvo.refino === 4), en = es.find(e => e.id === 'encaixe');
+    assert(c && r4 && en, es.map(e => e.id + (e.alvo.refino ? '+' + e.alvo.refino : '')).join(','));
+    assert.strictEqual(c.alvo.refino, 4);
+    assert.strictEqual(c.alvo.raridade, 1, 'Comum não tem encaixe: sobe para Incomum');
+    assert(Array.isArray(c.alvo.linhas) && c.alvo.linhas.length, 'linhas-alvo');
+    assert(Math.abs(c.ganhoPt - (r4.ganhoPt + en.ganhoPt)) < 0.05, `${c.ganhoPt} ≈ ${r4.ganhoPt} + ${en.ganhoPt}`);
+    assert(c.custoMedio > r4.custoMedio && c.custoMedio > en.custoMedio, 'custa mais que cada parte');
+    assert(c.passos.length >= r4.passos.length + en.passos.length);
+    // a máquina de decisão segue a ordem: refino primeiro, depois raridade, depois linhas
+    assert.strictEqual(M.fjProximoPasso({ alvo: c.alvo }, F(0, 0, 271), E({ refino: 9, raridade: 9, atributo: 9, limpeza: 9 })).acao, 'refino');
+    assert.strictEqual(M.fjProximoPasso({ alvo: c.alvo }, F(0, 4, 271), E({ refino: 9, raridade: 9, atributo: 9, limpeza: 9 })).acao, 'raridade');
+    assert.strictEqual(M.fjProximoPasso({ alvo: c.alvo }, F(1, 4, 271), E({ refino: 9, raridade: 9, atributo: 9, limpeza: 9 })).acao, 'atributo');
+});
+t('fjRanking: a mesma peça do baú avaliada para duas vocações vira UMA linha, na vocação em que rende mais; a vestida de alguém fica só com ele', () => {
+    const vestida = { iid: 'pl-corpo', nome: 'plate legs', slot: 'legs', attrs: { slot: 'legs', armor: 7, vocation: 'Knight;true' }, forja: F(0, 4, 306) };
+    const bau = { iid: 'sh-bau', nome: 'steel helmet', slot: 'head', attrs: { slot: 'head', armor: 6, vocation: 'Knight;true, Sorcerer;true' }, forja: F(3, 0, 293, ['regen_mana', 2.1]) };
+    const vestidaCav = { iid: 'sh-cav', nome: 'steel helmet', slot: 'head', attrs: { slot: 'head', armor: 6, vocation: 'Knight;true' }, forja: F(1, 4, 226, ['regen_mana', 2.5]) };
+    const est = M.fjEstoque({ 'refine gem t1': 30, 'rarity gem t1': 10, 'attribute gem t1': 10, 'cleansing gem t1': 5 }, []);
+    const custos = M.fjCustoGemas(LASTRO, CAT, est);
+    const porVoc = { KNIGHT: [{ peca: vestida, origem: 'bis', slot: 'legs' }, { peca: bau, origem: 'base', slot: 'head', atual: vestidaCav }], SORCERER: [{ peca: bau, origem: 'base', slot: 'head', atual: null }] };
+    const r = M.fjRanking(porVoc, CTX, custos, 1e7, est, { seed: 3, n: 150 });
+    const linhas = r.filter(x => x.peca.iid === 'sh-bau');
+    assert.strictEqual(linhas.length, 1, 'uma linha por peça: ' + r.map(x => x.peca.iid + '/' + x.voc).join(','));
+    assert(linhas[0].vocs && linhas[0].vocs.length === 2, 'guarda as vocações avaliadas: ' + JSON.stringify(linhas[0].vocs));
+    assert.strictEqual(r.find(x => x.peca.iid === 'pl-corpo').voc, 'KNIGHT');
+    const r2 = M.fjRanking(porVoc, CTX, custos, 1e7, est, { seed: 3, n: 150, umaPorPeca: false });
+    assert.strictEqual(r2.filter(x => x.peca.iid === 'sh-bau').length, 2);
+    assert.strictEqual(r.find(x => x.peca.iid === 'sh-bau').vestida, null, 'sem vestida no slot na vocação escolhida (Feiticeiro) → null');
+    const lk = r2.find(x => x.peca.iid === 'sh-bau' && x.voc === 'KNIGHT');
+    assert(lk.vestida && lk.vestida.iid === 'sh-cav', 'a linha do Cavaleiro diz qual vestida ela substitui');
+});
+
+/* ===== 2.25.4: Lendária com 4 encaixes — n linhas boas (minLinhas) ===== */
+t('forjaSimular: alvo.minLinhas = 2 numa Lendária cheia de linha ruim: Limpeza T1 apaga tudo e rola Atributo até ter 2 linhas boas; custa mais que 1 linha', () => {
+    const lend = { slot: 'legs', forja: F(4, 0, 300, ['capacidade', 40], ['resist_gelo', 0.3], ['max_mana', 10], ['resist_sagrado', 0.4]) };
+    const boas = ['regen_mana', 'regen_vida', 'resist_terra', 'protecao_magica', 'resist_morte'];
+    const precos = { atributo: 500000, limpeza: 200000, limpeza_maior: 5000000 };
+    const s1 = M.forjaSimular(lend, { linhas: boas, minLinhas: 1, limparTudo: true }, { n: 400, seed: 5, precos });
+    const s2 = M.forjaSimular(lend, { linhas: boas, minLinhas: 2, limparTudo: true }, { n: 400, seed: 5, precos });
+    const s4 = M.forjaSimular(lend, { linhas: boas, minLinhas: 4, limparTudo: true }, { n: 400, seed: 5, precos });
+    assert(s1.sucesso > 0.9 && s2.sucesso > 0.9 && s4.sucesso > 0.5, JSON.stringify([s1.sucesso, s2.sucesso, s4.sucesso]));
+    assert(s2.gemas > s1.gemas && s4.gemas > s2.gemas, JSON.stringify([s1.gemas, s2.gemas, s4.gemas]));
+    assert(s2.porGema.atributo >= 2 && s2.porGema.limpeza >= 1, JSON.stringify(s2.porGema));
+    // sem limparTudo e com a última linha ruim: Limpeza T2 (5 M) — o custo em ouro dispara
+    const s2b = M.forjaSimular(lend, { linhas: boas, minLinhas: 2 }, { n: 200, seed: 5, precos });
+    assert(s2b.ouro > s2.ouro * 2, JSON.stringify([s2.ouro, s2b.ouro]));
+});
+t('fjEstrategias: Lendária do Cavaleiro com 4 linhas ruins ganha planos "2/3/4 linhas boas" (ganho e custo crescentes) e o Completo junta refino + o melhor deles por pt/milhão', () => {
+    const lend = { iid: 'lg', nome: 'plate legs', slot: 'legs', attrs: { slot: 'legs', armor: 7, vocation: 'Knight;true' }, forja: F(4, 0, 300, ['capacidade', 40], ['resist_gelo', 0.3], ['max_mana', 10], ['resist_sagrado', 0.4]) };
+    const es = M.fjEstrategias(lend, 'KNIGHT', CTX, custos(), { seed: 3, n: 200 });
+    const multi = es.filter(e => e.id === 'encaixes').sort((a, b) => a.alvo.minLinhas - b.alvo.minLinhas);
+    assert.deepStrictEqual(multi.map(e => e.alvo.minLinhas), [2, 3, 4], es.map(e => e.id + (e.alvo.minLinhas || '')).join(','));
+    for (let i = 1; i < multi.length; i++) assert(multi[i].ganhoPt > multi[i - 1].ganhoPt && multi[i].custoMedio > multi[i - 1].custoMedio, 'crescentes');
+    const um = es.find(e => e.id === 'encaixe');
+    assert(um && multi[2].ganhoPt > um.ganhoPt * 2, 'quatro linhas valem bem mais que uma: ' + JSON.stringify([um.ganhoPt, multi[2].ganhoPt]));
+    assert(multi.every(e => e.alvo.limparTudo === true), 'nada aqui vale guardar: Limpeza T1');
+    const c = es.find(e => e.id === 'completo');
+    assert(c && c.alvo.refino === 4 && c.alvo.minLinhas >= 1, JSON.stringify(c && c.alvo));
+    // linha boa já na peça conta para o n (e entra no alvo) quando não se limpa tudo
+    const lend2 = { iid: 'lg2', nome: 'plate legs', slot: 'legs', attrs: { slot: 'legs', armor: 7, vocation: 'Knight;true' }, forja: F(4, 0, 300, ['regen_mana', 2.2], ['regen_vida', 2.0]) };
+    const m2 = M.fjEstrategias(lend2, 'KNIGHT', CTX, custos(), { seed: 3, n: 200 }).filter(e => e.id === 'encaixes');
+    assert(m2.length && m2.every(e => !e.alvo.limparTudo && e.alvo.linhas.includes('regen_mana')), JSON.stringify(m2.map(e => e.alvo)));
+    // linha boa + 3 ruins, Limpeza T2 cara: limpa tudo, mas a boa continua no alvo (volta a ser sorteável) e o custo fica em dezenas de gemas, não centenas
+    const lend3 = { iid: 'lg3', nome: 'plate legs', slot: 'legs', attrs: { slot: 'legs', armor: 7, vocation: 'Knight;true' }, forja: F(4, 0, 300, ['max_mana', 32], ['regen_mana', 1.7], ['resist_sagrado', 1], ['roubo_vida_chance', 2]) };
+    const m3 = M.fjEstrategias(lend3, 'KNIGHT', CTX, custos(), { seed: 3, n: 200 }).filter(e => e.id === 'encaixes');
+    assert(m3.length, 'planos de n linhas');
+    // (na fixture a Limpeza T2 custa 315 k, perto da T1: aí vale guardar a regen. de mana e apagar só a última; no jogo, a T2 a 5 M vira limparTudo)
+    assert(m3.every(e => e.alvo.linhas.includes('regen_mana')), JSON.stringify(m3.map(e => e.alvo)));
+    const q = m3.find(e => e.alvo.minLinhas === 4);
+    assert(q && q.gemasMedio < 80, '4 linhas com p ≈ 50 % por gema: dezenas de gemas, não centenas: ' + (q && q.gemasMedio));
+});
+t('fjProximoPasso com minLinhas = 2 (Raro, 2 encaixes): [boa] + vazio → Atributo; [boa, ruim] → Limpeza T2 (ou T1 se limparTudo); [ruim, boa] cheia → Limpeza T1 (recomeça); [boa, boa] → fim', () => {
+    const plano = { alvo: { linhas: ['regen_mana', 'regen_vida', 'resist_terra'], minLinhas: 2 } };
+    const g = { atributo: 5, limpeza: 5, limpeza_maior: 5 };
+    assert.strictEqual(M.fjProximoPasso(plano, F(2, 0, 300, ['regen_mana', 2]), E(g)).acao, 'atributo');
+    assert.strictEqual(M.fjProximoPasso(plano, F(2, 0, 300, ['regen_mana', 2], ['capacidade', 40]), E(g)).acao, 'limpeza_maior');
+    assert.strictEqual(M.fjProximoPasso({ alvo: Object.assign({}, plano.alvo, { limparTudo: true }) }, F(2, 0, 300, ['regen_mana', 2], ['capacidade', 40]), E(g)).acao, 'limpeza');
+    assert.strictEqual(M.fjProximoPasso(plano, F(2, 0, 300, ['capacidade', 40], ['regen_mana', 2]), E(g)).acao, 'limpeza');
+    assert.strictEqual(M.fjProximoPasso(plano, F(2, 0, 300, ['regen_mana', 2], ['regen_vida', 1.5]), E(g)).acao, 'fim');
 });
 
 console.log(n + ' testes ok' + (process.exitCode ? ' (com falhas)' : ''));

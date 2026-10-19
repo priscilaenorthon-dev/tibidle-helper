@@ -5543,3 +5543,22 @@ fragmentos de Refino T1 (≈ 15 k no Mercado).
   < 5 % em pt/milhão ou em ganho é empate (o Monte Carlo tem ruído de 0,01 e jogava a MPA vestida para 14.º atrás de um plate legs
   de potência 65 do baú); no empate a vestida (bis) vem antes da base, depois base maior, depois potência.
 - Ganho da MPA caiu de 20,4 para 15,3 pt entre as leituras: a régua da defesa depende do dano tomado medido, que se perde no reload.
+
+### 2.25.4 (19/10) — "tenho itens de raridade alta que podem ficar melhores que os que uso"
+- Conferido na conta: o ranking só olhava as BiS e as "bases" (Épico+) do Equip, cada base para UMA vocação (a do planoForja, quase
+  sempre o Cavaleiro); 29 "nobres" (Raro/Incomum com linha útil: magma monocle 344 [regen mana 2,2], battle shield 326, dark armor 311,
+  steel helmet 234…) nem entravam; e nenhum plano juntava refino com linhas.
+- Agora `fjPecasPorVoc` percorre os candidatos do Equip de cada vocação × slot (já respeitam vocação e "não tirar peça de quem veste"):
+  toda peça Rara ou melhor, mais bases e nobres, entra para cada vocação que pode vesti-la, com a vestida daquele slot como `atual`;
+  `fjRanking` junta a mesma peça numa linha só (a vocação em que rende mais; `vocs` guarda as avaliadas; `opc.umaPorPeca:false` mostra
+  todas) e a tela diz "no lugar de <vestida> +N que Cav veste — forjada, passa X pt dela".
+- Plano **Completo** em `fjEstrategias`: o melhor refino padrão (≤ +4) + o melhor plano de linha (Linha nova ou valor) num alvo só
+  (refino → raridade → linhas, a mesma máquina de decisão); ganho = soma, custo simulado junto. Não é o "melhor" por padrão (rende menos
+  por milhão), mas fica em "+ planos" para quem quer a peça inteira.
+- **n linhas boas** (dono: "a Lendária já vem com 4 encaixes; aí dá para ficar melhor que as que uso"): `alvo.minLinhas` em
+  `forjaSimular` e `fjProximoPasso` (as boas que já estão contam; vazio → Atributo; cheia com a última ruim → Limpeza T2, ou T1 se
+  `limparTudo`; cheia com a última boa e ainda faltando → Limpeza T1 e recomeça). `fjEstrategias` gera "2/3/4 linhas boas" para cada n até
+  os encaixes da raridade atual (ganho = min(n × média, soma das n melhores) − o que se perde ao limpar; Limpeza T1 quando a T2 custa
+  mais que re-rolar o que se guarda) e o Completo escolhe o plano de linha pela regra do "melhor" (maior ganho entre os que rendem
+  ≥ 3/4 do melhor pt por milhão). Com os preços de 19/10 (Atributo T1 ≈ 506 k, Limpeza T2 ≈ 5 M) quatro linhas boas custam milhões:
+  o ranking mostra o número em vez de esconder o plano.
