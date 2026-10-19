@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.25.0
+// @version      2.25.1
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.25.0';
+    const VERSAO = '2.25.1';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -5042,9 +5042,9 @@
     function botaoDireito(el) {
         const r = el.getBoundingClientRect();
         const o = { bubbles: true, cancelable: true, button: 2, buttons: 2, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
-        try { el.dispatchEvent(new PointerEvent('pointerdown', Object.assign({ pointerType: 'mouse', isPrimary: true }, o))); } catch (e) { }
+        try { el.dispatchEvent(new PointerEvent('pointerdown', Object.assign({ pointerType: 'mouse', isPrimary: true, pointerId: 1 }, o))); } catch (e) { }
         el.dispatchEvent(new MouseEvent('mousedown', o));
-        try { el.dispatchEvent(new PointerEvent('pointerup', Object.assign({ pointerType: 'mouse', isPrimary: true }, o))); } catch (e) { }
+        try { el.dispatchEvent(new PointerEvent('pointerup', Object.assign({ pointerType: 'mouse', isPrimary: true, pointerId: 1 }, o))); } catch (e) { }
         el.dispatchEvent(new MouseEvent('mouseup', o));
         el.dispatchEvent(new MouseEvent('contextmenu', o));
     }
@@ -5077,9 +5077,9 @@
     function cliqueCompleto(el) {
         const r = el.getBoundingClientRect();
         const o = { bubbles: true, cancelable: true, button: 0, buttons: 1, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
-        try { el.dispatchEvent(new PointerEvent('pointerdown', Object.assign({ pointerType: 'mouse', isPrimary: true }, o))); } catch (e) { }
+        try { el.dispatchEvent(new PointerEvent('pointerdown', Object.assign({ pointerType: 'mouse', isPrimary: true, pointerId: 1 }, o))); } catch (e) { }
         el.dispatchEvent(new MouseEvent('mousedown', o));
-        try { el.dispatchEvent(new PointerEvent('pointerup', Object.assign({ pointerType: 'mouse', isPrimary: true, buttons: 0 }, o))); } catch (e) { }
+        try { el.dispatchEvent(new PointerEvent('pointerup', Object.assign({ pointerType: 'mouse', isPrimary: true, pointerId: 1, buttons: 0 }, o))); } catch (e) { }
         el.dispatchEvent(new MouseEvent('mouseup', Object.assign({}, o, { buttons: 0 })));
         el.dispatchEvent(new MouseEvent('click', Object.assign({}, o, { buttons: 0 })));
     }
@@ -5126,9 +5126,9 @@
     function ponteiroSemClique(el) {
         const r = el.getBoundingClientRect();
         const o = { bubbles: true, cancelable: true, button: 0, buttons: 1, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
-        try { el.dispatchEvent(new PointerEvent('pointerdown', Object.assign({ pointerType: 'mouse', isPrimary: true }, o))); } catch { /* PointerEvent pode faltar */ }
+        try { el.dispatchEvent(new PointerEvent('pointerdown', Object.assign({ pointerType: 'mouse', isPrimary: true, pointerId: 1 }, o))); } catch { /* PointerEvent pode faltar */ }
         el.dispatchEvent(new MouseEvent('mousedown', o));
-        try { el.dispatchEvent(new PointerEvent('pointerup', Object.assign({ pointerType: 'mouse', isPrimary: true, buttons: 0 }, o))); } catch { /* PointerEvent pode faltar */ }
+        try { el.dispatchEvent(new PointerEvent('pointerup', Object.assign({ pointerType: 'mouse', isPrimary: true, pointerId: 1, buttons: 0 }, o))); } catch { /* PointerEvent pode faltar */ }
         el.dispatchEvent(new MouseEvent('mouseup', Object.assign({}, o, { buttons: 0 })));
     }
     /* Desmarca cada item protegido e confere: a caixa diz "desmarcado" OU o
@@ -14074,7 +14074,10 @@
             const card = await esperarQue(() => tid('forja-cartao-' + iid), 3000, 150);
             if (!card) { FJ.aviso = 'a peça não apareceu na galeria da Forja (confira o filtro Todas / Vestidas / Mochila / Depósito)'; renderizar(); return; }
             card.scrollIntoView({ block: 'center' });
-            cliqueCompleto(card);
+            /* v2.25.1: o onClick do React fica no <button> dentro do cartão; clicar no <div> não abre o modal */
+            cliqueCompleto(card.querySelector('button') || card);
+            await dorme(600);
+            if (!tid('forja-modal')) { FJ.aviso = 'a Forja abriu, mas a peça não abriu sozinha — clique nela na galeria'; renderizar(); }
         } catch (e) { falhou('forja (abrir no jogo)', e); }
     }
     async function fjPuxar(l) {

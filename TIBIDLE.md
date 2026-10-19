@@ -5515,3 +5515,8 @@ Ao vivo (19/10, nível 133, cidade, ao lado do Uzgod): 44 peças avaliadas; Cava
 "Refino +4" +20,4 pt por ~1,26 M (6,3 gemas); Druida: snakebite rod ML +1 → +2 (3 refinos até 421 + Refazer T1) +14,4 pt por ~4,4 M;
 magos com "Linha nova" 2,7 pt a 4,3 M; todas com selo "falta gema". Teste real (magic plate armor +0 → +1) pendente: faltam 86
 fragmentos de Refino T1 (≈ 15 k no Mercado).
+
+### 2.25.1 (19/10) — "abrir na Forja do jogo" abre a peça
+- O `onClick` do React fica no `<button>` dentro de `forja-cartao-<iid>`; o clique sintético no `<div>` abria só a janela. Agora
+  `fjAbrirNoJogo` clica no botão interno (e `cliqueCompleto` manda `pointerId: 1` nos PointerEvents). Se o modal não abrir em 600 ms,
+  avisa na aba. Conferido ao vivo: `forja-modal` abre na magic plate armor.
