@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.25.1
+// @version      2.25.3
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.25.1';
+    const VERSAO = '2.25.3';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -7711,7 +7711,14 @@
                 if (!x || !x.peca) continue;
                 const f = normForja(x.peca.forja), P = pesosDaVoc(voc, ctx);
                 const bis = x.origem === 'bis' || (Number(f.raridade) || 0) >= RARIDADE_BASE_FORJA || f.atributos.some(a => SKILL_FORJA.includes(a.id) && (P[a.id] || 0) > 0);
-                const es = fjEstrategias(x.peca, voc, ctx, custos, Object.assign({}, opc, { estoque: estoque || null }));
+                let es = fjEstrategias(x.peca, voc, ctx, custos, Object.assign({}, opc, { estoque: estoque || null }));
+                /* v2.25.3: peça do baú (ou da mochila) que NÃO é a vestida só rende o que passar da vestida no mesmo slot — a forja
+                 * dela precisa primeiro fechar a lacuna (dono, 19/10: "rank tanto equipado quanto no baú", sem enganar) */
+                let lacuna = 0;
+                if (x.atual && x.atual.iid !== x.peca.iid) {
+                    try { lacuna = Math.max(0, pontuarPeca(mlComRefino(x.atual), voc, ctx).pontos - pontuarPeca(mlComRefino(x.peca), voc, ctx).pontos); } catch (err) { lacuna = 0; } // mlComRefino: o refino conta (a mesma régua das estratégias)
+                    if (lacuna > 0) es = es.map(e => { const g = Math.round((e.ganhoPt - lacuna) * 100) / 100; return Object.assign({}, e, { ganhoPt: g, lacuna, ptPorMilhao: e.custoMedio > 0 ? Math.round(g / e.custoMedio * 1e6 * 100) / 100 : null }); }).filter(e => e.ganhoPt >= FJ_GANHO_MIN);
+                }
                 const cabem = es.filter(e => e.cabe !== false), pool = cabem.length ? cabem : es;
                 /* o melhor aproveitamento (dono, 19/10): o plano de MAIOR ganho entre os que rendem pelo menos 3/4 do melhor pt por milhão —
                  * o +1 rende um pouco mais por ouro, mas o +4 é o que deixa a peça forte */
@@ -7719,16 +7726,19 @@
                 const melhor = pool.filter(e => (e.ptPorMilhao || 0) >= 0.75 * topM).sort((x, y) => y.ganhoPt - x.ganhoPt || (y.ptPorMilhao || 0) - (x.ptPorMilhao || 0))[0] || null;
                 let selo = 'nao', motivo = '';
                 if (!bis) motivo = 'item de entrada: não é a melhor peça de ninguém nem tem linha de skill — gema aqui é ouro jogado fora (vídeos)';
-                else if (!melhor || melhor.ganhoPt < FJ_VALE_MIN) motivo = melhor ? 'o melhor plano rende menos de 1 pt' : 'nenhum plano rende 0,5 pt';
+                else if (!melhor || melhor.ganhoPt < FJ_VALE_MIN) motivo = lacuna > 0 ? `a peça vestida neste slot está ${Math.round(lacuna * 10) / 10} pt na frente: forjar esta não a alcança com folga` : melhor ? 'o melhor plano rende menos de 1 pt' : 'nenhum plano rende 0,5 pt';
                 else if (melhor.cabe === false) { selo = 'estoque'; motivo = 'falta ' + melhor.falta; }
                 else if (ouro != null && melhor.custoMedio > ouro) { selo = 'ouro'; motivo = `custo médio ${Math.round(melhor.custoMedio / 1000)} k acima do ouro`; }
                 else selo = 'vale';
-                linhas.push({ peca: x.peca, voc, slot: x.slot || normalizarSlot(x.peca.slot), origem: x.origem || null, bis, melhor, estrategias: es, selo, motivo });
+                linhas.push({ peca: x.peca, voc, slot: x.slot || normalizarSlot(x.peca.slot), origem: x.origem || null, bis, melhor, estrategias: es, selo, motivo, lacuna });
             }
         }
         const ordem = { vale: 0, estoque: 1, ouro: 2, nao: 3 };
         const pot = (l) => potenciaTotal(l.peca), base = (l) => { const at = l.peca.attrs || {}; return Number(at.armor) || Number(at.defense) || Number(at.attack) || 0; }; // a base melhor é a que fica: forja-se a BiS de verdade
-        return linhas.sort((a, b) => ordem[a.selo] - ordem[b.selo] || ((b.melhor && b.melhor.ptPorMilhao) || 0) - ((a.melhor && a.melhor.ptPorMilhao) || 0) || ((b.melhor && b.melhor.ganhoPt) || 0) - ((a.melhor && a.melhor.ganhoPt) || 0) || base(b) - base(a) || pot(b) - pot(a));
+        /* v2.25.3: diferença < 5 % em pt/milhão ou em ganho é empate (o Monte Carlo tem ruído de 0,01) — aí a vestida (bis) vem antes da base */
+        const ppm = (l) => (l.melhor && l.melhor.ptPorMilhao) || 0, ganho = (l) => (l.melhor && l.melhor.ganhoPt) || 0;
+        const dif = (a, b) => (Math.abs(a - b) <= 0.05 * Math.max(Math.abs(a), Math.abs(b)) ? 0 : b - a);
+        return linhas.sort((a, b) => ordem[a.selo] - ordem[b.selo] || dif(ppm(a), ppm(b)) || dif(ganho(a), ganho(b)) || (a.origem === 'bis' ? 0 : 1) - (b.origem === 'bis' ? 0 : 1) || base(b) - base(a) || pot(b) - pot(a));
     }
     /* A MÁQUINA DE DECISÃO do botão FORJAR (pura): dado o plano {alvo:{refino, raridade, linhas, valorMin}, garantia}, a peça como está
      * (forja ou instância) e o estado {estoque:{gemas, fragmentos}, gasto, orcamento, tentativas, maxTentativas, ouro, ouroCriar}, devolve
@@ -7774,6 +7784,43 @@
         if (livres > 0) { const p = precisa('atributo'); if (p) return p; return { acao: 'atributo', gema: 'atributo', motivo: 'linha nova no encaixe vazio' }; }
         if (at.length) { const gl = a.limparTudo ? 'limpeza' : 'limpeza_maior'; const p = precisa(gl); if (p) return p; return { acao: gl, gema: gl, motivo: a.limparTudo ? `apagar todas as linhas (${at.map(x => rotulo(x.id)).join(', ')}: nenhuma vale guardar)` : `apagar ${rotulo(at[at.length - 1].id)} (última linha, não é alvo)` }; }
         return { acao: 'parar', motivo: `${RAR_PT[rar]} sem encaixe: suba a raridade antes` };
+    }
+    /* v2.25.2 — COMPRAR O QUE FALTA: fragmentos no Mercado para o plano escolhido (o FORJAR em si continua sem comprar nada).
+     * plano.porGema90 = gemas por tipo no pior caso de 90 %; abate as gemas prontas e os fragmentos da conta; o resto vira
+     * fragmentos a comprar (100 por gema). Sem livro: só a estimativa pelo menor anúncio. Com livro ({gema: orders}): ordens
+     * SELL do mais barato ao mais caro, até opc.teto × menor anúncio (1,5× — não paga sobrepreço num livro raso). */
+    const FJ_COMPRA_TETO = 1.5;
+    function fjPlanoCompra(plano, estoque, custos, livros, opc) {
+        opc = opc || {}; const gemas = (estoque && estoque.gemas) || {}, frags = (estoque && estoque.fragmentos) || {}, por = (plano && plano.porGema90) || {};
+        const itens = [], compras = livros ? [] : null, faltam = {};
+        let estimado = 0, criar = 0, total = 0;
+        for (const g of FJ_GEMAS) {
+            const gemasCriar = Math.max(0, (Number(por[g]) || 0) - (gemas[g] || 0));
+            if (!gemasCriar) continue;
+            const c = custos && custos[g] ? custos[g] : {}, precoFrag = Number(c.precoFrag) || 0;
+            criar += gemasCriar * (Number(c.ouroCriar) || 0);
+            const fragmentos = Math.max(0, gemasCriar * FJ_FRAG_POR_GEMA - (frags[g] || 0));
+            if (!fragmentos) continue;
+            itens.push({ gema: g, item: fjItemFragmento(g), gemasCriar, fragmentos, precoFrag });
+            estimado += fragmentos * precoFrag;
+            if (!livros) continue;
+            const teto = precoFrag ? precoFrag * (opc.teto || FJ_COMPRA_TETO) : Infinity;
+            const ordens = (livros[g] || []).filter(x => x && String(x.side).toUpperCase() === 'SELL' && Number(x.quantityRemaining) > 0 && Number(x.unitPrice) <= teto)
+                .sort((a, b) => Number(a.unitPrice) - Number(b.unitPrice));
+            let resta = fragmentos;
+            for (const x of ordens) {
+                if (resta <= 0) break;
+                const q = Math.min(resta, Number(x.quantityRemaining));
+                compras.push({ gema: g, item: fjItemFragmento(g), orderId: x.id, quantity: q, unitPrice: Number(x.unitPrice), total: q * Number(x.unitPrice) });
+                total += q * Number(x.unitPrice); resta -= q;
+            }
+            if (resta > 0) faltam[g] = resta;
+        }
+        const temFalta = Object.keys(faltam).length > 0;
+        let motivo = null;
+        if (livros && temFalta) motivo = Object.entries(faltam).map(([g, n]) => `${n} ${fjItemFragmento(g)} sem anúncio até ${Math.round(((custos && custos[g] && custos[g].precoFrag) || 0) * (opc.teto || FJ_COMPRA_TETO))}`).join('; ');
+        if (opc.ouro != null && (livros ? total : estimado) + criar > opc.ouro) motivo = `ouro normal insuficiente: ${Math.round(opc.ouro / 1000)} k para ${Math.round(((livros ? total : estimado) + criar) / 1000)} k (fragmentos + criar as gemas)`;
+        return { itens, estimado, criar, compras, total: livros ? total : null, faltam: temFalta ? faltam : null, ok: !!livros && !motivo && compras.length > 0, motivo };
     }
     /* @@FORJA-FIM */
 
@@ -13924,7 +13971,7 @@
      *  ⭐ v2.25.0 — ABA FORJA: estado, socket e tela (o modelo puro está em @@FORJA).
      *  Só LER, SIMULAR (Bancada do jogo, grátis) e FORJAR (2 toques, orçamento, só com o que a conta tem) mandam algo.
      * ====================================================================== */
-    const FJ = { lendo: false, erro: null, aviso: null, t: 0, rank: null, custos: null, estoque: null, ouro: null, sel: null, estr: null,
+    const FJ = { comprando: false, compra: null, conf2: 0, lendo: false, erro: null, aviso: null, t: 0, rank: null, custos: null, estoque: null, ouro: null, sel: null, estr: null,
                  bancada: null, simulando: false, forjando: false, parar: false, progresso: '', relatorio: null, orcamento: null, conf: 0, abertos: new Set() };
     const FJ_BANCADA_N = 20;
     const fjOrcamentoPadrao = () => { const o = mlOuroNormal(); return o != null ? Math.floor(o * 0.5) : null; };
@@ -13953,7 +14000,7 @@
         for (const p of (R.bases || [])) {
             let pl = null; try { pl = planoForja(p, VOCS, EQUIP.ctx, R.porVoc); } catch (e) { pl = null; }
             const v = (pl && pl.voc) || VOCS.find(x => vocacaoPode(p.attrs, x));
-            if (v && !out[v].some(x => x.peca.iid === p.iid)) out[v].push({ peca: p, origem: 'base', slot: normalizarSlot(p.slot) });
+            if (v && !out[v].some(x => x.peca.iid === p.iid)) { const s = normalizarSlot(p.slot), vest = R.porVoc[v] && R.porVoc[v][s] && R.porVoc[v][s].atual; out[v].push({ peca: p, origem: 'base', slot: s, atual: vest || null }); }
         }
         return out;
     }
@@ -14037,7 +14084,9 @@
         const ouroCriar = Object.fromEntries(FJ_GEMAS.map(g => [g, FJ.custos && FJ.custos[g] ? FJ.custos[g].ouroCriar : FORJA_GEMA_OURO[g]]));
         log(`forja: FORJANDO ${peca.nome} (${VOC_ROTULO[l.voc] || l.voc}) — ${e.nome}; orçamento ${fjK(FJ.orcamento)}, até ${maxT} tentativas`, 'info');
         renderizar();
+        let foiAoUzgod = false;
         try {
+            if (!tid('window-forja')) { FJ.progresso = 'indo até o Uzgod…'; renderizar(); foiAoUzgod = await fjIrAoUzgod(); }
             for (let i = 0; i < 300; i++) {
                 if (FJ.parar) { rel.fim = { acao: 'parar', motivo: 'parado por você' }; break; }
                 const estado = { estoque, gasto: rel.gasto, orcamento: FJ.orcamento, tentativas: rel.passos.filter(x => x.acao !== 'craft').length, maxTentativas: maxT, ouro: ouro != null ? ouro + travado : null, ouroCriar };
@@ -14046,7 +14095,8 @@
                 FJ.progresso = `${rel.passos.length + 1}. ${px.motivo}`; renderizar();
                 const ped = fjPedidoDe(peca, px, true);
                 const r = await mkPedir(ped.tipo, ped.data);
-                if (r.erro) { rel.fim = { acao: 'parar', motivo: 'o jogo recusou (' + mkErroTexto(r.erro) + ')' }; rel.passos.push({ acao: px.acao, gema: px.gema, erro: r.erro, motivo: px.motivo }); break; }
+                if (r.erro === 'too_far' && !foiAoUzgod) { foiAoUzgod = true; FJ.progresso = 'longe do Uzgod — indo até ele…'; renderizar(); if (await fjIrAoUzgod()) { await dorme(800); i--; continue; } }
+                if (r.erro) { rel.fim = { acao: 'parar', motivo: 'o jogo recusou (' + mkErroTexto(r.erro) + ')' + (r.erro === 'too_far' ? ' — abra NAVEGAÇÃO › Forja no jogo para ir até o Uzgod' : '') }; rel.passos.push({ acao: px.acao, gema: px.gema, erro: r.erro, motivo: px.motivo }); break; }
                 const d = r.data || {};
                 if (d.instancia && d.instancia.forja) inst = normForja(d.instancia.forja);
                 if (d.gold != null) { const novo = Number(d.gold) + (Number(d.goldLocked) || 0); if (ouro != null) rel.gasto += Math.max(0, ouro + travado - novo); ouro = Number(d.gold); travado = Number(d.goldLocked) || 0; }
@@ -14066,10 +14116,58 @@
         log(`forja: ${peca.nome} terminou — ${rel.fim.motivo} · ${rel.passos.length} passo(s) · gasto ${fjK(rel.gasto)} · +${rel.antes.refino || 0} → +${inst.refino || 0}, ${RAR_PT[rel.antes.raridade || 0]} → ${RAR_PT[inst.raridade || 0]}`, rel.fim.acao === 'fim' ? 'ok' : 'erro');
         try { await fjLer(); } catch (err) { renderizar(); }
     }
+    /* v2.25.2 — compra no Mercado os fragmentos que faltam para o plano (2 toques). Só fragmentos: o FORJAR cria as gemas
+     * (forge_craft) e o dono fica com o ouro de criar à vista no botão. Nunca re-tenta uma ordem sem resposta. */
+    async function fjComprar(l, e) {
+        if (FJ.forjando || FJ.simulando || FJ.comprando || !l || !e) return;
+        const imp = mkImpedimento(); if (imp) { FJ.aviso = 'comprar: ' + imp; renderizar(); return; }
+        if (MK.ocupado) { FJ.aviso = 'o Mercado está ocupado (' + MK.ocupado + ')'; renderizar(); return; }
+        FJ.comprando = true; FJ.aviso = null; FJ.compra = null; MK.ocupado = 'forja'; renderizar();
+        const rel = { itens: [], total: 0, fim: null };
+        try {
+            const estoque = fjEstoqueAtual(), plano0 = fjPlanoCompra(e, estoque, FJ.custos);
+            if (!plano0.itens.length) { rel.fim = 'nada a comprar: a conta já tem o que o plano pede'; return; }
+            const livros = {};
+            for (const it of plano0.itens) {
+                FJ.progresso = `livro de ${it.item}…`; renderizar();
+                const r = await mkPedir('market_list', { asset: 'ITEM', itemName: it.item });
+                if (r.erro) throw new Error(`livro de ${it.item}: ${mkErroTexto(r.erro)}`);
+                const lv = MK.livros[mkMin(it.item)];
+                livros[it.gema] = (r.data && r.data.orders) || (lv && lv.orders) || [];
+            }
+            const plano = fjPlanoCompra(e, estoque, FJ.custos, livros, { ouro: mlOuroNormal() });
+            if (!plano.ok) throw new Error(plano.motivo || 'nenhuma ordem de venda no livro');
+            for (const c of plano.compras) {
+                if (FJ.parar) { rel.fim = 'parado por você'; break; }
+                FJ.progresso = `comprando ${c.quantity} ${c.item} a ${mkFmt(c.unitPrice)}…`; renderizar();
+                const r = await mkPedir('market_execute', { orderId: c.orderId, quantity: c.quantity, requestId: mkRid() });
+                if (r.erro) { rel.fim = `o jogo recusou ${c.quantity} ${c.item} a ${mkFmt(c.unitPrice)}: ${r.erro === 'sem_resposta' ? 'sem resposta — confira a mochila antes de tentar de novo' : mkErroTexto(r.erro)}`; break; }
+                rel.itens.push(c); rel.total += c.total;
+                log(`forja: comprado ${c.quantity} ${c.item} a ${mkFmt(c.unitPrice)} (${mkFmt(c.total)})`, 'ok');
+                await dorme(400);
+            }
+            if (!rel.fim) rel.fim = plano.faltam ? 'faltou: ' + plano.motivo : 'tudo comprado';
+        } catch (err) { rel.fim = err.message; log('forja: compra — ' + err.message, 'erro'); }
+        finally {
+            FJ.compra = rel; FJ.comprando = false; FJ.parar = false; FJ.progresso = ''; if (MK.ocupado === 'forja') MK.ocupado = null;
+            log(`forja: compra terminou — ${rel.fim} · ${rel.itens.reduce((a, c) => a + c.quantity, 0)} fragmento(s) · ${mkFmt(rel.total)}`, rel.itens.length ? 'ok' : 'info');
+            try { await fjLer(); } catch (err) { renderizar(); }
+        }
+    }
+    /* v2.25.3 — leva o personagem até o Uzgod (NAVEGAÇÃO › Forja no jogo): depois de relogar ele nasce no centro da cidade e
+     * toda ação de forja devolve too_far. Só UI; devolve true com a janela da Forja aberta. */
+    async function fjIrAoUzgod() {
+        if (tid('window-forja')) return true;
+        const nav = tid('topmenu-navegacao'); if (!nav) return false;
+        nav.click(); await dorme(500);
+        const u = tid('nav-uzgod'); if (!u) return false;
+        u.click();
+        return !!(await esperarQue(() => tid('window-forja'), 8000, 200));
+    }
     /* abre a janela da Forja do jogo (NAVEGAÇÃO › Uzgod) no cartão da peça — só UI, nada enviado */
     async function fjAbrirNoJogo(iid) {
         try {
-            if (!tid('window-forja')) { const nav = tid('topmenu-navegacao'); if (nav) { nav.click(); await dorme(500); } const u = tid('nav-uzgod'); if (!u) { FJ.aviso = 'não achei "Uzgod (Forja)" no menu NAVEGAÇÃO — abra a Forja no jogo'; renderizar(); return; } u.click(); await esperarQue(() => tid('window-forja'), 5000, 200); }
+            if (!(await fjIrAoUzgod())) { FJ.aviso = tid('topmenu-navegacao') ? 'não achei "Uzgod (Forja)" no menu NAVEGAÇÃO — abra a Forja no jogo' : 'o jogo não está no mundo (lobby?) — entre com o personagem e abra NAVEGAÇÃO › Forja'; renderizar(); return; }
             const aba = tid('forja-aba-equipamentos'); if (aba) { aba.click(); await dorme(400); }
             const card = await esperarQue(() => tid('forja-cartao-' + iid), 3000, 150);
             if (!card) { FJ.aviso = 'a peça não apareceu na galeria da Forja (confira o filtro Todas / Vestidas / Mochila / Depósito)'; renderizar(); return; }
@@ -14149,6 +14247,14 @@
                 h += `<div class="tb-linha" style="margin-top:6px"><label class="tb-l">orçamento <input type="number" class="tb-in" id="tb-fj-orc" value="${FJ.orcamento != null ? FJ.orcamento : ''}" min="0" step="10000" style="width:9em" ${FJ.forjando ? 'disabled' : ''}> ouro</label><span class="tb-mut tb-eq-nota">(padrão 50 % do ouro normal; a forja para ao chegar aqui)</span></div>`;
                 h += `<div class="tb-linha"><button type="button" class="tb-bt ${conf ? 'tb-conf' : 'pri'}" id="tb-fj-forjar" ${ocup || emHunt() || !socketAberto() || falta ? 'disabled' : ''} title="${escHtml(falta ? 'falta ' + falta : emHunt() ? 'só na cidade' : 'gasta gemas e ouro DE VERDADE; não volta')}">${FJ.forjando ? 'FORJANDO…' : conf ? 'CONFIRMAR: forjar de verdade (não volta)' : 'FORJAR DE VERDADE (2 toques)'}</button>` +
                     (FJ.forjando ? `<button type="button" class="tb-bt mini" id="tb-fj-parar">PARAR</button>` : '') + (falta ? `<span class="tb-av tb-eq-nota">falta ${escHtml(falta)}</span>` : '') + `</div>`;
+                /* v2.25.2: comprar os fragmentos que faltam (2 toques); o FORJAR depois cria as gemas */
+                if (falta && !FJ.forjando) {
+                    const pc = fjPlanoCompra(e, FJ.estoque, FJ.custos), conf2 = FJ.conf2 > Date.now(), imp = mkImpedimento();
+                    if (pc.itens.length) { h += `<div class="tb-linha"><button type="button" class="tb-bt ${conf2 ? 'tb-conf' : ''}" id="tb-fj-comprar" ${imp || FJ.comprando ? 'disabled' : ''} title="${escHtml(imp || 'compra no Mercado as ordens de venda mais baratas (até 1,5× o menor anúncio); gasta ouro DE VERDADE')}">${FJ.comprando ? 'comprando…' : conf2 ? 'CONFIRMAR: comprar no Mercado' : 'COMPRAR O QUE FALTA no Mercado (≈ ' + fjK(pc.estimado) + ')'}</button>` +
+                        (FJ.comprando ? `<button type="button" class="tb-bt mini" id="tb-fj-parar">parar</button>` : '') + `<span class="tb-mut tb-eq-nota">${escHtml(pc.itens.map(x => `${x.fragmentos} ${x.item} (${x.gemasCriar} gema(s) a criar, ${fjK(x.gemasCriar * ((FJ.custos && FJ.custos[x.gema] && FJ.custos[x.gema].ouroCriar) || 0))} no FORJAR)`).join(' · '))}</span></div>`; }
+                    else h += `<div class="tb-mut tb-eq-nota">a conta já tem os fragmentos: o FORJAR cria as gemas (${fjK(pc.criar)}).</div>`;
+                }
+                if (FJ.compra) h += `<div class="tb-cx tb-eq-nota">compra: ${escHtml(FJ.compra.fim)}${FJ.compra.itens.length ? ' · ' + escHtml(FJ.compra.itens.map(c => `${c.quantity} ${c.item} a ${mkFmt(c.unitPrice)}`).join(', ')) + ' · ' + fjK(FJ.compra.total) : ''}</div>`;
             }
         } else h += `<div class="tb-mut" style="margin-top:6px">escolha uma peça acima para ver os planos, conferir na Bancada do jogo e forjar.</div>`;
         if (FJ.relatorio) { const r = FJ.relatorio; h += `<div class="tb-cx" style="margin-top:6px"><b>Relatório — ${escHtml(r.peca)}</b> (${escHtml(r.estrategia)}) · ${r.seg} s · gasto <b>${fjK(r.gasto)}</b> · ${r.fim.acao === 'fim' ? '<span class="tb-ok">alvo atingido</span>' : '<span class="tb-ruim">parou: ' + escHtml(r.fim.motivo) + '</span>'}` +
@@ -14156,7 +14262,7 @@
             r.passos.map((p, i) => `<div class="fj-passo ${p.erro ? 'falha' : p.ok === false ? 'falha' : 'ok'}">${i + 1}. ${escHtml(p.motivo)} → ${escHtml(p.resultado || p.erro || '')}</div>`).join('') + `</div>`; }
         h += aj('fj-regras', `<ul style="margin:2px 0 0 14px;padding:0">` + ['Só peça BiS (a melhor que o personagem já veste) ou base com linha de skill e potência ≥ 300: gema em item de entrada é ouro jogado fora.', 'Refino até +4 (falha não derruba); +5 e +6 só se cruzam de faixa, sempre com Garantia T1 (a falha derruba 1 nível sem ela). Cada refino = +1 ataque (arma) ou +1 armadura (o resto) e +50 de potência.', 'A jogada da comunidade: peça que JÁ caiu com ML / distância / corpo a corpo e potência ≥ 300 → refinar até cruzar 400 (até +2) ou 600 (até +3) e usar Refazer para o valor subir.', 'Nunca rolar Atributo atrás de skill: cai 1 em 89. Linha nova mira as de peso 10 (regen., resistência, dano, proteção mágica); linha ruim → Limpeza T2 e tenta de novo.', 'Crítico: base 0 %, qualquer 1 % já acerta. Cavaleiro = dano físico; dano mágico vale em tudo.', 'Bancada de testes do jogo não gasta nada; a nossa conta é Monte Carlo com as regras exatas do jogo (média e 90 %). Forjar é sorteio: o azar custa o dobro; o orçamento é o freio.'].map(x => '<li>' + escHtml(x) + '</li>').join('') + `</ul><div class="tb-eq-nota">Fontes: wiki /forja (19/10), TV de Souza "Guia definitivo da forja" e "Guia completo de itens e forja", Osfurg "Tier rápido"; protocolo lido do cliente do jogo.</div>`, '? regras da Forja (vídeos e wiki)');
         h += aj('fj-calc', pgTelaForja(), '? calculadoras (refino esperado · imbuement)');
-        return h + `<div class="tb-mut" style="margin-top:6px">Só LER, a Bancada (consulta grátis) e FORJAR (2 toques) enviam algo ao jogo.</div></div>`;
+        return h + `<div class="tb-mut" style="margin-top:6px">Só LER, a Bancada (consulta grátis), COMPRAR O QUE FALTA (2 toques) e FORJAR (2 toques) enviam algo ao jogo.</div></div>`;
     }
     function ligarForja() {
         const corpo = $('#tb-corpo');
@@ -14170,6 +14276,8 @@
         const bc = $('#tb-fj-bancada'); if (bc) bc.onclick = () => fjBancada(sel, e);
         const pr = $('#tb-fj-parar'); if (pr) pr.onclick = () => { FJ.parar = true; renderizar(); };
         const orc = $('#tb-fj-orc'); if (orc) orc.onchange = () => { FJ.orcamento = Math.max(0, parseInt(orc.value) || 0); renderizar(); };
+        const cp = $('#tb-fj-comprar');
+        if (cp) cp.onclick = () => { const agora = Date.now(); if (FJ.conf2 > agora) { FJ.conf2 = 0; fjComprar(sel, e); } else { FJ.conf2 = agora + 8000; renderizar(); setTimeout(() => { if (FJ.conf2 && Date.now() >= FJ.conf2) { FJ.conf2 = 0; renderizar(); } }, 8100); } };
         const fz = $('#tb-fj-forjar');
         if (fz) fz.onclick = () => { const agora = Date.now(); if (FJ.conf > agora) { FJ.conf = 0; fjForjar(sel, e); } else { FJ.conf = agora + 8000; renderizar(); setTimeout(() => { if (FJ.conf && Date.now() >= FJ.conf) { FJ.conf = 0; renderizar(); } }, 8100); } };
         ligarCalcForja();
@@ -14297,7 +14405,7 @@
             equip: EQUIP.equipando || EQUIP.lendo ? 'av pulsa' : '',
             mercado: MK.ocupado ? 'av pulsa' : '',
             radar: RADAR.rodando || MK.ocupado === 'radar' ? 'av pulsa' : alertasCfg().vigiar ? 'ok' : '',
-            forja: FJ.lendo || FJ.forjando || FJ.simulando ? 'av pulsa' : '' // v2.25.0
+            forja: FJ.lendo || FJ.forjando || FJ.simulando || FJ.comprando ? 'av pulsa' : '' // v2.25.0
         };
         $$('.tb-ico[data-aba]', t).forEach(i => { const on = !!u.aberta && !u.oculto && i.dataset.aba === ABA; i.classList.toggle('on', on); i.setAttribute('aria-pressed', on ? 'true' : 'false'); const d = $('.tb-dot', i); if (d) d.className = 'tb-dot ' + (estado[i.dataset.aba] || ''); });
         const at = $('#tb-atualizar', t); if (at) { at.style.display = NOVA_VERSAO ? 'flex' : 'none'; at.title = NOVA_VERSAO ? 'versão ' + NOVA_VERSAO + ' disponível — clique para atualizar no Tampermonkey' : ''; }
@@ -14479,7 +14587,7 @@
         // v2.11 — Mercado (modelo puro e o estado lido)
         mkMontar, mkSugerir, mkTaxa, mkRevisao, mkVendas, get MERCADO() { return MK; },
         // v2.25.0 — Forja (modelo puro e o estado lido; forjar e a Bancada NÃO ficam expostos)
-        fjEstoque, fjCustoGemas, fjEstrategias, fjRanking, fjProximoPasso, get FORJA() { return FJ; },
+        fjEstoque, fjCustoGemas, fjEstrategias, fjRanking, fjProximoPasso, fjPlanoCompra, get FORJA() { return FJ; },
         // v2.18.0 — Melhorias (modelo puro e o estado lido; comprar NÃO fica exposto)
         mlAvaliar, mlCandidatosMercado, get MELHORIAS() { return ML; },
         // v2.13.0 — Radar (estimativa e calibração; só leitura)

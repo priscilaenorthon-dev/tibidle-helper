@@ -5520,3 +5520,26 @@ fragmentos de Refino T1 (≈ 15 k no Mercado).
 - O `onClick` do React fica no `<button>` dentro de `forja-cartao-<iid>`; o clique sintético no `<div>` abria só a janela. Agora
   `fjAbrirNoJogo` clica no botão interno (e `cliqueCompleto` manda `pointerId: 1` nos PointerEvents). Se o modal não abrir em 600 ms,
   avisa na aba. Conferido ao vivo: `forja-modal` abre na magic plate armor.
+
+### 2.25.2 (19/10) — COMPRAR O QUE FALTA
+- Dono (19/10): carta branca com até 2 M de ouro para os testes, pode comprar material no Mercado, e o ranking deve cobrir o que está
+  vestido E o que está no baú. O FORJAR continua sem comprar nada; o botão **COMPRAR O QUE FALTA no Mercado (≈ X)** (2 toques) aparece
+  abaixo dele quando o plano escolhido pede gema que a conta não tem: compra só FRAGMENTOS (100 por gema; o FORJAR cria as gemas com
+  `forge_craft` e o ouro de criar fica à vista), pelas ordens SELL do livro (`market_list {asset:'ITEM', itemName}`) da mais barata à
+  mais cara, até 1,5× o menor anúncio do catálogo, `market_execute {orderId, quantity, requestId}` uma a uma; para no primeiro erro e
+  nunca repete ordem sem resposta. `fjPlanoCompra(plano, estoque, custos, livros?, {ouro, teto})` é puro (3 testes).
+- Ao vivo: 886 refine fragment t1 em 4 ordens (639 a 180, 9 a 190, 116 a 200, 122 a 209) = 165.428; estoque 14 → 900.
+
+### 2.25.3 (19/10) — teste real do FORJAR; peça do baú contra a vestida; too_far
+- **FORJAR de verdade na magic plate armor (Cavaleiro), plano "Refino +4", orçamento 1,8 M:** +0 → +4 em 53 s, 16 passos (8 × criar
+  Refino T1 + 8 refinos: ✓ +1, ✓ +2, ✗, ✗, ✓ +3, ✗, ✗, ✓ +4), gasto 1.453.680 (8 × 181.684 de criar; previsto 6,3 gemas em média,
+  9 no pior caso de 90 %). Ouro 4.133.623 → 2.514.515 (compra + forja = 1,62 M dos 2 M liberados). Sobrou 100 fragmentos (= 1 gema).
+- O 1.º FORJAR voltou `too_far`: depois do reload a aba caiu no lobby e, ao entrar, o personagem nasce no centro da cidade (dono).
+  Agora `fjIrAoUzgod()` (NAVEGAÇÃO › UZGOD (Forja), espera `window-forja`) roda antes do laço se a janela não está aberta, e um
+  `too_far` no meio faz o helper ir até o Uzgod e repetir o mesmo passo (uma vez). `fjAbrirNoJogo` usa a mesma função e avisa quando
+  o jogo está no lobby.
+- Ranking: uma base do baú/mochila que não é a vestida leva `atual` (a vestida do slot, `R.porVoc[v][s].atual`); o ganho de cada
+  plano desconta a **lacuna** (pontos da vestida − pontos da base) e o que não passa da vestida vira "nao" com o motivo. Diferença
+  < 5 % em pt/milhão ou em ganho é empate (o Monte Carlo tem ruído de 0,01 e jogava a MPA vestida para 14.º atrás de um plate legs
+  de potência 65 do baú); no empate a vestida (bis) vem antes da base, depois base maior, depois potência.
+- Ganho da MPA caiu de 20,4 para 15,3 pt entre as leituras: a régua da defesa depende do dano tomado medido, que se perde no reload.

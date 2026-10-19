@@ -5,7 +5,7 @@ const fs = require('fs'), path = require('path'), assert = require('assert');
 const src = fs.readFileSync(path.join(__dirname, '..', 'tibidle-helper.user.js'), 'utf8');
 const trecho = (a, b) => { const i = src.indexOf(a), f = src.indexOf(b); assert(i > 0 && f > i, 'marcador ausente: ' + a); return src.slice(i, f); };
 const M = new Function(trecho('/* @@EQUIP-PURO-INICIO */', '/* @@EQUIP-PURO-FIM */') + trecho('/* @@MELHORIAS-INICIO', '/* @@MELHORIAS-FIM */') + trecho('/* @@FORJA-INICIO', '/* @@FORJA-FIM */') +
-    '\nreturn { fjEstoque, fjCustoGemas, fjEstrategias, fjRanking, fjProximoPasso, forjaSimular, FJ_ITEM_GEMA, fjItemFragmento, FJ_GEMAS, FJ_GANHO_MIN, FJ_VALE_MIN, pontuarPeca, pesosDaVoc };')();
+    '\nreturn { fjEstoque, fjCustoGemas, fjEstrategias, fjRanking, fjProximoPasso, fjPlanoCompra, forjaSimular, FJ_ITEM_GEMA, fjItemFragmento, FJ_GEMAS, FJ_GANHO_MIN, FJ_VALE_MIN, pontuarPeca, pesosDaVoc };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 const F = (r, refino, pot, ...at) => ({ raridade: r, refino, potenciaBase: pot, atributos: at.map(([id, valor]) => ({ id, valor })) });
@@ -182,6 +182,76 @@ t('fjProximoPasso: linhas — encaixe livre pede Atributo; cheio com linha errad
     assert.strictEqual(M.fjProximoPasso({ alvo: { raridade: 2, linhas: ['regen_mana'] } }, F(1, 0, 300, ['capacidade', 50]), E(g)).acao, 'raridade');
     /* Comum sem encaixe nenhum e sem raridade no alvo: parar */
     assert.strictEqual(M.fjProximoPasso(plano, F(0, 0, 300), E(g)).acao, 'parar');
+});
+
+/* ===== 2.25.2: COMPRAR O QUE FALTA (fragmentos no Mercado para o plano escolhido) ===== */
+t('fjPlanoCompra: sem livro, estima os fragmentos que faltam pelo menor anúncio e o ouro de criar cada gema que falta', () => {
+    const est = M.fjEstoque({}, [{ itemName: 'refine fragment t1', count: 14 }]);
+    const custos = M.fjCustoGemas(LASTRO, CAT, est);
+    const pc = M.fjPlanoCompra({ porGema90: { refino: 2 } }, est, custos);
+    assert.deepStrictEqual(pc.itens.map(x => [x.gema, x.item, x.gemasCriar, x.fragmentos]), [['refino', 'refine fragment t1', 2, 186]]);
+    assert.strictEqual(pc.estimado, 186 * 180);
+    assert.strictEqual(pc.criar, 2 * 181640);
+    assert.strictEqual(pc.compras, null, 'sem livro não há ordens para executar');
+    assert.strictEqual(pc.faltam, null);
+});
+t('fjPlanoCompra: gema pronta e fragmentos já na conta abatem o que comprar; nada a comprar → itens vazio', () => {
+    const est = M.fjEstoque({ 'refine gem t1': 1 }, [{ itemName: 'refine fragment t1', count: 120 }]);
+    const custos = M.fjCustoGemas(LASTRO, CAT, est);
+    const pc = M.fjPlanoCompra({ porGema90: { refino: 2 } }, est, custos);
+    assert.deepStrictEqual(pc.itens, []);
+    assert.strictEqual(pc.estimado, 0);
+    const pc3 = M.fjPlanoCompra({ porGema90: { refino: 3 } }, est, custos);
+    assert.deepStrictEqual(pc3.itens.map(x => [x.gemasCriar, x.fragmentos]), [[2, 80]]);
+});
+t('fjPlanoCompra: com o livro, só ordens SELL do mais barato ao mais caro, até 1,5× o menor anúncio; o que não dá para cobrir vai em "faltam"', () => {
+    const est = M.fjEstoque({}, [{ itemName: 'refine fragment t1', count: 14 }]);
+    const custos = M.fjCustoGemas(LASTRO, CAT, est);
+    const livros = { refino: [
+        { id: 'c', side: 'SELL', unitPrice: 300, quantityRemaining: 500 },   // 300 > 1,5 × 180 = 270: não compra
+        { id: 'a', side: 'SELL', unitPrice: 180, quantityRemaining: 50 },
+        { id: 'x', side: 'BUY', unitPrice: 170, quantityRemaining: 999 },    // ordem de compra: ignora
+        { id: 'b', side: 'SELL', unitPrice: 200, quantityRemaining: 100 }] };
+    const pc = M.fjPlanoCompra({ porGema90: { refino: 2 } }, est, custos, livros);
+    assert.deepStrictEqual(pc.compras.map(c => [c.orderId, c.quantity, c.unitPrice]), [['a', 50, 180], ['b', 100, 200]]);
+    assert.strictEqual(pc.total, 50 * 180 + 100 * 200);
+    assert.deepStrictEqual(pc.faltam, { refino: 36 });
+    assert.strictEqual(pc.ok, false);
+    const pc2 = M.fjPlanoCompra({ porGema90: { refino: 2 } }, est, custos, { refino: livros.refino.concat([{ id: 'd', side: 'SELL', unitPrice: 250, quantityRemaining: 40 }]) }, { ouro: 1e9 });
+    assert.deepStrictEqual(pc2.compras.map(c => [c.orderId, c.quantity]), [['a', 50], ['b', 100], ['d', 36]]);
+    assert.strictEqual(pc2.faltam, null); assert.strictEqual(pc2.ok, true);
+    const pc3 = M.fjPlanoCompra({ porGema90: { refino: 2 } }, est, custos, livros, { ouro: 10000 });
+    assert.strictEqual(pc3.ok, false); assert.match(pc3.motivo, /ouro/);
+});
+
+/* ===== 2.25.3: peça do baú medida contra a vestida; desempate sem ruído ===== */
+t('fjRanking: uma base do depósito só rende o que passa da peça vestida no mesmo slot (o ganho desconta a lacuna); lacuna maior que o ganho → "nao"', () => {
+    // plate legs vestida forte (armor 7 +4 refino) × plate legs do baú +0: as duas ganham +4 armadura no refino, mas a do baú tem antes de alcançar a vestida
+    const vestida = { iid: 'pl-corpo', nome: 'plate legs', slot: 'legs', attrs: { slot: 'legs', armor: 7, vocation: 'Knight;true' }, forja: F(0, 4, 306) };
+    // raridade de base (3) para contar como base de forja (senão é "item de entrada" antes de olhar a lacuna)
+    const bau = { iid: 'pl-bau', nome: 'plate legs', slot: 'legs', attrs: { slot: 'legs', armor: 7, vocation: 'Knight;true' }, forja: F(3, 0, 65) };
+    const est = M.fjEstoque({ 'refine gem t1': 30 }, []);
+    const custos = M.fjCustoGemas(LASTRO, CAT, est);
+    const r = M.fjRanking({ KNIGHT: [{ peca: vestida, origem: 'bis', slot: 'legs' }, { peca: bau, origem: 'base', slot: 'legs', atual: vestida }] }, CTX, custos, 1e7, est, { seed: 3, n: 200 });
+    const lv = r.find(x => x.peca.iid === 'pl-corpo'), lb = r.find(x => x.peca.iid === 'pl-bau');
+    assert(lv.melhor && lv.melhor.ganhoPt > 10, 'a vestida rende: ' + JSON.stringify(lv.melhor && lv.melhor.ganhoPt));
+    assert.strictEqual(lb.selo, 'nao', 'a do baú +4 só empata com a vestida +4: lacuna = ganho → nada a ganhar; ' + JSON.stringify(lb.melhor && lb.melhor.ganhoPt));
+    assert.match(lb.motivo, /vestida/);
+    assert.strictEqual(r[0].peca.iid, 'pl-corpo');
+    // sem "atual" (a vestida é ela mesma, ou o slot está vazio) nada muda
+    const r2 = M.fjRanking({ KNIGHT: [{ peca: bau, origem: 'base', slot: 'legs' }] }, CTX, custos, 1e7, est, { seed: 3, n: 200 });
+    assert(r2[0].melhor && r2[0].melhor.ganhoPt > 10);
+});
+t('fjRanking: pt por milhão e ganho a menos de 5 % são empate; aí a peça vestida (bis) vem antes da base do baú, e depois a de base maior', () => {
+    const corpo = { iid: 'mpa-corpo', nome: 'magic plate armor', slot: 'armor', attrs: { slot: 'armor', armor: 17, vocation: 'Knight;true' }, forja: F(0, 0, 271) };
+    const bau = { iid: 'pl-bau', nome: 'plate legs', slot: 'legs', attrs: { slot: 'legs', armor: 7, vocation: 'Knight;true' }, forja: F(0, 0, 300) };
+    const est = M.fjEstoque({ 'refine gem t1': 30 }, []);
+    const custos = M.fjCustoGemas(LASTRO, CAT, est);
+    // sementes diferentes dão custos médios ligeiramente diferentes (ruído de 0,01 pt/milhão): mesmo assim a vestida vem primeiro
+    for (const seed of [1, 2, 3, 4]) {
+        const r = M.fjRanking({ KNIGHT: [{ peca: bau, origem: 'base', slot: 'legs' }, { peca: corpo, origem: 'bis', slot: 'armor' }] }, CTX, custos, 1e7, est, { seed, n: 150 });
+        assert.strictEqual(r[0].peca.iid, 'mpa-corpo', 'seed ' + seed + ': ' + r.map(x => x.peca.iid + ' ' + (x.melhor && x.melhor.ptPorMilhao)).join(' | '));
+    }
 });
 
 console.log(n + ' testes ok' + (process.exitCode ? ' (com falhas)' : ''));
