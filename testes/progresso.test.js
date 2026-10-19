@@ -379,8 +379,10 @@ t('formato de horas', () => {
         assert(/Wildcards/.test(p) && /Orc Fortress/.test(p) && /DEFESA ★10 \+40%/.test(p), 'estado da prey ausente');
         assert(/as travas desligam em ~5h00/.test(p), 'simulação das travas ausente');
         assert(/Sugestão por coluna/.test(p));
-        const f = await aba('forja', []);
-        assert(/Refino esperado/.test(f) && /Total esperado/.test(f) && /proteção (VALE|NÃO vale)/.test(f), 'calculadoras ausentes');
+        /* 2.25.0 — a Forja virou aba própria: a sub-aba 'forja' do Progresso cai em Chaves, e as calculadoras moram na aba Forja */
+        const f0 = await aba('forja', []);
+        assert(/Mochila de chaves|Chaves por hora/.test(f0) && !/Refino esperado/.test(f0), 'a sub-aba forja deveria cair em Chaves');
+        /* (a aba Forja em si é conferida ao vivo e por telas.test.js: este harness não troca de aba do trilho) */
         const o = await aba('offline', []);
         assert(/sem dado ainda/.test(o), 'offline sem caçada deveria dizer sem dado');
         const b = await aba('bestiario', []);

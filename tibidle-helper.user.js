@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.24.3
+// @version      2.25.0
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.24.3';
+    const VERSAO = '2.25.0';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -7634,7 +7634,7 @@
         };
         const faixaEm = (r) => faixaPotencia((Number(f.potenciaBase) || 0) + 50 * r);
         /* 1. REFINO: +1 ataque (arma) ou +1 armadura por nível, pela régua; acima do padrão (+4) só se cruza faixa, com Garantia; wand/rod só ganha potência */
-        if (!ehVarinha) for (let N = refino0 + 1; N <= Math.min(10, Math.max(refinoMax, 6)); N++) {
+        for (let N = refino0 + 1; !ehVarinha && N <= Math.min(10, Math.max(refinoMax, 6)); N++) {
             if (N > refinoMax && faixaEm(N) === faixaEm(refinoMax)) continue;
             const ganho = ptRef(N) - base;
             add('refino', 'Refino +' + N, { refino: N, garantia: N >= 5 }, ganho,
@@ -7963,7 +7963,7 @@
         return UI;
     };
     const guardarUI = (patch) => { UI = Object.assign(ui(), patch); guardar('ui', UI); };
-    const ICONES = [['estado', '⌂', 'Status'], ['magia', '✦', 'Magia'], ['autohunt', '↻', 'Auto Hunt'], ['scan', '◎', 'Scan'], ['equip', '⛨', 'Equip'], ['analise', '▤', 'Analisador'], ['progresso', '⚑', 'Progresso'], ['mercado', '⚖', 'Mercado'], ['melhorias', '⇧', 'Melhorias'], ['radar', '⌖', 'Radar'], ['log', '≡', 'Log']];
+    const ICONES = [['estado', '⌂', 'Status'], ['magia', '✦', 'Magia'], ['autohunt', '↻', 'Auto Hunt'], ['scan', '◎', 'Scan'], ['equip', '⛨', 'Equip'], ['analise', '▤', 'Analisador'], ['progresso', '⚑', 'Progresso'], ['mercado', '⚖', 'Mercado'], ['melhorias', '⇧', 'Melhorias'], ['forja', '⚒', 'Forja'], ['radar', '⌖', 'Radar'], ['log', '≡', 'Log']];
     /* "?" com a explicação escondida; data-k preserva aberto/fechado ao repintar */
     const aj = (k, html, rotulo) => `<details class="tb-aj" data-k="${k}"><summary>${rotulo || '?'}</summary><div class="tb-mut">${html}</div></details>`;
 
@@ -10973,6 +10973,22 @@
         if (M == null) h += `<div class="pg-mut pg-peq">sem preço dos materiais: conta feita com materiais = 0 (digite o valor).</div>`;
         return h;
     }
+    /* v2.25.0 — as calculadoras (refino esperado, proteção de imbuement) moram na aba Forja; os handlers vêm juntos */
+    function ligarCalcForja() {
+        const muda = (patch) => { guardar('prog_calc', Object.assign(pgCalc(), patch)); renderizar(); };
+        const de = $('#pg-de'); if (de) de.onchange = () => { const x = parseInt(de.value) || 0; muda({ de: x, ate: Math.max(x + 1, pgCalc().ate) }); };
+        const ate = $('#pg-ate'); if (ate) ate.onchange = () => muda({ ate: parseInt(ate.value) || 1 });
+        const md = $('#pg-modo'); if (md) md.onchange = () => muda({ modo: md.value });
+        const im = $('#pg-imbu'); if (im) im.onchange = () => muda({ imbu: im.value, mat: null });
+        const tr = $('#pg-tier'); if (tr) tr.onchange = () => muda({ tier: parseInt(tr.value) || 1, mat: null });
+        const mat = $('#pg-mat');
+        if (mat) {
+            /* digitar não repinta a aba (perderia o foco): só o resultado */
+            mat.oninput = () => { const r = $('#pg-imbu-res'); if (r) r.innerHTML = pgImbuHtml(pgCalc(), mat.value); };
+            mat.onchange = () => guardar('prog_calc', Object.assign(pgCalc(), { mat: mat.value === '' ? null : Math.max(0, parseInt(mat.value) || 0) }));
+        }
+        pgCarregarImbu().catch(() => { });
+    }
     function pgTelaForja() {
         const c = pgCalc();
         const opt = (v, t, sel) => `<option value="${v}"${String(v) === String(sel) ? ' selected' : ''}>${t}</option>`;
@@ -11245,8 +11261,8 @@
     function telaProgresso() {
         pgGarantirCss();
         pgSincronizarBestiario();
-        const sub = ler('prog_sub', 'chaves');
-        const abas = [['chaves', 'Chaves'], ['bestiario', 'Bestiário'], ['invasao', 'Invasão'], ['offline', 'Offline'], ['prey', 'Prey'], ['forja', 'Forja']];
+        const sub0 = ler('prog_sub', 'chaves'), sub = sub0 === 'forja' ? 'chaves' : sub0; // v2.25.0 — a Forja virou aba própria
+        const abas = [['chaves', 'Chaves'], ['bestiario', 'Bestiário'], ['invasao', 'Invasão'], ['offline', 'Offline'], ['prey', 'Prey']];
         const kb = PROG.chaves;
         const maxKb = kb ? pgTierDaMochila(kb, PROG.meta && PROG.meta.keyBags).max : null;
         const av = kb ? pgAvisoChaves(Object.assign({}, kb, { max: maxKb })) : null;
@@ -11259,27 +11275,15 @@
         if (inv && (inv.nivel === 'aviso' || sub === 'chaves')) h += `<div class="${inv.nivel === 'aviso' ? 'pg-atencao' : 'pg-cx'} pg-peq">${inv.nivel === 'aviso' ? '⚠ ' : inv.nivel === 'ok' ? '✓ ' : ''}${escHtml(inv.texto)}</div>`;
         const ap = sub === 'prey' ? null : pgAlertaPrey(PROG.prey);
         if (ap && ap.nivel === 'aviso') h += `<div class="pg-atencao pg-peq">⚠ prey — ${escHtml(ap.texto)}</div>`;
-        h += sub === 'bestiario' ? pgTelaBestiario() : sub === 'invasao' ? pgTelaInvasao() : sub === 'offline' ? pgTelaOffline() : sub === 'prey' ? pgTelaPrey() : sub === 'forja' ? pgTelaForja() : pgTelaChaves();
+        h += sub === 'bestiario' ? pgTelaBestiario() : sub === 'invasao' ? pgTelaInvasao() : sub === 'offline' ? pgTelaOffline() : sub === 'prey' ? pgTelaPrey() : pgTelaChaves();
         return h + `<div class="pg-rodape">${sub === 'invasao' ? 'Só o SALVAR (ou a chave automático) envia o preset ao jogo; o resto é leitura.' : 'Só leitura: nada nesta aba envia comando ao jogo.'}</div></div>`;
     }
     function ligarProgresso() {
         $$('[data-pg-sub]').forEach(b => { b.onclick = () => { guardar('prog_sub', b.dataset.pgSub); renderizar(); }; });
         ligarBestiario();
         ligarInvasao(); // v2.17.0
-        const muda = (patch) => { guardar('prog_calc', Object.assign(pgCalc(), patch)); renderizar(); };
-        const de = $('#pg-de'); if (de) de.onchange = () => { const x = parseInt(de.value) || 0; muda({ de: x, ate: Math.max(x + 1, pgCalc().ate) }); };
-        const ate = $('#pg-ate'); if (ate) ate.onchange = () => muda({ ate: parseInt(ate.value) || 1 });
-        const md = $('#pg-modo'); if (md) md.onchange = () => muda({ modo: md.value });
-        const im = $('#pg-imbu'); if (im) im.onchange = () => muda({ imbu: im.value, mat: null });
-        const tr = $('#pg-tier'); if (tr) tr.onchange = () => muda({ tier: parseInt(tr.value) || 1, mat: null });
-        const mat = $('#pg-mat');
-        if (mat) {
-            /* digitar não repinta a aba (perderia o foco): só o resultado */
-            mat.oninput = () => { const r = $('#pg-imbu-res'); if (r) r.innerHTML = pgImbuHtml(pgCalc(), mat.value); };
-            mat.onchange = () => guardar('prog_calc', Object.assign(pgCalc(), { mat: mat.value === '' ? null : Math.max(0, parseInt(mat.value) || 0) }));
-        }
-        /* o catálogo de imbuements (13 KB, público) serve à calculadora e marca materiais no loot dos Elites */
-        { const sub = ler('prog_sub', 'chaves'); if (sub === 'forja' || sub === 'chaves') pgCarregarImbu().catch(() => { }); }
+        /* o catálogo de imbuements (13 KB, público) marca materiais no loot dos Elites (a calculadora foi para a aba Forja, 2.25.0) */
+        if (ler('prog_sub', 'chaves') === 'chaves') pgCarregarImbu().catch(() => { });
         /* repinta sozinha a cada 5 s só com a aba aberta e a party caçando (é
          * leitura: ouro, mochila e abates mudam a cada frame); nunca no meio de
          * um campo em edição */
@@ -11807,7 +11811,9 @@
                           market_create: 'market_create_result', market_cancel: 'market_cancel_result', market_claim: 'market_claim_result',
                           market_history: 'market_history_result', market_execute: 'market_execute_result',
                           depot_withdraw: 'depot_result', forge_salvage_batch: 'forge_salvage_batch_result',
-                          party_get_snapshot: 'party_snapshot', forge_lastro: 'forge_lastro_result' }; // v2.22.0
+                          party_get_snapshot: 'party_snapshot', forge_lastro: 'forge_lastro_result', // v2.22.0
+                          forge_refine: 'forge_refine_result', forge_rarity: 'forge_rarity_result', forge_attr: 'forge_attr_result', forge_craft: 'forge_craft_result',
+                          forge_quote: 'forge_quote_result', forge_simulate: 'forge_simulate_result' }; // v2.25.0 — Forja (quote/simulate não têm requestId: casam pelo tipo)
     const MK_PRAZO_MS = 8000; // sem resposta nisso = para (um anúncio pode ter passado: conferir antes de repetir)
     const MK_GRACA_ERRO_MS = 1200; // erro sem requestId: espera o resultado de verdade chegar antes de acreditar
     const MK_PAUSA_LIMITE_MS = 20000; // rate_limited: pausa e tenta de novo UMA vez
@@ -11872,7 +11878,7 @@
             if (Array.isArray(d.bagInstances)) MK.bagInst = clonar(d.bagInstances);
         }
         /* depot_result traz o depósito novo (depois do depot_withdraw): o Equip também lê ESTADO_WS.depot */
-        if (t === 'depot_result' && Array.isArray(d.entries)) { ESTADO_WS.depot = { entries: clonar(d.entries), used: d.used, total: d.total }; ESTADO_WS.depot_t = agora; }
+        if ((t === 'depot_result' || /^forge_/.test(t)) && Array.isArray(d.entries)) { ESTADO_WS.depot = { entries: clonar(d.entries), used: d.used != null ? d.used : (ESTADO_WS.depot || {}).used, total: d.total != null ? d.total : (ESTADO_WS.depot || {}).total }; ESTADO_WS.depot_t = agora; } // v2.25.0: a forja também devolve o depósito
         if (t === 'market_catalog_result' && Array.isArray(d.items)) { MK.catalogo = Object.fromEntries(d.items.filter(x => x && x.name).map(x => [mkMin(x.name), x])); MK.catalogo_t = agora; }
         else if (t === 'market_my_orders_result' && Array.isArray(d.orders)) {
             /* v2.13.5 — páginas de 50 (01/10: 55 abertas, só a página 0 era lida): a 0 recomeça, as outras somam */
@@ -13897,6 +13903,252 @@
         });
     }
 
+    /* =========================================================================
+     *  ⭐ v2.25.0 — ABA FORJA: estado, socket e tela (o modelo puro está em @@FORJA).
+     *  Só LER, SIMULAR (Bancada do jogo, grátis) e FORJAR (2 toques, orçamento, só com o que a conta tem) mandam algo.
+     * ====================================================================== */
+    const FJ = { lendo: false, erro: null, aviso: null, t: 0, rank: null, custos: null, estoque: null, ouro: null, sel: null, estr: null,
+                 bancada: null, simulando: false, forjando: false, parar: false, progresso: '', relatorio: null, orcamento: null, conf: 0, abertos: new Set() };
+    const FJ_BANCADA_N = 20;
+    const fjOrcamentoPadrao = () => { const o = mlOuroNormal(); return o != null ? Math.floor(o * 0.5) : null; };
+    const fjLastroAtual = () => (FORJA_LASTRO.ouro ? { disponivel: true, ouroPorGema: FORJA_LASTRO.ouro } : null);
+    function fjEstoqueAtual() {
+        const b = mkBagAtual();
+        const dep = ESTADO_WS.depot && Array.isArray(ESTADO_WS.depot.entries) ? ESTADO_WS.depot.entries : [];
+        return fjEstoque(b ? b.bag : {}, dep);
+    }
+    /* origem da peça no protocolo da Forja: vestida (com a vocação), mochila ou depósito */
+    function fjOrigem(p) {
+        if (p.origem === 'corpo' && p.dono) return { iid: p.iid, origem: 'equipped', vocation: p.dono };
+        return { iid: p.iid, origem: p.origem === 'depósito' ? 'depot' : 'bag' };
+    }
+    /* as peças que entram no ranking: a melhor de cada espaço de cada um (BiS) e as bases de forja do Equip */
+    function fjPecasPorVoc() {
+        const R = EQUIP.res; if (!R) return null;
+        const out = {};
+        for (const v of VOCS) {
+            out[v] = [];
+            for (const s of SLOTS_EQUIP) {
+                const x = R.porVoc[v] && R.porVoc[v][s], p = x && (x.melhor || x.atual);
+                if (p && !ehTemporaria(p) && !(p.forja && p.forja.selado)) out[v].push({ peca: p, origem: 'bis', slot: s });
+            }
+        }
+        for (const p of (R.bases || [])) {
+            let pl = null; try { pl = planoForja(p, VOCS, EQUIP.ctx, R.porVoc); } catch (e) { pl = null; }
+            const v = (pl && pl.voc) || VOCS.find(x => vocacaoPode(p.attrs, x));
+            if (v && !out[v].some(x => x.peca.iid === p.iid)) out[v].push({ peca: p, origem: 'base', slot: normalizarSlot(p.slot) });
+        }
+        return out;
+    }
+    const fjPt = (n) => numBR(n, 1) + ' pt';
+    const fjK = (n) => (n == null ? '—' : milBR(n));
+    async function fjLer() {
+        if (FJ.lendo || FJ.forjando) return;
+        FJ.lendo = true; FJ.erro = null; FJ.aviso = null; FJ.bancada = null; renderizar();
+        try {
+            if (!EQUIP.lendo) await equipAtualizar({ manterLiberadas: true }); // lê corpo, mochila, depósito e o lastro da forja
+            if (!EQUIP.res) throw new Error('o Equip não leu o equipamento dos 4' + (EQUIP.erro ? ' (' + EQUIP.erro + ')' : ''));
+            FJ.estoque = fjEstoqueAtual();
+            FJ.ouro = mlOuroNormal();
+            FJ.custos = fjCustoGemas(fjLastroAtual(), MK.catalogo || null, FJ.estoque);
+            FJ.rank = fjRanking(fjPecasPorVoc(), EQUIP.ctx, FJ.custos, FJ.ouro, FJ.estoque, { n: 400, seed: 11 });
+            if (FJ.orcamento == null) FJ.orcamento = fjOrcamentoPadrao();
+            if (!FJ.custos.lastro) FJ.aviso = 'cotação da forja não lida (o jogo não respondeu ao lastro): o ouro de criar gema está pela wiki, sem a parcela em coins';
+            if (!MK.catalogo) FJ.aviso = (FJ.aviso ? FJ.aviso + ' · ' : '') + 'preço dos fragmentos estimado (2 mil): aba Mercado → ATUALIZAR para o preço de hoje';
+            FJ.t = Date.now();
+            const vale = FJ.rank.filter(l => l.selo === 'vale').length;
+            log(`forja: ${FJ.rank.length} peças avaliadas · ${vale} vale(m) forjar agora`, 'ok');
+        } catch (e) { FJ.erro = e.message; log('forja: ' + e.message, 'erro'); }
+        FJ.lendo = false; renderizar();
+    }
+    /* a próxima ação do plano como pedido ao jogo (forge_simulate ou a ação real) */
+    function fjPedidoDe(peca, passo, real) {
+        const o = fjOrigem(peca), rid = real ? { requestId: mkRid() } : {};
+        if (passo.acao === 'craft') return { tipo: 'forge_craft', data: Object.assign({ gema: passo.gema, qty: 1 }, rid) };
+        if (passo.acao === 'refino') return real ? { tipo: 'forge_refine', data: Object.assign({}, o, rid, passo.garantia ? { garantia: true } : {}) } : { tipo: 'forge_simulate', data: Object.assign({}, o, { aba: 'refino' }, passo.garantia ? { garantia: true } : {}) };
+        if (passo.acao === 'raridade') return real ? { tipo: 'forge_rarity', data: Object.assign({}, o, rid) } : { tipo: 'forge_simulate', data: Object.assign({}, o, { aba: 'raridade' }) };
+        return real ? { tipo: 'forge_attr', data: Object.assign({}, o, { acao: passo.acao }, rid) } : { tipo: 'forge_simulate', data: Object.assign({}, o, { aba: 'atributos', acao: passo.acao }) };
+    }
+    const fjEstadoLivre = () => ({ estoque: { gemas: Object.fromEntries(FJ_GEMAS.map(g => [g, 99])), fragmentos: {} }, gasto: 0, orcamento: null, tentativas: 0, maxTentativas: 0 });
+    /* BANCADA DO JOGO (grátis, só consulta): o 1.º passo do plano, N vezes, no forge_simulate do servidor — a taxa real contra a prevista */
+    async function fjBancada(l, e) {
+        if (FJ.simulando || FJ.forjando || !l || !e) return;
+        if (!socketAberto()) { FJ.aviso = 'o socket do jogo não foi capturado — F5 com o helper instalado'; renderizar(); return; }
+        if (MK.ocupado) { FJ.aviso = 'o Mercado está ocupado (' + MK.ocupado + ') — espera terminar'; renderizar(); return; }
+        const passo = fjProximoPasso({ alvo: e.alvo }, l.peca.forja, fjEstadoLivre());
+        if (passo.acao === 'fim' || passo.acao === 'parar') { FJ.aviso = 'nada a simular: ' + passo.motivo; renderizar(); return; }
+        FJ.simulando = true; FJ.aviso = null; MK.ocupado = 'forja'; renderizar();
+        const r = { n: 0, ok: 0, passo, previsto: null, encadeada: null, ultima: null, erro: null };
+        const f0 = normForja(l.peca.forja);
+        if (passo.acao === 'refino') r.previsto = FORJA_REFINO_PCT[(f0.refino || 0)] / 100;
+        else if (passo.acao === 'raridade') r.previsto = FORJA_RARIDADE_PCT[f0.raridade || 0] / 100;
+        try {
+            for (let i = 0; i < FJ_BANCADA_N && !FJ.parar; i++) {
+                const ped = fjPedidoDe(l.peca, passo, false);
+                const x = await mkPedir(ped.tipo, ped.data);
+                if (x.erro) { r.erro = mkErroTexto(x.erro); break; }
+                const d = x.data || {}; r.n++;
+                if (d.ok === true) r.ok++;
+                const inst = d.instancia && d.instancia.forja ? normForja(d.instancia.forja) : null;
+                if (inst) { if (i === 0) r.encadeada = false; else if (r.ultima && passo.acao === 'refino' && inst.refino > (r.ultima.refino || 0) && r.ultima.refino > (f0.refino || 0)) r.encadeada = true; r.ultima = inst; }
+                FJ.progresso = `Bancada do jogo: ${r.n}/${FJ_BANCADA_N} (${r.ok} ok)`; renderizar();
+            }
+        } catch (err) { r.erro = err.message; falhou('forja (bancada)', err); }
+        FJ.bancada = r; FJ.simulando = false; FJ.parar = false; FJ.progresso = ''; if (MK.ocupado === 'forja') MK.ocupado = null;
+        log(`forja: Bancada do jogo em ${l.peca.nome} — ${r.passo.motivo}: ${r.ok}/${r.n} ok` + (r.previsto != null ? ` (previsto ${Math.round(r.previsto * 100)} %)` : '') + (r.erro ? ' · parou: ' + r.erro : ''), r.erro ? 'erro' : 'ok');
+        renderizar();
+    }
+    /* FORJAR DE VERDADE: uma peça, um plano, o orçamento do dono; uma ação por vez, relendo a peça e o estoque a cada resposta.
+     * Para no alvo, no orçamento, no limite de tentativas (1,5 × o pior caso de 90 %), em qualquer recusa do jogo ou no PARAR. */
+    async function fjForjar(l, e) {
+        if (FJ.forjando || FJ.simulando || !l || !e) return;
+        if (!socketAberto()) { FJ.aviso = 'o socket do jogo não foi capturado — F5 com o helper instalado'; renderizar(); return; }
+        if (emHunt()) { FJ.aviso = 'a Forja só funciona na cidade'; renderizar(); return; }
+        const ocup = travaJogo(); if (ocup || MK.ocupado) { FJ.aviso = (ocup || 'o Mercado') + ' em andamento — espera terminar'; renderizar(); return; }
+        if (!(FJ.orcamento > 0)) { FJ.aviso = 'defina o orçamento (ouro máximo nesta forja)'; renderizar(); return; }
+        FJ.forjando = true; FJ.parar = false; FJ.erro = null; FJ.aviso = null; FJ.relatorio = null; _travaJogo = 'Forja'; MK.ocupado = 'forja';
+        const peca = l.peca, rel = { peca: peca.nome, iid: peca.iid, voc: l.voc, estrategia: e.nome, t0: Date.now(), antes: normForja(peca.forja), depois: null, passos: [], gasto: 0, fim: null };
+        let inst = normForja(peca.forja), estoque = fjEstoqueAtual();
+        const sh0 = lerShellFibra(), w0 = sh0 && sh0.wallet ? sh0.wallet : null;
+        let ouro = w0 && Number.isFinite(Number(w0.gold)) ? Number(w0.gold) : (FJ.ouro != null ? FJ.ouro : null), travado = w0 && Number.isFinite(Number(w0.goldLocked)) ? Number(w0.goldLocked) : 0;
+        const maxT = Math.max(3, Math.ceil(((e.gemas90 || e.gemasMedio || 4)) * 1.5));
+        const ouroCriar = Object.fromEntries(FJ_GEMAS.map(g => [g, FJ.custos && FJ.custos[g] ? FJ.custos[g].ouroCriar : FORJA_GEMA_OURO[g]]));
+        log(`forja: FORJANDO ${peca.nome} (${VOC_ROTULO[l.voc] || l.voc}) — ${e.nome}; orçamento ${fjK(FJ.orcamento)}, até ${maxT} tentativas`, 'info');
+        renderizar();
+        try {
+            for (let i = 0; i < 300; i++) {
+                if (FJ.parar) { rel.fim = { acao: 'parar', motivo: 'parado por você' }; break; }
+                const estado = { estoque, gasto: rel.gasto, orcamento: FJ.orcamento, tentativas: rel.passos.filter(x => x.acao !== 'craft').length, maxTentativas: maxT, ouro: ouro != null ? ouro + travado : null, ouroCriar };
+                const px = fjProximoPasso({ alvo: e.alvo }, inst, estado);
+                if (px.acao === 'fim' || px.acao === 'parar') { rel.fim = px; break; }
+                FJ.progresso = `${rel.passos.length + 1}. ${px.motivo}`; renderizar();
+                const ped = fjPedidoDe(peca, px, true);
+                const r = await mkPedir(ped.tipo, ped.data);
+                if (r.erro) { rel.fim = { acao: 'parar', motivo: 'o jogo recusou (' + mkErroTexto(r.erro) + ')' }; rel.passos.push({ acao: px.acao, gema: px.gema, erro: r.erro, motivo: px.motivo }); break; }
+                const d = r.data || {};
+                if (d.instancia && d.instancia.forja) inst = normForja(d.instancia.forja);
+                if (d.gold != null) { const novo = Number(d.gold) + (Number(d.goldLocked) || 0); if (ouro != null) rel.gasto += Math.max(0, ouro + travado - novo); ouro = Number(d.gold); travado = Number(d.goldLocked) || 0; }
+                estoque = fjEstoque(d.bag || (mkBagAtual() || {}).bag, (ESTADO_WS.depot && ESTADO_WS.depot.entries) || []);
+                const res = px.acao === 'craft' ? `+1 ${FJ_GEMA_PT[px.gema]}` : px.acao === 'refino' ? (d.ok ? `✓ +${inst.refino}` : `✗ ficou +${inst.refino}`) + (d.garantiaConsumida ? ' (Garantia gasta)' : '')
+                    : px.acao === 'raridade' ? (d.ok ? `✓ ${RAR_PT[inst.raridade]}` : `✗ ficou ${RAR_PT[inst.raridade]}`)
+                    : inst.atributos.map(a => rotulo(a.id) + ' ' + a.valor).join(', ') || 'sem linhas';
+                rel.passos.push({ acao: px.acao, gema: px.gema, ok: d.ok, motivo: px.motivo, resultado: res });
+                log(`forja: ${px.motivo} → ${res}`, d.ok === false ? 'info' : 'ok');
+                renderizar();
+                await dorme(400);
+            }
+            if (!rel.fim) rel.fim = { acao: 'parar', motivo: 'limite de 300 passos' };
+        } catch (err) { rel.fim = { acao: 'parar', motivo: 'estourou: ' + err.message }; falhou('forja (forjar)', err); }
+        rel.depois = inst; rel.seg = Math.round((Date.now() - rel.t0) / 1000);
+        FJ.relatorio = rel; FJ.forjando = false; FJ.parar = false; FJ.progresso = ''; _travaJogo = null; if (MK.ocupado === 'forja') MK.ocupado = null;
+        log(`forja: ${peca.nome} terminou — ${rel.fim.motivo} · ${rel.passos.length} passo(s) · gasto ${fjK(rel.gasto)} · +${rel.antes.refino || 0} → +${inst.refino || 0}, ${RAR_PT[rel.antes.raridade || 0]} → ${RAR_PT[inst.raridade || 0]}`, rel.fim.acao === 'fim' ? 'ok' : 'erro');
+        try { await fjLer(); } catch (err) { renderizar(); }
+    }
+    /* abre a janela da Forja do jogo (NAVEGAÇÃO › Uzgod) no cartão da peça — só UI, nada enviado */
+    async function fjAbrirNoJogo(iid) {
+        try {
+            if (!tid('window-forja')) { const nav = tid('topmenu-navegacao'); if (nav) { nav.click(); await dorme(500); } const u = tid('nav-uzgod'); if (!u) { FJ.aviso = 'não achei "Uzgod (Forja)" no menu NAVEGAÇÃO — abra a Forja no jogo'; renderizar(); return; } u.click(); await esperarQue(() => tid('window-forja'), 5000, 200); }
+            const aba = tid('forja-aba-equipamentos'); if (aba) { aba.click(); await dorme(400); }
+            const card = await esperarQue(() => tid('forja-cartao-' + iid), 3000, 150);
+            if (!card) { FJ.aviso = 'a peça não apareceu na galeria da Forja (confira o filtro Todas / Vestidas / Mochila / Depósito)'; renderizar(); return; }
+            card.scrollIntoView({ block: 'center' });
+            cliqueCompleto(card);
+        } catch (e) { falhou('forja (abrir no jogo)', e); }
+    }
+    async function fjPuxar(l) {
+        if (!l || l.peca.origem !== 'depósito' || FJ.forjando) return;
+        if (emHunt()) { FJ.aviso = 'puxar do depósito só na cidade'; renderizar(); return; }
+        if (!socketAberto()) { FJ.aviso = 'o socket do jogo não foi capturado'; renderizar(); return; }
+        try { const r = await retirarDoDepot(l.peca); if (r.erro) FJ.aviso = r.erro; else log(`forja: ${l.peca.nome} está na mochila`, 'ok'); } catch (e) { FJ.aviso = e.message; }
+        await fjLer();
+    }
+    const FJ_CSS = `
+    #tb-fj .fj-selo{display:inline-block;padding:0 6px;border-radius:9px;font-size:var(--tb-fmin,10.5px);font-weight:bold}
+    #tb-fj .fj-selo.vale{background:#1f4a2c;color:#8ff0a8}#tb-fj .fj-selo.estoque{background:#4a3b14;color:#ffd479}#tb-fj .fj-selo.ouro{background:#1d3550;color:#9fd0ff}#tb-fj .fj-selo.nao{background:#2b3242;color:#9aa4b8}
+    #tb-fj table.tb-t td{white-space:nowrap}
+    #tb-fj .fj-passo{padding:1px 0 1px 6px;border-left:2px solid #2b3242;font-size:var(--tb-fmin,10.5px)}
+    #tb-fj .fj-passo.ok{border-left-color:#6ede8a}#tb-fj .fj-passo.falha{border-left-color:#ff7b72}
+    `;
+    function fjGarantirCss() { if (document.getElementById('tb-fj-css')) return; const st = document.createElement('style'); st.id = 'tb-fj-css'; st.textContent = FJ_CSS; (document.head || document.documentElement).appendChild(st); }
+    const fjSeloTxt = { vale: '✓ vale', estoque: 'falta gema', ouro: 'falta ouro', nao: 'não vale' };
+    function telaForja() {
+        garantirCssTelas(); fjGarantirCss();
+        const ocup = FJ.lendo || FJ.forjando || FJ.simulando;
+        let h = `<div id="tb-fj"><div class="tb-eq-bts"><button type="button" class="tb-bt pri" id="tb-fj-ler" ${ocup ? 'disabled' : ''} title="lê corpo, mochila, depósito, cotação da forja e calcula o ranking">${FJ.lendo ? 'LENDO…' : 'LER E RANQUEAR'}</button>` +
+            `<button type="button" class="tb-bt" id="tb-fj-abrir" ${FJ.sel && !ocup ? '' : 'disabled'} title="abre a janela da Forja do jogo no cartão da peça escolhida (só mostra)">abrir na Forja do jogo</button></div>`;
+        h += `<div class="tb-mut tb-eq-info">ouro normal ${FJ.ouro != null ? '<b>' + mkFmt(FJ.ouro) + '</b>' : '—'} · cotação ${FJ.custos && FJ.custos.cotacao ? mkFmt(FJ.custos.cotacao) + '/coin' : '—'} · ${FJ.t ? 'lido ' + mkHora(FJ.t) : 'não lido'}${emHunt() ? ' · <span class="tb-av">a Forja só funciona na cidade</span>' : ''}</div>`;
+        if (FJ.progresso) h += `<div class="tb-av" role="status">${escHtml(FJ.progresso)}</div>`;
+        if (FJ.erro) h += `<div class="tb-cx tb-ruim">${escHtml(FJ.erro)}</div>`;
+        if (FJ.aviso) h += `<div class="tb-cx tb-av">${escHtml(FJ.aviso)}</div>`;
+        if (!FJ.rank) {
+            return h + `<div class="tb-mut" style="margin-top:6px">LER E RANQUEAR avalia a melhor peça de cada espaço dos 4 e as bases de forja do Equip, simula cada plano com as regras do jogo (refino, faixa + Refazer na linha de skill, linha nova, subir valor) e ordena por pontos ganhos por milhão de ouro. Regras dos vídeos: só peça BiS, refino até +4, nunca rolar skill. Só LER, a Bancada (grátis) e FORJAR (2 toques, só com as gemas que você tem) mandam algo ao jogo.</div>` +
+                aj('fj-calc', pgTelaForja(), '? calculadoras (refino esperado · imbuement)') + `</div>`;
+        }
+        /* A. estoque e custo das gemas */
+        const C = FJ.custos;
+        h += aj('fj-estoque', `<table class="tb-t"><tr><th>gema</th><th class="n">prontas</th><th class="n">frag.</th><th class="n">criar (ouro)</th><th class="n">frag. no Mercado</th></tr>` +
+            FJ_GEMAS.map(g => { const c = C[g]; return `<tr><td>${FJ_GEMA_PT[g]}</td><td>${c.prontas}${c.criaveis ? ' <span class="tb-ok">+' + c.criaveis + ' criável</span>' : ''}</td><td>${c.fragmentos}/100</td><td>${fjK(c.ouroCriar)}</td><td>${c.fragEstimado ? '<span class="tb-mut">~' + fjK(c.precoFrag) + '</span>' : fjK(c.precoFrag)}</td></tr>`; }).join('') + `</table>` +
+            `<div class="tb-mut tb-eq-nota">gema = 100 fragmentos do mesmo tipo + ouro (base + coins × cotação de 6 h). O botão FORJAR usa só o que está aqui (decisão sua, 19/10): sem gema e sem 100 fragmentos ele para e diz o que falta. Fragmentos vêm do Desmanche (aba Equip), das caixas de boss, dos raid tokens (NPC Ravena) e do Mercado.</div>`,
+            `estoque: ${FJ_GEMAS.filter(g => C[g].disponiveis > 0).map(g => FJ_GEMA_PT[g] + ' ×' + C[g].disponiveis).join(' · ') || 'nenhuma gema (nem 100 fragmentos de um tipo)'}`);
+        /* B. ranking */
+        const sel = FJ.sel ? FJ.rank.find(l => l.peca.iid === FJ.sel) : null;
+        h += `<h4 style="margin:8px 0 2px">Vale forjar? <span class="tb-mut">(pontos por milhão de ouro; 1 pt = 1 % do dano da party)</span></h4>`;
+        FJ.rank.forEach((l, i) => {
+            const m = l.melhor, k = 'fj-' + l.peca.iid, aberto = FJ.abertos.has(k), ehSel = FJ.sel === l.peca.iid;
+            const enc = ((l.peca.forja && l.peca.forja.atributos) || []).map(a => rotulo(a.id) + ' ' + a.valor).join(', ');
+            h += `<div class="tb-cx" style="margin:3px 0;padding:4px 6px${ehSel ? ';border-color:#c39a34' : ''}">` +
+                `<div class="tb-lin"><span><span class="fj-selo ${l.selo}">${fjSeloTxt[l.selo]}</span> <b>${escHtml(l.peca.nome)}</b> ${rarTag(l.peca)} <span class="tb-mut">${escHtml(VOC_CURTO[l.voc] || l.voc)} · ${escHtml(slotPt(l.slot))} · +${(l.peca.forja && l.peca.forja.refino) || 0} · pot ${numBR(potenciaTotal(l.peca))} · ${l.peca.origem === 'corpo' ? 'vestida' : escHtml(l.peca.origem)} <span title="id da cópia">#${escHtml(String(l.peca.iid).slice(-6))}</span></span></span>` +
+                `<span>${m ? `<b class="tb-ok">+${fjPt(m.ganhoPt)}</b> <span class="tb-mut">· ~${fjK(m.custoMedio)}</span>` : '<span class="tb-mut">—</span>'}</span></div>` +
+                (enc ? `<div class="tb-mut tb-eq-nota">${escHtml(enc)}</div>` : '') +
+                `<div class="tb-mut tb-eq-nota">${m ? escHtml(m.nome) + ' · ' + Math.round(m.chance * 100) + ' % · ' + numBR(m.gemasMedio, 1) + ' gema(s), 90 %: ' + m.gemas90 + ' · ' : ''}${escHtml(l.motivo || '')}</div>` +
+                `<div class="tb-linha"><button type="button" class="tb-bt mini" data-fj-sel="${escHtml(String(l.peca.iid))}" ${ocup ? 'disabled' : ''}>${ehSel ? '✓ escolhida' : 'escolher'}</button>` +
+                `<button type="button" class="tb-bt mini" data-fj-det="${escHtml(k)}">${aberto ? '− planos' : '+ planos'}</button>` +
+                (l.peca.origem === 'depósito' ? `<button type="button" class="tb-bt mini" data-fj-puxar="${escHtml(String(l.peca.iid))}" ${ocup || emHunt() ? 'disabled' : ''} title="tira do depósito e põe na mochila (depot_withdraw)">puxar p/ mochila</button>` : '') + `</div>` +
+                (aberto ? `<div class="tb-det">` + (l.estrategias.length ? l.estrategias.map((e, j) => `<div style="margin:3px 0"><b>${escHtml(e.nome)}</b>${e.cabe === false ? ' <span class="tb-av">(falta ' + escHtml(e.falta) + ')</span>' : ''}: +${fjPt(e.ganhoPt)} · média ${fjK(e.custoMedio)} (90 %: ${fjK(e.custo90)}) · ${numBR(e.gemasMedio, 1)} gema(s) · ${Math.round(e.chance * 100)} %` +
+                    `<div class="tb-mut">${e.passos.map(escHtml).join(' → ')}</div><div class="tb-mut">gemas: ${Object.entries(e.porGema).map(([g, q]) => FJ_GEMA_PT[g] + ' ' + numBR(q, 1)).join(' · ')}</div>` +
+                    `<button type="button" class="tb-bt mini" data-fj-estr="${escHtml(String(l.peca.iid))}|${j}" ${ocup ? 'disabled' : ''}>${ehSel && FJ.estr === j ? '✓ este plano' : 'usar este plano'}</button></div>`).join('') : '<span class="tb-mut">nenhum plano rende 0,5 pt</span>') + `</div>` : '') + `</div>`;
+            if (i === 11 && FJ.rank.length > 12 && !FJ.abertos.has('fj-mais')) { h += `<button type="button" class="tb-bt mini" data-fj-det="fj-mais">… e mais ${FJ.rank.length - 12}</button>`; }
+        });
+        /* C + D. a peça escolhida: Bancada do jogo e FORJAR */
+        if (sel) {
+            const e = sel.estrategias[FJ.estr != null ? FJ.estr : 0] || null;
+            h += `<h4 style="margin:10px 0 2px">${escHtml(sel.peca.nome)} — ${e ? escHtml(e.nome) : 'sem plano'}</h4>`;
+            if (e) {
+                h += `<div class="tb-mut tb-eq-nota">${e.passos.map(escHtml).join(' → ')}</div>`;
+                h += `<div class="tb-linha"><button type="button" class="tb-bt" id="tb-fj-bancada" ${ocup || !socketAberto() ? 'disabled' : ''} title="roda o 1.º passo deste plano ${FJ_BANCADA_N} vezes na Bancada de testes do jogo (grátis) e compara com a chance prevista">${FJ.simulando ? 'simulando…' : 'conferir na Bancada do jogo (' + FJ_BANCADA_N + '×, grátis)'}</button>` +
+                    (FJ.simulando ? `<button type="button" class="tb-bt mini" id="tb-fj-parar">parar</button>` : '') + `</div>`;
+                if (FJ.bancada) { const b = FJ.bancada; h += `<div class="tb-cx">Bancada do jogo — ${escHtml(b.passo.motivo)}: <b>${b.ok}/${b.n}</b> deram certo${b.previsto != null ? ` (previsto ${Math.round(b.previsto * 100)} %, deu ${b.n ? Math.round(b.ok / b.n * 100) : 0} %)` : ''}${b.encadeada === true ? ' · <span class="tb-av">a Bancada do jogo encadeia: cada simulação parte da anterior</span>' : ''}${b.ultima ? ` · última cópia simulada: +${b.ultima.refino}, ${RAR_PT[b.ultima.raridade]}, ${(b.ultima.atributos || []).map(a => rotulo(a.id) + ' ' + a.valor).join(', ') || 'sem linhas'}` : ''}${b.erro ? ' · <span class="tb-ruim">' + escHtml(b.erro) + '</span>' : ''}</div>`; }
+                const falta = e.cabe === false ? e.falta : '';
+                const conf = FJ.conf > Date.now();
+                h += `<div class="tb-linha" style="margin-top:6px"><label class="tb-l">orçamento <input type="number" class="tb-in" id="tb-fj-orc" value="${FJ.orcamento != null ? FJ.orcamento : ''}" min="0" step="10000" style="width:9em" ${FJ.forjando ? 'disabled' : ''}> ouro</label><span class="tb-mut tb-eq-nota">(padrão 50 % do ouro normal; a forja para ao chegar aqui)</span></div>`;
+                h += `<div class="tb-linha"><button type="button" class="tb-bt ${conf ? 'tb-conf' : 'pri'}" id="tb-fj-forjar" ${ocup || emHunt() || !socketAberto() || falta ? 'disabled' : ''} title="${escHtml(falta ? 'falta ' + falta : emHunt() ? 'só na cidade' : 'gasta gemas e ouro DE VERDADE; não volta')}">${FJ.forjando ? 'FORJANDO…' : conf ? 'CONFIRMAR: forjar de verdade (não volta)' : 'FORJAR DE VERDADE (2 toques)'}</button>` +
+                    (FJ.forjando ? `<button type="button" class="tb-bt mini" id="tb-fj-parar">PARAR</button>` : '') + (falta ? `<span class="tb-av tb-eq-nota">falta ${escHtml(falta)}</span>` : '') + `</div>`;
+            }
+        } else h += `<div class="tb-mut" style="margin-top:6px">escolha uma peça acima para ver os planos, conferir na Bancada do jogo e forjar.</div>`;
+        if (FJ.relatorio) { const r = FJ.relatorio; h += `<div class="tb-cx" style="margin-top:6px"><b>Relatório — ${escHtml(r.peca)}</b> (${escHtml(r.estrategia)}) · ${r.seg} s · gasto <b>${fjK(r.gasto)}</b> · ${r.fim.acao === 'fim' ? '<span class="tb-ok">alvo atingido</span>' : '<span class="tb-ruim">parou: ' + escHtml(r.fim.motivo) + '</span>'}` +
+            `<div class="tb-mut tb-eq-nota">antes: +${r.antes.refino || 0} ${RAR_PT[r.antes.raridade || 0]} ${escHtml((r.antes.atributos || []).map(a => rotulo(a.id) + ' ' + a.valor).join(', '))} → depois: +${r.depois.refino || 0} ${RAR_PT[r.depois.raridade || 0]} ${escHtml((r.depois.atributos || []).map(a => rotulo(a.id) + ' ' + a.valor).join(', '))}</div>` +
+            r.passos.map((p, i) => `<div class="fj-passo ${p.erro ? 'falha' : p.ok === false ? 'falha' : 'ok'}">${i + 1}. ${escHtml(p.motivo)} → ${escHtml(p.resultado || p.erro || '')}</div>`).join('') + `</div>`; }
+        h += aj('fj-regras', `<ul style="margin:2px 0 0 14px;padding:0">` + ['Só peça BiS (a melhor que o personagem já veste) ou base com linha de skill e potência ≥ 300: gema em item de entrada é ouro jogado fora.', 'Refino até +4 (falha não derruba); +5 e +6 só se cruzam de faixa, sempre com Garantia T1 (a falha derruba 1 nível sem ela). Cada refino = +1 ataque (arma) ou +1 armadura (o resto) e +50 de potência.', 'A jogada da comunidade: peça que JÁ caiu com ML / distância / corpo a corpo e potência ≥ 300 → refinar até cruzar 400 (até +2) ou 600 (até +3) e usar Refazer para o valor subir.', 'Nunca rolar Atributo atrás de skill: cai 1 em 89. Linha nova mira as de peso 10 (regen., resistência, dano, proteção mágica); linha ruim → Limpeza T2 e tenta de novo.', 'Crítico: base 0 %, qualquer 1 % já acerta. Cavaleiro = dano físico; dano mágico vale em tudo.', 'Bancada de testes do jogo não gasta nada; a nossa conta é Monte Carlo com as regras exatas do jogo (média e 90 %). Forjar é sorteio: o azar custa o dobro; o orçamento é o freio.'].map(x => '<li>' + escHtml(x) + '</li>').join('') + `</ul><div class="tb-eq-nota">Fontes: wiki /forja (19/10), TV de Souza "Guia definitivo da forja" e "Guia completo de itens e forja", Osfurg "Tier rápido"; protocolo lido do cliente do jogo.</div>`, '? regras da Forja (vídeos e wiki)');
+        h += aj('fj-calc', pgTelaForja(), '? calculadoras (refino esperado · imbuement)');
+        return h + `<div class="tb-mut" style="margin-top:6px">Só LER, a Bancada (consulta grátis) e FORJAR (2 toques) enviam algo ao jogo.</div></div>`;
+    }
+    function ligarForja() {
+        const corpo = $('#tb-corpo');
+        const b = $('#tb-fj-ler'); if (b) b.onclick = () => fjLer();
+        const ab = $('#tb-fj-abrir'); if (ab) ab.onclick = () => { if (FJ.sel) fjAbrirNoJogo(FJ.sel); };
+        $$('[data-fj-sel]', corpo).forEach(x => { x.onclick = () => { FJ.sel = x.dataset.fjSel; FJ.estr = 0; FJ.bancada = null; FJ.conf = 0; renderizar(); }; });
+        $$('[data-fj-det]', corpo).forEach(x => { x.onclick = () => { const k = x.dataset.fjDet; if (FJ.abertos.has(k)) FJ.abertos.delete(k); else FJ.abertos.add(k); renderizar(); }; });
+        $$('[data-fj-estr]', corpo).forEach(x => { x.onclick = () => { const [iid, j] = x.dataset.fjEstr.split('|'); FJ.sel = iid; FJ.estr = parseInt(j) || 0; FJ.bancada = null; FJ.conf = 0; renderizar(); }; });
+        $$('[data-fj-puxar]', corpo).forEach(x => { x.onclick = () => { const l = (FJ.rank || []).find(y => String(y.peca.iid) === x.dataset.fjPuxar); fjPuxar(l); }; });
+        const sel = FJ.sel && FJ.rank ? FJ.rank.find(l => l.peca.iid === FJ.sel) : null, e = sel ? sel.estrategias[FJ.estr != null ? FJ.estr : 0] : null;
+        const bc = $('#tb-fj-bancada'); if (bc) bc.onclick = () => fjBancada(sel, e);
+        const pr = $('#tb-fj-parar'); if (pr) pr.onclick = () => { FJ.parar = true; renderizar(); };
+        const orc = $('#tb-fj-orc'); if (orc) orc.onchange = () => { FJ.orcamento = Math.max(0, parseInt(orc.value) || 0); renderizar(); };
+        const fz = $('#tb-fj-forjar');
+        if (fz) fz.onclick = () => { const agora = Date.now(); if (FJ.conf > agora) { FJ.conf = 0; fjForjar(sel, e); } else { FJ.conf = agora + 8000; renderizar(); setTimeout(() => { if (FJ.conf && Date.now() >= FJ.conf) { FJ.conf = 0; renderizar(); } }, 8100); } };
+        ligarCalcForja();
+    }
+
     function telaRadar() {
         rdGarantirCss();
         const sub = ler('radar_sub', 'mapas');
@@ -14018,7 +14270,8 @@
             scan: SCAN.ativo ? 'ok pulsa' : '',
             equip: EQUIP.equipando || EQUIP.lendo ? 'av pulsa' : '',
             mercado: MK.ocupado ? 'av pulsa' : '',
-            radar: RADAR.rodando || MK.ocupado === 'radar' ? 'av pulsa' : alertasCfg().vigiar ? 'ok' : ''
+            radar: RADAR.rodando || MK.ocupado === 'radar' ? 'av pulsa' : alertasCfg().vigiar ? 'ok' : '',
+            forja: FJ.lendo || FJ.forjando || FJ.simulando ? 'av pulsa' : '' // v2.25.0
         };
         $$('.tb-ico[data-aba]', t).forEach(i => { const on = !!u.aberta && !u.oculto && i.dataset.aba === ABA; i.classList.toggle('on', on); i.setAttribute('aria-pressed', on ? 'true' : 'false'); const d = $('.tb-dot', i); if (d) d.className = 'tb-dot ' + (estado[i.dataset.aba] || ''); });
         const at = $('#tb-atualizar', t); if (at) { at.style.display = NOVA_VERSAO ? 'flex' : 'none'; at.title = NOVA_VERSAO ? 'versão ' + NOVA_VERSAO + ' disponível — clique para atualizar no Tampermonkey' : ''; }
@@ -14064,7 +14317,7 @@
         const mesmaAba = _abaPintada === ABA;
         const html = ABA === 'estado' ? telaEstado() : ABA === 'autohunt' ? telaAutoHunt() : ABA === 'scan' ? telaScan()
             : ABA === 'magia' ? telaMagia() : ABA === 'analise' ? telaAnalise() : ABA === 'equip' ? telaEquip()
-            : ABA === 'progresso' ? telaProgresso() : ABA === 'mercado' ? telaMercado() : ABA === 'melhorias' ? telaMelhorias() : ABA === 'radar' ? telaRadar() : `<div id="tb-log"></div>`;
+            : ABA === 'progresso' ? telaProgresso() : ABA === 'mercado' ? telaMercado() : ABA === 'melhorias' ? telaMelhorias() : ABA === 'radar' ? telaRadar() : ABA === 'forja' ? telaForja() : `<div id="tb-log"></div>`;
         if (mesmaAba && html === _htmlPintado) { if (ABA === 'log') pintarLog(); return; }
         if (mesmaAba) { const f = campoEmUso(c); if (f) { adiarRepinte(f); return; } }
         /* v2.3.0 — trocar o innerHTML zera a rolagem: marcar um mapa no Scan
@@ -14086,6 +14339,7 @@
         if (ABA === 'progresso') ligarProgresso();
         if (ABA === 'mercado') ligarMercado();
         if (ABA === 'radar') ligarRadar(); // v2.13.0
+        if (ABA === 'forja') ligarForja(); // v2.25.0
         if (ABA === 'melhorias') ligarMelhorias(); // v2.18.0
         if (ABA === 'scan') ligarScan(); // v2.11 — handlers do Scan ao lado da tela
         if (ABA === 'autohunt') ligarAutoHunt(); // v2.11 — handlers do Auto Hunt ao lado da tela
