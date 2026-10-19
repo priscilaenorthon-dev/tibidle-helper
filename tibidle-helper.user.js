@@ -14159,7 +14159,7 @@
         const corpo = $('#tb-corpo');
         const b = $('#tb-fj-ler'); if (b) b.onclick = () => fjLer();
         const ab = $('#tb-fj-abrir'); if (ab) ab.onclick = () => { if (FJ.sel) fjAbrirNoJogo(FJ.sel); };
-        $$('[data-fj-sel]', corpo).forEach(x => { x.onclick = () => { FJ.sel = x.dataset.fjSel; FJ.estr = 0; FJ.bancada = null; FJ.conf = 0; renderizar(); }; });
+        $$('[data-fj-sel]', corpo).forEach(x => { x.onclick = () => { FJ.sel = x.dataset.fjSel; const l = (FJ.rank || []).find(y => String(y.peca.iid) === FJ.sel); FJ.estr = l && l.melhor ? Math.max(0, l.estrategias.indexOf(l.melhor)) : 0; FJ.bancada = null; FJ.conf = 0; renderizar(); }; }); // o plano "melhor" vem escolhido
         $$('[data-fj-det]', corpo).forEach(x => { x.onclick = () => { const k = x.dataset.fjDet; if (FJ.abertos.has(k)) FJ.abertos.delete(k); else FJ.abertos.add(k); renderizar(); }; });
         $$('[data-fj-estr]', corpo).forEach(x => { x.onclick = () => { const [iid, j] = x.dataset.fjEstr.split('|'); FJ.sel = iid; FJ.estr = parseInt(j) || 0; FJ.bancada = null; FJ.conf = 0; renderizar(); }; });
         $$('[data-fj-puxar]', corpo).forEach(x => { x.onclick = () => { const l = (FJ.rank || []).find(y => String(y.peca.iid) === x.dataset.fjPuxar); fjPuxar(l); }; });

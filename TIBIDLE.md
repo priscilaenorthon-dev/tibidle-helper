@@ -5464,3 +5464,54 @@ ele recomenda comprar. Só isso. E na parte de equipar você também está coloc
 - Tela Equip: régua/fase, Legado, ficha do Cavaleiro pela regra do jogo, vida mínima e "dano tomado medido / quem bate" foram
   para um "?" fechado ("? régua (fase N) e dano tomado"). Nada mudou na conta.
 - Testes: `melhorias.test.js` — o teste do "caro" virou "preço alto não tira a recomendação"; +1 teste do `porClasse`.
+
+## 2.25.0 — aba FORJA (19/10): ranking do que vale forjar, Bancada do jogo e FORJAR DE VERDADE
+
+Dono, 19/10: "Você vai ser agora um especialista de Forja nesse jogo. Nunca fiz, então quero que nossa automação tire de letra."
+Desenho aprovado em `docs/plans/2026-10-19-forja-design.md`; plano em `docs/plans/2026-10-19-forja.md`. Decisões do dono: o botão
+FORJAR usa só gemas e fragmentos que a conta já tem (nada de compra no Mercado); orçamento padrão 50 % do ouro normal; a simulação
+da peça é a Bancada do jogo (grátis); o Monte Carlo local fica para o ranking.
+
+**Protocolo da Forja (lido do cliente em 19/10, chunks 7-bd2f98… e 7335-8a43…):** `forge_quote {iid?, origem: bag|depot|equipped
+(+vocation), aba: refino|raridade|atributos|desmanche}` → `forge_quote_result` (por aba: gema, estoque, chance, statDelta, podeCair,
+estoqueGarantia / raridadeAtual, raridadeAlvo / acoes[{acao, gema, estoque, disponivel, motivo}] / totalFragmentos, pBase, pMaior);
+`forge_simulate {iid, origem, vocation?, aba, acao?, garantia?}` → `forge_simulate_result {ok, instancia, garantiaConsumida, afetados}`
+— a Bancada roda no SERVIDOR, de graça, cada simulação a partir da peça real (não encadeia: conferido ao vivo, 20 refinos +0→+1 deram 13
+ok contra 80 % previstos); `forge_refine {iid, origem, vocation?, garantia?, requestId}` → `{ok, refino, garantiaConsumida, instancia, bag,
+gold, goldLocked, coins, entries?}`; `forge_rarity` → `{ok, raridade, instancia, bag…}`; `forge_attr {acao: atributo|refazer|refazer_maior|
+ordem|limpeza|limpeza_maior}` → `{acao, afetados, instancia, bag…}`; `forge_craft {gema, qty, requestId}` → `{gema, qty, gold, bag}`;
+`forge_lastro {}` → `{disponivel, ouroPorGema{…} (ouro base + coins × cotação de 6 h), proximaAtualizacaoEm}`. Gema de refino `refino` até
+o +4 e `refino_maior` do +5; `raridade` até Lendário, `raridade_maior` para Mítico; Garantia só com a peça entre +4 e +9. Erros:
+not_in_city, too_far, insufficient_item, trade_reserved, item_protected, insufficient_gold, bag_capacity_exceeded, invalid_forge.
+Itens: `refine gem t1`, `guarantee gem t1`, `cleansing gem t1/t2`, `attribute gem t1`, `reroll gem t1/t2`, `rarity gem t1/t2`, `order
+gem t2`, `refine gem t2`; fragmentos = `… fragment t1/t2`; todos negociáveis no Mercado. Janela do jogo: NAVEGAÇÃO › `nav-uzgod`
+abre `window-forja` (abas desmanche / equipamentos / gemas / bancada; `forja-cartao-<iid>`; modal `forja-modal` com `forja-gema-<id>`,
+`forja-bloco-valores`, `forja-acao-botao`, `forja-bancada`).
+
+**Wiki /forja (19/10), o que faltava no helper:** tetos somados entre as peças vestidas — cura própria 40 %, roubo de vida chance 35 % /
+quantia 25 %, chance de loot 10 %, escudo +15. Bases de potência: caçada 0–350, Elite 50–420, boss 250–500.
+
+**Vídeos (transcrições de 19/10: TV de Souza "Guia definitivo da forja" e "Guia completo de itens e forja", Osfurg "Tier rápido"):**
+só peça BiS; refino até +4 (no máximo +5); a jogada da comunidade é peça que JÁ caiu com ML/distância/corpo a corpo e potência ≥ 300 →
+refinar até cruzar 400/600 e Refazer até +2/+3; nunca rolar Atributo atrás de skill (1 em 89); crítico: base 0 %; Kina = dano físico.
+
+**Mercado em 19/10 (menor anúncio):** fragmentos refine 180 · cleansing 100 · guarantee 599 · reroll 1.954 · attribute 2.800 · rarity 5.150 ·
+refine T2 24.444 · reroll T2 39.999 · cleansing T2 48.880; gemas prontas: refine 210 k · cleansing 187 k · guarantee 319 k · reroll 465 k ·
+attribute 449 k · rarity 943 k. Cotação 34,3 k/coin → criar Refino T1 = 10 k + 5 × 34,3 k + 100 × 180 ≈ 200 k. A conta tinha 14/60/21/1/5
+fragmentos (refine/rarity/attribute/cleansing/order T2): nenhuma gema criável.
+
+**O que a 2.25.0 faz:** bloco puro `@@FORJA` (`fjEstoque`, `fjCustoGemas`, `fjEstrategias` — refino / faixa + Refazer / linha nova /
+subir valor —, `fjRanking` com selos vale · estoque · ouro · não, `fjProximoPasso` = a máquina de decisão do botão), `forjaSimular` com
+`limite` por gema (o estoque), `custos`, `porGema90`, `limparTudo` (Limpeza T1 quando nada vale guardar) e `refazerTudo` (Refazer T1
+na última linha quando ela é a única que vale: 421 k contra 4 M do T2), e a correção de que um alvo só de refino não gastava mais
+Raridade. Tela: estoque e custo real de cada gema; ranking (o "melhor" plano = maior ganho entre os que rendem ≥ ¾ do melhor pt por
+milhão; empate → base de armadura/defesa/ataque maior); peça escolhida com os planos, "conferir na Bancada do jogo (20×)" e FORJAR DE
+VERDADE (2 toques, orçamento, PARAR, relatório); "abrir na Forja do jogo" e "puxar p/ mochila". A sub-aba Forja saiu do Progresso
+(as calculadoras de refino esperado e de imbuement vieram para um "?" da aba Forja). Bug antigo corrigido: o lastro (2.22.0) lia
+`r.ouroPorGema` em vez de `r.data.ouroPorGema` — a cotação nunca tinha entrado. Guarda de cópia única (`window.__tbHelperAtivo`):
+duas cópias do helper na mesma página dividiam o painel.
+
+Ao vivo (19/10, nível 133, cidade, ao lado do Uzgod): 44 peças avaliadas; Cavaleiro: vampire shield / magic plate armor / plate legs
+"Refino +4" +20,4 pt por ~1,26 M (6,3 gemas); Druida: snakebite rod ML +1 → +2 (3 refinos até 421 + Refazer T1) +14,4 pt por ~4,4 M;
+magos com "Linha nova" 2,7 pt a 4,3 M; todas com selo "falta gema". Teste real (magic plate armor +0 → +1) pendente: faltam 86
+fragmentos de Refino T1 (≈ 15 k no Mercado).
