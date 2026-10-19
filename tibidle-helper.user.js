@@ -4481,7 +4481,7 @@
         return { seg, sessoes: ss.length, t: Math.max(...ss.map(x => x.t || 0)), tomadoH: Math.round(ss.reduce((t, x) => t + (x.tomadoH || 0) * w(x), 0)), mortes: ss.reduce((t, x) => t + (x.mortes || 0), 0), elemPorVoc, crias: lista };
     }
     /* v2.24.2 — DANO TOMADO: A MEDIDA MAIS LONGA MANDA. O Equip lia o dano tomado do livro-razão vivo (≥ 2 min) ou do Scan mais
-     * recente; o dano guardado do mapa (dano_mapa, até 3 sessões) só entrava sem os dois. Ao vivo (18/10, Petrified Hollow): uma
+     * recente; o dano guardado do mapa (dano_mapa, até 3 sessões) só entrava sem os dois. Ao vivo (18/10, Throne of Verminor): uma
      * reconexão zerou o livro 94 s antes do fim da caçada, a régua caiu no Scan de 4 min (1,1 golpe/s) e a dark armor regen. 2,4
      * passou na frente da magic plate armor — com o guardado de 11 min (3,2 golpes/s, 382 HP/s) a MPA ganha. Agora o lado "o que
      * a party toma" (tomadoS, fração física, golpes/s do Knight, elementos por personagem) vem de quem mediu por mais tempo:
