@@ -62,6 +62,19 @@ t('forjaSimular: opc.limite (o estoque) corta as tentativas por gema e a rodada 
     assert(c.porGema90 && c.porGema90.refino >= 1, 'p90 por gema: ' + JSON.stringify(c.porGema90));
 });
 
+t('forjaSimular: alvo.limparTudo usa Limpeza T1 (apaga todas, barata) no lugar da T2 quando não há linha a preservar; alvo.refazerTudo usa Refazer T1 na última linha', () => {
+    const peca = { slot: 'boots', forja: F(1, 0, 300, ['capacidade', 50]) };
+    const t2 = M.forjaSimular(peca, { linhas: ['regen_mana'] }, { n: 300, seed: 5 });
+    const t1 = M.forjaSimular(peca, { linhas: ['regen_mana'], limparTudo: true }, { n: 300, seed: 5 });
+    assert(t2.porGema.limpeza_maior > 0 && !(t2.porGema.limpeza > 0), JSON.stringify(t2.porGema));
+    assert(t1.porGema.limpeza > 0 && !(t1.porGema.limpeza_maior > 0), JSON.stringify(t1.porGema));
+    const rod = { slot: 'weapon', forja: F(1, 3, 271, ['nivel_magico', 1]) };
+    const a = M.forjaSimular(rod, { linhas: ['nivel_magico'], valorMin: 2 }, { n: 300, seed: 5 });
+    const b = M.forjaSimular(rod, { linhas: ['nivel_magico'], valorMin: 2, refazerTudo: true }, { n: 300, seed: 5 });
+    assert(a.porGema.refazer_maior > 0 && !(a.porGema.refazer > 0), JSON.stringify(a.porGema));
+    assert(b.porGema.refazer > 0 && !(b.porGema.refazer_maior > 0), JSON.stringify(b.porGema));
+});
+
 /* ===== Task 3: estratégias ===== */
 const custos = () => M.fjCustoGemas(LASTRO, CAT, M.fjEstoque({}, []));
 t('fjEstrategias: magic plate armor +0 do Cavaleiro (fase 2) → refino até +4 com ganho na régua e ≈ 6,35 gemas; +5 só com garantia; nada de linha (sem encaixe, Comum)', () => {
@@ -77,11 +90,12 @@ t('fjEstrategias: magic plate armor +0 do Cavaleiro (fase 2) → refino até +4 
     const r5 = es.find(e => e.id === 'refino' && e.alvo.refino === 5);
     assert(!r5 || r5.alvo.garantia === true, '+5 só com garantia');
 });
-t('fjEstrategias: snakebite ML+1 potência 271 do Druida → "faixa + refazer": 3 refinos (421, faixa III) e ML até 2', () => {
+t('fjEstrategias: snakebite ML+1 potência 271 do Druida → "faixa + refazer": 3 refinos (421, faixa III) e ML até 2; com uma linha só, Refazer T1 (barato) no lugar do T2', () => {
     const es = M.fjEstrategias(SNAKE, 'DRUID', CTX, custos(), { seed: 3, n: 300 });
     const fx = es.find(e => e.id === 'faixa');
     assert(fx, 'estratégia faixa: ' + es.map(e => e.id).join(','));
-    assert.deepStrictEqual([fx.alvo.refino, fx.alvo.linhas, fx.alvo.valorMin], [3, ['nivel_magico'], 2]);
+    assert.deepStrictEqual([fx.alvo.refino, fx.alvo.linhas, fx.alvo.valorMin, fx.alvo.refazerTudo], [3, ['nivel_magico'], 2, true]);
+    assert(fx.porGema.refazer > 0 && !(fx.porGema.refazer_maior > 0), 'Refazer T1 (421 k) e não T2 (4 M): ' + JSON.stringify(fx.porGema));
     assert(fx.ganhoPt > 0 && fx.chance > 0.5, JSON.stringify([fx.ganhoPt, fx.chance]));
 });
 t('fjEstrategias: encaixe novo mira só linhas de peso 10 que valem (nunca skill) e abre encaixe com Raridade quando não há vazio', () => {
@@ -91,6 +105,15 @@ t('fjEstrategias: encaixe novo mira só linhas de peso 10 que valem (nunca skill
     assert(en, 'encaixe: ' + es.map(e => e.id).join(','));
     assert.strictEqual(en.alvo.raridade, 2, 'Incomum cheio: sobe para Raro para abrir o encaixe');
     assert(en.alvo.linhas.includes('regen_mana') && !en.alvo.linhas.some(id => /nivel_magico|distancia|corpo_a_corpo/.test(id)), JSON.stringify(en.alvo.linhas));
+    assert.strictEqual(en.alvo.limparTudo, true, 'capacidade 60 não vale nada para o Druida: Limpeza T1 (barata) apaga tudo');
+    const bota2 = { iid: 'b2', nome: 'fur boots', slot: 'boots', attrs: { slot: 'feet', armor: 2 }, forja: F(2, 0, 349, ['regen_mana', 2.0]) };
+    const en2 = M.fjEstrategias(bota2, 'DRUID', CTX, custos(), { seed: 3, n: 300 }).find(e => e.id === 'encaixe');
+    assert(en2 && !en2.alvo.limparTudo, 'regen. de mana 2,0 vale: só Limpeza T2 (a última)');
+});
+t('fjProximoPasso: alvo.limparTudo pede Limpeza T1 com a peça cheia de linha ruim; refazerTudo pede Refazer T1 na última linha', () => {
+    const g = { atributo: 1, limpeza: 1, limpeza_maior: 1, refazer: 1, refazer_maior: 1 };
+    assert.strictEqual(M.fjProximoPasso({ alvo: { linhas: ['regen_mana'], limparTudo: true } }, F(1, 0, 300, ['capacidade', 50]), E(g)).acao, 'limpeza');
+    assert.strictEqual(M.fjProximoPasso({ alvo: { linhas: ['nivel_magico'], valorMin: 2, refazerTudo: true } }, F(1, 3, 271, ['nivel_magico', 1]), E(g)).acao, 'refazer');
 });
 t('fjEstrategias: peça de entrada (potência 50, Comum) não tem estratégia que valha o mínimo; estoque vazio marca cabe:false com o que falta', () => {
     const es = M.fjEstrategias(ENTRADA, 'KNIGHT', CTX, custos(), { seed: 3, n: 200 });
@@ -116,6 +139,14 @@ t('fjRanking: a BiS com ganho fica na frente com selo "vale"; sem estoque vira "
     assert.strictEqual(r2.find(x => x.peca.iid === 'mpa').selo, 'estoque');
     const r3 = M.fjRanking(porVoc, CTX, M.fjCustoGemas(LASTRO, CAT, estCheio), 100000, estCheio, { seed: 3, n: 200 });
     assert.strictEqual(r3.find(x => x.peca.iid === 'mpa').selo, 'ouro');
+});
+
+t('fjRanking: o "melhor" plano é o de MAIOR ganho entre os que rendem pelo menos 3/4 do melhor pt por milhão (refino +4 da MPA, não o +1); empate entre peças → potência maior primeiro', () => {
+    const porVoc = { KNIGHT: [{ peca: MPA, origem: 'bis', slot: 'armor' }, { peca: Object.assign({}, MPA, { iid: 'mpa2', forja: F(0, 0, 100) }), origem: 'bis', slot: 'legs' }] };
+    const est = M.fjEstoque({ 'refine gem t1': 30, 'guarantee gem t1': 10, 'refine gem t2': 5 }, []);
+    const r = M.fjRanking(porVoc, CTX, M.fjCustoGemas(LASTRO, CAT, est), 10000000, est, { seed: 3, n: 300 });
+    assert.strictEqual(r[0].melhor.alvo.refino, 4, 'o plano de maior ganho que ainda rende: ' + JSON.stringify([r[0].melhor.id, r[0].melhor.alvo, r[0].melhor.ptPorMilhao]));
+    assert.strictEqual(r[0].peca.iid, 'mpa', 'empate: a de potência maior primeiro');
 });
 
 /* ===== Task 5: máquina de decisão ===== */

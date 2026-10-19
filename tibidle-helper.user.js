@@ -27,6 +27,11 @@
     'use strict';
 
     const VERSAO = '2.25.0';
+    /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
+     * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
+     * que sobe fica; a outra avisa no console e não faz nada. */
+    if (window.__tbHelperAtivo) { try { console.warn('[TB] outra cópia do helper (' + window.__tbHelperAtivo + ') já roda nesta página — esta (' + VERSAO + ') não vai subir'); } catch (e) { } return; }
+    window.__tbHelperAtivo = VERSAO;
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -6925,7 +6930,7 @@
                     /* a linha certa já está na peça, com valor baixo: re-sorteia o valor (a última com Refazer T2; as outras só com Refazer T1, que mexe em todas) */
                     let tent = 0;
                     while (!ok && total < maxG && tent++ < 60) {
-                        const ult = at.indexOf(tem) === at.length - 1, gk = ult ? 'refazer_maior' : 'refazer';
+                        const ult = at.indexOf(tem) === at.length - 1 && !alvo.refazerTudo, gk = ult ? 'refazer_maior' : 'refazer';
                         if (!pode(gk)) break;
                         total = gasta(gk);
                         if (ult) tem.valor = forjaValorSorteado(tem.id, faixa, rnd); else for (const a of at) a.valor = forjaValorSorteado(a.id, faixa, rnd);
@@ -6934,14 +6939,15 @@
                 }
                 while (!ok && total < maxG) {
                     const livres = (ENCAIXES_POR_RARIDADE[rar] || 0) - at.length;
-                    if (livres <= 0) { if (!at.length || !pode('limpeza_maior')) break; total = gasta('limpeza_maior'); at = at.slice(0, -1); continue; }
+                    /* alvo.limparTudo: nenhuma linha da peça vale a pena guardar → Limpeza T1 (apaga todas; 15 k + fragmento de 100) no lugar da T2 (40 k + fragmento de 49 k) */
+                    if (livres <= 0) { if (!at.length) break; const gl = alvo.limparTudo ? 'limpeza' : 'limpeza_maior'; if (!pode(gl)) break; total = gasta(gl); at = alvo.limparTudo ? [] : at.slice(0, -1); continue; }
                     if (!pode('atributo')) break;
                     total = gasta('atributo');
                     const id = forjaLinhaSorteada(slot, at, rnd); if (!id) break;
                     at = at.concat([{ id, valor: forjaValorSorteado(id, faixa, rnd) }]);
                     if (!alvos.has(id)) continue;
                     let tent = 0;
-                    while (alvo.valorMin && at[at.length - 1].valor < alvo.valorMin && total < maxG && tent++ < 60 && pode('refazer_maior')) { total = gasta('refazer_maior'); at[at.length - 1].valor = forjaValorSorteado(id, faixa, rnd); }
+                    while (alvo.valorMin && at[at.length - 1].valor < alvo.valorMin && total < maxG && tent++ < 60 && pode(alvo.refazerTudo ? 'refazer' : 'refazer_maior')) { total = gasta(alvo.refazerTudo ? 'refazer' : 'refazer_maior'); if (alvo.refazerTudo) for (const a of at) a.valor = forjaValorSorteado(a.id, faixa, rnd); else at[at.length - 1].valor = forjaValorSorteado(id, faixa, rnd); }
                     ok = !alvo.valorMin || at[at.length - 1].valor >= alvo.valorMin;
                 }
             } else ok = refino >= refAlvo && rar >= rarAlvo;
@@ -7618,6 +7624,11 @@
         const ptRef = (N) => pontuarPeca(mlComRefino(Object.assign({}, peca, { forja: Object.assign({}, f, { refino: N }) })), voc, ctx).pontos;
         const refino0 = Number(f.refino) || 0, pot0 = potenciaTotal(Object.assign({}, peca, { forja: f })), base = ptRef(refino0), refinoMax = opc.refinoMax || FJ_REFINO_MAX;
         const stat = fjStat(slot), ehVarinha = !!(peca.attrs && (peca.attrs.weaponType === 'wand' || peca.attrs.wandType));
+        /* linhas que valem guardar para esta vocação (≥ 0,3 pt): sem nenhuma, a Limpeza T1 (barata) pode apagar tudo; com uma só linha (a alvo),
+         * o Refazer T1 re-sorteia só ela — e é bem mais barato que o T2 (fragmento de 2 k contra 40 k) */
+        const vale = (a) => (P[a.id] || 0) * Number(a.valor) >= 0.3;
+        const guardaveis = f.atributos.filter(vale);
+        const refazerTudo = (idAlvo) => f.atributos.every(a => a.id === idAlvo || !vale(a)) && precos.refazer <= precos.refazer_maior;
         const out = [];
         const add = (id, nome, alvo, ganhoPt, passos, extra) => {
             if (!(ganhoPt >= FJ_GANHO_MIN)) return;
@@ -7651,9 +7662,10 @@
                 if (!(teto > Number(a.valor))) continue;
                 const ganho = (teto - Number(a.valor)) * P[a.id];
                 const ult = f.atributos.indexOf(a) === f.atributos.length - 1;
-                add('faixa', `${rotulo(a.id)} +${a.valor} → +${teto}`, { refino: N, garantia: N >= 5, linhas: [a.id], valorMin: teto }, ganho,
+                const rt = refazerTudo(a.id);
+                add('faixa', `${rotulo(a.id)} +${a.valor} → +${teto}`, { refino: N, garantia: N >= 5, linhas: [a.id], valorMin: teto, refazerTudo: rt }, ganho,
                     (refinos ? [`Refinar de +${refino0} até +${N}${N >= 5 ? ' (com Garantia T1)' : ''}: potência ${pot0} → ${pot0 + 50 * refinos}, faixa ${faixa0} → ${fx} (${rotulo(a.id)} passa a poder ter até +${teto})`] : [])
-                        .concat([`${ult ? 'Refazer T2 (só o último encaixe)' : 'Refazer T1 (re-sorteia o valor de TODAS as linhas)'} até ${rotulo(a.id)} chegar a +${teto}`]), { linha: a.id });
+                        .concat([`${ult && !rt ? 'Refazer T2 (só o último encaixe)' : 'Refazer T1 (re-sorteia o valor de TODAS as linhas' + (rt ? '; as outras não valem nada aqui' : '') + ')'} até ${rotulo(a.id)} chegar a +${teto}`]), { linha: a.id });
             }
         }
         /* 3. ENCAIXE NOVO: só linhas de peso 10 que valem ≥ 0,3 pt (nunca skill: 1 em 89); sem encaixe vazio, Raridade T1 abre um */
@@ -7671,9 +7683,10 @@
                 const ganhoMedio = linhas.reduce((s, x) => s + x.chance * x.ganho, 0) / p;
                 const alvo = { linhas: linhas.map(x => x.id) };
                 if (livres <= 0) alvo.raridade = rar + 1;
+                if (!guardaveis.length && precos.limpeza <= precos.limpeza_maior) alvo.limparTudo = true;
                 add('encaixe', 'Linha nova', alvo, ganhoMedio,
                     (livres <= 0 ? [`Raridade T1 até ${RAR_PT[rar + 1]} (${FORJA_RARIDADE_PCT[rar]} % por gema; falhar não rebaixa) para abrir um encaixe`] : [])
-                        .concat([`Atributo T1 no encaixe vazio até cair uma linha que vale (${linhas.sort((x, y) => y.ganho - x.ganho).slice(0, 3).map(x => rotulo(x.id)).join(', ')}…: ${Math.round(p * 100)} % por gema); linha ruim → Limpeza T2 e tenta de novo`]),
+                        .concat([`Atributo T1 no encaixe vazio até cair uma linha que vale (${linhas.sort((x, y) => y.ganho - x.ganho).slice(0, 3).map(x => rotulo(x.id)).join(', ')}…: ${Math.round(p * 100)} % por gema); linha ruim → ${alvo.limparTudo ? 'Limpeza T1 (apaga tudo: nada aqui vale guardar)' : 'Limpeza T2 (só a última)'} e tenta de novo`]),
                     { linhas });
             }
         }
@@ -7682,9 +7695,9 @@
             if (SKILL_FORJA.includes(a.id) || !((P[a.id] || 0) > 0) || !nobresDe(slot, voc).includes(a.id)) continue;
             const alvoV = valorTipico(a.id, faixaPotencia(pot0));
             if (!(alvoV > Number(a.valor) + 1e-9)) continue;
-            const ult = f.atributos.indexOf(a) === f.atributos.length - 1;
-            add('valor', `${rotulo(a.id)} ${a.valor} → ${alvoV}`, { linhas: [a.id], valorMin: alvoV }, (alvoV - Number(a.valor)) * P[a.id],
-                [`${ult ? 'Refazer T2 (só o último encaixe)' : 'Refazer T1 (re-sorteia o valor de TODAS as linhas)'} até ${rotulo(a.id)} chegar a ${alvoV} (mediana da faixa ${faixaPotencia(pot0)})`], { linha: a.id });
+            const ult = f.atributos.indexOf(a) === f.atributos.length - 1, rt = refazerTudo(a.id);
+            add('valor', `${rotulo(a.id)} ${a.valor} → ${alvoV}`, { linhas: [a.id], valorMin: alvoV, refazerTudo: rt }, (alvoV - Number(a.valor)) * P[a.id],
+                [`${ult && !rt ? 'Refazer T2 (só o último encaixe)' : 'Refazer T1 (re-sorteia o valor de TODAS as linhas)'} até ${rotulo(a.id)} chegar a ${alvoV} (mediana da faixa ${faixaPotencia(pot0)})`], { linha: a.id });
         }
         return out.sort((x, y) => (y.ptPorMilhao || 0) - (x.ptPorMilhao || 0) || y.ganhoPt - x.ganhoPt);
     }
@@ -7699,8 +7712,11 @@
                 const f = normForja(x.peca.forja), P = pesosDaVoc(voc, ctx);
                 const bis = x.origem === 'bis' || (Number(f.raridade) || 0) >= RARIDADE_BASE_FORJA || f.atributos.some(a => SKILL_FORJA.includes(a.id) && (P[a.id] || 0) > 0);
                 const es = fjEstrategias(x.peca, voc, ctx, custos, Object.assign({}, opc, { estoque: estoque || null }));
-                const cabem = es.filter(e => e.cabe !== false);
-                const melhor = (cabem.length ? cabem : es)[0] || null;
+                const cabem = es.filter(e => e.cabe !== false), pool = cabem.length ? cabem : es;
+                /* o melhor aproveitamento (dono, 19/10): o plano de MAIOR ganho entre os que rendem pelo menos 3/4 do melhor pt por milhão —
+                 * o +1 rende um pouco mais por ouro, mas o +4 é o que deixa a peça forte */
+                const topM = pool.length ? Math.max(...pool.map(e => e.ptPorMilhao || 0)) : 0;
+                const melhor = pool.filter(e => (e.ptPorMilhao || 0) >= 0.75 * topM).sort((x, y) => y.ganhoPt - x.ganhoPt || (y.ptPorMilhao || 0) - (x.ptPorMilhao || 0))[0] || null;
                 let selo = 'nao', motivo = '';
                 if (!bis) motivo = 'item de entrada: não é a melhor peça de ninguém nem tem linha de skill — gema aqui é ouro jogado fora (vídeos)';
                 else if (!melhor || melhor.ganhoPt < FJ_VALE_MIN) motivo = melhor ? 'o melhor plano rende menos de 1 pt' : 'nenhum plano rende 0,5 pt';
@@ -7711,7 +7727,8 @@
             }
         }
         const ordem = { vale: 0, estoque: 1, ouro: 2, nao: 3 };
-        return linhas.sort((a, b) => ordem[a.selo] - ordem[b.selo] || ((b.melhor && b.melhor.ptPorMilhao) || 0) - ((a.melhor && a.melhor.ptPorMilhao) || 0) || ((b.melhor && b.melhor.ganhoPt) || 0) - ((a.melhor && a.melhor.ganhoPt) || 0));
+        const pot = (l) => potenciaTotal(l.peca), base = (l) => { const at = l.peca.attrs || {}; return Number(at.armor) || Number(at.defense) || Number(at.attack) || 0; }; // a base melhor é a que fica: forja-se a BiS de verdade
+        return linhas.sort((a, b) => ordem[a.selo] - ordem[b.selo] || ((b.melhor && b.melhor.ptPorMilhao) || 0) - ((a.melhor && a.melhor.ptPorMilhao) || 0) || ((b.melhor && b.melhor.ganhoPt) || 0) - ((a.melhor && a.melhor.ganhoPt) || 0) || base(b) - base(a) || pot(b) - pot(a));
     }
     /* A MÁQUINA DE DECISÃO do botão FORJAR (pura): dado o plano {alvo:{refino, raridade, linhas, valorMin}, garantia}, a peça como está
      * (forja ou instância) e o estado {estoque:{gemas, fragmentos}, gasto, orcamento, tentativas, maxTentativas, ouro, ouroCriar}, devolve
@@ -7749,13 +7766,13 @@
         const i = at.findIndex(x => alvos.has(x.id));
         if (i >= 0) {
             if (!a.valorMin || Number(at[i].valor) >= a.valorMin) return { acao: 'fim', motivo: `${rotulo(at[i].id)} ${at[i].valor}: alvo atingido` };
-            const g = i === at.length - 1 ? 'refazer_maior' : 'refazer';
+            const g = i === at.length - 1 && !a.refazerTudo ? 'refazer_maior' : 'refazer';
             const p = precisa(g); if (p) return p;
             return { acao: g, gema: g, motivo: `${rotulo(at[i].id)} ${at[i].valor} abaixo de ${a.valorMin}: re-sortear${g === 'refazer' ? ' (todas as linhas: a linha não é a última)' : ''}` };
         }
         const livres = (ENCAIXES_POR_RARIDADE[rar] || 0) - at.length;
         if (livres > 0) { const p = precisa('atributo'); if (p) return p; return { acao: 'atributo', gema: 'atributo', motivo: 'linha nova no encaixe vazio' }; }
-        if (at.length) { const p = precisa('limpeza_maior'); if (p) return p; return { acao: 'limpeza_maior', gema: 'limpeza_maior', motivo: `apagar ${rotulo(at[at.length - 1].id)} (última linha, não é alvo)` }; }
+        if (at.length) { const gl = a.limparTudo ? 'limpeza' : 'limpeza_maior'; const p = precisa(gl); if (p) return p; return { acao: gl, gema: gl, motivo: a.limparTudo ? `apagar todas as linhas (${at.map(x => rotulo(x.id)).join(', ')}: nenhuma vale guardar)` : `apagar ${rotulo(at[at.length - 1].id)} (última linha, não é alvo)` }; }
         return { acao: 'parar', motivo: `${RAR_PT[rar]} sem encaixe: suba a raridade antes` };
     }
     /* @@FORJA-FIM */
@@ -9406,7 +9423,7 @@
             /* v2.22.0 — o balão de dano recebido por elemento do próprio jogo (party_get_snapshot é consulta: não muda nada) */
             if (emHunt() && socketAberto()) { try { await mkPedir('party_get_snapshot', {}); } catch (e) { falhou('equip (snapshot do grupo)', e); } }
             /* v2.22.0 — cotação real das gemas (forge_lastro é consulta): o custo da forja deixa de usar os preços fixos da wiki */
-            if (socketAberto() && !MK.ocupado) { try { const r = await mkPedir('forge_lastro', {}); if (r && r.ouroPorGema && typeof r.ouroPorGema === 'object') { FORJA_LASTRO.ouro = clonar(r.ouroPorGema); FORJA_LASTRO.t = Date.now(); } } catch (e) { falhou('equip (lastro da forja)', e); } }
+            if (socketAberto() && !MK.ocupado) { try { const r = await mkPedir('forge_lastro', {}), dl = r && r.data; if (dl && dl.disponivel !== false && dl.ouroPorGema && typeof dl.ouroPorGema === 'object') { FORJA_LASTRO.ouro = clonar(dl.ouroPorGema); FORJA_LASTRO.t = Date.now(); } /* v2.25.0: lia r.ouroPorGema, que nunca existia */ } catch (e) { falhou('equip (lastro da forja)', e); } }
             const d = await lerDepot();
             if (d.erro) { EQUIP.aviso = d.erro + ' — ranqueando só o que está no corpo'; log('equip: ' + EQUIP.aviso, 'erro'); }
             else if (d.aviso) EQUIP.aviso = d.aviso;
@@ -13948,6 +13965,11 @@
         try {
             if (!EQUIP.lendo) await equipAtualizar({ manterLiberadas: true }); // lê corpo, mochila, depósito e o lastro da forja
             if (!EQUIP.res) throw new Error('o Equip não leu o equipamento dos 4' + (EQUIP.erro ? ' (' + EQUIP.erro + ')' : ''));
+            if (!MK.catalogo && socketAberto() && !MK.ocupado && mkPremiumAgora() !== false) { // o preço dos fragmentos (só leitura, 1 pedido)
+                MK.ocupado = 'forja'; FJ.progresso = 'preços do Mercado…'; renderizar();
+                try { if (MK.taxa == null) { MK.taxa = MK_TAXA_WIKI; MK.taxaWiki = true; } await mkPedir('market_catalog', {}); } catch (e) { falhou('forja (catálogo)', e); }
+                MK.ocupado = null; FJ.progresso = '';
+            }
             FJ.estoque = fjEstoqueAtual();
             FJ.ouro = mlOuroNormal();
             FJ.custos = fjCustoGemas(fjLastroAtual(), MK.catalogo || null, FJ.estoque);
@@ -14094,6 +14116,7 @@
         const sel = FJ.sel ? FJ.rank.find(l => l.peca.iid === FJ.sel) : null;
         h += `<h4 style="margin:8px 0 2px">Vale forjar? <span class="tb-mut">(pontos por milhão de ouro; 1 pt = 1 % do dano da party)</span></h4>`;
         FJ.rank.forEach((l, i) => {
+            if (i >= 12 && !FJ.abertos.has('fj-mais') && FJ.sel !== l.peca.iid) return;
             const m = l.melhor, k = 'fj-' + l.peca.iid, aberto = FJ.abertos.has(k), ehSel = FJ.sel === l.peca.iid;
             const enc = ((l.peca.forja && l.peca.forja.atributos) || []).map(a => rotulo(a.id) + ' ' + a.valor).join(', ');
             h += `<div class="tb-cx" style="margin:3px 0;padding:4px 6px${ehSel ? ';border-color:#c39a34' : ''}">` +
@@ -14452,6 +14475,8 @@
         verificarAtualizacao, get NOVA_VERSAO() { return NOVA_VERSAO; },
         // v2.11 — Mercado (modelo puro e o estado lido)
         mkMontar, mkSugerir, mkTaxa, mkRevisao, mkVendas, get MERCADO() { return MK; },
+        // v2.25.0 — Forja (modelo puro e o estado lido; forjar e a Bancada NÃO ficam expostos)
+        fjEstoque, fjCustoGemas, fjEstrategias, fjRanking, fjProximoPasso, get FORJA() { return FJ; },
         // v2.18.0 — Melhorias (modelo puro e o estado lido; comprar NÃO fica exposto)
         mlAvaliar, mlCandidatosMercado, get MELHORIAS() { return ML; },
         // v2.13.0 — Radar (estimativa e calibração; só leitura)
