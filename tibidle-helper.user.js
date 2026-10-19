@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.24.1
+// @version      2.24.2
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.24.1';
+    const VERSAO = '2.24.2';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -4480,6 +4480,26 @@
                                                                    magias: Object.values(c.magias).map(m => Object.assign(m, { medio: Math.round(m.medio), porH: Math.round(m.porH) })).sort((a, b) => b.porH - a.porH) })).sort((a, b) => b.porH - a.porH);
         return { seg, sessoes: ss.length, t: Math.max(...ss.map(x => x.t || 0)), tomadoH: Math.round(ss.reduce((t, x) => t + (x.tomadoH || 0) * w(x), 0)), mortes: ss.reduce((t, x) => t + (x.mortes || 0), 0), elemPorVoc, crias: lista };
     }
+    /* v2.24.2 — DANO TOMADO: A MEDIDA MAIS LONGA MANDA. O Equip lia o dano tomado do livro-razão vivo (≥ 2 min) ou do Scan mais
+     * recente; o dano guardado do mapa (dano_mapa, até 3 sessões) só entrava sem os dois. Ao vivo (18/10, Petrified Hollow): uma
+     * reconexão zerou o livro 94 s antes do fim da caçada, a régua caiu no Scan de 4 min (1,1 golpe/s) e a dark armor regen. 2,4
+     * passou na frente da magic plate armor — com o guardado de 11 min (3,2 golpes/s, 382 HP/s) a MPA ganha. Agora o lado "o que
+     * a party toma" (tomadoS, fração física, golpes/s do Knight, elementos por personagem) vem de quem mediu por mais tempo:
+     * o livro (rz, com seg) ou o guardado (dm, com seg). O lado "o que a party dá" continua do livro/Scan. */
+    function danoTomadoDe(rz, dm) {
+        const deGuardado = !!(dm && dm.seg > 0 && dm.tomadoH > 0 && (!rz || !(rz.seg >= dm.seg)));
+        if (deGuardado) {
+            const k = dm.elemPorVoc && dm.elemPorVoc.KNIGHT, elemVoc = {};
+            for (const [v, x] of Object.entries(dm.elemPorVoc || {})) elemVoc[v] = { tomadoS: x.tomadoH / 3600, frac: x.frac };
+            return { deGuardado: true, seg: dm.seg, tomadoS: dm.tomadoH / 3600, fisico: k && k.frac ? (k.frac.fisico || 0) : null,
+                     golpesS: k && k.golpesH > 0 ? k.golpesH / 3600 * ((k.frac && k.frac.fisico) || 0) : null, elemVoc: Object.keys(elemVoc).length ? elemVoc : null };
+        }
+        if (!rz || !(rz.tomadoH > 0)) return null;
+        const elemVoc = {};
+        for (const [v, x] of Object.entries(rz.elemPorVoc || {})) elemVoc[v] = { tomadoS: x.tomadoH / 3600, frac: x.frac };
+        return { deGuardado: false, seg: rz.seg, tomadoS: rz.tomadoH / 3600,
+                 fisico: rz.tomadoCorpoH != null ? rz.tomadoCorpoH / rz.tomadoH : null, golpesS: rz.golpesCorpoH > 0 ? rz.golpesCorpoH / 3600 : null, elemVoc: Object.keys(elemVoc).length ? elemVoc : null };
+    }
     /* @@RAZAO-FIM */
     const DANO_MAPA = { cache: null };
     const danoMapaChave = () => (ESTADO_WS.boss ? 'boss:' + ESTADO_WS.boss : ESTADO_WS.huntId != null ? 'hunt:' + ESTADO_WS.huntId : null);
@@ -4506,7 +4526,7 @@
         const el = (e) => ({ fisico: 'físico' })[e] || e;
         const vocs = VOCS.filter(v => d.elemPorVoc[v] && (!voc || v === voc)).map(v => { const x = d.elemPorVoc[v]; const top = Object.entries(x.frac).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([e, f]) => `${Math.round(f * 100)} % ${el(e)}`).join(' · '); return `<b>${VOC_CURTO[v]}</b> ${milBR(x.tomadoH)}/h: ${top}`; }).join(' ; ');
         const crias = (d.crias || []).slice(0, 4).map(c => `${escHtml(c.nome)}${c.golpes ? ` golpe ${c.golpes.medio} (máx ${c.golpes.max})` : ''}${c.magias.slice(0, 2).map(m => ` · ${escHtml(m.atk)} ${m.medio} (máx ${m.max}, ${el(m.el)})`).join('')}`).join(' | ');
-        return `<div class="tb-mut" style="font-size:10.5px">Dano tomado medido${d.sessoes ? ` (${d.sessoes} sessão${d.sessoes > 1 ? 'ões' : ''}, ${numBR(Math.round(d.seg / 60))} min${d.mortes ? ', ' + d.mortes + ' morte' + (d.mortes > 1 ? 's' : '') : ''})` : ''}: ${vocs || '—'}${crias ? `<br>quem bate: ${crias}` : ''}</div>`;
+        return `<div class="tb-mut" style="font-size:10.5px">Dano tomado medido${d.sessoes ? ` (${d.sessoes} ${d.sessoes > 1 ? 'sessões' : 'sessão'}, ${numBR(Math.round(d.seg / 60))} min${d.mortes ? ', ' + d.mortes + ' morte' + (d.mortes > 1 ? 's' : '') : ''})` : ''}: ${vocs || '—'}${crias ? `<br>quem bate: ${crias}` : ''}</div>`;
     }
     const VOC_CURTO = { KNIGHT: 'Cav', PALADIN: 'Pal', SORCERER: 'Fei', DRUID: 'Dru' };
     function razaoHtml(rz, curto) {
@@ -9037,9 +9057,12 @@
         }
         /* v2.18.2 — vida mínima do Knight na medida: a defesa dele vale menos quando ele não passa aperto */
         if (rz.porVoc && rz.porVoc.KNIGHT && Number.isFinite(Number(rz.porVoc.KNIGHT.hpMin))) P.hpMinK = Number(rz.porVoc.KNIGHT.hpMin);
-        if (rz.tomadoH > 0) {
-            P.tomadoS = rz.tomadoH / 3600;
-            if (rz.tomadoCorpoH != null && rz.golpesCorpoH != null && rz.golpesCorpoH > 0) { P.fisico = rz.tomadoCorpoH / rz.tomadoH; P.golpesS = rz.golpesCorpoH / 3600; }
+        /* v2.24.2 — o lado "o que a party toma" vem de quem mediu por mais tempo: o livro/Scan ou o dano guardado do mapa */
+        const dt = danoTomadoDe(rz, dm);
+        if (dt) {
+            P.tomadoS = dt.tomadoS;
+            if (dt.fisico != null && dt.golpesS != null) { P.fisico = dt.fisico; P.golpesS = dt.golpesS; }
+            if (dt.deGuardado) { if (dt.elemVoc && !snapE) P.elemVoc = dt.elemVoc; P.fonte = fonte + ' + dano guardado do mapa (' + Math.round(dt.seg / 60) + ' min)'; }
         }
         return P;
     }

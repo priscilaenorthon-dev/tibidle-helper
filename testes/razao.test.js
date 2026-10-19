@@ -6,7 +6,7 @@ const trecho = (a, b) => { const i = src.indexOf(a), f = src.indexOf(b); assert(
 const ORDEM = ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'];
 const stubs = `const vocDoIndice = (i) => ${JSON.stringify(ORDEM)}[i] || null; const CAT = { magias: [] }; const precoRuna = () => 0; const FRAME_FRESCO_MS = 5000;
 const guardar = () => {}; const _hash = (s) => s; const amostraRegen = () => null; const medianaRegen = () => 0;`;
-const M = new Function(stubs + trecho('/* @@RAZAO-INICIO', '/* @@RAZAO-FIM */') + '\nreturn { razaoNovo, razaoEvento, razaoResumo, danoMapaJuntar, elemDoJogo };')();
+const M = new Function(stubs + trecho('/* @@RAZAO-INICIO', '/* @@RAZAO-FIM */') + '\nreturn { razaoNovo, razaoEvento, razaoResumo, danoMapaJuntar, elemDoJogo, danoTomadoDe };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 
@@ -64,3 +64,19 @@ t('dano guardado por mapa: junta sessões pelo tempo (frações ponderadas, máx
     assert.strictEqual(j.mortes, 2);
 });
 console.log(`\n${n} testes ok`);
+
+t('2.24.2 dano tomado: a medida mais LONGA do mapa manda (dano guardado de 11 min sobre o Scan de 4 min); sem guardado, fica a do livro', () => {
+    const dm = { seg: 686, sessoes: 3, tomadoH: 1463177, elemPorVoc: { KNIGHT: { tomadoH: 1374928, golpesH: 11518, frac: { fisico: 0.675, terra: 0.28 } }, PALADIN: { tomadoH: 80000, golpesH: 700, frac: { terra: 0.6, drenovida: 0.4 } } } };
+    const rzScan = { seg: 240, tomadoH: 291000, tomadoCorpoH: 190000, golpesCorpoH: 4034, elemPorVoc: { KNIGHT: { tomadoH: 280000, golpesH: 4000, frac: { fisico: 0.89, terra: 0.1 } } } };
+    const a = M.danoTomadoDe(rzScan, dm);
+    assert(a && a.deGuardado === true, 'o guardado (686 s) tem que vencer o Scan (240 s)');
+    assert(Math.abs(a.tomadoS - 1463177 / 3600) < 0.01 && Math.abs(a.fisico - 0.675) < 1e-9, 'tomadoS e físico vêm do guardado: ' + JSON.stringify(a));
+    assert(Math.abs(a.golpesS - 11518 / 3600 * 0.675) < 1e-6, 'golpes/s corpo a corpo = golpes/h do Knight × fração física');
+    assert(a.elemVoc.KNIGHT.frac.terra === 0.28 && Math.abs(a.elemVoc.KNIGHT.tomadoS - 1374928 / 3600) < 0.01, 'elemVoc do guardado');
+    const rzVivo = Object.assign({}, rzScan, { seg: 900 });
+    const b = M.danoTomadoDe(rzVivo, dm);
+    assert(b && b.deGuardado === false && Math.abs(b.tomadoS - 291000 / 3600) < 0.01 && Math.abs(b.golpesS - 4034 / 3600) < 1e-6, 'livro de 15 min vence o guardado de 11: ' + JSON.stringify(b));
+    assert.strictEqual(M.danoTomadoDe(null, null), null);
+    const c = M.danoTomadoDe(null, dm);
+    assert(c && c.deGuardado === true && Math.abs(c.tomadoS - 1463177 / 3600) < 0.01, 'sem livro, o guardado');
+});
