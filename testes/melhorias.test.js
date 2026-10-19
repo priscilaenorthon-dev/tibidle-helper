@@ -123,13 +123,27 @@ t('ouro: "cabe" diz se dá para pagar; sem ouro lido fica null', () => {
     assert.strictEqual(M.mlAvaliar(porVoc, c, null, { ouro: 1000 }).porVoc.DRUID.boots.ofertas[0].cabe, false);
     assert.strictEqual(M.mlAvaliar(porVoc, c, null, {}).porVoc.DRUID.boots.ofertas[0].cabe, null);
 });
-t('recomendada: cara demais (paga-se em > 48 h) não entra nas compras recomendadas nem tem botão', () => {
+t('2.24.3 preço alto NÃO tira a recomendação (dono, 19/10: "pode retirar a parte das 48 h; quero só o item que ele recomenda comprar por classe")', () => {
     const porVoc = cenario(vestidos());
     const c = M.mlCandidatosMercado({ botas: [copia(60, 'steel boots', 5000000, F(1, ['regen_mana', 2.3]))] }, BASE);
     const r = M.mlAvaliar(porVoc, c, null, {});
     const o = r.porVoc.DRUID.boots.ofertas[0];
-    assert(o && o.caro && !o.recomendada, JSON.stringify(o && [o.ganho, o.pagaH]));
-    assert.strictEqual(r.top.length, 0);
+    assert(o && o.recomendada && o.caro === undefined, JSON.stringify(o && [o.ganho, o.pagaH, o.caro, o.recomendada]));
+    assert(r.top.some(x => x.orderId === 60), 'a bota cara entra nas recomendadas');
+});
+t('2.24.3 porClasse: por personagem, a melhor compra recomendada de cada espaço (maior ganho), na ordem Cav → Fei → Dru → Pal; sem nada, lista vazia', () => {
+    const porVoc = cenario(vestidos());
+    const c = M.mlCandidatosMercado({ botas: [copia(61, 'steel boots', 2000, F(1, ['regen_mana', 3.4])), copia(62, 'steel boots', 9000, F(1, ['regen_mana', 3.9]))],
+                                       aneis: [copia(63, 'crystal ring', 300, F(1, ['regen_mana', 2.5]))] }, BASE);
+    const r = M.mlAvaliar(porVoc, c, null, { ouro: 100000 });
+    assert.deepStrictEqual(Object.keys(r.porClasse), ['KNIGHT', 'SORCERER', 'DRUID', 'PALADIN']);
+    for (const v of Object.keys(r.porClasse)) {
+        const l = r.porClasse[v];
+        assert.deepStrictEqual(l.map(x => [x.slot, x.orderId]), [['boots', 62], ['ring', 63]], v + ': uma por espaço, a de maior ganho, maior ganho primeiro: ' + JSON.stringify(l.map(x => [x.slot, x.orderId, x.ganho])));
+        assert(l.every(x => x.recomendada && x.voc === v));
+    }
+    const vazio = M.mlAvaliar(porVoc, [], null, {});
+    assert.deepStrictEqual(Object.values(vazio.porClasse).map(l => l.length), [0, 0, 0, 0]);
 });
 t('2.19.6 set: no Knight, elmo de armadura maior (6 → 9) é recomendado — subir o nível do set é o que o dono pediu', () => {
     const pecas = vestidos().concat([{ iid: 'Kh', nome: 'steel helmet', slot: 'head', attrs: BASE['steel helmet'].attrs, forja: F(0), origem: 'corpo', dono: 'KNIGHT' }]);

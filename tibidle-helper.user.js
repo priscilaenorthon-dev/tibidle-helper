@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.24.2
+// @version      2.24.3
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.24.2';
+    const VERSAO = '2.24.3';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -7253,11 +7253,12 @@
     const ML_GANHO_MIN = 0.3; // abaixo disso é ruído da régua: não vale o ouro nem o clique
     /* dono, 14/10: "vou confiar cegamente — não me faça errar". As "melhores compras" só levam o que é certo:
      *  • seguro (não perde encaixe nobre);
-     *  • paga-se em até ML_PAGA_MAX_H horas de caçada (1 pt ≈ 450 de ouro/h — a régua do Equip);
-     *  • o ganho NÃO vem quase todo de armadura/defesa no Knight: a wiki diz que o bloqueio do escudo tem 2 cargas
+     *  • o ganho NÃO vem quase todo de armadura/defesa no Knight (fase 1): a wiki diz que o bloqueio do escudo tem 2 cargas
      *    (1 por segundo) e que armadura + bloqueio já zeram golpe fraco — a régua ainda conta cada ponto inteiro, e
-     *    nos Scans o Knight nunca precisou de poção de vida. Essas ofertas aparecem por personagem, com o aviso. */
-    const ML_PAGA_MAX_H = 48;
+     *    nos Scans o Knight nunca precisou de poção de vida. Essas ofertas aparecem por personagem, com o aviso.
+     *  v2.24.3 — o teto "paga-se em até 48 h" SAIU (dono, 19/10: "quero só saber por classe o item que ele recomenda
+     *  comprar"): o preço aparece, mas não tira a recomendação. */
+    const ML_ORDEM_CLASSE = ['KNIGHT', 'SORCERER', 'DRUID', 'PALADIN']; // v2.24.3
     const ML_IDS_DEFESA = new Set(['armor', 'defense', 'extradef', 'escudo', 'skillshield', 'resist_fisica', 'absorbpercentphysical']);
     /* refino (wiki /forja): +1 de ataque na arma (wand/rod não) ou +1 de armadura em qualquer outra peça — a régua do Equip
      * não conta; aqui conta, nas DUAS pontas (senão a sua peça +5 pareceria pior do que é) */
@@ -7483,18 +7484,17 @@
                     /* v2.24.0 — fase 2: peça TRABALHADA (refino ≥ 1) com potência total < 350 não se compra ("a pessoa enfia o preço que
                      * gastou num item que não vale"; a base certa é ≥ 350 e aí se trabalha) */
                     const potencia = potenciaTotal(c0), potenciaBaixa = fase2 && (Number(c.forja && c.forja.refino) || 0) >= 1 && potencia < 350;
-                    const caro = pagaH != null && pagaH > ML_PAGA_MAX_H;
                     const soArmadura = ehSet && ganho < ML_GANHO_MIN;
                     const idsForja = new Set(((c.forja && c.forja.atributos) || []).map(a => a.id));
                     const linhasQueValem = r.detalhe.filter(d => idsForja.has(d.id) && Math.abs(d.pt) >= 1).map(d => d.id + ':' + d.valor);
                     ofertas.push({ voc: v, slot: s, orderId: c.orderId, nome: c.nome, cat: c.cat, preco: c.preco, vendedor: c.vendedor, forja: c.forja, linhasQueValem,
                                    pontos: r.pontos, ganho, ouroPorPt: ganho > 0 ? Math.round(c.preco / ganho) : null, pagaH, perdas, seguro: !perdas.length,
                                    cabe: ouro == null ? null : c.preco <= ouro, motivos: r.motivos, duasMaos: !!c.duasMaos,
-                                   fontes: fontes.slice(0, 4), soDefesa, caro, refImbuida, refino: Number(c.forja && c.forja.refino) || 0, ficha: mlFichaVarinha(c0),
+                                   fontes: fontes.slice(0, 4), soDefesa, refImbuida, refino: Number(c.forja && c.forja.refino) || 0, ficha: mlFichaVarinha(c0),
                                    nivelSet: ehSet && pisoSet ? Object.assign(mlFichaSet(c0, s), { de: mlNum(pisoSet.attrs, mlChaveSet(s)) }) : null, soArmadura,
                                    efeito: efeitoOficial(c0, ref0, v, ctx), // v2.20.1 — o que muda no jogo, pelas regras oficiais
                                    potencia, potenciaBaixa, // v2.24.0
-                                   recomendada: !perdas.length && !soDefesa && !caro && !refImbuida && !soArmadura && !potenciaBaixa });
+                                   recomendada: !perdas.length && !soDefesa && !refImbuida && !soArmadura && !potenciaBaixa });
                 }
                 /* melhor primeiro: mais ganho; empate (±5 %), o mais barato */
                 ofertas.sort((p, q) => (Math.abs(q.ganho - p.ganho) > 0.05 * Math.max(p.ganho, q.ganho) ? q.ganho - p.ganho : p.preco - q.preco));
@@ -7527,6 +7527,18 @@
         /* v2.24.0 — fase 2: o Paladino fecha a fila (vídeos 17/10: "arma e colar do Cav → Fei → Dru → armaduras do Cav → … → Paladino por
          * último; o dano principal é dos magos") */
         res.top = [...porOrdem.values()].sort((p, q) => (fase2 ? (p.voc === 'PALADIN') - (q.voc === 'PALADIN') : 0) || (q.ganho / q.preco) - (p.ganho / p.preco) || q.ganho - p.ganho).slice(0, 8);
+        /* v2.24.3 — POR CLASSE (dono, 19/10: "quero só saber por classe e achar no mercado o item que ele recomenda comprar. Só isso"):
+         * para cada personagem, a compra recomendada de maior ganho em cada espaço, maior ganho primeiro; ordem dos vídeos Cav → Fei → Dru → Pal */
+        res.porClasse = {};
+        for (const v of ML_ORDEM_CLASSE) {
+            const l = [];
+            for (const s of SLOTS_EQUIP) {
+                const x = res.porVoc[v] && res.porVoc[v][s];
+                const melhor = x ? x.ofertas.filter(o => o.recomendada).sort((p, q) => q.ganho - p.ganho || p.preco - q.preco)[0] : null;
+                if (melhor) l.push(melhor);
+            }
+            res.porClasse[v] = l.sort((p, q) => q.ganho - p.ganho || p.preco - q.preco);
+        }
         return res;
     }
     /* @@MELHORIAS-FIM */
@@ -9342,21 +9354,25 @@
           <div class="tb-mut tb-eq-info">${dep ? `depósito ${numBR(dep.used)}/${numBR(dep.total)}${dep.lembrado ? ` <span class="tb-av" title="foto guardada na última leitura na cidade">(foto de ${escHtml(new Date(dep.t).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }))})</span>` : ''}` : 'depósito —'}${EQUIP.t ? ` · lido ${new Date(EQUIP.t).toLocaleTimeString('pt-BR')}` : ''}${EQUIP.ctx && EQUIP.ctx.mapa ? ` · wand/rod pelo elemento de ${escHtml(EQUIP.ctx.mapa)}` : ''}${dentro ? ' · <span class="tb-av">equipar só na cidade (o ranking já vê o baú)</span>' : ''}</div>`;
         if (EQUIP.erro) h += `<div class="tb-cx tb-ruim">${escHtml(EQUIP.erro)}</div>`;
         if (EQUIP.aviso) h += `<div class="tb-cx tb-av">${escHtml(EQUIP.aviso)}</div>`;
+        /* v2.24.3 — tudo isto (régua, Legado, ficha do Cavaleiro, vida mínima, dano tomado) fica atrás de um "?" fechado
+         * (dono, 19/10: "na parte de equipar você também está colocando um texto gigante") */
+        let info = '';
         /* v2.24.0 — a fase da régua (vídeos de 13–17/10): até o 110 regen. de mana; depois defesa, proteção mágica e resistência */
         { const fase = faseEquip(EQUIP.ctx), nv = EQUIP.ctx && Number(EQUIP.ctx.nivel) > 0 ? Number(EQUIP.ctx.nivel) : null;
-          h += `<div class="tb-mut" style="font-size:10.5px">Régua: <b>fase ${fase}</b>${nv != null ? ` (nível ${nv}${fase === 2 ? ' ≥' : ' <'} ${FASE2_NIVEL})` : ' (nível não lido)'} — ${fase === 2
+          info += `<div class="tb-mut" style="font-size:10.5px">Régua: <b>fase ${fase}</b>${nv != null ? ` (nível ${nv}${fase === 2 ? ' ≥' : ' <'} ${FASE2_NIVEL})` : ' (nível não lido)'} — ${fase === 2
               ? 'defesa, proteção mágica e resistência (fogo por padrão, ou o elemento medido no mapa) valem cheias no Cavaleiro; vida conta nos magos e no Paladino; base de forja e peça trabalhada só com potência ≥ 350; Paladino por último nas compras. Vídeos de 13–17/10: "depois do 110–120 não se brinca mais de regen. de mana".'
               : 'regen. de mana em 1º (Storming: "até o 80 é o melhor do mundo"); a defesa do Cavaleiro vale pelo aperto medido. A partir do nível ' + FASE2_NIVEL + ' a régua passa para a fase 2 (defesa e resistência).'}</div>`; }
         /* v2.18.2 — por que armadura/defesa do Knight valem menos agora (ou cheias) */
         { const pm = EQUIP.ctx && EQUIP.ctx.party, hp = pm && Number.isFinite(pm.hpMinK) ? pm.hpMinK : null;
           /* v2.20.0 — a ficha oficial da defesa do Knight (regras do jogo, com o que ele veste) */
           let fd = null; try { fd = EQUIP.ctx ? pesosDaVoc('KNIGHT', EQUIP.ctx).fichaDefesa : null; } catch { fd = null; }
-          { const L = EQUIP.ctx && EQUIP.ctx.legado; if (L) h += `<div class="tb-mut" style="font-size:10.5px">Legado (bônus permanente de dano pela skill treinada): ${VOCS.filter(v => L[v]).map(v => `${VOC_ROTULO[v]} ${L[v].marco ? 'marco ' + L[v].marco + ' = +' + numBR(L[v].bonusPct, 0) + ' %' : 'ainda sem marco'} (próximo +${numBR(L[v].proximoBonusPct, 0)} % no ${L[v].proximaSkill})`).join(' · ')}. Linha de skill da forja não conta para o Legado.</div>`; }
-          if (fd) h += `<div class="tb-mut" style="font-size:10.5px">Cavaleiro pela regra do jogo${fd.lido ? '' : ' (referência: sem leitura do que ele veste)'}: bloqueio tira <b>${fd.bloq.min}–${fd.bloq.max}</b> por golpe bloqueado (Escudo ${numBR(fd.skEscudo, 0)} × defesa ${numBR(fd.defEscudo, 0)}; 2 cargas, volta 1/s) · armadura ${numBR(fd.armadura, 0)} tira <b>${fd.arm.min}–${fd.arm.max}</b> por golpe · mitigação <b>${numBR(fd.mit, 2)} %</b> de todo o dano · magia de criatura ignora escudo e armadura (só proteção ao elemento).</div>`;
-          if (hp != null) h += `<div class="tb-mut" style="font-size:10.5px">Knight: vida mínima medida ${Math.round(hp)} % → armadura, defesa e resistências dele valem ${faseEquip(EQUIP.ctx) === 2 ? 'cheias (fase 2: a vida fica alta porque ele bebe poção — cada ponto evitado é um ponto que não se paga)' : (hp >= 60 ? 'metade' : hp >= 40 ? '¾' : 'cheias') + ' (' + (hp >= 40 ? 'ele não está passando aperto' : 'ele está apanhando') + ')'}.</div>`;
+          { const L = EQUIP.ctx && EQUIP.ctx.legado; if (L) info += `<div class="tb-mut" style="font-size:10.5px">Legado (bônus permanente de dano pela skill treinada): ${VOCS.filter(v => L[v]).map(v => `${VOC_ROTULO[v]} ${L[v].marco ? 'marco ' + L[v].marco + ' = +' + numBR(L[v].bonusPct, 0) + ' %' : 'ainda sem marco'} (próximo +${numBR(L[v].proximoBonusPct, 0)} % no ${L[v].proximaSkill})`).join(' · ')}. Linha de skill da forja não conta para o Legado.</div>`; }
+          if (fd) info += `<div class="tb-mut" style="font-size:10.5px">Cavaleiro pela regra do jogo${fd.lido ? '' : ' (referência: sem leitura do que ele veste)'}: bloqueio tira <b>${fd.bloq.min}–${fd.bloq.max}</b> por golpe bloqueado (Escudo ${numBR(fd.skEscudo, 0)} × defesa ${numBR(fd.defEscudo, 0)}; 2 cargas, volta 1/s) · armadura ${numBR(fd.armadura, 0)} tira <b>${fd.arm.min}–${fd.arm.max}</b> por golpe · mitigação <b>${numBR(fd.mit, 2)} %</b> de todo o dano · magia de criatura ignora escudo e armadura (só proteção ao elemento).</div>`;
+          if (hp != null) info += `<div class="tb-mut" style="font-size:10.5px">Knight: vida mínima medida ${Math.round(hp)} % → armadura, defesa e resistências dele valem ${faseEquip(EQUIP.ctx) === 2 ? 'cheias (fase 2: a vida fica alta porque ele bebe poção — cada ponto evitado é um ponto que não se paga)' : (hp >= 60 ? 'metade' : hp >= 40 ? '¾' : 'cheias') + ' (' + (hp >= 40 ? 'ele não está passando aperto' : 'ele está apanhando') + ')'}.</div>`;
           /* v2.21.0 — o dano tomado medido (ao vivo ou guardado deste mapa): de quem e de que elemento */
           try { const vivo = emHunt() && RAZAO.tomado.total > 0 ? razaoResumo(RAZAO) : null; const d = vivo && vivo.seg >= 60 ? Object.assign({ sessoes: 0 }, vivo) : danoMapaDaHunt(huntAtual());
-                if (d) h += danoMapaHtml(d, null); else h += `<div class="tb-mut" style="font-size:10.5px">Dano tomado: ainda sem medida neste mapa — cace nele com o helper aberto (qualquer caçada normal conta; 2 min bastam) e as resistências passam a valer pelo elemento certo.</div>`; } catch (e) { falhou('equip (dano do mapa)', e); } }
+                if (d) info += danoMapaHtml(d, null); else info += `<div class="tb-mut" style="font-size:10.5px">Dano tomado: ainda sem medida neste mapa — cace nele com o helper aberto (qualquer caçada normal conta; 2 min bastam) e as resistências passam a valer pelo elemento certo.</div>`; } catch (e) { falhou('equip (dano do mapa)', e); } }
+        h += aj('eq-regua', info, `? régua (fase ${faseEquip(EQUIP.ctx)}) e dano tomado`);
         if (!R) return h + aj('eq-ajuda', 'ATUALIZAR lê o corpo dos 4, a mochila e o depósito, busca os atributos base e ranqueia por vocação e slot. Nada é equipado nem descartado sem o botão EQUIPAR. Raridade não pontua: um épico com atributos que a vocação não usa perde para um incomum com o atributo certo.');
         h += `<div class="tb-sub tb-eq-vocs" role="group" aria-label="vocação">${VOCS.map(x => {
             const n = Object.values(R.porVoc[x] || {}).filter(eqMexer).length;
@@ -13565,6 +13581,16 @@
         if (!fj || fj.tipo !== 'linha') return '';
         return `<div class="tb-av">⚒ forjar a sua peça sai mais em conta por ponto (≈ ${mkFmt(fj.ouroPorPt)} contra ${mkFmt(o.ouroPorPt)} da compra), mas é sorteio — ${numBR(fj.tentativas, 1)} tentativa(s) em média; detalhes no ${escHtml(VOC_ROTULO[o.voc] || o.voc)} · ${escHtml(slotPt(o.slot))} abaixo</div>`;
     }
+    /* v2.24.3 — a linha curta do resumo por classe: nome, espaço, preço, ganho e o botão; o detalhe fica na lista do personagem */
+    function mlLinhaCurta(o) {
+        const i = ML.botoes.push(o) - 1;
+        const pode = o.recomendada && o.cabe !== false && !ML.comprando && !MK.ocupado;
+        const enc = mlEncaixes(o.forja);
+        return `<div class="tb-cx" style="margin:2px 0;padding:4px 6px"><div class="tb-lin"><span><b>${escHtml(o.nome)}</b> ${rarTag({ forja: o.forja })} <span class="tb-mut">${escHtml(slotPt(o.slot))}${enc ? ' · ' + escHtml(enc) : ''}</span></span>` +
+            `<span class="${o.cabe === false ? 'tb-ruim' : 'tb-ok'}"><b>${mkFmt(o.preco)}</b> ouro</span></div>` +
+            `<div class="tb-linha"><span class="tb-ok">+${numBR(o.ganho, 1)} pt</span>${o.cabe === false ? '<span class="tb-ruim">falta ouro normal</span>' : ''}` +
+            `<button type="button" class="tb-bt pri mini" id="tb-ml-c-${i}" ${pode ? '' : 'disabled'} style="margin-left:auto">${ML.comprando === o.orderId ? 'COMPRANDO…' : 'COMPRAR (2 toques)'}</button></div></div>`;
+    }
     /* os botões de compra pintados nesta tela (índice → oferta): o ligar acha cada um pelo id */
     function mlLinhaOferta(o) {
         const i = ML.botoes.push(o) - 1;
@@ -13582,7 +13608,6 @@
                          : `<span class="tb-mut">${o.ganho < 0 ? numBR(o.ganho, 1) : '±0'} pt na régua</span>`) + `</div>` +
             (o.fontes && o.fontes.length ? `<div class="tb-mut">de onde vem: ${o.fontes.map(f => `${escHtml(rotulo(f.id))} ${numBR(f.de, 2)} → ${numBR(f.para, 2)} (${f.pt > 0 ? '+' : ''}${numBR(f.pt, 1)} pt)`).join(' · ')}</div>` : '') +
             perde + (o.cabe === false ? `<div class="tb-ruim">falta ouro normal para pagar</div>` : '') +
-            (o.caro ? `<div class="tb-av">⚠ caro para o que dá: leva mais de ${ML_PAGA_MAX_H} h de caçada para se pagar</div>` : '') +
             (o.refImbuida ? `<div class="tb-av">⚠ a sua peça atual está imbuída: trocando, o imbuement fica na peça velha — troque quando ele acabar</div>` : '') +
             (o.potenciaBaixa ? `<div class="tb-av">⚠ peça trabalhada (refino +${o.refino}) com potência total ${numBR(o.potencia, 0)} &lt; 350: na fase 2 não se paga preço de item trabalhado por potência baixa (vídeos de 13–15/10) — procure uma base com potência ≥ 350 e trabalhe nela</div>` : '') +
             (o.soDefesa ? `<div class="tb-av">⚠ o ganho vem quase todo de armadura/defesa no Knight — a régua ainda superestima isso (o seu Knight não tem passado aperto)</div>` : '') +
@@ -13613,9 +13638,15 @@
         const nRegride = nEsc('regride'), nSet = nEsc('mesmoNivel');
         if (nRegride) h += `<div class="tb-mut" style="margin-top:4px">🔒 ${nRegride} wand/rod à venda menores que as de vocês ficaram de fora (nível exigido ou dano do tiro menor): só entra a do mesmo nível ou acima.</div>`;
         if (nSet) h += `<div class="tb-mut" style="margin-top:4px">🔒 ${nSet} peça(s) de set à venda do mesmo nível ou abaixo do que vocês já têm ficaram de fora (a mesma peça com a regen. maior também): só entra armadura base maior (defesa no escudo).</div>`;
-        h += `<h4 style="margin:8px 0 2px">Compras recomendadas <span class="tb-mut">(seguras, que se pagam em até ${ML_PAGA_MAX_H} h; mais ganho por ouro primeiro)</span></h4>`;
-        h += top.length ? top.map(o => `<div class="tb-mut" style="margin-top:4px"><b>${escHtml(VOC_ROTULO[o.voc] || o.voc)} · ${escHtml(slotPt(o.slot))}</b></div>` + mlLinhaOferta(o)).join('')
-            : `<div class="tb-ok">Nada no Mercado agora é melhor (e seguro) do que o que vocês já têm${cfg.soCabe ? ' dentro do seu ouro' : ''}.</div>`;
+        /* v2.24.3 — por classe: o item recomendado, o preço e o botão (dono, 19/10: "só isso") */
+        let algum = false;
+        for (const v of ML_ORDEM_CLASSE) {
+            const l = ofertasDe(ML.res.porClasse[v] || []);
+            h += `<div style="margin-top:6px"><b>${escHtml(VOC_ROTULO[v] || v)}</b>${l.length ? '' : ' <span class="tb-mut">— nada melhor à venda</span>'}</div>`;
+            for (const o of l) { algum = true; h += mlLinhaCurta(o); }
+        }
+        if (!algum) h += `<div class="tb-ok" style="margin-top:4px">Nada no Mercado agora é melhor (e seguro) do que o que vocês já têm${cfg.soCabe ? ' dentro do seu ouro' : ''}.</div>`;
+        void top;
         for (const v of VOCS) {
             const slots = ML.res.porVoc[v] || {};
             const linhas = [];
@@ -13635,7 +13666,7 @@
             const n = Object.values(slots).reduce((a, x) => a + ofertasDe(x.ofertas).length, 0);
             h += `<details class="tb-aj" data-k="ml-${v}"><summary>${escHtml(VOC_ROTULO[v] || v)} — ${n ? n + ' melhoria(s)' : 'nada melhor à venda'}</summary><div>${linhas.join('') || '<div class="tb-mut">Todos os espaços já estão no melhor que o Mercado tem hoje.</div>'}</div></details>`;
         }
-        h += aj('ml-como', `<b>Ponto (pt)</b> é a régua do Equip: 1 pt ≈ +1 % do dano da party ≈ 450 de ouro/h; "paga-se em ~X h" = preço ÷ (ganho × 450). A comparação é com a <b>melhor peça que o personagem já tem</b> naquele espaço (não só a vestida) e pesa tudo o que a peça dá (armadura, regen., resistências, skill, dano, crítico em par). <b>Recomendada</b> = não perde encaixe nobre (regen. de mana em todos — nos magos ela pode dar lugar a nível mágico —, regen. de vida no Knight, nível mágico/skill/dano/crítico na arma e no colar), se paga em até ${ML_PAGA_MAX_H} h de caçada e, no Knight, o ganho não vem quase todo de armadura/defesa (a régua ainda superestima defesa). Só a recomendada tem botão de compra; as outras aparecem por personagem com o motivo. Marcando "mostrar também", aparecem até as que perdem encaixe. O Mercado devolve os anúncios de cada categoria como o jogo manda: se a categoria tiver muitos, pode faltar algum. Arma de 2 mãos do Knight concorre com arma + escudo. <b>Set só sobe de nível</b> (elmo, armadura, calça, bota e escudo): só aparece a peça com armadura base maior (defesa no escudo) que TODAS as que o personagem já tem naquele espaço — no empate, nível exigido maior; ou com nível mágico/skill de fábrica maior (Hat of the Mad). A mesma peça com regen. um pouco maior fica de fora. Sem perder regen. de mana/vida; nos 3 que não são Knight a armadura não muda o dano (o corpo a corpo vai no Knight), então ali o nível superior só ganha botão com linha melhor. <b>Wand/rod nunca regride</b>: só aparece a do mesmo nível exigido ou acima e com dano do tiro igual ou maior que a maior que o personagem já tem (a vortex/snakebite forjada não passa mais na frente da sua); entre essas, ganham as linhas da forja, o dano e a mana por tiro, e o elemento conta neutro (a compra serve a todos os mapas). Peça que pede nível acima do seu não aparece. O seu próprio anúncio nunca aparece. <b>Comprar</b> (wiki /mercado): é imediato e não pode ser desfeito; Premium não paga taxa; só ouro normal (não o travado); o item vai para a mochila (cheia: depósito). Antes de comprar, o helper relê o anúncio e confere preço e ouro. Depois, equipe pela aba Equip. <b>⚒ Forjar a sua</b> (embaixo de cada espaço com oferta): quanto custaria, em média, pôr uma linha que vale na peça que você já tem — só quando ela tem encaixe vazio (ou falta 1 grau de raridade para abrir um); conta Atributo T1 20 mil + Limpeza T2 40 mil por tentativa repetida, Raridade T1 30 mil, 100 fragmentos por gema (preço do fragmento do Mercado, ou 2 mil estimado) e a chance de sorteio da wiki. A forja só aparece como "mais em conta" quando sai 1/3 mais barata por ponto, porque comprar é certo e a forja é sorteio.`, 'como funciona');
+        h += aj('ml-como', `<b>Ponto (pt)</b> é a régua do Equip: 1 pt ≈ +1 % do dano da party ≈ 450 de ouro/h; "paga-se em ~X h" = preço ÷ (ganho × 450). A comparação é com a <b>melhor peça que o personagem já tem</b> naquele espaço (não só a vestida) e pesa tudo o que a peça dá (armadura, regen., resistências, skill, dano, crítico em par). <b>Recomendada</b> = não perde encaixe nobre (regen. de mana em todos — nos magos ela pode dar lugar a nível mágico —, regen. de vida no Knight, nível mágico/skill/dano/crítico na arma e no colar), e, no Knight, o ganho não vem quase todo de armadura/defesa (a régua ainda superestima defesa). Só a recomendada tem botão de compra; as outras aparecem por personagem com o motivo. Marcando "mostrar também", aparecem até as que perdem encaixe. O Mercado devolve os anúncios de cada categoria como o jogo manda: se a categoria tiver muitos, pode faltar algum. Arma de 2 mãos do Knight concorre com arma + escudo. <b>Set só sobe de nível</b> (elmo, armadura, calça, bota e escudo): só aparece a peça com armadura base maior (defesa no escudo) que TODAS as que o personagem já tem naquele espaço — no empate, nível exigido maior; ou com nível mágico/skill de fábrica maior (Hat of the Mad). A mesma peça com regen. um pouco maior fica de fora. Sem perder regen. de mana/vida; nos 3 que não são Knight a armadura não muda o dano (o corpo a corpo vai no Knight), então ali o nível superior só ganha botão com linha melhor. <b>Wand/rod nunca regride</b>: só aparece a do mesmo nível exigido ou acima e com dano do tiro igual ou maior que a maior que o personagem já tem (a vortex/snakebite forjada não passa mais na frente da sua); entre essas, ganham as linhas da forja, o dano e a mana por tiro, e o elemento conta neutro (a compra serve a todos os mapas). Peça que pede nível acima do seu não aparece. O seu próprio anúncio nunca aparece. <b>Comprar</b> (wiki /mercado): é imediato e não pode ser desfeito; Premium não paga taxa; só ouro normal (não o travado); o item vai para a mochila (cheia: depósito). Antes de comprar, o helper relê o anúncio e confere preço e ouro. Depois, equipe pela aba Equip. <b>⚒ Forjar a sua</b> (embaixo de cada espaço com oferta): quanto custaria, em média, pôr uma linha que vale na peça que você já tem — só quando ela tem encaixe vazio (ou falta 1 grau de raridade para abrir um); conta Atributo T1 20 mil + Limpeza T2 40 mil por tentativa repetida, Raridade T1 30 mil, 100 fragmentos por gema (preço do fragmento do Mercado, ou 2 mil estimado) e a chance de sorteio da wiki. A forja só aparece como "mais em conta" quando sai 1/3 mais barata por ponto, porque comprar é certo e a forja é sorteio.`, 'como funciona');
         return h + `<div class="tb-mut" style="margin-top:6px">${ML.nCands} peças à venda conferidas. Só COMPRAR (2 toques) envia comando ao jogo.</div></div>`;
     }
     function ligarMelhorias() {

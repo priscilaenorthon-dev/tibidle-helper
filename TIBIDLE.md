@@ -5451,3 +5451,16 @@ Na cidade (18/10, Throne of Verminor (id 200; o Scan de 4 min era de Petrified H
 mapa (`dano_mapa`, até 3 sessões). O lado "o que a party dá" continua do livro/Scan. Fonte na tela: "Scan … + dano guardado do mapa
 (11 min)". Resultado ao vivo na cidade: MPA 92,9 · golden armor 76,5 · dark armor regen 76,3 · lavos 71,1. Typo "sessãoões" corrigido.
 1 teste novo em `razao.test.js`.
+
+## 2.24.3 — Melhorias por classe, sem o teto de 48 h; Equip sem o bloco de texto (19/10)
+
+Dono, 19/10: "pode retirar essa parte (mais de 48 h para se pagar). Eu quero só saber por classe e achar no mercado o item que
+ele recomenda comprar. Só isso. E na parte de equipar você também está colocando um texto gigante."
+
+- `mlAvaliar`: a regra "paga-se em até 48 h" (`ML_PAGA_MAX_H`, `caro`) saiu; o preço continua na linha, mas não tira a recomendação.
+  Novo `res.porClasse` = {VOC: [a compra recomendada de maior ganho em cada espaço, maior ganho primeiro]}, ordem Cav → Fei → Dru → Pal.
+- Tela Melhorias: o topo virou "por personagem": nome da peça, raridade, espaço, encaixes, preço, +pt e COMPRAR (2 toques)
+  (`mlLinhaCurta`); o detalhe (de onde vem o ganho, efeito no jogo, forjar a sua) continua na lista de cada personagem.
+- Tela Equip: régua/fase, Legado, ficha do Cavaleiro pela regra do jogo, vida mínima e "dano tomado medido / quem bate" foram
+  para um "?" fechado ("? régua (fase N) e dano tomado"). Nada mudou na conta.
+- Testes: `melhorias.test.js` — o teste do "caro" virou "preço alto não tira a recomendação"; +1 teste do `porClasse`.
