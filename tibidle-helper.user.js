@@ -6887,23 +6887,30 @@
     function forjaSimular(peca, alvo, opc) {
         opc = opc || {}; alvo = alvo || {};
         const f = normForja(peca && peca.forja), slot = normalizarSlot(peca && peca.slot);
-        const precos = Object.assign({}, FORJA_GEMA_OURO, opc.precos || {}), n = Math.max(1, Math.min(20000, opc.n || 2000)), maxG = opc.maxGemas || 400;
+        /* v2.25.0 — opc.custos (ouro por gema, por cima de precos), opc.limite ({gema: n} = o estoque: a rodada que precisaria de mais
+         * para e conta como falha) e porGema90 na saída; linha-alvo já na peça abaixo do valor: Refazer T2 se é a última, senão Refazer T1 */
+        const precos = Object.assign({}, FORJA_GEMA_OURO, opc.precos || {}, opc.custos || {}), n = Math.max(1, Math.min(20000, opc.n || 2000)), maxG = opc.maxGemas || 400;
+        const lim = opc.limite && typeof opc.limite === 'object' ? opc.limite : null;
         const refAlvo = Math.max(Number(f.refino) || 0, Math.min(10, Number(alvo.refino) || 0));
         const rar0 = Math.max(0, Math.min(5, Number(f.raridade) || 0));
         const rodadas = [];
         for (let i = 0; i < n; i++) {
             const rnd = rngSemente((opc.seed || 1) * 7919 + i);
             const g = {}; const gasta = (k) => { g[k] = (g[k] || 0) + 1; return Object.values(g).reduce((a, b) => a + b, 0); };
+            const pode = (k) => !lim || lim[k] == null || (g[k] || 0) < lim[k];
             let refino = Number(f.refino) || 0, rar = rar0, at = (f.atributos || []).map(a => ({ id: a.id, valor: a.valor })), total = 0, ok = false;
             /* refino */
             while (refino < refAlvo && total < maxG) {
-                const prox = refino + 1, p = FORJA_REFINO_PCT[prox - 1], gar = !!alvo.garantia && prox >= 5;
-                total = gasta(prox <= 4 ? 'refino' : 'refino_maior'); if (gar) total = gasta('garantia');
+                const prox = refino + 1, p = FORJA_REFINO_PCT[prox - 1], gar = !!alvo.garantia && prox >= 5, gk = prox <= 4 ? 'refino' : 'refino_maior';
+                if (!pode(gk) || (gar && !pode('garantia'))) break;
+                total = gasta(gk); if (gar) total = gasta('garantia');
                 if (rnd() * 100 < p) refino = prox; else if (prox >= 5 && !gar) refino = Math.max(0, refino - 1);
             }
             const faixa = faixaPotencia((Number(f.potenciaBase) || 0) + 50 * refino);
-            const rarAlvo = Math.max(rar0, Math.min(5, Number(alvo.raridade) || 0), at.length >= (ENCAIXES_POR_RARIDADE[rar0] || 0) ? Math.min(5, rar0 + 1) : rar0);
-            while (rar < rarAlvo && total < maxG) {
+            /* v2.25.0 — só abre encaixe sozinho quando o alvo é uma LINHA (antes um alvo só de refino gastava Raridade numa peça Comum) */
+            const querLinha = !!((Array.isArray(alvo.linhas) && alvo.linhas.length) || alvo.linha);
+            const rarAlvo = Math.max(rar0, Math.min(5, Number(alvo.raridade) || 0), querLinha && at.length >= (ENCAIXES_POR_RARIDADE[rar0] || 0) ? Math.min(5, rar0 + 1) : rar0);
+            while (rar < rarAlvo && total < maxG && pode(rar >= 4 ? 'raridade_maior' : 'raridade')) {
                 total = gasta(rar >= 4 ? 'raridade_maior' : 'raridade');
                 if (rnd() * 100 < FORJA_RARIDADE_PCT[rar]) rar++;
             }
@@ -6914,15 +6921,27 @@
             if (alvos.size) {
                 const tem = at.find(a => alvos.has(a.id));
                 if (tem && (!alvo.valorMin || tem.valor >= alvo.valorMin)) ok = true;
+                else if (tem && alvo.valorMin) {
+                    /* a linha certa já está na peça, com valor baixo: re-sorteia o valor (a última com Refazer T2; as outras só com Refazer T1, que mexe em todas) */
+                    let tent = 0;
+                    while (!ok && total < maxG && tent++ < 60) {
+                        const ult = at.indexOf(tem) === at.length - 1, gk = ult ? 'refazer_maior' : 'refazer';
+                        if (!pode(gk)) break;
+                        total = gasta(gk);
+                        if (ult) tem.valor = forjaValorSorteado(tem.id, faixa, rnd); else for (const a of at) a.valor = forjaValorSorteado(a.id, faixa, rnd);
+                        ok = tem.valor >= alvo.valorMin;
+                    }
+                }
                 while (!ok && total < maxG) {
                     const livres = (ENCAIXES_POR_RARIDADE[rar] || 0) - at.length;
-                    if (livres <= 0) { if (!at.length) break; total = gasta('limpeza_maior'); at = at.slice(0, -1); continue; }
+                    if (livres <= 0) { if (!at.length || !pode('limpeza_maior')) break; total = gasta('limpeza_maior'); at = at.slice(0, -1); continue; }
+                    if (!pode('atributo')) break;
                     total = gasta('atributo');
                     const id = forjaLinhaSorteada(slot, at, rnd); if (!id) break;
                     at = at.concat([{ id, valor: forjaValorSorteado(id, faixa, rnd) }]);
                     if (!alvos.has(id)) continue;
                     let tent = 0;
-                    while (alvo.valorMin && at[at.length - 1].valor < alvo.valorMin && total < maxG && tent++ < 60) { total = gasta('refazer_maior'); at[at.length - 1].valor = forjaValorSorteado(id, faixa, rnd); }
+                    while (alvo.valorMin && at[at.length - 1].valor < alvo.valorMin && total < maxG && tent++ < 60 && pode('refazer_maior')) { total = gasta('refazer_maior'); at[at.length - 1].valor = forjaValorSorteado(id, faixa, rnd); }
                     ok = !alvo.valorMin || at[at.length - 1].valor >= alvo.valorMin;
                 }
             } else ok = refino >= refAlvo && rar >= rarAlvo;
@@ -6932,8 +6951,9 @@
         const okR = rodadas.filter(r => r.ok), q = (arr, p) => { const a = arr.slice().sort((x, y) => x - y); return a.length ? a[Math.min(a.length - 1, Math.floor(p * a.length))] : 0; };
         const media = (k) => (okR.length ? okR.reduce((t, r) => t + r[k], 0) / okR.length : 0);
         const porGema = {}; for (const r of okR) for (const [k, v] of Object.entries(r.g)) porGema[k] = (porGema[k] || 0) + v / okR.length;
+        const porGema90 = Object.fromEntries(Object.keys(porGema).map(k => [k, q(okR.map(r => r.g[k] || 0), 0.9)]));
         return { n, sucesso: Math.round(okR.length / n * 1000) / 1000, gemas: Math.round(media('gemas') * 10) / 10, gemas90: q(okR.map(r => r.gemas), 0.9), ouro: Math.round(media('ouro')), ouro90: q(okR.map(r => r.ouro), 0.9),
-                 fragmentos: Math.round(media('gemas') * 100), porGema: Object.fromEntries(Object.entries(porGema).map(([k, v]) => [k, Math.round(v * 100) / 100])), precos };
+                 fragmentos: Math.round(media('gemas') * 100), porGema: Object.fromEntries(Object.entries(porGema).map(([k, v]) => [k, Math.round(v * 100) / 100])), porGema90, precos };
     }
     /* v2.16.0 — DESMANCHE (wiki /forja, 12/10): fragmentos devolvidos pela FAIXA DA POTÊNCIA TOTAL (base + 50 × refino)
      * e pela raridade; Comum não desmancha. Chance de o fragmento ser Tier 2: 0 % nas faixas I–III, 10 % IV, 25 % V,
@@ -7542,6 +7562,203 @@
         return res;
     }
     /* @@MELHORIAS-FIM */
+    /* @@FORJA-INICIO — aba Forja (2.25.0): funções puras; testes/forja.test.js roda EQUIP-PURO + MELHORIAS + este trecho.
+     *  Dono, 19/10: "Você vai ser agora um especialista de Forja. Nunca fiz, então quero que nossa automação tire de letra."
+     *  Fontes (docs/plans/2026-10-19-forja-design.md): wiki /forja (19/10), o cliente do jogo (protocolo forge_*: quote, simulate,
+     *  refine, rarity, attr, craft, lastro), TV de Souza "Guia definitivo da forja" e "Guia completo de itens e forja", Osfurg "Tier
+     *  rápido". Regras dos vídeos embutidas: só peça BiS (ou base com linha de skill); refino até +4 (+5/+6 só cruzando faixa e com
+     *  Garantia); nunca rolar Atributo atrás de skill (1 em 89); a jogada da comunidade é cruzar faixa + Refazer na linha de skill.
+     *  Decisões do dono (19/10): o botão FORJAR usa só gemas e fragmentos que a conta já tem (nada de compra); orçamento padrão
+     *  50 % do ouro; a simulação da peça é a Bancada do jogo (forge_simulate, grátis); o Monte Carlo local fica para o ranking. */
+    const FJ_GEMAS = ['refino', 'garantia', 'limpeza', 'atributo', 'refazer', 'raridade', 'refino_maior', 'limpeza_maior', 'refazer_maior', 'ordem', 'raridade_maior'];
+    const FJ_ITEM_GEMA = { refino: 'refine gem t1', garantia: 'guarantee gem t1', limpeza: 'cleansing gem t1', atributo: 'attribute gem t1', refazer: 'reroll gem t1', raridade: 'rarity gem t1',
+                           refino_maior: 'refine gem t2', limpeza_maior: 'cleansing gem t2', refazer_maior: 'reroll gem t2', ordem: 'order gem t2', raridade_maior: 'rarity gem t2' };
+    const fjItemFragmento = (g) => FJ_ITEM_GEMA[g].replace(/\bgem\b/, 'fragment');
+    const FJ_COINS_GEMA = { refino: 5, garantia: 5, limpeza: 5, atributo: 6, refazer: 6, raridade: 7, refino_maior: 8, limpeza_maior: 8, refazer_maior: 8, ordem: 9, raridade_maior: 10 };
+    const FJ_GEMA_PT = { refino: 'Refino T1', garantia: 'Garantia T1', limpeza: 'Limpeza T1', atributo: 'Atributo T1', refazer: 'Refazer T1', raridade: 'Raridade T1',
+                         refino_maior: 'Refino T2', limpeza_maior: 'Limpeza T2', refazer_maior: 'Refazer T2', ordem: 'Ordem T2', raridade_maior: 'Raridade T2' };
+    const FJ_FRAG_POR_GEMA = 100, FJ_GANHO_MIN = 0.5, FJ_VALE_MIN = 1, FJ_REFINO_MAX = 4, FJ_SIM_N = 600;
+    const fjMin = (s) => String(s == null ? '' : s).toLowerCase().trim();
+    /* gemas e fragmentos por tipo, somando a mochila ({nome: n}) e o depósito ([{itemName, count}]) */
+    function fjEstoque(bag, entries) {
+        const gemas = {}, fragmentos = {}, porItem = {};
+        for (const g of FJ_GEMAS) { gemas[g] = 0; fragmentos[g] = 0; porItem[FJ_ITEM_GEMA[g]] = ['gemas', g]; porItem[fjItemFragmento(g)] = ['fragmentos', g]; }
+        const somar = (nome, n) => { const k = porItem[fjMin(nome)]; if (!k || !(Number(n) > 0)) return; (k[0] === 'gemas' ? gemas : fragmentos)[k[1]] += Math.round(Number(n)); };
+        for (const [nome, n] of Object.entries(bag || {})) somar(nome, n);
+        for (const e of (entries || [])) if (e) somar(e.itemName || e.name, e.count);
+        return { gemas, fragmentos };
+    }
+    /* o que cada gema custa HOJE: ouro de criar (o lastro do jogo: ouro base + coins × cotação; sem ele, a wiki) + 100 fragmentos ao preço do
+     * Mercado (menor anúncio do fragmento; sem anúncio, 2 mil). `custo` é o que UMA tentativa custa de verdade; disponiveis = prontas + floor(frag/100). */
+    function fjCustoGemas(lastro, catalogo, estoque, opc) {
+        opc = opc || {};
+        const ouroJogo = lastro && lastro.disponivel !== false && lastro.ouroPorGema && typeof lastro.ouroPorGema === 'object' ? lastro.ouroPorGema : null;
+        const cotacao = ouroJogo && Number(ouroJogo.raridade_maior) > 0 ? Math.round((Number(ouroJogo.raridade_maior) - FORJA_GEMA_OURO.raridade_maior) / FJ_COINS_GEMA.raridade_maior)
+            : (Number(opc.cotacao) > 0 ? Number(opc.cotacao) : null);
+        const out = { cotacao, lastro: !!ouroJogo };
+        for (const g of FJ_GEMAS) {
+            const ouroCriar = ouroJogo && Number(ouroJogo[g]) > 0 ? Number(ouroJogo[g]) : FORJA_GEMA_OURO[g] + (cotacao ? FJ_COINS_GEMA[g] * cotacao : 0);
+            const c = catalogo ? catalogo[fjItemFragmento(g)] : null, temPreco = !!(c && Number(c.sellOrders) > 0 && Number(c.minSell) > 0);
+            const precoFrag = temPreco ? Number(c.minSell) : PRECO_FRAG_ESTIMADO;
+            const prontas = (estoque && estoque.gemas && estoque.gemas[g]) || 0, fragmentos = (estoque && estoque.fragmentos && estoque.fragmentos[g]) || 0;
+            const criaveis = Math.floor(fragmentos / FJ_FRAG_POR_GEMA);
+            out[g] = { ouroCriar, precoFrag, fragEstimado: !temPreco, custo: ouroCriar + FJ_FRAG_POR_GEMA * precoFrag, prontas, fragmentos, criaveis, disponiveis: prontas + criaveis };
+        }
+        return out;
+    }
+    const fjCustosSim = (custos) => Object.fromEntries(FJ_GEMAS.map(g => [g, custos && custos[g] && custos[g].custo > 0 ? custos[g].custo : FORJA_GEMA_OURO[g]]));
+    const fjStat = (slot) => (normalizarSlot(slot) === 'weapon' ? 'ataque' : 'armadura');
+    /* ESTRATÉGIAS de uma peça para a vocação: cada uma com ganho na régua do Equip (pt), custo médio e de 90 % (Monte Carlo com as regras
+     * do jogo), chance, gemas por tipo e os passos. opc = {n, seed, refinoMax (4), estoque (marca cabe/falta pelo que a conta tem)}. */
+    function fjEstrategias(peca, voc, ctx, custos, opc) {
+        opc = opc || {};
+        const f = normForja(peca.forja), slot = normalizarSlot(peca.slot), P = pesosDaVoc(voc, ctx);
+        const precos = fjCustosSim(custos);
+        const sim = (alvo) => forjaSimular(Object.assign({}, peca, { forja: f }), alvo, { n: opc.n || FJ_SIM_N, seed: opc.seed || 7, custos: precos, maxGemas: 300 });
+        const ptRef = (N) => pontuarPeca(mlComRefino(Object.assign({}, peca, { forja: Object.assign({}, f, { refino: N }) })), voc, ctx).pontos;
+        const refino0 = Number(f.refino) || 0, pot0 = potenciaTotal(Object.assign({}, peca, { forja: f })), base = ptRef(refino0), refinoMax = opc.refinoMax || FJ_REFINO_MAX;
+        const stat = fjStat(slot), ehVarinha = !!(peca.attrs && (peca.attrs.weaponType === 'wand' || peca.attrs.wandType));
+        const out = [];
+        const add = (id, nome, alvo, ganhoPt, passos, extra) => {
+            if (!(ganhoPt >= FJ_GANHO_MIN)) return;
+            const s = sim(alvo);
+            if (!(s.sucesso > 0)) return;
+            const e = Object.assign({ id, nome, alvo, ganhoPt: Math.round(ganhoPt * 100) / 100, custoMedio: s.ouro, custo90: s.ouro90, gemasMedio: s.gemas, gemas90: s.gemas90, chance: s.sucesso,
+                                      porGema: s.porGema, porGema90: s.porGema90, passos, ptPorMilhao: s.ouro > 0 ? Math.round(ganhoPt / s.ouro * 1e6 * 100) / 100 : null }, extra || {});
+            if (opc.estoque) {
+                const falta = [];
+                for (const [g, q] of Object.entries(s.porGema90 || {})) { const precisa = Math.ceil(q), tem = custos && custos[g] ? custos[g].disponiveis : 0; if (precisa > 0 && tem < precisa) falta.push(`${FJ_GEMA_PT[g]} (tem ${tem}, precisa ${precisa})`); }
+                e.cabe = !falta.length; e.falta = falta.join(', ');
+            }
+            out.push(e);
+        };
+        const faixaEm = (r) => faixaPotencia((Number(f.potenciaBase) || 0) + 50 * r);
+        /* 1. REFINO: +1 ataque (arma) ou +1 armadura por nível, pela régua; acima do padrão (+4) só se cruza faixa, com Garantia; wand/rod só ganha potência */
+        if (!ehVarinha) for (let N = refino0 + 1; N <= Math.min(10, Math.max(refinoMax, 6)); N++) {
+            if (N > refinoMax && faixaEm(N) === faixaEm(refinoMax)) continue;
+            const ganho = ptRef(N) - base;
+            add('refino', 'Refino +' + N, { refino: N, garantia: N >= 5 }, ganho,
+                [`Refinar de +${refino0} até +${N}${N >= 5 ? ' (Garantia T1 em toda tentativa do +5 em diante: a falha não derruba)' : ' (até o +4 a falha não derruba)'}: ${stat} +${N - refino0}, potência ${pot0} → ${pot0 + 50 * (N - refino0)} (faixa ${faixaEm(N)})`]);
+        }
+        /* 2. FAIXA + REFAZER (a jogada da comunidade): linha de skill que a vocação usa; refinar até a faixa que sobe o teto e re-sortear o valor */
+        for (const a of f.atributos) {
+            if (!SKILL_FORJA.includes(a.id) || !((P[a.id] || 0) > 0)) continue;
+            const faixa0 = faixaPotencia(pot0);
+            for (let fx = faixa0; fx <= Math.min(6, faixa0 + 2); fx++) {
+                const limiar = FAIXA_LIMIAR[fx - 1], refinos = Math.max(0, Math.ceil((limiar - pot0) / 50)), N = refino0 + refinos;
+                if (N > 6) continue;
+                const teto = faixaRange(a.id, fx)[1];
+                if (!(teto > Number(a.valor))) continue;
+                const ganho = (teto - Number(a.valor)) * P[a.id];
+                const ult = f.atributos.indexOf(a) === f.atributos.length - 1;
+                add('faixa', `${rotulo(a.id)} +${a.valor} → +${teto}`, { refino: N, garantia: N >= 5, linhas: [a.id], valorMin: teto }, ganho,
+                    (refinos ? [`Refinar de +${refino0} até +${N}${N >= 5 ? ' (com Garantia T1)' : ''}: potência ${pot0} → ${pot0 + 50 * refinos}, faixa ${faixa0} → ${fx} (${rotulo(a.id)} passa a poder ter até +${teto})`] : [])
+                        .concat([`${ult ? 'Refazer T2 (só o último encaixe)' : 'Refazer T1 (re-sorteia o valor de TODAS as linhas)'} até ${rotulo(a.id)} chegar a +${teto}`]), { linha: a.id });
+            }
+        }
+        /* 3. ENCAIXE NOVO: só linhas de peso 10 que valem ≥ 0,3 pt (nunca skill: 1 em 89); sem encaixe vazio, Raridade T1 abre um */
+        const rar = Number(f.raridade) || 0, enc = ENCAIXES_POR_RARIDADE[rar] || 0, livres = enc - f.atributos.length;
+        if (rar < 5) {
+            const grupo = PESO_LINHA[slot === 'weapon' || slot === 'necklace' ? 'ataque' : 'defesa'], faixa = faixaPotencia(pot0);
+            const linhas = [];
+            for (const [id, w] of Object.entries(grupo)) {
+                if (w < 10 || SKILL_FORJA.includes(id) || f.atributos.some(x => x.id === id)) continue;
+                const ganho = valorTipico(id, faixa) * (P[id] || 0), chance = chanceLinha(id, slot, f.atributos);
+                if (ganho >= 0.3 && chance > 0) linhas.push({ id, ganho, chance });
+            }
+            const p = linhas.reduce((s, x) => s + x.chance, 0);
+            if (linhas.length && p > 0) {
+                const ganhoMedio = linhas.reduce((s, x) => s + x.chance * x.ganho, 0) / p;
+                const alvo = { linhas: linhas.map(x => x.id) };
+                if (livres <= 0) alvo.raridade = rar + 1;
+                add('encaixe', 'Linha nova', alvo, ganhoMedio,
+                    (livres <= 0 ? [`Raridade T1 até ${RAR_PT[rar + 1]} (${FORJA_RARIDADE_PCT[rar]} % por gema; falhar não rebaixa) para abrir um encaixe`] : [])
+                        .concat([`Atributo T1 no encaixe vazio até cair uma linha que vale (${linhas.sort((x, y) => y.ganho - x.ganho).slice(0, 3).map(x => rotulo(x.id)).join(', ')}…: ${Math.round(p * 100)} % por gema); linha ruim → Limpeza T2 e tenta de novo`]),
+                    { linhas });
+            }
+        }
+        /* 4. SUBIR VALOR: linha nobre já na peça abaixo da mediana da faixa → Refazer (T2 se é a última, T1 senão) */
+        for (const a of f.atributos) {
+            if (SKILL_FORJA.includes(a.id) || !((P[a.id] || 0) > 0) || !nobresDe(slot, voc).includes(a.id)) continue;
+            const alvoV = valorTipico(a.id, faixaPotencia(pot0));
+            if (!(alvoV > Number(a.valor) + 1e-9)) continue;
+            const ult = f.atributos.indexOf(a) === f.atributos.length - 1;
+            add('valor', `${rotulo(a.id)} ${a.valor} → ${alvoV}`, { linhas: [a.id], valorMin: alvoV }, (alvoV - Number(a.valor)) * P[a.id],
+                [`${ult ? 'Refazer T2 (só o último encaixe)' : 'Refazer T1 (re-sorteia o valor de TODAS as linhas)'} até ${rotulo(a.id)} chegar a ${alvoV} (mediana da faixa ${faixaPotencia(pot0)})`], { linha: a.id });
+        }
+        return out.sort((x, y) => (y.ptPorMilhao || 0) - (x.ptPorMilhao || 0) || y.ganhoPt - x.ganhoPt);
+    }
+    /* RANKING: pecasPorVoc = {VOC: [{peca, origem: 'bis'|'base'|'reserva', slot}]}. A melhor estratégia de cada peça (mais pt por milhão entre as que
+     * cabem no estoque; senão a melhor de todas) e o selo: vale (≥ 1 pt, cabe no estoque, custo médio ≤ ouro) · estoque · ouro · nao. */
+    function fjRanking(pecasPorVoc, ctx, custos, ouro, estoque, opc) {
+        opc = opc || {};
+        const linhas = [];
+        for (const [voc, lista] of Object.entries(pecasPorVoc || {})) {
+            for (const x of (lista || [])) {
+                if (!x || !x.peca) continue;
+                const f = normForja(x.peca.forja), P = pesosDaVoc(voc, ctx);
+                const bis = x.origem === 'bis' || (Number(f.raridade) || 0) >= RARIDADE_BASE_FORJA || f.atributos.some(a => SKILL_FORJA.includes(a.id) && (P[a.id] || 0) > 0);
+                const es = fjEstrategias(x.peca, voc, ctx, custos, Object.assign({}, opc, { estoque: estoque || null }));
+                const cabem = es.filter(e => e.cabe !== false);
+                const melhor = (cabem.length ? cabem : es)[0] || null;
+                let selo = 'nao', motivo = '';
+                if (!bis) motivo = 'item de entrada: não é a melhor peça de ninguém nem tem linha de skill — gema aqui é ouro jogado fora (vídeos)';
+                else if (!melhor || melhor.ganhoPt < FJ_VALE_MIN) motivo = melhor ? 'o melhor plano rende menos de 1 pt' : 'nenhum plano rende 0,5 pt';
+                else if (melhor.cabe === false) { selo = 'estoque'; motivo = 'falta ' + melhor.falta; }
+                else if (ouro != null && melhor.custoMedio > ouro) { selo = 'ouro'; motivo = `custo médio ${Math.round(melhor.custoMedio / 1000)} k acima do ouro`; }
+                else selo = 'vale';
+                linhas.push({ peca: x.peca, voc, slot: x.slot || normalizarSlot(x.peca.slot), origem: x.origem || null, bis, melhor, estrategias: es, selo, motivo });
+            }
+        }
+        const ordem = { vale: 0, estoque: 1, ouro: 2, nao: 3 };
+        return linhas.sort((a, b) => ordem[a.selo] - ordem[b.selo] || ((b.melhor && b.melhor.ptPorMilhao) || 0) - ((a.melhor && a.melhor.ptPorMilhao) || 0) || ((b.melhor && b.melhor.ganhoPt) || 0) - ((a.melhor && a.melhor.ganhoPt) || 0));
+    }
+    /* A MÁQUINA DE DECISÃO do botão FORJAR (pura): dado o plano {alvo:{refino, raridade, linhas, valorMin}, garantia}, a peça como está
+     * (forja ou instância) e o estado {estoque:{gemas, fragmentos}, gasto, orcamento, tentativas, maxTentativas, ouro, ouroCriar}, devolve
+     * a próxima ação: refino | raridade | atributo | limpeza_maior | refazer | refazer_maior (com a gema e, no refino, garantia) · craft (criar a
+     * gema que falta com 100 fragmentos) · fim (alvo atingido) · parar (motivo). Quem executa manda UMA ação, relê a peça e pergunta de novo. */
+    function fjProximoPasso(plano, inst, estado) {
+        plano = plano || {}; const a = plano.alvo || {}, est = estado || {};
+        const f = normForja(inst && inst.forja ? inst.forja : inst);
+        const gemas = (est.estoque && est.estoque.gemas) || {}, frags = (est.estoque && est.estoque.fragmentos) || {};
+        if (est.orcamento != null && est.gasto >= est.orcamento) return { acao: 'parar', motivo: `orçamento de ${Math.round(est.orcamento / 1000)} k atingido (gasto ${Math.round((est.gasto || 0) / 1000)} k)` };
+        if (est.maxTentativas && est.tentativas >= est.maxTentativas) return { acao: 'parar', motivo: `${est.tentativas} tentativas: o limite do plano (1,5× o pior caso de 90 %)` };
+        const precisa = (g) => {
+            if ((gemas[g] || 0) > 0) return null;
+            if ((frags[g] || 0) >= FJ_FRAG_POR_GEMA) {
+                const ouro = est.ouroCriar && est.ouroCriar[g];
+                if (est.ouro != null && ouro != null && est.ouro < ouro) return { acao: 'parar', motivo: `sem ouro para criar ${FJ_GEMA_PT[g]} (custa ${Math.round(ouro / 1000)} k, tem ${Math.round(est.ouro / 1000)} k)` };
+                return { acao: 'craft', gema: g, motivo: `criar 1 ${FJ_GEMA_PT[g]} com 100 fragmentos` };
+            }
+            return { acao: 'parar', motivo: `sem ${FJ_GEMA_PT[g]} (tem ${gemas[g] || 0} gema(s) e ${frags[g] || 0} fragmentos; precisa de 100 para criar)` };
+        };
+        const refino = Number(f.refino) || 0, rar = Number(f.raridade) || 0, at = f.atributos;
+        if (refino < (Number(a.refino) || 0)) {
+            const prox = refino + 1, g = prox <= 4 ? 'refino' : 'refino_maior', gar = prox >= 5 && plano.garantia !== false && a.garantia !== false;
+            const p = precisa(g); if (p) return p;
+            if (gar) { const pg = precisa('garantia'); if (pg) return pg; }
+            return { acao: 'refino', gema: g, garantia: gar, motivo: `refino +${refino} → +${prox} (${FORJA_REFINO_PCT[prox - 1]} %)` };
+        }
+        if (rar < (Number(a.raridade) || 0)) {
+            const g = rar >= 4 ? 'raridade_maior' : 'raridade';
+            const p = precisa(g); if (p) return p;
+            return { acao: 'raridade', gema: g, motivo: `raridade ${RAR_PT[rar]} → ${RAR_PT[rar + 1]} (${FORJA_RARIDADE_PCT[rar]} %)` };
+        }
+        const alvos = new Set(Array.isArray(a.linhas) ? a.linhas : a.linha ? [a.linha] : []);
+        if (!alvos.size) return { acao: 'fim', motivo: 'alvo atingido' };
+        const i = at.findIndex(x => alvos.has(x.id));
+        if (i >= 0) {
+            if (!a.valorMin || Number(at[i].valor) >= a.valorMin) return { acao: 'fim', motivo: `${rotulo(at[i].id)} ${at[i].valor}: alvo atingido` };
+            const g = i === at.length - 1 ? 'refazer_maior' : 'refazer';
+            const p = precisa(g); if (p) return p;
+            return { acao: g, gema: g, motivo: `${rotulo(at[i].id)} ${at[i].valor} abaixo de ${a.valorMin}: re-sortear${g === 'refazer' ? ' (todas as linhas: a linha não é a última)' : ''}` };
+        }
+        const livres = (ENCAIXES_POR_RARIDADE[rar] || 0) - at.length;
+        if (livres > 0) { const p = precisa('atributo'); if (p) return p; return { acao: 'atributo', gema: 'atributo', motivo: 'linha nova no encaixe vazio' }; }
+        if (at.length) { const p = precisa('limpeza_maior'); if (p) return p; return { acao: 'limpeza_maior', gema: 'limpeza_maior', motivo: `apagar ${rotulo(at[at.length - 1].id)} (última linha, não é alvo)` }; }
+        return { acao: 'parar', motivo: `${RAR_PT[rar]} sem encaixe: suba a raridade antes` };
+    }
+    /* @@FORJA-FIM */
 
     /* =========================================================================
      *  TELAS
