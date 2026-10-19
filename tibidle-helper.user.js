@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.23.5
+// @version      2.24.0
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.23.5';
+    const VERSAO = '2.24.0';
 
     /* =========================================================================
      *  ⚠ POR QUE document-start E NÃO document-idle
@@ -6247,6 +6247,16 @@
     const VOCS_EQUIP = ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'];
     const PT_OURO_H = 450;
     const VIDA_PT_KNIGHT = 3.6, VIDA_PT_LADO = 0.5;
+    /* v2.24.0 — FASE 2 (vídeos de 13–17/10: TV de Souza "Como aumentar o seu dano — forja 2", "RMT" e "Como ficar muito forte";
+     * Storming 14/10): até o 80 a regen. de mana é "o melhor do mundo"; "depois do 110–120 a gente não brinca mais de regeneração
+     * de mana" — o critério vira potência ≥ 350 + proteção mágica + resistência ao elemento que bate (fogo na maioria das hunts
+     * altas) e, nos laterais, vida ("mago que morre não dá dano, não cura e leva a party para o DP"). A régua muda pelo NÍVEL da
+     * conta (ctx.nivel); sem nível lido, fase 1. Aprovado pelo dono em 18/10 ("faça a mudança de acordo com as pesquisas"). */
+    const FASE2_NIVEL = 110;
+    const faseEquip = (ctx) => (ctx && Number(ctx.nivel) >= FASE2_NIVEL ? 2 : 1);
+    /* referência do dano tomado pelo Knight na fase 2 quando não há medida (17/10, nível 130, Holy Portal lure 8: ~143 HP/s;
+     * 8 criaturas batendo a cada 2 s ≈ 2 golpes/s que passam pelo bloqueio). Qualquer medida do livro-razão ou do mapa substitui. */
+    const PARTY_REF_FASE2 = { tomadoS: 140, golpesS: 2 };
     const WC_HP_POR_MANA = 2.5; // v2.23.1 — HP de Wound Cleansing por mana do Knight que vira defesa (medido 17/10: 95–164 HP / 40 mana ≈ 3,2; ~¼ sobra com a vida cheia)
     /* elemento das magias de cada mago (dono, 29/09): Feiticeiro energia e fogo, Druida gelo e terra */
     const ELEM_DO_MAGO = { SORCERER: ['energia', 'fogo'], DRUID: ['gelo', 'terra'] };
@@ -6277,9 +6287,9 @@
         ouroPorMana: 0.6
     };
     function partyDoCtx(ctx) {
-        const p = (ctx && ctx.party) || {}, R = {};
+        const p = (ctx && ctx.party) || {}, R = {}, fase2 = faseEquip(ctx) === 2;
         for (const k of Object.keys(PARTY_REF)) {
-            const ref = PARTY_REF[k], v = p[k];
+            const ref = fase2 && k in PARTY_REF_FASE2 ? PARTY_REF_FASE2[k] : PARTY_REF[k], v = p[k]; // v2.24.0
             if (k === 'elemVoc') { R[k] = v && typeof v === 'object' ? v : null; continue; } // v2.21.0
             if (ref && typeof ref === 'object') { R[k] = Object.assign({}, ref); for (const [kk, vv] of Object.entries(v || {})) if (typeof vv === 'boolean' || Number.isFinite(vv)) R[k][kk] = vv; }
             else R[k] = Number.isFinite(v) && v >= 0 ? v : ref;
@@ -6428,7 +6438,7 @@
         return (R.dpm[voc] || 0) / R.dps * 100;
     }
     function pesosDaVoc(voc, ctx) {
-        const R = partyDoCtx(ctx), s = R.share[voc] || 0, P = {};
+        const R = partyDoCtx(ctx), s = R.share[voc] || 0, P = {}, fase2 = faseEquip(ctx) === 2; // v2.24.0
         const sk = Object.assign({}, REF_SK);
         for (const [k, v] of Object.entries((ctx && ctx.sk && ctx.sk[voc]) || {})) if (Number.isFinite(v) && v > 0) sk[k] = v;
         const n5 = ((ctx && ctx.nivel > 0 && ctx.nivel) || sk.nivel) / 5;
@@ -6500,7 +6510,10 @@
              *     mínima dele ficou em 61–75 % sem poção de vida. Com a vida mínima medida ≥ 60 % a defesa vale metade;
              *     40–60 %, ¾; abaixo de 40 % (ou sem medida), cheia. Regen. de vida e cura própria ficam como estão
              *     (regra do dono: regen. de mana em 1º, regen. de vida em 2º; valem também contra magia). */
-            const folga = R.hpMinK == null ? 1 : R.hpMinK >= 60 ? 0.5 : R.hpMinK >= 40 ? 0.75 : 1;
+            /* v2.24.0 — na fase 2 a folga some: a vida mínima fica alta porque ele BEBE poção (medido 17/10: ~145k/h de cura, mais
+             * que o loot) — cada ponto de vida que a armadura/resistência evita é um ponto que não se paga. Vídeos: "viver é mais
+             * importante do que recuperar dois de mana". */
+            const folga = fase2 ? 1 : (R.hpMinK == null ? 1 : R.hpMinK >= 60 ? 0.5 : R.hpMinK >= 40 ? 0.75 : 1);
             const bloqueiosS = Math.min(R.golpesS, 1);
             /* v2.20.0 — PELA REGRA OFICIAL (wiki /como-o-dano-e-calculado + Canary, 16/10), com o que o Knight veste hoje
              * (ctx.kn: defesa do escudo e armadura total; sem leitura, uma referência) e a skill Escudo vista no frame:
@@ -6520,7 +6533,9 @@
             /* v2.21.0 — resistência por elemento pelo que o Knight TOMA de cada um neste mapa (medido: mhit/mcast por
              * elemento); sem medida, a magia das criaturas é dividida por igual entre os 4 elementos de antes */
             const ek = R.elemVoc && R.elemVoc.KNIGHT && R.elemVoc.KNIGHT.frac;
-            for (const e of ELEM) P['resist_' + e] = P['absorbpercent' + ELEM_EN[e]] = _r((ek ? R.tomadoS / 100 * VIDA_PT_KNIGHT * (ek[e] || 0) : k1 * (1 - R.fisico) / 4) * folga);
+            /* v2.24.0 — sem medida, na fase 2 o padrão é FOGO (vídeos: "a maior parte dos danos é de fogo"): metade do peso da magia
+             * das criaturas vai para fogo, 10 % para cada um dos outros */
+            for (const e of ELEM) P['resist_' + e] = P['absorbpercent' + ELEM_EN[e]] = _r((ek ? R.tomadoS / 100 * VIDA_PT_KNIGHT * (ek[e] || 0) : k1 * (1 - R.fisico) * (fase2 ? (e === 'fogo' ? 0.5 : 0.1) : 0.25)) * folga);
             P.absorbpercentpoison = P.resist_terra;
             P.elemMedido = !!ek;
             P.cura_propria = _r(k1 * 0.5); // metade da vida dele volta por poção/cura própria
@@ -6531,12 +6546,13 @@
             P.fichaDefesa = { skEscudo: skE, defEscudo: defE, armadura: armE, bloq, arm, mit, bloqueiosS, golpesS: R.golpesS, tomadoS: R.tomadoS, lido: !!(kn.defEscudo > 0 || kn.armadura != null) };
         } else {
             const la = R.ladoApanha > 0 ? R.ladoApanha : 1;
-            P.regen_vida = _r(VIDA_PT_LADO * la); P.max_hp = _r(0.01 * la);
+            /* v2.24.0 — fase 2: vida conta nos laterais (vídeos: resistência → proteção mágica → VIDA; o Magic Shield come mana) */
+            P.regen_vida = _r(VIDA_PT_LADO * la); P.max_hp = _r((fase2 ? 0.04 : 0.01) * la);
             /* v2.21.0 — lateral medido: o que ELE toma por segundo de cada elemento (magia de área de criatura) */
             const ev = R.elemVoc && R.elemVoc[voc], tS = ev ? ev.tomadoS : 0;
             P.resist_fisica = P.absorbpercentphysical = _r(ev ? tS / 100 * VIDA_PT_LADO * (ev.frac.fisico || 0) : 0.02 * la);
             P.protecao_magica = _r(ev ? tS / 100 * VIDA_PT_LADO * (1 - (ev.frac.fisico || 0)) : 0.15 * la);
-            for (const e of ELEM) P['resist_' + e] = P['absorbpercent' + ELEM_EN[e]] = _r(ev ? tS / 100 * VIDA_PT_LADO * (ev.frac[e] || 0) : 0.05 * la);
+            for (const e of ELEM) P['resist_' + e] = P['absorbpercent' + ELEM_EN[e]] = _r(ev ? tS / 100 * VIDA_PT_LADO * (ev.frac[e] || 0) : (fase2 ? (e === 'fogo' ? 0.15 : 0.03) : 0.05) * la); // v2.24.0: fogo por padrão na fase 2
             P.absorbpercentpoison = P.resist_terra;
             P.elemMedido = !!ev;
             P.cura_propria = _r(0.05 * la);
@@ -6548,6 +6564,7 @@
         /* v2.18.1 — chance de acerto do arco/besta (elvish bow 5, hornbow 2): +1 % de acerto ≈ +1,1 % no dano do tiro
          * (acerto de base ~90 %); só o Paladino atira — nos outros vale 0 */
         P.hitchance = voc === 'PALADIN' ? _r(s * (1 - fm) * 1.1) : 0;
+        P.fase = fase2 ? 2 : 1; // v2.24.0
         return P;
     }
     /* v2.11.6 — PARES (crítico e roubo de vida): o ganho de uma peça depende do
@@ -6725,6 +6742,8 @@
      * sobe de faixa (1–199, 200–399, 400–599, 600–799, 800+); a faixa é o teto das linhas de skill (ML, distância,
      * corpo a corpo: faixa 2 → até +2, faixa 3 → até +3). Uma Snakebite Rod ML+1 com 300+ vira ML+3 na forja. */
     const POTENCIA_BASE_FORJA = 300, SKILL_FORJA = ['nivel_magico', 'distancia', 'corpo_a_corpo'];
+    /* v2.24.0 — fase 2: "item base só vale com potência 350–400; abaixo disso você gasta e não chega" (TV de Souza 13 e 15/10) */
+    const potenciaBaseForja = (ctx) => (faseEquip(ctx) === 2 ? 350 : POTENCIA_BASE_FORJA);
     const potenciaDe = p => Number(p && p.forja && p.forja.potenciaBase) || 0;
     /* v2.14.9 — DESMANCHE (criador do jogo, 04/10): o que o NPC não compra (Incomum ou melhor, ou refinada) e ninguém usa
      * vira fragmento na Forja — a única fonte de gemas. Só mochila (bag) e depósito (depot); o corpo nunca. */
@@ -6920,6 +6939,14 @@
     /* v2.16.0 — O QUE É BOM PARA CADA PERSONAGEM, em palavras (wiki /guia-do-*, /forja; TV de Souza 02/10 e 12/10;
      * NunohS 11/10; criador do jogo 04/10). A pontuação do helper é a medida da SUA party; estas são as regras que a
      * comunidade usa e que a tela mostra ao lado, para você conferir quando as duas discordarem. */
+    /* v2.24.0 — o que muda na fase 2 (nível ≥ 110), pelos vídeos de 13–17/10; aparece ANTES das regras gerais */
+    const REGRAS_FASE2 = {
+        KNIGHT: ['FASE 2: "depois do 110–120 não se brinca mais de regen. de mana" — defesa BASE alta (Royal/Demon/Zaoan Helmet; Golden Armor → Dragon Scale Mail → Magic Plate Armor → prismático da Isolda; Golden → Zaoan Legs) com proteção mágica + resistência a fogo nos encaixes; regen. "no final do final"',
+                 'FASE 2: arma de maior ataque refinada só até +4; colar a potência 400 para cair corpo a corpo 2; linhas de arma/colar: corpo a corpo + dano físico % + chance de crítico; base de forja só com potência ≥ 350 (meta 600)'],
+        PALADIN: ['FASE 2: o Paladino é o último a receber ("filho esquecido; o dano principal é dos magos") — mas tudo que aparecer para ele vai: distância, dano físico + sagrado + crítico na arma e no colar; no corpo resist. a fogo + proteção mágica + vida'],
+        SORCERER: ['FASE 2: wand e colar = dano de ENERGIA + dano mágico % + ML (crítico "não bobeia"); no corpo resist. ao elemento + proteção mágica + VIDA ("mago que morre não dá dano"; com resistência alta dá para caçar sem Magic Shield); potência ≥ 350, meta 600'],
+        DRUID: ['FASE 2: rod e colar = dano de GELO + dano mágico % + ML; no corpo resist. ao elemento + proteção mágica + VIDA; "set de terra" subiu o lucro de uma hunt de ~200k/h; potência ≥ 350, meta 600']
+    };
     const REGRAS_VOCACAO = {
         KNIGHT: ['arma: a de MAIOR ATAQUE que ele pode usar (Heroic Axe → Onyx Flail → Magic Sword → Stonecutter 50 / Shiny Blade); +1 de corpo a corpo numa arma fraca não compensa (TV de Souza: "não segura arma fraca porque brilha")',
                  'tudo que dá armadura vai nele — é o único que apanha corpo a corpo; escudo sempre (sem escudo não há bloqueio)',
@@ -7165,7 +7192,7 @@
          * Atributo T1; TV de Souza 02/10: "uma Mace com 500 de potência é item de noob — desencanta"). Base de forja
          * = potência ≥ 300 com linha de skill, OU Épico+ com pelo menos uma linha que vale para quem pode vestir. */
         const temLinhaUtil = p => vocs.some(v => linhasUteis(p, v, ctx).length > 0);
-        const baseDeForja = p => (potenciaDe(p) >= POTENCIA_BASE_FORJA && ((p.forja && p.forja.atributos) || []).some(a => SKILL_FORJA.includes(a.id) && Number(a.valor) > 0))
+        const baseDeForja = p => (potenciaDe(p) >= potenciaBaseForja(ctx) && ((p.forja && p.forja.atributos) || []).some(a => SKILL_FORJA.includes(a.id) && Number(a.valor) > 0))
             || (((p.forja && p.forja.raridade) || 0) >= RARIDADE_BASE_FORJA && temLinhaUtil(p));
         const bases = pecas.filter(p => !usadas.has(p.iid) && !ehTemporaria(p) && baseDeForja(p));
         /* v2.11.19 — dono, 30/09: "caso todos já estejam equipados com itens bons quero ter a opção de vender".
@@ -7288,7 +7315,8 @@
     /* v2.23.2 — a mesma peça anunciada N vezes é UMA oferta: a mais barata, com o total à venda (dono, 18/10: "recomendando
      * spellbook of mind control várias vezes"). "Mesma" = nome, refino e as linhas que VALEM para a vocação (≥ 1 pt); raridade
      * e linhas que não contam (capacidade, roubo de vida num mago…) não separam — senão 7 spirit cloaks lotavam a lista. */
-    const mlAssinatura = (o) => [o.nome, (o.forja && o.forja.refino) || 0, (o.linhasQueValem || []).slice().sort().join(',')].join('|');
+    /* v2.24.0 — a faixa de potência entra na assinatura: um elmo +3 com potência 250 e outro com 450 não são "a mesma peça" */
+    const mlAssinatura = (o) => [o.nome, (o.forja && o.forja.refino) || 0, faixaPotencia(potenciaTotal(o)), (o.linhasQueValem || []).slice().sort().join(',')].join('|');
     function mlUnicas(ofertas) {
         const grupos = new Map();
         for (const o of ofertas) { const k = mlAssinatura(o), g = grupos.get(k); if (g) g.push(o); else grupos.set(k, [o]); }
@@ -7384,6 +7412,7 @@
          * mapa de hoje é imune a fogo. */
         if (ctx && ctx.notas) ctx = Object.assign({}, ctx, { notas: null });
         const nivelConta = ctx && Number(ctx.nivel) > 0 ? Number(ctx.nivel) : null;
+        const fase2 = faseEquip(ctx) === 2; // v2.24.0
         for (const [v, slots] of Object.entries(porVoc || {})) {
             res.porVoc[v] = {};
             for (const [s, x] of Object.entries(slots || {})) {
@@ -7424,7 +7453,11 @@
                     const fontes = mlFontes(c, ref, v, ctx), pos = fontes.filter(f => f.pt > 0), somaPos = pos.reduce((a, f) => a + f.pt, 0);
                     const defesa = pos.filter(f => ML_IDS_DEFESA.has(f.id)).reduce((a, f) => a + f.pt, 0);
                     /* no set, armadura melhor é o que o dono pediu: o aviso "só defesa" fica para os outros espaços */
-                    const soDefesa = !ehSet && v === 'KNIGHT' && somaPos > 0 && defesa > 0.6 * somaPos;
+                    /* v2.24.0 — na fase 2 defesa é exatamente o que se compra para o Knight: o aviso "só defesa" é só da fase 1 */
+                    const soDefesa = !fase2 && !ehSet && v === 'KNIGHT' && somaPos > 0 && defesa > 0.6 * somaPos;
+                    /* v2.24.0 — fase 2: peça TRABALHADA (refino ≥ 1) com potência total < 350 não se compra ("a pessoa enfia o preço que
+                     * gastou num item que não vale"; a base certa é ≥ 350 e aí se trabalha) */
+                    const potencia = potenciaTotal(c0), potenciaBaixa = fase2 && (Number(c.forja && c.forja.refino) || 0) >= 1 && potencia < 350;
                     const caro = pagaH != null && pagaH > ML_PAGA_MAX_H;
                     const soArmadura = ehSet && ganho < ML_GANHO_MIN;
                     const idsForja = new Set(((c.forja && c.forja.atributos) || []).map(a => a.id));
@@ -7435,7 +7468,8 @@
                                    fontes: fontes.slice(0, 4), soDefesa, caro, refImbuida, refino: Number(c.forja && c.forja.refino) || 0, ficha: mlFichaVarinha(c0),
                                    nivelSet: ehSet && pisoSet ? Object.assign(mlFichaSet(c0, s), { de: mlNum(pisoSet.attrs, mlChaveSet(s)) }) : null, soArmadura,
                                    efeito: efeitoOficial(c0, ref0, v, ctx), // v2.20.1 — o que muda no jogo, pelas regras oficiais
-                                   recomendada: !perdas.length && !soDefesa && !caro && !refImbuida && !soArmadura });
+                                   potencia, potenciaBaixa, // v2.24.0
+                                   recomendada: !perdas.length && !soDefesa && !caro && !refImbuida && !soArmadura && !potenciaBaixa });
                 }
                 /* melhor primeiro: mais ganho; empate (±5 %), o mais barato */
                 ofertas.sort((p, q) => (Math.abs(q.ganho - p.ganho) > 0.05 * Math.max(p.ganho, q.ganho) ? q.ganho - p.ganho : p.preco - q.preco));
@@ -7465,7 +7499,9 @@
                 }
             }
         }
-        res.top = [...porOrdem.values()].sort((p, q) => (q.ganho / q.preco) - (p.ganho / p.preco) || q.ganho - p.ganho).slice(0, 8);
+        /* v2.24.0 — fase 2: o Paladino fecha a fila (vídeos 17/10: "arma e colar do Cav → Fei → Dru → armaduras do Cav → … → Paladino por
+         * último; o dano principal é dos magos") */
+        res.top = [...porOrdem.values()].sort((p, q) => (fase2 ? (p.voc === 'PALADIN') - (q.voc === 'PALADIN') : 0) || (q.ganho / q.preco) - (p.ganho / p.preco) || q.ganho - p.ganho).slice(0, 8);
         return res;
     }
     /* @@MELHORIAS-FIM */
@@ -9278,13 +9314,18 @@
           <div class="tb-mut tb-eq-info">${dep ? `depósito ${numBR(dep.used)}/${numBR(dep.total)}${dep.lembrado ? ` <span class="tb-av" title="foto guardada na última leitura na cidade">(foto de ${escHtml(new Date(dep.t).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }))})</span>` : ''}` : 'depósito —'}${EQUIP.t ? ` · lido ${new Date(EQUIP.t).toLocaleTimeString('pt-BR')}` : ''}${EQUIP.ctx && EQUIP.ctx.mapa ? ` · wand/rod pelo elemento de ${escHtml(EQUIP.ctx.mapa)}` : ''}${dentro ? ' · <span class="tb-av">equipar só na cidade (o ranking já vê o baú)</span>' : ''}</div>`;
         if (EQUIP.erro) h += `<div class="tb-cx tb-ruim">${escHtml(EQUIP.erro)}</div>`;
         if (EQUIP.aviso) h += `<div class="tb-cx tb-av">${escHtml(EQUIP.aviso)}</div>`;
+        /* v2.24.0 — a fase da régua (vídeos de 13–17/10): até o 110 regen. de mana; depois defesa, proteção mágica e resistência */
+        { const fase = faseEquip(EQUIP.ctx), nv = EQUIP.ctx && Number(EQUIP.ctx.nivel) > 0 ? Number(EQUIP.ctx.nivel) : null;
+          h += `<div class="tb-mut" style="font-size:10.5px">Régua: <b>fase ${fase}</b>${nv != null ? ` (nível ${nv}${fase === 2 ? ' ≥' : ' <'} ${FASE2_NIVEL})` : ' (nível não lido)'} — ${fase === 2
+              ? 'defesa, proteção mágica e resistência (fogo por padrão, ou o elemento medido no mapa) valem cheias no Cavaleiro; vida conta nos magos e no Paladino; base de forja e peça trabalhada só com potência ≥ 350; Paladino por último nas compras. Vídeos de 13–17/10: "depois do 110–120 não se brinca mais de regen. de mana".'
+              : 'regen. de mana em 1º (Storming: "até o 80 é o melhor do mundo"); a defesa do Cavaleiro vale pelo aperto medido. A partir do nível ' + FASE2_NIVEL + ' a régua passa para a fase 2 (defesa e resistência).'}</div>`; }
         /* v2.18.2 — por que armadura/defesa do Knight valem menos agora (ou cheias) */
         { const pm = EQUIP.ctx && EQUIP.ctx.party, hp = pm && Number.isFinite(pm.hpMinK) ? pm.hpMinK : null;
           /* v2.20.0 — a ficha oficial da defesa do Knight (regras do jogo, com o que ele veste) */
           let fd = null; try { fd = EQUIP.ctx ? pesosDaVoc('KNIGHT', EQUIP.ctx).fichaDefesa : null; } catch { fd = null; }
           { const L = EQUIP.ctx && EQUIP.ctx.legado; if (L) h += `<div class="tb-mut" style="font-size:10.5px">Legado (bônus permanente de dano pela skill treinada): ${VOCS.filter(v => L[v]).map(v => `${VOC_ROTULO[v]} ${L[v].marco ? 'marco ' + L[v].marco + ' = +' + numBR(L[v].bonusPct, 0) + ' %' : 'ainda sem marco'} (próximo +${numBR(L[v].proximoBonusPct, 0)} % no ${L[v].proximaSkill})`).join(' · ')}. Linha de skill da forja não conta para o Legado.</div>`; }
           if (fd) h += `<div class="tb-mut" style="font-size:10.5px">Cavaleiro pela regra do jogo${fd.lido ? '' : ' (referência: sem leitura do que ele veste)'}: bloqueio tira <b>${fd.bloq.min}–${fd.bloq.max}</b> por golpe bloqueado (Escudo ${numBR(fd.skEscudo, 0)} × defesa ${numBR(fd.defEscudo, 0)}; 2 cargas, volta 1/s) · armadura ${numBR(fd.armadura, 0)} tira <b>${fd.arm.min}–${fd.arm.max}</b> por golpe · mitigação <b>${numBR(fd.mit, 2)} %</b> de todo o dano · magia de criatura ignora escudo e armadura (só proteção ao elemento).</div>`;
-          if (hp != null) h += `<div class="tb-mut" style="font-size:10.5px">Knight: vida mínima medida ${Math.round(hp)} % → armadura, defesa e resistências dele valem ${hp >= 60 ? 'metade' : hp >= 40 ? '¾' : 'cheias'} (${hp >= 40 ? 'ele não está passando aperto' : 'ele está apanhando'}).</div>`;
+          if (hp != null) h += `<div class="tb-mut" style="font-size:10.5px">Knight: vida mínima medida ${Math.round(hp)} % → armadura, defesa e resistências dele valem ${faseEquip(EQUIP.ctx) === 2 ? 'cheias (fase 2: a vida fica alta porque ele bebe poção — cada ponto evitado é um ponto que não se paga)' : (hp >= 60 ? 'metade' : hp >= 40 ? '¾' : 'cheias') + ' (' + (hp >= 40 ? 'ele não está passando aperto' : 'ele está apanhando') + ')'}.</div>`;
           /* v2.21.0 — o dano tomado medido (ao vivo ou guardado deste mapa): de quem e de que elemento */
           try { const vivo = emHunt() && RAZAO.tomado.total > 0 ? razaoResumo(RAZAO) : null; const d = vivo && vivo.seg >= 60 ? Object.assign({ sessoes: 0 }, vivo) : danoMapaDaHunt(huntAtual());
                 if (d) h += danoMapaHtml(d, null); else h += `<div class="tb-mut" style="font-size:10.5px">Dano tomado: ainda sem medida neste mapa — cace nele com o helper aberto (qualquer caçada normal conta; 2 min bastam) e as resistências passam a valer pelo elemento certo.</div>`; } catch (e) { falhou('equip (dano do mapa)', e); } }
@@ -9335,7 +9376,7 @@
          * cidade, no Auto Selling nem no Mercado — só se usa ou se desmancha, e o
          * desmanche é a ÚNICA fonte de fragmentos (gemas). Comum sem refino vende. */
         /* v2.16.0 — o que é bom para este personagem, em palavras (regras da comunidade + wiki), ao lado da medida */
-        h += aj('eq-regras-' + v, `<ul style="margin:2px 0 0 14px;padding:0">${(REGRAS_VOCACAO[v] || []).map(x => '<li>' + escHtml(x) + '</li>').join('')}</ul>` +
+        h += aj('eq-regras-' + v, `<ul style="margin:2px 0 0 14px;padding:0">${((faseEquip(EQUIP.ctx) === 2 ? (REGRAS_FASE2[v] || []) : []).concat(REGRAS_VOCACAO[v] || [])).map(x => '<li>' + escHtml(x) + '</li>').join('')}</ul>` +
             `<div class="tb-eq-nota" style="margin-top:4px">A nota em pt é a medida da SUA party (1 pt = 1 % do dano dos 4), com duas regras da comunidade por cima (decisão de 13/10): nos magos +1 ML vale pelo menos uma regen. de mana 2,0, e chance de crítico sozinha já conta (base 0 % no jogo; dano extra de 50 % é premissa). Fontes: wiki /forja e /guia-do-${escHtml(VOC_NOME[v])}, TV de Souza (02/10, 12/10), NunohS (11/10).</div>`,
             `? o que é bom para o ${VOC_ROTULO[v]}`);
         const temNegocio = MK.catalogo ? (nome) => { const c = MK.catalogo[mkMin(nome)]; return !!(c && Number(c.trades30d) > 0); } : null; // v2.23.4
@@ -9423,7 +9464,7 @@
                 `<ol style="margin:4px 0 0 16px;padding:0">${pl.passos.map(x => '<li>' + escHtml(x) + '</li>').join('')}</ol></div></details>`;
         };
         if (bases.length) { h += aj('eq-bases', `<div class="tb-linha">${btAnunciar('tb-eq-anunciar-bases', bases.filter(p => p.origem !== 'corpo').length, 'as bases')}</div>` +
-            `<div class="tb-mut tb-eq-nota">peça que já CAIU com a linha certa (ML, distância ou corpo a corpo com potência ≥ ${POTENCIA_BASE_FORJA}) ou Épico+ com pelo menos uma linha que alguém usa: só valem guardar se você for forjar — <a class="tb-lk" href="https://tibidle.com/wiki/forja" target="_blank" rel="noopener">como forjar</a>. Sem forjar, anuncie. Cada peça abaixo tem um <b>plano</b>: para quem, quantos refinos até a próxima faixa, quais linhas procurar (com a chance real de cada uma) e a ordem das gemas. Épico sem linha útil não fica aqui: está nas sobras (rolar skill cai 1 em 89).</div>` +
+            `<div class="tb-mut tb-eq-nota">peça que já CAIU com a linha certa (ML, distância ou corpo a corpo com potência ≥ ${potenciaBaseForja(EQUIP.ctx)}) ou Épico+ com pelo menos uma linha que alguém usa: só valem guardar se você for forjar — <a class="tb-lk" href="https://tibidle.com/wiki/forja" target="_blank" rel="noopener">como forjar</a>. Sem forjar, anuncie. Cada peça abaixo tem um <b>plano</b>: para quem, quantos refinos até a próxima faixa, quais linhas procurar (com a chance real de cada uma) e a ordem das gemas. Épico sem linha útil não fica aqui: está nas sobras (rolar skill cai 1 em 89).</div>` +
             bases.map(p => `<div class="tb-lin"><span>${nomeLink(p)}${rarTag(p)} <span class="tb-mut">${escHtml(slotPt(p.slot))} · ${escHtml(p.origem)}${potTxt(p)} · ${encaixeTxt(p)}</span></span><span class="tb-eq-nota">${refTxt(p)}${vereditoTxt(p)}${p.origem === 'depósito' && p.iid ? ` <button type="button" class="tb-bt mini" data-eq-puxar="${escHtml(String(p.iid))}" ${dentro || !sock || ocupado ? 'disabled' : ''} title="${escHtml(dentro ? 'só na cidade' : !sock ? 'o socket do jogo não foi capturado — F5 com o helper instalado' : 'tira esta peça do depósito e põe na mochila (depot_withdraw) para você levar à Forja com o plano abaixo')}">puxar p/ mochila</button>` : p.origem === 'mochila' ? ' <span class="tb-tag">já na mochila</span>' : ''}</span></div>` + planoForjaHtml(p, R)).join('') +
             aj('eq-forja-gl', `<b>As gemas, uma a uma</b> (100 fragmentos + ouro cada; o ouro acompanha a coin): <b>Refino T1</b> +1 a +4 (10 mil; falha não derruba) · <b>Refino T2</b> +5 a +10 (35 mil; falha derruba 1) · <b>Garantia T1</b> 15 mil, protege a tentativa do +5 em diante · <b>Raridade T1</b> 30 mil, sobe um grau até Lendário (55/35/20/10 %; falhar só gasta a gema) · <b>Raridade T2</b> 50 mil, Mítico (3 %) · <b>Atributo T1</b> 20 mil, escreve uma linha aleatória no 1º encaixe vazio · <b>Limpeza T1</b> 15 mil, apaga TODAS as linhas · <b>Limpeza T2</b> 40 mil, apaga só a ÚLTIMA · <b>Refazer T1</b> 20 mil, re-sorteia o valor de todas no range da faixa · <b>Refazer T2</b> 40 mil, só do último encaixe · <b>Ordem T2</b> 45 mil, embaralha a ordem. Potência = base + 50 por refino (caçada 0–350, Elite 50–420, boss 250–500); faixas I Simples 1–199 · II Notável 200–399 · III Superior 400–599 · IV Formidável 600–799 · V Colossal 800–999 · VI Godlike 1000, e cada faixa sobe o valor que a linha pode ter (regen 1,1 → 5,2 · skill +1 → +3 · dano 1,2 → 9,8 % · dano mágico 0,5 → 4,2 %). <b>Sorteio das linhas</b> (Atributo T1): arma e colar — cada elemento 10, dano físico 10, dano mágico 10, roubo 2+2, crítico 1+1, corpo a corpo / distância / ML <b>1 cada</b> (de 89); defesa — cada resistência 10, proteção mágica 10, max HP / max mana / capacidade 10, regen. vida / mana 10, cura própria 5, roubo 2+2, resist. física / escudo / loot 1 (de 132). Encaixes = raridade (Incomum 1, Raro 2, Épico 3, Lendário 4, Mítico 5); purificação de caçada dá Épico 0,45 % e Lendário 0,05 %. <b>Desmanche</b> devolve fragmentos pela faixa da potência total × raridade (Incomum 1 → 30, Raro 2 → 60, Épico 4 → 105, Lendário 6 → 180, Mítico 10 → 300 da faixa I à VI; T2 a partir da faixa IV). Comum não desmancha e não tem encaixe. Fonte: wiki /forja, lida em 12/10.`, '? como a Forja funciona'),
             `bases de forja (${bases.length})`); }
@@ -13515,6 +13556,7 @@
             perde + (o.cabe === false ? `<div class="tb-ruim">falta ouro normal para pagar</div>` : '') +
             (o.caro ? `<div class="tb-av">⚠ caro para o que dá: leva mais de ${ML_PAGA_MAX_H} h de caçada para se pagar</div>` : '') +
             (o.refImbuida ? `<div class="tb-av">⚠ a sua peça atual está imbuída: trocando, o imbuement fica na peça velha — troque quando ele acabar</div>` : '') +
+            (o.potenciaBaixa ? `<div class="tb-av">⚠ peça trabalhada (refino +${o.refino}) com potência total ${numBR(o.potencia, 0)} &lt; 350: na fase 2 não se paga preço de item trabalhado por potência baixa (vídeos de 13–15/10) — procure uma base com potência ≥ 350 e trabalhe nela</div>` : '') +
             (o.soDefesa ? `<div class="tb-av">⚠ o ganho vem quase todo de armadura/defesa no Knight — a régua ainda superestima isso (o seu Knight não tem passado aperto)</div>` : '') +
             (o.soArmadura ? `<div class="tb-av">⚠ sobe o nível do set, mas ${o.voc === 'KNIGHT' ? 'o ganho na régua fica abaixo de ' + numBR(ML_GANHO_MIN, 1) + ' pt' : 'para o ' + escHtml(VOC_ROTULO[o.voc] || o.voc) + ' a armadura não muda o dano nem a vida (o corpo a corpo vai todo no Knight — wiki)'}: sem botão de compra; só entra nas recomendadas com linha melhor</div>` : '') +
             (o.forjaMaisBarata ? mlForjaAviso(o) : '') +

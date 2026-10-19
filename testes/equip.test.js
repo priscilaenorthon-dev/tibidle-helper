@@ -7,7 +7,7 @@ const raiz = path.join(__dirname, '..');
 const src = fs.readFileSync(path.join(raiz, 'tibidle-helper.user.js'), 'utf8');
 const ini = src.indexOf('/* @@EQUIP-PURO-INICIO */'), fim = src.indexOf('/* @@EQUIP-PURO-FIM */');
 assert(ini > 0 && fim > ini, 'marcadores @@EQUIP-PURO não encontrados');
-const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, pesosDaVoc, mitigacaoPct, bloqueioEscudo, reducaoArmadura, golpeBasico, efeitoOficial, legadoDe, loyaltyBonus, forjaSimular, forjaValorSorteado, forjaLinhaSorteada, FORJA_GEMA_OURO, protecaoComposta, danoRecebidoCorpo, danoRecebidoMagia, COMBATE_VOC, SUPORTE_OFICIAL, candidatosEquip, distribuirEquip, pecasDesmanche, planoForja, faixaPotencia, wikiSlug, wikiUrlPeca, EQUIP_RESERVAS, destinosSobras, chanceLinha, fragmentosDesmanche, escolherDestino, faixaRange, valorTipico, linhasUteis, REGRAS_VOCACAO, FAIXA_NOME };')();
+const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, pesosDaVoc, mitigacaoPct, bloqueioEscudo, reducaoArmadura, golpeBasico, efeitoOficial, legadoDe, loyaltyBonus, forjaSimular, forjaValorSorteado, forjaLinhaSorteada, FORJA_GEMA_OURO, protecaoComposta, danoRecebidoCorpo, danoRecebidoMagia, COMBATE_VOC, SUPORTE_OFICIAL, candidatosEquip, distribuirEquip, pecasDesmanche, planoForja, faixaPotencia, wikiSlug, wikiUrlPeca, EQUIP_RESERVAS, destinosSobras, chanceLinha, fragmentosDesmanche, escolherDestino, faixaRange, valorTipico, linhasUteis, REGRAS_VOCACAO, FAIXA_NOME, faseEquip, potenciaBaseForja };')();
 const le = (p) => { try { return JSON.parse(fs.readFileSync(path.join(raiz, p), 'utf8')); } catch (e) { return null; } };
 const base = {};
 for (const [nome, it] of Object.entries(le('testes/fixtures/itens.json').itens)) base[nome] = { id: it.id, attrs: it.attrs || {}, sell: it.sell || 0, equipPreview: it.equipPreview || null };
@@ -690,3 +690,48 @@ t('2.22.0 simulador da forja: determinístico com semente; valor uniforme nos pa
     assert.strictEqual(M.FORJA_GEMA_OURO.atributo, 20000);
 });
 console.log(`\n${n} testes ok` + (pulados ? ` · ${pulados} pulados (sem o estado da conta em data/)` : ''));
+
+/* ===== 2.24.0 — FASE 2 (vídeos de 13–17/10: TV de Souza "depois do 110–120 não se brinca mais de regen. de mana") ===== */
+const ARM = (nome, armor, forja) => ({ nome, slot: 'armor', attrs: { slot: 'armor', armor }, forja: forja || F(0) });
+t('2.24.0 fase: nível < 110 é fase 1; ≥ 110 é fase 2; sem nível lido, fase 1', () => {
+    assert.strictEqual(M.faseEquip({ nivel: 67 }), 1);
+    assert.strictEqual(M.faseEquip({ nivel: 130 }), 2);
+    assert.strictEqual(M.faseEquip(null), 1);
+});
+t('2.24.0 Knight fase 2: magic plate armor 17 (sem linha) bate a dark armor regen. 2,4; na fase 1 a dark armor ganha', () => {
+    const dark = ARM('dark armor', 10, F(1, ['regen_mana', 2.4])), mpa = ARM('magic plate armor', 17);
+    const f1 = { nivel: 67 }, f2 = { nivel: 130 };
+    assert(M.pontuarPeca(dark, 'KNIGHT', f1).pontos > M.pontuarPeca(mpa, 'KNIGHT', f1).pontos, 'fase 1: a dark armor regen. tem que ganhar (regra de 17/10)');
+    const a = M.pontuarPeca(mpa, 'KNIGHT', f2).pontos, b = M.pontuarPeca(dark, 'KNIGHT', f2).pontos;
+    assert(a > b + 5, `fase 2: magic plate armor (${a}) tem que bater a dark armor regen. (${b}) com folga`);
+});
+t('2.24.0 Knight fase 2: a vida mínima medida ≥ 60 % NÃO corta mais a armadura (ele fica alto porque bebe poção)', () => {
+    const mpa = ARM('magic plate armor', 17);
+    const folgado = M.pontuarPeca(mpa, 'KNIGHT', { nivel: 130, party: { hpMinK: 72 } }).pontos, cheio = M.pontuarPeca(mpa, 'KNIGHT', { nivel: 130, party: { hpMinK: null } }).pontos;
+    assert.strictEqual(folgado, cheio, `fase 2: ${folgado} × ${cheio}`);
+    assert.strictEqual(M.pesosDaVoc('KNIGHT', { nivel: 130, party: { hpMinK: 72 } }).folgaDefesa, 1);
+    const f1 = M.pontuarPeca(mpa, 'KNIGHT', { nivel: 67, party: { hpMinK: 72 } }).pontos, f1cheio = M.pontuarPeca(mpa, 'KNIGHT', { nivel: 67, party: { hpMinK: null } }).pontos;
+    assert(f1 < f1cheio, 'fase 1 continua com a folga (2.18.2)');
+});
+t('2.24.0 fase 2 sem medida: fogo é o padrão (≥ 4× os outros elementos) no Knight e nos laterais; proteção mágica continua; com medida, o elemento medido manda', () => {
+    for (const v of ['KNIGHT', 'SORCERER', 'PALADIN']) {
+        const P = M.pesosDaVoc(v, { nivel: 130 });
+        assert(P.resist_fogo >= 4 * P.resist_gelo, `${v}: fogo ${P.resist_fogo} × gelo ${P.resist_gelo}`);
+        assert(P.protecao_magica > 0 && P.resist_fogo >= 0.4 * P.protecao_magica, `${v}: proteção mágica ${P.protecao_magica} × fogo ${P.resist_fogo}`);
+        assert.strictEqual(P.elemMedido, false);
+    }
+    const P1 = M.pesosDaVoc('KNIGHT', { nivel: 67 });
+    assert.strictEqual(P1.resist_fogo, P1.resist_gelo, 'fase 1: sem medida, divisão igual (2.21.0)');
+    const medido = { nivel: 130, party: { elemVoc: { KNIGHT: { tomadoS: 140, frac: { fisico: 0.3, gelo: 0.7 } } } } };
+    const Pm = M.pesosDaVoc('KNIGHT', medido);
+    assert(Pm.resist_gelo > 3 * Pm.resist_fogo && Pm.elemMedido === true, 'com medida, gelo manda');
+});
+t('2.24.0 fase 2: vida (max HP) do mago passa a contar — 25 de max HP vale ≥ 1 pt; fase 1 fica como era (~0,25)', () => {
+    assert(M.pesosDaVoc('SORCERER', { nivel: 130 }).max_hp * 25 >= 1, 'fase 2: ' + M.pesosDaVoc('SORCERER', { nivel: 130 }).max_hp);
+    assert(M.pesosDaVoc('SORCERER', { nivel: 67 }).max_hp * 25 < 0.5, 'fase 1: ' + M.pesosDaVoc('SORCERER', { nivel: 67 }).max_hp);
+});
+t('2.24.0 fase 2: base de forja exige potência ≥ 350 (fase 1: 300)', () => {
+    assert.strictEqual(M.potenciaBaseForja({ nivel: 67 }), 300);
+    assert.strictEqual(M.potenciaBaseForja({ nivel: 130 }), 350);
+    assert.strictEqual(M.potenciaBaseForja(null), 300);
+});

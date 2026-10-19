@@ -287,3 +287,36 @@ t('2.19.6 set: escudo do Knight só sobe com defesa maior; o spellbook dos magos
     assert.strictEqual(r.porVoc.KNIGHT.shield.pisoSet.k, 'defense');
 });
 console.log(`\n${n} testes ok`);
+
+/* ===== 2.24.0 — FASE 2 nas compras (vídeos 13–17/10) ===== */
+BASE['paladin armor'] = { attrs: { slot: 'armor', armor: 12, vocation: 'Paladin;true, Royal Paladin' } };
+BASE['magic plate armor'] = { attrs: { slot: 'armor', armor: 17, vocation: 'Knight;true, Paladin;true, Elite Knight, Royal Paladin' } };
+t('2.24.0 fase 2: o Paladino vai para o FIM das compras recomendadas (ordem dos vídeos); na fase 1 a ordem é só ganho/ouro', () => {
+    const porVoc = cenario(vestidos());
+    const cands = M.mlCandidatosMercado({ armaduras: [copia(50, 'paladin armor', 10, F(1, ['regen_mana', 3.0]))], elmos: [copia(51, 'steel helmet', 5000, F(1, ['regen_mana', 3.4]))] }, BASE);
+    const r1 = M.mlAvaliar(porVoc, cands, null, { ouro: 100000 });
+    assert.deepStrictEqual(r1.top.map(o => o.voc), ['PALADIN', 'KNIGHT'], 'fase 1: ganho/ouro manda (Paladino a 10 de ouro primeiro): ' + r1.top.map(o => o.voc + ' ' + o.ganho + '/' + o.preco));
+    const r2 = M.mlAvaliar(porVoc, cands, { nivel: 130 }, { ouro: 100000 });
+    assert.deepStrictEqual(r2.top.map(o => o.voc), ['KNIGHT', 'PALADIN'], 'fase 2: Paladino por último: ' + r2.top.map(o => o.voc + ' ' + o.ganho + '/' + o.preco));
+});
+t('2.24.0 fase 2: peça SÓ de defesa para o Knight (magic plate armor) é recomendada; na fase 1 fica com o aviso "só defesa"', () => {
+    const porVoc = cenario(vestidos().concat([corpo('Ka', 'steel helmet', 'head', 'KNIGHT', F(1, ['regen_mana', 2.0]))]));
+    const cands = M.mlCandidatosMercado({ armaduras: [copia(60, 'magic plate armor', 20000)] }, BASE);
+    const o1 = M.mlAvaliar(porVoc, cands, null, { ouro: 100000 }).porVoc.KNIGHT.armor.ofertas[0];
+    assert(o1 && o1.soDefesa && !o1.recomendada, 'fase 1: só defesa, sem botão');
+    const o2 = M.mlAvaliar(porVoc, cands, { nivel: 130 }, { ouro: 100000 }).porVoc.KNIGHT.armor.ofertas[0];
+    assert(o2 && !o2.soDefesa && o2.recomendada, 'fase 2: defesa é o que se compra — recomendada');
+});
+t('2.24.0 fase 2: peça TRABALHADA (refino ≥ 1) com potência total < 350 não é recomendada ("não pague preço de item trabalhado"); com ≥ 350, sim; sem refino não muda', () => {
+    const porVoc = cenario(vestidos());
+    const baixa = copia(70, 'steel helmet', 3000, Object.assign(F(1, ['regen_mana', 3.4]), { refino: 3, potenciaBase: 100 }));
+    const alta = copia(71, 'steel helmet', 3000, Object.assign(F(1, ['regen_mana', 3.4]), { refino: 3, potenciaBase: 300 }));
+    const crua = copia(72, 'steel helmet', 3000, Object.assign(F(1, ['regen_mana', 3.4]), { refino: 0, potenciaBase: 100 }));
+    const r = M.mlAvaliar(porVoc, M.mlCandidatosMercado({ elmos: [baixa, alta, crua] }, BASE), { nivel: 130 }, { ouro: 100000 });
+    const of = r.porVoc.KNIGHT.head.ofertas, por = (id) => of.find(o => o.orderId === id);
+    assert(por(70) && por(70).potenciaBaixa && !por(70).recomendada, 'refino +3 com potência 250: fora');
+    assert(por(71) && !por(71).potenciaBaixa && por(71).recomendada, 'refino +3 com potência 450: recomendada');
+    assert(por(72) && !por(72).potenciaBaixa && por(72).recomendada, 'sem refino: a regra não se aplica');
+    const r1 = M.mlAvaliar(porVoc, M.mlCandidatosMercado({ elmos: [baixa] }, BASE), null, { ouro: 100000 });
+    assert(r1.porVoc.KNIGHT.head.ofertas[0].recomendada, 'fase 1: não se aplica');
+});

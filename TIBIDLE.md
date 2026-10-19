@@ -5361,3 +5361,77 @@ boots regen. vida 2, plate legs regen. mana 1,6…) — sobram porque todos já 
 peças que o dono disse valer caro no Mercado. `pecasDesmanche` passa a excluir `encaixeNobre(p)` (qualquer vocação), com ou
 sem "incluir": essas vão só para ANUNCIAR NO MERCADO. Ao desmanche ficam as sobras com linhas que ninguém usa (capacidade,
 max mana, resistência fraca, roubo de vida num mago…) e as refinadas sem linha. 1 teste novo em `equip.test.js`.
+
+## Vídeos de 13–18/10, lidos em 18/10 — "como ficar mais forte com equipamento" (sem mudança de código)
+Pedido do dono (18/10): "dá uma olhada nos vídeos do YouTube e verifica o que deixa nossos equipamentos mais fortes: item melhor,
+ou item inferior com regen. de mana e vida, ou crítico; Discord também". Discord (`discord.gg/tibidle`, 2.466 membros) exige conta —
+a página de convite pede "Criar conta"/login e não há sessão no perfil do Playwright; não criei conta em nome do dono. Legendas
+pelo método timedtext (memória `tibidle-sessao-12-10-equip-2-16`), 7 vídeos novos em relação a 12/10:
+TV de Souza "Como Ficar Muito Forte no Tibidle (Troca simples de Equipamentos!)" (17/10), "Como ganhar dinheiro jogando / RMT"
+(15/10), "Como aumentar o seu dano — forja 2" (13/10), "Guia do lvl 50 ao 80" (04/10); Storming (criador do jogo) "Como começar
+hoje e ficar forte" (14/10); Elias GameFi "Fiz imbuements" (25/09); C4lmont "Guia intermediário" (27/09); AllRichard "Guia para
+iniciantes" (14/10, nada de equip). Wiki nova: /legado (já na 2.22.0: só a skill TREINADA conta; item/imbuement/bestiário não sobem marco).
+
+**O que a comunidade diz, por fase (consenso entre TV de Souza e Storming):**
+- **Até o 80 (Storming: "até o 80, regen. de mana é o melhor do mundo")** — bestiário de regen. de mana primeiro (vespas, goblins,
+  dwarfs), depois os de armadura, ML, distância e corpo a corpo; calça/escudo com regen. de mana a 10–30 mil no Mercado.
+- **Depois do 80–100 (TV de Souza, 13/10: "não basta a configuração certa, os itens pesam") e sobretudo depois do 110–120 ("a gente não
+  brinca mais de regeneração de mana depois do level 110, 120; saindo de Yalahar você já procura resistências")** — o critério vira
+  **potência alta + proteção mágica + resistência ao elemento que bate (fogo na maioria das hunts altas)**. "Viver é mais importante
+  do que recuperar dois de ML, dois de mana." Um set por elemento para as hunts específicas (gelo, terra, energia, veneno).
+- **Ordem de prioridade para gastar** (17/10): arma + colar do Cavaleiro → arma + colar do Feiticeiro → arma + colar do Druida →
+  armaduras do Cavaleiro → equipamento do Feiticeiro → do Druida → **Paladino por último** ("filho esquecido; o dano principal é dos magos").
+- **Cavaleiro** — arma: a de maior ataque mesmo com potência baixa, refinada só até **+4** (barato, +4 de ataque "faz muita diferença");
+  colar a potência 400 para cair corpo a corpo 2; linhas de arma/colar: corpo a corpo + dano físico % + chance de crítico (roubo de vida
+  é extra). Armaduras por DEFESA BASE, nesta escada: elmo Royal Helmet (djins) → Demon Helmet (Hive Queen, Grey Island) → Zaoan Helmet
+  (protege em %, "a porcentagem se mantém sólida"); armadura Golden Armor (fácil; sem potência boa, +4 só pela defesa) → Dragon Scale
+  Mail (dragões, nível 60) → Magic Plate Armor (rara) → set prismático da Isolda (Warzone, "meta do Cavaleiro, absorve muito");
+  calça Knight/Crown Legs → Golden Legs → **Zaoan Legs** (boss de Lizard City, "fica com você por muito tempo, +4 sem medo");
+  bota Fur Boots (velocidade não faz nada) até uma Mystic Boots. Encaixes: proteção mágica + resistência a fogo; regen. de mana/vida
+  "no final do final".
+- **Magos** — arma e colar: dano elemental (energia Fei, gelo Dru) + dano mágico % + nível mágico; crítico "não bobeia" (base 0).
+  No corpo: resistência ao elemento + proteção mágica, depois **vida** ("mago que morre não dá dano, não cura e leva a party para o DP";
+  Magic Shield come mana — com resistência alta dá para caçar sem ele). No começo (17/10): "primeiro itens de mana regen, depois ML".
+  "Set de terra" subiu o lucro de uma hunt de ~200k/h. Livro de ML +2 (Ice Witch) "vale trocar o brass shield de 2 de regen por ele".
+- **Paladino** — distância em tudo; linhas de arma/colar: dano físico + dano sagrado + distância + crítico; corpo: resist. fogo +
+  proteção mágica + vida; Living Vine Bow (Spikes lower) / Jungle Bow / Hive Bow (boss GS); Paladin Armor (Bog Raiders).
+- **Potência** (13/10 e 15/10): item base só vale com **≥ 350–400**; meta 600 (faixa IV, onde o Refazer dá ML 1–3, elemento 4–8 %,
+  dano mágico ≤ 4 %). Anel de um encaixe só com ≥ 350; calça com regen. > 2 só com ≥ 350. Refino do +4 → +5 custa Refino T2 (280k) +
+  Garantia (160k) ≈ 440k por tentativa; Épico com 3 linhas ideais cai < 1 % (0,86 % nos dourados). Regra: "não trabalhe item de
+  potência baixa; limpe encaixes de preferência em peça dourada; use o leilão/Mercado para achar a peça que já veio encaminhada".
+- **Isolda (NPC novo)**: tokens de Warzone / Forgotten Knowledge / Otherworld viram major tokens → set prismático, peças +4 de ML /
+  corpo a corpo / distância, calça e elmo de ML +2, armas da destruição (Otherworld, com encaixe de imbuement). Desmanche em evento
+  (2×/dia) dobra os fragmentos. Chave = 1 por hora na dificuldade máxima (tempo salvo ao sair).
+- **Imbuement** (Elias, C4lmont): as 20 h só correm caçando; life leech em Cavaleiro/Paladino, mana leech nos magos; "vampire kit" 4k.
+- **Legado** (wiki 18/10): marco a cada 5 de skill treinada (ML 40 / corpo a corpo e distância 60), +2 %, +5, +9, +14, +20…; vale na
+  arma, nas magias e na cura do Druida; NÃO vale no crítico nem no roubo; item não sobe marco — o +1 ML de peça não conta.
+
+**Contra o que os 4 vestem (foto de 17/10, nível 130, Holy Portal):** tudo regen. de mana em bases fracas — Cavaleiro steel helmet 6 +
+dark armor 10 + plate legs 7 + leather boots 1 (armadura 24 + escudo), zero resistência, zero proteção mágica; magos e Paladino idem.
+É exatamente o cenário que o TV de Souza chama de "parado no regen": o Cavaleiro toma ~143 HP/s e a cura custa ~145k/h (medido 17/10),
+mais que o loot. O Equip já pesa proteção/resistência pelo dano medido por elemento (2.21.0), mas com o piso de regen. de mana do
+Cavaleiro (2,5 HP/s por mana/s, decisão de 17/10) e a folga ×0,5 quando a vida mínima fica ≥ 60 %, uma dark armor com regen. 2,4
+ainda ganha da magic plate armor 17 — o oposto do que os vídeos mandam nesta fase. Decisão pendente do dono (regras de 17/10:
+"Cavaleiro = armadura + regen. de mana + vida" e "o Equip não depende do mapa").
+
+## 2.24.0 (18/10) — FASE 2 da régua do Equip (nível ≥ 110): defesa, proteção mágica e resistência na frente; potência ≥ 350; Paladino por último
+Dono (18/10): "faça a mudança de acordo com as pesquisas; deixa tudo pronto para a gente aguentar mais coisas; carta branca". Base: a seção
+anterior ("Vídeos de 13–18/10"). A régua passa a ter duas fases, pelo NÍVEL da conta (`faseEquip(ctx)`, `FASE2_NIVEL = 110`; sem nível
+lido, fase 1 — nada muda para quem está abaixo):
+- **Knight (fase 2)**: a folga da defesa some (`folga = 1`): a vida mínima fica ≥ 60 % porque ele BEBE poção (17/10: ~145k/h de cura), então
+  cada ponto que armadura/resistência evita é um ponto que não se paga. Sem medida de dano, a referência passa a ser a da fase
+  (`PARTY_REF_FASE2`: 140 HP/s tomados, 2 golpes/s — Holy Portal lure 8, nível 130) e a magia das criaturas conta 50 % FOGO + 10 % cada
+  outro elemento (vídeos: "a maior parte dos danos é de fogo"); com medida, o elemento medido manda, como na 2.21.0. O piso de regen. de
+  mana (WC 2,5 HP/s por mana/s, decisão de 17/10) fica — é física medida —, mas sem a folga a dark armor regen. 2,4 e a magic plate armor
+  17 EMPATAM com o golpe/s medido (1,1/s) e a MPA ganha com folga na referência (2 golpes/s).
+- **Laterais (fase 2)**: vida conta (`max_hp` 0,04 × lado: 25 HP = 1 pt; era 0,01) — "mago que morre não dá dano"; sem medida, fogo = o
+  peso da proteção mágica (0,15) e os outros elementos 0,03.
+- **Forja**: base de forja exige potência ≥ 350 na fase 2 (`potenciaBaseForja(ctx)`; 300 na fase 1).
+- **Melhorias**: na fase 2 o aviso "só defesa" do Knight some (defesa é o que se compra); peça TRABALHADA (refino ≥ 1) com potência total
+  < 350 nunca é recomendada (`potenciaBaixa`, com o aviso na tela: "não pague preço de item trabalhado por potência baixa"); o Paladino
+  fecha a fila das compras recomendadas (vídeos 17/10). A assinatura do agrupamento (2.23.2) ganhou a faixa de potência: elmo +3 com
+  potência 250 e outro com 450 não são "a mesma peça".
+- **Tela**: linha "Régua: fase N (nível X ≥/< 110) — …" no Equip; a nota da vida mínima do Knight explica a fase 2; `REGRAS_FASE2` (o que
+  muda por vocação) aparece antes das regras gerais na caixa "? o que é bom para o …".
+- Testes: 6 novos em `equip.test.js` (fase, dark armor × MPA nas duas fases, folga, fogo padrão × medido, vida do mago, potência da base)
+  e 3 em `melhorias.test.js` (Paladino por último, MPA recomendada na fase 2, potência baixa trabalhada). 366 testes, eslint 0 erros.
