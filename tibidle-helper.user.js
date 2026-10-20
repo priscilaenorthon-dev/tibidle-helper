@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.27.4
+// @version      2.27.5
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.27.4';
+    const VERSAO = '2.27.5';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -8124,6 +8124,24 @@
             PALADIN: { vida: ['Great Health Potion', 30], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2], ['thunderstorm rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Divine Healing', 70]] },
             SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Energy Wave', 2], ['thunderstorm rune', 2], ['Strong Energy Strike', 1], ['Energy Strike', 1]], defesa: [['Intense Healing', 75]], suporte: ['Enchant Party', 'Magic Shield'] },
             DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Terra Wave', 2], ['stone shower rune', 2], ['Strong Terra Strike', 1], ['Terra Strike', 1]], defesa: [['Heal Friend', 70], ['Mass Healing', 60], ['Ultimate Healing', 60]], suporte: ['Heal Party', 'Magic Shield'] } } },
+        /* — 2.27.5: Quara's Domain Yalahar (id 191) não tem post no Discord. Dois setups ADAPTADOS (o dono escolhe no select): a barra da
+         *   Bottom of the Ocean do Specter (mesmo nível 130, o mapa da comunidade mais parecido: imune a fogo e gelo, fraco a energia e terra)
+         *   e a ideia do Bog Raiders aprovada em 02/10 (= a Quara's entrance do Argonaut). Aqui energia −25 % e terra −10 %; na Bottom os
+         *   dois eram −10 %, por isso o Druida troca a runa e o strike de terra pelos de energia (mesma fórmula, ×1,25/1,10 = +13,6 %). */
+        { id: 'quaradomain-specter-adapt', hunt: "Quara's Domain Yalahar", huntId: 191, autor: 'Specter (Bottom of the Ocean), adaptado', data: '20/10', titulo: "Quara's Domain — forte: Bottom of the Ocean do Specter adaptada (20/10)",
+          lure: 'nível 4 — 8 criaturas', skills: '', nota: '', nivel: '110–130', obs: "Ninguém postou Quara's Domain no Discord. Esta é a barra da Bottom of the Ocean do Specter (180–190k/h raw, lucro 70–100k no post dele), o mapa mais parecido: nível 130, imune a fogo e gelo. Mudou só o Druida: stone shower → thunderstorm rune e Terra Strike → Energy Strike, porque aqui energia dá +25 % e terra só +10 % (+13,6 % nas duas). Feiticeiro (tudo energia), Paladino (holy/físico, sem resistência) e Cavaleiro (físico) iguais ao post. Magos com Magic Shield: “sem ele morriam combados”. Os quaras têm 2.300–2.850 de vida. Suporte do Cavaleiro fica o seu.",
+          chars: {
+            KNIGHT: { vida: ['Great Health Potion', 30], mana: ['Mana Potion', 40], ataque: [['Fierce Berserk', 4], ['Berserk', 2], ['Lesser Front Sweep', 1], ['Brutal Strike', 1]], defesa: [['Intense Wound Cleansing', 40], ['Wound Cleansing', 85]] },
+            PALADIN: { vida: ['Great Health Potion', 30], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2], ['thunderstorm rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Divine Healing', 70]] },
+            SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Energy Wave', 2], ['thunderstorm rune', 2], ['Strong Energy Strike', 1], ['Energy Strike', 1]], defesa: [['Intense Healing', 75]], suporte: ['Enchant Party', 'Magic Shield'] },
+            DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Terra Wave', 2], ['thunderstorm rune', 2], ['Strong Terra Strike', 1], ['Energy Strike', 1]], defesa: [['Heal Friend', 70], ['Mass Healing', 60], ['Ultimate Healing', 60]], suporte: ['Heal Party', 'Magic Shield'] } } },
+        { id: 'quaradomain-bog-adapt', hunt: "Quara's Domain Yalahar", huntId: 191, autor: "Argonaut (Bog Raiders / Quara's entrance), adaptado", data: '20/10', titulo: "Quara's Domain — enxuto: ideia do Bog Raiders (20/10)",
+          lure: 'nível 4 — 8 criaturas', skills: '', nota: '', nivel: '', obs: "A ideia do Bog Raiders aprovada em 02/10: área ≥2 em cima, alvo único ≥1 embaixo, Mana Potion 30 % nos 4. A Strong Ice Wave do Druida virou Terra Wave (os quaras são imunes a gelo); é a mesma barra que o Argonaut usa na Quara's entrance. Gasta menos poção e bate menos que a do Specter: os quaras daqui têm 2.300–2.850 de vida. Curas, poção de vida e suportes ficam os seus.",
+          chars: {
+            KNIGHT: { mana: ['Mana Potion', 30], ataque: [['Groundshaker', 2], ['Berserk', 2], ['Lesser Front Sweep', 1]] },
+            PALADIN: { mana: ['Mana Potion', 30], ataque: [['thunderstorm rune', 2], ['Ethereal Spear', 1]] },
+            SORCERER: { mana: ['Mana Potion', 30], ataque: [['Energy Wave', 2], ['thunderstorm rune', 2], ['Energy Strike', 1]] },
+            DRUID: { mana: ['Mana Potion', 30], ataque: [['Terra Wave', 2], ['thunderstorm rune', 2], ['Energy Strike', 1]] } } },
         { id: 'lizard-specter', hunt: 'Lizard City', huntId: 62, autor: 'Specter', data: '14/10', titulo: 'Lizard City (Specter, 14/10)',
           lure: '', skills: '', nota: '', nivel: '110–130', obs: 'Specter: "235–240k/h raw, profit 30–60k. Mesmo setup da Bottom of the Ocean, só mudando as spells/runas da PT para gelo; proteção a fogo ajuda aqui."', estatisticas: { xpH: '277,2k', lucroH: '+29,6k', nivel: 147 }, posicoes: 'Symbioth (EK) fica à esquerda, isolado, junto da escada/parede com os lagartos chegando por ele (ondas de gelo visíveis em volta); RP (amarelo), ED (azul) e MS (vermelho) ficam lado a lado, adjacentes, numa linha à direita do EK.',
           chars: {

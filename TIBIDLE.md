@@ -5690,3 +5690,18 @@ Canais lidos: patch-notes, changelog, anuncios-ptbr (desde 08/10), roadmap (só 
   (automações)", detectadas "em tempo real, graças a IA"; 16/10 nova onda contra contas com mais de 4 personagens farmando. O helper envia
   comandos pelo mesmo WebSocket (Auto Hunt, Scan, EQUIPAR, Mercado, APLICAR).
 
+## 2.27.5 (20/10) — Quara's Domain Yalahar no modelo Discord (2 setups adaptados)
+- Pedido do dono: "baseada na ideia do Bog Raiders, monta uma parecida para Quara's Domain Yalahar"; depois: "tem que parecer com as
+  técnicas do pessoal do Discord, lá é muito forte; tem que analisar". Ninguém postou esse mapa no Discord (31 setups, 24 hunts).
+- Catálogo vivo de 20/10 (`/hunts/select`): os quaras de Quara's Domain (id 191, rec 130, lure 2/4/6/8) têm **2.300–2.850 de vida**
+  (Hydromancer 2.300, Pincher 2.650, Predator 2.850; o catálogo de 27/09 dizia 1.200–2.200), energia −25 %, terra −10 %, imunes a
+  fogo, gelo, afogamento e roubo de vida; físico, holy e morte neutros.
+- O mapa da comunidade mais parecido é a **Bottom of the Ocean** (id 197, rec 130, Deeplings: imunes a fogo e gelo, energia e terra −10 %).
+  Os setups fortes de nível 110–130 (Specter, Gus, lucasdela) usam 4 slots de ataque (onda ≥2 · runa ≥2 · strike forte ≥1 · strike
+  barato ≥1), poção de mana alta nos magos (50–60 %), Magic Shield nos magos e Fierce Berserk ≥4 no Cavaleiro; o "Bog" de 02/10 era
+  barra de nível 70.
+- `quaradomain-specter-adapt` ("forte"): a barra da Bottom do Specter com 2 trocas no Druida, stone shower → thunderstorm e Terra Strike
+  → Energy Strike (mesma fórmula; aqui energia ×1,25 contra terra ×1,10 = +13,6 %). O resto igual ao post; suporte do Cavaleiro fica o do dono.
+- `quaradomain-bog-adapt` ("enxuto"): a ideia do Bog (área ≥2, alvo ≥1, Mana Potion 30 %) com Terra Wave no lugar da Strong Ice Wave —
+  igual à Quara's entrance do Argonaut; curas, poção de vida e suportes ficam os do dono.
+- Teste novo: os 2 setups de Quara's Domain não usam fogo nem gelo e passam no `dcConfigDe` do nível 136 sem avisos.

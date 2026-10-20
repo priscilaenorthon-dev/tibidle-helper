@@ -118,6 +118,18 @@ t('dcSetupsDaHunt: hunts com mais de um setup da comunidade (o dono escolhe): Hi
         assert(new Set(ls.map(s => s.autor)).size >= 2, `${title}: autores ${ls.map(s => s.autor)}`);
     }
 });
+t("Quara's Domain (2.27.5, adaptados): 2 setups (forte e enxuto), nenhuma magia de fogo ou gelo (os quaras são imunes) e o Druida com runa e strike de energia", () => {
+    const ls = M.dcSetupsDaHunt({ id: 191, title: "Quara's Domain Yalahar" });
+    assert.strictEqual(ls.length, 2);
+    for (const s of ls) for (const [voc, ch] of Object.entries(s.chars)) for (const [nome] of (ch.ataque || [])) {
+        const m = SPELLS.find(x => x.name === nome);
+        assert(m && !/FIRE|ICE/.test(m.combatType || ''), `${s.id} ${voc}: ${nome} (${m && m.combatType})`);
+    }
+    const forte = ls.find(s => s.id === 'quaradomain-specter-adapt').chars.DRUID.ataque.map(a => a[0]);
+    assert(forte.includes('thunderstorm rune') && forte.includes('Energy Strike') && !forte.includes('stone shower rune'), forte.join(', '));
+    const ctx = { nivel: 136, magias: SPELLS, pocoes: NOMES_POCOES };
+    for (const s of ls) for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx).avisos, [], s.id + ' ' + voc);
+});
 t('dcConfigDe com um setup real (Hive Queen Chamber do Specter) no catálogo real: 4 barras, sem avisos para um nível 150', () => {
     const s = M.SETUPS_DISCORD.find(x => x.id === 'hivequeen-specter');
     const ctx = { nivel: 150, magias: SPELLS, pocoes: NOMES_POCOES };
