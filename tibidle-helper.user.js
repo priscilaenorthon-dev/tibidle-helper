@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.27.3
+// @version      2.27.4
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.27.3';
+    const VERSAO = '2.27.4';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -8144,7 +8144,31 @@
             KNIGHT: { vida: ['Strong Health Potion', 30], mana: ['Mana Potion', 0], ataque: [['Berserk', 2], ['Lesser Front Sweep', 1]], defesa: [['Intense Wound Cleansing', 70]] },
             SORCERER: { vida: ['Health Potion', 60], mana: ['Mana Potion', 30], ataque: [['Energy Wave', 2], ['thunderstorm rune', 2]], defesa: [['Light Healing', 60]] },
             DRUID: { vida: ['Health Potion', 60], mana: ['Mana Potion', 30], ataque: [['Strong Ice Wave', 2], ['thunderstorm rune', 2]], defesa: [['Heal Friend', 50]] },
-            PALADIN: { vida: ['Health Potion', 60], mana: ['Mana Potion', 0], ataque: [['Divine Caldera', 2], ['thunderstorm rune', 2]], defesa: [['Intense Healing', 70]] } } }
+            PALADIN: { vida: ['Health Potion', 60], mana: ['Mana Potion', 0], ataque: [['Divine Caldera', 2], ['thunderstorm rune', 2]], defesa: [['Intense Healing', 70]] } } },
+        /* — 2.27.4 (20/10): varredura de TODOS os tópicos do guias-da-comunidade (Rota do UP, Aoba, Logbook + fixados, Setup Hive Queen,
+         *   "qual hunt abrir primeiro", FARMANDO MAIS GOLD, Extensão para setups). Só entrou build NOVA: as outras imagens eram estatística
+         *   (Wyclif, CBIN, Theus na Warzone, Atlas, !SDNunoh) ou vídeo (Deeribas). */
+        { id: 'lizard-gus', hunt: 'Lizard City', huntId: 62, autor: 'Gus', data: '11/10', titulo: 'Lizard City (Gus, 11/10)',
+          lure: '', skills: '', nota: '', nivel: '129', obs: 'Gus (tópico "Rota do UP"): "a lo mejor no es lo más óptimo, pero me funciona bien y sin waste". Leitura pelos ícones: a vida do Paladino é Strong Health Potion pelo tamanho do frasco; a munição dele (flecha de ponta vermelha) não foi identificada e fica a sua.', estatisticas: { xpH: '239,8k', lucroH: '+47,4k', nivel: 129 }, posicoes: '',
+          chars: {
+            KNIGHT: { vida: ['Great Health Potion', 40], mana: ['Mana Potion', 30], ataque: [['Fierce Berserk', 7], ['Berserk', 4], ['Lesser Front Sweep', 1]], defesa: [['Intense Wound Cleansing', 20], ['Intense Recovery', 85]], suporte: ['Train Party'] },
+            PALADIN: { vida: ['Strong Health Potion', 30], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 4], ['avalanche rune', 2], ['Ethereal Spear', 1]], defesa: [['Salvation', 30], ['Divine Healing', 75], ['Intense Recovery', 70]], suporte: ['Protect Party'] },
+            SORCERER: { mana: ['Mana Potion', 50], ataque: [['Energy Wave', 3], ['avalanche rune', 2], ['Lightning', 1], ['Ice Strike', 1]], defesa: [['Intense Healing', 80]], suporte: ['Magic Shield', 'Enchant Party'] },
+            DRUID: { mana: ['Mana Potion', 50], ataque: [['Strong Ice Wave', 3], ['avalanche rune', 2], ['Strong Ice Strike', 1], ['Ice Strike', 1]], defesa: [['Intense Healing', 60], ['Heal Friend', 80]], suporte: ['Magic Shield', 'Heal Party'] } } },
+        { id: 'vampire-nikelao', hunt: 'Vampire hell', huntId: 50, autor: 'Nikelao', data: '15/10', titulo: 'Vampire hell (Nikelao, 15/10)',
+          lure: '', skills: '', nota: '', nivel: '50–70', obs: 'Nikelao (tópico "Rota do UP", em resposta a "quem envia a build para vampire"): "esta me iba bien". Só as barras, sem estatística; a faixa de nível é a da rota do Atlas no mesmo tópico (Vamp 50–70). O suporte do Druida (Heal Party) estava coberto pelo número da recarga.', posicoes: '',
+          chars: {
+            KNIGHT: { vida: ['Strong Health Potion', 55], mana: ['Mana Potion', 30], ataque: [['Berserk', 2], ['Groundshaker', 2]] },
+            PALADIN: { vida: ['Strong Health Potion', 30], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 1], ['thunderstorm rune', 2], ['Ethereal Spear', 1]], defesa: [['Divine Healing', 60]] },
+            SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 20], ataque: [['Energy Wave', 2], ['thunderstorm rune', 2], ['Ice Strike', 1]], defesa: [['Intense Healing', 70], ['Ultimate Healing', 40]], suporte: ['Enchant Party'] },
+            DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 50], ataque: [['Strong Ice Wave', 2], ['thunderstorm rune', 2], ['Ice Strike', 1]], defesa: [['Heal Friend', 75], ['Mass Healing', 70]], suporte: ['Heal Party'] } } },
+        { id: 'bog-vysach', hunt: 'Bog Raiders Yalahar', huntId: 151, autor: 'Vysach', data: '19/10', titulo: 'Bog Raiders Yalahar (Vysach, 19/10)',
+          lure: '', skills: '', nota: '', nivel: '', obs: 'Vysach (tópico "Extensão para setups"): imagem da extensão Hunt Journal, com os nomes escritos (leitura exata). 7h14 de caçada, 16.080 abates, 106,8k ouro/h, 73,3k xp/h. Poção de mana desligada (≤ 0 %) no Knight, Paladino e Feiticeiro; equipamento de nível baixo (wolf tooth chain, crystal ring, peças de regen. de mana).', estatisticas: { xpH: '73,3k', lucroH: '+106,8k' }, posicoes: '',
+          chars: {
+            KNIGHT: { vida: ['Strong Health Potion', 30], mana: ['Strong Mana Potion', 0], ataque: [['Fierce Berserk', 4], ['Berserk', 4], ['Lesser Front Sweep', 1], ['Brutal Strike', 1]], defesa: [['Recovery', 50], ['Wound Cleansing', 30]], suporte: ['Train Party'] },
+            PALADIN: { vida: ['Strong Health Potion', 70], mana: ['Mana Potion', 0], ataque: [['Divine Caldera', 2], ['thunderstorm rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Intense Healing', 60]], suporte: ['Protect Party'], municao: 'bolt' },
+            SORCERER: { vida: ['Health Potion', 60], mana: ['Great Mana Potion', 0], ataque: [['Energy Wave', 2], ['thunderstorm rune', 2], ['Energy Strike', 1]], defesa: [['Ultimate Healing', 50]] },
+            DRUID: { vida: ['Health Potion', 60], mana: ['Great Mana Potion', 10], ataque: [['Strong Ice Wave', 1], ['thunderstorm rune', 2], ['Energy Strike', 1]], defesa: [['Heal Friend', 50], ['Ultimate Healing', 60]], suporte: ['Heal Party'] } } }
     ];
     const DC_VOC_PT = { KNIGHT: 'Cavaleiro', PALADIN: 'Paladino', SORCERER: 'Feiticeiro', DRUID: 'Druida' };
     const DC_VOC_CAT = { KNIGHT: 'knight', PALADIN: 'paladin', SORCERER: 'sorcerer', DRUID: 'druid' };

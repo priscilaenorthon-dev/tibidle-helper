@@ -5658,3 +5658,15 @@ fragmentos de Refino T1 (≈ 15 k no Mercado).
   war hammer Comum de potência 38 a 259.783 (a "igual" pela potência era uma cópia de potência parecida a 200 mil × fator; as 21 Comum de
   potência maior estavam entre 150 e 200 mil). Agora `mkJustoDe` e o piso respeitam um teto = a cópia MELHOR (razão combinada > 1,1)
   mais barata −1. Vendedor especialista não anuncia acima de uma peça melhor que já está mais barata.
+
+### 2.27.4 (20/10) — Discord: varredura de todos os tópicos do guias-da-comunidade, +3 setups
+- Pedido do dono: "deu super certo as builds do Discord; varre se tem mais build de mais mapas; olhe TODOS os tópicos; não replica build
+  que já colocamos". Lidos os 11 tópicos do fórum: Rota do UP (Atlas, 105 msgs, nunca lido antes), Aoba/Specter (nada novo com barra desde
+  19/10; o Specter parou de postar setups), Logbook + 8 fixados (todos já no helper), Setup Hive Queen (Theus, nada novo), "qual hunt abrir
+  primeiro" (Wyclif: só tabela de xp/lucro de 12 hunts), FARMANDO MAIS GOLD (só vídeo), Extensão para setups (Vysach) e 4 guias de texto.
+- Nenhum mapa NOVO com barra completa. Entraram 3 builds novas para mapas que já tinham setup (o dono escolhe no seletor):
+  `lizard-gus` (Lizard City, 11/10, nível 129, 239,8k xp/h, +47,4k/h), `vampire-nikelao` (Vampire hell, 15/10) e `bog-vysach`
+  (Bog Raiders, 19/10, 106,8k ouro/h; imagem da extensão Hunt Journal, nomes escritos). Agora são 31 setups em 24 hunts.
+- Só estatística (não entra): Theus na Warzone I (164–166k xp/h, +278–292k/h, nível 141–142, prey de dano no MS), CBIN, Wyclif.
+- Leitura pelos ícones (Gus e Nikelao): mesma folha oficial da 2.26 + casamento por imagem; poções pelo tamanho do frasco.
+

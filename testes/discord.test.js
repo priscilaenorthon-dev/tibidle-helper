@@ -88,7 +88,7 @@ t('SETUPS_DISCORD: ids únicos, hunt/autor/titulo em todos, ≥ 20 hunts, e todo
     const ids = new Set();
     for (const s of M.SETUPS_DISCORD) { assert(s.id && !ids.has(s.id), 'id repetido ou ausente: ' + s.id); ids.add(s.id); assert(s.hunt && s.autor && s.titulo && s.chars, 'campos: ' + s.id); }
     assert(new Set(M.SETUPS_DISCORD.map(s => s.hunt)).size >= 20);
-    assert(M.SETUPS_DISCORD.length >= 28);
+    assert(M.SETUPS_DISCORD.length >= 31);
     const conhecidos = new Set(SPELLS.map(m => m.name).concat(NOMES_POCOES));
     const usados = M.dcNomesUsados(M.SETUPS_DISCORD);
     const desconhecidos = usados.filter(x => !conhecidos.has(x) && x !== '?');
