@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.26.1
+// @version      2.26.2
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.26.1';
+    const VERSAO = '2.26.2';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -7149,7 +7149,11 @@
     /* v2.14.11 — Incomum ANUNCIA no Mercado (04/10: a u2tag tinha leather boots Incomum a 2.299 em ordem aberta; a nota
      * antiga da wiki dizia que não). temNegocio(nome) = o Mercado teve negócio em 30 dias com esse nome: fica fora do
      * desmanche, a não ser que `incluir` seja true (checkbox na aba). */
-    function pecasDesmanche(res, temNegocio, incluir) {
+    /* v2.26.2 — O VEREDITO POR PEÇA MANDA (dono, 20/10: "faça isso"). Com o Mercado lido, ter negócio em 30 dias não basta
+     * para ficar fora: a peça entra no desmanche quando os fragmentos valem MAIS que o Mercado líquido dela (escolherDestino =
+     * 'desmanche'); sem referência de preço, vale a regra antiga (fica fora se o nome teve negócio). `destinoDe(p)` vem de
+     * filtroDesmanche(); sem ele, a 2.23.4 continua igual. */
+    function pecasDesmanche(res, temNegocio, incluir, destinoDe) {
         const ORIG = { 'mochila': 'bag', 'depósito': 'depot' };
         /* v2.23.4 — SEM O MERCADO LIDO, NADA É DESMANCHADO (dono, 18/10: "tem certeza que não está desmanchando itens bons, que
          * têm valor de Mercado?"). Antes, sem o catálogo (temNegocio ausente) a lista ia inteira. Agora só com o catálogo lido
@@ -7158,7 +7162,8 @@
         /* v2.23.5 — LINHA NOBRE NUNCA VAI PARA O DESMANCHE (dono, 18/10: "itens com regen. de mana + regen. de vida são caríssimos no
          * Mercado, pois são muito raros"). Uma sobra pode ter regen. de mana/vida, ML, skill, dano ou crítico e ainda assim sobrar
          * (todos já vestem igual ou melhor): essa vai para ANUNCIAR NO MERCADO, nunca para fragmento — nem com "incluir" marcado. */
-        return ((res && res.dispensaveis) || []).filter(p => p && p.iid && ORIG[p.origem] && !vendivelNpc(p) && !encaixeNobre(p) && (incluir || !temNegocio(p.nome)))
+        const vai = (p) => incluir || !temNegocio(p.nome) || (typeof destinoDe === 'function' && destinoDe(p) === 'desmanche');
+        return ((res && res.dispensaveis) || []).filter(p => p && p.iid && ORIG[p.origem] && !vendivelNpc(p) && !encaixeNobre(p) && vai(p))
             .map(p => ({ iid: p.iid, origem: ORIG[p.origem], nome: p.nome }));
     }
     /* v2.11.2 — TROCA TEM CUSTO. Com 0,05 de bônus para ficar, o otimizador
@@ -9812,8 +9817,8 @@
      * mkPedir, que já casa a resposta pelo requestId e respeita o ritmo). Erro em um lote para tudo. */
     const DESM_LOTE = 10;
     async function desmancharSobras() {
-        const temNegocio = MK.catalogo ? (nome) => { const c = MK.catalogo[mkMin(nome)]; return !!(c && Number(c.trades30d) > 0); } : null; // v2.23.4 — sem catálogo, sem desmanche
-        const alvos = pecasDesmanche(EQUIP.res, temNegocio, !!ler('desm_incluir_mercado', false));
+        const FD = filtroDesmanche(); // v2.26.2 — mesmo critério da tela (veredito por peça)
+        const alvos = pecasDesmanche(EQUIP.res, FD.temNegocio, !!ler('desm_incluir_mercado', false), FD.destinoDe);
         if (!alvos.length || EQUIP.equipando || EQUIP.lendo) return;
         if (emHunt()) { EQUIP.aviso = 'desmanche só na cidade'; renderizar(); return; }
         EQUIP.equipando = true; EQUIP.desm = true; EQUIP.erro = null; EQUIP.aviso = null; renderizar();
@@ -10063,6 +10068,22 @@
         if (!v.length) return { preco: PRECO_FRAG_ESTIMADO, estimado: true, n: 0 };
         return { preco: v[Math.floor(v.length / 2)], estimado: false, n: v.length };
     }
+    /* v2.26.2 — o que a tela e o botão DESMANCHAR usam para decidir: temNegocio (catálogo), preço do fragmento, referência de
+     * Mercado da peça (cópias lidas) e o veredito escolherDestino por peça. Sem catálogo, destinoDe é null (nada desmancha). */
+    function filtroDesmanche() {
+        const temNegocio = MK.catalogo ? (nome) => { const c = MK.catalogo[mkMin(nome)]; return !!(c && Number(c.trades30d) > 0); } : null; // v2.23.4
+        const pf = precoFragmento();
+        const meusIds = new Set((MK.minhas || []).map(o => o.id));
+        const refPreco = (p) => {
+            if (!MK.copias || !Object.keys(MK.copias).length) return null;
+            const n = mkMin(p.nome), cat = MK.tradeable && MK.tradeable[n] && MK.tradeable[n].cat;
+            if (!((cat ? 'cat:' + cat : 'item:' + n) in MK.copias) && !(('item:' + n) in MK.copias)) return null;
+            const r = precoReferencia({ nome: p.nome, forja: p.forja }, MK.copias, meusIds);
+            return r.preco != null ? r.preco : null;
+        };
+        const destinoDe = MK.catalogo ? (p) => escolherDestino(p, refPreco(p), pf.estimado ? null : pf.preco).destino : null;
+        return { temNegocio, pf, meusIds, refPreco, destinoDe };
+    }
     /* v2.11 (D2) — botões numa linha (ATUALIZAR · EQUIPAR (n) · só Cav (n)),
      * vocação como botões com aria-pressed e nome inteiro no rótulo, "8 slots"
      * vira um interruptor à parte (misturado às abas parecia uma 5ª vocação),
@@ -10152,26 +10173,22 @@
         h += aj('eq-regras-' + v, `<ul style="margin:2px 0 0 14px;padding:0">${((faseEquip(EQUIP.ctx) === 2 ? (REGRAS_FASE2[v] || []) : []).concat(REGRAS_VOCACAO[v] || [])).map(x => '<li>' + escHtml(x) + '</li>').join('')}</ul>` +
             `<div class="tb-eq-nota" style="margin-top:4px">A nota em pt é a medida da SUA party (1 pt = 1 % do dano dos 4), com duas regras da comunidade por cima (decisão de 13/10): nos magos +1 ML vale pelo menos uma regen. de mana 2,0, e chance de crítico sozinha já conta (base 0 % no jogo; dano extra de 50 % é premissa). Fontes: wiki /forja e /guia-do-${escHtml(VOC_NOME[v])}, TV de Souza (02/10, 12/10), NunohS (11/10).</div>`,
             `? o que é bom para o ${VOC_ROTULO[v]}`);
-        const temNegocio = MK.catalogo ? (nome) => { const c = MK.catalogo[mkMin(nome)]; return !!(c && Number(c.trades30d) > 0); } : null; // v2.23.4
+        const FD = filtroDesmanche(), temNegocio = FD.temNegocio, pf = FD.pf, meusIds = FD.meusIds, refPreco = FD.refPreco; // v2.26.2
         const incluirMk = !!ler('desm_incluir_mercado', false);
-        const alvosDesm = pecasDesmanche(R, temNegocio, incluirMk);
-        const nd = alvosDesm.length, nMk = MK.catalogo ? pecasDesmanche(R, null, true).length - pecasDesmanche(R, temNegocio, false).length : 0;
+        const alvosDesm = pecasDesmanche(R, temNegocio, incluirMk, FD.destinoDe);
+        const nd = alvosDesm.length, nMk = MK.catalogo ? pecasDesmanche(R, null, true).length - pecasDesmanche(R, temNegocio, false, FD.destinoDe).length : 0;
         const semMercado = !MK.catalogo && !incluirMk;
-        /* v2.16.0 — preço do fragmento de forja no Mercado (menor anúncio dos "… Fragment T1/T2" com negócio em 30 d;
-         * mediana); sem leitura vale a estimativa dos vídeos (2 mil) */
-        const pf = precoFragmento();
         const dispPorIid = new Map(((R && R.dispensaveis) || []).map(p => [p.iid, p]));
         const fragTotal = alvosDesm.reduce((s, a) => { const p = dispPorIid.get(a.iid) || candidatoPorIid(a.iid); return s + (p ? fragmentosDesmanche(p).n : 0); }, 0);
         const podeDesm = nd && !dentro && sock && !EQUIP.equipando && !EQUIP.lendo;
         const desmArmado = EQUIP.desmConf && Date.now() < EQUIP.desmConf;
         h += `<div class="tb-linha"><button type="button" class="tb-bt ${desmArmado ? 'pri' : ''}" id="tb-eq-desmanchar" ${podeDesm ? '' : 'disabled'} title="${escHtml(semMercado ? 'leia o Mercado antes (aba Mercado → ATUALIZAR): sem o catálogo não sei quais sobras têm comprador, e nada é desmanchado' : !nd ? 'nada para desmanchar: as sobras Incomum+ ou refinadas (o NPC não compra) é que vão' : dentro ? 'só na cidade' : !sock ? 'o socket do jogo não foi capturado — F5 com o helper instalado' : 'manda as sobras que o NPC não compra e que não têm linha nobre (regen., ML, skill, dano, crítico) para o Desmanche da Forja (forge_salvage_batch) — vira fragmento, não volta')}">${EQUIP.desm ? 'DESMANCHANDO…' : desmArmado ? `confirmar: desmanchar ${nd}` : `DESMANCHAR (${nd})`}</button>` +
              `<span class="tb-mut tb-eq-nota">${desmArmado ? 'toque de novo para confirmar (não volta)' : `sobras sem linha nobre que o NPC não compra → ${numBR(fragTotal)} fragmento${fragTotal === 1 ? '' : 's'} ≈ ${milBR(fragTotal * pf.preco)} de ouro${pf.estimado ? ' (fragmento a 2 mil, estimado)' : ' (fragmento a ' + milBR(pf.preco) + ' no Mercado)'} · 2 toques`}</span></div>` +
-             `<div class="tb-mut tb-eq-nota">${MK.catalogo ? `${nMk} com negócio no Mercado em 30 dias ficam fora ` : '<b class="tb-av">Mercado não lido (aba Mercado → ATUALIZAR): sem saber quais têm comprador, nada é desmanchado</b> '}<label class="tb-l"><input type="checkbox" id="tb-eq-desm-mk" ${incluirMk ? 'checked' : ''}> incluir as que têm negócio no Mercado (e desmanchar mesmo sem o Mercado lido)</label></div>`;
+             `<div class="tb-mut tb-eq-nota">${MK.catalogo ? `${nMk} fica${nMk === 1 ? '' : 'm'} fora: vale${nMk === 1 ? '' : 'm'} mais no Mercado (líquido) que em fragmentos, ou tem negócio em 30 dias sem referência lida ` : '<b class="tb-av">Mercado não lido (aba Mercado → ATUALIZAR): sem saber quais têm comprador, nada é desmanchado</b> '}<label class="tb-l"><input type="checkbox" id="tb-eq-desm-mk" ${incluirMk ? 'checked' : ''}> incluir essas também (e desmanchar mesmo sem o Mercado lido)</label></div>`;
         /* v2.15.0 — as sobras viram DESTINOS com botão (dono, 07/10: "não posso ficar guardando item que nunca vou usar"):
          * comum sem encaixe → VENDER NO NPC (2 toques, venderSobrasNpc); incomum ou melhor → ANUNCIAR NO MERCADO
          * (liberarParaMercado: abre a aba já marcada; a confirmação, com a taxa escrita, continua lá). Nada dispara sozinho. */
-        const D = destinosSobras(R);
-        const meusIds = new Set((MK.minhas || []).map(o => o.id));
+        const D = destinosSobras(R); // meusIds vem de filtroDesmanche (2.26.2)
         const refTxt = (p) => {
             if (!MK.copias || !Object.keys(MK.copias).length) return '<span class="tb-mut">ref. Mercado: aba Mercado → ATUALIZAR</span>';
             /* v2.15.1 — cópias são lidas por categoria (mkChaveCopias: 'cat:<cat>' ou 'item:<nome>'), e só das peças que a aba
@@ -10189,14 +10206,7 @@
         const ocupado = EQUIP.equipando || EQUIP.lendo;
         /* v2.16.0 — veredito da sobra: Mercado líquido (ref − 5 %) contra o desmanche (fragmentos da faixa × raridade × preço
          * do fragmento). Sem referência lida, mostra só o desmanche e deixa a escolha com o dono. */
-        const refPreco = (p) => {
-            if (!MK.copias || !Object.keys(MK.copias).length) return null;
-            const n = mkMin(p.nome), cat = MK.tradeable && MK.tradeable[n] && MK.tradeable[n].cat;
-            if (!((cat ? 'cat:' + cat : 'item:' + n) in MK.copias) && !(('item:' + n) in MK.copias)) return null;
-            const r = precoReferencia({ nome: p.nome, forja: p.forja }, MK.copias, meusIds);
-            return r.preco != null ? r.preco : null;
-        };
-        const vereditoTxt = (p) => {
+        const vereditoTxt = (p) => { // refPreco vem de filtroDesmanche (2.26.2)
             const d = escolherDestino(p, refPreco(p), pf.estimado ? null : pf.preco);
             if (!d.fragmentos) return '';
             const desm = `desmanche ${d.fragmentos} frag. ≈ ${milBR(d.desmanche)}${d.t2 ? ` (${Math.round(d.t2 * 100)} % T2)` : ''}`;

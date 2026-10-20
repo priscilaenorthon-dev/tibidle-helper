@@ -5609,3 +5609,12 @@ fragmentos de Refino T1 (≈ 15 k no Mercado).
   No modelo Discord `telaMagia` filtra `CAT.hunts` por `dcSetupsDaHunt(c).length` e o placeholder diz quantas são ("— escolha a caçada
   (23 com setup do Discord) —"); nos outros modelos a lista continua inteira. Teste em `testes/telas.test.js`.
   Conferido ao vivo (20/10, 00:30): no Discord o seletor lista 23 hunts; no Em área, 113.
+
+### 2.26.2 (20/10) — Desmanche pelo veredito por peça
+- Dono (20/10): "Porque a opção desmanchar não tá aparecendo mais itens na tela Equip?" → era a 2.23.4: com 15 sobras Incomum+, 13 tinham
+  negócio no Mercado em 30 dias (ficavam fora) e 2 eram nobres; DESMANCHAR (0). Proposta aceita ("Faça isso"): a lista do DESMANCHAR usa o
+  veredito que a tela já calculava por peça (`escolherDestino`: fragmentos × preço do fragmento contra o Mercado líquido − 5 %). Com o
+  Mercado lido, a peça com negócio ENTRA quando os fragmentos valem mais; sem referência de preço lida, vale a regra antiga (fica fora).
+  Sem o catálogo, nada; linha nobre nunca; "incluir" leva tudo. `filtroDesmanche()` junta temNegocio, preço do fragmento, referência e
+  veredito, usado pela tela e pelo botão (`desmancharSobras`). Nota da tela: "N ficam fora: valem mais no Mercado (líquido) que em
+  fragmentos, ou têm negócio sem referência lida". Teste em `testes/equip.test.js`.

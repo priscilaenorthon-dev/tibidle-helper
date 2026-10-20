@@ -328,6 +328,16 @@ t('pecasDesmanche: peça com negócio no Mercado fica fora do desmanche (Incomum
     assert.deepStrictEqual(M.pecasDesmanche(res, null, true).map(x => x.iid), ['a', 'b', 'c'], 'incluir marcado de propósito: vai tudo mesmo sem o Mercado');
     assert.deepStrictEqual(M.pecasDesmanche(res, temNegocio, true).map(x => x.iid), ['a', 'b', 'c'], 'incluir = ignora o filtro');
 });
+t('2.26.2 pecasDesmanche: com negócio no Mercado mas fragmentos valendo MAIS que o Mercado líquido → desmancha (veredito por peça); sem veredito, regra antiga', () => {
+    const sobra = (iid, nome, r) => ({ iid, nome, slot: 'ring', origem: 'mochila', forja: { raridade: r, refino: 0 }, motivo: 'x' });
+    const res = { dispensaveis: [sobra('a', 'crystal ring', 1), sobra('b', 'simple dress', 1), sobra('c', 'cape', 1), sobra('d', 'plate armor', 2)] };
+    const temNegocio = (nome) => nome !== 'simple dress';                      // b não tem negócio: vai de qualquer jeito
+    const destinoDe = (p) => ({ 'crystal ring': 'desmanche', 'cape': 'mercado', 'plate armor': 'mercado?' })[p.nome];
+    assert.deepStrictEqual(M.pecasDesmanche(res, temNegocio, false, destinoDe).map(x => x.iid), ['a', 'b'], 'a: fragmentos > Mercado; c: Mercado paga mais; d: sem referência e com negócio → fora');
+    assert.deepStrictEqual(M.pecasDesmanche(res, temNegocio, false).map(x => x.iid), ['b'], 'sem veredito: só quem não tem negócio (2.23.4)');
+    assert.deepStrictEqual(M.pecasDesmanche(res, temNegocio, true, destinoDe).map(x => x.iid), ['a', 'b', 'c', 'd'], 'incluir: tudo');
+    assert.deepStrictEqual(M.pecasDesmanche(res, null, false, destinoDe), [], 'sem o Mercado lido (sem temNegocio) nada vai, mesmo com veredito');
+});
 t('2.23.5 pecasDesmanche: sobra com linha NOBRE (regen. de mana/vida, ML, skill, dano, crítico) nunca vai para o desmanche, nem com "incluir"', () => {
     const sobra = (iid, nome, slot, forja) => ({ iid, nome, slot, origem: 'depósito', forja, motivo: 'encaixe bom, mas todos já usam igual ou melhor' });
     const res = { dispensaveis: [
