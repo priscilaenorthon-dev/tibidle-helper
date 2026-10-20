@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.26.0
+// @version      2.26.1
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.26.0';
+    const VERSAO = '2.26.1';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -9321,8 +9321,11 @@
         let h = huntAtual();
         let corpo = `<div class="tb-seg" role="group" aria-label="modelo de magia">` + Object.keys(MODELOS).map(k =>
             `<button type="button" data-modelo="${k}" aria-pressed="${k === modelo}" aria-label="${escHtml(MODELOS[k].nome)}" title="${escHtml(MODELOS[k].nome + ' — ' + maisAlvos(MODELOS[k].dica))}">${escHtml(MODELO_CURTO[k] || MODELOS[k].nome)}</button>`).join('') + `</div>`;
-        const ordenadas = (CAT.hunts || []).slice().sort((a, b) => (a.levelMin || 0) - (b.levelMin || 0) || String(a.title).localeCompare(String(b.title)));
-        corpo += `<select id="tb-hunt" aria-label="caçada"><option value="">— escolha a caçada —</option>` +
+        /* v2.26.1 — no modelo Discord o seletor só lista as hunts que têm setup da comunidade (dono, 20/10: "tem q aparecer somente as
+         * hunts q tem magias definidas no discord") */
+        const soDiscord = modelo === 'discord';
+        const ordenadas = (CAT.hunts || []).filter(c => !soDiscord || dcSetupsDaHunt(c).length).slice().sort((a, b) => (a.levelMin || 0) - (b.levelMin || 0) || String(a.title).localeCompare(String(b.title)));
+        corpo += `<select id="tb-hunt" aria-label="caçada"><option value="">— escolha a caçada${soDiscord ? ` (${ordenadas.length} com setup do Discord)` : ''} —</option>` +
             ordenadas.map(c => `<option value="${escHtml(c.id)}"${c.id === manual ? ' selected' : ''}>[${escHtml(c.levelMin || 1)}] ${escHtml(c.title)}${(c.levelMin || 0) > nv ? ' ⚠' : ''}</option>`).join('') + `</select>` +
             (det && det.hunt && det.hunt.id !== manual ? `<div class="tb-linha tb-palpite"><span class="tb-mut">palpite: <b>${escHtml(det.hunt.title)}</b></span><button type="button" class="tb-bt mini" data-usar-palpite="${escHtml(det.hunt.id)}" aria-label="usar o palpite ${escHtml(det.hunt.title)}">usar</button></div>` : '');
         let alvo = h;

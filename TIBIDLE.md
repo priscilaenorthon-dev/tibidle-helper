@@ -5591,7 +5591,7 @@ fragmentos de Refino T1 (≈ 15 k no Mercado).
   gelo), Hive Tower, Hive Queen Chamber, Earth Portal, Warzone I – Fungus; Theus: Hive Queen Chamber; lucasdela: Energy/Fire/Ice Portal
   (Fire = Paladino e Feiticeiro copiados do Energy, como o autor disse); Logbook: Matheustlm e KairusZ (Behemoth Quest), Venenu (Dragon
   Lair, lure 8 para bestiário), NaneRz (Holy Portal), Zumpano1 (Lizard City), Gabs (Thunderscar Peak), Jhefy (POI), malachias (Bog, pelo
-  texto do próprio post). Total: 28 setups em 24 hunts; Hive Queen, Behemoth, Lizard City e Bog têm 2 autores (o dono escolhe no seletor).
+  texto do próprio post). Total: 28 setups em 23 hunts; Hive Queen, Behemoth, Lizard City e Bog têm 2 autores (o dono escolhe no seletor).
   Decisões de leitura: cura azul com figura vermelha à direita = Intense Healing, à esquerda = Light Healing (a folha antiga não tinha as
   duas); "ice wave com chapéu" = Chill Out; poção marrom com correntes do Paladino = Great Spirit Potion (pode ser a Ultimate; anotado no
   `obs`); munição só "flecha" fica de fora (a config atual permanece); mana "off" = poção de mana a 0 %; o Strike "Strong/Ultimate" que não
@@ -5603,3 +5603,9 @@ fragmentos de Refino T1 (≈ 15 k no Mercado).
   Paladino Divine Caldera ≥2 · avalanche ≥2 · Ethereal Spear ≥1 · Strong Ethereal Spear ≥1, Great Spirit Potion ≤30 %, Intense Healing
   ≤70 %, munição e Protect Party do dono mantidos); "voltar ao que eu tinha antes do Discord" (2 toques) devolveu os 4 iguais à foto,
   confirmado numa terceira aba nova. Entrar pelo Playwright derruba a sessão do dono (aceito).
+
+### 2.26.1 (20/10) — Discord: o seletor de caçada só lista as hunts com setup
+- Dono (20/10, print do `<select>`): "Na magia discord, no campo da hunt tem q aparecer somente as hunts q tem magias definidas no discord."
+  No modelo Discord `telaMagia` filtra `CAT.hunts` por `dcSetupsDaHunt(c).length` e o placeholder diz quantas são ("— escolha a caçada
+  (23 com setup do Discord) —"); nos outros modelos a lista continua inteira. Teste em `testes/telas.test.js`.
+  Conferido ao vivo (20/10, 00:30): no Discord o seletor lista 23 hunts; no Em área, 113.

@@ -262,6 +262,24 @@ t('Status: boss com nome malicioso na linha de cima sai escapado', async () => {
     semXss(W.html(), 'Status');
 });
 
+t('Magia no modelo Discord: o seletor de caçada só lista as hunts com setup da comunidade (2.26.1)', async () => {
+    const mon = [{ name: 'X', health: 100, experience: 10, weight: 1, elements: [] }];
+    const hunts = HUNTS.concat([{ id: 199, title: 'Hive Queen Chamber', levelMin: 80, island: 'zao', lureTiers: [{ min: 4, max: 8 }], monsters: mon },
+        { id: 151, title: 'Bog Raiders Yalahar', levelMin: 70, island: 'yalahar', lureTiers: [{ min: 4, max: 8 }], monsters: mon },
+        { id: 170, title: 'Wolves Den', levelMin: 1, island: 'tibidle_island', lureTiers: [{ min: 1, max: 4 }], monsters: mon }]);
+    const W = criarMundo({ rotas: { '/hunts/select': hunts }, ls: comAba('magia', { tb_helper_hunt_id: '199', tb_helper_modelo: '"discord"' }) });
+    await W.avancar(0); await W.avancar(200);                // catálogo de hunts chega → repinte
+    const sel = (W.html().match(/<select id="tb-hunt"[\s\S]*?<\/select>/) || [''])[0];
+    const ops = [...sel.matchAll(/<option value="(\d+)"/g)].map(m => Number(m[1]));
+    assert.deepStrictEqual(ops, [151, 199], 'só Bog e Hive Queen têm setup: ' + ops.join(','));
+    assert.match(sel, /2 com setup do Discord/);
+    assert.match(sel, /value="199" selected/);
+    const W2 = criarMundo({ rotas: { '/hunts/select': hunts }, ls: comAba('magia', { tb_helper_hunt_id: '199', tb_helper_modelo: '"area"' }) });
+    await W2.avancar(0); await W2.avancar(200);
+    const sel2 = (W2.html().match(/<select id="tb-hunt"[\s\S]*?<\/select>/) || [''])[0];
+    assert.strictEqual([...sel2.matchAll(/<option value="(\d+)"/g)].length, 5, 'nos outros modelos a lista é inteira');
+    assert(!/com setup do Discord/.test(sel2));
+});
 t('Magia: controle segmentado (Eco · Equil · Área · Intel · Boss · Discord) com aria-pressed — o Inteligente voltou (2.12.0); Discord na 2.26.0', async () => {
     const W = criarMundo({ ls: comAba('magia', { tb_helper_hunt_id: '34', tb_helper_modelo: '"area"' }) });
     await W.avancar(0);
