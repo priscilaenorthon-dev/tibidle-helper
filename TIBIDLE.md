@@ -5640,3 +5640,11 @@ fragmentos de Refino T1 (≈ 15 k no Mercado).
   não entra" virou o contrário).
 - Não entrei na conta u2tag (o dono estava jogando nela); a análise foi pela ShamanBr logada no Playwright. `market_history` não guarda as
   linhas da peça vendida: a regen. 1,6 veio do dono.
+
+### 2.27.1 (20/10) — revisão de empilhável pede a média antes de sugerir descer
+- Teste ao vivo da 2.27.0 na ShamanBr (01:22–01:27): Anunciar com o baú = 35 linhas (forjadas: skull helmet Comum 39.999/49.999, magma coat
+  → NPC, jungle flail sem cópia → digite); REVISAR nos 136 anúncios: 31 sozinho, 26 menor, 48 barato, 24 BAIXO (terra mantle Incomum
+  199.998 → 312.375 pelo piso das Comum ×1,25; terra mantle Raro max_mana 111 + resist. energia 1,9 149.999 → 858.125; terra boots Raro
+  44.999 → 275.000; beetle necklace Incomum 99.999 → 375.000; muck rod Incomum dano mágico 1 199.999 → 1,25 M), 7 acima (icicle bow
+  499.999 → 198.006; terra boots resist. terra 0,7 → 61.387). Falha: empilhável sem a média lida ainda sugeria o menor −1 (cleansing
+  fragment t1 328 → 65 com a média a 184). Agora a revisão pede `market_stats` (pendente) e só sugere com a média; abaixo dela = 'piso'.

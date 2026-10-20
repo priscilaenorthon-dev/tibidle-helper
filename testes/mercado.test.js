@@ -425,6 +425,16 @@ t('2.27.0 — piso: peça COM linha nunca abaixo das cópias SEM linha (mediana 
     const semPiso = P.precoReferencia({ nome: 'terra mantle', forja: F1(0) }, copias, new Set());
     assert.strictEqual(semPiso.preco, 19999, 'peça sem linha: a igual mais barata −1, sem piso'); assert.strictEqual(semPiso.piso, undefined);
 });
+t('2.27.1 — revisão de empilhável: pede a média de 30 d antes de sugerir descer; com a média, o menor −1 abaixo dela vira o piso; já no piso = "piso"', () => {
+    const catalogo = { 'cleansing fragment t1': { name: 'cleansing fragment t1', sellOrders: 3, minSell: 66, trades30d: 2477 } };
+    const minhas = [ordem('m', 'cleansing fragment t1', 328, { quantityRemaining: 49, quantityTotal: 49 })];
+    let r = P.mkRevisao({ minhas, catalogo, tradeable: TRAD, taxa: 0.05, livros: {}, copias: {}, stats: {} });
+    assert.strictEqual(r.linhas[0].situacao, 'pendente', JSON.stringify(r.linhas[0])); igual(r.pendencias.map(p => [p.tipo, p.data]), [['market_stats', { itemName: 'cleansing fragment t1' }]]);
+    r = P.mkRevisao({ minhas, catalogo, tradeable: TRAD, taxa: 0.05, livros: {}, copias: {}, stats: { 'cleansing fragment t1': { stats: { avg: 184.3 } } } });
+    assert.strictEqual(r.linhas[0].situacao, 'barato'); assert.strictEqual(r.linhas[0].novo, 184, 'não desce ao 65: o piso é a média de 30 d');
+    r = P.mkRevisao({ minhas: [ordem('m', 'cleansing fragment t1', 180, { quantityRemaining: 49, quantityTotal: 49 })], catalogo, tradeable: TRAD, taxa: 0.05, livros: {}, copias: {}, stats: { 'cleansing fragment t1': { stats: { avg: 184.3 } } } });
+    assert.strictEqual(r.linhas[0].situacao, 'piso'); assert.strictEqual(r.linhas[0].novo, null, 'já abaixo da média: nada a refazer');
+});
 t('2.27.0 — regras do dono: 1,6 de regen vale mais que a 1,3 a 1 M; peça mais forte (potência) com status um pouco menor vale mais que a inferior; raridade maior com a mesma nobre vale mais', () => {
     const fjp = (rar, atrs, pot) => ({ raridade: rar, refino: 0, potenciaBase: pot, atributos: atrs.map(([id, valor]) => ({ id, valor })) });
     const cpp = (preco, forja) => ({ orderId: 'o' + preco, itemName: 'terra mantle', unitPrice: preco, sellerName: 'x', instance: { name: 'terra mantle', forja } });

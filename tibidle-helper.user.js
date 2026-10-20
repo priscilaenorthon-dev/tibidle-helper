@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.27.0
+// @version      2.27.1
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.27.0';
+    const VERSAO = '2.27.1';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -12343,6 +12343,8 @@
                     else pendente = { tipo: 'market_list', data: { asset: 'ITEM', itemName: o.itemName }, chave: 'livro:' + n, cache: 'livros', alvo: n, rotulo: 'livro de ' + o.itemName, erro: l ? l.erro : null };
                 }
                 const st = e.stats && e.stats[n]; if (st && !st.erro && st.stats && st.stats.avg != null) media = Number(st.stats.avg) || null; // v2.27.0 — piso
+                /* v2.27.1 — sem a média lida, a revisão PEDE a média antes de sugerir descer (ao vivo: cleansing fragment t1 328 → 65 com a média a 184) */
+                if (media == null && !pendente && c && Number(c.trades30d) > 0 && !st) pendente = { tipo: 'market_stats', data: { itemName: o.itemName }, chave: 'stats:' + n, cache: 'stats', alvo: n, rotulo: 'média de ' + o.itemName, erro: null };
             }
             if (pendente && pendente.tipo && !pendente.erro && !pend.has(pendente.chave)) pend.set(pendente.chave, pendente);
             const menor = outros && outros.length ? Math.min(...outros) : null;
