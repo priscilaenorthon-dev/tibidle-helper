@@ -5650,4 +5650,5 @@ fragmentos de Refino T1 (≈ 15 k no Mercado).
   fragment t1 328 → 65 com a média a 184). Agora a revisão pede `market_stats` (pendente) e só sugere com a média; abaixo dela = 'piso'.
 
 ### 2.27.2 (20/10) — a revisão recebe as médias
-- Ao vivo a 2.27.1 deixava todo empilhável "não revisado":  não passava  para , e a pendência da média nunca se resolvia. Corrigido; o teste vm da revisão voltou a passar.
+- Ao vivo a 2.27.1 deixava todo empilhável "não revisado": `mkRevisaoAtual` não passava `MK.stats` para `mkRevisao`, e a pendência
+  da média nunca se resolvia. Corrigido; o teste vm da revisão voltou a passar.
