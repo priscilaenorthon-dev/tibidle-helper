@@ -148,6 +148,28 @@ t('Northon (2.28.0): título "Northon - <mapa>", a barra dos 4, nenhum mapa repe
     }
     assert(M.SETUPS_DISCORD.filter(s => s.huntId === 191).every(s => /^Northon - /.test(s.titulo)));
 });
+t('Northon (2.28.1): o padrão da comunidade — Cavaleiro de dano, a mesma runa nos três, nenhum slot que a fila nunca dispara', () => {
+    const nn = M.SETUPS_DISCORD.filter(s => /^northon-\d+$/.test(s.id));
+    const sp = (n) => SPELLS.find(x => x.name === n && x.combatType && (x.vocations || []).length) || SPELLS.find(x => x.name === n);
+    for (const s of nn) {
+        assert.deepStrictEqual(s.chars.KNIGHT.ataque.map(a => a[0]), ['Fierce Berserk', 'Berserk', 'Lesser Front Sweep', 'Brutal Strike'], s.id);
+        const runas = ['PALADIN', 'SORCERER', 'DRUID'].map(v => (s.chars[v].ataque.find(a => / rune$/.test(a[0]) && a[0] !== 'sudden death rune') || [])[0]);
+        assert(runas[0] && runas.every(r => r === runas[0]), s.id + ': runas ' + runas.join(', '));
+        for (const [voc, ch] of Object.entries(s.chars)) {
+            const at = ch.ataque;
+            /* um slot atrás de outro que fica pronto a cada 2 s (recarga = a do grupo), com mínimo ≤ o dele, só sai sem mana para o da
+             * frente — atrás de runa, nunca (slotMorto, @@MAGIA) */
+            for (let j = 1; j < at.length; j++) {
+                for (let i = 0; i < j; i++) {
+                    const a = sp(at[i][0]), b = sp(at[j][0]);
+                    if ((a.cooldownMs || 2000) > 2000 || at[i][1] > at[j][1]) continue;
+                    const runaA = / rune$/.test(at[i][0]);
+                    assert(!runaA && !(!/ rune$/.test(at[j][0]) && (b.mana || 0) >= (a.mana || 0)), `${s.id} ${voc}: ${at[j][0]} atrás de ${at[i][0]} nunca dispara`);
+                }
+            }
+        }
+    }
+});
 t('dcConfigDe com um setup real (Hive Queen Chamber do Specter) no catálogo real: 4 barras, sem avisos para um nível 150', () => {
     const s = M.SETUPS_DISCORD.find(x => x.id === 'hivequeen-specter');
     const ctx = { nivel: 150, magias: SPELLS, pocoes: NOMES_POCOES };

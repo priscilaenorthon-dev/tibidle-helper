@@ -5782,3 +5782,77 @@ Canais lidos: patch-notes, changelog, anuncios-ptbr (desde 08/10), roadmap (só 
 | Shadow Nexus | 250 | lucasdela, Ice Portal |
 | Warzone III - Crystal Caves | 250 | lucasdela, Ice Portal |
 
+
+## 2.28.1 (20/10) — "Northon - <mapa>" refeitos pelo PADRÃO da comunidade, para o nível 136
+
+Dono: "todo setup que a gente tirou do Discord está perfeito; analisa o padrão que eles usam e alinha para o meu nível e para os outros mapas".
+A 2.28.0 copiava o post do mapa "mais parecido" pelos elementos e pelo nível RECOMENDADO dos dois mapas, sem olhar o nível da party nem a
+vida dos monstros. No Throne of Infernatil (vida média 3.614) a base era o Ice Portal do lucasdela (8.033, nível 157): o Cavaleiro vinha só
+com Lesser Front Sweep e Protector. Os 14 mapas de nível alto herdavam esse Cavaleiro tanque.
+
+**O padrão** (posts do nível 118–158: Specter em 6 mapas, Gus, Theus, Zumpano) é quase o mesmo em todos os mapas; muda só o elemento:
+- Cavaleiro: Fierce Berserk ≥4 · Berserk ≥2 · Lesser Front Sweep ≥1 · Brutal Strike ≥1; Great Health 30 %, Mana Potion 40 %; Intense Wound Cleansing 40 % antes de Wound Cleansing 85 %; sem suporte.
+- Paladino: Divine Caldera ≥2 · runa ≥2 · Strong Ethereal Spear ≥1 · Ethereal Spear ≥1; Great Spirit 30 %, Mana Potion 30 %; Divine Healing 70 %.
+- Feiticeiro: onda ≥2 · runa ≥2 · golpe forte ≥1 · golpe ≥1; Health Potion 30 %, Mana Potion 60 %; Ultimate Healing 60 % e Intense Healing 75 %; Enchant Party.
+- Druida: onda ≥2 · runa ≥2 · golpe forte ≥1 · golpe ≥1; Health Potion 30 %, Mana Potion 60 %; Heal Friend 70 %, Mass Healing 60 %, Ultimate Healing 60 %; Heal Party.
+- A MESMA runa 3×3 nos três (a de melhor nota no mapa).
+
+**Como cada mapa foi montado:** onda, runa e golpes pelo melhor elemento (área pela média com veto de imunes ≥ 50 %; golpe pela média). Magia com nota < 60 não entra. Caldera só com sagrado ≥ 60; físico < 60 e sagrado ≥ 60 = Divine Missile no lugar das lanças. Mago sem onda boa: a sudden death (morte ≥ 60) no lugar do golpe, como o Theus (golpe de 2 s e runa ≥1 juntos, o de trás nunca sai). Pelo recomendado contra o 136: até 125 sem Magic Shield; 126–160 Magic Shield nos magos (Specter na Bottom of the Ocean e na Lizard City); acima de 160 também Intense Recovery 85 % no Cavaleiro e Divine Healing 60 % + Intense Healing 70 % no Paladino (Specter na Warzone, nível 158). Mínimos cortados no lure.
+
+**Teste novo** (discord.test.js): Cavaleiro com a barra do padrão, a mesma runa nos três, e nenhum slot atrás de outro de 2 s com mínimo ≤ o dele (a fila nunca o dispararia). 12 testes no arquivo; ESLint 0 erros.
+
+**Ainda não medido**: nenhum foi caçado. O dono vai testar mapa a mapa; o que não ficar bom sai pelo id northon-<huntId>.
+
+| Mapa | Rec. | Faixa | Runa | Onda Fei | Onda Dru |
+|---|---|---|---|---|---|
+| Foreign Quarter | 60 | sem MS | great fireball rune | Great Fire Wave | Strong Ice Wave |
+| Ice Witch Tower | 60 | sem MS | thunderstorm rune | Energy Wave | Terra Wave |
+| Nargor Pirate island | 60 | sem MS | great fireball rune | Great Fire Wave | Strong Ice Wave |
+| Stonerefiners Cavern | 60 | sem MS | avalanche rune | Great Fire Wave | Strong Ice Wave |
+| The Banshee Quest | 60 | sem MS | avalanche rune | Energy Wave | Strong Ice Wave |
+| Feyrist Surface | 70 | sem MS | great fireball rune | Great Fire Wave | Strong Ice Wave |
+| Yalahar Worker Golem | 70 | sem MS | thunderstorm rune | Energy Wave | Strong Ice Wave |
+| Fiehonja Stairway | 80 | sem MS | thunderstorm rune | Energy Wave | Terra Wave |
+| Hero Fortress Entrance | 80 | sem MS | great fireball rune | Great Fire Wave | Strong Ice Wave |
+| Killer Caiman Caverns | 80 | sem MS | thunderstorm rune | Energy Wave | Strong Ice Wave |
+| Upper Spikes | 80 | sem MS | avalanche rune | Energy Wave | Strong Ice Wave |
+| Zao Entrance | 80 | sem MS | avalanche rune | Energy Wave | Strong Ice Wave |
+| Death Portal | 100 | sem MS | avalanche rune | Energy Wave | Strong Ice Wave |
+| Frozen Hell | 100 | sem MS | thunderstorm rune | Energy Wave | Terra Wave |
+| Middle Spikes | 100 | sem MS | avalanche rune | Energy Wave | Strong Ice Wave |
+| Petrified Hollow | 100 | sem MS | great fireball rune | Great Fire Wave | Strong Ice Wave |
+| Souleater's Canyon | 100 | sem MS | great fireball rune | Energy Wave | Strong Ice Wave |
+| Lizard Chosen's Dojo | 110 | sem MS | great fireball rune | Great Fire Wave | Strong Ice Wave |
+| Crystal Keeper | 130 | MS | avalanche rune | Energy Wave | Strong Ice Wave |
+| Deepling Library | 130 | MS | thunderstorm rune | Energy Wave | Terra Wave |
+| Inquisition Warlocks | 130 | MS | avalanche rune | Energy Wave | Strong Ice Wave |
+| Lower Spikes | 130 | MS | avalanche rune | Energy Wave | Strong Ice Wave |
+| Mushroom Gardens | 130 | MS | thunderstorm rune | Energy Wave | Strong Ice Wave |
+| Otherworld Kazordoon | 130 | MS | stone shower rune | Great Fire Wave | Terra Wave |
+| Throne of Bazir | 130 | MS | great fireball rune | Energy Wave | Strong Ice Wave |
+| Zao Caverns | 130 | MS | great fireball rune | Great Fire Wave | Strong Ice Wave |
+| Zugurosh Seal | 130 | MS | thunderstorm rune | Energy Wave | Terra Wave |
+| Draken Walls | 150 | MS | avalanche rune | Energy Wave | Strong Ice Wave |
+| Inquisition Entrance | 150 | MS | avalanche rune | Energy Wave | Strong Ice Wave |
+| Lava Hot Spot | 150 | MS | avalanche rune | Energy Wave | Strong Ice Wave |
+| Otherworld Svargrond | 150 | MS | stone shower rune | Great Fire Wave | Terra Wave |
+| Throne of Ashfalor | 150 | MS | avalanche rune | Great Fire Wave | Strong Ice Wave |
+| Throne of Pumin | 150 | MS | thunderstorm rune | Energy Wave | Strong Ice Wave |
+| Throne of Verminor | 150 | MS | thunderstorm rune | Energy Wave | Strong Ice Wave |
+| Otherworld Ankrahmun | 170 | MS + defesa | stone shower rune | Great Fire Wave | Terra Wave |
+| Throne of Apocalypse | 170 | MS + defesa | avalanche rune | — (sudden death) | Strong Ice Wave |
+| Throne of Tafariel | 170 | MS + defesa | avalanche rune | Energy Wave | Strong Ice Wave |
+| Annihilon Seal | 180 | MS + defesa | avalanche rune | — (sudden death) | Strong Ice Wave |
+| Latrivan & Golgordan Seal | 180 | MS + defesa | thunderstorm rune | Energy Wave | Strong Ice Wave |
+| Madareth Seal | 180 | MS + defesa | avalanche rune | Energy Wave | Strong Ice Wave |
+| Throne of Infernatil | 180 | MS + defesa | avalanche rune | Energy Wave | Strong Ice Wave |
+| Ushuriel Seal | 180 | MS + defesa | avalanche rune | Energy Wave | Strong Ice Wave |
+| Warzone - Lava Lurkers | 180 | MS + defesa | avalanche rune | Energy Wave | Strong Ice Wave |
+| Warzone I - Rocky Mountain | 180 | MS + defesa | great fireball rune | Great Fire Wave | Strong Ice Wave |
+| Otherworld Edron | 190 | MS + defesa | stone shower rune | Great Fire Wave | Terra Wave |
+| Hellgorak Seal | 200 | MS + defesa | avalanche rune | Energy Wave | Strong Ice Wave |
+| Warzone II - Magma Dungeon | 200 | MS + defesa | avalanche rune | Energy Wave | Strong Ice Wave |
+| Warzone II - Parasite Nest | 220 | MS + defesa | avalanche rune | — (sudden death) | Strong Ice Wave |
+| Otherworld Zao | 250 | MS + defesa | stone shower rune | Great Fire Wave | Terra Wave |
+| Shadow Nexus | 250 | MS + defesa | avalanche rune | Energy Wave | Strong Ice Wave |
+| Warzone III - Crystal Caves | 250 | MS + defesa | thunderstorm rune | Energy Wave | Strong Ice Wave |
