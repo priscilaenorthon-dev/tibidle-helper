@@ -75,7 +75,7 @@ t('empilhável: mochila + depósito, menor −1 do catálogo, retirar do depósi
     assert.strictEqual(l.taxa, 224); assert.strictEqual(l.liquido, 899 * 5 - 224); assert.strictEqual(l.npcTotal, 1250);
     assert.strictEqual(l.bloqueio, null); assert.strictEqual(l.marcado, true);
     assert.strictEqual(r.plano.n, 1); assert.strictEqual(r.plano.taxa, 224);
-    assert.strictEqual(r.pendencias.length, 0, 'catálogo bastou — nenhum pedido extra');
+    assert(r.pendencias.every(x => x.tipo === 'market_stats'), '2.27.0: o único pedido extra é a média de 30 d (piso), que não segura o preço: ' + JSON.stringify(r.pendencias));
 });
 
 t('minhas ordens não contam: livro só quando o menor pode ser meu; o menor já é meu = mantém', () => {
@@ -94,10 +94,10 @@ t('minhas ordens não contam: livro só quando o menor pode ser meu; o menor já
     l = linha(r, 'n:small ruby'); assert.strictEqual(l.preco, 879); assert.strictEqual(l.origem, 'menor');
     // catálogo já mostra alguém abaixo do meu: sem livro
     r = P.mkMontar(base({ bag: { 'small ruby': 2 }, catalogo: cat(850, 4), minhas }));
-    assert.strictEqual(r.pendencias.length, 0); assert.strictEqual(linha(r, 'n:small ruby').preco, 849);
+    assert(r.pendencias.every(x => x.tipo === 'market_stats'), 'sem livro (2.27.0: só a média entra na fila)'); assert.strictEqual(linha(r, 'n:small ruby').preco, 849);
     // todas as ordens do livro são minhas: sem livro, fica o meu
     r = P.mkMontar(base({ bag: { 'small ruby': 2 }, catalogo: cat(900, 1), minhas }));
-    assert.strictEqual(r.pendencias.length, 0); assert.strictEqual(linha(r, 'n:small ruby').preco, 900);
+    assert(r.pendencias.every(x => x.tipo === 'market_stats'), 'sem livro (2.27.0: só a média entra na fila)'); assert.strictEqual(linha(r, 'n:small ruby').preco, 900);
 });
 
 t('sem concorrente: média de 30 dias (arredondada); sem histórico: vazio, sem pedido; digitado vale', () => {
@@ -166,21 +166,27 @@ t('2.14.12 — cópia forjada: o ENCAIXE faz o preço — só cópias com os mes
         { iid: 'a5', name: 'plate armor', forja: fj(0, [], 292) } ], bag: { 'plate armor': 5 }, catalogo, copias };
     const r = P.mkMontar(base(e));
     const a1 = linha(r, 'i:a1');
-    assert.strictEqual(a1.preco, 249999, 'regen mana: menor regen mana de outro (250.000) −1 — não o resist a 8.999: ' + JSON.stringify(a1.sug));
-    assert.strictEqual(a1.sug.ref, 250000); assert.strictEqual(a1.origem, 'menor');
+    /* 2.27.0 — as três regen 1,2 têm potência 306/59/46 contra a minha 34: com as linhas iguais a potência desempata → todas são
+     * "melhores"; o justo desce pela curva a partir da mais barata (250 mil) e multiplica pela potência (34/306)^0,35 travada em ×0,75 */
+    assert.strictEqual(a1.preco, 187499, 'regen mana: a 1,2 a 250 mil é melhor (potência) — justo = 249.999 × 0,75: ' + JSON.stringify(a1.sug));
+    assert.strictEqual(a1.sug.ref, 250000); assert.strictEqual(a1.origem, 'justo');
     assert(/regen mana/.test(a1.encaixe || ''), 'a linha diz qual encaixe serviu de referência: ' + a1.encaixe);
-    assert.strictEqual(linha(r, 'i:a2').preco, 9998, 'resist gelo: só a c3 (resist gelo) conta');
+    /* 2.27.0 — resist gelo 1,2 (pot. 220) contra a c3 resist gelo 0,9 (pot. 9) a 9.999: a c3 é INFERIOR (valor e potência) → justo:
+     * 9.999 × (1,2/0,9)^1,5 ≈ 15.395 × potência (220/9)^0,35 travada em ×1,4 → 21.552 (era 9.998: a mais barata −1) */
+    assert.strictEqual(linha(r, 'i:a2').preco, 21552, 'resist gelo: a c3 (resist gelo) é a referência, inferior → sobe');
     const a3 = linha(r, 'i:a3');
-    /* 2.16.5 — sem igual nem parecida: a faixa da raridade (a mais barata incomum +0, c2 a 8.999, −1) */
-    assert.strictEqual(a3.preco, 8998); assert.strictEqual(a3.origem, 'faixa'); assert.strictEqual(a3.bloqueio, null);
+    /* 2.27.0 — sem igual nem parecida: a MEDIANA do corte (incomum +0: 8.999, 9.999, 94.000, 250.000, 280.000, 450.000 → 94.000); era a mais barata −1 */
+    assert.strictEqual(a3.preco, 94000); assert.strictEqual(a3.origem, 'faixa'); assert.strictEqual(a3.bloqueio, null);
     assert(/8\.999|8999/.test(a3.nota) && /confira/.test(a3.nota), 'a nota diz de onde veio o preço: ' + a3.nota);
-    assert.strictEqual(linha(r, 'i:a4').preco, 449999, 'raro: os mesmos 2 atributos em qualquer ordem (c8), nunca a c7');
+    /* 2.27.0 — a igual Raro (c8) daria 449.999, mas as Incomum regen 1,2 (raridade abaixo, mesma nobre, linha não mais que 15 % melhor) vão a
+     * 450 mil: peça de raridade maior vale mais que a inferior → piso 450.000 × 1,1 */
+    assert.strictEqual(linha(r, 'i:a4').preco, 495000, 'raro: os mesmos 2 atributos (c8) são a referência, mas o piso da Incomum regen a 450 mil × 1,1 manda');
     assert.strictEqual(linha(r, 'i:a5').preco, 849, 'comum: sem atributos, como antes');
     // a minha ordem só conta como "meu" se tiver o mesmo encaixe
     let r2 = P.mkMontar(base(Object.assign({}, e, { minhas: [ordem('m1', 'plate armor', 240000, { forja: fj(1, [['regen_mana', 1.4]], 300) })] }))); // 2.16.5: "meu" também pede valor igual (±10 %)
     assert.strictEqual(linha(r2, 'i:a1').preco, 240000); assert.strictEqual(linha(r2, 'i:a1').origem, 'meu');
     r2 = P.mkMontar(base(Object.assign({}, e, { minhas: [ordem('m1', 'plate armor', 9999, { forja: fj(1, [['regen_vida', 2]], 300) })] })));
-    assert.strictEqual(linha(r2, 'i:a1').preco, 249999, 'minha ordem de OUTRO encaixe (regen vida) não é "meu" para a regen mana');
+    assert.strictEqual(linha(r2, 'i:a1').preco, 187499, 'minha ordem de OUTRO encaixe (regen vida) não é "meu" para a regen mana (2.27.0: justo pela potência, como a1)');
     // mkMesmoCorte
     assert(P.mkMesmoCorte(fj(1, [['regen_mana', 1.3]]), fj(1, [['Regen Mana', '1,2']])), 'mesmo id normalizado, valor diferente = mesmo encaixe');
     assert(!P.mkMesmoCorte(fj(1, [['regen_mana', 1.3]]), fj(1, [['regen_vida', 1.3]])));
@@ -190,7 +196,10 @@ t('2.14.12 — cópia forjada: o ENCAIXE faz o preço — só cópias com os mes
     /* 2.16.5 — o VALOR da linha nobre: mkMesmoCorte = igual ou melhor (≥ 90 %) */
     assert(!P.mkMesmoCorte(fj(1, [['regen_mana', 1.4]]), fj(1, [['regen_mana', 1.1]])), 'regen 1,1 não é referência para a 1,4');
     assert(P.mkMesmoCorte(fj(1, [['regen_mana', 1.4]]), fj(1, [['regen_mana', 2]])), 'regen 2,0 (melhor) conta como igual ou melhor');
-    assert(P.mkMesmoCorte(fj(1, [['resist_gelo', 1.9]]), fj(1, [['resist_gelo', 0.6]])), 'linha que não é nobre: o valor não entra');
+    assert(!P.mkMesmoCorte(fj(1, [['resist_gelo', 1.9]]), fj(1, [['resist_gelo', 0.6]])), '2.27.0: o valor de TODA linha entra — resist. gelo 0,6 não é referência para a 1,9');
+    assert(P.mkMesmoCorte(fj(1, [['resist_gelo', 1.9]]), fj(1, [['resist_gelo', 1.8]])), 'resist. gelo 1,8 (±10 %) é igual');
+    assert(!P.mkMesmoCorte(fj(0, [], 324), fj(0, [], 138)), '2.27.0: potência 138 não é referência para a 324 (fator 1,35)');
+    assert(P.mkMesmoCorte(fj(0, [], 138), fj(0, [], 324)), 'potência maior é igual ou melhor');
 });
 
 t('2.16.5 — preço justo pelo valor: inferior e melhor com o mesmo encaixe ajustam; revisão não diz "barato" contra a inferior', () => {
@@ -214,7 +223,7 @@ t('2.16.5 — preço justo pelo valor: inferior e melhor com o mesmo encaixe aju
     /* só uma melhor: desce pela mesma curva, nunca acima dela −1 */
     const soM = { 'cat:escudos': { copies: [cp('c2', 450000, fj(1, [['regen_mana', 2]]))] } };
     const b2 = linha(P.mkMontar(base(Object.assign({}, e, { copias: soM }))), 'i:a1');
-    assert.strictEqual(b2.origem, 'justo'); assert.strictEqual(b2.preco, Math.round(Math.max(450000 / 3, 450000 * Math.pow(1.4 / 2, 4))), 'só uma melhor: desce pela curva, mas no máximo ÷3');
+    assert.strictEqual(b2.origem, 'justo'); assert.strictEqual(b2.preco, Math.round(Math.max(450000 / 10, 450000 * Math.pow(1.4 / 2, 4))), 'só uma melhor: desce pela curva, mas no máximo ÷10 (2.27.0)');
     /* revisão: a minha 1,4 a 100 mil NÃO está "barato" contra a 1,1 a 25 mil; é "menor" que a 2,0; a inferior aparece como piso */
     const minhas = [ordem('m', 'black shield', 100000, { forja: fj(1, [['regen_mana', 1.4]]) }), ordem('m2', 'black shield', 600000, { forja: fj(1, [['regen_mana', 1.3]]) })];
     const rv = P.mkRevisao({ minhas, catalogo, tradeable: trad, taxa: 0.05, livros: {}, copias });
@@ -239,7 +248,10 @@ t('2.14.12 — revisão: menor de outro só com o MESMO encaixe; ordem minha aba
         minhas: [ordem('d1', 'plate armor', 9999, { forja: fj(1, [['regen_vida', 2]], 338) })] }));
     const l = r.linhas[0];
     assert.strictEqual(l.menor, 95000, 'o resist a 8.999 não é concorrente da regen vida: ' + JSON.stringify(l));
-    assert.strictEqual(l.situacao, 'menor'); assert.strictEqual(l.folga, 85001, 'quanto a minha está ABAIXO do menor de outro com o mesmo encaixe');
+    /* 2.27.0 — a minha regen. de vida 2,0 (pot. 338) a 9.999 está ABAIXO do valor: a única igual-ou-melhor é a 2,4 a 95 mil → justo pela
+     * curva (95.000 × (2/2,4)^4 ≈ 45.800) × potência (338/239)^0,35 ≈ 1,13 → ≈ 51.700; 9.999 < 70 % disso → 'baixo', refazer no justo */
+    assert.strictEqual(l.situacao, 'baixo', JSON.stringify(l)); assert(l.novo > 45000 && l.novo < 60000, 'novo = justo pelas linhas e potência: ' + l.novo);
+    assert.strictEqual(l.folga, 85001, 'quanto a minha está ABAIXO do menor de outro com o mesmo encaixe');
     assert(/regen vida/.test(l.encaixe || ''));
 });
 
@@ -366,7 +378,7 @@ const cp = (item, preco, rar, atrs, orderId) => ({ orderId: orderId || 'o' + pre
 const F1 = (rar, ...atrs) => ({ raridade: rar, refino: 0, atributos: atrs.map(([id, valor]) => ({ id, valor })) });
 t('precoReferencia: igual (mesmo corte) → menor −1; o meu anúncio não conta', () => {
     const copias = { 'cat:armaduras': { copies: [cp('dark armor', 300000, 1, [['regen_mana', 1.3]]), cp('dark armor', 450000, 1, [['regen_mana', 1.2]]), cp('dark armor', 9999, 1, [['resist_gelo', 1]]), cp('dark armor', 100, 1, [['regen_mana', 2]], 'meu')] } };
-    igual(P.precoReferencia({ nome: 'dark armor', forja: F1(1, ['regen_mana', 1.4]) }, copias, new Set(['meu'])), { preco: 299999, origem: 'igual', ref: 300000 });
+    igual(P.precoReferencia({ nome: 'dark armor', forja: F1(1, ['regen_mana', 1.4]) }, copias, new Set(['meu'])), { preco: 299999, origem: 'igual', ref: 300000, potFator: 1 });
     /* 2.16.5 — só cópias inferiores (1,1 e 1,2 contra a minha 1,4): a mais próxima (1,2 a 450 mil) sobe pela curva */
     const inf = { 'cat:armaduras': { copies: [cp('dark armor', 300000, 1, [['regen_mana', 1.1]]), cp('dark armor', 450000, 1, [['regen_mana', 1.2]])] } };
     const j = P.precoReferencia({ nome: 'dark armor', forja: F1(1, ['regen_mana', 1.4]) }, inf, new Set());
@@ -378,13 +390,15 @@ t('precoReferencia: parecida só com o encaixe nobre em comum (regen. de mana n�
     const j = P.precoReferencia({ nome: 'dark armor', forja: F1(2, ['regen_mana', 1.4], ['resist_morte', 2.1]) }, copias, new Set());
     assert.strictEqual(j.origem, 'justo'); assert.strictEqual(j.ref, 450000); assert.strictEqual(j.preco, Math.round(450000 * Math.pow(1.4 / 1.2, 4))); assert(j.parecida);
     const igualP = { 'cat:armaduras': { copies: [cp('dark armor', 450000, 2, [['resist_sagrado', 0.8], ['regen_mana', 1.3]])] } };
-    igual(P.precoReferencia({ nome: 'dark armor', forja: F1(2, ['regen_mana', 1.4], ['resist_morte', 2.1]) }, igualP, new Set()), { preco: 449999, origem: 'parecida', ref: 450000, parecida: true });
+    igual(P.precoReferencia({ nome: 'dark armor', forja: F1(2, ['regen_mana', 1.4], ['resist_morte', 2.1]) }, igualP, new Set()), { preco: 449999, origem: 'parecida', ref: 450000, parecida: true, potFator: 1 });
 });
 t('precoReferencia: sem nobre, parecida = qualquer atributo em comum; senão faixa; senão vazio', () => {
     const copias = { 'cat:armaduras': { copies: [cp('plate armor', 65000, 2, [['resist_gelo', 2.1], ['resist_energia', 1.6]]), cp('plate armor', 70000, 2, [['max_mana', 55], ['protecao_magica', 0.4]])] } };
-    igual(P.precoReferencia({ nome: 'plate armor', forja: F1(2, ['resist_sagrado', 1.4], ['resist_energia', 1.9]) }, copias, new Set()), { preco: 64999, origem: 'parecida', ref: 65000, parecida: true });
-    /* 2.16.5 — faixa agora dá preço: a mais barata da mesma raridade −1; sem a raridade, a mais cara da raridade abaixo × 1,25 */
-    igual(P.precoReferencia({ nome: 'plate armor', forja: F1(2, ['max_hp', 20], ['cura_propria', 1]) }, copias, new Set()), { preco: 64999, origem: 'faixa', ref: 65000, min: 65000, max: 70000 });
+    /* 2.27.0 — a linha em comum (resist. energia 1,9 contra 1,6) agora tem valor: a cópia é inferior → justo com expoente 1,5 (65.000 × (1,9/1,6)^1,5 ≈ 84.113) */
+    const pj = P.precoReferencia({ nome: 'plate armor', forja: F1(2, ['resist_sagrado', 1.4], ['resist_energia', 1.9]) }, copias, new Set());
+    assert.strictEqual(pj.origem, 'justo'); assert.strictEqual(pj.preco, 84113); assert(pj.parecida);
+    /* 2.27.0 — sem parecida: a MEDIANA da mesma raridade (65.000, 70.000 → 65.000); sem a raridade, a mais cara da raridade abaixo × 1,25 */
+    igual(P.precoReferencia({ nome: 'plate armor', forja: F1(2, ['max_hp', 20], ['cura_propria', 1]) }, copias, new Set()), { preco: 65000, origem: 'faixa', ref: 65000, min: 65000, max: 70000, mediana: true });
     igual(P.precoReferencia({ nome: 'plate armor', forja: F1(3, ['max_hp', 20]) }, copias, new Set()), { preco: 87500, origem: 'faixa', ref: 70000, min: 65000, max: 70000, abaixo: true });
     igual(P.precoReferencia({ nome: 'plate armor', forja: F1(0) }, null, null), { preco: null, origem: 'vazio', ref: null });
 });
@@ -392,29 +406,53 @@ t('precoReferencia: nobre casa só com o MESMO conjunto de nobres (5b) — peça
     /* peça só com resistências × cópia com regen. de mana + a mesma resistência (450k): a resistência em comum não a
      * torna parecida — a cópia vale pelo nobre que a peça não tem → faixa */
     const semNobre = { 'cat:armaduras': { copies: [cp('dark armor', 450000, 1, [['regen_mana', 1.2], ['resist_gelo', 1]])] } };
-    igual(P.precoReferencia({ nome: 'dark armor', forja: F1(1, ['resist_gelo', 1.1], ['resist_energia', 0.9]) }, semNobre, new Set()), { preco: 449999, origem: 'faixa', ref: 450000, min: 450000, max: 450000 });
+    igual(P.precoReferencia({ nome: 'dark armor', forja: F1(1, ['resist_gelo', 1.1], ['resist_energia', 0.9]) }, semNobre, new Set()), { preco: 450000, origem: 'faixa', ref: 450000, min: 450000, max: 450000, mediana: true });
     /* peça com 1 nobre × cópia com 2 nobres (900k): não casa → faixa; com uma cópia de nobre igual, essa é a parecida */
     const doisNobres = { 'cat:armaduras': { copies: [cp('dark armor', 900000, 1, [['regen_mana', 1.2], ['regen_vida', 1.5]])] } };
-    igual(P.precoReferencia({ nome: 'dark armor', forja: F1(1, ['regen_mana', 1.4]) }, doisNobres, new Set()), { preco: 899999, origem: 'faixa', ref: 900000, min: 900000, max: 900000 });
+    /* 2.27.0 — linha NOBRE sem cópia parecida: nunca a faixa do corte; o dono digita ('nobre', com a faixa como dica) */
+    igual(P.precoReferencia({ nome: 'dark armor', forja: F1(1, ['regen_mana', 1.4]) }, doisNobres, new Set()), { preco: null, origem: 'nobre', ref: null, min: 900000, max: 900000 });
     const mista = { 'cat:armaduras': { copies: [...doisNobres['cat:armaduras'].copies, cp('dark armor', 300000, 1, [['regen_mana', 1.0], ['resist_morte', 1]])] } };
-    /* 2.16.5 — parecida com regen 1,0 contra a minha 1,4: inferior → justo, extrapolação travada em ×3 (300 mil → 900 mil) */
+    /* 2.27.0 — parecida com regen 1,0 contra a minha 1,4: inferior → justo pela curva (300 mil × 1,4^4 ≈ 1,15 M); a trava de extrapolação é ×10 */
     const jm = P.precoReferencia({ nome: 'dark armor', forja: F1(1, ['regen_mana', 1.4]) }, mista, new Set());
-    assert.strictEqual(jm.origem, 'justo'); assert.strictEqual(jm.preco, 900000); assert.strictEqual(jm.ref, 300000);
-    /* sem cópia da mesma raridade: a mais cara da raridade abaixo × 1,25 */
-    igual(P.precoReferencia({ nome: 'dark armor', forja: F1(2, ['regen_mana', 1.4]) }, doisNobres, new Set()), { preco: 1125000, origem: 'faixa', ref: 900000, min: 900000, max: 900000, abaixo: true });
+    assert.strictEqual(jm.origem, 'justo'); assert.strictEqual(jm.preco, Math.round(300000 * Math.pow(1.4, 4))); assert.strictEqual(jm.ref, 300000);
+    /* nobre sem cópia da mesma raridade: também fica para o dono (sem dica de faixa) */
+    igual(P.precoReferencia({ nome: 'dark armor', forja: F1(2, ['regen_mana', 1.4]) }, doisNobres, new Set()), { preco: null, origem: 'nobre', ref: null, min: null, max: null });
+});
+t('2.27.0 — piso: peça COM linha nunca abaixo das cópias SEM linha (mediana × 1,25), mesmo com cópia igual mais barata', () => {
+    const copias = { 'cat:armaduras': { copies: [cp('terra mantle', 5000, 1, [['resist_gelo', 1.0]]), cp('terra mantle', 20000, 0, []), cp('terra mantle', 30000, 0, []), cp('terra mantle', 100000, 0, [])] } };
+    const r = P.precoReferencia({ nome: 'terra mantle', forja: F1(1, ['resist_gelo', 1.0]) }, copias, new Set());
+    assert.strictEqual(r.origem, 'igual'); assert.strictEqual(r.preco, 37500, 'mediana das sem linha 30.000 × 1,25'); assert.strictEqual(r.piso, 37500);
+    const semPiso = P.precoReferencia({ nome: 'terra mantle', forja: F1(0) }, copias, new Set());
+    assert.strictEqual(semPiso.preco, 19999, 'peça sem linha: a igual mais barata −1, sem piso'); assert.strictEqual(semPiso.piso, undefined);
+});
+t('2.27.0 — regras do dono: 1,6 de regen vale mais que a 1,3 a 1 M; peça mais forte (potência) com status um pouco menor vale mais que a inferior; raridade maior com a mesma nobre vale mais', () => {
+    const fjp = (rar, atrs, pot) => ({ raridade: rar, refino: 0, potenciaBase: pot, atributos: atrs.map(([id, valor]) => ({ id, valor })) });
+    const cpp = (preco, forja) => ({ orderId: 'o' + preco, itemName: 'terra mantle', unitPrice: preco, sellerName: 'x', instance: { name: 'terra mantle', forja } });
+    /* 1) a 1,3 a 1 M é inferior à minha 1,6: sobe pela curva (expoente 4): 1 M × (1,6/1,3)^4 ≈ 2,29 M */
+    let r = P.precoReferencia({ nome: 'terra mantle', forja: fjp(1, [['regen_mana', 1.6]], 250) }, { 'cat:armaduras': { copies: [cpp(1000000, fjp(1, [['regen_mana', 1.3]], 250))] } }, new Set());
+    assert.strictEqual(r.origem, 'justo'); assert.strictEqual(r.preco, Math.round(1000000 * Math.pow(1.6 / 1.3, 4))); assert(r.preco > 1000000);
+    /* 2) cópia com regen 1,5 mas potência 120 contra a minha 1,4 com potência 340: linhas perto (±15 %) → a potência decide: a cópia é inferior → a minha fica acima dela */
+    r = P.precoReferencia({ nome: 'terra mantle', forja: fjp(1, [['regen_mana', 1.4]], 340) }, { 'cat:armaduras': { copies: [cpp(800000, fjp(1, [['regen_mana', 1.5]], 120))] } }, new Set());
+    assert.strictEqual(r.origem, 'justo'); assert(r.preco > 800000, 'mais forte com status um pouco menor tem que ser mais caro: ' + r.preco); assert(r.inferior && r.inferior.p === 800000);
+    /* 3) Raro regen 1,4 sem cópia Raro: a Incomum regen 1,5 a 600 mil é de raridade menor → piso = 600 mil × 1,1 (e a peça é nobre: o dono digita, mas o piso aparece) */
+    r = P.precoReferencia({ nome: 'terra mantle', forja: fjp(2, [['regen_mana', 1.4]], 250) }, { 'cat:armaduras': { copies: [cpp(600000, fjp(1, [['regen_mana', 1.5]], 250)), cpp(200000, fjp(0, [], 250))] } }, new Set());
+    assert.strictEqual(r.origem, 'nobre'); assert.strictEqual(r.preco, null);
+    /* 3b) a mesma situação com linha não nobre: Raro resist. fogo 1,4 contra Incomum resist. fogo 1,5 a 300 mil → mediana do corte não existe → piso 330 mil */
+    r = P.precoReferencia({ nome: 'terra mantle', forja: fjp(2, [['resist_fogo', 1.4]], 250) }, { 'cat:armaduras': { copies: [cpp(300000, fjp(1, [['resist_fogo', 1.5]], 250)), cpp(200000, fjp(0, [], 250)), cpp(310000, fjp(2, [['max_hp', 20]], 250))] } }, new Set());
+    assert.strictEqual(r.origem, 'faixa'); assert.strictEqual(r.preco, 330000, 'mediana do corte raro (310 mil) < piso da Incomum parecida × 1,1 = 330 mil: ' + JSON.stringify(r)); assert.strictEqual(r.piso, 330000);
 });
 t('mkMontar: cópia sem igual mas com parecida recebe o preço (origem "parecida"); sem parecida continua "digite"', () => {
     const copias = { 'cat:armaduras': { copies: [cp('plate armor', 65000, 2, [['resist_gelo', 2.1], ['resist_energia', 1.6]])] } };
     const e = base({ depot: [{ itemName: 'plate armor', count: 1, iid: 'pa1', forja: F1(2, ['resist_sagrado', 1.4], ['resist_energia', 1.9]) }],
         catalogo: { 'plate armor': { name: 'plate armor', sellOrders: 1, minSell: 65000, trades30d: 5, copyOrders: 1 } }, copias, equip: { usadas: [], reservas: [], sobras: ['pa1'] } });
     const l = linha(P.mkMontar(e), 'i:pa1');
-    assert.strictEqual(l.preco, 64999); assert.strictEqual(l.origem, 'parecida'); assert.strictEqual(l.bloqueio, null);
+    assert.strictEqual(l.preco, 84113, '2.27.0: a cópia parecida tem resist. energia menor → justo'); assert.strictEqual(l.origem, 'justo'); assert.strictEqual(l.bloqueio, null);
     assert(/faixa dos outros encaixes raro \+0: de 65\.000 a 65\.000/.test(l.nota) && !/digite/.test(l.nota), 'com parecida a nota traz a faixa, sem "digite": ' + l.nota);
     const e2 = base({ depot: [{ itemName: 'plate armor', count: 1, iid: 'pa2', forja: F1(2, ['max_hp', 20], ['cura_propria', 1]) }],
         catalogo: { 'plate armor': { name: 'plate armor', sellOrders: 1, minSell: 65000, trades30d: 5, copyOrders: 1 } }, copias, equip: { usadas: [], reservas: [], sobras: ['pa2'] } });
     const l2 = linha(P.mkMontar(e2), 'i:pa2');
-    /* 2.16.5 — sem parecida: a faixa da raridade dá o preço (a mais barata raro +0 −1) e a nota diz */
-    assert.strictEqual(l2.preco, 64999); assert.strictEqual(l2.origem, 'faixa'); assert.strictEqual(l2.bloqueio, null); assert(/mais barata raro \+0/.test(l2.nota), l2.nota);
+    /* 2.27.0 — sem parecida: a MEDIANA da raridade dá o preço e a nota diz */
+    assert.strictEqual(l2.preco, 65000); assert.strictEqual(l2.origem, 'faixa'); assert.strictEqual(l2.bloqueio, null); assert(/MEDIANA raro \+0/.test(l2.nota), l2.nota);
 });
 t('mkMontar: liberadas tira a barreira "melhor ou reserva" só para o iid liberado; peça no corpo nunca', () => {
     const dep = [{ itemName: 'plate armor', count: 1, iid: 'res1', forja: F1(1, ['regen_mana', 1.3]) }, { itemName: 'plate armor', count: 1, iid: 'res2', forja: F1(1, ['regen_vida', 1.3]) }];
@@ -616,8 +654,8 @@ t('vm: ATUALIZAR só LÊ (catálogo, ordens, caixa, média) e monta a lista com 
         stats: { 'orc tooth': { avg: 412.4, min: 300, max: 500, samples: 9 } } });
     await M.atualizar();
     assert.strictEqual(M.S.tipos(...ESCRITA).length, 0, 'ATUALIZAR mandou escrita: ' + M.S.tipos(...ESCRITA).map(x => x.o.type));
-    igual(M.S.recebidos.map(x => x.o.type), ['depot_get', 'market_catalog', 'market_my_orders', 'market_inbox', 'market_stats']);
-    igual(M.S.tipos('market_stats')[0].o.data, { itemName: 'orc tooth' });
+    igual(M.S.recebidos.map(x => x.o.type), ['depot_get', 'market_catalog', 'market_my_orders', 'market_inbox', 'market_stats', 'market_stats'], '2.27.0: a média é lida também para o small ruby (piso)');
+    igual(M.S.tipos('market_stats').map(x => x.o.data.itemName).sort(), ['orc tooth', 'small ruby']);
     const mk = M.S.recebidos.filter(x => /^market_/.test(x.o.type));
     for (let i = 1; i < mk.length; i++) assert(mk[i].t - mk[i - 1].t >= 3500, 'pedidos ao mercado a menos de 3,5 s: ' + (mk[i].t - mk[i - 1].t));
     const L = M.W.H.MERCADO.pintadas;

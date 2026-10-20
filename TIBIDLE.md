@@ -5618,3 +5618,25 @@ fragmentos de Refino T1 (≈ 15 k no Mercado).
   Sem o catálogo, nada; linha nobre nunca; "incluir" leva tudo. `filtroDesmanche()` junta temNegocio, preço do fragmento, referência e
   veredito, usado pela tela e pelo botão (`desmancharSobras`). Nota da tela: "N ficam fora: valem mais no Mercado (líquido) que em
   fragmentos, ou têm negócio sem referência lida". Teste em `testes/equip.test.js`.
+
+### 2.27.0 (20/10) — Mercado: o valor de TODAS as linhas e a potência fazem o preço
+- Dono (20/10, 01:00): "vc tá vendendo as coisas muito barato; itens com regen de mana alto vendendo super barato; seu critério não tá
+  levando em conta as coisas e os status; tá se vendendo tudo e eu não tô tendo lucro algum; um terra mantle com regen de mana 1,6 vendido
+  super barato". Auditoria na conta ShamanBr (Playwright, a conta logada pelo dono): 88 anúncios abertos, quase todos na cópia mais barata
+  do mesmo corte −1 sem olhar a própria linha (terra mantle Incomum resist. energia 2,1 a 199.998 por causa de uma resist. sagrado 0,8 a
+  199.999; terra boots Raro a 44.999 com as Raro de 45 a 500 mil; terra legs Comum pot. 324 a 249.000 pela pot. 138 a 248.000). Vendas de
+  30 d (293 lotes): 2 terra mantle a 159.999 em 18/10 (o dono: regen. de mana 1,6 — hoje uma 1,6 está a 2 milhões), beetle necklace ×2
+  a 19.999 (hoje 100–300 mil), mycological bow ×2 a 64.000 (mediana Comum 125 mil), hailstorm rod ×26 a 4.999 (hoje a Comum mais barata
+  300 mil). Causas: (a) `mkRazaoValor` só olhava as linhas NOBRES — resistência, vida, mana, capacidade e potência não valiam nada;
+  (b) a 'faixa' (sem cópia parecida) dava a cópia MAIS BARATA do corte −1, inclusive para peça com regen. de mana; (c) a extrapolação a
+  partir de uma cópia inferior travava em ×3 (a 1,6 contra a 1,1 saía 75 mil quando o Mercado pedia 6×); (d) empilhável sempre no menor −1.
+- Regra nova: `mkRazaoValor` compara todas as linhas que as duas peças têm; `mkPotFator` = (potência minha ÷ da cópia)^0,35 entre ×0,75 e
+  ×1,4; igual/inferior/melhor pela razão combinada (linhas ÷ fator de potência), preço pelas linhas × potência; expoente 4 para nobre e
+  1,5 para outras linhas; extrapolação até ×10; peça com linha NOBRE sem cópia parecida → 'nobre' (preço null, o dono digita; a faixa do
+  corte vira dica); peça com outras linhas sem parecida → MEDIANA do corte (não a mais barata); sem linha → igual (potência decide);
+  empilhável: `mkSugerir` nunca abaixo da média de 30 d ('piso'; a média passa a ser pedida sempre, sem segurar o preço — `pendenteMedia`).
+  Revisão: 'baixo' (meu preço < 70 % do justo pelas linhas/potência → refazer no justo), 'piso' (empilhável já na média). Textos da tela
+  e do Equip (`ref. Mercado`) seguem. Testes em `testes/mercado.test.js` reescritos para a regra nova (a 2.14.12 "resist. gelo: o valor
+  não entra" virou o contrário).
+- Não entrei na conta u2tag (o dono estava jogando nela); a análise foi pela ShamanBr logada no Playwright. `market_history` não guarda as
+  linhas da peça vendida: a regen. 1,6 veio do dono.

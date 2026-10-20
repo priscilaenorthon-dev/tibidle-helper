@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.26.2
+// @version      2.27.0
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.26.2';
+    const VERSAO = '2.27.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -10199,7 +10199,8 @@
             if (r.origem === 'igual') return `ref. Mercado <b>${mkFmt(r.preco)}</b> <span class="tb-mut">(igual a ${mkFmt(r.ref)})</span>`;
             if (r.origem === 'parecida') return `ref. Mercado <b>${mkFmt(r.preco)}</b> <span class="tb-mut">(parecida a ${mkFmt(r.ref)})</span>`;
             if (r.origem === 'justo') return `ref. Mercado <b>${mkFmt(r.preco)}</b> <span class="tb-mut">(ajustado pelo valor, ref. ${mkFmt(r.ref)})</span>`;
-            if (r.origem === 'faixa') return `ref. Mercado <b>${mkFmt(r.preco)}</b> <span class="tb-mut">(faixa ${mkFmt(r.min)}–${mkFmt(r.max)}${r.abaixo ? ', raridade abaixo' : ''})</span>`;
+            if (r.origem === 'faixa') return `ref. Mercado <b>${mkFmt(r.preco)}</b> <span class="tb-mut">(${r.mediana ? 'mediana da ' : ''}faixa ${mkFmt(r.min)}–${mkFmt(r.max)}${r.abaixo ? ', raridade abaixo' : ''})</span>`;
+            if (r.origem === 'nobre') return `<span class="tb-av">linha nobre sem cópia parecida — você digita</span>${r.min != null ? ` <span class="tb-mut">(corte de ${mkFmt(r.min)} a ${mkFmt(r.max)})</span>` : ''}`;
             return '<span class="tb-mut">sem cópia à venda — você digita</span>';
         };
         const encaixeTxt = (p) => { const at = ((p.forja && p.forja.atributos) || []).map(a => rotulo(a.id) + ' ' + a.valor).join(', '); return at ? escHtml(at) : 'sem encaixe'; };
@@ -11910,9 +11911,12 @@
         const nums = (a) => (a || []).map(Number).filter(x => Number.isFinite(x) && x > 0);
         const outros = nums(ref.outros), meus = nums(ref.meus);
         const minO = outros.length ? Math.min(...outros) : null, minM = meus.length ? Math.min(...meus) : null;
-        if (minO != null && (minM == null || minM >= minO)) return { preco: Math.max(1, minO - 1), origem: 'menor', ref: minO };
-        if (minM != null) return { preco: minM, origem: 'meu', ref: minM };
         const med = mkNum(ref.media);
+        /* v2.27.0 — PISO NA MÉDIA DE 30 DIAS (dono, 20/10: "vendendo todos os fragmentos com preço baixo"): o menor −1 nunca desce
+         * abaixo da média de 30 dias do item (reroll fragment t1: menor 2.097, média 2.290 → 2.290). Quem quiser vender mais rápido
+         * digita. */
+        if (minO != null && (minM == null || minM >= minO)) { const b = Math.max(1, minO - 1); return med != null && med > b ? { preco: Math.round(med), origem: 'piso', ref: minO, media: med } : { preco: b, origem: 'menor', ref: minO }; }
+        if (minM != null) return { preco: minM, origem: 'meu', ref: minM };
         if (med != null && med > 0) return { preco: Math.max(1, Math.round(med)), origem: 'media', ref: med };
         return { preco: null, origem: 'vazio', ref: null };
     }
@@ -11939,18 +11943,34 @@
     const MK_ATR_NOBRES = ['regen_mana', 'regen_vida', 'nivel_magico', 'distancia', 'corpo_a_corpo', 'dano_fisico', 'dano_magico', 'chance_de_loot'];
     const MK_VALOR_IGUAL = 0.1;
     const mkValorDe = (f, id) => { const a = (f && Array.isArray(f.atributos) ? f.atributos : []).find(x => mkIdAtr(x) === id); const v = a ? (typeof a.valor === 'string' ? Number(a.valor.replace(',', '.')) : Number(a.valor)) : NaN; return Number.isFinite(v) ? v : null; };
+    /* v2.27.0 — TODAS AS LINHAS E A POTÊNCIA FAZEM O PREÇO (dono, 20/10: "seu critério não tá levando em conta as coisas e os
+     * status; itens com regen. de mana alto vendendo super barato"). Ao vivo na conta ShamanBr: 50 anúncios, quase todos na cópia
+     * mais barata do mesmo corte −1, sem olhar a própria linha (terra mantle Incomum resist. energia 2,1 a 199.998 porque havia uma
+     * resist. sagrado 0,8 a 199.999 — as Incomum iam a 2 milhões). A razão de valor agora compara TODAS as linhas que as duas peças
+     * têm (não só as nobres); a potência entra como fator à parte (mkPotFator). Peça com linha nobre sem cópia parecida NÃO recebe
+     * o menor do corte: fica para o dono digitar ('nobre'); peça com outras linhas sem cópia parecida vai para a MEDIANA do corte. */
     function mkRazaoValor(minha, outra) {
         let soma = 0, n = 0;
         for (const a of (minha && Array.isArray(minha.atributos) ? minha.atributos : [])) {
-            const id = mkIdAtr(a); if (!MK_ATR_NOBRES.includes(id)) continue;
+            const id = mkIdAtr(a); if (!id) continue;
             const m = mkValorDe(minha, id), o = mkValorDe(outra, id);
             if (m > 0 && o > 0) { soma += Math.log(o / m); n++; }
         }
         return n ? Math.exp(soma / n) : 1;
     }
-    const mkNaoInferior = (minha, outra) => mkRazaoValor(minha, outra) >= 1 - MK_VALOR_IGUAL - 1e-9;
+    const mkTemNobre = (f) => mkAtrIds(f).some(id => MK_ATR_NOBRES.includes(id));
+    const mkPot = (f) => { const v = Number(f && (f.potenciaBase != null ? f.potenciaBase : f.potencia)); return Number.isFinite(v) && v > 0 ? v : null; };
+    /* potência: a minha sobre a da cópia de referência, expoente 0,35, entre ×0,75 e ×1,4 (pot. 324 sobre 138 → ×1,35) */
+    const mkPotFator = (minha, outra) => { const a = mkPot(minha), b = mkPot(outra); if (!a || !b) return 1; return Math.min(MK_POT_MAX, Math.max(MK_POT_MIN, Math.pow(a / b, MK_POT_EXP))); };
+    /* v2.27.0 — razão combinada: valor das linhas da cópia ÷ fator de potência (cópia com potência bem menor vale menos) */
+    /* dono, 20/10: "se um item inferior está sendo vendido com regen 1,5 e o nosso é mais forte com status um pouco menor, tem que ser
+     * mais caro" — linhas até 15 % de diferença (MK_LINHA_PERTO) → a potência decide quem é melhor */
+    const MK_LINHA_PERTO = 0.15;
+    const mkRazaoComb = (minha, outra) => { const r = mkRazaoValor(minha, outra), pf = mkPotFator(minha, outra); return Math.abs(r - 1) <= MK_LINHA_PERTO + 1e-9 && Math.abs(pf - 1) > 0.05 ? 1 / pf : r; };
+    const mkIgualLinhas = (minha, outra) => mkMesmoEncaixe(minha, outra) && Math.abs(mkRazaoValor(minha, outra) - 1) <= MK_VALOR_IGUAL + 1e-9; // sem potência: para reconhecer o MEU anúncio da mesma peça
+    const mkNaoInferior = (minha, outra) => mkRazaoComb(minha, outra) >= 1 - MK_VALOR_IGUAL - 1e-9;
     const mkMesmoCorte = (minha, outra) => mkMesmoEncaixe(minha, outra) && mkNaoInferior(minha, outra); // igual ou melhor
-    const mkIgual = (minha, outra) => mkMesmoEncaixe(minha, outra) && Math.abs(mkRazaoValor(minha, outra) - 1) <= MK_VALOR_IGUAL + 1e-9;
+    const mkIgual = (minha, outra) => mkMesmoEncaixe(minha, outra) && Math.abs(mkRazaoComb(minha, outra) - 1) <= MK_VALOR_IGUAL + 1e-9;
     const mkInferior = (minha, outra) => mkMesmoEncaixe(minha, outra) && !mkNaoInferior(minha, outra);
     const MK_RAR = ['comum', 'incomum', 'raro', 'épico', 'lendário', 'mítico'];
     const mkCorteTxt = (f) => (MK_RAR[mkRar(f, 0)] || 'raridade ' + mkRar(f, 0)) + ' +' + mkRef(f, 0);
@@ -11972,21 +11992,27 @@
      * as duas; com uma só, 4, no máximo ×3 ou ÷3), nunca acima da melhor −1 nem abaixo da inferior +1 ('justo'); 2) a mesma conta
      * com as PARECIDAS (mesmas nobres, outras linhas) → 'parecida' ou 'justo'; 3) 'faixa': a cópia mais barata da mesma raridade e
      * refino −1; sem nenhuma, a mais cara da raridade abaixo × 1,25; 4) 'vazio'. As minhas ordens nunca contam. */
-    const MK_EXPOENTE_VALOR = 4, MK_EXTRAPOLA_MAX = 3, MK_FAIXA_ABAIXO = 1.25;
-    function mkJustoDe(lista) {
-        const ig = lista.filter(c => Math.abs(c.r - 1) <= MK_VALOR_IGUAL + 1e-9).map(c => c.p);
-        if (ig.length) { const m = Math.min(...ig); return { preco: Math.max(1, m - 1), origem: 'igual', ref: m }; }
-        const inf = lista.filter(c => c.r < 1), mel = lista.filter(c => c.r > 1);
+    /* v2.27.0 — expoente 4 só para linha nobre (medido: black shield regen 1,1 → 25 mil, 2,0 → 450 mil); outras linhas (resistência,
+     * vida, mana, capacidade) sobem com expoente 1,5; a extrapolação a partir de UMA cópia vai até ×10 (era ×3: a 1,6 de regen contra a
+     * 1,1 travava em 75 mil quando o Mercado pedia 6× mais); a potência multiplica o resultado (mkPotFator). */
+    const MK_EXPOENTE_VALOR = 4, MK_EXPOENTE_COMUM = 1.5, MK_EXTRAPOLA_MAX = 10, MK_FAIXA_ABAIXO = 1.25, MK_POT_EXP = 0.35, MK_POT_MIN = 0.75, MK_POT_MAX = 1.4;
+    function mkJustoDe(lista, k0, minha) {
+        const pot = (c) => (minha && c && c.f ? mkPotFator(minha, c.f) : 1);
+        const rc = (c) => (Math.abs(c.r - 1) <= MK_LINHA_PERTO + 1e-9 && Math.abs(pot(c) - 1) > 0.05 ? 1 / pot(c) : c.r); // linhas perto (±15 %) e potência diferente → a potência desempata; o preço usa c.r × potência
+        const ig = lista.filter(c => Math.abs(rc(c) - 1) <= MK_VALOR_IGUAL + 1e-9);
+        if (ig.length) { const c = ig.reduce((a, b) => (b.p < a.p ? b : a)); return { preco: Math.max(1, Math.round((c.p - 1) * pot(c))), origem: 'igual', ref: c.p, potFator: pot(c) }; }
+        const inf = lista.filter(c => rc(c) < 1), mel = lista.filter(c => rc(c) > 1);
         const i = inf.length ? inf.reduce((a, b) => (b.r > a.r ? b : a)) : null; // a inferior mais próxima
         const m = mel.length ? mel.reduce((a, b) => (b.p < a.p ? b : a)) : null; // a melhor mais barata
         if (!i && !m) return null;
-        let k = MK_EXPOENTE_VALOR, preco;
+        let k = k0 || MK_EXPOENTE_VALOR, preco;
         if (i && m && m.p > i.p) { k = Math.min(8, Math.max(1, Math.log(m.p / i.p) / Math.log(m.r / i.r))); preco = i.p * Math.pow(1 / i.r, k); }
         else if (i) preco = i.p * Math.min(MK_EXTRAPOLA_MAX, Math.pow(1 / i.r, k));
         else preco = m.p * Math.max(1 / MK_EXTRAPOLA_MAX, Math.pow(1 / m.r, k));
         if (m) preco = Math.min(preco, m.p - 1);
         if (i) preco = Math.max(preco, i.p + 1);
-        return { preco: Math.max(1, Math.round(preco)), origem: 'justo', ref: i ? i.p : m.p, inferior: i ? { p: i.p, r: i.r } : null, melhor: m ? { p: m.p, r: m.r } : null };
+        const pf = pot(i || m);
+        return { preco: Math.max(1, Math.round(preco * pf)), origem: 'justo', ref: i ? i.p : m.p, inferior: i ? { p: i.p, r: i.r } : null, melhor: m ? { p: m.p, r: m.r } : null, potFator: pf };
     }
     function precoReferencia(x, copias, meusIds) {
         const vazio = { preco: null, origem: 'vazio', ref: null };
@@ -12001,17 +12027,33 @@
             }
         }
         if (!doItem.length) return vazio;
-        const comR = (l) => l.map(y => ({ p: y.p, r: mkRazaoValor(x.forja, y.f) }));
-        const exatas = doItem.filter(y => mkMesmoEncaixe(x.forja, y.f));
-        if (exatas.length) { const j = mkJustoDe(comR(exatas)); if (j) return j; }
         const ids = mkAtrIds(x.forja), nobresDe = (f) => mkAtrIds(f).filter(id => MK_ATR_NOBRES.includes(id)), nobres = nobresDe(x.forja);
+        const k0 = nobres.length ? MK_EXPOENTE_VALOR : MK_EXPOENTE_COMUM;
+        /* v2.27.0 — PEÇA COM LINHA NUNCA VALE MENOS QUE A SEM LINHA (dono, 20/10: "todos os itens com status sempre vão ser mais caros
+         * comparados com item que não tem status"): piso = mediana das cópias sem atributo do item (qualquer raridade) × 1,25 */
+        const semLinha = doItem.filter(y => !mkAtrIds(y.f).length).map(y => y.p).sort((a, b) => a - b);
+        let piso = ids.length && semLinha.length ? Math.round(semLinha[Math.floor((semLinha.length - 1) / 2)] * MK_FAIXA_ABAIXO) : null;
+        /* dono, 20/10: "item inferior vendido com regen 1,5 e o nosso é mais forte com status um pouco menor → o nosso tem que ser mais
+         * caro": cópia de raridade MENOR (ou mesma raridade e refino menor) cujas nobres são as minhas (ou nenhuma) e cujas linhas não
+         * passam das minhas em mais de 15 % → piso = a mais cara dessas × 1,1 */
+        const inferiorTier = doItem.filter(y => mkAtrIds(y.f).length && (mkRar(y.f, -1) < mkRar(x.forja, 0) || (mkRar(y.f, -1) === mkRar(x.forja, 0) && mkRef(y.f, -1) < mkRef(x.forja, 0)))
+            && nobresDe(y.f).every(id => nobres.includes(id)) && mkRazaoValor(x.forja, y.f) <= 1 + MK_LINHA_PERTO + 1e-9).map(y => y.p);
+        if (ids.length && inferiorTier.length) piso = Math.max(piso || 0, Math.round(Math.max(...inferiorTier) * 1.1));
+        const comPiso = (r) => (r && r.preco != null && piso != null && r.preco < piso ? Object.assign(r, { preco: piso, piso }) : r);
+        const comR = (l) => l.map(y => ({ p: y.p, r: mkRazaoValor(x.forja, y.f), f: y.f }));
+        const exatas = doItem.filter(y => mkMesmoEncaixe(x.forja, y.f));
+        if (exatas.length) { const j = mkJustoDe(comR(exatas), k0, x.forja); if (j) return comPiso(j); }
         /* parecida: o mesmo conjunto de nobres (regen, skill, dano, loot), outras linhas diferentes; sem nobre, um atributo em comum */
         const casa = (f) => { const o = mkAtrIds(f); return nobresDe(f).join('|') === nobres.join('|') && (nobres.length > 0 || ids.some(id => o.includes(id))); };
         const mesmoCorte = doItem.filter(y => mkMesmoCorteSemEncaixe(x.forja, y.f));
         const parecidas = mesmoCorte.filter(y => casa(y.f));
-        if (parecidas.length) { const j = mkJustoDe(comR(parecidas)); if (j) return Object.assign(j, { origem: j.origem === 'igual' ? 'parecida' : 'justo', parecida: true }); }
-        const faixa = mesmoCorte.map(y => y.p);
-        if (faixa.length) { const mn = Math.min(...faixa); return { preco: Math.max(1, mn - 1), origem: 'faixa', ref: mn, min: mn, max: Math.max(...faixa) }; }
+        if (parecidas.length) { const j = mkJustoDe(comR(parecidas), k0, x.forja); if (j) return comPiso(Object.assign(j, { origem: j.origem === 'igual' ? 'parecida' : 'justo', parecida: true })); }
+        const faixa = mesmoCorte.map(y => y.p).sort((a, b) => a - b);
+        /* v2.27.0 — linha NOBRE sem cópia parecida: nunca o menor do corte (a regen. de mana 1,6 não vale o preço da resistência 0,8);
+         * o dono digita, com a faixa do corte como dica */
+        if (nobres.length) return { preco: null, origem: 'nobre', ref: null, min: faixa.length ? faixa[0] : null, max: faixa.length ? faixa[faixa.length - 1] : null };
+        /* v2.27.0 — outras linhas sem cópia parecida: a MEDIANA do corte (era a mais barata −1) */
+        if (faixa.length) { const md = faixa[Math.floor((faixa.length - 1) / 2)]; return comPiso({ preco: Math.max(1, md), origem: 'faixa', ref: md, min: faixa[0], max: faixa[faixa.length - 1], mediana: true }); }
         const abaixo = doItem.filter(y => mkRar(y.f, -1) === mkRar(x.forja, 0) - 1 && mkRef(y.f, -1) === mkRef(x.forja, 0)).map(y => y.p);
         if (abaixo.length) { const mx = Math.max(...abaixo); return { preco: Math.max(1, Math.round(mx * MK_FAIXA_ABAIXO)), origem: 'faixa', ref: mx, min: Math.min(...abaixo), max: mx, abaixo: true }; }
         return vazio;
@@ -12063,11 +12105,13 @@
                 else pendente = { tipo: 'market_list', data: { asset: 'ITEM', itemName: p.nome }, chave: 'livro:' + n, cache: 'livros', alvo: n, rotulo: 'livro de ' + p.nome, erro: l ? l.erro : null };
             }
         }
-        let media = null;
-        if (!pendente && !outros.length && !meus.length) ({ media, pendente } = mkPendMedia(p.nome, n, c, e));
+        let media = null, pendenteMedia = null;
+        /* v2.27.0 — a média de 30 dias é lida sempre (piso do menor −1): com outro vendedor à vista ela NÃO segura o preço (vem na
+         * fila, pendenteMedia); sem outro vendedor nem anúncio meu, continua sendo a referência (pendente) */
+        if (!pendente) { const pm = mkPendMedia(p.nome, n, c, e); media = pm.media; if (pm.pendente) { if (!outros.length && !meus.length) pendente = pm.pendente; else pendenteMedia = pm.pendente; } }
         /* o mercado não cruza ordens: anunciar a ≤ uma COMPRA aberta só deixa a
          * ordem parada — aceitar a compra no jogo é na hora e sem taxa (wiki) */
-        return { ref: { outros, meus, media }, pendente, compra: c && c.maxBuy != null ? mkNum(c.maxBuy) : null };
+        return { ref: { outros, meus, media }, pendente, pendenteMedia, compra: c && c.maxBuy != null ? mkNum(c.maxBuy) : null };
     }
     /* Referência de uma CÓPIA forjada: cópias do mesmo corte (raridade, refino
      * e encaixe), tirando as minhas (orderId nas minhas ordens); sem cópia igual,
@@ -12078,7 +12122,7 @@
         if (!e.catalogo) return { ref: {}, pendente: { tipo: null, chave: 'catalogo', rotulo: 'catálogo do mercado' } };
         const c = e.catalogo[n] || null;
         const minhasDoItem = minhas.filter(o => mkMin(o.itemName) === n && o.forja);
-        const meus = minhasDoItem.filter(o => mkIgual(x.forja, o.forja)).map(o => o.unitPrice);
+        const meus = minhasDoItem.filter(o => mkIgualLinhas(x.forja, o.forja)).map(o => o.unitPrice); // v2.27.0 — o meu anúncio da mesma peça, sem olhar potência
         let outros = [], parecidas = [], inferiores = [], pendente = null, justo = null;
         if (c && (Number(c.copyOrders) || 0) > minhasDoItem.length) {
             const data = cat ? { category: cat } : { itemName: x.nome }, k = mkChaveCopias(data);
@@ -12091,7 +12135,8 @@
                 /* mesma raridade e refino com OUTROS encaixes: para a nota */
                 parecidas = doItem.filter(y => mkMesmoCorteSemEncaixe(x.forja, y.instance && y.instance.forja)).map(y => Number(y.unitPrice)).filter(v => v > 0);
                 /* sem cópia igual: o preço justo (ajustado pelo valor), a parecida, ou a faixa da raridade — todo item sai com preço */
-                justo = !outros.length ? precoReferencia(x, { [k]: cp }, meusIds) : null;
+                justo = precoReferencia(x, { [k]: cp }, meusIds); // v2.27.0 — sempre: com cópia igual ele só serve de PISO (peça com linha ≥ sem linha; item inferior com linha parecida)
+                if (outros.length && justo && !justo.piso) justo = null;
             } else pendente = { tipo: 'market_copies', data, chave: k, cache: 'copias', alvo: k, rotulo: 'cópias de ' + (cat ? (MK_CATS[cat] || cat) : x.nome), erro: cp ? cp.erro : null };
         }
         /* v2.11.8 — SEM MÉDIA PARA CÓPIA. A média de 30 dias é do item inteiro e
@@ -12107,23 +12152,27 @@
         const pct = (r) => Math.round(r * 100) + ' % do seu valor';
         const jTxt = temSug && justo.origem === 'justo' ? 'ajustado pelo valor da linha' + (justo.parecida ? ' (encaixe do mesmo tipo)' : '') + ': ' +
             [justo.inferior ? `inferior a ${mkFmt(justo.inferior.p)} (${pct(justo.inferior.r)})` : null, justo.melhor ? `melhor a ${mkFmt(justo.melhor.p)} (${pct(justo.melhor.r)})` : null].filter(Boolean).join(' · ') : null;
-        const fTxt = temSug && justo.origem === 'faixa' ? (justo.abaixo ? `sem cópia ${mkCorteTxt(x.forja)} à venda: a mais cara da raridade abaixo (${mkFmt(justo.ref)}) × 1,25` : `sem cópia com este encaixe: a mais barata ${mkCorteTxt(x.forja)} (${mkFmt(justo.ref)}) −1 — confira`) : null;
+        const fTxt = temSug && justo.origem === 'faixa' ? (justo.abaixo ? `sem cópia ${mkCorteTxt(x.forja)} à venda: a mais cara da raridade abaixo (${mkFmt(justo.ref)}) × 1,25` : `sem cópia com este encaixe: a MEDIANA ${mkCorteTxt(x.forja)} (${mkFmt(justo.ref)}, de ${mkFmt(justo.min)} a ${mkFmt(justo.max)}) — confira`) : null;
+        const nobreTxt = justo && justo.origem === 'nobre' ? `linha nobre sem cópia parecida à venda — digite o preço${justo.min != null ? ` (o corte ${mkCorteTxt(x.forja)} vai de ${mkFmt(justo.min)} a ${mkFmt(justo.max)}; a sua vale pela linha, não pelo mais barato)` : ''}` : null;
         const infTxt = inferiores.length ? `cópias com o mesmo encaixe e valor MENOR que o seu a partir de ${mkFmt(Math.min(...inferiores))}` : null;
         const partes = [];
         if (temSug) {
             if (justo.origem === 'justo') partes.push(jTxt); else if (justo.origem === 'faixa') partes.push(fTxt);
+            if (justo.piso) partes.push(`piso: peça com linha nunca abaixo das cópias sem linha (mediana × 1,25 = ${mkFmt(justo.piso)})`);
             if (justo.origem !== 'faixa' && faixaTxt) partes.push('faixa dos ' + faixaTxt);
             if (infTxt && justo.origem !== 'justo') partes.push(infTxt);
         }
         const nota = pendente || outros.length || meus.length ? null
             : temSug ? (partes.join(' · ') || null)
-            : `nenhuma cópia de ${x.nome} à venda — digite o preço (a média de 30 dias mistura todas as raridades)`;
+            : nobreTxt || `nenhuma cópia de ${x.nome} à venda — digite o preço (a média de 30 dias mistura todas as raridades)`;
         return { ref: { outros, meus, media: null }, pendente, nota, encaixe: encaixe || null, justo: temSug ? justo : null, inferior: inferiores.length ? Math.min(...inferiores) : null };
     }
     function mkLinha(b, r, e, marcados) {
         const dig = e.digitados ? e.digitados[b.chave] : undefined;
         const temDig = dig != null && String(dig).trim() !== '';
         let sug = r.pendente ? { preco: null, origem: 'pendente', ref: null } : mkSugerir(r.ref);
+        /* v2.27.0 — piso: nem o menor −1 de uma cópia igual desce abaixo do piso (peça com linha nunca vale menos que a sem linha) */
+        if (sug.preco != null && r.justo && r.justo.piso && sug.preco < r.justo.piso) sug = { preco: r.justo.piso, origem: 'piso', ref: sug.ref, piso: r.justo.piso };
         if (sug.origem === 'vazio' && r.justo && r.justo.preco) sug = { preco: r.justo.preco, origem: r.justo.origem, ref: r.justo.ref };
         const bruto = temDig ? Math.floor(Number(dig)) : sug.preco;
         const preco = Number.isFinite(bruto) ? bruto : null;
@@ -12225,7 +12274,7 @@
         const minhas = (e.minhas || []).filter(mkAbertaVenda);
         const meusIds = new Set(minhas.map(o => o.id));
         const linhas = [], pend = new Map();
-        const somar = (r) => { const p = r.pendente; if (p && p.tipo && !p.erro && !pend.has(p.chave)) pend.set(p.chave, p); };
+        const somar = (r) => { for (const p of [r.pendente, r.pendenteMedia]) if (p && p.tipo && !p.erro && !pend.has(p.chave)) pend.set(p.chave, p); };
         for (const p of pilhas.values()) {
             const qtd = p.mochila + (naCidade ? p.deposito : 0);
             const r = mkRefPilha(p, e, minhas, meusIds); somar(r);
@@ -12264,7 +12313,7 @@
             const b = { id: o.id, nome: o.itemName || '?', n, lado: o.side, preco: o.unitPrice, qtd: Number(o.quantityRemaining) || 0, total: o.quantityTotal,
                         taxaPaga: o.creationFeePaid != null ? o.creationFeePaid : null, expira: o.expiresAt || null, forja: o.forja || null };
             if (!mkAbertaVenda(o)) return Object.assign(b, { situacao: o.side === 'BUY' ? 'compra' : 'vazia', menor: null, novo: null, taxaNova: null });
-            let outros = null, pendente = null, inferior = null, justo = null;
+            let outros = null, pendente = null, inferior = null, justo = null, justoOrigem = null, media = null;
             const c = e.catalogo ? e.catalogo[n] || null : undefined;
             if (c === undefined) pendente = { tipo: null, chave: 'catalogo' };
             else if (o.forja) {
@@ -12280,7 +12329,7 @@
                         const inf = doItem.filter(y => mkInferior(o.forja, y.instance && y.instance.forja)).map(y => Number(y.unitPrice)).filter(v => v > 0);
                         if (inf.length) inferior = Math.min(...inf);
                         const j = precoReferencia({ nome: o.itemName, forja: o.forja }, { [k]: cp }, meusIds);
-                        if (j && j.preco != null && j.origem !== 'faixa') justo = j.preco;
+                        if (j && j.preco != null) { justo = j.preco; justoOrigem = j.origem; }
                     }
                     else pendente = { tipo: 'market_copies', data, chave: k, cache: 'copias', alvo: k, rotulo: 'cópias de ' + (cat ? (MK_CATS[cat] || cat) : o.itemName), erro: cp ? cp.erro : null };
                 }
@@ -12293,13 +12342,19 @@
                     if (l && !l.erro) outros = (l.orders || []).filter(y => y && y.side === 'SELL' && !meusIds.has(y.id)).map(y => y.unitPrice);
                     else pendente = { tipo: 'market_list', data: { asset: 'ITEM', itemName: o.itemName }, chave: 'livro:' + n, cache: 'livros', alvo: n, rotulo: 'livro de ' + o.itemName, erro: l ? l.erro : null };
                 }
+                const st = e.stats && e.stats[n]; if (st && !st.erro && st.stats && st.stats.avg != null) media = Number(st.stats.avg) || null; // v2.27.0 — piso
             }
             if (pendente && pendente.tipo && !pendente.erro && !pend.has(pendente.chave)) pend.set(pendente.chave, pendente);
             const menor = outros && outros.length ? Math.min(...outros) : null;
             let situacao = pendente ? (pendente.erro ? 'erro' : 'pendente') : menor == null ? 'sozinho' : o.unitPrice < menor ? 'menor' : o.unitPrice === menor ? 'empate' : 'barato';
             let novo = menor != null && situacao !== 'menor' ? Math.max(1, menor - 1) : null;
+            /* v2.27.0 — empilhável: o menor −1 não desce abaixo da média de 30 dias; se o meu já está no piso, não é 'barato' */
+            if (!o.forja && media != null && novo != null && novo < media) { novo = Math.round(media); if (o.unitPrice <= novo) { situacao = 'piso'; novo = null; } }
             /* v2.16.5 — sem concorrente igual, mas 30 % acima do preço justo pelo valor da linha: 'acima' (ninguém compra) */
-            if ((situacao === 'sozinho' || situacao === 'menor') && justo != null && o.unitPrice > justo * 1.3) { situacao = 'acima'; novo = justo; }
+            if ((situacao === 'sozinho' || situacao === 'menor') && justo != null && justoOrigem !== 'faixa' && o.unitPrice > justo * 1.3) { situacao = 'acima'; novo = justo; }
+            /* v2.27.0 — ABAIXO DO VALOR DA PEÇA: o meu está mais de 30 % abaixo do preço justo pelas linhas/potência → refazer mais caro
+             * (dono, 20/10: "regen. de mana os itens são uma fortuna; mais fraco e vc vendendo super barato") */
+            if ((situacao === 'sozinho' || situacao === 'menor') && justo != null && o.unitPrice < justo * 0.7) { situacao = 'baixo'; novo = justo; }
             /* alguém melhor está mais barato: refazer no preço justo da MINHA linha, não a menor −1 da melhor */
             if ((situacao === 'barato' || situacao === 'empate') && justo != null && novo != null && justo < novo) novo = justo;
             return Object.assign(b, { situacao, menor, novo, taxaNova: novo != null ? mkTaxa(novo, b.qtd, e.taxa) : null, inferior, justo,
@@ -12833,11 +12888,11 @@
             <span class="tb-mut" style="font-size:10.5px">${MK.minhas ? rv.length + ' aberta(s)' + (MK.revisao ? ' · revisado ' + mkHora(MK.revisao.t) : '') : 'ainda não lido'}</span></div>`;
         if (!MK.minhas) return h + `<div class="tb-cx tb-mut">REVISAR lê suas ordens abertas e, para cada uma, o menor preço de outro vendedor (mesmo item; forjado, mesma raridade, mesmo refino, os MESMOS atributos e valor igual ou melhor — o encaixe e o valor fazem o preço) e quanto custaria refazer; lê também o que você vendeu nos últimos 30 dias. Nada é refeito sozinho: cancelar pede 2 toques, e anunciar de novo é pela lista.</div>`;
         const SIT = { menor: '<span class="tb-ok">você é o menor</span>', sozinho: '<span class="tb-ok">sem concorrente</span>', empate: '<span class="tb-av">empatado com outro</span>',
-                      barato: '<span class="tb-ruim">alguém está mais barato</span>', acima: '<span class="tb-av">acima do preço justo pelo valor da linha</span>', pendente: '<span class="tb-mut">não revisado — REVISAR</span>', erro: '<span class="tb-ruim">não consegui ler o livro</span>',
+                      barato: '<span class="tb-ruim">alguém está mais barato</span>', acima: '<span class="tb-av">acima do preço justo pelo valor da linha</span>', baixo: '<span class="tb-ruim">ABAIXO do valor da sua peça (linhas/potência) — refaça mais caro</span>', piso: '<span class="tb-ok">no piso da média de 30 d (quem está abaixo vende abaixo da média)</span>', pendente: '<span class="tb-mut">não revisado — REVISAR</span>', erro: '<span class="tb-ruim">não consegui ler o livro</span>',
                       compra: '<span class="tb-mut">ordem de compra</span>', vazia: '<span class="tb-mut">—</span>' };
         rv.forEach((l, i) => {
             const conf = mkConfAtiva('cancelar:' + l.id);
-            const refazer = l.novo != null ? `<br>refazer a ${mkFmt(l.novo)}${l.situacao === 'acima' ? ' (preço justo)' : ''}: taxa nova ${mkFmt(l.taxaNova)}${l.taxaPaga != null ? ` + a taxa já paga (${mkFmt(l.taxaPaga)}) não volta` : ''}` : '';
+            const refazer = l.novo != null ? `<br>refazer a ${mkFmt(l.novo)}${l.situacao === 'acima' || l.situacao === 'baixo' ? ' (preço justo pelas linhas e potência)' : ''}: taxa nova ${mkFmt(l.taxaNova)}${l.taxaPaga != null ? ` + a taxa já paga (${mkFmt(l.taxaPaga)}) não volta` : ''}` : '';
             h += `<div class="mk-ord"><div><b>${escHtml(l.nome)}</b>${mkCorte(l.forja)}${mkPecaTxt(l.forja)} <span class="tb-mut">×${mkFmt(l.qtd)} @ ${mkFmt(l.preco)}</span></div>
                 <button type="button" class="tb-bt mini${conf ? ' tb-conf' : ''}" id="tb-mk-x-${i}" ${ocup ? 'disabled' : ''} aria-label="cancelar a ordem de ${escHtml(l.nome)}">${conf ? 'confirmar?' : 'cancelar'}</button>
                 <div class="mk-info">${SIT[l.situacao] || escHtml(l.situacao)}${l.menor != null ? ` · menor de outro${l.forja ? ' igual ou melhor' : ''}: ${mkFmt(l.menor)}` + (l.preco > l.menor ? ` (o seu está ${mkFmt(l.preco - l.menor)} acima)` : l.folga ? ` <span class="tb-av">(o seu está ${mkFmt(l.folga)} ABAIXO — cancele e anuncie de novo se quiser)</span>` : '') : ''}${l.justo != null && l.situacao !== 'barato' ? ` · justo pelo valor ${mkFmt(l.justo)}` : ''}${l.inferior != null ? ` · <span class="tb-mut">cópias com valor menor a partir de ${mkFmt(l.inferior)} não contam</span>` : ''} · ${escHtml(mkExpira(l.expira))}${refazer}</div></div>`;
