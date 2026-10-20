@@ -5652,3 +5652,9 @@ fragmentos de Refino T1 (≈ 15 k no Mercado).
 ### 2.27.2 (20/10) — a revisão recebe as médias
 - Ao vivo a 2.27.1 deixava todo empilhável "não revisado": `mkRevisaoAtual` não passava `MK.stats` para `mkRevisao`, e a pendência
   da média nunca se resolvia. Corrigido; o teste vm da revisão voltou a passar.
+
+### 2.27.3 (20/10) — teto: nunca acima da cópia melhor mais barata
+- Revisão ao vivo da 2.27.2 (ShamanBr, 136 anúncios): 24 BAIXO, 7 no piso da média, 43 com alguém mais barato, 7 acima. Exagero visto:
+  war hammer Comum de potência 38 a 259.783 (a "igual" pela potência era uma cópia de potência parecida a 200 mil × fator; as 21 Comum de
+  potência maior estavam entre 150 e 200 mil). Agora `mkJustoDe` e o piso respeitam um teto = a cópia MELHOR (razão combinada > 1,1)
+  mais barata −1. Vendedor especialista não anuncia acima de uma peça melhor que já está mais barata.

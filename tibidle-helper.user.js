@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.27.2
+// @version      2.27.3
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.27.2';
+    const VERSAO = '2.27.3';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -12000,7 +12000,8 @@
         const pot = (c) => (minha && c && c.f ? mkPotFator(minha, c.f) : 1);
         const rc = (c) => (Math.abs(c.r - 1) <= MK_LINHA_PERTO + 1e-9 && Math.abs(pot(c) - 1) > 0.05 ? 1 / pot(c) : c.r); // linhas perto (±15 %) e potência diferente → a potência desempata; o preço usa c.r × potência
         const ig = lista.filter(c => Math.abs(rc(c) - 1) <= MK_VALOR_IGUAL + 1e-9);
-        if (ig.length) { const c = ig.reduce((a, b) => (b.p < a.p ? b : a)); return { preco: Math.max(1, Math.round((c.p - 1) * pot(c))), origem: 'igual', ref: c.p, potFator: pot(c) }; }
+        const melhores = lista.filter(c => rc(c) > 1 + MK_VALOR_IGUAL + 1e-9), teto = melhores.length ? Math.min(...melhores.map(c => c.p)) - 1 : null; // v2.27.3 — nunca acima da melhor mais barata
+        if (ig.length) { const c = ig.reduce((a, b) => (b.p < a.p ? b : a)); let preco = Math.round((c.p - 1) * pot(c)); if (teto != null) preco = Math.min(preco, teto); return { preco: Math.max(1, preco), origem: 'igual', ref: c.p, potFator: pot(c), teto }; }
         const inf = lista.filter(c => rc(c) < 1), mel = lista.filter(c => rc(c) > 1);
         const i = inf.length ? inf.reduce((a, b) => (b.r > a.r ? b : a)) : null; // a inferior mais próxima
         const m = mel.length ? mel.reduce((a, b) => (b.p < a.p ? b : a)) : null; // a melhor mais barata
@@ -12012,7 +12013,8 @@
         if (m) preco = Math.min(preco, m.p - 1);
         if (i) preco = Math.max(preco, i.p + 1);
         const pf = pot(i || m);
-        return { preco: Math.max(1, Math.round(preco * pf)), origem: 'justo', ref: i ? i.p : m.p, inferior: i ? { p: i.p, r: i.r } : null, melhor: m ? { p: m.p, r: m.r } : null, potFator: pf };
+        let final = Math.round(preco * pf); if (teto != null) final = Math.min(final, teto); // v2.27.3 — a potência não leva acima da melhor mais barata
+        return { preco: Math.max(1, final), origem: 'justo', ref: i ? i.p : m.p, inferior: i ? { p: i.p, r: i.r } : null, melhor: m ? { p: m.p, r: m.r } : null, potFator: pf, teto };
     }
     function precoReferencia(x, copias, meusIds) {
         const vazio = { preco: null, origem: 'vazio', ref: null };
@@ -12039,7 +12041,11 @@
         const inferiorTier = doItem.filter(y => mkAtrIds(y.f).length && (mkRar(y.f, -1) < mkRar(x.forja, 0) || (mkRar(y.f, -1) === mkRar(x.forja, 0) && mkRef(y.f, -1) < mkRef(x.forja, 0)))
             && nobresDe(y.f).every(id => nobres.includes(id)) && mkRazaoValor(x.forja, y.f) <= 1 + MK_LINHA_PERTO + 1e-9).map(y => y.p);
         if (ids.length && inferiorTier.length) piso = Math.max(piso || 0, Math.round(Math.max(...inferiorTier) * 1.1));
-        const comPiso = (r) => (r && r.preco != null && piso != null && r.preco < piso ? Object.assign(r, { preco: piso, piso }) : r);
+        const comPiso = (r) => {
+            if (!r || r.preco == null || piso == null || r.preco >= piso) return r;
+            const alvo = r.teto != null ? Math.min(piso, r.teto) : piso; // v2.27.3 — o piso não passa da cópia melhor mais barata
+            return alvo > r.preco ? Object.assign(r, { preco: alvo, piso }) : r;
+        };
         const comR = (l) => l.map(y => ({ p: y.p, r: mkRazaoValor(x.forja, y.f), f: y.f }));
         const exatas = doItem.filter(y => mkMesmoEncaixe(x.forja, y.f));
         if (exatas.length) { const j = mkJustoDe(comR(exatas), k0, x.forja); if (j) return comPiso(j); }

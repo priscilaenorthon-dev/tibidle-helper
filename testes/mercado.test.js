@@ -378,7 +378,7 @@ const cp = (item, preco, rar, atrs, orderId) => ({ orderId: orderId || 'o' + pre
 const F1 = (rar, ...atrs) => ({ raridade: rar, refino: 0, atributos: atrs.map(([id, valor]) => ({ id, valor })) });
 t('precoReferencia: igual (mesmo corte) → menor −1; o meu anúncio não conta', () => {
     const copias = { 'cat:armaduras': { copies: [cp('dark armor', 300000, 1, [['regen_mana', 1.3]]), cp('dark armor', 450000, 1, [['regen_mana', 1.2]]), cp('dark armor', 9999, 1, [['resist_gelo', 1]]), cp('dark armor', 100, 1, [['regen_mana', 2]], 'meu')] } };
-    igual(P.precoReferencia({ nome: 'dark armor', forja: F1(1, ['regen_mana', 1.4]) }, copias, new Set(['meu'])), { preco: 299999, origem: 'igual', ref: 300000, potFator: 1 });
+    igual(P.precoReferencia({ nome: 'dark armor', forja: F1(1, ['regen_mana', 1.4]) }, copias, new Set(['meu'])), { preco: 299999, origem: 'igual', ref: 300000, potFator: 1, teto: null });
     /* 2.16.5 — só cópias inferiores (1,1 e 1,2 contra a minha 1,4): a mais próxima (1,2 a 450 mil) sobe pela curva */
     const inf = { 'cat:armaduras': { copies: [cp('dark armor', 300000, 1, [['regen_mana', 1.1]]), cp('dark armor', 450000, 1, [['regen_mana', 1.2]])] } };
     const j = P.precoReferencia({ nome: 'dark armor', forja: F1(1, ['regen_mana', 1.4]) }, inf, new Set());
@@ -390,7 +390,7 @@ t('precoReferencia: parecida só com o encaixe nobre em comum (regen. de mana n�
     const j = P.precoReferencia({ nome: 'dark armor', forja: F1(2, ['regen_mana', 1.4], ['resist_morte', 2.1]) }, copias, new Set());
     assert.strictEqual(j.origem, 'justo'); assert.strictEqual(j.ref, 450000); assert.strictEqual(j.preco, Math.round(450000 * Math.pow(1.4 / 1.2, 4))); assert(j.parecida);
     const igualP = { 'cat:armaduras': { copies: [cp('dark armor', 450000, 2, [['resist_sagrado', 0.8], ['regen_mana', 1.3]])] } };
-    igual(P.precoReferencia({ nome: 'dark armor', forja: F1(2, ['regen_mana', 1.4], ['resist_morte', 2.1]) }, igualP, new Set()), { preco: 449999, origem: 'parecida', ref: 450000, parecida: true, potFator: 1 });
+    igual(P.precoReferencia({ nome: 'dark armor', forja: F1(2, ['regen_mana', 1.4], ['resist_morte', 2.1]) }, igualP, new Set()), { preco: 449999, origem: 'parecida', ref: 450000, parecida: true, potFator: 1, teto: null });
 });
 t('precoReferencia: sem nobre, parecida = qualquer atributo em comum; senão faixa; senão vazio', () => {
     const copias = { 'cat:armaduras': { copies: [cp('plate armor', 65000, 2, [['resist_gelo', 2.1], ['resist_energia', 1.6]]), cp('plate armor', 70000, 2, [['max_mana', 55], ['protecao_magica', 0.4]])] } };
@@ -434,6 +434,18 @@ t('2.27.1 — revisão de empilhável: pede a média de 30 d antes de sugerir de
     assert.strictEqual(r.linhas[0].situacao, 'barato'); assert.strictEqual(r.linhas[0].novo, 184, 'não desce ao 65: o piso é a média de 30 d');
     r = P.mkRevisao({ minhas: [ordem('m', 'cleansing fragment t1', 180, { quantityRemaining: 49, quantityTotal: 49 })], catalogo, tradeable: TRAD, taxa: 0.05, livros: {}, copias: {}, stats: { 'cleansing fragment t1': { stats: { avg: 184.3 } } } });
     assert.strictEqual(r.linhas[0].situacao, 'piso'); assert.strictEqual(r.linhas[0].novo, null, 'já abaixo da média: nada a refazer');
+});
+t('2.27.3 — teto: nunca acima da cópia MELHOR mais barata (war hammer Comum pot. 38 a 259 mil com 21 Comum de potência maior entre 150 e 200 mil)', () => {
+    const fjp = (rar, atrs, pot) => ({ raridade: rar, refino: 0, potenciaBase: pot, atributos: atrs.map(([id, valor]) => ({ id, valor })) });
+    const cpp = (preco, forja) => ({ orderId: 'o' + preco + forja.potenciaBase, itemName: 'war hammer', unitPrice: preco, sellerName: 'x', instance: { name: 'war hammer', forja } });
+    const copias = { 'cat:armas': { copies: [cpp(150000, fjp(0, [], 300)), cpp(180000, fjp(0, [], 250)), cpp(200000, fjp(0, [], 40)), cpp(200000, fjp(0, [], 20))] } };
+    const r = P.precoReferencia({ nome: 'war hammer', forja: fjp(0, [], 38) }, copias, new Set());
+    assert.strictEqual(r.preco, 149999, 'a pot. 20 a 200 mil é inferior e a pot. 40 é igual (×1,0): 199.999 — mas as de pot. 250/300 a 150 e 180 mil são melhores e mais baratas → teto 149.999: ' + JSON.stringify(r));
+    assert.strictEqual(r.teto, 149999);
+    /* o piso também respeita o teto */
+    const copias2 = { 'cat:armaduras': { copies: [cpp(5000, fjp(1, [['resist_gelo', 1.0]], 100)), cpp(20000, fjp(1, [['resist_gelo', 2.0]], 100)), cpp(30000, fjp(0, [], 100)), cpp(100000, fjp(0, [], 100))] } };
+    const r2 = P.precoReferencia({ nome: 'war hammer', forja: fjp(1, [['resist_gelo', 1.0]], 100) }, copias2, new Set());
+    assert.strictEqual(r2.preco, 19999, 'piso das sem linha seria 37.500, mas a resist. 2,0 (melhor) está a 20 mil → 19.999: ' + JSON.stringify(r2));
 });
 t('2.27.0 — regras do dono: 1,6 de regen vale mais que a 1,3 a 1 M; peça mais forte (potência) com status um pouco menor vale mais que a inferior; raridade maior com a mesma nobre vale mais', () => {
     const fjp = (rar, atrs, pot) => ({ raridade: rar, refino: 0, potenciaBase: pot, atributos: atrs.map(([id, valor]) => ({ id, valor })) });
