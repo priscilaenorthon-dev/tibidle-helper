@@ -5856,3 +5856,65 @@ com Lesser Front Sweep e Protector. Os 14 mapas de nível alto herdavam esse Cav
 | Otherworld Zao | 250 | MS + defesa | stone shower rune | Great Fire Wave | Terra Wave |
 | Shadow Nexus | 250 | MS + defesa | avalanche rune | Energy Wave | Strong Ice Wave |
 | Warzone III - Crystal Caves | 250 | MS + defesa | thunderstorm rune | Energy Wave | Strong Ice Wave |
+
+## 2.28.2 (20/10) — teste de volta do padrão nos mapas QUE TÊM post; Lizard City do Specter corrigida
+
+**Pergunta do dono:** "se fosse montar um mapa que já temos do Discord, teria que sair igual ou próximo; se não, estudar mais o padrão".
+**Teste de volta:** o gerador da 2.28.1 rodou nos 33 posts do Discord, com o nível de cada autor, e a barra foi comparada slot a slot
+(script de bastidor, fora do repositório). No grupo do padrão (posts de nível 110–158, 11 posts):
+
+| | 2.28.1 | 2.28.2 |
+|---|---|---|
+| runa igual à do post | 70 % | 97 % |
+| Cavaleiro | 60 % | 70 % |
+| Paladino | 72 % | 83 % |
+| Feiticeiro | 50 % | 65 % |
+| Druida | 57 % | 65 % |
+| só os posts do Specter (16 barras) | — | 94 % |
+
+A diferença que sobra é estilo do autor, não regra: lucasdela usa Cavaleiro tanque (só Lesser Front Sweep + Protector) e Ultimate
+Strike; Theus põe sudden death no último slot mesmo com onda; Zumpano e Jhefy usam 2–3 slots.
+
+**O que o teste corrigiu no gerador:**
+- elemento pesado por **vida × peso** de cada monstro (o tempo que a party gasta nele), não só pela quantidade. Hive Queen Chamber
+  (Specter e Theus) e The Behemoth Quest (2 posts) usam avalanche; pela quantidade dava thunderstorm.
+- runa cujo elemento tem monstro **imune** perde para a próxima a até 15 pontos (Ice Portal do lucasdela: Destroyer imune a energia → avalanche).
+- o golpe do último slot dos magos é o do **elemento da runa** (Ice Strike com avalanche, Energy Strike com thunderstorm, Flame Strike
+  com great fireball) — nenhum post de nível 110+ usa Death Strike ou Physical Strike.
+- Divine Caldera a partir de sagrado **50** (lucasdela no Energy Portal, sagrado 55).
+- no nível 150+ os posts trocam Brutal Strike por Groundshaker no Cavaleiro (Specter Earth/Warzone, lucasdela) — não se aplica ao 136.
+
+**Erro de dado achado:** `lizard-specter` estava gravado com a barra da Bottom of the Ocean (Terra Wave e stone shower no Druida; todo
+lagarto é imune a terra = zero de dano). Refeito como o próprio texto do Specter diz ("só mudando as spells/runas da PT para gelo"):
+avalanche nos três, Druida Strong Ice Wave · avalanche · Strong Ice Strike · Ice Strike, Feiticeiro Ice Strike no último slot.
+`quara-argonaut`: a great fireball rune do Feiticeiro é do post, mas os quaras são imunes a fogo — a observação agora avisa.
+
+**Teste novo** (`testes/discord.test.js` + fixture `testes/fixtures/hunts-discord.json`, monstros públicos dos 75 mapas com setup):
+nenhum ataque de setup num elemento ao qual o mapa inteiro é imune (exceções: os 2 posts do Argonaut, com aviso); golpe básico dos
+magos Northon = elemento da runa; a barra de gelo da Lizard City.
+
+**Mapas Northon que mudaram (21 de 51; o Cavaleiro não mudou em nenhum):**
+
+| mapa | barra nova |
+|---|---|
+| The Banshee Quest | Fei: Energy Wave, avalanche rune, Strong Energy Strike, Ice Strike |
+| Feyrist Surface | Pal: Divine Caldera, great fireball rune, Strong Ethereal Spear, Ethereal Spear · Dru: Strong Ice Wave, great fireball rune, Strong Ice Strike, Flame Strike |
+| Yalahar Worker Golem | Pal: Divine Caldera, thunderstorm rune, Strong Ethereal Spear, Ethereal Spear |
+| Fiehonja Stairway | Dru: Terra Wave, thunderstorm rune, Strong Terra Strike, Energy Strike |
+| Hero Fortress Entrance | Pal: Divine Caldera, avalanche rune, Strong Ethereal Spear, Ethereal Spear · Fei: Great Fire Wave, avalanche rune, Strong Flame Strike, Ice Strike · Dru: Strong Ice Wave, avalanche rune, Strong Ice Strike, Ice Strike |
+| Zao Entrance | Fei: Energy Wave, avalanche rune, Strong Energy Strike, Ice Strike · Dru: Strong Ice Wave, avalanche rune, Strong Ice Strike, Ice Strike |
+| Death Portal | Fei: Energy Wave, avalanche rune, Strong Energy Strike, Ice Strike |
+| Middle Spikes | Dru: Strong Ice Wave, avalanche rune, Strong Ice Strike, Ice Strike |
+| Souleater's Canyon | Pal: Divine Caldera, great fireball rune, Divine Missile · Fei: Energy Wave, great fireball rune, Strong Energy Strike, Flame Strike · Dru: Terra Wave, great fireball rune, Strong Terra Strike, Flame Strike |
+| Crystal Keeper | Fei: Energy Wave, avalanche rune, Strong Energy Strike, Ice Strike · Dru: Strong Ice Wave, avalanche rune, Strong Ice Strike, Ice Strike |
+| Deepling Library | Dru: Terra Wave, thunderstorm rune, Strong Terra Strike, Energy Strike |
+| Throne of Bazir | Fei: Energy Wave, great fireball rune, Strong Energy Strike, Flame Strike · Dru: Strong Ice Wave, great fireball rune, Strong Ice Strike, Flame Strike |
+| Throne of Ashfalor | Pal: Divine Caldera, thunderstorm rune, Strong Ethereal Spear, Ethereal Spear · Fei: Energy Wave, thunderstorm rune, Strong Energy Strike, Energy Strike · Dru: thunderstorm rune, Energy Strike |
+| Throne of Verminor | Dru: Strong Ice Wave, thunderstorm rune, Strong Ice Strike, Energy Strike |
+| Throne of Tafariel | Fei: Energy Wave, avalanche rune, Strong Energy Strike, Ice Strike · Dru: Strong Ice Wave, avalanche rune, Strong Ice Strike, Ice Strike |
+| Annihilon Seal | Pal: Divine Caldera, thunderstorm rune, Strong Ethereal Spear, Ethereal Spear · Fei: Energy Wave, thunderstorm rune, Strong Energy Strike, Energy Strike · Dru: thunderstorm rune, sudden death rune |
+| Latrivan & Golgordan Seal | Dru: Strong Ice Wave, thunderstorm rune, Strong Ice Strike, Energy Strike |
+| Madareth Seal | Dru: Strong Ice Wave, avalanche rune, Strong Ice Strike, Ice Strike |
+| Ushuriel Seal | Pal: Divine Caldera, thunderstorm rune, Strong Ethereal Spear, Ethereal Spear · Fei: Energy Wave, thunderstorm rune, Strong Energy Strike, Energy Strike · Dru: Strong Ice Wave, thunderstorm rune, Strong Ice Strike, Energy Strike |
+| Warzone - Lava Lurkers | Fei: Energy Wave, avalanche rune, Strong Energy Strike, Ice Strike |
+| Shadow Nexus | Pal: Divine Caldera, thunderstorm rune, Strong Ethereal Spear, Ethereal Spear · Fei: Energy Wave, thunderstorm rune, Strong Energy Strike, Energy Strike · Dru: Strong Ice Wave, thunderstorm rune, Strong Ice Strike, Energy Strike |

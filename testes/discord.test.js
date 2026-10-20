@@ -148,7 +148,7 @@ t('Northon (2.28.0): título "Northon - <mapa>", a barra dos 4, nenhum mapa repe
     }
     assert(M.SETUPS_DISCORD.filter(s => s.huntId === 191).every(s => /^Northon - /.test(s.titulo)));
 });
-t('Northon (2.28.1): o padrão da comunidade — Cavaleiro de dano, a mesma runa nos três, nenhum slot que a fila nunca dispara', () => {
+t('Northon (2.28.2): o padrão da comunidade — Cavaleiro de dano, a mesma runa nos três, nenhum slot que a fila nunca dispara', () => {
     const nn = M.SETUPS_DISCORD.filter(s => /^northon-\d+$/.test(s.id));
     const sp = (n) => SPELLS.find(x => x.name === n && x.combatType && (x.vocations || []).length) || SPELLS.find(x => x.name === n);
     for (const s of nn) {
@@ -169,6 +169,39 @@ t('Northon (2.28.1): o padrão da comunidade — Cavaleiro de dano, a mesma runa
             }
         }
     }
+});
+/* 2.28.2 — o backtest achou a Lizard City do Specter gravada com a barra da Bottom of the Ocean (Druida de terra num mapa todo imune a
+ * terra). Nenhum ataque de setup pode usar um elemento ao qual TODOS os monstros do mapa são imunes (tomam ≤ 25 %). Exceções: os dois
+ * posts do Argonaut que são assim no original, com aviso na observação. */
+const HD = le('testes/fixtures/hunts-discord.json').hunts;
+const elemDe = (n) => { const m = SPELLS.find(x => x.name === n && x.combatType); return m ? m.combatType.replace('COMBAT_', '').replace('DAMAGE', '') : null; };
+const tomado = (mo, e) => 100 - ((mo.elements.find(x => x[0] === e) || [0, 0])[1]);
+t('SETUPS_DISCORD: nenhum ataque num elemento ao qual o mapa inteiro é imune (fixture hunts-discord)', () => {
+    const POST = new Set(['poi-argonaut|SORCERER|Flame Strike', 'poi-argonaut|DRUID|Flame Strike', 'quara-argonaut|SORCERER|great fireball rune']);
+    const erros = [];
+    for (const s of M.SETUPS_DISCORD) {
+        const h = HD.find(x => x.id === s.huntId);
+        assert(h, s.id + ': mapa ' + s.huntId + ' fora da fixture hunts-discord.json');
+        for (const [voc, ch] of Object.entries(s.chars)) for (const [n] of (ch.ataque || [])) {
+            const e = elemDe(n);
+            if (e && h.monsters.every(mo => tomado(mo, e) <= 25) && !POST.has(s.id + '|' + voc + '|' + n)) erros.push(`${s.id} ${voc}: ${n} (${e})`);
+        }
+    }
+    assert.deepStrictEqual(erros, []);
+    for (const id of ['poi-argonaut', 'quara-argonaut']) assert.match(M.SETUPS_DISCORD.find(s => s.id === id).obs, /imunes? a fogo/, id + ': a observação tem que avisar');
+});
+t('Northon (2.28.2): o golpe básico dos magos é do elemento da runa (Ice Strike com avalanche, Energy Strike com thunderstorm…)', () => {
+    const BASICO = /^(Energy|Flame|Ice|Terra|Death|Physical) Strike$/;
+    for (const s of M.SETUPS_DISCORD.filter(x => /^northon-\d+$/.test(x.id))) for (const voc of ['SORCERER', 'DRUID']) {
+        const at = s.chars[voc].ataque.map(a => a[0]), runa = at.find(n => / rune$/.test(n) && n !== 'sudden death rune'), b = at.find(n => BASICO.test(n));
+        if (b) assert.strictEqual(elemDe(b), elemDe(runa), `${s.id} ${voc}: ${b} com ${runa}`);
+        assert(!at.includes('Death Strike') && !at.includes('Physical Strike'), `${s.id} ${voc}: a comunidade não usa Death/Physical Strike`);
+    }
+});
+t('Lizard City (Specter): a barra de gelo que ele descreve, não a cópia da Bottom of the Ocean', () => {
+    const s = M.SETUPS_DISCORD.find(x => x.id === 'lizard-specter');
+    assert.deepStrictEqual(s.chars.DRUID.ataque.map(a => a[0]), ['Strong Ice Wave', 'avalanche rune', 'Strong Ice Strike', 'Ice Strike']);
+    for (const v of ['PALADIN', 'SORCERER']) assert(s.chars[v].ataque.some(a => a[0] === 'avalanche rune'), v);
 });
 t('dcConfigDe com um setup real (Hive Queen Chamber do Specter) no catálogo real: 4 barras, sem avisos para um nível 150', () => {
     const s = M.SETUPS_DISCORD.find(x => x.id === 'hivequeen-specter');
