@@ -5705,3 +5705,80 @@ Canais lidos: patch-notes, changelog, anuncios-ptbr (desde 08/10), roadmap (só 
 - `quaradomain-bog-adapt` ("enxuto"): a ideia do Bog (área ≥2, alvo ≥1, Mana Potion 30 %) com Terra Wave no lugar da Strong Ice Wave —
   igual à Quara's entrance do Argonaut; curas, poção de vida e suportes ficam os do dono.
 - Teste novo: os 2 setups de Quara's Domain não usam fogo nem gelo e passam no `dcConfigDe` do nível 136 sem avisos.
+
+## 2.28.0 (20/10) — "Northon - <mapa>": setup adaptado para os 51 mapas sem post no Discord
+- O dono testou o Quara's Domain adaptado (2.27.5) e aprovou ("acho que funcionou"); pediu o mesmo para todos os mapas sem post, com
+  "Northon -" na frente do nome, para saber qual tirar se um não ficar bom. As duas de Quara's Domain viraram "Northon - Quara's Domain
+  Yalahar (forte)" e "(enxuto)" (os ids ficaram, a escolha guardada continua valendo).
+- Escopo: os mapas de recomendado ≥ 60 sem post (51). Os 38 abaixo disso ficaram de fora: no nível 136 a party mata a onda com qualquer
+  barra e o Radar já os esconde (50 níveis abaixo).
+- Método (script, a partir do catálogo vivo /hunts/select e /spells de 20/10): para cada mapa, o setup do Discord de quem caça no nível da
+  party (Specter ×6, lucasdela ×3, Gus, Theus, KairusZ, Zumpano1, Gabs, NaneRz, Jhefy) cujo MAPA mais se parece — distância entre as notas
+  de elemento (100 − absorção, média ponderada pelo peso; área com veto se os imunes pesam ≥ 50 %) + metade da diferença de nível
+  recomendado. A barra do post vem inteira (vida, mana, defesa, suporte); no ataque só troca o que o elemento manda: onda, runa 3×3 e
+  golpes dos magos pelo papel equivalente no melhor elemento livre (a do post fica se não perde mais de 15 pontos); Divine Caldera sai com
+  sagrado < 50 (o Specter faz isso na Earth Portal); magia que nada fere sai (slot vazio não gasta mana); mínimo de criaturas cortado no
+  lure do mapa; ícone ilegível do post ("?") sai. A observação de cada setup diz a base, as trocas e os avisos (físico baixo, monstro
+  imune a físico, mapa acima do nível).
+- Erros achados na revisão e corrigidos antes de publicar: troca de ida e volta quando a base tem duas ondas (Feiticeiro do lucasdela);
+  trocas que não ganhavam nada (a régua de alvo único marcava 30 o mapa inteiro por UM monstro imune — agora o golpe usa a média);
+  magias que ficavam na barra sem ferir ninguém.
+- Mapas de recomendado 170–250 (14) ficaram com as bases do lucasdela (nível 156) e um aviso de "teste com lure baixo". Throne of Bazir,
+  Throne of Pumin e Zugurosh Seal têm monstro imune a físico: o Cavaleiro não fere esse monstro (aviso no setup).
+- Teste novo: todo "Northon -" tem título "Northon - <mapa>", os 4 personagens, nenhuma magia repetida, um golpe ≥1 por barra, nenhum
+  mapa que já tem post da comunidade, e passa no dcConfigDe do nível 136 sem aviso.
+
+| mapa | recomendado | base (autor, mapa) |
+|---|---|---|
+| Foreign Quarter | 60 | KairusZ, The Behemoth Quest |
+| Ice Witch Tower | 60 | KairusZ, The Behemoth Quest |
+| Nargor Pirate island | 60 | KairusZ, The Behemoth Quest |
+| Stonerefiners Cavern | 60 | KairusZ, The Behemoth Quest |
+| The Banshee Quest | 60 | Jhefy, Pits of Inferno Entrance |
+| Feyrist Surface | 70 | KairusZ, The Behemoth Quest |
+| Yalahar Worker Golem | 70 | KairusZ, The Behemoth Quest |
+| Fiehonja Stairway | 80 | Specter, Bottom of the Ocean |
+| Hero Fortress Entrance | 80 | KairusZ, The Behemoth Quest |
+| Killer Caiman Caverns | 80 | KairusZ, The Behemoth Quest |
+| Upper Spikes | 80 | KairusZ, The Behemoth Quest |
+| Zao Entrance | 80 | KairusZ, The Behemoth Quest |
+| Death Portal | 100 | Jhefy, Pits of Inferno Entrance |
+| Frozen Hell | 100 | Specter, Bottom of the Ocean |
+| Middle Spikes | 100 | Specter, Hive Tower |
+| Petrified Hollow | 100 | Specter, Hive Tower |
+| Souleater's Canyon | 100 | Specter, Hive Tower |
+| Lizard Chosen's Dojo | 110 | Specter, Hive Tower |
+| Crystal Keeper | 130 | Specter, Lizard City |
+| Deepling Library | 130 | Specter, Bottom of the Ocean |
+| Inquisition Warlocks | 130 | Specter, Lizard City |
+| Lower Spikes | 130 | Specter, Lizard City |
+| Mushroom Gardens | 130 | Specter, Hive Queen Chamber |
+| Otherworld Kazordoon | 130 | Specter, Hive Queen Chamber |
+| Throne of Bazir | 130 | Specter, Hive Queen Chamber |
+| Zao Caverns | 130 | Specter, Hive Queen Chamber |
+| Zugurosh Seal | 130 | Specter, Bottom of the Ocean |
+| Draken Walls | 150 | Specter, Lizard City |
+| Inquisition Entrance | 150 | Specter, Bottom of the Ocean |
+| Lava Hot Spot | 150 | Specter, Lizard City |
+| Otherworld Svargrond | 150 | NaneRz, Holy Portal |
+| Throne of Ashfalor | 150 | Specter, Warzone I - Fungus |
+| Throne of Pumin | 150 | Specter, Lizard City |
+| Throne of Verminor | 150 | Specter, Warzone I - Fungus |
+| Otherworld Ankrahmun | 170 | Specter, Warzone I - Fungus |
+| Throne of Apocalypse | 170 | lucasdela, Ice Portal |
+| Throne of Tafariel | 170 | Specter, Warzone I - Fungus |
+| Annihilon Seal | 180 | lucasdela, Fire Portal |
+| Latrivan & Golgordan Seal | 180 | lucasdela, Fire Portal |
+| Madareth Seal | 180 | lucasdela, Fire Portal |
+| Throne of Infernatil | 180 | lucasdela, Ice Portal |
+| Ushuriel Seal | 180 | lucasdela, Fire Portal |
+| Warzone - Lava Lurkers | 180 | lucasdela, Ice Portal |
+| Warzone I - Rocky Mountain | 180 | Specter, Warzone I - Fungus |
+| Otherworld Edron | 190 | lucasdela, Ice Portal |
+| Hellgorak Seal | 200 | lucasdela, Ice Portal |
+| Warzone II - Magma Dungeon | 200 | lucasdela, Ice Portal |
+| Warzone II - Parasite Nest | 220 | lucasdela, Ice Portal |
+| Otherworld Zao | 250 | lucasdela, Ice Portal |
+| Shadow Nexus | 250 | lucasdela, Ice Portal |
+| Warzone III - Crystal Caves | 250 | lucasdela, Ice Portal |
+

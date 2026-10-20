@@ -130,6 +130,24 @@ t("Quara's Domain (2.27.5, adaptados): 2 setups (forte e enxuto), nenhuma magia 
     const ctx = { nivel: 136, magias: SPELLS, pocoes: NOMES_POCOES };
     for (const s of ls) for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx).avisos, [], s.id + ' ' + voc);
 });
+t('Northon (2.28.0): título "Northon - <mapa>", a barra dos 4, nenhum mapa repetido com post da comunidade, e todos passam no dcConfigDe do nível 136 sem aviso', () => {
+    const nn = M.SETUPS_DISCORD.filter(s => /^northon-\d+$/.test(s.id));
+    assert(nn.length >= 40, 'Northon: ' + nn.length);
+    const daComunidade = new Set(M.SETUPS_DISCORD.filter(s => !/^Northon/.test(s.autor)).map(s => s.huntId));
+    const ctx = { nivel: 136, magias: SPELLS, pocoes: NOMES_POCOES };
+    for (const s of nn) {
+        assert.strictEqual(s.titulo, 'Northon - ' + s.hunt, s.id);
+        assert(!daComunidade.has(s.huntId), s.id + ': o mapa já tem post da comunidade');
+        for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) {
+            assert(s.chars[voc], s.id + ' sem ' + voc);
+            assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx).avisos, [], s.id + ' ' + voc);
+            const at = s.chars[voc].ataque || [];
+            assert(new Set(at.map(a => a[0])).size === at.length, s.id + ' ' + voc + ': magia repetida');
+            assert(!at.length || at.some(a => a[1] <= 1), s.id + ' ' + voc + ': nenhuma ≥1 (com 1 monstro vivo nada dispara)');
+        }
+    }
+    assert(M.SETUPS_DISCORD.filter(s => s.huntId === 191).every(s => /^Northon - /.test(s.titulo)));
+});
 t('dcConfigDe com um setup real (Hive Queen Chamber do Specter) no catálogo real: 4 barras, sem avisos para um nível 150', () => {
     const s = M.SETUPS_DISCORD.find(x => x.id === 'hivequeen-specter');
     const ctx = { nivel: 150, magias: SPELLS, pocoes: NOMES_POCOES };
