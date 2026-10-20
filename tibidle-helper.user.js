@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.25.4
+// @version      2.26.0
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.25.4';
+    const VERSAO = '2.26.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -377,6 +377,10 @@
         boss: {
             nome: 'Boss',
             dica: 'Escolha o boss: as magias e runas que mais dão dano por segundo nele com a mana que cada um tem (uma por grupo de recarga), todas com gatilho ≥1.'
+        },
+        discord: {
+            nome: 'Discord',
+            dica: 'Setup da comunidade (Discord do Tibidle) para esta caçada: a barra inteira dos 4 — vida, mana, ataque, defesa, suporte e munição — como o autor postou. Com mais de um setup para o mapa, você escolhe qual.'
         }
     };
     /* v2.12.0 — O INTELIGENTE VOLTA (v3). Saiu na 2.11.13 porque perdia do Em
@@ -3466,6 +3470,7 @@
     function montarPlano(modelo, hunt, vocForcada, opcoes) {
         const voc = vocForcada || vocacaoAtual();
         if (!hunt) return { erro: 'não achei as resistências dessa hunt no catálogo' };
+        if (modelo === 'discord') return { erro: 'o modelo Discord não calcula plano: ele aplica o setup da comunidade escolhido na aba Magia' };
         const cat = [CAT.magias, CAT.precos, CAT.pocoes, CAT.bosses, CAT.municao, _ammoCat];
         /* v2.14.5 — catálogo de munição (/ammo, CAT.municao) chegando NÃO derruba a party do Inteligente: ele só muda a
          * munição (extrasInt), não a busca. Ao vivo (02/10, Orc Fortress): o /ammo chegou no meio do APLICAR, entre o
@@ -3861,6 +3866,7 @@
         try { await _aplicarEmTodos(modelo, hunt, opcInt); } finally { _aplicando = false; renderizar(); }
     }
     async function _aplicarEmTodos(modelo, hunt, opcInt) {
+        if (modelo === 'discord') { await aplicarDiscord(hunt); return; }
         /* v1.8.2 — CONTA NOVA SEM DANO MEDIDO. Numa conta de teste (23/09) o
          * APLICAR saiu com 1 runa por mago e nada no Cavaleiro: o plano só
          * usa magia com dano conhecido, e ali nada tinha sido medido. Como o
@@ -4216,6 +4222,53 @@
         let eco = null;
         if (cacando && who != null) eco = await esperarQue(() => ESTADO_WS.eco[who] && ESTADO_WS.eco[who] > t0, 4000, 150);
         return { n: resultado.plano.length, who, eco: !!eco, cacando, soCacada: !real };
+    }
+    /* v2.26.0 — a config INTEIRA de uma vocação pelo socket (modelo Discord): o mesmo caminho do aplicarPlanoSocket, com heals, poção,
+     * skills, suportes e munição já prontos */
+    async function aplicarConfigSocket(voc, nova) {
+        const cacando = emHunt();
+        const who = cacando ? indiceDaVoc(voc) : null;
+        const real = perfilReal(voc);
+        if (!real && who == null) throw new Error(`o perfil de ${voc} não veio do servidor — profiles_set pulado para não apagar os presets dele (dê F5 com o helper instalado)`);
+        const t0 = Date.now();
+        if (cacando && who != null) enviarWS({ type: 'update_battle_config', data: payloadBattleConfig(nova, who) });
+        if (real) {
+            const perfil = perfilDaVoc(voc);
+            perfil.list[perfil.active] = Object.assign({}, perfil.list[perfil.active], { config: nova });
+            enviarWS({ type: 'profiles_set', data: { vocation: voc, profiles: perfil } });
+        } else log(`  ${voc}: perfil não veio do servidor — só update_battle_config (vale nesta caçada, não fica salvo no preset)`, 'erro');
+        let eco = null;
+        if (cacando && who != null) eco = await esperarQue(() => ESTADO_WS.eco[who] && ESTADO_WS.eco[who] > t0, 4000, 150);
+        return { who, eco: !!eco, cacando, soCacada: !real };
+    }
+    const dcCtx = () => ({ nivel: nivelAtual(), magias: CAT.magias || [], pocoes: (Array.isArray(CAT.pocoes) ? CAT.pocoes.flat() : []).map(p => p && p.name).filter(Boolean) });
+    function dcEscolhido(h) {
+        const ls = dcSetupsDaHunt(h); if (!ls.length) return null;
+        const id = ler('dc_setup_' + h.id, null);
+        return ls.find(x => x.id === id) || ls[0];
+    }
+    async function aplicarDiscord(hunt) {
+        const s = dcEscolhido(hunt);
+        if (!s) { log(`Discord: nenhum setup da comunidade para ${hunt.title}`, 'erro'); return; }
+        if (!socketAberto() || !ESTADO_WS.perfisDoServidor) { log('Discord: preciso do socket do jogo e dos perfis do servidor — dê F5 com o helper instalado', 'erro'); return; }
+        log(`aplicando o setup "${s.titulo}" nos 4 personagens em ${hunt.title} — pelo socket, sem abrir janela…`);
+        /* foto do perfil dos 4 ANTES do Discord: o botão "voltar ao que eu tinha" devolve tudo (dono, 19/10: "depois volte para onde
+         * parou com as magias que eu já tinha deixado"). Só a primeira aplicação de uma sequência tira a foto. */
+        if (!ler('dc_foto', null) && ESTADO_WS.profiles) guardar('dc_foto', { t: Date.now(), hunt: hunt.title, setup: s.titulo, profiles: clonar(ESTADO_WS.profiles) });
+        let total = 0;
+        for (const voc of VOCS) {
+            const atual = configAtiva(voc);
+            const r = dcConfigDe(s, voc, atual ? normalizarConfig(atual) : null, dcCtx());
+            if (!r.cfg) { log(`  ${voc}: ${r.avisos.join('; ')} — não mexi`, 'erro'); continue; }
+            r.avisos.forEach(a => log(`  ${voc}: ${a}`, 'erro'));
+            try {
+                const x = await aplicarConfigSocket(voc, r.cfg); total++;
+                log(`  ${voc}: ${dcResumo(s, voc)}` + (x.cacando ? (x.eco ? ' ✓ servidor confirmou' : ' (sem eco do servidor)') : ' (na cidade: vale na próxima caçada)'), 'ok');
+            } catch (e) { log(`  ${voc}: falhou pelo socket — ${e.message}`, 'erro'); }
+            await dorme(150);
+        }
+        log(`Discord: ${total}/4 personagens configurados com "${s.titulo}"` + (s.lure ? ` · lure do post: ${s.lure} (o lure fica como está)` : ''), total ? 'ok' : 'erro');
+        renderizar();
     }
     /* @@PERFIS-FIM */
 
@@ -5566,7 +5619,7 @@
     function scanIniciar(over) {
         const c = Object.assign(scanCfg(), over || {});
         const ids = c.mapas.filter(id => (CAT.hunts || []).some(h => h.id === id));
-        const modelos = c.comparar ? (c.variantes || []).filter(m => MODELOS[m] && m !== 'boss') : [c.modelo || 'equilibrado'];
+        const modelos = c.comparar ? (c.variantes || []).filter(m => MODELOS[m] && m !== 'boss' && m !== 'discord') : [c.modelo || 'equilibrado'];
         const fila = [];
         for (const id of ids) for (const modelo of modelos) fila.push({ id, modelo, opcInt: (over && over.opcInt) || null });
         if (!fila.length) { log('Scan: marque pelo menos um mapa' + (c.comparar ? ' e uma variante' : ''), 'erro'); return false; }
@@ -7885,6 +7938,299 @@
         return { itens, estimado, criar, compras, total: livros ? total : null, faltam: temFalta ? faltam : null, ok: !!livros && !motivo && compras.length > 0, motivo };
     }
     /* @@FORJA-FIM */
+    /* @@DISCORD-INICIO — modelo "Discord" (2.26.0): setups da comunidade (servidor do Tibidle, https://discord.gg/pPXNXu3dh), lidos em
+     * 19/10 nos guias "Logbook De Hunts (Argonaut)" e "Aoba meu povo (Specter, lucasdela…)". Cada setup é a BARRA INTEIRA dos 4:
+     * vida (poção ≤ %), mana (poção ≤ %), ataque (magia/runa ≥ criaturas, na ordem dos slots), defesa (cura/escudo ≤ % de vida),
+     * suporte e munição. O que o post não diz fica como está na config do dono. Vários setups para a mesma hunt = o dono escolhe. */
+    const DC_FONTE = 'https://discord.gg/pPXNXu3dh';
+    const SETUPS_DISCORD = [
+        /* — Argonaut (Logbook, texto): "Gran Frigo Hur" = Strong Ice Wave, "Vis Hur" = Energy Wave, "Exori" = Berserk, "Exori Infir Min" =
+         *   Lesser Front Sweep, "Exori Mas" = Groundshaker, "Exevo Mas San" = Divine Caldera, "Exori Con" = Ethereal Spear, "Sio" = Heal Friend.
+         *   "Buffs: Pally, Sorc e Knight (skill boosts)" = Sharpshooter / Enchant Party / Train Party. "Coloque cura nos outros três, Exura Gran
+         *   a N %" = Intense Healing nos magos e no Paladino; o Knight não tem Exura Gran, fica com Wound Cleansing no mesmo %. */
+        { id: 'bog-argonaut-2', hunt: 'Bog Raiders Yalahar', huntId: 151, autor: 'Argonaut', data: '06/10', titulo: 'Bog Raiders 2.0 (Argonaut, 06/10)',
+          lure: 'nível 4 — 8 criaturas', skills: 'ML 42 · EK 48 · RP 53', nota: '4/5 · key ✪✪✪✪✪ · exp ✪✪ · gold ✪✪✪✪✪',
+          obs: 'Hunt OK para exp e excelente para gold; key muito boa. Voltaria: sim, farmar itens para purificar (legs e boots).',
+          chars: { KNIGHT: { ataque: [['Berserk', 2], ['Lesser Front Sweep', 1]] },
+                   PALADIN: { ataque: [['Divine Caldera', 2], ['thunderstorm rune', 2]] },
+                   SORCERER: { ataque: [['Energy Wave', 2], ['thunderstorm rune', 2]] },
+                   DRUID: { mana: ['Mana Potion', 30], ataque: [['Strong Ice Wave', 2], ['thunderstorm rune', 2]], defesa: [['Heal Friend', 60]] } } },
+        { id: 'hiveentr-argonaut', hunt: 'The Hive Entrance', huntId: 123, autor: 'Argonaut', data: '03/10', titulo: 'The Hive Entrance (Argonaut, 03/10)',
+          lure: 'nível 4 — 8 criaturas', skills: 'melee 44 · shielding 43 · distance 49 · ML 42/39', nota: '3,3/5 · key ✪✪✪✪✪ · exp ✪✪✪✪ · gold ✪',
+          obs: 'Boa para exp; tem waste, o melhor cenário é ficar no 0 a 0. O boss dropa SCA. Se possível, Fur Armor no Knight.',
+          chars: { KNIGHT: { vida: ['Great Health Potion', 40], mana: ['Mana Potion', 30], ataque: [['Berserk', 4], ['Lesser Front Sweep', 1]], defesa: [['Intense Wound Cleansing', 30]], suporte: ['Protector', 'Train Party'] },
+                   PALADIN: { mana: ['Mana Potion', 30], ataque: [['great fireball rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Salvation', 30], ['Divine Healing', 60]], suporte: ['Protect Party'] },
+                   SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 20], ataque: [['Great Fire Wave', 3], ['great fireball rune', 2], ['Ultimate Flame Strike', 1], ['Strong Flame Strike', 1]], defesa: [['Ultimate Healing', 45], ['Intense Healing', 70]], suporte: ['Enchant Party'] },
+                   DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 30], ataque: [['Strong Ice Wave', 3], ['great fireball rune', 2], ['Ultimate Ice Strike', 1], ['Strong Ice Strike', 1]], defesa: [['Heal Friend', 65], ['Intense Healing', 70]] } } },
+        { id: 'poi-argonaut', hunt: 'Pits of Inferno Entrance', huntId: 49, autor: 'Argonaut', data: '01/10', titulo: 'Pits of Inferno Entrance (Argonaut, 01/10)',
+          lure: 'nível 4 — 8 criaturas', skills: 'ML 37 · EK 42 · RP 47', nota: '2,3/5 · key ✪✪ · exp ✪✪✪ · gold ✪✪',
+          obs: 'Medíocre para gold, exp razoável; key horrível, exceto pelo item da POI. Bestiário de ML. Burst arrow no Paladino. Dragon Lord é imune a fogo: o Exori Flam do post não dá dano aqui.',
+          chars: { KNIGHT: { mana: ['Mana Potion', 30], ataque: [['Groundshaker', 2], ['Berserk', 2], ['Lesser Front Sweep', 1]], defesa: [['Wound Cleansing', 40]], suporte: ['Train Party'] },
+                   PALADIN: { mana: ['Mana Potion', 30], ataque: [['avalanche rune', 2], ['Ethereal Spear', 1]], defesa: [['Intense Healing', 40]], suporte: ['Sharpshooter'], municao: 'burst arrow' },
+                   SORCERER: { mana: ['Mana Potion', 30], ataque: [['Energy Wave', 2], ['avalanche rune', 2], ['Flame Strike', 1]], defesa: [['Intense Healing', 40]], suporte: ['Enchant Party'] },
+                   DRUID: { mana: ['Mana Potion', 30], ataque: [['Strong Ice Wave', 2], ['avalanche rune', 2], ['Flame Strike', 1]], defesa: [['Heal Friend', 70], ['Mass Healing', 65]] } } },
+        { id: 'gs-argonaut', hunt: 'Giant Spiders POH', huntId: 105, autor: 'Argonaut', data: '01/10', titulo: 'Giant Spiders POH (Argonaut, 01/10)',
+          lure: 'nível 4 — 8 criaturas', skills: 'ML 37 · EK 42 · RP 47', nota: '2,6/5 · key ✪✪✪ · exp ✪✪ · gold ✪✪✪',
+          obs: 'Medíocre para gold e exp; key muito boa para o Hive Bow do Elite. Burst arrow no Paladino.',
+          chars: { KNIGHT: { mana: ['Mana Potion', 30], ataque: [['Groundshaker', 2], ['Berserk', 2], ['Lesser Front Sweep', 1]], defesa: [['Wound Cleansing', 70]], suporte: ['Train Party'] },
+                   PALADIN: { mana: ['Mana Potion', 30], ataque: [['great fireball rune', 2], ['Ethereal Spear', 1]], defesa: [['Intense Healing', 70]], suporte: ['Sharpshooter'], municao: 'burst arrow' },
+                   SORCERER: { mana: ['Mana Potion', 30], ataque: [['Energy Wave', 2], ['great fireball rune', 2], ['Flame Strike', 1]], defesa: [['Intense Healing', 70]], suporte: ['Enchant Party'] },
+                   DRUID: { mana: ['Mana Potion', 30], ataque: [['Strong Ice Wave', 2], ['great fireball rune', 2], ['Flame Strike', 1]], defesa: [['Heal Friend', 70]] } } },
+        { id: 'hellspawns-argonaut', hunt: 'Hellspawns yalahar', huntId: 111, autor: 'Argonaut', data: '27/09', titulo: 'Hellspawns Yalahar (Argonaut, 27/09)',
+          lure: 'nível 4 — 8 criaturas', skills: 'ML 32 · EK 39 · RP 43', nota: '3/5 · key ✪✪✪✪✪ · exp ✪✪✪ · gold ✪',
+          obs: 'Ruim para gold, medíocre para exp; key muito boa. Com skills medíocres dá 25–30k de lucro.',
+          chars: { KNIGHT: { mana: ['Mana Potion', 30], ataque: [['Berserk', 2], ['Lesser Front Sweep', 1]], suporte: ['Protector'] },
+                   PALADIN: { mana: ['Mana Potion', 30], ataque: [['avalanche rune', 2], ['Ethereal Spear', 1]] },
+                   SORCERER: { mana: ['Mana Potion', 30], ataque: [['Energy Wave', 2], ['avalanche rune', 2], ['Ice Strike', 1]] },
+                   DRUID: { mana: ['Mana Potion', 30], ataque: [['Strong Ice Wave', 2], ['avalanche rune', 2], ['Ice Strike', 1]], defesa: [['Heal Friend', 65]] } } },
+        { id: 'quara-argonaut', hunt: "Quara's entrance Yalahar", huntId: 190, autor: 'Argonaut', data: '26/09', titulo: "Quara's entrance (Argonaut, 26/09)",
+          lure: 'nível 3 — 6 criaturas', skills: 'ML 31 · EK 39 · RP 43', nota: '2,6/5 · key ✪✪✪✪✪ · exp ✪✪ · gold ✪',
+          obs: 'Ruim para exp e gold; key de Yalahar é sempre boa. Voltaria: não.',
+          chars: { KNIGHT: { mana: ['Mana Potion', 40], ataque: [['Groundshaker', 2], ['Berserk', 2], ['Lesser Front Sweep', 1]] },
+                   PALADIN: { mana: ['Mana Potion', 30], ataque: [['thunderstorm rune', 2], ['Ethereal Spear', 1]] },
+                   SORCERER: { mana: ['Mana Potion', 30], ataque: [['Energy Wave', 2], ['great fireball rune', 2], ['Energy Strike', 1]] },
+                   DRUID: { mana: ['Mana Potion', 30], ataque: [['Terra Wave', 2], ['thunderstorm rune', 2], ['Energy Strike', 1]], defesa: [['Heal Friend', 65]] } } },
+        { id: 'gargoyles-argonaut', hunt: 'Gargoyles Meriana', huntId: 109, autor: 'Argonaut', data: '26/09', titulo: 'Gargoyles Meriana (Argonaut, 26/09)',
+          lure: 'nível 2 — 7 criaturas', skills: 'ML 31 · EK 39 · RP 43', nota: '2,6/5 · key ✪✪ · exp ✪ · gold ✪✪✪✪✪',
+          obs: 'Ótima para gold, péssima para exp. Farmar itens para purificar (legs, ring, helmet, necklace) e gold bruto.',
+          chars: { KNIGHT: { mana: ['Mana Potion', 40], ataque: [['Berserk', 2]] },
+                   PALADIN: { mana: ['Mana Potion', 30], ataque: [['Ethereal Spear', 1]] },
+                   SORCERER: { mana: ['Mana Potion', 30], ataque: [['Energy Wave', 2]] },
+                   DRUID: { mana: ['Mana Potion', 30], ataque: [['Strong Ice Wave', 2]], defesa: [['Heal Friend', 65]] } } },
+        { id: 'vampire-argonaut', hunt: 'Vampire hell', huntId: 50, autor: 'Argonaut', data: '25/09', titulo: 'Vampire hell (Argonaut, 25/09)',
+          lure: 'nível 1 — 6 criaturas', skills: 'ML 29 · EK 38 · RP 42', nota: '',
+          obs: 'Ajuste: Vis Hur no Feiticeiro deu mais exp/h.',
+          chars: { KNIGHT: { ataque: [['Berserk', 2], ['Lesser Front Sweep', 1]] },
+                   PALADIN: { ataque: [['Divine Caldera', 2], ['avalanche rune', 2]] },
+                   SORCERER: { ataque: [['Energy Wave', 2], ['avalanche rune', 2]] },
+                   DRUID: { ataque: [['Strong Ice Wave', 2], ['avalanche rune', 2]] } } },
+        { id: 'djinns-argonaut', hunt: 'Djinns Marid Territory', huntId: 146, autor: 'Argonaut', data: '24/09', titulo: 'Djinns Marid Territory (Argonaut, 24/09)',
+          lure: 'nível 2 — 7 criaturas', skills: 'ML 28 · EK 37 · RP 41', nota: '', obs: '',
+          chars: { KNIGHT: { ataque: [['Berserk', 2]] }, PALADIN: { ataque: [['avalanche rune', 2]] }, SORCERER: { ataque: [['avalanche rune', 2]] }, DRUID: { ataque: [['Strong Ice Wave', 2]] } } },
+        { id: 'beholder-argonaut', hunt: 'Return of the beholder', huntId: 182, autor: 'Argonaut', data: '25/09', titulo: 'Return of the Beholder (Argonaut, 25/09)',
+          lure: 'nível 4 — 8 criaturas', skills: 'ML 30 · EK 39 · RP 43', nota: '', obs: '',
+          chars: { KNIGHT: { ataque: [['Berserk', 2], ['Lesser Front Sweep', 1]] }, PALADIN: { ataque: [['great fireball rune', 2]] },
+                   SORCERER: { ataque: [['Great Fire Wave', 2], ['great fireball rune', 2]] }, DRUID: { ataque: [['great fireball rune', 2]] } } },
+        /* — setups em imagem (prints da barra de atalhos), transcritos em 19–20/10 com os ícones oficiais do jogo (v213) e a autoria lida no
+         *   Discord. Poção do Paladino "marrom com correntes" = Great Spirit Potion (pode ser a Ultimate); cura azul com figura vermelha à
+         *   direita = Intense Healing, à esquerda = Light Healing; ice wave com chapéu = Chill Out. Munição genérica ("flecha") fica de fora. */
+        { id: 'hivetower-specter', hunt: 'Hive Tower', huntId: 198, autor: 'Specter', data: '14/10', titulo: 'Hive Tower (Specter, 14/10)',
+          lure: '', skills: '', nota: '', nivel: '100+', obs: 'Specter: "Xp 135–140k/h raw, profit 60–80k/h. Lvl 100+. Nunca usei utamo vita e nunca morri. Set full ML, sem proteção a terra. O dano em área da hunt é do Spidris (terra)." poção do Paladino lida pelo ícone: Great Spirit Potion; pode ser a Ultimate', posicoes: 'o Knight (Symbioth, roupa ciano, \'exura ico\') fica sozinho mais à esquerda e à frente, entre os cristais azuis; os outros três ficam em fila à direita (amarelo \'exevo mas san\' = Paladino, azul, vermelho \'exevo vis hur\' = Feiticeiro), encostados na parede de pedras.',
+          chars: {
+            KNIGHT: { vida: ['Great Health Potion', 30], mana: ['Mana Potion', 40], ataque: [['Fierce Berserk', 2], ['Berserk', 2], ['Lesser Front Sweep', 1], ['Brutal Strike', 1]], defesa: [['Intense Wound Cleansing', 40], ['Wound Cleansing', 85]] },
+            PALADIN: { vida: ['Great Spirit Potion', 30], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2], ['thunderstorm rune', 2], ['Ethereal Spear', 1], ['Strong Ethereal Spear', 1]], defesa: [['Intense Healing', 70]] },
+            SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Energy Wave', 2], ['thunderstorm rune', 2], ['Strong Energy Strike', 1], ['Energy Strike', 1]], defesa: [['Intense Healing', 75]], suporte: ['Enchant Party'] },
+            DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Strong Ice Wave', 2], ['thunderstorm rune', 2], ['Strong Ice Strike', 1], ['Energy Strike', 1]], defesa: [['Heal Friend', 60], ['Mass Healing', 60], ['Ultimate Healing', 60]], suporte: ['Heal Party'] } } },
+        { id: 'hivequeen-specter', hunt: 'Hive Queen Chamber', huntId: 199, autor: 'Specter', data: '15/10', titulo: 'Hive Queen Chamber (Specter, 15/10)',
+          lure: '', skills: '', nota: '', nivel: '130+', obs: 'Specter: "Xp 130–135k raw, profit 200–300k/h (o Kolos tem que dropar). Lvl 130+. No 146 sem utamo vita; proteção a terra ajuda níveis mais baixos (o Kolos bate terra). Utito no EK não é boa ideia." poção do Paladino lida pelo ícone: Great Spirit Potion; pode ser a Ultimate', estatisticas: { xpH: '142.8k', lucroH: '+215.8k', nivel: 146 }, posicoes: 'o Knight (Symbioth, ciano, \'exori ico\') fica mais à esquerda e à frente, no meio dos cristais azuis em forma de lua; os três restantes (amarelo \'exori gran con\' = Paladino, azul, vermelho) ficam em fila à direita, sobre o favo.',
+          chars: {
+            KNIGHT: { vida: ['Great Health Potion', 30], mana: ['Mana Potion', 40], ataque: [['Fierce Berserk', 4], ['Berserk', 2], ['Lesser Front Sweep', 1], ['Brutal Strike', 1]], defesa: [['Intense Wound Cleansing', 40], ['Wound Cleansing', 85]] },
+            PALADIN: { vida: ['Great Spirit Potion', 30], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2], ['avalanche rune', 2], ['Ethereal Spear', 1], ['Strong Ethereal Spear', 1]], defesa: [['Intense Healing', 70]] },
+            SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Energy Wave', 4], ['avalanche rune', 2], ['Strong Energy Strike', 1], ['Ice Strike', 1]], defesa: [['Intense Healing', 60]], suporte: ['Enchant Party'] },
+            DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Strong Ice Wave', 4], ['avalanche rune', 2], ['Strong Ice Strike', 1], ['Ice Strike', 1]], defesa: [['Heal Friend', 60], ['Mass Healing', 60], ['Ultimate Healing', 60]], suporte: ['Heal Party'] } } },
+        { id: 'hivequeen-theus', hunt: 'Hive Queen Chamber', huntId: 199, autor: 'Theus', data: '14/10', titulo: 'Hive Queen Chamber (Theus, 14/10)',
+          lure: '', skills: '', nota: '', nivel: '', obs: 'Post "Setup - Hive Queen Chamber" do Theus.', estatisticas: { xpH: '140k', lucroH: '+273,1k', nivel: 130 },
+          chars: {
+            KNIGHT: { vida: ['Great Health Potion', 50], mana: ['Mana Potion', 30], ataque: [['Fierce Berserk', 4], ['Berserk', 4], ['Lesser Front Sweep', 1]], defesa: [['Intense Wound Cleansing', 30]] },
+            PALADIN: { vida: ['Strong Health Potion', 50], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 3], ['avalanche rune', 3], ['Divine Missile', 1]], defesa: [['Salvation', 50], ['Intense Healing', 75]], suporte: ['Protect Party'] },
+            SORCERER: { vida: ['Health Potion', 70], mana: ['Mana Potion', 30], ataque: [['Energy Wave', 2], ['avalanche rune', 2], ['sudden death rune', 1]], defesa: [['Intense Healing', 70]] },
+            DRUID: { vida: ['Health Potion', 70], mana: ['Mana Potion', 50], ataque: [['Strong Ice Wave', 3], ['avalanche rune', 2], ['sudden death rune', 1]], defesa: [['Heal Friend', 75], ['Mass Healing', 65]] } } },
+        { id: 'earth-specter', hunt: 'Earth Portal', huntId: 224, autor: 'Specter', data: '15/10', titulo: 'Earth Portal (Specter, 15/10)',
+          lure: '', skills: '', nota: '', nivel: '', obs: 'Specter: "Farmzinho silver token. Xp 140k/h raw, profit 40–60k/h. Mages sem utamo vita, RP longe para não apanhar da box (um bicho toma −50 % de holy, não vale mas san). Hunt ruim, só vale pelos silver tokens." poção do Paladino lida pelo ícone: Great Spirit Potion; pode ser a Ultimate', estatisticas: { xpH: '154,3k', lucroH: '+46,9k', nivel: 150 }, posicoes: 'Symbioth (roupa ciano) fica sozinho à esquerda, no meio de nove marcas azuis em forma de lua (pontos de spawn); os outros três personagens (roupas azul, vermelha e amarela) ficam agrupados à direita, fora das marcas, encostados na borda de fogo/lava.',
+          chars: {
+            KNIGHT: { vida: ['Great Health Potion', 30], mana: ['Strong Mana Potion', 50], ataque: [['Fierce Berserk', 4], ['Berserk', 2], ['Groundshaker', 2], ['Lesser Front Sweep', 1]], defesa: [['Intense Wound Cleansing', 40], ['Wound Cleansing', 85]] },
+            PALADIN: { vida: ['Great Spirit Potion', 30], mana: ['Mana Potion', 30], ataque: [['thunderstorm rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1], ['Divine Caldera', 2]], defesa: [['Divine Healing', 70]] },
+            SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 50], ataque: [['Energy Wave', 2], ['thunderstorm rune', 2], ['Strong Energy Strike', 1], ['Energy Strike', 1]], defesa: [['Ultimate Healing', 60], ['Intense Healing', 75]], suporte: ['Enchant Party'] },
+            DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 50], ataque: [['Strong Ice Wave', 2], ['thunderstorm rune', 2], ['Strong Ice Strike', 1], ['Energy Strike', 1]], defesa: [['Heal Friend', 70], ['Mass Healing', 60], ['Ultimate Healing', 60]], suporte: ['Heal Party'] } } },
+        { id: 'warzone1-specter', hunt: 'Warzone I - Fungus', huntId: 214, autor: 'Specter', data: '18/10', titulo: 'Warzone I - Fungus (Specter, 18/10)',
+          lure: '', skills: '', nota: '', nivel: '', obs: 'Specter: "Farmzinho Crystalline Tokens. XP 130–140k raw, profit 220–260k/h. Mages sem utamo vita. Hunt SAFE; bestiário novo de mana regen. RP e MS com o máximo de regen de mana (25+) ficam sem usar pot e o profit sobe muito." poção do Paladino lida pelo ícone: Great Spirit Potion; pode ser a Ultimate', estatisticas: { xpH: '151,4k', lucroH: '+353,6k', nivel: 158 }, posicoes: 'Personagem de roupa vermelha isolado à esquerda; Symbioth (ciano, com \'+40\' de cura) no centro, cercado por marcas azuis em losango (pontos de spawn); amarelo e azul lado a lado à direita, também entre marcas.',
+          chars: {
+            KNIGHT: { vida: ['Great Health Potion', 30], mana: ['Mana Potion', 50], ataque: [['Fierce Berserk', 4], ['Berserk', 2], ['Groundshaker', 2], ['Lesser Front Sweep', 1]], defesa: [['Intense Recovery', 85], ['Intense Wound Cleansing', 40], ['Wound Cleansing', 85]] },
+            PALADIN: { vida: ['Great Spirit Potion', 30], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2], ['great fireball rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Divine Healing', 60], ['Intense Healing', 70]] },
+            SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 50], ataque: [['Great Fire Wave', 2], ['great fireball rune', 2], ['Strong Flame Strike', 1], ['Flame Strike', 1]], defesa: [['Ultimate Healing', 60], ['Intense Healing', 75]], suporte: ['Enchant Party'] },
+            DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 50], ataque: [['Strong Ice Wave', 4], ['great fireball rune', 2], ['Flame Strike', 1]], defesa: [['Heal Friend', 70], ['Mass Healing', 65], ['Ultimate Healing', 60]], suporte: ['Heal Party'] } } },
+        { id: 'energy-lucasdela', hunt: 'Energy Portal', huntId: 225, autor: 'lucasdela', data: '19/10', titulo: 'Energy Portal (lucasdela, 19/10)',
+          lure: '', skills: '', nota: '', nivel: '', obs: 'lucasdela (nível 156): "setup basicão só pra diária; quer mais profit, deixa o kina de utamo tempo". Personagem "Lucas Knight de Leve".', estatisticas: { xpH: '119,8k', lucroH: '+138,7k', nivel: 156 },
+          chars: {
+            KNIGHT: { vida: ['Great Health Potion', 38], mana: ['Mana Potion', 30], ataque: [['Fierce Berserk', 2], ['Berserk', 2], ['Groundshaker', 2], ['Lesser Front Sweep', 1]], defesa: [['Intense Recovery', 85], ['Wound Cleansing', 70], ['Intense Wound Cleansing', 30]], suporte: ['Protector'] },
+            PALADIN: { vida: ['Great Health Potion', 38], mana: ['Mana Potion', 6], ataque: [['Divine Caldera', 2], ['avalanche rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Intense Healing', 85], ['Salvation', 60]], suporte: ['Protect Party'] },
+            SORCERER: { vida: ['Health Potion', 39], mana: ['Mana Potion', 7], ataque: [['Great Fire Wave', 1], ['avalanche rune', 2], ['Ultimate Flame Strike', 1], ['Ice Strike', 1]], defesa: [['Ultimate Healing', 70]], suporte: ['Enchant Party'] },
+            DRUID: { vida: ['Health Potion', 40], mana: ['Mana Potion', 20], ataque: [['Strong Ice Wave', 1], ['avalanche rune', 2], ['Strong Ice Strike', 1], ['Ultimate Ice Strike', 1]], defesa: [['Heal Friend', 75], ['Mass Healing', 70]], suporte: ['Heal Party'] } } },
+        { id: 'fire-lucasdela', hunt: 'Fire Portal', huntId: 226, autor: 'lucasdela', data: '19/10', titulo: 'Fire Portal (lucasdela, 19/10)',
+          lure: '', skills: '', nota: '', nivel: '', obs: 'lucasdela: "mesma configuração do Energy Portal, o profit baixa um pouco e estabiliza em uns 20 min; abaixo do nível 145 faça o kina full def". Esta é a variante do Knight de utamo tempo (Protector) com o Druida de cura ajustada: "reduz um pouco a xp; dá pra baixar o pot do ED pra 10 %; só consegui manter no nv 140+". Paladino e Feiticeiro copiados do Energy Portal: o autor disse que usa a mesma configuração nos dois', estatisticas: { xpH: '274,3k', lucroH: '+160,8k', nivel: 156 },
+          chars: {
+            KNIGHT: { vida: ['Great Health Potion', 38], mana: ['Mana Potion', 10], ataque: [['Lesser Front Sweep', 1]], defesa: [['Wound Cleansing', 85], ['Intense Wound Cleansing', 20]], suporte: ['Protector'] },
+            PALADIN: { vida: ['Great Health Potion', 38], mana: ['Mana Potion', 6], ataque: [['Divine Caldera', 2], ['avalanche rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Intense Healing', 85], ['Salvation', 60]], suporte: ['Protect Party'] },
+            SORCERER: { vida: ['Health Potion', 39], mana: ['Mana Potion', 7], ataque: [['Great Fire Wave', 1], ['avalanche rune', 2], ['Ultimate Flame Strike', 1], ['Ice Strike', 1]], defesa: [['Ultimate Healing', 70]], suporte: ['Enchant Party'] },
+            DRUID: { vida: ['Health Potion', 40], mana: ['Mana Potion', 20], ataque: [['Strong Ice Wave', 1], ['avalanche rune', 2], ['Strong Ice Strike', 1], ['Ultimate Ice Strike', 1]], defesa: [['Heal Friend', 70], ['Mass Healing', 60]], suporte: ['Heal Party'] } } },
+        { id: 'ice-lucasdela', hunt: 'Ice Portal', huntId: 227, autor: 'lucasdela', data: '19/10', titulo: 'Ice Portal (lucasdela, 19/10)',
+          lure: '', skills: '', nota: '', nivel: '', obs: 'lucasdela (nível 157): "Agora to assim em ice portal" — corrigido para avalanche rune (antes usava great fireball por engano e os bichos não morriam).', estatisticas: { xpH: '213,9k', lucroH: '+18,9k', nivel: 157 },
+          chars: {
+            KNIGHT: { vida: ['Great Health Potion', 36], mana: ['Mana Potion', 30], ataque: [['Lesser Front Sweep', 1]], defesa: [['Intense Recovery', 94], ['Wound Cleansing', 89], ['Intense Wound Cleansing', 30]], suporte: ['Protector'] },
+            PALADIN: { vida: ['Great Health Potion', 40], mana: ['Mana Potion', 8], ataque: [['Divine Caldera', 2], ['avalanche rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Salvation', 70], ['Intense Healing', 85]], suporte: ['Protect Party'] },
+            SORCERER: { vida: ['Health Potion', 40], mana: ['Mana Potion', 10], ataque: [['Energy Wave', 1], ['Great Fire Wave', 1], ['avalanche rune', 2], ['Ultimate Energy Strike', 1]], defesa: [['Ultimate Healing', 59], ['Intense Healing', 70]], suporte: ['Enchant Party'] },
+            DRUID: { vida: ['Health Potion', 40], mana: ['Great Mana Potion', 20], ataque: [['Strong Ice Wave', 1], ['avalanche rune', 2], ['Strong Ice Strike', 1], ['Ultimate Ice Strike', 1]], defesa: [['Heal Friend', 75], ['Mass Healing', 66]], suporte: ['Heal Party'] } } },
+        { id: 'behemoth-matheustlm', hunt: 'The Behemoth Quest', huntId: 188, autor: 'Matheustlm', data: '16/10', titulo: 'The Behemoth Quest (Matheustlm, 16/10)',
+          lure: '', skills: '', nota: '', nivel: '', obs: 'Matheustlm (nível 96–100, conta free): "Behe quest deu mais certo que bog pra mim"; setup enviado a pedido do Gabs. KNIGHT: poção de mana desligada no post poção do Paladino lida pelo ícone: Great Spirit Potion; pode ser a Ultimate PALADIN: poção de mana desligada no post SORCERER: poção de mana desligada no post DRUID: poção de mana desligada no post', estatisticas: { xpH: '88,2k', lucroH: '+117,7k', nivel: 96 },
+          chars: {
+            KNIGHT: { vida: ['Great Health Potion', 30], mana: ['Mana Potion', 0], ataque: [['Fierce Berserk', 2], ['Berserk', 2], ['Groundshaker', 2], ['Whirlwind Throw', 1]], defesa: [['Wound Cleansing', 85], ['Intense Wound Cleansing', 10]] },
+            PALADIN: { vida: ['Great Spirit Potion', 10], mana: ['Great Mana Potion', 0], ataque: [['Divine Caldera', 2], ['avalanche rune', 2], ['Ethereal Spear', 1], ['Strong Ethereal Spear', 1]], defesa: [['Light Healing', 85], ['Intense Healing', 60], ['Divine Healing', 50], ['Salvation', 30]] },
+            SORCERER: { vida: ['Health Potion', 30], mana: ['Great Mana Potion', 0], ataque: [['Energy Wave', 2], ['avalanche rune', 2], ['Ice Strike', 1]], defesa: [['Ultimate Healing', 60], ['Intense Healing', 85]] },
+            DRUID: { vida: ['Health Potion', 30], mana: ['Great Mana Potion', 0], ataque: [['Strong Ice Wave', 2], ['avalanche rune', 2], ['Strong Ice Strike', 1], ['Ice Wave', 2]], defesa: [['Ultimate Healing', 60], ['Heal Friend', 50], ['Intense Healing', 85]] } } },
+        { id: 'dragonlair-venenu', hunt: 'Dragon Lair', huntId: 46, autor: 'Venenu', data: '10/10', titulo: 'Dragon Lair (Venenu, 10/10)',
+          lure: '', skills: '', nota: '', nivel: '', obs: 'Venenu (nível 82): "Preset Dragon Lord – Lure 8 Extremo – hunt para bestiário". KNIGHT: poção de mana desligada no post PALADIN: poção de mana desligada no post SORCERER: poção de mana desligada no post', estatisticas: { xpH: '88,8k', lucroH: '+86,7k', nivel: 82 }, posicoes: 'Sem imagem de posição; na tela, os 4 personagens ficam espalhados no corredor de lava (um à esquerda, Venenu no centro, outro à direita).',
+          chars: {
+            KNIGHT: { vida: ['Health Potion', 30], mana: ['Mana Potion', 0], ataque: [['Berserk', 2], ['Lesser Front Sweep', 1]], defesa: [['Wound Cleansing', 70], ['Recovery', 30]], suporte: ['Train Party'] },
+            PALADIN: { vida: ['Health Potion', 30], mana: ['Mana Potion', 0], ataque: [['avalanche rune', 2], ['Divine Caldera', 1]], defesa: [['Intense Healing', 70]], suporte: ['Protect Party'] },
+            SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 0], ataque: [['Energy Wave', 2], ['avalanche rune', 2], ['Great Energy Beam', 1], ['Energy Beam', 1]], defesa: [['Intense Healing', 70]], suporte: ['Enchant Party'] },
+            DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 20], ataque: [['Strong Ice Wave', 2], ['Strong Ice Wave', 1], ['avalanche rune', 1], ['Chill Out', 2]], defesa: [['Heal Friend', 60], ['Intense Healing', 70]], suporte: ['Heal Party'] } } },
+        { id: 'holy-nanerz', hunt: 'Holy Portal', huntId: 228, autor: 'NaneRz', data: '16/10', titulo: 'Holy Portal (NaneRz, 16/10)',
+          lure: '', skills: '', nota: '', nivel: '', obs: 'NaneRz (nível 102): "HOLY PORTAL". Personagem Nanerzord. KNIGHT: poção de mana desligada no post poção do Paladino lida pelo ícone: Great Spirit Potion; pode ser a Ultimate PALADIN: poção de mana desligada no post', estatisticas: { xpH: '156,8k', lucroH: '-9,6k', nivel: 102 }, posicoes: 'Nanerzord sozinho à esquerda em terreno arenoso perto da água; os outros 3 agrupados à direita/embaixo junto à vegetação (dois lado a lado e um abaixo), todos de roupa roxa.',
+          chars: {
+            KNIGHT: { vida: ['Great Health Potion', 30], mana: ['Mana Potion', 0], ataque: [['Berserk', 2], ['Brutal Strike', 1], ['Front Sweep', 1]], defesa: [['Wound Cleansing', 50], ['Recovery', 30]], suporte: ['Train Party'] },
+            PALADIN: { vida: ['Great Spirit Potion', 70], mana: ['Mana Potion', 0], ataque: [['Divine Caldera', 2], ['thunderstorm rune', 2], ['Ethereal Spear', 1], ['Strong Ethereal Spear', 1]], defesa: [['Divine Healing', 85], ['Salvation', 40]], suporte: ['Protect Party'] },
+            SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 30], ataque: [['Energy Wave', 2], ['thunderstorm rune', 1], ['Strong Energy Strike', 1]], defesa: [['Intense Healing', 70], ['Ultimate Healing', 50]] },
+            DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 30], ataque: [['Strong Ice Wave', 8], ['thunderstorm rune', 2], ['Energy Strike', 1]], defesa: [['Heal Friend', 61], ['Mass Healing', 50], ['Intense Healing', 70]], suporte: ['?', 'Magic Shield'] } } },
+        { id: 'behemoth-kairusz', hunt: 'The Behemoth Quest', huntId: 188, autor: 'KairusZ', data: '11/10', titulo: 'The Behemoth Quest (KairusZ, 11/10)',
+          lure: '', skills: '', nota: '', nivel: '', obs: 'KairusZ (nível 108): "Acredito que com uma build melhor daria para extrair mais lucro, mas essa config foi a que se enquadrou no meu bolso. Deve ser possível otimizar para mais profit/xp." KNIGHT: poção de mana desligada no post poção do Paladino lida pelo ícone: Great Spirit Potion; pode ser a Ultimate', estatisticas: { xpH: '106,9k', lucroH: '+130k', nivel: 108 }, posicoes: 'KairusZ (Knight) encostado em 2 Behemoths no meio da sala de pedra; Paladino e magos à direita.',
+          chars: {
+            KNIGHT: { vida: ['Great Health Potion', 40], mana: ['Mana Potion', 0], ataque: [['Fierce Berserk', 3], ['Brutal Strike', 1], ['Whirlwind Throw', 1], ['Lesser Front Sweep', 1]], defesa: [['Wound Cleansing', 50]], suporte: ['Train Party'] },
+            PALADIN: { vida: ['Great Spirit Potion', 70], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 4], ['avalanche rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Salvation', 85], ['Intense Healing', 70], ['Light Healing', 70], ['Divine Healing', 70]], suporte: ['Protect Party'] },
+            SORCERER: { vida: ['Health Potion', 85], mana: ['Mana Potion', 30], ataque: [['Energy Wave', 2], ['avalanche rune', 2], ['Energy Beam', 1], ['Death Strike', 1]], defesa: [['Intense Healing', 70], ['Light Healing', 60], ['Ultimate Healing', 70]], suporte: ['Magic Shield', 'Enchant Party'] },
+            DRUID: { vida: ['Health Potion', 70], mana: ['Mana Potion', 30], ataque: [['Strong Ice Wave', 4], ['avalanche rune', 2], ['Ultimate Ice Strike', 1], ['Strong Ice Strike', 1]], defesa: [['Heal Friend', 60]], suporte: ['Heal Party', 'Magic Shield'] } } },
+        { id: 'lizard-zumpano1', hunt: 'Lizard City', huntId: 62, autor: 'Zumpano1', data: '17/10', titulo: 'Lizard City (Zumpano1, 17/10)',
+          lure: '', skills: '', nota: '', nivel: '', obs: 'Zumpano1: "Lizard" — setup para exp. poção do Paladino lida pelo ícone: Great Spirit Potion; pode ser a Ultimate PALADIN: poção de mana desligada no post', estatisticas: { xpH: '254,5k', lucroH: '+123,2k', nivel: 118 }, posicoes: 'lizard1/lizard2: o grupo fica num salão de piso escuro logo abaixo de uma faixa de lava/fogo, encostado à direita de uma grade 3×3 de anéis azuis (campos de energia); os monstros chegam pela direita e por cima. \'Zumpano\' está dentro da grade.',
+          chars: {
+            KNIGHT: { vida: ['Health Potion', 30], mana: ['Mana Potion', 30], ataque: [['Berserk', 2], ['Lesser Front Sweep', 1]], defesa: [['Intense Wound Cleansing', 30], ['Wound Cleansing', 70]] },
+            PALADIN: { vida: ['Great Spirit Potion', 40], mana: ['Mana Potion', 0], ataque: [['avalanche rune', 2], ['Strong Ethereal Spear', 1]], defesa: [['Intense Healing', 70]], suporte: ['Protect Party'] },
+            SORCERER: { vida: ['Health Potion', 40], mana: ['Mana Potion', 30], ataque: [['Energy Wave', 3], ['avalanche rune', 2], ['Ultimate Energy Strike', 1]], defesa: [['Intense Healing', 60]], suporte: ['Enchant Party', 'Magic Shield'] },
+            DRUID: { vida: ['Health Potion', 40], mana: ['Mana Potion', 30], ataque: [['Strong Ice Wave', 2], ['avalanche rune', 2], ['Ultimate Ice Strike', 1]], defesa: [['Heal Friend', 50], ['Intense Healing', 60]], suporte: ['Heal Party', 'Magic Shield'] } } },
+        { id: 'thunderscar-gabs', hunt: 'Thunderscar Peak', huntId: 183, autor: 'Gabs', data: '16/10', titulo: 'Thunderscar Peak (Gabs, 16/10)',
+          lure: '', skills: '', nota: '', nivel: '', obs: 'Gabs: "Aq mano, boa sorte (Thunderscar Peak)". PALADIN: poção de mana desligada no post',
+          chars: {
+            KNIGHT: { vida: ['Health Potion', 45], mana: ['Mana Potion', 20], ataque: [['Fierce Berserk', 3], ['Berserk', 2], ['Lesser Front Sweep', 1], ['Brutal Strike', 1]], defesa: [['Wound Cleansing', 70], ['Intense Wound Cleansing', 30]], suporte: ['Train Party'] },
+            PALADIN: { vida: ['Health Potion', 50], mana: ['Mana Potion', 0], ataque: [['Divine Caldera', 2], ['avalanche rune', 3], ['Lesser Ethereal Spear', 1]], defesa: [['Intense Healing', 70]], suporte: ['Protect Party'] },
+            SORCERER: { vida: ['Health Potion', 50], mana: ['Mana Potion', 50], ataque: [['Great Fire Wave', 2], ['avalanche rune', 2], ['Strong Flame Strike', 1], ['Flame Strike', 1]], defesa: [['Intense Healing', 60]], suporte: ['Enchant Party'] },
+            DRUID: { vida: ['Health Potion', 50], mana: ['Mana Potion', 50], ataque: [['Strong Ice Wave', 2], ['avalanche rune', 2], ['Strong Ice Strike', 1], ['Ultimate Ice Strike', 1]], defesa: [['Heal Friend', 70], ['Mass Healing', 60], ['Intense Healing', 60]], suporte: ['Heal Party'] } } },
+        { id: 'bottom-specter', hunt: 'Bottom of the Ocean', huntId: 197, autor: 'Specter', data: '14/10', titulo: 'Bottom of the Ocean (Specter, 14/10)',
+          lure: '', skills: '', nota: '', nivel: '110–130', obs: 'Specter: "180–190k/h raw, profit 70–100k. Mages com utamo vita (sem ele morriam combados). ML 51+10, EK 62+4, RP 61+4. Proteção física no EK (spats + zao legs), ML nos mages. Para o mid level 110–130."', posicoes: 'Os 4 em linha horizontal no fundo do mar, com ~3 sqm entre cada um: da esquerda para a direita, MS (vermelho) sobre o coral rosa, Symbioth (EK, roupa azul-petróleo) na pedra clara do centro, RP (amarelo) e ED (azul) à direita.',
+          chars: {
+            KNIGHT: { vida: ['Great Health Potion', 30], mana: ['Mana Potion', 40], ataque: [['Fierce Berserk', 4], ['Berserk', 2], ['Lesser Front Sweep', 1], ['Brutal Strike', 1]], defesa: [['Intense Wound Cleansing', 40], ['Wound Cleansing', 85]] },
+            PALADIN: { vida: ['Great Health Potion', 30], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2], ['thunderstorm rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Divine Healing', 70]] },
+            SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Energy Wave', 2], ['thunderstorm rune', 2], ['Strong Energy Strike', 1], ['Energy Strike', 1]], defesa: [['Intense Healing', 75]], suporte: ['Enchant Party', 'Magic Shield'] },
+            DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Terra Wave', 2], ['stone shower rune', 2], ['Strong Terra Strike', 1], ['Terra Strike', 1]], defesa: [['Heal Friend', 70], ['Mass Healing', 60], ['Ultimate Healing', 60]], suporte: ['Heal Party', 'Magic Shield'] } } },
+        { id: 'lizard-specter', hunt: 'Lizard City', huntId: 62, autor: 'Specter', data: '14/10', titulo: 'Lizard City (Specter, 14/10)',
+          lure: '', skills: '', nota: '', nivel: '110–130', obs: 'Specter: "235–240k/h raw, profit 30–60k. Mesmo setup da Bottom of the Ocean, só mudando as spells/runas da PT para gelo; proteção a fogo ajuda aqui."', estatisticas: { xpH: '277,2k', lucroH: '+29,6k', nivel: 147 }, posicoes: 'Symbioth (EK) fica à esquerda, isolado, junto da escada/parede com os lagartos chegando por ele (ondas de gelo visíveis em volta); RP (amarelo), ED (azul) e MS (vermelho) ficam lado a lado, adjacentes, numa linha à direita do EK.',
+          chars: {
+            KNIGHT: { vida: ['Great Health Potion', 30], mana: ['Mana Potion', 40], ataque: [['Fierce Berserk', 4], ['Berserk', 2], ['Lesser Front Sweep', 1], ['Brutal Strike', 1]], defesa: [['Intense Wound Cleansing', 40], ['Wound Cleansing', 85]] },
+            PALADIN: { vida: ['Great Health Potion', 30], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2], ['thunderstorm rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Divine Healing', 70]] },
+            SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Energy Wave', 2], ['thunderstorm rune', 2], ['Strong Energy Strike', 1], ['Energy Strike', 1]], defesa: [['Intense Healing', 75]], suporte: ['Enchant Party', 'Magic Shield'] },
+            DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Terra Wave', 2], ['stone shower rune', 2], ['Strong Terra Strike', 1], ['Terra Strike', 1]], defesa: [['Heal Friend', 70], ['Mass Healing', 60], ['Ultimate Healing', 60]], suporte: ['Heal Party', 'Magic Shield'] } } },
+        { id: 'poi-jhefy', hunt: 'Pits of Inferno Entrance', huntId: 49, autor: 'Jhefy', data: '08/10', titulo: 'Pits of Inferno Entrance (Jhefy, 08/10)',
+          lure: '', skills: '', nota: '', nivel: '', obs: 'Jhefy (nível 116): posts "POI" e "KN-PALA-SORCE-DRUID". Knight no preset 3, os outros no 1; mana do Knight e do Paladino desligada. KNIGHT: poção de mana desligada no post PALADIN: poção de mana desligada no post', estatisticas: { xpH: '98,6k', lucroH: '+83,9k', nivel: 116 }, posicoes: 'poi0: corredor de lava do POI; três personagens em fila horizontal à esquerda e o quarto (de vermelho, com nome \'Jhefy\' por cima) um pouco à direita, cercado por 6 campos/criaturas azuis em 2 colunas × 3 linhas; buraco escuro ao norte. Sessão de 5 min (168 abates), nível 116.',
+          chars: {
+            KNIGHT: { vida: ['Great Health Potion', 45], mana: ['Mana Potion', 0], ataque: [['Fierce Berserk', 1]], defesa: [['Intense Wound Cleansing', 40]], suporte: ['Protector'] },
+            PALADIN: { vida: ['Great Health Potion', 45], mana: ['Mana Potion', 0], ataque: [['Divine Caldera', 2], ['avalanche rune', 1]], defesa: [['Divine Healing', 50]], suporte: ['Protect Party'] },
+            SORCERER: { vida: ['Health Potion', 50], mana: ['Mana Potion', 30], ataque: [['Rage of the Skies', 2], ['avalanche rune', 1]], defesa: [['Ultimate Healing', 50]], suporte: ['Enchant Party'] },
+            DRUID: { vida: ['Health Potion', 50], mana: ['Great Mana Potion', 40], ataque: [['Strong Ice Wave', 2], ['avalanche rune', 1]], defesa: [['Mass Healing', 70], ['Ultimate Healing', 45]], suporte: ['Heal Party'] } } },
+        { id: 'bog-malachias', hunt: 'Bog Raiders Yalahar', huntId: 151, autor: 'malachias', data: '11/10', titulo: 'Bog Raiders Yalahar (malachias, 11/10)',
+          lure: '', skills: '', nota: '', nivel: '', obs: 'malachias (nível 71, skills Knight 60+2 · Paladin 64+3 · Sorcerer 45+2 · Druid 45+2): "to em bog fazendo 52k xp raw e 30k gold" — a comunidade respondeu que falta regen de mana nos magos. KNIGHT: poção de mana desligada no post PALADIN: poção de mana desligada no post', posicoes: 'Os 4 personagens ficam lado a lado na borda entre a grama e a terra escura; o Feiticeiro (\'Malachias\', de vermelho) no meio, com as waves/campos batendo nos Bog Raiders ao redor dele.',
+          chars: {
+            KNIGHT: { vida: ['Strong Health Potion', 30], mana: ['Mana Potion', 0], ataque: [['Berserk', 2], ['Lesser Front Sweep', 1]], defesa: [['Intense Wound Cleansing', 70]] },
+            SORCERER: { vida: ['Health Potion', 60], mana: ['Mana Potion', 30], ataque: [['Energy Wave', 2], ['thunderstorm rune', 2]], defesa: [['Light Healing', 60]] },
+            DRUID: { vida: ['Health Potion', 60], mana: ['Mana Potion', 30], ataque: [['Strong Ice Wave', 2], ['thunderstorm rune', 2]], defesa: [['Heal Friend', 50]] },
+            PALADIN: { vida: ['Health Potion', 60], mana: ['Mana Potion', 0], ataque: [['Divine Caldera', 2], ['thunderstorm rune', 2]], defesa: [['Intense Healing', 70]] } } }
+    ];
+    const DC_VOC_PT = { KNIGHT: 'Cavaleiro', PALADIN: 'Paladino', SORCERER: 'Feiticeiro', DRUID: 'Druida' };
+    const DC_VOC_CAT = { KNIGHT: 'knight', PALADIN: 'paladin', SORCERER: 'sorcerer', DRUID: 'druid' };
+    const dcNorm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    /* setups de uma hunt: pelo id do catálogo ou pelo nome */
+    function dcSetupsDaHunt(hunt, lista) {
+        if (!hunt) return [];
+        const nome = dcNorm(hunt.title || hunt.name);
+        return (lista || SETUPS_DISCORD).filter(s => (s.huntId != null && hunt.id != null && Number(s.huntId) === Number(hunt.id)) || (nome && dcNorm(s.hunt) === nome));
+    }
+    /* o battle config de uma vocação a partir do setup: parte da config ATUAL (o que o post não diz fica), valida cada magia no catálogo
+     * (nome, vocação e nível) e devolve {cfg, avisos}. cfg null = o setup não tem esta vocação. */
+    function dcConfigDe(setup, voc, atual, ctx) {
+        ctx = ctx || {}; const avisos = [];
+        const ch = setup && setup.chars && setup.chars[voc];
+        if (!ch) return { cfg: null, avisos: [`o setup não traz a barra do ${DC_VOC_PT[voc] || voc}`] };
+        const cat = ctx.magias || [], nivel = Number(ctx.nivel) || 0, pocoes = new Set(ctx.pocoes || []);
+        const acha = (nome) => cat.find(m => m.name === nome) || cat.find(m => dcNorm(m.name) === dcNorm(nome)) || null;
+        const ehPocao = (nome) => pocoes.size ? pocoes.has(nome) : /potion/i.test(nome || '');
+        const valida = (nome, onde) => {
+            if (!nome || nome === '?' || /^\?/.test(nome)) { avisos.push(`${onde}: ícone não identificado ("?") — slot pulado`); return null; }
+            const m = acha(nome);
+            if (!m) { avisos.push(`${onde}: "${nome}" não está no catálogo — slot pulado`); return null; }
+            const vocs = (m.vocations || []).map(v => String(v).toLowerCase());
+            if (vocs.length && !vocs.some(v => v.includes(DC_VOC_CAT[voc]))) { avisos.push(`${onde}: ${m.name} não é do ${DC_VOC_PT[voc]} (vocação) — slot pulado`); return null; }
+            if (nivel && Number(m.level) > nivel) { avisos.push(`${onde}: ${m.name} pede nível ${m.level} (você tem ${nivel}) — slot pulado`); return null; }
+            return m.name;
+        };
+        const base = atual || {};
+        const cfg = {
+            heals: (base.heals || []).filter(Boolean).map(h => ({ name: h.name, percent: h.percent != null ? h.percent : 60 })),
+            manaPotion: base.manaPotion ? { name: base.manaPotion.name, percent: base.manaPotion.percent != null ? base.manaPotion.percent : 0 } : null,
+            skills: (base.skills || []).slice(0, 4).map(x => x || null), minCreatures: Object.assign({}, base.minCreatures || {}),
+            supports: (base.supports || []).slice(0, 2).map(x => x || null)
+        };
+        while (cfg.skills.length < 4) cfg.skills.push(null);
+        while (cfg.supports.length < 2) cfg.supports.push(null);
+        if (typeof base.ammo === 'string' && base.ammo) cfg.ammo = base.ammo;
+        if (Array.isArray(ch.vida) && ch.vida[0]) {
+            if (!ehPocao(ch.vida[0])) avisos.push(`vida: "${ch.vida[0]}" não é uma poção conhecida — mantida a sua`);
+            else cfg.heals = [{ name: ch.vida[0], percent: Number(ch.vida[1]) || 0 }].concat(cfg.heals.filter(h => !ehPocao(h.name)));
+        }
+        if (Array.isArray(ch.mana) && ch.mana[0]) {
+            if (!ehPocao(ch.mana[0])) avisos.push(`mana: "${ch.mana[0]}" não é uma poção conhecida — mantida a sua`);
+            else cfg.manaPotion = { name: ch.mana[0], percent: Number(ch.mana[1]) || 0 };
+        }
+        if (Array.isArray(ch.defesa)) {
+            const curas = [];
+            ch.defesa.forEach((d, i) => { const nome = valida(d && d[0], `defesa ${i + 1}`); if (nome) curas.push({ name: nome, percent: Number(d[1]) || 0 }); });
+            cfg.heals = cfg.heals.filter(h => ehPocao(h.name)).concat(curas).slice(0, 5);
+        }
+        if (Array.isArray(ch.ataque)) {
+            const skills = [], mc = {};
+            ch.ataque.forEach((a, i) => { const nome = valida(a && a[0], `ataque ${i + 1}`); if (nome && skills.length < 4) { skills.push(nome); mc[nome] = Math.min(8, Math.max(1, Number(a[1]) || 1)); } });
+            while (skills.length < 4) skills.push(null);
+            cfg.skills = skills; cfg.minCreatures = mc;
+        }
+        if (Array.isArray(ch.suporte)) {
+            const sup = [];
+            ch.suporte.forEach((nome, i) => { const n = valida(nome, `suporte ${i + 1}`); if (n && sup.length < 2) sup.push(n); });
+            while (sup.length < 2) sup.push(null);
+            cfg.supports = sup;
+        }
+        if (typeof ch.municao === 'string' && ch.municao) cfg.ammo = ch.municao;
+        return { cfg, avisos };
+    }
+    /* a barra em palavras, para a tela */
+    function dcResumo(setup, voc) {
+        const ch = setup && setup.chars && setup.chars[voc]; if (!ch) return '—';
+        const partes = [];
+        if (ch.vida) partes.push(`vida ${ch.vida[0]} ≤${ch.vida[1]} %`);
+        if (ch.mana) partes.push(`mana ${ch.mana[0]} ≤${ch.mana[1]} %`);
+        if (ch.ataque && ch.ataque.length) partes.push('ataque ' + ch.ataque.map(a => `${a[0]} ≥${a[1]}`).join(' · '));
+        if (ch.defesa && ch.defesa.length) partes.push('defesa ' + ch.defesa.map(d => `${d[0]} ≤${d[1]} %`).join(' · '));
+        if (ch.suporte && ch.suporte.length) partes.push('suporte ' + ch.suporte.join(' · '));
+        if (ch.municao) partes.push('munição ' + ch.municao);
+        return partes.join(' | ');
+    }
+    /* todos os nomes de magia/runa/poção usados (para o teste de integridade) */
+    function dcNomesUsados(lista) {
+        const out = new Set();
+        for (const s of lista || SETUPS_DISCORD) {
+            for (const ch of Object.values(s.chars || {})) {
+                if (ch.vida) out.add(ch.vida[0]);
+                if (ch.mana) out.add(ch.mana[0]);
+                (ch.ataque || []).forEach(a => out.add(a[0])); (ch.defesa || []).forEach(d => out.add(d[0])); (ch.suporte || []).forEach(x => out.add(x));
+            }
+        }
+        return [...out];
+    }
+    /* @@DISCORD-FIM */
 
     /* =========================================================================
      *  TELAS
@@ -8814,7 +9160,7 @@
         const ocupado = scanOcupado() || !!travaJogo();
         const dis = scanOcupado() ? 'disabled' : '';
         const nMapas = c.mapas.filter(id => (CAT.hunts || []).some(h => h.id === id)).length;
-        const nVar = c.comparar ? (c.variantes || []).filter(m => MODELOS[m] && m !== 'boss').length : 1;
+        const nVar = c.comparar ? (c.variantes || []).filter(m => MODELOS[m] && m !== 'boss' && m !== 'discord').length : 1;
         const nMed = nMapas * nVar, estMin = Math.max(1, Math.round(nMed * (c.minutos + 0.5)));
         const btTxt = SCAN.ativo ? `Parar · ${Math.max(1, SCAN.idx + 1)}/${SCAN.fila.length}` : scanOcupado() ? (SCAN.fase === 'restaurando' || SCAN.restaurando ? 'devolvendo o jogo…' : 'terminando…')
             : `Iniciar · ${nMapas} mapa${nMapas === 1 ? '' : 's'}${nVar > 1 ? ' × ' + nVar : ''} · ~${estMin} min`;
@@ -8920,7 +9266,7 @@
      *  personagem o gasto/h e as runas/h, fichas com "2+ alvos", extras em
      *  português ("poção de mana ≤30%" — saía "mana Mana ≤30") e os slots que a
      *  Magia cortou por nunca dispararem (r.mortos) numa linha discreta. */
-    const MODELO_CURTO = { economica: 'Eco', equilibrado: 'Equil', area: 'Área', inteligente: 'Intel', boss: 'Boss' };
+    const MODELO_CURTO = { economica: 'Eco', equilibrado: 'Equil', area: 'Área', inteligente: 'Intel', boss: 'Boss', discord: 'Discord' };
     /* nome da poção como o painel fala: "Strong Mana Potion" → "poção de mana forte" */
     function nomePocao(n) {
         const s = String(n || '');
@@ -8936,6 +9282,38 @@
         partes.push(sup.length ? sup.join(' + ') : 'sem suporte');
         if (x.ammo) partes.push('munição: ' + x.ammo);
         return partes.join(' · ');
+    }
+    /* v2.26.0 — a ficha do setup da comunidade para a hunt escolhida */
+    function telaDiscord(h) {
+        const ls = dcSetupsDaHunt(h), s = dcEscolhido(h), ocupado = _aplicando || _aprendendo;
+        const todas = [...new Set(SETUPS_DISCORD.map(x => x.hunt))].sort((a, b) => a.localeCompare(b));
+        const lista = aj('dc-lista', `<div class="tb-mut tb-eq-nota">${todas.map(nm => { const n = SETUPS_DISCORD.filter(x => x.hunt === nm).length; return `${escHtml(nm)}${n > 1 ? ' (' + n + ')' : ''}`; }).join(' · ')}</div><div class="tb-mut tb-eq-nota">fonte: <a href="${DC_FONTE}" target="_blank" rel="noopener">servidor do Tibidle no Discord</a>, guias "Logbook de Hunts" e "Aoba meu povo" (lidos em 19/10)</div>`, `? ${todas.length} hunts com setup da comunidade`);
+        if (!s) return `<div class="tb-cx" style="margin-top:6px">a comunidade ainda não postou setup para <b>${escHtml(h.title)}</b> — use outro modelo aqui.</div>` + lista;
+        let c = '';
+        if (ls.length > 1) c += `<select id="tb-dc-setup" aria-label="setup da comunidade" style="margin-top:4px">` + ls.map(x => `<option value="${escHtml(x.id)}"${x.id === s.id ? ' selected' : ''}>${escHtml(x.titulo)}</option>`).join('') + `</select>`;
+        c += `<div class="tb-cx" style="margin-top:6px"><b>${escHtml(s.titulo)}</b><div class="tb-mut tb-eq-nota">${escHtml([s.autor ? 'por ' + s.autor + (s.data ? ' (' + s.data + ')' : '') : '', s.lure ? 'lure ' + s.lure : '', s.skills ? 'skills do autor: ' + s.skills : '', s.nivel ? 'nível ' + s.nivel : '', s.nota ? 'nota ' + s.nota : ''].filter(Boolean).join(' · '))}</div>` +
+            (s.estatisticas ? `<div class="tb-mut tb-eq-nota">no post: ${escHtml([s.estatisticas.xpH ? s.estatisticas.xpH + ' xp/h' : '', s.estatisticas.lucroH ? 'lucro ' + s.estatisticas.lucroH + '/h' : '', s.estatisticas.nivel ? 'nível ' + s.estatisticas.nivel : ''].filter(Boolean).join(' · '))}</div>` : '') +
+            (s.obs ? `<div class="tb-mut tb-eq-nota">${escHtml(s.obs)}</div>` : '') + (s.posicoes ? `<div class="tb-mut tb-eq-nota">posição no mapa (não dá para aplicar daqui): ${escHtml(s.posicoes)}</div>` : '');
+        for (const voc of VOCS) {
+            const atual = configAtiva(voc);
+            const r = dcConfigDe(s, voc, atual ? normalizarConfig(atual) : null, dcCtx());
+            c += `<div style="margin-top:4px"><b>${escHtml(VOC_ROTULO[voc] || voc)}</b>: <span class="tb-eq-nota">${escHtml(dcResumo(s, voc))}</span>` + (r.avisos.length ? `<div class="tb-av tb-eq-nota">${r.avisos.map(escHtml).join('<br>')}</div>` : '') + `</div>`;
+        }
+        c += `</div>`;
+        c += `<button type="button" class="tb-bt pri tb-larga tb-grande" id="tb-aplicar-todos" ${ocupado || !socketAberto() ? 'disabled' : ''} style="margin-top:6px" title="${socketAberto() ? 'grava a barra inteira dos 4 pelo socket (vida, mana, ataque, defesa, suporte, munição); o que o post não diz fica como está' : 'preciso do socket do jogo — F5 com o helper instalado'}">${_aplicando ? 'APLICANDO…' : 'APLICAR O SETUP NOS 4'}</button>` +
+            `<div class="tb-mut tb-eq-nota">o que o post não diz (poção, cura, suporte) fica como está no seu perfil; magia que seu nível ou vocação não permite é pulada com aviso; o lure não muda. Nada é aplicado sozinho.</div>`;
+        const foto = ler('dc_foto', null);
+        if (foto && foto.profiles) c += `<div class="tb-linha" style="margin-top:4px"><button type="button" class="tb-bt" id="tb-dc-voltar" ${ocupado || !socketAberto() ? 'disabled' : ''} title="devolve o perfil dos 4 como estava antes do primeiro APLICAR do Discord (profiles_set; na caçada também o update_battle_config)">voltar ao que eu tinha antes do Discord</button><span class="tb-mut tb-eq-nota">foto de ${new Date(foto.t).toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}, antes de "${escHtml(foto.setup || '')}"</span></div>`;
+        return c + lista;
+    }
+    async function dcVoltar() {
+        const foto = ler('dc_foto', null);
+        if (!foto || !foto.profiles) { log('Discord: não há foto do perfil anterior', 'erro'); return; }
+        if (!socketAberto()) { log('Discord: preciso do socket do jogo para devolver o perfil', 'erro'); return; }
+        _aplicando = true; renderizar();
+        try { await scanRestaurarPerfis({ profiles: foto.profiles }, 'Discord'); guardar('dc_foto', null); }
+        catch (e) { falhou('Discord (voltar)', e); }
+        finally { _aplicando = false; renderizar(); }
     }
     function telaMagia() {
         garantirCssTelas();
@@ -8958,6 +9336,7 @@
         }
         if (!alvo) return corpo + `<div class="tb-mut" style="margin-top:6px">escolha a caçada para ver o plano</div>`;
         h = alvo;
+        if (modelo === 'discord') return corpo + telaDiscord(h);
         const r = montarPlano(modelo, h);
         if (r.erro) return corpo + `<div class="tb-cx tb-ruim">${escHtml(r.erro)}</div>`;
         const ocupado = _aplicando || _aprendendo;
@@ -9152,6 +9531,10 @@
         $$('[data-usar-palpite]', corpo).forEach(b => { b.onclick = () => { guardar('hunt_id', parseInt(b.dataset.usarPalpite)); renderizar(); }; });
         const selBoss = $('#tb-boss');
         if (selBoss) selBoss.onchange = () => { guardar('boss_nome', selBoss.value || null); renderizar(); };
+        const selDc = $('#tb-dc-setup');
+        if (selDc) selDc.onchange = () => { const h = alvoDoModelo(); if (h) guardar('dc_setup_' + h.id, selDc.value || null); renderizar(); };
+        const dcv = $('#tb-dc-voltar');
+        if (dcv && !dcv.disabled) ligarDoisToques(dcv, 'dc-voltar', 'CONFIRMAR: devolver o perfil dos 4', () => dcVoltar());
         /* v2.19.0 — ajuste fino: 2 toques por sugestão, ou todas */
         if (AJ.res && AJ.res.sugestoes) {
             AJ.res.sugestoes.forEach((sg, i) => { const b = $('#tb-aj-' + i); if (b && !b.disabled) ligarDoisToques(b, 'aj-' + sg.voc, `CONFIRMAR: aplicar no ${VOC_ROTULO[sg.voc] || sg.voc}`, () => ajAplicar([sg])); });
@@ -10962,7 +11345,7 @@
         return `<div class="pg-cx"><div class="pg-lin"><b>Completar marcos</b><span class="pg-mut">desligado</span></div>` +
             (valem.length ? valem.map(linhaHtml).join('') : '<div class="pg-mut">nenhum marco compensa agora.</div>') +
             (outras.length ? `<details class="pg-aj" data-k="pg-best-outras"><summary>não compensam (${outras.length})</summary><div>${outras.map(linhaHtml).join('')}</div></details>` : '') +
-            `<div class="pg-form"><label for="pg-best-modelo">kit</label><select id="pg-best-modelo">${Object.keys(MODELOS).filter(m => m !== 'boss').map(m => `<option value="${m}"${c.modelo === m ? ' selected' : ''}>${escHtml(nomeModelo(m))}</option>`).join('')}</select></div>` +
+            `<div class="pg-form"><label for="pg-best-modelo">kit</label><select id="pg-best-modelo">${Object.keys(MODELOS).filter(m => m !== 'boss' && m !== 'discord').map(m => `<option value="${m}"${c.modelo === m ? ' selected' : ''}>${escHtml(nomeModelo(m))}</option>`).join('')}</select></div>` +
             `<div class="pg-form"><label for="pg-best-fim">no fim, upar em</label><select id="pg-best-fim" style="flex:1;min-width:0"><option value="">onde estava antes</option>${huntsNivel.map(x => `<option value="${x.id}"${c.fim === 'hunt' && c.fimHunt === x.id ? ' selected' : ''}>[${x.levelMin || 1}] ${escHtml(x.title)}</option>`).join('')}</select></div>` +
             `<button type="button" class="tb-bt pri" id="pg-best-ir" ${fila.length ? '' : 'disabled'} style="width:100%;margin-top:4px">COMPLETAR (${fila.length}) · ~${pgHoras(tot)}</button>` +
             `<div class="pg-mut pg-peq">${autoHunt().on ? 'Mochila cheia: o Auto Hunt vende e volta para a caçada do bestiário.' : 'Mochila cheia (no limite do Auto Hunt): o próprio modo vende e volta.'} Morte para o modo. Com o jogo fechado o helper não troca de caçada.</div></div>`;

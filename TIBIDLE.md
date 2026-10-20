@@ -5562,3 +5562,44 @@ fragmentos de Refino T1 (≈ 15 k no Mercado).
   mais que re-rolar o que se guarda) e o Completo escolhe o plano de linha pela regra do "melhor" (maior ganho entre os que rendem
   ≥ 3/4 do melhor pt por milhão). Com os preços de 19/10 (Atributo T1 ≈ 506 k, Limpeza T2 ≈ 5 M) quatro linhas boas custam milhões:
   o ranking mostra o número em vez de esconder o plano.
+
+### 2.26.0 (19/10) — modelo "Discord": os setups da comunidade na aba Magia
+- Dono (19/10): "coloca uma nova [opção] chamada Discord; aí muda todo o setup para o que o cara oferece — eles falam a posição de todas as
+  magias: vida, mana, ataque, defesa e suporte; se tiver mais de 1 setup para o mesmo mapa, me dê a opção". Logado no Discord do Tibidle
+  (discord.gg/pPXNXu3dh) com a conta do dono no navegador do Playwright (QR no celular). Guias lidos: fórum "guias-da-comunidade" →
+  "Logbook De Hunts (Check Pins)" (Argonaut, 986 mensagens, 11 hunts em texto estruturado + ~25 setups em imagem de outros membros),
+  "Aoba meu povo. Symbioth aqui" (Specter: Bottom of the Ocean, Lizard City, Hive Tower, Hive Queen Chamber, Earth Portal, Warzone I –
+  Fungus; lucasdela: Energy/Fire/Ice Portal), "Setup - Hive Queen Chamber" (Theus), "qual hunt abrir primeiro" (Wyclif, tabela de 12
+  hunts a nível 120), "Rota do UP" (Atlas: Vamp 50–70, Ice Witch 70–80, Zao Entrance 80–95, Hive Tower 95–100, Lizard Chosen's Dojo
+  100–110, Lizard City 110+), "SISTEMA DE TREINO" (Kmzera), "FARMANDO MAIS GOLD" (vídeo). Imagens baixadas para o rascunho e
+  transcritas por agentes com uma folha de ícones gerada do próprio jogo (/assets/v208/icons/spells/<nome>.webp e items/3/<runeId>).
+- Bloco puro `@@DISCORD`: `SETUPS_DISCORD` (id, hunt, huntId, autor, data, título, lure, skills, nota, obs, estatísticas, posições,
+  chars{VOC:{vida, mana, ataque[[magia, ≥n]], defesa[[cura, ≤%]], suporte[], municao}}), `dcSetupsDaHunt(hunt)`, `dcConfigDe(setup, voc,
+  atual, ctx)` → battle config {heals (poção de vida primeiro + curas), manaPotion, skills + minCreatures, supports, ammo} partindo da
+  config ATUAL (o que o post não diz fica) e validando no catálogo (vocação, nível, "?") com avisos; `dcResumo`, `dcNomesUsados`.
+  6 testes em `testes/discord.test.js`.
+- Aba Magia: botão "Discord" nos modelos; `telaDiscord(h)` = seletor quando há mais de um setup para a hunt (`dc_setup_<huntId>`), ficha
+  (autor, lure, skills do autor, nota, obs, estatísticas do post, posição no mapa em texto — não dá para aplicar daqui), a barra de cada
+  personagem em palavras com os avisos da conta, APLICAR O SETUP NOS 4 (`aplicarDiscord` → `aplicarConfigSocket(voc, cfg)` =
+  update_battle_config na caçada + profiles_set no perfil ativo). O lure não muda. O Scan e o bestiário não usam o modelo Discord.
+- Posição dos personagens no mapa ("posição dos chares") não tem protocolo conhecido no socket (só a invasão tem partyPositions);
+  fica descrita no texto do setup.
+- **Setups em imagem (20/10)** — 18 setups transcritos dos prints da barra de atalhos por 6 agentes em paralelo (recortes 3–10×, comparação
+  por pixel com a folha de ícones) e conferidos contra os ícones oficiais do jogo (`/assets/v213/icons/spells/<nome>.webp`; a versão de
+  sprite muda — a 208 já devolvia "não é a corrente"). Autoria e texto de cada post lidos no Discord (salto por id de anexo:
+  `/channels/<guild>/<thread>/<attachmentId>` cai na mensagem). Specter: Bottom of the Ocean, Lizard City (mesmas barras da Bottom, PT em
+  gelo), Hive Tower, Hive Queen Chamber, Earth Portal, Warzone I – Fungus; Theus: Hive Queen Chamber; lucasdela: Energy/Fire/Ice Portal
+  (Fire = Paladino e Feiticeiro copiados do Energy, como o autor disse); Logbook: Matheustlm e KairusZ (Behemoth Quest), Venenu (Dragon
+  Lair, lure 8 para bestiário), NaneRz (Holy Portal), Zumpano1 (Lizard City), Gabs (Thunderscar Peak), Jhefy (POI), malachias (Bog, pelo
+  texto do próprio post). Total: 28 setups em 24 hunts; Hive Queen, Behemoth, Lizard City e Bog têm 2 autores (o dono escolhe no seletor).
+  Decisões de leitura: cura azul com figura vermelha à direita = Intense Healing, à esquerda = Light Healing (a folha antiga não tinha as
+  duas); "ice wave com chapéu" = Chill Out; poção marrom com correntes do Paladino = Great Spirit Potion (pode ser a Ultimate; anotado no
+  `obs`); munição só "flecha" fica de fora (a config atual permanece); mana "off" = poção de mana a 0 %; o Strike "Strong/Ultimate" que não
+  é da vocação vira o Strike simples (mesmo ícone de mão). Números grandes dentro dos ícones são recarga, não mínimo. Testes: 9 em
+  `testes/discord.test.js` (integridade contra as fixtures reais de /spells e /potions, vocação de cada slot, hunts com 2 autores).
+- **Teste ao vivo (20/10, 00:20–00:25, conta nível 136, sem caçada, Playwright com a 2.26.0 injetada em aba nova):** Magia → Discord →
+  Hive Queen Chamber mostra o seletor com os 2 setups (Specter e Theus), a ficha (autor, nível, xp/lucro do post, texto, posição no mapa)
+  e as 4 barras em palavras sem nenhum aviso; APLICAR O SETUP NOS 4 gravou os 4 perfis (aba nova trouxe do servidor o setup do Specter:
+  Paladino Divine Caldera ≥2 · avalanche ≥2 · Ethereal Spear ≥1 · Strong Ethereal Spear ≥1, Great Spirit Potion ≤30 %, Intense Healing
+  ≤70 %, munição e Protect Party do dono mantidos); "voltar ao que eu tinha antes do Discord" (2 toques) devolveu os 4 iguais à foto,
+  confirmado numa terceira aba nova. Entrar pelo Playwright derruba a sessão do dono (aceito).

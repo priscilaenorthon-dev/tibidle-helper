@@ -262,12 +262,12 @@ t('Status: boss com nome malicioso na linha de cima sai escapado', async () => {
     semXss(W.html(), 'Status');
 });
 
-t('Magia: controle segmentado (Eco · Equil · Área · Intel · Boss) com aria-pressed — o Inteligente voltou (2.12.0)', async () => {
+t('Magia: controle segmentado (Eco · Equil · Área · Intel · Boss · Discord) com aria-pressed — o Inteligente voltou (2.12.0); Discord na 2.26.0', async () => {
     const W = criarMundo({ ls: comAba('magia', { tb_helper_hunt_id: '34', tb_helper_modelo: '"area"' }) });
     await W.avancar(0);
     const seg = (W.html().match(/<div class="tb-seg"[\s\S]*?<\/div>/) || [''])[0];
     const bts = [...seg.matchAll(/<button[^>]*data-modelo="(\w+)"[^>]*aria-pressed="(true|false)"[^>]*>([^<]*)<\/button>/g)].map(m => [m[1], m[2], m[3]]);
-    assert.deepStrictEqual(bts.map(b => b[2]), ['Eco', 'Equil', 'Área', 'Intel', 'Boss']);
+    assert.deepStrictEqual(bts.map(b => b[2]), ['Eco', 'Equil', 'Área', 'Intel', 'Boss', 'Discord']);
     assert.deepStrictEqual(bts.filter(b => b[1] === 'true').map(b => b[0]), ['area']);
 });
 
