@@ -5670,3 +5670,23 @@ fragmentos de Refino T1 (≈ 15 k no Mercado).
 - Só estatística (não entra): Theus na Warzone I (164–166k xp/h, +278–292k/h, nível 141–142, prey de dano no MS), CBIN, Wyclif.
 - Leitura pelos ícones (Gus e Nikelao): mesma folha oficial da 2.26 + casamento por imagem; poções pelo tamanho do frasco.
 
+### Jogo 1.1.4–1.1.7 (12–19/10), lido no Discord oficial em 20/10 — nenhuma mudança de código
+Canais lidos: patch-notes, changelog, anuncios-ptbr (desde 08/10), roadmap (só o de agosto), faq (vazio).
+- **1.1.4 (12/10) — chaves por TEMPO na caçada**: a dificuldade mais alta dá 1 chave a cada 60 min; as outras, a cada 240 min. Não é mais
+  chance por abate. O helper já lê o relógio (`frame.keyClock`, linha "Próxima chave" no DIAGNÓSTICO), mas a tabela "chaves/h" da aba
+  Progresso (`pgChavesHora` = abates/h × chance × prey) e o texto "? como é a conta" ainda usam a regra antiga.
+  Também na 1.1.4: NPC Isolda troca tokens dos Elites por itens; hunts até o nível 45 com uma dificuldade só; corrigido Utito Tempo San
+  bloqueando poção/cura e runa de ataque bloqueada pela recarga da poção; Auto Exit por ouro não dispara mais contra Elite/Boss.
+- **1.1.5 (14/10)**: Sistema de Legado (já no helper desde a 2.22.0); evento recorrente de mais fragmentos no desmanche; Fragmento de
+  Garantia saiu do desmanche; dano de bows/crossbows corrigido; Drogon sem Mana Drain.
+- **1.1.6 (15/10)**: Recovery e Intense Recovery passaram a curar direito (a medida de 17/10, "Recovery inútil", é posterior à correção).
+- **1.1.7 (19/10)**: Key Backpack com buffs passivos no drop de chaves e buff pago em ouro; assinatura "Sessão 24h" (caçada e treino de
+  12 h para 24 h; o helper fixa `tetoCacadaH: 12`); acertos críticos aparecem em hunts e invasões; ouro caiu em Ice Portal −23 %,
+  Shadow Nexus −45 %, Ushuriel Seal −13 % (o catálogo vivo já traz); The Inquisitor +25 % de vida; Azerus sem xp.
+- **19/10 (anúncio)**: Speed NÃO muda o tempo de lure; o lure é sempre 10 s (o padrão `esperaS` do helper já é 10).
+- Changelog 09–12/10: Fire Portal lure 7 e nível 180, Ice Portal nível 200, Lizard Chosen's Dojo respawn de Lizard Chosen limitado a 3,
+  Quara Hydromancer −10 % e limitado a 2; 26 Elites ganharam ataque em área de Mana Drain (12/10).
+- **Banimentos (anuncios-ptbr)**: 14/10 "500+ contas deletadas" por "scripts e programas que atuam diretamente no web-socket do jogo
+  (automações)", detectadas "em tempo real, graças a IA"; 16/10 nova onda contra contas com mais de 4 personagens farmando. O helper envia
+  comandos pelo mesmo WebSocket (Auto Hunt, Scan, EQUIPAR, Mercado, APLICAR).
+
