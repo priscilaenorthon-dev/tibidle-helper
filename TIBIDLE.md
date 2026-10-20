@@ -5648,3 +5648,6 @@ fragmentos de Refino T1 (≈ 15 k no Mercado).
   44.999 → 275.000; beetle necklace Incomum 99.999 → 375.000; muck rod Incomum dano mágico 1 199.999 → 1,25 M), 7 acima (icicle bow
   499.999 → 198.006; terra boots resist. terra 0,7 → 61.387). Falha: empilhável sem a média lida ainda sugeria o menor −1 (cleansing
   fragment t1 328 → 65 com a média a 184). Agora a revisão pede `market_stats` (pendente) e só sugere com a média; abaixo dela = 'piso'.
+
+### 2.27.2 (20/10) — a revisão recebe as médias
+- Ao vivo a 2.27.1 deixava todo empilhável "não revisado":  não passava  para , e a pendência da média nunca se resolvia. Corrigido; o teste vm da revisão voltou a passar.

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.27.1
+// @version      2.27.2
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.27.1';
+    const VERSAO = '2.27.2';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -12561,7 +12561,7 @@
         }
         return mkPremium(MK.premiumAte, Date.now());
     }
-    const mkRevisaoAtual = () => mkRevisao({ minhas: MK.minhas, catalogo: MK.catalogo, livros: MK.livros, copias: MK.copias, tradeable: MK.tradeable, taxa: MK.taxa });
+    const mkRevisaoAtual = () => mkRevisao({ minhas: MK.minhas, catalogo: MK.catalogo, livros: MK.livros, copias: MK.copias, tradeable: MK.tradeable, taxa: MK.taxa, stats: MK.stats }); // v2.27.2 — a média (piso) chega à revisão
     /* o que impede QUALQUER ação de escrita (anunciar, cancelar, resgatar) */
     function mkImpedimento() {
         if (!socketAberto()) return 'socket do jogo não está à mão — dê F5 com o helper instalado';
