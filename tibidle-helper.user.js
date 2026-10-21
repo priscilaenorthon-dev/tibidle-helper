@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.28.2
+// @version      2.28.3
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.28.2';
+    const VERSAO = '2.28.3';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -2022,7 +2022,7 @@
         const regOk = reg.every(x => x.n >= 30);
         itens.push({ ok: regOk, txt: regOk ? 'regeneração de mana dos 4 medida' : 'regeneração de mana: ' + reg.map(x => `${ab[x.v]} ${Math.min(30, x.n)}/30`).join(' · ') + ' (mede sozinha caçando, em qualquer mapa)' });
         let sc = null;
-        try { for (const r of Object.values(scanResultados())) if (r && r.id === hunt.id && r.abatesH > 0 && r.seg >= 120 && MODELOS[r.modelo] && r.modelo !== 'inteligente' && r.modelo !== 'boss' && (!sc || r.seg > sc.seg)) sc = r; } catch { }
+        try { for (const r of Object.values(scanResultados())) if (r && r.id === hunt.id && r.abatesH > 0 && r.seg >= 120 && MODELOS[r.modelo] && r.modelo !== 'inteligente' && r.modelo !== 'boss' && r.modelo !== 'discord' && (!sc || r.seg > sc.seg)) sc = r; } catch { }
         itens.push({ ok: !!sc, txt: sc ? `Scan deste mapa com ${nomeModelo(sc.modelo)} (${Math.round(sc.seg / 60)} min)` : 'falta um Scan deste mapa com Em área (≥ 2 min; 5 min é o ideal)' });
         const loot = lootMedidoInt(hunt) != null;
         itens.push({ ok: loot, txt: loot ? 'loot por abate medido' : 'loot por abate: precisa de um Scan com ≥ 100 abates' });
@@ -2989,7 +2989,7 @@
     function calibrarPorScan(ctx) {
         let sc = null, curaTotH = 0;
         ctx.curaPorVivo = 0;
-        try { for (const r of Object.values(scanResultados())) if (r && r.id === ctx.hunt.id && r.abatesH > 0 && r.seg >= 120 && MODELOS[r.modelo] && r.modelo !== 'inteligente' && r.modelo !== 'boss' && (!sc || r.seg > sc.seg)) sc = r; } catch { }
+        try { for (const r of Object.values(scanResultados())) if (r && r.id === ctx.hunt.id && r.abatesH > 0 && r.seg >= 120 && MODELOS[r.modelo] && r.modelo !== 'inteligente' && r.modelo !== 'boss' && r.modelo !== 'discord' && (!sc || r.seg > sc.seg)) sc = r; } catch { }
         for (const v of VOCS_INT) ctx.cVoc[v] = 1;
         if (!sc) return;
         const esc = {};
@@ -4254,7 +4254,8 @@
         log(`aplicando o setup "${s.titulo}" nos 4 personagens em ${hunt.title} — pelo socket, sem abrir janela…`);
         /* foto do perfil dos 4 ANTES do Discord: o botão "voltar ao que eu tinha" devolve tudo (dono, 19/10: "depois volte para onde
          * parou com as magias que eu já tinha deixado"). Só a primeira aplicação de uma sequência tira a foto. */
-        if (!ler('dc_foto', null) && ESTADO_WS.profiles) guardar('dc_foto', { t: Date.now(), hunt: hunt.title, setup: s.titulo, profiles: clonar(ESTADO_WS.profiles) });
+        /* no Scan, quem guarda e devolve a foto é o próprio Scan (v2.28.3) */
+        if (!SCAN.ativo && !SCAN.ocupado && !ler('dc_foto', null) && ESTADO_WS.profiles) guardar('dc_foto', { t: Date.now(), hunt: hunt.title, setup: s.titulo, profiles: clonar(ESTADO_WS.profiles) });
         let total = 0;
         for (const voc of VOCS) {
             const atual = configAtiva(voc);
@@ -5619,7 +5620,7 @@
     function scanIniciar(over) {
         const c = Object.assign(scanCfg(), over || {});
         const ids = c.mapas.filter(id => (CAT.hunts || []).some(h => h.id === id));
-        const modelos = c.comparar ? (c.variantes || []).filter(m => MODELOS[m] && m !== 'boss' && m !== 'discord') : [c.modelo || 'equilibrado'];
+        const modelos = c.comparar ? (c.variantes || []).filter(m => MODELOS[m] && m !== 'boss') : [c.modelo || 'equilibrado'];
         const fila = [];
         for (const id of ids) for (const modelo of modelos) fila.push({ id, modelo, opcInt: (over && over.opcInt) || null });
         if (!fila.length) { log('Scan: marque pelo menos um mapa' + (c.comparar ? ' e uma variante' : ''), 'erro'); return false; }
@@ -9562,7 +9563,9 @@
      * confirmação em 2 toques; lista de mapas com display por CLASSE (o
      * filtro trocava display 'block' por '' e os rótulos viravam inline — a
      * caixa ficava colada no mapa errado). */
-    const MODELOS_SCAN = ['equilibrado', 'economica', 'area', 'inteligente'];
+    /* v2.28.3 — o Scan também mede o setup do Discord do mapa (o escolhido na aba Magia; nos 51 mapas sem post, o
+     * "Northon - <mapa>"). Com o estudo de variantes, Discord × Em área no mesmo mapa dão o veredito lado a lado. */
+    const MODELOS_SCAN = ['equilibrado', 'economica', 'area', 'inteligente', 'discord'];
     const FIM_SCAN = [['voltar', 'fim: voltar'], ['ficar', 'fim: ficar'], ['xp', 'fim: melhor XP'], ['ouro', 'fim: melhor ouro']];
     function telaScan() {
         garantirCssAH();
@@ -9577,7 +9580,7 @@
         const ocupado = scanOcupado() || !!travaJogo();
         const dis = scanOcupado() ? 'disabled' : '';
         const nMapas = c.mapas.filter(id => (CAT.hunts || []).some(h => h.id === id)).length;
-        const nVar = c.comparar ? (c.variantes || []).filter(m => MODELOS[m] && m !== 'boss' && m !== 'discord').length : 1;
+        const nVar = c.comparar ? (c.variantes || []).filter(m => MODELOS[m] && m !== 'boss').length : 1;
         const nMed = nMapas * nVar, estMin = Math.max(1, Math.round(nMed * (c.minutos + 0.5)));
         const btTxt = SCAN.ativo ? `Parar · ${Math.max(1, SCAN.idx + 1)}/${SCAN.fila.length}` : scanOcupado() ? (SCAN.fase === 'restaurando' || SCAN.restaurando ? 'devolvendo o jogo…' : 'terminando…')
             : `Iniciar · ${nMapas} mapa${nMapas === 1 ? '' : 's'}${nVar > 1 ? ' × ' + nVar : ''} · ~${estMin} min`;

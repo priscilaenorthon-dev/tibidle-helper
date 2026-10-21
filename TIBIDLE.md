@@ -5918,3 +5918,15 @@ magos Northon = elemento da runa; a barra de gelo da Lizard City.
 | Ushuriel Seal | Pal: Divine Caldera, thunderstorm rune, Strong Ethereal Spear, Ethereal Spear · Fei: Energy Wave, thunderstorm rune, Strong Energy Strike, Energy Strike · Dru: Strong Ice Wave, thunderstorm rune, Strong Ice Strike, Energy Strike |
 | Warzone - Lava Lurkers | Fei: Energy Wave, avalanche rune, Strong Energy Strike, Ice Strike |
 | Shadow Nexus | Pal: Divine Caldera, thunderstorm rune, Strong Ethereal Spear, Ethereal Spear · Fei: Energy Wave, thunderstorm rune, Strong Energy Strike, Energy Strike · Dru: Strong Ice Wave, thunderstorm rune, Strong Ice Strike, Energy Strike |
+
+## 2.28.3 (20/10) — o Scan mede o setup do Discord
+
+Dono, 20/10: "vamos então testar". Até a 2.28.2 o Scan não tinha a opção Discord: `MODELOS_SCAN` não a listava e o estudo de
+variantes a filtrava. Agora o Scan aplica, em cada mapa, o setup do Discord escolhido na aba Magia (nos 51 mapas sem post, o
+"Northon - <mapa>"), igual ao APLICAR da Magia. Com "estudo de variantes" marcando Discord + Em área, os dois resultados do mesmo
+mapa ficam lado a lado (chave `id|modelo`).
+
+- Scan com Discord fica FORA da calibração do Inteligente (`calibrarPorScan`, `calibracaoStatusInt`): `montarPlano('discord')` não
+  monta plano, e a calibração reconstrói o kit pelo modelo.
+- Durante o Scan o `aplicarDiscord` não grava a foto `dc_foto` ("voltar ao que eu tinha"): quem guarda e devolve os kits é o Scan.
+- Mapa sem setup do Discord: o Scan registra "nenhum setup da comunidade" no Log e mede com o kit que estiver.
