@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.28.3
+// @version      2.28.4
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.28.3';
+    const VERSAO = '2.28.4';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -6516,6 +6516,78 @@
          * dura muitos mapas; regra da comunidade (dono, 30/09): regen. de mana é boa para todos. */
         return (R.dpm[voc] || 0) / R.dps * 100;
     }
+    /* v2.28.4 — A MEDIDA DA PARTY É DE CADA PERSONAGEM, NÃO DO MAPA (dono, 20/10: "isso tem que ser individual, senão a aba
+     * Melhorias não tem significância alguma"). Até a 2.28.3 a régua lia a caçada de agora, senão o Scan MAIS RECENTE, e quem bebe
+     * poção pelo setup aplicado na hora: com os itens reais da conta (nível 141), a mesma party dava 1 troca na referência e 4 no
+     * Scan de Death Portal, e a regen. de mana do Feiticeiro valia de 0,44 a 4,8 pt conforme o mapa e o setup. Agora tudo que já
+     * foi medido (Scans e caçadas) é SOMADO pelo tempo de cada medida: o perfil sai o mesmo em qualquer mapa e só anda devagar,
+     * conforme você caça mais. rzs = [{seg, danoTotal, porVoc, magias, tirosH, tomadoH, tomadoCorpoH, golpesCorpoH, elemPorVoc}]
+     * (livro-razão), dms = [danoMapaJuntar(...)] (dano guardado por mapa), bebe = {VOC: bool}, sagrado = Set de magias de holy. */
+    function partyConsolidada(rzs, dms, bebe, sagrado) {
+        const R = (rzs || []).filter(r => r && r.seg > 0 && r.danoTotal > 0), D = (dms || []).filter(d => d && d.seg > 0 && d.tomadoH > 0);
+        if (!R.length && !D.length) return null;
+        const P = { share: {}, dpm: {}, mana: {}, bebe: Object.assign({}, bebe || {}), fracMagica: {}, fracMagia: {}, tiroS: {}, n: R.length + D.length };
+        if (R.length) {
+            const seg = R.reduce((t, r) => t + r.seg, 0), tot = R.reduce((t, r) => t + r.danoTotal, 0);
+            P.dps = tot / seg;
+            for (const v of VOCS_EQUIP) {
+                let dano = 0, spD = 0, spM = 0, todoM = 0, holy = 0, manaW = 0, manaS = 0, tiros = 0, tirosS = 0;
+                for (const r of R) {
+                    const pv = r.porVoc && r.porVoc[v]; if (!pv || !(pv.dano > 0)) continue;
+                    dano += pv.dano;
+                    if (pv.manaMedia != null) { manaW += pv.manaMedia * r.seg; manaS += r.seg; }
+                    for (const m of (r.magias || [])) {
+                        if (m.voc !== v || !(m.dano > 0)) continue;
+                        todoM += m.dano;
+                        if (!m.runa) { spD += m.dano; spM += m.mana || 0; if (sagrado && sagrado.has(m.nome)) holy += m.dano; }
+                    }
+                    if (r.tirosH && r.tirosH[v] != null) { tiros += r.tirosH[v] * r.seg / 3600; tirosS += r.seg; }
+                }
+                if (!(dano > 0)) continue;
+                P.share[v] = dano / tot;
+                if (manaS) P.mana[v] = manaW / manaS;
+                if (spM > 0 && spD > 0) P.dpm[v] = spD / spM;
+                P.fracMagia[v] = spD / dano;
+                P.fracMagica[v] = v === 'SORCERER' || v === 'DRUID' ? 1 : todoM / dano;
+                if (v === 'PALADIN') P.fracSagrado = holy / dano;
+                if (tirosS) P.tiroS[v] = tiros / tirosS;
+            }
+            const hp = R.filter(r => r.porVoc && r.porVoc.KNIGHT && Number.isFinite(Number(r.porVoc.KNIGHT.hpMin)));
+            if (hp.length) P.hpMinK = hp.reduce((t, r) => t + Number(r.porVoc.KNIGHT.hpMin) * r.seg, 0) / hp.reduce((t, r) => t + r.seg, 0);
+        }
+        /* o que a party toma: o dano guardado de TODOS os mapas (pesado pelo tempo caçado em cada um); sem ele, o livro-razão */
+        const fontes = D.length ? D.map(d => ({ seg: d.seg, tomadoH: d.tomadoH, elemPorVoc: d.elemPorVoc || {} }))
+                                : R.filter(r => r.tomadoH > 0).map(r => ({ seg: r.seg, tomadoH: r.tomadoH, elemPorVoc: r.elemPorVoc || {}, corpoH: r.tomadoCorpoH, golpesH: r.golpesCorpoH }));
+        if (fontes.length) {
+            const seg = fontes.reduce((t, f) => t + f.seg, 0);
+            P.tomadoS = fontes.reduce((t, f) => t + f.tomadoH * f.seg, 0) / seg / 3600;
+            let kT = 0, kF = 0, kG = 0, kS = 0;
+            for (const f of fontes) {
+                const k = f.elemPorVoc.KNIGHT;
+                if (k && k.tomadoH > 0) { kT += k.tomadoH * f.seg; kF += k.tomadoH * ((k.frac && k.frac.fisico) || 0) * f.seg; kG += (k.golpesH || 0) * ((k.frac && k.frac.fisico) || 0) * f.seg; kS += f.seg; }
+                else if (f.corpoH != null && f.tomadoH > 0) { kT += f.tomadoH * f.seg; kF += f.corpoH * f.seg; kG += (f.golpesH || 0) * f.seg; kS += f.seg; }
+            }
+            if (kT > 0) { P.fisico = kF / kT; P.golpesS = kG / kS / 3600; }
+            const ev = {};
+            for (const v of VOCS_EQUIP) {
+                let t = 0, sg = 0; const fr = {};
+                for (const f of fontes) { const x = f.elemPorVoc[v]; if (!x || !(x.tomadoH > 0)) continue; t += x.tomadoH * f.seg; sg += f.seg; for (const [e, q] of Object.entries(x.frac || {})) fr[e] = (fr[e] || 0) + q * x.tomadoH * f.seg; }
+                if (t > 0) ev[v] = { tomadoS: t / seg / 3600, frac: Object.fromEntries(Object.entries(fr).map(([e, q]) => [e, Math.round(q / t * 1000) / 1000])) };
+            }
+            if (Object.keys(ev).length) P.elemVoc = ev;
+        }
+        return P;
+    }
+    /* quem bebe poção de mana: a maioria das caçadas normais registradas (nunca o setup que o Scan aplicou); sem registro, o de agora */
+    function bebeConsolidado(hist, agora) {
+        const out = {};
+        for (const v of VOCS_EQUIP) {
+            const l = (hist || []).filter(h => h && h.b && typeof h.b[v] === 'boolean');
+            if (l.length) out[v] = l.filter(h => h.b[v]).length * 2 > l.length;
+            else if (agora && typeof agora[v] === 'boolean') out[v] = agora[v];
+        }
+        return out;
+    }
     function pesosDaVoc(voc, ctx) {
         const R = partyDoCtx(ctx), s = R.share[voc] || 0, P = {}, fase2 = faseEquip(ctx) === 2; // v2.24.0
         const sk = Object.assign({}, REF_SK);
@@ -6709,9 +6781,19 @@
         const a = (peca && peca.attrs) || {};
         return !!(peca && peca.equipPreview && peca.equipPreview.attrs) || Number(a.charges) > 0 || !!a.showduration || !!a.stopduration;
     };
+    /* v2.28.4 — REFINO NUM LUGAR SÓ (wiki /forja): +1 de ataque na arma (wand/rod não) ou +1 de armadura em qualquer outra peça.
+     * Até a 2.28.3 só a aba Melhorias contava (mlComRefino) e o Equip não: uma peça +4 valia mais lá do que aqui. */
+    function attrsComRefino(peca) {
+        const a = (peca && peca.attrs) || {}, r = Number(peca && peca.forja && peca.forja.refino) || 0;
+        if (!(r > 0)) return a;
+        const b = Object.assign({}, a);
+        if (normalizarSlot(peca.slot) === 'weapon') { if (!(b.weaponType === 'wand' || b.wandType || b.weaponType === 'rod')) b.attack = (Number(b.attack) || 0) + r; }
+        else b.armor = (Number(b.armor) || 0) + r;
+        return b;
+    }
     function pontuarPeca(peca, voc, ctx) {
         const P = pesosDaVoc(voc, ctx);
-        const a = peca.attrs || {};
+        const a = attrsComRefino(peca);
         const detalhe = [];
         const add = (id, valor, pt) => detalhe.push({ id, valor, pt: Math.round(pt * 1000) / 1000 });
         const temporario = ehTemporaria(peca);
@@ -7176,6 +7258,11 @@
      * Paladino nem a 2,5 tirava (+0,8). Desde a 2.11.11 peça vestida não troca de personagem — a cadeia de 3 trocas
      * que motivou o custo não existe mais. Fica só um desempate: qualquer ganho real de encaixe vira sugestão. */
     const EQUIP_FICAR_PT = 0.1;
+    /* v2.28.4 — O QUE VOCÊ ESCOLHEU FICA (dono, 20/10: "compro em Melhorias e o Equip manda equipar outra coisa; toda hora que entro e
+     * saio de um mapa ele pede outro item guardado"). Peça comprada na aba Melhorias ou equipada pelo EQUIPAR (ctx.escolhas = iids)
+     * vale +2 pt na escolha do espaço: só sai por uma peça claramente melhor, nunca por uma diferença de régua. A tela mostra a nota
+     * de verdade; o bônus só pesa na decisão. */
+    const EQUIP_ESCOLHA_PT = 2;
     /* v2.11.16 — ENCAIXE NOBRE NUNCA SOBRA (dono, 30/09, regra da comunidade + wiki /forja):
      *   escudo, elmo, armadura, calça, bota e anel → regen. de mana (todos) e regen. de vida (Knight);
      *   arma e colar → corpo a corpo, distância, nível mágico, dano físico ou dano mágico.
@@ -7198,13 +7285,16 @@
         const ids = nobresDe(p.slot, voc);
         return pontuarPeca(p, voc, ctx).detalhe.filter(d => ids.includes(d.id)).reduce((s, d) => s + d.pt, 0);
     }
-    function _resolverSlot(porVoc, vocsSlot, s, usadas, extra) {
+    function _resolverSlot(porVoc, vocsSlot, s, usadas, extra, escolhas) {
         // candidatos por voc: top-K não usados + o atual (se não estiver) + extra (virtual)
+        const bonus = (p) => (p && escolhas && escolhas.has(p.iid) ? EQUIP_ESCOLHA_PT : 0);
         const listas = vocsSlot.map(v => {
             const x = porVoc[v][s]; if (!x) return [];
             const ehAtual = (p) => !!(x.atual && p && p.iid === x.atual.iid);
-            const l = x.candidatos.filter(c => !usadas.has(c.peca.iid)).slice(0, EQUIP_TOPK).map(c => ({ iid: c.peca.iid, peca: c.peca, pt: c.r.pontos + (ehAtual(c.peca) ? EQUIP_FICAR_PT : 0) }));
-            if (x.atual && !l.some(c => c.iid === x.atual.iid) && !usadas.has(x.atual.iid)) l.push({ iid: x.atual.iid, peca: x.atual, pt: x.atualPt + EQUIP_FICAR_PT });
+            const doTopo = x.candidatos.filter(c => !usadas.has(c.peca.iid)), topo = doTopo.slice(0, EQUIP_TOPK);
+            for (const c of doTopo.slice(EQUIP_TOPK)) if (bonus(c.peca)) topo.push(c); // a escolhida concorre mesmo fora do top-K
+            const l = topo.map(c => ({ iid: c.peca.iid, peca: c.peca, pt: c.r.pontos + (ehAtual(c.peca) ? EQUIP_FICAR_PT : 0) + bonus(c.peca) }));
+            if (x.atual && !l.some(c => c.iid === x.atual.iid) && !usadas.has(x.atual.iid)) l.push({ iid: x.atual.iid, peca: x.atual, pt: x.atualPt + EQUIP_FICAR_PT + bonus(x.atual) });
             if (extra && extra[v]) l.push(extra[v]);
             l.push({ iid: null, peca: null, pt: 0 }); // "nada" — evita forçar peça ruim quando falta candidato
             return l;
@@ -7227,6 +7317,7 @@
         vocs = vocs || Object.keys(PESOS_EQUIP);
         const pont = new Map(); // iid|voc → resultado
         const P = (p, v) => { const k = p.iid + '|' + v; if (!pont.has(k)) pont.set(k, pontuarPeca(p, v, ctx)); return pont.get(k); };
+        const escolhas = ctx && ctx.escolhas && ctx.escolhas.length ? new Set(ctx.escolhas) : null;
         const porVoc = {};
         for (const v of vocs) {
             porVoc[v] = {};
@@ -7249,7 +7340,7 @@
         // 1) arma: só as de 1 mão (Paladino: o arco é sempre 2 mãos e não tem escudo)
         for (const v of vocs) for (const c of porVoc[v].weapon.candidatos) if (c.peca.duasMaos && v !== 'PALADIN') c.duasMaos2 = true;
         const soArma1 = {}; for (const v of vocs) { soArma1[v] = porVoc[v].weapon.candidatos; porVoc[v].weapon.candidatos = soArma1[v].filter(c => !c.duasMaos2); }
-        for (const r of _resolverSlot(porVoc, vocs, 'weapon', usadas)) fixar(r.v, 'weapon', r.c);
+        for (const r of _resolverSlot(porVoc, vocs, 'weapon', usadas, null, escolhas)) fixar(r.v, 'weapon', r.c);
         for (const v of vocs) porVoc[v].weapon.candidatos = soArma1[v];
         // 2) escudo, com o candidato virtual "2 mãos" para quem tiver arma de 2 mãos melhor
         const extra = {};
@@ -7258,7 +7349,7 @@
             const m2 = porVoc[v].weapon.candidatos.find(c => c.duasMaos2 && !usadas.has(c.peca.iid));
             if (m2) extra[v] = { iid: '__2m__' + v, peca: null, duasMaos: m2.peca, pt: m2.r.pontos - porVoc[v].weapon.melhorPt };
         }
-        for (const r of _resolverSlot(porVoc, vocs.filter(v => porVoc[v].shield), 'shield', usadas, extra)) {
+        for (const r of _resolverSlot(porVoc, vocs.filter(v => porVoc[v].shield), 'shield', usadas, extra, escolhas)) {
             if (r.c && r.c.duasMaos) { // 2 mãos venceu: arma vira a de 2 mãos, escudo fica vazio
                 if (porVoc[r.v].weapon.melhor) usadas.delete(porVoc[r.v].weapon.melhor.iid);
                 fixar(r.v, 'weapon', { iid: r.c.duasMaos.iid, peca: r.c.duasMaos });
@@ -7268,7 +7359,7 @@
         // 3) os outros slots, independentes entre si
         for (const s of SLOTS_EQUIP) {
             if (s === 'weapon' || s === 'shield') continue;
-            for (const r of _resolverSlot(porVoc, vocs, s, usadas)) fixar(r.v, s, r.c);
+            for (const r of _resolverSlot(porVoc, vocs, s, usadas, null, escolhas)) fixar(r.v, s, r.c);
         }
         /* reservas: a 2.ª melhor de cada (voc, slot) com pontos > 0. v2.11.6 eram 2; v2.15.0 — dono (07/10): "não posso
          * ficar guardando item que nunca vou usar" → 1 por slot; a 3.ª melhor vai para as sobras. */
@@ -7341,6 +7432,10 @@
      *  em todos, regen. de vida no Knight, nível mágico/skill/dano na arma e no colar) — oferta que perde fica fora,
      *  a não ser que o dono peça para ver. */
     const ML_GANHO_MIN = 0.3; // abaixo disso é ruído da régua: não vale o ouro nem o clique
+    /* v2.28.4 — CONSENSO COM O EQUIP: a compra só é RECOMENDADA com o ganho que o Equip também troca (1 pt; ver GANHO_MIN da tela) e,
+     * se a sua peça do espaço foi escolhida por você (comprada ou equipada pelo helper), com mais os 2 pt que ela tem de prioridade.
+     * Abaixo disso a oferta aparece por personagem, sem botão de compra. */
+    const ML_RECOMENDA_MIN = 1;
     /* dono, 14/10: "vou confiar cegamente — não me faça errar". As "melhores compras" só levam o que é certo:
      *  • seguro (não perde encaixe nobre);
      *  • o ganho NÃO vem quase todo de armadura/defesa no Knight (fase 1): a wiki diz que o bloqueio do escudo tem 2 cargas
@@ -7350,16 +7445,8 @@
      *  comprar"): o preço aparece, mas não tira a recomendação. */
     const ML_ORDEM_CLASSE = ['KNIGHT', 'SORCERER', 'DRUID', 'PALADIN']; // v2.24.3
     const ML_IDS_DEFESA = new Set(['armor', 'defense', 'extradef', 'escudo', 'skillshield', 'resist_fisica', 'absorbpercentphysical']);
-    /* refino (wiki /forja): +1 de ataque na arma (wand/rod não) ou +1 de armadura em qualquer outra peça — a régua do Equip
-     * não conta; aqui conta, nas DUAS pontas (senão a sua peça +5 pareceria pior do que é) */
-    function mlComRefino(p) {
-        const r = Number(p && p.forja && p.forja.refino) || 0;
-        if (!p || !(r > 0)) return p;
-        const a = Object.assign({}, p.attrs || {});
-        if (p.slot === 'weapon') { if (!(a.weaponType === 'wand' || a.wandType || a.weaponType === 'rod')) a.attack = (Number(a.attack) || 0) + r; }
-        else a.armor = (Number(a.armor) || 0) + r;
-        return Object.assign({}, p, { attrs: a });
-    }
+    /* v2.28.4 — o refino agora entra no próprio pontuarPeca (attrsComRefino): aqui não soma mais nada, senão contaria 2 vezes */
+    const mlComRefino = (p) => p;
     const mlImbuida = (p) => !!(p && (Array.isArray(p.imbuements) ? p.imbuements.some(x => x != null && x !== false) : p.imbuements && typeof p.imbuements === 'object' && Object.keys(p.imbuements).length));
     /* de onde vem o ganho: diferença de pt por atributo (oferta − referência), maiores primeiro */
     function mlFontes(oferta, ref, voc, ctx) {
@@ -7546,6 +7633,7 @@
                 const ref = mlComRefino(ref0);
                 const refPt = ref ? pontuarPeca(ref, v, ctx).pontos : 0;
                 const refImbuida = mlImbuida(ref0);
+                const refEscolhida = !!(ref0 && ctx && Array.isArray(ctx.escolhas) && ctx.escolhas.includes(ref0.iid)); // v2.28.4
                 /* 2 mãos (Knight): a arma de 2 mãos ocupa também o escudo — a referência é arma + escudo */
                 const esc0 = s === 'weapon' && slots.shield ? (slots.shield.melhor || slots.shield.atual) : null;
                 const escudo = esc0 ? pontuarPeca(mlComRefino(esc0), v, ctx).pontos : 0;
@@ -7584,7 +7672,7 @@
                                    nivelSet: ehSet && pisoSet ? Object.assign(mlFichaSet(c0, s), { de: mlNum(pisoSet.attrs, mlChaveSet(s)) }) : null, soArmadura,
                                    efeito: efeitoOficial(c0, ref0, v, ctx), // v2.20.1 — o que muda no jogo, pelas regras oficiais
                                    potencia, potenciaBaixa, // v2.24.0
-                                   recomendada: !perdas.length && !soDefesa && !refImbuida && !soArmadura && !potenciaBaixa });
+                                   refEscolhida, recomendada: !perdas.length && !soDefesa && !refImbuida && !soArmadura && !potenciaBaixa && ganho >= ML_RECOMENDA_MIN + (refEscolhida ? EQUIP_ESCOLHA_PT : 0) });
                 }
                 /* melhor primeiro: mais ganho; empate (±5 %), o mais barato */
                 ofertas.sort((p, q) => (Math.abs(q.ganho - p.ganho) > 0.05 * Math.max(p.ganho, q.ganho) ? q.ganho - p.ganho : p.preco - q.preco));
@@ -10148,7 +10236,19 @@
         }
         /* v2.22.0 — Legado por personagem (skill treinada vista no frame), se a conta tem o Legado ativo */
         const legado = legadoDaConta();
-        return { nivel: nivelAtual(), sk, party, usando, kn: kn2, legado };
+        return { nivel: nivelAtual(), sk, party, usando, kn: kn2, legado, escolhas: escolhasEquip() };
+    }
+    /* v2.28.4 — peças que o dono escolheu pelo helper (compradas na Melhorias, equipadas pelo EQUIPAR): ganham EQUIP_ESCOLHA_PT por 30 dias */
+    const EQUIP_ESCOLHA_DIAS = 30;
+    function escolhasEquip() {
+        const g = ler('equip_escolhas', {}) || {}, lim = Date.now() - EQUIP_ESCOLHA_DIAS * 864e5;
+        return Object.keys(g).filter(k => g[k] > lim);
+    }
+    function anotarEscolha(iids) {
+        const g = ler('equip_escolhas', {}) || {}, lim = Date.now() - EQUIP_ESCOLHA_DIAS * 864e5;
+        for (const k of Object.keys(g)) if (!(g[k] > lim)) delete g[k];
+        for (const i of (iids || [])) if (i) g[i] = Date.now();
+        guardar('equip_escolhas', g);
     }
     /* v2.22.0 — lastro da forja (forge_lastro_result {ouroPorGema}): o preço em ouro de cada gema hoje (acompanha a coin) */
     const FORJA_LASTRO = { ouro: null, t: 0 };
@@ -10178,53 +10278,38 @@
         return Object.keys(out).length ? out : null;
     }
     const xpMultiplicador = () => { const a = ESTADO_WS.frame && ESTADO_WS.frame.an; return a && a.xpRaw > 0 && a.xp > 0 ? Math.round(a.xp / a.xpRaw * 100) / 100 : null; };
+    /* v2.28.4 — a medida da party é CONSOLIDADA (partyConsolidada): todos os Scans até 8 níveis do seu, a caçada de agora (fora de
+     * Scan) e o dano guardado de todos os mapas — a mesma em qualquer mapa, para o Equip, a Melhorias e a Forja. Quem bebe poção sai
+     * das caçadas normais registradas (equip_bebe), não do setup que o Scan ou o modelo Discord aplicaram. */
+    const EQUIP_BEBE_MAX = 12, EQUIP_BEBE_CADA_MS = 10 * 60000;
+    function bebeAgora() {
+        const b = {};
+        for (const v of VOCS) { try { const c = configAtiva(v); if (c) b[v] = !!(c.manaPotion && c.manaPotion.name && c.manaPotion.percent > 0); } catch (e) { /* sem perfil */ } }
+        return b;
+    }
     function partyMedida() {
-        let rz = null, fonte = null;
-        const vivo = razaoResumo(RAZAO);
-        if (vivo && vivo.seg >= 120 && vivo.danoTotal > 0) { rz = vivo; fonte = emHunt() ? 'caçada atual' : 'última caçada'; }
-        else {
-            const sc = Object.values(scanResultados()).filter(r => r && r.razao && r.razao.danoTotal > 0).sort((a, b) => (b.t || 0) - (a.t || 0))[0];
-            if (sc) { rz = sc.razao; fonte = 'Scan ' + sc.title; }
+        const nv = nivelAtual(), rzs = [];
+        let nScan = 0, vivo = false;
+        try {
+            for (const r of Object.values(scanResultados())) {
+                if (!r || r.suja || r.erro || !r.razao || !(r.razao.danoTotal > 0) || !(r.razao.seg >= 120)) continue;
+                if (nv && r.nivel && Math.abs(r.nivel - nv) > TP_NIVEL_JANELA) continue;
+                rzs.push(r.razao); nScan++;
+            }
+        } catch (e) { falhou('equip (Scans da medida)', e); }
+        const lr = razaoResumo(RAZAO);
+        const normal = !SCAN.ativo && !scanOcupado() && !BEST.ativo;
+        if (normal && lr && lr.seg >= 120 && lr.danoTotal > 0) { rzs.push(lr); vivo = true; }
+        /* quem bebe: anota a caçada normal (≥ 10 min, fora de Scan e do modo bestiário), no máximo 1× a cada 10 min */
+        let hist = ler('equip_bebe', []) || [];
+        if (normal && lr && lr.seg >= 600 && emHunt() && !(hist.length && Date.now() - hist[hist.length - 1].t < EQUIP_BEBE_CADA_MS)) {
+            hist = hist.concat([{ t: Date.now(), b: bebeAgora() }]).slice(-EQUIP_BEBE_MAX); guardar('equip_bebe', hist);
         }
-        /* v2.21.0 — 3ª fonte: o dano guardado do mapa escolhido (caçadas normais), para o Equip acertar na cidade */
-        let dm = null;
-        try { const h = huntAtual(); dm = danoMapaDaHunt(h); if (dm && !rz) fonte = 'dano guardado de ' + (h.title || h.id); } catch { dm = null; }
-        if (!rz && !dm) return null;
-        const P = { fonte, share: {}, dpm: {}, mana: {}, bebe: {}, fracMagica: {}, fracMagia: {}, tiroS: {} };
-        /* elementos do dano tomado por personagem (ao vivo/Scan primeiro; senão o guardado do mapa) */
-        const snapE = snapElemPorVoc(); // v2.22.0 — o balão do próprio jogo (party_snapshot), quando é desta caçada
-        const epv = snapE || (rz && rz.elemPorVoc && Object.keys(rz.elemPorVoc).length ? rz.elemPorVoc : dm && dm.elemPorVoc) || null;
-        if (epv) { P.elemVoc = {}; for (const [v, x] of Object.entries(epv)) P.elemVoc[v] = { tomadoS: x.tomadoH / 3600, frac: x.frac }; }
-        if (!rz) {
-            if (dm.tomadoH > 0) P.tomadoS = dm.tomadoH / 3600;
-            const k = dm.elemPorVoc && dm.elemPorVoc.KNIGHT;
-            if (k && k.frac) { P.fisico = k.frac.fisico || 0; if (k.golpesH > 0) P.golpesS = k.golpesH / 3600 * (k.frac.fisico || 0); }
-            return P;
-        }
-        P.dps = rz.danoTotal / Math.max(1, rz.seg);
-        const cat = {}; for (const m of (CAT.magias || [])) cat[m.name] = m;
-        for (const v of VOCS) {
-            const pv = rz.porVoc[v]; if (!pv || !pv.dano) continue;
-            P.share[v] = pv.dano / rz.danoTotal;
-            if (pv.manaMedia != null) P.mana[v] = pv.manaMedia;
-            const ms = (rz.magias || []).filter(m => m.voc === v && m.dano > 0);
-            const spells = ms.filter(m => !m.runa), manaG = spells.reduce((s, m) => s + (m.mana || 0), 0), danoS = spells.reduce((s, m) => s + m.dano, 0);
-            if (manaG > 0 && danoS > 0) P.dpm[v] = danoS / manaG;
-            P.fracMagia[v] = danoS / pv.dano;
-            P.fracMagica[v] = v === 'SORCERER' || v === 'DRUID' ? 1 : ms.reduce((s, m) => s + m.dano, 0) / pv.dano;
-            if (v === 'PALADIN') P.fracSagrado = spells.filter(m => cat[m.nome] && cat[m.nome].combatType === 'COMBAT_HOLYDAMAGE').reduce((s, m) => s + m.dano, 0) / pv.dano;
-            if (rz.tirosH && rz.tirosH[v] != null) P.tiroS[v] = rz.tirosH[v] / 3600;
-            try { const c = configAtiva(v); if (c) P.bebe[v] = !!(c.manaPotion && c.manaPotion.name && c.manaPotion.percent > 0); } catch (e) { }
-        }
-        /* v2.18.2 — vida mínima do Knight na medida: a defesa dele vale menos quando ele não passa aperto */
-        if (rz.porVoc && rz.porVoc.KNIGHT && Number.isFinite(Number(rz.porVoc.KNIGHT.hpMin))) P.hpMinK = Number(rz.porVoc.KNIGHT.hpMin);
-        /* v2.24.2 — o lado "o que a party toma" vem de quem mediu por mais tempo: o livro/Scan ou o dano guardado do mapa */
-        const dt = danoTomadoDe(rz, dm);
-        if (dt) {
-            P.tomadoS = dt.tomadoS;
-            if (dt.fisico != null && dt.golpesS != null) { P.fisico = dt.fisico; P.golpesS = dt.golpesS; }
-            if (dt.deGuardado) { if (dt.elemVoc && !snapE) P.elemVoc = dt.elemVoc; P.fonte = fonte + ' + dano guardado do mapa (' + Math.round(dt.seg / 60) + ' min)'; }
-        }
+        const dms = [];
+        try { for (const l of Object.values(ler('dano_mapa', {}) || {})) { const d = danoMapaJuntar(l); if (d) dms.push(d); } } catch (e) { falhou('equip (dano guardado)', e); }
+        const sagrado = new Set((CAT.magias || []).filter(m => m.combatType === 'COMBAT_HOLYDAMAGE').map(m => m.name));
+        const P = partyConsolidada(rzs, dms, bebeConsolidado(hist, bebeAgora()), sagrado);
+        if (P) P.fonte = `consolidada: ${nScan} Scan(s)${vivo ? ' + a caçada de agora' : ''} + dano guardado de ${dms.length} mapa(s) — a mesma em todo mapa`;
         return P;
     }
     /* v2.14.9 — DESMANCHE pelo socket: forge_salvage_batch {requestId, alvos:[{iid, origem:'bag'|'depot'}]} →
@@ -10453,7 +10538,7 @@
                     if (w.lugar === 'depósito') { const r = await retirarDoDepot(f.peca); if (r.erro) { log('equip: ' + r.erro, 'erro'); continue; } }
                     const r2 = await equiparPeca(f.peca, f.v, f.s);
                     if (r2.erro) { log('equip: ' + r2.erro, 'erro'); continue; }
-                    feitas++; log(`equip: ${VOC_ROTULO[f.v]} ${f.s} ← ${f.peca.nome} (${f.peca.origem})` + (f.dependencia ? ' — para liberar a peça para outro' : ''), 'ok');
+                    feitas++; anotarEscolha([f.peca.iid]); log(`equip: ${VOC_ROTULO[f.v]} ${f.s} ← ${f.peca.nome} (${f.peca.origem})` + (f.dependencia ? ' — para liberar a peça para outro' : ''), 'ok');
                     await dorme(350);
                 }
                 pend = resto;
@@ -10537,6 +10622,8 @@
           /* v2.21.0 — o dano tomado medido (ao vivo ou guardado deste mapa): de quem e de que elemento */
           try { const vivo = emHunt() && RAZAO.tomado.total > 0 ? razaoResumo(RAZAO) : null; const d = vivo && vivo.seg >= 60 ? Object.assign({ sessoes: 0 }, vivo) : danoMapaDaHunt(huntAtual());
                 if (d) info += danoMapaHtml(d, null); else info += `<div class="tb-mut" style="font-size:10.5px">Dano tomado: ainda sem medida neste mapa — cace nele com o helper aberto (qualquer caçada normal conta; 2 min bastam) e as resistências passam a valer pelo elemento certo.</div>`; } catch (e) { falhou('equip (dano do mapa)', e); } }
+        { const pm = EQUIP.ctx && EQUIP.ctx.party, ne = EQUIP.ctx && EQUIP.ctx.escolhas ? EQUIP.ctx.escolhas.length : 0; // v2.28.4
+          info = `<div class="tb-mut" style="font-size:10.5px">Medida da party ${pm && pm.fonte ? escHtml(pm.fonte) : '— nenhuma ainda: vale a referência'}. Peças que você comprou na Melhorias ou equipou pelo EQUIPAR ficam com +${EQUIP_ESCOLHA_PT} pt de prioridade por ${EQUIP_ESCOLHA_DIAS} dias (${ne} agora): só saem por uma claramente melhor.</div>` + info; }
         h += aj('eq-regua', info, `? régua (fase ${faseEquip(EQUIP.ctx)}) e dano tomado`);
         if (!R) return h + aj('eq-ajuda', 'ATUALIZAR lê o corpo dos 4, a mochila e o depósito, busca os atributos base e ranqueia por vocação e slot. Nada é equipado nem descartado sem o botão EQUIPAR. Raridade não pontua: um épico com atributos que a vocação não usa perde para um incomum com o atributo certo.');
         h += `<div class="tb-sub tb-eq-vocs" role="group" aria-label="vocação">${VOCS.map(x => {
@@ -14775,6 +14862,7 @@
                 if (r.erro !== 'sem_resposta') ML.compradas.delete(o.orderId); // recusado pelo servidor: nada saiu da carteira
                 throw new Error(r.erro === 'sem_resposta' ? 'o jogo não respondeu — confira a mochila e o Histórico do Mercado antes de tentar de novo (este anúncio fica bloqueado aqui)' : 'o jogo recusou: ' + mkErroTexto(r.erro));
             }
+            anotarEscolha([y.instance && y.instance.iid]); // v2.28.4 — o Equip dá prioridade a ela (EQUIP_ESCOLHA_PT)
             log(`melhorias: COMPRADO ${o.nome} por ${mkFmt(o.preco)} — está na mochila; equipe pela aba Equip (ATUALIZAR → EQUIPAR)`, 'ok');
             avisar('melhorias', `melhorias: comprado ${o.nome} por ${mkFmt(o.preco)} — equipe pela aba Equip`, 'ok');
             mlRecalcular();

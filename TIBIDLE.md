@@ -5930,3 +5930,31 @@ mapa ficam lado a lado (chave `id|modelo`).
   monta plano, e a calibração reconstrói o kit pelo modelo.
 - Durante o Scan o `aplicarDiscord` não grava a foto `dc_foto` ("voltar ao que eu tinha"): quem guarda e devolve os kits é o Scan.
 - Mapa sem setup do Discord: o Scan registra "nenhum setup da comunidade" no Log e mede com o kit que estiver.
+
+## 2.28.4 (20/10) — Equip e Melhorias em consenso
+
+Dono, 20/10: "compro itens em Melhorias e a aba Equip fala para eu equipar outra coisa; toda hora que entro e saio de um mapa ela
+pede outro item guardado" e "isso tem que ser individual, senão a aba Melhorias não tem significância alguma".
+
+**Causa, medida com os itens reais da conta (nível 141, 113 peças):** a régua do Equip lia a party "de agora" — a caçada atual,
+senão o Scan MAIS RECENTE, senão o dano guardado do mapa escolhido — e quem bebe poção pelo setup aplicado na hora. A mesma
+party dava 1 troca sem medida, 3 a 4 com o Scan de Death Portal, 3 com o de Throne of Verminor (Feiticeiro: jade hat → steel
+helmet), e a regen. de mana do Feiticeiro valia de 0,44 a 4,8 pt conforme o mapa e o setup (o modelo Discord liga poção nos 4).
+A Melhorias recomendava com a régua daquele momento; no mapa seguinte o Equip pensava outra coisa. E a Melhorias contava o
+refino (mlComRefino) e o Equip não.
+
+**Correção:**
+- `partyConsolidada` (EQUIP-PURO): todos os Scans limpos até 8 níveis do seu, a caçada de agora (fora de Scan) e o dano guardado
+  de TODOS os mapas são somados pelo tempo de cada medida. A mesma medida em qualquer mapa, para Equip, Melhorias e Forja; ela só
+  anda devagar, conforme se caça mais.
+- Quem bebe poção (`bebeConsolidado`): a maioria das caçadas normais de ≥ 10 min registradas em `equip_bebe` (até 12; fora de
+  Scan e do modo bestiário). Sem registro, o setup de agora.
+- Peça comprada na Melhorias ou equipada pelo EQUIPAR entra em `equip_escolhas` e vale +2 pt na escolha do espaço por 30 dias
+  (`EQUIP_ESCOLHA_PT`): só sai por uma claramente melhor. A tela mostra a nota de verdade.
+- A Melhorias só RECOMENDA (botão de compra) com ganho ≥ 1 pt — o mesmo mínimo de troca do Equip — e, se a peça do espaço é uma
+  escolha sua, ≥ 1 + 2 pt.
+- Refino num lugar só: `attrsComRefino` dentro do `pontuarPeca` (+1 ataque na arma que não é wand/rod, +1 armadura no resto);
+  `mlComRefino` virou identidade.
+
+Conferido com os dados reais: com o histórico de caçada normal, o Equip dá as mesmas 2 trocas com o setup normal e com o Discord
+aplicado (antes, 2 a 4 diferentes). Teste novo: `testes/consenso.test.js` (6).
