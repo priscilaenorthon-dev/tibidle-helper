@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.28.5
-// @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
+// @version      2.29.0
+// @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
 // @updateURL    https://raw.githubusercontent.com/priscilaenorthon-dev/tibidle-helper/main/tibidle-helper.user.js
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.28.5';
+    const VERSAO = '2.29.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -14117,6 +14117,75 @@
     }
     /* @@TELAS-API-FIM */
 
+    /* @@PECHINCHAS-INICIO — Radar → Pechinchas (2.29.0): funções puras; testes/pechinchas.test.js roda este trecho no node.
+     * Dono, 21/10: "a turma com pressa de vender coloca item muito abaixo da média; analisa esse mercado para a gente
+     * comprar e revender". Vigia só keys de Elite e itens de quest (ilhas e bosses), que giram muito e têm preço estável.
+     * Decisões dele: vigia de 5 min ligada por ele, até 1 milhão por compra, e cada oferta mostra a média de 30 dias. */
+    const PCH_PADRAO = { vigiar: true, min: 5, lucroPct: 0.15, lucroMin: 2000, teto: 1000000, negMin: 50, extras: [], fora: [] };
+    const PCH_TAXA = 0.05; // taxa de criação do anúncio de revenda (wiki /mercado); vender para uma compra aberta não paga
+    const pchMin = (s) => String(s == null ? '' : s).toLowerCase().trim();
+    /* bosses = /bosses/select (Elites `kind: mini` com keyItem; bosses com access.items), ilhas = /islands (access.items),
+     * nomeDeId(itemId) → nome → [{n, nome, usos:[texto]}] */
+    function pchItensVigiaveis(bosses, ilhas, nomeDeId) {
+        const por = new Map();
+        const add = (nome, uso) => { if (!nome) return; const n = pchMin(nome); const x = por.get(n) || { n, nome: String(nome), usos: [] }; if (!x.usos.includes(uso)) x.usos.push(uso); por.set(n, x); };
+        for (const b of (bosses || [])) {
+            if (!b) continue;
+            if (b.kind === 'mini' && b.keyItem) add(b.keyItem, 'key do Elite ' + b.name);
+            for (const it of ((b.access && b.access.items) || [])) add(nomeDeId(it.itemId), `${it.quantity}× para a tentativa do boss ${b.name}`);
+        }
+        for (const il of (ilhas || [])) for (const it of ((il && il.access && il.access.items) || [])) add(nomeDeId(it.itemId), `${it.quantity}× para abrir ${il.name}`);
+        return [...por.values()];
+    }
+    /* o que a vigia olha: negócios em 30 dias ≥ negMin; extras do dono sempre; fora nunca */
+    function pchVigiados(itens, catalogo, cfg) {
+        const fora = new Set((cfg.fora || []).map(pchMin)), extras = (cfg.extras || []).map(pchMin);
+        const l = (itens || []).filter(x => !fora.has(x.n) && catalogo && catalogo[x.n] && Number(catalogo[x.n].trades30d) >= cfg.negMin);
+        for (const e of extras) if (!fora.has(e) && !l.some(x => x.n === e)) l.push({ n: e, nome: e, usos: ['você pôs na lista'] });
+        return l;
+    }
+    /* vale abrir o livro? menor venda ≤ média × (1 − lucroPct), ou abaixo da maior compra aberta */
+    function pchCandidato(c, media, cfg) {
+        const p = Number(c && c.minSell);
+        if (!(p > 0) || !(Number(c.sellOrders) > 0)) return false;
+        if (Number(c.maxBuy) > p) return true;
+        const avg = Number(media && media.avg);
+        return avg > 0 && p <= avg * (1 - cfg.lucroPct);
+    }
+    /* livro de um item (market_list): menor e 2.º menor anúncio de OUTROS vendedores, maior compra de outros */
+    function pchLivro(orders, meusIds) {
+        const meus = meusIds || new Set(), ab = (o) => o && !meus.has(o.id) && Number(o.quantityRemaining) > 0 && Number(o.unitPrice) > 0;
+        const vend = (orders || []).filter(o => ab(o) && o.side === 'SELL').sort((a, b) => a.unitPrice - b.unitPrice);
+        const comp = (orders || []).filter(o => ab(o) && o.side === 'BUY').sort((a, b) => b.unitPrice - a.unitPrice);
+        const m = vend[0], s = vend.find(o => o.unitPrice > (m ? m.unitPrice : 0)), c = comp[0];
+        return { menor: m ? { id: m.id, preco: Number(m.unitPrice), qtd: Number(m.quantityRemaining) } : null, segundo: s ? Number(s.unitPrice) : null,
+                 compra: c ? { id: c.id, preco: Number(c.unitPrice), qtd: Number(c.quantityRemaining) } : null };
+    }
+    /* x = {preco, qtd (no menor anúncio), media {avg,…}, segundo, compra {id,preco,qtd}, cfg, ouro} →
+     * {ok, tipo 'arbitragem'|'revenda', revenda, lucroUn, lucroTot, qtd, desconto, motivo} */
+    function pchAvaliar(x) {
+        const cfg = x.cfg, preco = Number(x.preco), avg = Number(x.media && x.media.avg) || null;
+        const r = { ok: false, tipo: null, revenda: null, lucroUn: null, lucroTot: null, qtd: 0, desconto: avg ? 1 - preco / avg : null, motivo: null };
+        if (!(preco > 0)) { r.motivo = 'sem preço'; return r; }
+        let qMax = Math.min(Number(x.qtd) || 0, Math.floor(cfg.teto / preco));
+        if (Number.isFinite(x.ouro) && x.ouro != null) qMax = Math.min(qMax, Math.floor(x.ouro / preco));
+        if (x.compra && x.compra.preco > preco) {
+            r.tipo = 'arbitragem'; r.revenda = x.compra.preco; r.lucroUn = x.compra.preco - preco; r.qtd = Math.min(qMax, x.compra.qtd);
+        } else {
+            if (!avg) { r.motivo = 'sem média de 30 dias'; return r; }
+            r.tipo = 'revenda';
+            r.revenda = x.segundo > 0 ? Math.min(Math.round(avg), x.segundo - 1) : Math.round(avg);
+            r.lucroUn = Math.floor(r.revenda * (1 - PCH_TAXA)) - preco; r.qtd = qMax;
+        }
+        r.lucroTot = r.lucroUn * r.qtd;
+        if (r.qtd < 1) r.motivo = 'não cabe no teto ou no ouro';
+        else if (r.lucroUn < preco * cfg.lucroPct) r.motivo = `lucro de ${Math.round(r.lucroUn / preco * 100)} % por unidade (mínimo ${Math.round(cfg.lucroPct * 100)} %)`;
+        else if (r.lucroTot < cfg.lucroMin) r.motivo = 'lucro total abaixo do mínimo';
+        else r.ok = true;
+        return r;
+    }
+    /* @@PECHINCHAS-FIM */
+
     /* =========================================================================
      *  RADAR — estado, ganchos e tela (v2.13.0). Tudo abaixo LÊ: REST pública
      *  (/hunt/lootTable, /bestiary/creature) e as leituras do mercado
@@ -14595,9 +14664,196 @@
         const cat = MK.catalogo || null;
         return [...nomes].filter(n => !cat || (cat[mkMin(n)] && Number(cat[mkMin(n)].trades30d) > 0)).sort((a, b) => a.localeCompare(b)).slice(0, 80);
     }
+    /* ---- v2.29.0 — PECHINCHAS (o modelo está em @@PECHINCHAS): só a compra e a revenda enviam ação, e só por botão ---- */
+    const PCH = { itens: null, ofertas: [], vistos: null, lendo: false, comprando: null, erro: null, naoVistos: 0, prog: '', resumo: null };
+    const PCH_MEDIA_VALE_MS = 24 * 3600000, PCH_MEDIAS_POR_RODADA = 5, PCH_MEDIAS_NO_BOTAO = 20, PCH_LIVROS_POR_RODADA = 6; // o botão lê 20 médias (~70 s), a vigia 5
+    const pchCfg = () => Object.assign({}, PCH_PADRAO, ler('pch_cfg', {}) || {});
+    const guardarPchCfg = (p) => guardar('pch_cfg', Object.assign(pchCfg(), p));
+    async function pchCarregarListas() {
+        if (PCH.itens) return PCH.itens;
+        const ids = await idsPorNome(), inv = {};
+        for (const [nome, id] of Object.entries(ids || {})) if (inv[id] == null) inv[id] = nome;
+        let bosses = CAT.bosses;
+        if (!bosses || !bosses.length) bosses = normalizarBosses(await buscarJSON('/bosses/select')) || [];
+        const ilhas = await buscarJSON('/islands');
+        PCH.itens = pchItensVigiaveis(bosses, Array.isArray(ilhas) ? ilhas : [], id => inv[id]);
+        return PCH.itens;
+    }
+    function pchBipe() {
+        try {
+            const A = window.AudioContext || window.webkitAudioContext; if (!A) return;
+            const ctx = new A(), o = ctx.createOscillator(), g = ctx.createGain();
+            o.frequency.value = 880; g.gain.value = 0.06; o.connect(g); g.connect(ctx.destination);
+            o.start(); o.stop(ctx.currentTime + 0.25); setTimeout(() => { try { ctx.close(); } catch { /* já fechado */ } }, 600);
+        } catch { /* sem áudio */ }
+    }
+    /* VERIFICAR (botão) ou a vigia: catálogo → suas ordens → médias que faltam → livros dos candidatos → ofertas */
+    async function pchLer(origem) {
+        const imp = radarMercadoImpedido();
+        if (imp) { if (origem !== 'vigia') avisar('radar', 'pechinchas: ' + imp, 'erro'); return; }
+        MK.ocupado = 'pechinchas'; PCH.lendo = true; PCH.erro = null; renderizar();
+        guardar('pch_ult', Date.now()); // falha também espera a próxima rodada (não tenta de novo a cada minuto)
+        const cfg = pchCfg();
+        try {
+            PCH.prog = 'lista de keys e itens de quest…'; await pchCarregarListas();
+            PCH.prog = 'catálogo do Mercado…'; renderizar();
+            const r = await mkPedir('market_catalog', {});
+            if (r.erro) throw new Error('catálogo do Mercado: ' + mkErroTexto(r.erro));
+            if (!Array.isArray(MK.minhas) || Date.now() - (MK.minhas_t || 0) > RADAR_MINHAS_VALE_MS) { PCH.prog = 'suas ordens…'; renderizar(); const rm = await mkLerMinhas(); if (rm && rm.erro) log('pechinchas: suas ordens não lidas — ' + mkErroTexto(rm.erro), 'erro'); }
+            const meus = new Set((MK.minhas || []).map(o => o.id));
+            const vig = pchVigiados(PCH.itens, MK.catalogo, cfg).sort((a, b) => (Number((MK.catalogo[b.n] || {}).trades30d) || 0) - (Number((MK.catalogo[a.n] || {}).trades30d) || 0));
+            const med = ler('pch_medias', {}) || {};
+            let pedidas = 0;
+            const maxMed = origem === 'vigia' ? PCH_MEDIAS_POR_RODADA : PCH_MEDIAS_NO_BOTAO;
+            for (const x of vig) {
+                if (pedidas >= maxMed || MK.parar) break;
+                if (med[x.n] && Date.now() - (med[x.n].t || 0) < PCH_MEDIA_VALE_MS) continue;
+                pedidas++; PCH.prog = `média de ${x.nome} (${pedidas}/${maxMed})…`; renderizar();
+                const s = await mkPedir('market_stats', { itemName: x.nome });
+                if (s.erro) { if (MK_PARA_TUDO.has(s.erro)) break; continue; }
+                const st = s.data && s.data.stats;
+                med[x.n] = st ? { avg: Number(st.avg) || null, min: Number(st.min) || null, max: Number(st.max) || null, samples: Number(st.samples) || 0, t: Date.now() } : { avg: null, t: Date.now() };
+            }
+            guardar('pch_medias', med);
+            const cand = vig.filter(x => pchCandidato(MK.catalogo[x.n], med[x.n], cfg)).slice(0, PCH_LIVROS_POR_RODADA);
+            const ouro = mlOuroNormal(), ofertas = [];
+            for (const x of cand) {
+                if (MK.parar) break;
+                PCH.prog = `livro de ${x.nome}…`; renderizar();
+                const lr = await mkPedir('market_list', { asset: 'ITEM', itemName: x.nome });
+                if (lr.erro) { if (MK_PARA_TUDO.has(lr.erro)) break; continue; }
+                const lv = pchLivro((lr.data && lr.data.orders) || [], meus);
+                if (!lv.menor) continue;
+                const a = pchAvaliar({ preco: lv.menor.preco, qtd: lv.menor.qtd, media: med[x.n], segundo: lv.segundo, compra: lv.compra, cfg, ouro });
+                const c = MK.catalogo[x.n] || {};
+                ofertas.push(Object.assign(a, { n: x.n, nome: x.nome, usos: x.usos, orderId: lv.menor.id, preco: lv.menor.preco, noPreco: lv.menor.qtd, segundo: lv.segundo,
+                                                compra: lv.compra, media: med[x.n] || null, negocios: Number(c.trades30d) || 0, t: Date.now() }));
+            }
+            PCH.ofertas = ofertas.sort((a, b) => (b.ok - a.ok) || (b.lucroTot || 0) - (a.lucroTot || 0));
+            PCH.resumo = { t: Date.now(), vigiados: vig.length, comMedia: vig.filter(x => med[x.n] && med[x.n].avg).length, candidatos: cand.length };
+            guardar('pch_ult', Date.now());
+            if (!PCH.vistos) PCH.vistos = new Set(ler('pch_vistos', []) || []);
+            let novas = 0;
+            for (const o of PCH.ofertas.filter(o => o.ok)) {
+                const k = o.n + '|' + o.orderId + '|' + o.preco;
+                if (PCH.vistos.has(k)) continue;
+                PCH.vistos.add(k); novas++;
+                log(`pechincha: ${o.nome} a ${mkFmt(o.preco)} (média 30 d ${mkFmt(o.media && o.media.avg)}) — ${o.tipo === 'arbitragem' ? 'compra aberta a ' + mkFmt(o.compra.preco) : 'revenda ~' + mkFmt(o.revenda)}, lucro ${mkFmt(o.lucroTot)} em ${o.qtd} un.`, 'ok');
+            }
+            guardar('pch_vistos', [...PCH.vistos].slice(-300));
+            if (novas) {
+                PCH.naoVistos += novas; pchBipe();
+                const m = PCH.ofertas.filter(o => o.ok)[0];
+                const ant = ler('pch_alerta', null);
+                guardar('pch_alerta', { t: Date.now(), n: ((ant && ant.n) || 0) + novas, nome: m.nome, preco: m.preco, avg: m.media && m.media.avg, lucro: m.lucroTot });
+            }
+            if (origem !== 'vigia') avisar('radar', `pechinchas: ${vig.length} itens vigiados, ${cand.length} candidato(s), ${PCH.ofertas.filter(o => o.ok).length} oferta(s)`, 'ok');
+        } catch (e) { PCH.erro = e.message; if (origem !== 'vigia') avisar('radar', 'pechinchas: ' + e.message, 'erro'); else falhou('pechinchas (vigia)', e); }
+        finally { PCH.lendo = false; PCH.prog = ''; if (MK.ocupado === 'pechinchas') MK.ocupado = null; renderizar(); }
+    }
+    /* de minuto em minuto (o mesmo relógio do Radar): só age com a chave ligada, a cada `min` minutos (5 por padrão) */
+    function pchVigia() {
+        try {
+            const cfg = pchCfg();
+            if (!cfg.vigiar || Date.now() - (ler('pch_ult', 0) || 0) < Math.max(5, Number(cfg.min) || 5) * 60000) return;
+            if (RADAR.rodando) return; // o ranking do Radar está lendo: não disputa a fila
+            if (!socketAberto() || MK.ocupado || travaJogo() || scanOcupado() || _cicloEmCurso || mkPremiumAgora() === false) return;
+            pchLer('vigia').catch(e => falhou('pechinchas (vigia)', e));
+        } catch (e) { falhou('pechinchas (vigia)', e); }
+    }
+    /* COMPRAR (2 toques): relê o livro e só compra se o anúncio ainda está lá pelo mesmo preço e cabe no teto e no ouro */
+    async function pchComprar(o) {
+        if (!o || PCH.comprando) return;
+        const imp = mkImpedimento(); if (imp) { avisar('radar', 'pechinchas: ' + imp, 'erro'); return; }
+        if (MK.ocupado) { avisar('radar', 'pechinchas: o Mercado está ocupado (' + MK.ocupado + ')', 'erro'); return; }
+        PCH.comprando = o.orderId; MK.ocupado = 'pechinchas'; renderizar();
+        try {
+            const lr = await mkPedir('market_list', { asset: 'ITEM', itemName: o.nome });
+            if (lr.erro) throw new Error('não consegui reler o livro (' + mkErroTexto(lr.erro) + ') — nada comprado');
+            const ord = ((lr.data && lr.data.orders) || []).find(x => x && x.id === o.orderId);
+            if (!ord || Number(ord.quantityRemaining) < 1) throw new Error(o.nome + ': o anúncio já foi vendido — nada comprado');
+            if (Number(ord.unitPrice) !== o.preco) throw new Error(`${o.nome}: o preço mudou (${mkFmt(o.preco)} → ${mkFmt(ord.unitPrice)}) — nada comprado`);
+            const cfg = pchCfg(), ouro = mlOuroNormal();
+            let q = Math.min(o.qtd, Number(ord.quantityRemaining), Math.floor(cfg.teto / o.preco));
+            if (ouro != null) q = Math.min(q, Math.floor(ouro / o.preco));
+            if (q < 1) throw new Error(`ouro normal insuficiente (${mkFmt(ouro)}) — nada comprado`);
+            const r = await mkPedir('market_execute', { orderId: o.orderId, quantity: q, requestId: mkRid() });
+            if (r.erro) throw new Error(r.erro === 'sem_resposta' ? 'o jogo não respondeu — confira a mochila e o Histórico do Mercado antes de repetir' : 'o jogo recusou: ' + mkErroTexto(r.erro));
+            const compras = ler('pch_compras', []) || [];
+            compras.push({ t: Date.now(), n: o.n, nome: o.nome, qtd: q, preco: o.preco, revenda: o.revenda, tipo: o.tipo, compra: o.compra || null, media: o.media && o.media.avg });
+            guardar('pch_compras', compras.slice(-50));
+            PCH.ofertas = PCH.ofertas.filter(x => x.orderId !== o.orderId);
+            log(`pechinchas: COMPRADO ${q}× ${o.nome} a ${mkFmt(o.preco)} (${mkFmt(q * o.preco)}) — está na mochila; revenda na lista "compradas"`, 'ok');
+            avisar('radar', `pechinchas: comprado ${q}× ${o.nome} por ${mkFmt(q * o.preco)}`, 'ok');
+        } catch (e) { log('pechinchas: ' + e.message, 'erro'); avisar('radar', 'pechinchas: ' + e.message, 'erro'); }
+        finally { PCH.comprando = null; if (MK.ocupado === 'pechinchas') MK.ocupado = null; renderizar(); }
+    }
+    /* REVENDER (2 toques): arbitragem → vende para a compra aberta (market_execute na ordem BUY); senão anuncia no preço de
+     * revenda pelo fluxo do Mercado (mkAnunciarUm: confere a mochila e o piso do NPC) */
+    async function pchRevender(i) {
+        const compras = ler('pch_compras', []) || [], c = compras[i];
+        if (!c || PCH.comprando) return;
+        const imp = mkImpedimento(); if (imp) { avisar('radar', 'pechinchas: ' + imp, 'erro'); return; }
+        if (MK.ocupado) { avisar('radar', 'pechinchas: o Mercado está ocupado (' + MK.ocupado + ')', 'erro'); return; }
+        PCH.comprando = 'revenda:' + i; MK.ocupado = 'pechinchas'; renderizar();
+        try {
+            await mkCarregarRest();
+            let feito = false;
+            if (c.tipo === 'arbitragem' && c.compra && c.compra.id) {
+                const r = await mkPedir('market_execute', { orderId: c.compra.id, quantity: Math.min(c.qtd, c.compra.qtd), requestId: mkRid() });
+                if (r.erro) log(`pechinchas: vender para a compra aberta falhou (${mkErroTexto(r.erro)}) — anuncio no preço de revenda`, 'erro');
+                else { feito = true; log(`pechinchas: vendido ${c.qtd}× ${c.nome} para a compra aberta a ${mkFmt(c.compra.preco)}`, 'ok'); }
+            }
+            if (!feito) {
+                const npc = MK.npc ? (Number(MK.npc[mkMin(c.nome)]) || 0) : null;
+                const preco = c.tipo === 'arbitragem' ? Math.max(c.revenda, Math.round(c.media || 0)) : c.revenda;
+                const r = await mkAnunciarUm({ chave: 'n:' + mkMin(c.nome), tipo: 'pilha', nome: c.nome, n: mkMin(c.nome), qtd: c.qtd, preco, iid: null, retirar: [], npc });
+                feito = !!(r && r.ok);
+            }
+            if (feito) { compras.splice(i, 1); guardar('pch_compras', compras); }
+        } catch (e) { log('pechinchas: revenda — ' + e.message, 'erro'); }
+        finally { PCH.comprando = null; if (MK.ocupado === 'pechinchas') MK.ocupado = null; renderizar(); }
+    }
+    /* v2.29.0 — dono, 21/10: "não fico olhando muito; algo de cor forte quando achar algo que vale conferir". Faixa fixa no
+     * alto da página (fora da gaveta), pulsando, e o título da aba piscando, até abrir Radar → Pechinchas ou tocar no ✕. */
+    let _pchTitulo = null;
+    function pchLimparAlerta() { guardar('pch_alerta', null); PCH.naoVistos = 0; pchPintarAlerta(); }
+    function pchPintarAlerta() {
+        const a = ler('pch_alerta', null);
+        let f = document.getElementById('tb-pch-alerta');
+        if (!a) {
+            if (f) f.remove();
+            if (_pchTitulo != null) { if (/^💰 PECHINCHA/.test(document.title)) document.title = _pchTitulo; _pchTitulo = null; }
+            return;
+        }
+        if (!f && document.body) {
+            if (!document.getElementById('tb-pch-css')) {
+                const st = document.createElement('style'); st.id = 'tb-pch-css';
+                st.textContent = '#tb-pch-alerta{position:fixed;z-index:100000;top:6px;left:50%;transform:translateX(-50%);max-width:calc(100vw - 32px);box-sizing:border-box;display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:12px;border:3px solid #fff;background:linear-gradient(90deg,#ff1f6b,#ff8a00);color:#fff;font:bold 15px/1.3 system-ui,sans-serif;box-shadow:0 0 0 4px #ff1f6b88,0 10px 30px #000c;cursor:pointer;animation:tbpchpulsa 1s infinite}' +
+                    '#tb-pch-alerta button{flex:none;min-width:32px;min-height:32px;border:0;border-radius:8px;background:#0004;color:#fff;font:bold 16px system-ui,sans-serif;cursor:pointer}' +
+                    '@keyframes tbpchpulsa{0%,100%{box-shadow:0 0 0 4px #ff1f6b88,0 10px 30px #000c}50%{box-shadow:0 0 0 12px #ffd21f99,0 10px 30px #000c}}';
+                (document.head || document.documentElement).appendChild(st);
+            }
+            f = document.createElement('div'); f.id = 'tb-pch-alerta'; f.setAttribute('role', 'alert');
+            f.innerHTML = '<span></span><button type="button" aria-label="dispensar o aviso">✕</button>';
+            f.onclick = (ev) => {
+                if (ev.target && ev.target.tagName === 'BUTTON') { pchLimparAlerta(); return; }
+                guardar('radar_sub', 'pechinchas'); ABA = 'radar'; guardarUI({ aba: 'radar', aberta: true, oculto: false }); pchLimparAlerta(); renderizar();
+            };
+            document.body.appendChild(f);
+        }
+        if (f) {
+            const txt = `💰 PECHINCHA${a.n > 1 ? ' (' + a.n + ')' : ''}: ${a.nome} a ${mkFmt(a.preco)}${a.avg ? ' (média 30 d ' + mkFmt(a.avg) + ')' : ''} — lucro +${mkFmt(a.lucro)} · toque para ver`;
+            const sp = f.querySelector('span'); if (sp && sp.textContent !== txt) sp.textContent = txt;
+        }
+        if (_pchTitulo == null) _pchTitulo = document.title.replace(/^💰 PECHINCHA! /, '');
+        const t = Math.floor(Date.now() / 1000) % 2 ? '💰 PECHINCHA! ' + _pchTitulo : _pchTitulo;
+        if (document.title !== t) document.title = t;
+    }
     function pintarContadorRadar() {
+        try { pchPintarAlerta(); } catch (e) { falhou('pechinchas (aviso)', e); }
         const i = $('#tb-trilho .tb-ico[data-aba="radar"]'); if (!i) return;
-        const n = RADAR.alertas.naoVistos, b = $('.tb-cont', i);
+        const n = RADAR.alertas.naoVistos + PCH.naoVistos, b = $('.tb-cont', i);
         if (b) { b.textContent = n > 9 ? '9+' : String(n); b.hidden = !n; }
         const rot = n ? `Radar — ${n} alerta${n > 1 ? 's' : ''} de preço não visto${n > 1 ? 's' : ''}` : 'Radar';
         if (i.getAttribute('aria-label') !== rot) { i.setAttribute('aria-label', rot); i.title = rot; }
@@ -15342,23 +15598,83 @@
         ligarCalcForja();
     }
 
+    /* v2.29.0 — Radar → Pechinchas */
+    function rdTelaPechinchas() {
+        const cfg = pchCfg(), ult = ler('pch_ult', 0) || 0, ocup = PCH.lendo || !!PCH.comprando || !!MK.ocupado;
+        const pct = (x) => (x == null ? '—' : Math.round(x * 100) + ' %');
+        let h = `<div class="tb-linha"><button type="button" class="tb-bt" id="rd-pch-ler"${ocup ? ' disabled' : ''}>${PCH.lendo ? 'verificando…' : 'VERIFICAR AGORA'}</button>` +
+                `${rdSw('rd-pch-vigiar', cfg.vigiar, 'vigiar a cada')}<input type="number" id="rd-pch-min" min="5" step="1" value="${cfg.min}" aria-label="minutos entre leituras (mínimo 5)"> min</div>`;
+        h += `<div class="tb-mut">${ult ? 'última leitura ' + rdHa(ult) : 'nunca verificado'}${cfg.vigiar && ult ? ` · próxima em ~${numBR(Math.max(0, Math.ceil((ult + cfg.min * 60000 - Date.now()) / 60000)))} min` : ''}` +
+             `${PCH.resumo ? ` · ${PCH.resumo.vigiados} vigiados (${PCH.resumo.comMedia} com média), ${PCH.resumo.candidatos} candidato(s)` : ''}${mkPremiumAgora() === false ? ' · <span class="tb-ruim">sem Premium</span>' : ''}</div>`;
+        if (PCH.prog) h += `<div class="tb-av" role="status">${escHtml(PCH.prog)}</div>`;
+        if (PCH.erro) h += `<div class="rd-cx tb-ruim">${escHtml(PCH.erro)}</div>`;
+        h += `<div class="rd-form"><label>lucro ≥ <input type="number" id="rd-pch-pct" min="1" value="${Math.round(cfg.lucroPct * 100)}"> %</label>` +
+             `<label>e ≥ <input type="number" id="rd-pch-lmin" min="0" step="5000" value="${cfg.lucroMin}"></label>` +
+             `<label>teto <input type="number" id="rd-pch-teto" min="1000" step="100000" value="${cfg.teto}"></label>` +
+             `<label>negócios ≥ <input type="number" id="rd-pch-neg" min="0" value="${cfg.negMin}"></label></div>`;
+        const ofs = PCH.ofertas || [], boas = ofs.filter(o => o.ok);
+        h += `<div class="rd-tit">Ofertas${boas.length ? ` (${boas.length})` : ''}</div>`;
+        if (!boas.length) h += `<div class="tb-mut">${ult ? 'Nada abaixo da média com lucro agora.' : 'Clique VERIFICAR AGORA ou ligue a vigia.'} Enquanto as médias de 30 dias não chegam (20 a cada VERIFICAR, 5 a cada leitura da vigia): as ofertas aparecem conforme elas chegam.</div>`;
+        PCH.botoes = [];
+        for (const o of boas) {
+            const i = PCH.botoes.push(o) - 1, m = o.media || {};
+            h += `<div class="rd-cx"><div class="tb-lin"><span><b>${escHtml(o.nome)}</b>${o.tipo === 'arbitragem' ? ' <span class="tb-tag tb-ok">compra aberta acima</span>' : ''}</span><span class="tb-ok"><b>+${mkFmt(o.lucroTot)}</b></span></div>` +
+                 `<div class="tb-mut">${escHtml(o.usos.join(' · '))}</div>` +
+                 `<div>anunciado a <b>${mkFmt(o.preco)}</b> (${o.noPreco} un. nesse preço) · <b>média 30 d ${mkFmt(m.avg)}</b> → <b class="tb-ok">${pct(o.desconto)} abaixo</b></div>` +
+                 `<div class="tb-mut">30 dias: mín ${mkFmt(m.min)} · máx ${mkFmt(m.max)} · ${numBR(o.negocios)} negócios${m.samples ? ` (${numBR(m.samples)} na média)` : ''} · maior compra agora ${o.compra ? mkFmt(o.compra.preco) + ' (' + o.compra.qtd + ' un.)' : '—'} · 2.º menor anúncio ${mkFmt(o.segundo)}</div>` +
+                 `<div>${o.tipo === 'arbitragem' ? `vende na hora para a compra aberta a <b>${mkFmt(o.revenda)}</b> (sem taxa)` : `revenda ~<b>${mkFmt(o.revenda)}</b> (menor entre a média e o 2.º anúncio − 1; −5 % de taxa)`} · lucro ${mkFmt(o.lucroUn)}/un. × ${o.qtd} = <b>${mkFmt(o.lucroTot)}</b> · gasta ${mkFmt(o.qtd * o.preco)}</div>` +
+                 `<button type="button" class="tb-bt pri mini" id="rd-pch-c-${i}"${ocup ? ' disabled' : ''} style="margin-top:3px">${PCH.comprando === o.orderId ? 'COMPRANDO…' : `COMPRAR ${o.qtd} (2 toques)`}</button></div>`;
+        }
+        const quase = ofs.filter(o => !o.ok);
+        if (quase.length) h += aj('rd-pch-quase', quase.map(o => `<div class="tb-lin"><span>${escHtml(o.nome)} a ${mkFmt(o.preco)} <span class="tb-mut">(média ${mkFmt(o.media && o.media.avg)}, ${pct(o.desconto)} abaixo)</span></span><span class="tb-mut">${escHtml(o.motivo || '')}</span></div>`).join(''), `candidatos que não fecharam a conta (${quase.length})`);
+        const compras = ler('pch_compras', []) || [];
+        if (compras.length) {
+            h += `<div class="rd-tit">Compradas, para revender (${compras.length})</div>`;
+            compras.forEach((c, i) => { h += `<div class="tb-lin"><span>${escHtml(c.nome)} ×${c.qtd} a ${mkFmt(c.preco)} <span class="tb-mut">${rdHa(c.t)}</span></span><span><button type="button" class="tb-bt mini" id="rd-pch-r-${i}"${ocup ? ' disabled' : ''}>${c.tipo === 'arbitragem' ? 'VENDER PARA A COMPRA' : 'ANUNCIAR a ' + mkFmt(c.revenda)}</button> <button type="button" class="tb-bt mini" id="rd-pch-x-${i}" title="tirar da lista (já vendi à mão)">✕</button></span></div>`; });
+        }
+        const med = ler('pch_medias', {}) || {};
+        const vig = PCH.itens && MK.catalogo ? pchVigiados(PCH.itens, MK.catalogo, cfg).sort((a, b) => (Number((MK.catalogo[b.n] || {}).trades30d) || 0) - (Number((MK.catalogo[a.n] || {}).trades30d) || 0)) : [];
+        if (vig.length) {
+            h += aj('rd-pch-vig', `<table class="tb-an"><colgroup><col><col class="c5"><col class="c5"><col class="c4"></colgroup><thead><tr><th>item</th><th>menor</th><th>média</th><th>neg.</th></tr></thead><tbody>` +
+                vig.map(x => { const c = MK.catalogo[x.n] || {}, m = med[x.n]; const d = m && m.avg && c.minSell ? 1 - c.minSell / m.avg : null;
+                    return `<tr><td title="${escHtml(x.usos.join(' · '))}">${escHtml(x.nome)}</td><td>${mkFmt(c.minSell)}</td><td>${m && m.avg ? mkFmt(m.avg) : '<span class="tb-mut">…</span>'}${d != null && d > 0.05 ? ` <span class="tb-ok">−${Math.round(d * 100)}%</span>` : ''}</td><td>${numBR(c.trades30d)}</td></tr>`; }).join('') +
+                `</tbody></table><div class="rd-form"><input id="rd-pch-extra" placeholder="pôr outro item na lista" style="flex:1 1 9em"><button type="button" class="tb-bt mini" id="rd-pch-add">pôr</button></div>` +
+                ((cfg.extras || []).length ? `<div class="tb-mut">seus: ${cfg.extras.map(escHtml).join(', ')} <button type="button" class="tb-bt mini" id="rd-pch-limpar">limpar</button></div>` : ''), `itens vigiados (${vig.length})`);
+        }
+        return h + aj('rd-pch-como', 'Vigia as keys dos Elites e os itens que o Silas pede para abrir ilhas e para as tentativas dos bosses (listas do próprio jogo), com 50 negócios ou mais em 30 dias. Cada leitura: 1 catálogo do Mercado (menor anúncio de todos), até 5 médias de 30 dias novas (guardadas 24 h) e o livro de até 6 itens que parecem baratos. <b>Revenda</b> = o menor entre a média de 30 dias e o 2.º menor anúncio − 1; o lucro desconta os 5 % de taxa do anúncio. Abaixo de uma compra aberta é <b>arbitragem</b>: vende na hora para quem já quer comprar, sem taxa. A média de 30 dias costuma ficar perto da maior compra aberta, e não dos anúncios: a maioria das vendas é gente vendendo para uma ordem de compra (visto em 21/10: genio key média 15,9 mil, compra 26 mil, anúncio 42 mil). Por isso a revenda nunca passa da média, e a pechincha mais segura é a arbitragem. Só aparece com lucro ≥ ' + Math.round(cfg.lucroPct * 100) + ' % e ≥ ' + mkFmt(cfg.lucroMin) + ', até ' + mkFmt(cfg.teto) + ' por compra. COMPRAR relê o anúncio e confere preço, quantidade e ouro; nada compra nem anuncia sozinho. Seus próprios anúncios não contam.');
+    }
     function telaRadar() {
         rdGarantirCss();
         const sub = ler('radar_sub', 'mapas');
-        const n = RADAR.alertas.naoVistos;
-        const abas = [['mapas', 'Mapas'], ['loot', 'Loot'], ['alertas', 'Alertas' + (n && sub !== 'alertas' ? ` <b class="tb-av">${n > 9 ? '9+' : n}</b>` : '')], ['dia', 'Dia']];
+        const n = RADAR.alertas.naoVistos, np = PCH.naoVistos;
+        const abas = [['mapas', 'Mapas'], ['loot', 'Loot'], ['alertas', 'Alertas' + (n && sub !== 'alertas' ? ` <b class="tb-av">${n > 9 ? '9+' : n}</b>` : '')], ['pechinchas', 'Pechinchas' + (np && sub !== 'pechinchas' ? ` <b class="tb-av">${np > 9 ? '9+' : np}</b>` : '')], ['dia', 'Dia']];
         let h = `<div id="tb-radar"><div class="rd-sub" role="tablist">` + abas.map(([k, nome]) =>
             `<button type="button" class="rd-aba${k === sub ? ' on' : ''}" data-rd-sub="${k}" role="tab" aria-selected="${k === sub}">${nome}</button>`).join('') + `</div>`;
         let corpo = '';
-        try { corpo = sub === 'loot' ? rdTelaLoot() : sub === 'alertas' ? rdTelaAlertas() : sub === 'dia' ? rdTelaDia() : rdTelaMapas(); }
+        try { corpo = sub === 'loot' ? rdTelaLoot() : sub === 'alertas' ? rdTelaAlertas() : sub === 'pechinchas' ? rdTelaPechinchas() : sub === 'dia' ? rdTelaDia() : rdTelaMapas(); }
         catch (e) { falhou('radar (tela ' + sub + ')', e); corpo = `<div class="rd-cx tb-ruim">esta parte da tela falhou: ${escHtml(e.message)}</div>`; }
-        return h + corpo + `<div class="rd-rodape">Só leitura: nada aqui envia comando de ação ao jogo.</div></div>`;
+        return h + corpo + `<div class="rd-rodape">${sub === 'pechinchas' ? 'Só COMPRAR e REVENDER (2 toques) enviam ação ao jogo; a vigia só lê.' : 'Só leitura: nada aqui envia comando de ação ao jogo.'}</div></div>`;
     }
     function ligarRadar() {
         $$('[data-rd-sub]').forEach(b => { b.onclick = () => { guardar('radar_sub', b.dataset.rdSub); renderizar(); }; });
         const sub = ler('radar_sub', 'mapas');
         if (sub === 'alertas' && RADAR.alertas.naoVistos) { RADAR.alertas.naoVistos = 0; pintarContadorRadar(); }
+        if (sub === 'pechinchas' && (PCH.naoVistos || ler('pch_alerta', null))) { pchLimparAlerta(); pintarContadorRadar(); }
         const cl = (id, f) => { const e = $('#' + id); if (e) e.onclick = f; };
+        /* pechinchas (v2.29.0) */
+        cl('rd-pch-ler', () => { pchLer('botao').catch(e => falhou('pechinchas', e)); });
+        cl('rd-pch-vigiar', () => { const on = !pchCfg().vigiar; guardarPchCfg({ vigiar: on }); avisar('radar', on ? `pechinchas: vigia ligada — lê o Mercado a cada ${pchCfg().min} min (só leitura; comprar é sempre por botão)` : 'pechinchas: vigia desligada', 'ok'); renderizar(); });
+        const pnum = (id, campo, f) => { const e = $('#' + id); if (e) e.onchange = () => { const v = Number(e.value); if (Number.isFinite(v) && v >= 0) guardarPchCfg({ [campo]: f ? f(v) : v }); renderizar(); }; };
+        pnum('rd-pch-min', 'min', v => Math.max(5, Math.round(v)));
+        pnum('rd-pch-pct', 'lucroPct', v => Math.max(0.01, v / 100));
+        pnum('rd-pch-lmin', 'lucroMin'); pnum('rd-pch-teto', 'teto', v => Math.max(1000, v)); pnum('rd-pch-neg', 'negMin');
+        (PCH.botoes || []).forEach((o, i) => { const b = $('#rd-pch-c-' + i); if (b && !b.disabled) ligarDoisToques(b, 'pch-' + o.orderId, `CONFIRMAR: comprar ${o.qtd} por ${mkFmt(o.qtd * o.preco)}?`, () => pchComprar(o)); });
+        (ler('pch_compras', []) || []).forEach((c, i) => {
+            const b = $('#rd-pch-r-' + i); if (b && !b.disabled) ligarDoisToques(b, 'pch-r-' + i + '-' + c.t, 'CONFIRMAR: revender?', () => pchRevender(i));
+            cl('rd-pch-x-' + i, () => { const l = ler('pch_compras', []) || []; l.splice(i, 1); guardar('pch_compras', l); renderizar(); });
+        });
+        cl('rd-pch-add', () => { const v = String(($('#rd-pch-extra') || {}).value || '').trim(); if (!v) return; guardarPchCfg({ extras: [...new Set((pchCfg().extras || []).concat([v]))] }); renderizar(); });
+        cl('rd-pch-limpar', () => { guardarPchCfg({ extras: [] }); renderizar(); });
         /* mapas */
         cl('rd-calc', () => { rankingRodar().catch(e => falhou('radar (ranking)', e)); });
         const st = $('#rd-scan-top'); if (st) ligarDoisToques(st, 'rd-scan-top', 'confirmar: medir e trocar de mapa?', () => radarScanRapido(RADAR.topIds || []));
@@ -15463,7 +15779,7 @@
             scan: SCAN.ativo ? 'ok pulsa' : '',
             equip: EQUIP.equipando || EQUIP.lendo ? 'av pulsa' : '',
             mercado: MK.ocupado ? 'av pulsa' : '',
-            radar: RADAR.rodando || MK.ocupado === 'radar' ? 'av pulsa' : alertasCfg().vigiar ? 'ok' : '',
+            radar: ler('pch_alerta', null) ? 'ruim pulsa' : RADAR.rodando || MK.ocupado === 'radar' || PCH.lendo ? 'av pulsa' : alertasCfg().vigiar || pchCfg().vigiar ? 'ok' : '', // v2.29.0 — Pechinchas
             forja: FJ.lendo || FJ.forjando || FJ.simulando || FJ.comprando ? 'av pulsa' : '' // v2.25.0
         };
         $$('.tb-ico[data-aba]', t).forEach(i => { const on = !!u.aberta && !u.oculto && i.dataset.aba === ABA; i.classList.toggle('on', on); i.setAttribute('aria-pressed', on ? 'true' : 'false'); const d = $('.tb-dot', i); if (d) d.className = 'tb-dot ' + (estado[i.dataset.aba] || ''); });
@@ -15606,6 +15922,12 @@
         setInterval(() => verificarAtualizacao().catch(() => { }), 30 * 60 * 1000);
         /* v2.13.0 — Radar: o vigiar dos alertas (só age se o dono ligou) e o dia salvo ao sair */
         setInterval(radarVigia, 60000);
+        /* v2.29.0 — dono, 21/10: a vigia das pechinchas fica LIGADA sempre que o navegador abre (só lê o Mercado; comprar é por botão) */
+        /* 21/10 — o mínimo de 30 mil no total barrava as keys (média 15–40 mil): vira 2 mil; o filtro é o lucro de 15 % por unidade */
+        try { const pc = ler('pch_cfg', null); if (pc && pc.lucroMin === 30000) guardarPchCfg({ lucroMin: PCH_PADRAO.lucroMin }); } catch (e) { falhou('pechinchas (migrar)', e); }
+        try { if (!pchCfg().vigiar) { guardarPchCfg({ vigiar: true }); log('pechinchas: vigia ligada (padrão a cada abertura) — só lê o Mercado a cada ' + pchCfg().min + ' min', 'info'); } } catch (e) { falhou('pechinchas (ligar vigia)', e); }
+        setInterval(pchVigia, 60000);
+        setInterval(() => { try { pchPintarAlerta(); } catch (e) { /* só o aviso */ } }, 1000); // o título da aba pisca a cada segundo
         setInterval(() => { try { if (emHunt()) danoMapaGuardar(); } catch (e) { falhou('dano por mapa', e); } }, 120000); // v2.21.0
         window.addEventListener('beforeunload', () => { try { fecharSessao('página fechada'); } catch (e) { } try { radarSalvarDia(true); } catch { /* sem espaço */ } });
     }
@@ -15652,6 +15974,8 @@
         mlAvaliar, mlCandidatosMercado, get MELHORIAS() { return ML; },
         // v2.13.0 — Radar (estimativa e calibração; só leitura)
         estimarMapa, tpEstimar, tpCalibrar, registrarMotorRanking, get RADAR() { return RADAR; },
+        // v2.29.0 — Pechinchas (modelo e o estado; comprar NÃO fica exposto)
+        pchItensVigiaveis, pchVigiados, pchCandidato, pchLivro, pchAvaliar, get PCH() { return PCH; },
         // v2.17.0 — Invasão (leituras e o plano; o salvar só pelo botão)
         invPlanoHoje, invPosicoes, invMontarPreset, invResumoReplay, invTemplateDoReplay, invAplicarTemplate, invModelos, get INV() { return INV; }
     }; }

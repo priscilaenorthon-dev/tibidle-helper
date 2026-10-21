@@ -5979,3 +5979,29 @@ Resultado do Scan, estável corrigido (xp/h raw · ouro/h estável · vida mín.
 | Thunderscar Peak | 151,2k · −269,1k · 73 % | 155,9k · −69,1k · 69 % (magos 51/42 %) |
 | Inquisition Entrance | 137,7k · +5,0k · 42 % | 131,0k · −33,4k · 40 % |
 O Discord gastou menos poção em 4 dos 5 mapas (Inquisition: mais). 70–140 abates em 5 min: o loot ainda é ruído.
+
+## 2.29.0 — Radar → Pechinchas (21/10)
+
+Dono: "a turma com pressa de vender coloca item muito abaixo da média; analisa o mercado para comprar e revender".
+- **O que vigia:** keys dos Elites (`/bosses/select`, `kind: mini`, `keyItem`), os itens das tentativas de boss
+  (`access.items`) e os que o Silas pede para abrir ilhas (`/islands`, `access.items`; itemId → nome por
+  `items-by-name.json`). Entra quem tem ≥ 50 negócios em 30 dias no `market_catalog`. O dono pode pôr e tirar itens.
+- **Leitura:** 1 `market_catalog`, médias de 30 dias por `market_stats` (guardadas 24 h; 20 no botão, 5 por rodada da
+  vigia), `market_list` dos até 6 candidatos (menor venda ≤ 85 % da média, ou abaixo da maior compra aberta).
+- **Regra:** revenda = min(média 30 d, 2.º menor anúncio − 1); lucro/un = floor(revenda × 0,95) − preço. Oferta com
+  lucro ≥ 15 % por unidade e ≥ 2 mil no total, até 1 milhão por compra. Abaixo de uma compra aberta = **arbitragem**
+  (vende na hora para a compra, sem taxa).
+- **Achado:** a média de 30 dias fica perto da maior COMPRA aberta, não dos anúncios (genio key: média 15,9 mil,
+  compra 26 mil, anúncio 42 mil) — a maioria das vendas é gente vendendo para uma ordem de compra. Por isso a revenda
+  nunca passa da média, e a arbitragem é a pechincha mais segura.
+- **Mínimo total:** começou em 30 mil; o dono apontou que barrava toda key (média 15–40 mil): uma key a 10 mil com
+  média 15,9 mil dá ~5 mil de lucro (50 %). Baixou para 2 mil (o valor antigo gravado é migrado no boot).
+- **Vigia:** ligada sempre que a página abre (só lê, a cada 5 min; pausa sem Premium, com o Mercado ocupado, Scan,
+  ciclo de venda ou o ranking do Radar). Achou oferta nova: faixa rosa/laranja pulsando no alto da página, título da aba
+  piscando "💰 PECHINCHA!", ponto vermelho no ícone do Radar, linha no Log e um bipe — até abrir Radar → Pechinchas ou
+  tocar no ✕.
+- **Comprar/revender:** só por botão, 2 toques. COMPRAR relê o livro e confere preço, quantidade e ouro normal;
+  `market_execute {orderId, quantity, requestId}`. REVENDER: arbitragem → `market_execute` na ordem BUY; senão anúncio
+  pelo fluxo do Mercado (piso do NPC incluído). `market_execute` numa ordem BUY ainda não foi visto ao vivo.
+- **Leilão (coins):** `auction_create {iid, origin, minPrice, buyout, durationHours, requestId}` com 0 coins →
+  `insufficient_coins` (`server.leilao.saldo`); anunciar exige saldo de coins.

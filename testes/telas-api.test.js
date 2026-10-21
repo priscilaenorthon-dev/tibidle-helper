@@ -533,7 +533,7 @@ function criarMundo(opts) {
 
 const BASE = { tb_helper_debug: 'true', tb_helper_nivel_manual: '62', tb_helper_era: '"2026-09-wipe"' };
 const comAba = (sub, extra) => {
-    const ls = Object.assign({}, BASE, { tb_helper_ui: JSON.stringify({ aba: 'radar', aberta: true, livre: false, oculto: false, logLido: 1 }), tb_helper_radar_sub: JSON.stringify(sub || 'mapas') }, extra || {});
+    const ls = Object.assign({}, BASE, { tb_helper_ui: JSON.stringify({ aba: 'radar', aberta: true, livre: false, oculto: false, logLido: 1 }), tb_helper_radar_sub: JSON.stringify(sub || 'mapas'), tb_helper_pch_ult: JSON.stringify(9e15) }, extra || {});
     for (const [v, x] of Object.entries(DANOS)) ls['tb_helper_danos_' + v] = JSON.stringify(x);
     return ls;
 };
@@ -583,7 +583,7 @@ t('Radar/Mapas: ranking completo é SÓ LEITURA (nada no socket, GETs públicos)
     assert.deepStrictEqual(enviados(ws), [], 'o ranking mandou algo pelo socket');
     const novos = W.gets.slice(antesGets).map(caminhoGet);
     const fora = novos.filter(u => !GETS_OK.test(u));
-    assert.deepStrictEqual(fora, [], 'GET fora da lista');
+    assert.deepStrictEqual(fora, [], 'GET fora da lista: ' + JSON.stringify(fora));
     const nLoot = novos.filter(u => /lootTable/.test(u)).length;
     const elegiveis = HUNTS.filter(h => h.levelMin <= 67).length;
     assert.strictEqual(nLoot, elegiveis, 'uma tabela por mapa elegível');
