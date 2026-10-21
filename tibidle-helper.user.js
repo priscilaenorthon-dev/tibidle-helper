@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.28.4
+// @version      2.28.5
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.28.4';
+    const VERSAO = '2.28.5';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -673,9 +673,18 @@
     /* v2.3.0 — a TABELA inteira fica em memória: o Scan precisa do valor e da
      * chance de cada item para separar loot estável de loteria. */
     const LOOT_TABELA = {};
+    /* v2.28.5 — A MOEDA VALE O QUE VALE. /hunt/lootTable traz platinum coin com value 1 (visto em 20/10 no Death Portal,
+     * Throne of Verminor e Throne of Apocalypse), mas o analisador do jogo conta 100 por moeda. O "estável" do Scan e o
+     * loot por abate do catálogo perdiam até 200k/h nesses mapas (Throne of Apocalypse: 939 abates/h × ~2 moedas × 99).
+     * Toda tabela que entra passa por aqui. */
+    const VALOR_MOEDA = { 'gold coin': 1, 'platinum coin': 100, 'crystal coin': 10000 };
+    const corrigirMoedas = (t) => (Array.isArray(t) ? t.map(it => {
+        const v = it && VALOR_MOEDA[String(it.name || '').toLowerCase().trim()];
+        return v != null && Number(it.value) !== v ? Object.assign({}, it, { value: v }) : it;
+    }) : []);
     async function lootTabela(huntId) {
         if (LOOT_TABELA[huntId]) return LOOT_TABELA[huntId];
-        try { const t = await buscarJSON('/hunt/lootTable?huntId=' + huntId); LOOT_TABELA[huntId] = Array.isArray(t) ? t : []; radarGuardarTab(huntId, LOOT_TABELA[huntId]); return LOOT_TABELA[huntId]; }
+        try { const t = await buscarJSON('/hunt/lootTable?huntId=' + huntId); LOOT_TABELA[huntId] = corrigirMoedas(t); radarGuardarTab(huntId, LOOT_TABELA[huntId]); return LOOT_TABELA[huntId]; }
         catch (e) { return null; }
     }
 
@@ -688,7 +697,7 @@
      * catalogo carregado garante que id e titulo combinam. */
     const chaveLoot = (huntId) => {
         const h = (CAT.hunts || []).find(x => x.id === huntId);
-        return 'loot_' + (h && h.title ? h.title.replace(/[^\w]+/g, '_').toLowerCase() : 'id' + huntId);
+        return 'loot_m_' + (h && h.title ? h.title.replace(/[^\w]+/g, '_').toLowerCase() : 'id' + huntId);
     };
 
     async function ouroPorAbate(huntId) {
@@ -697,11 +706,11 @@
         const guardado = ler(chaveLoot(huntId), null);
         if (guardado != null) { LOOT_CACHE[huntId] = guardado; return guardado; }
         try {
-            const t = await buscarJSON('/hunt/lootTable?huntId=' + huntId);
-            LOOT_TABELA[huntId] = Array.isArray(t) ? t : [];
+            const t = corrigirMoedas(await buscarJSON('/hunt/lootTable?huntId=' + huntId));
+            LOOT_TABELA[huntId] = t;
             radarGuardarTab(huntId, LOOT_TABELA[huntId]);
             let o = 0;
-            (t || []).forEach(it => {
+            t.forEach(it => {
                 const p = (it.chance || 0) / 100000 * (((it.maxCount || 1) + 1) / 2);
                 o += p * (it.value || 0);
             });
@@ -5610,6 +5619,20 @@
     const scanCfg = () => Object.assign({}, SCAN_PADRAO, ler('scan_cfg', {}));
     const guardarScanCfg = (patch) => guardar('scan_cfg', Object.assign(scanCfg(), patch));
     const scanResultados = () => ler('scan_resultados', {});
+    /* v2.28.5 — Scans gravados com a platinum coin a 1 (ver corrigirMoedas): a parte que faltou no estável é moeda, e moeda é
+     * sempre estável. Estável certo = bruto − sorte (loot − poção − loteria). Corrige uma vez, só onde a conta não fechava. */
+    function corrigirScansMoedas() {
+        if (ler('scan_moedas_v1', false)) return;
+        const r = scanResultados();
+        let n = 0;
+        for (const x of Object.values(r || {})) {
+            if (!x || x.estavelH == null || x.ouroH == null || x.lootH == null || x.supH == null) continue;
+            const falta = x.lootH - x.supH - x.estavelH - (x.sorteH || 0);
+            if (falta > 1000) { x.estavelH = Math.round(x.ouroH - (x.sorteH || 0)); x.moedaCorrigida = true; n++; }
+        }
+        if (n) { guardar('scan_resultados', r); log(`Scan: ${n} resultado(s) com a platinum coin a 1 no catálogo tiveram o ouro estável corrigido`, 'info'); }
+        guardar('scan_moedas_v1', true);
+    }
     /* v2.14.3 — a configuração DESTA rodada: a do Scan com o que quem ligou pediu por cima (o Radar pede 3 min, lure
      * máximo e o kit do ranking sem mexer na configuração guardada do Scan) */
     const scanCfgRodada = () => Object.assign(scanCfg(), (SCAN && SCAN.over) || {});
@@ -14277,7 +14300,7 @@
     function radarLerTabComum(h) {
         const g = lerComum('loot_tab_' + radarSlug(h.title), null);
         const lista = Array.isArray(g) ? g : g && g.era === ERA && Date.now() - (g.t || 0) < RADAR_LOOT_VALIDADE_MS && Array.isArray(g.tab) ? g.tab : null;
-        return lista ? lista.map(x => ({ name: x[0], chance: x[1], maxCount: x[2], value: x[3], currency: !!x[4] })) : null;
+        return lista ? corrigirMoedas(lista.map(x => ({ name: x[0], chance: x[1], maxCount: x[2], value: x[3], currency: !!x[4] }))) : null;
     }
     /* v2.13.5 — toda tabela baixada vai para a gaveta comum, venha de onde vier (Scan, Magia, ouro por
      * abate ou CALCULAR). Antes só o CALCULAR guardava: em 01/10 eram 69 de 70 e faltava justo Vampire
@@ -14295,7 +14318,7 @@
             tab = radarLerTabComum(h);
             if (!tab) {
                 rede = true;
-                try { const t = await buscarJSON('/hunt/lootTable?huntId=' + h.id); tab = Array.isArray(t) ? t : []; }
+                try { tab = corrigirMoedas(await buscarJSON('/hunt/lootTable?huntId=' + h.id)); }
                 catch { return rede; }
                 radarGuardarTab(h.id, tab);
             }
@@ -15522,6 +15545,7 @@
         await escolherGaveta();
         LOG = ler('log', []);
         try { migrarModelos(); } catch (e) { falhou('migrar modelos', e); }
+        try { corrigirScansMoedas(); } catch (e) { falhou('Scan (moedas)', e); }
         try { bestRecarregar(); } catch (e) { falhou('bestiário (recarregar)', e); }
         await esperarQue(() => tid('shell') || tid('action-bar') || document.body, 20000, 400);
         try { montarPainel(); } catch (e) { console.error('[TB] painel', e); }

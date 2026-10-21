@@ -5958,3 +5958,24 @@ refino (mlComRefino) e o Equip não.
 
 Conferido com os dados reais: com o histórico de caçada normal, o Equip dá as mesmas 2 trocas com o setup normal e com o Discord
 aplicado (antes, 2 a 4 diferentes). Teste novo: `testes/consenso.test.js` (6).
+
+## 2.28.5 (20/10) — platinum coin a 1 no catálogo de loot
+
+Scan de 20/10 (nível 141, Em área × Discord em 5 mapas, 5 min cada): no Death Portal, Throne of Verminor e Throne of
+Apocalypse o "ouro estável" ficava 58k–200k/h abaixo do bruto sem que a loteria explicasse (gap = loot − poção − estável −
+sorte). Causa: `/hunt/lootTable` traz `platinum coin` com `value: 1` (é 100; o analisador do jogo conta 100). Os 2 mapas
+sem platinum coin (Thunderscar Peak, Inquisition Entrance) fechavam a conta exatos.
+- `corrigirMoedas` (gold 1, platinum 100, crystal 10.000) em toda tabela que entra: `lootTabela`, `ouroPorAbate`,
+  `radarGarantirLoot` e a cópia guardada do Radar. O loot por abate guardado muda de chave (`loot_m_`): o velho não vale.
+- `corrigirScansMoedas` (1× no boot): Scans gravados com a conta aberta recebem estável = bruto − sorte.
+- `testes/moedas.test.js` (2 testes).
+
+Resultado do Scan, estável corrigido (xp/h raw · ouro/h estável · vida mín. do Cavaleiro):
+| mapa | Em área | Discord |
+|---|---|---|
+| Death Portal | 104,6k · −49,5k · 61 % | 104,3k · **+53,4k** · 59 % |
+| Throne of Verminor | 107,6k · +10,9k · 58 % | 108,9k · −130,8k · 58 % |
+| Throne of Apocalypse | 182,8k · −161,9k · **28 %** | 203,7k · −66,8k · **32 %** |
+| Thunderscar Peak | 151,2k · −269,1k · 73 % | 155,9k · −69,1k · 69 % (magos 51/42 %) |
+| Inquisition Entrance | 137,7k · +5,0k · 42 % | 131,0k · −33,4k · 40 % |
+O Discord gastou menos poção em 4 dos 5 mapas (Inquisition: mais). 70–140 abates em 5 min: o loot ainda é ruído.
