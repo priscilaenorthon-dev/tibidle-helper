@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.29.0
+// @version      2.29.1
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.29.0';
+    const VERSAO = '2.29.1';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -4250,7 +4250,8 @@
         if (cacando && who != null) eco = await esperarQue(() => ESTADO_WS.eco[who] && ESTADO_WS.eco[who] > t0, 4000, 150);
         return { who, eco: !!eco, cacando, soCacada: !real };
     }
-    const dcCtx = () => ({ nivel: nivelAtual(), magias: CAT.magias || [], pocoes: (Array.isArray(CAT.pocoes) ? CAT.pocoes.flat() : []).map(p => p && p.name).filter(Boolean) });
+    const dcCtx = () => { const pc = Array.isArray(CAT.pocoes) ? CAT.pocoes.flat() : (CAT.pocoes && typeof CAT.pocoes === 'object' ? Object.values(CAT.pocoes).flat() : []);
+                          return { nivel: nivelAtual(), magias: CAT.magias || [], pocoes: pc.map(p => p && p.name).filter(Boolean), pocoesCat: pc.filter(Boolean) }; };
     function dcEscolhido(h) {
         const ls = dcSetupsDaHunt(h); if (!ls.length) return null;
         const id = ler('dc_setup_' + h.id, null);
@@ -4548,26 +4549,6 @@
                                                                    magias: Object.values(c.magias).map(m => Object.assign(m, { medio: Math.round(m.medio), porH: Math.round(m.porH) })).sort((a, b) => b.porH - a.porH) })).sort((a, b) => b.porH - a.porH);
         return { seg, sessoes: ss.length, t: Math.max(...ss.map(x => x.t || 0)), tomadoH: Math.round(ss.reduce((t, x) => t + (x.tomadoH || 0) * w(x), 0)), mortes: ss.reduce((t, x) => t + (x.mortes || 0), 0), elemPorVoc, crias: lista };
     }
-    /* v2.24.2 — DANO TOMADO: A MEDIDA MAIS LONGA MANDA. O Equip lia o dano tomado do livro-razão vivo (≥ 2 min) ou do Scan mais
-     * recente; o dano guardado do mapa (dano_mapa, até 3 sessões) só entrava sem os dois. Ao vivo (18/10, Throne of Verminor): uma
-     * reconexão zerou o livro 94 s antes do fim da caçada, a régua caiu no Scan de 4 min (1,1 golpe/s) e a dark armor regen. 2,4
-     * passou na frente da magic plate armor — com o guardado de 11 min (3,2 golpes/s, 382 HP/s) a MPA ganha. Agora o lado "o que
-     * a party toma" (tomadoS, fração física, golpes/s do Knight, elementos por personagem) vem de quem mediu por mais tempo:
-     * o livro (rz, com seg) ou o guardado (dm, com seg). O lado "o que a party dá" continua do livro/Scan. */
-    function danoTomadoDe(rz, dm) {
-        const deGuardado = !!(dm && dm.seg > 0 && dm.tomadoH > 0 && (!rz || !(rz.seg >= dm.seg)));
-        if (deGuardado) {
-            const k = dm.elemPorVoc && dm.elemPorVoc.KNIGHT, elemVoc = {};
-            for (const [v, x] of Object.entries(dm.elemPorVoc || {})) elemVoc[v] = { tomadoS: x.tomadoH / 3600, frac: x.frac };
-            return { deGuardado: true, seg: dm.seg, tomadoS: dm.tomadoH / 3600, fisico: k && k.frac ? (k.frac.fisico || 0) : null,
-                     golpesS: k && k.golpesH > 0 ? k.golpesH / 3600 * ((k.frac && k.frac.fisico) || 0) : null, elemVoc: Object.keys(elemVoc).length ? elemVoc : null };
-        }
-        if (!rz || !(rz.tomadoH > 0)) return null;
-        const elemVoc = {};
-        for (const [v, x] of Object.entries(rz.elemPorVoc || {})) elemVoc[v] = { tomadoS: x.tomadoH / 3600, frac: x.frac };
-        return { deGuardado: false, seg: rz.seg, tomadoS: rz.tomadoH / 3600,
-                 fisico: rz.tomadoCorpoH != null ? rz.tomadoCorpoH / rz.tomadoH : null, golpesS: rz.golpesCorpoH > 0 ? rz.golpesCorpoH / 3600 : null, elemVoc: Object.keys(elemVoc).length ? elemVoc : null };
-    }
     /* @@RAZAO-FIM */
     const DANO_MAPA = { cache: null };
     const danoMapaChave = () => (ESTADO_WS.boss ? 'boss:' + ESTADO_WS.boss : ESTADO_WS.huntId != null ? 'hunt:' + ESTADO_WS.huntId : null);
@@ -4682,6 +4663,7 @@
         const d = (o.data && typeof o.data === 'object') ? o.data : {};
         if (o.type === 'depot_state' && Array.isArray(d.entries)) {
             ESTADO_WS.depot = { entries: clonar(d.entries), used: d.used, total: d.total }; ESTADO_WS.depot_t = Date.now();
+            ESTADO_WS.depotReal = ESTADO_WS.depot; // v2.29.1 — o depósito inteiro (gemas, fragmentos, pilhas), que a foto do Equip não tem
             lembrarDepot(ESTADO_WS.depot); // v2.23.0 — o Equip usa esta foto na caçada (o jogo não responde ao depot_get lá)
             if (ABA === 'equip') renderizar();
             return;
@@ -5622,16 +5604,20 @@
     /* v2.28.5 — Scans gravados com a platinum coin a 1 (ver corrigirMoedas): a parte que faltou no estável é moeda, e moeda é
      * sempre estável. Estável certo = bruto − sorte (loot − poção − loteria). Corrige uma vez, só onde a conta não fechava. */
     function corrigirScansMoedas() {
-        if (ler('scan_moedas_v1', false)) return;
         const r = scanResultados();
-        let n = 0;
+        let n = 0, mexeu = false;
         for (const x of Object.values(r || {})) {
-            if (!x || x.estavelH == null || x.ouroH == null || x.lootH == null || x.supH == null) continue;
+            if (!x || x.moedaConferida || x.estavelH == null || x.ouroH == null || x.lootH == null || x.supH == null) continue;
+            /* v2.29.1 — só decide com a tabela de loot do mapa carregada: a conta "falta > 1000" também aparece em drop fora da tabela
+             * (boss/quest), que NÃO é moeda e deve continuar fora do estável */
+            const tab = LOOT_TABELA[x.id]; if (!tab) continue;
+            const temPlatina = tab.some(i => i && /^platinum coin$/i.test(i.name || ''));
             const falta = x.lootH - x.supH - x.estavelH - (x.sorteH || 0);
-            if (falta > 1000) { x.estavelH = Math.round(x.ouroH - (x.sorteH || 0)); x.moedaCorrigida = true; n++; }
+            if (temPlatina && falta > 1000) { x.estavelH = Math.round(x.ouroH - (x.sorteH || 0)); x.moedaCorrigida = true; n++; }
+            x.moedaConferida = true; mexeu = true;
         }
-        if (n) { guardar('scan_resultados', r); log(`Scan: ${n} resultado(s) com a platinum coin a 1 no catálogo tiveram o ouro estável corrigido`, 'info'); }
-        guardar('scan_moedas_v1', true);
+        if (mexeu) guardar('scan_resultados', r);
+        if (n) log(`Scan: ${n} resultado(s) com a platinum coin a 1 no catálogo tiveram o ouro estável corrigido`, 'info');
     }
     /* v2.14.3 — a configuração DESTA rodada: a do Scan com o que quem ligou pediu por cima (o Radar pede 3 min, lure
      * máximo e o kit do ranking sem mexer na configuração guardada do Scan) */
@@ -6593,8 +6579,8 @@
             if (kT > 0) { P.fisico = kF / kT; P.golpesS = kG / kS / 3600; }
             const ev = {};
             for (const v of VOCS_EQUIP) {
-                let t = 0, sg = 0; const fr = {};
-                for (const f of fontes) { const x = f.elemPorVoc[v]; if (!x || !(x.tomadoH > 0)) continue; t += x.tomadoH * f.seg; sg += f.seg; for (const [e, q] of Object.entries(x.frac || {})) fr[e] = (fr[e] || 0) + q * x.tomadoH * f.seg; }
+                let t = 0; const fr = {};
+                for (const f of fontes) { const x = f.elemPorVoc[v]; if (!x || !(x.tomadoH > 0)) continue; t += x.tomadoH * f.seg; for (const [e, q] of Object.entries(x.frac || {})) fr[e] = (fr[e] || 0) + q * x.tomadoH * f.seg; }
                 if (t > 0) ev[v] = { tomadoS: t / seg / 3600, frac: Object.fromEntries(Object.entries(fr).map(([e, q]) => [e, Math.round(q / t * 1000) / 1000])) };
             }
             if (Object.keys(ev).length) P.elemVoc = ev;
@@ -7072,7 +7058,9 @@
             }
             const faixa = faixaPotencia((Number(f.potenciaBase) || 0) + 50 * refino);
             /* v2.25.0 — só abre encaixe sozinho quando o alvo é uma LINHA (antes um alvo só de refino gastava Raridade numa peça Comum) */
-            const querLinha = !!((Array.isArray(alvo.linhas) && alvo.linhas.length) || alvo.linha);
+            const alvosIds = new Set(Array.isArray(alvo.linhas) && alvo.linhas.length ? alvo.linhas : alvo.linha ? [alvo.linha] : []);
+            /* v2.29.1 — plano de UMA linha que JÁ está na peça (só falta o valor: Refazer) não abre encaixe novo — antes gastava Raridade à toa */
+            const querLinha = alvosIds.size > 0 && !((Number(alvo.minLinhas) || 1) <= 1 && at.some(a => alvosIds.has(a.id)));
             const rarAlvo = Math.max(rar0, Math.min(5, Number(alvo.raridade) || 0), querLinha && at.length >= (ENCAIXES_POR_RARIDADE[rar0] || 0) ? Math.min(5, rar0 + 1) : rar0);
             while (rar < rarAlvo && total < maxG && pode(rar >= 4 ? 'raridade_maior' : 'raridade')) {
                 total = gasta(rar >= 4 ? 'raridade_maior' : 'raridade');
@@ -8170,21 +8158,21 @@
           lure: '', skills: '', nota: '', nivel: '', obs: 'lucasdela (nível 156): "setup basicão só pra diária; quer mais profit, deixa o kina de utamo tempo". Personagem "Lucas Knight de Leve".', estatisticas: { xpH: '119,8k', lucroH: '+138,7k', nivel: 156 },
           chars: {
             KNIGHT: { vida: ['Great Health Potion', 38], mana: ['Mana Potion', 30], ataque: [['Fierce Berserk', 2], ['Berserk', 2], ['Groundshaker', 2], ['Lesser Front Sweep', 1]], defesa: [['Intense Recovery', 85], ['Wound Cleansing', 70], ['Intense Wound Cleansing', 30]], suporte: ['Protector'] },
-            PALADIN: { vida: ['Great Health Potion', 38], mana: ['Mana Potion', 6], ataque: [['Divine Caldera', 2], ['avalanche rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Intense Healing', 85], ['Salvation', 60]], suporte: ['Protect Party'] },
+            PALADIN: { vida: ['Great Spirit Potion', 38], mana: ['Mana Potion', 6], ataque: [['Divine Caldera', 2], ['avalanche rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Intense Healing', 85], ['Salvation', 60]], suporte: ['Protect Party'] },
             SORCERER: { vida: ['Health Potion', 39], mana: ['Mana Potion', 7], ataque: [['Great Fire Wave', 1], ['avalanche rune', 2], ['Ultimate Flame Strike', 1], ['Ice Strike', 1]], defesa: [['Ultimate Healing', 70]], suporte: ['Enchant Party'] },
             DRUID: { vida: ['Health Potion', 40], mana: ['Mana Potion', 20], ataque: [['Strong Ice Wave', 1], ['avalanche rune', 2], ['Strong Ice Strike', 1], ['Ultimate Ice Strike', 1]], defesa: [['Heal Friend', 75], ['Mass Healing', 70]], suporte: ['Heal Party'] } } },
         { id: 'fire-lucasdela', hunt: 'Fire Portal', huntId: 226, autor: 'lucasdela', data: '19/10', titulo: 'Fire Portal (lucasdela, 19/10)',
           lure: '', skills: '', nota: '', nivel: '', obs: 'lucasdela: "mesma configuração do Energy Portal, o profit baixa um pouco e estabiliza em uns 20 min; abaixo do nível 145 faça o kina full def". Esta é a variante do Knight de utamo tempo (Protector) com o Druida de cura ajustada: "reduz um pouco a xp; dá pra baixar o pot do ED pra 10 %; só consegui manter no nv 140+". Paladino e Feiticeiro copiados do Energy Portal: o autor disse que usa a mesma configuração nos dois', estatisticas: { xpH: '274,3k', lucroH: '+160,8k', nivel: 156 },
           chars: {
             KNIGHT: { vida: ['Great Health Potion', 38], mana: ['Mana Potion', 10], ataque: [['Lesser Front Sweep', 1]], defesa: [['Wound Cleansing', 85], ['Intense Wound Cleansing', 20]], suporte: ['Protector'] },
-            PALADIN: { vida: ['Great Health Potion', 38], mana: ['Mana Potion', 6], ataque: [['Divine Caldera', 2], ['avalanche rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Intense Healing', 85], ['Salvation', 60]], suporte: ['Protect Party'] },
+            PALADIN: { vida: ['Great Spirit Potion', 38], mana: ['Mana Potion', 6], ataque: [['Divine Caldera', 2], ['avalanche rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Intense Healing', 85], ['Salvation', 60]], suporte: ['Protect Party'] },
             SORCERER: { vida: ['Health Potion', 39], mana: ['Mana Potion', 7], ataque: [['Great Fire Wave', 1], ['avalanche rune', 2], ['Ultimate Flame Strike', 1], ['Ice Strike', 1]], defesa: [['Ultimate Healing', 70]], suporte: ['Enchant Party'] },
             DRUID: { vida: ['Health Potion', 40], mana: ['Mana Potion', 20], ataque: [['Strong Ice Wave', 1], ['avalanche rune', 2], ['Strong Ice Strike', 1], ['Ultimate Ice Strike', 1]], defesa: [['Heal Friend', 70], ['Mass Healing', 60]], suporte: ['Heal Party'] } } },
         { id: 'ice-lucasdela', hunt: 'Ice Portal', huntId: 227, autor: 'lucasdela', data: '19/10', titulo: 'Ice Portal (lucasdela, 19/10)',
           lure: '', skills: '', nota: '', nivel: '', obs: 'lucasdela (nível 157): "Agora to assim em ice portal" — corrigido para avalanche rune (antes usava great fireball por engano e os bichos não morriam).', estatisticas: { xpH: '213,9k', lucroH: '+18,9k', nivel: 157 },
           chars: {
             KNIGHT: { vida: ['Great Health Potion', 36], mana: ['Mana Potion', 30], ataque: [['Lesser Front Sweep', 1]], defesa: [['Intense Recovery', 94], ['Wound Cleansing', 89], ['Intense Wound Cleansing', 30]], suporte: ['Protector'] },
-            PALADIN: { vida: ['Great Health Potion', 40], mana: ['Mana Potion', 8], ataque: [['Divine Caldera', 2], ['avalanche rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Salvation', 70], ['Intense Healing', 85]], suporte: ['Protect Party'] },
+            PALADIN: { vida: ['Great Spirit Potion', 40], mana: ['Mana Potion', 8], ataque: [['Divine Caldera', 2], ['avalanche rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Salvation', 70], ['Intense Healing', 85]], suporte: ['Protect Party'] },
             SORCERER: { vida: ['Health Potion', 40], mana: ['Mana Potion', 10], ataque: [['Energy Wave', 1], ['Great Fire Wave', 1], ['avalanche rune', 2], ['Ultimate Energy Strike', 1]], defesa: [['Ultimate Healing', 59], ['Intense Healing', 70]], suporte: ['Enchant Party'] },
             DRUID: { vida: ['Health Potion', 40], mana: ['Great Mana Potion', 20], ataque: [['Strong Ice Wave', 1], ['avalanche rune', 2], ['Strong Ice Strike', 1], ['Ultimate Ice Strike', 1]], defesa: [['Heal Friend', 75], ['Mass Healing', 66]], suporte: ['Heal Party'] } } },
         { id: 'behemoth-matheustlm', hunt: 'The Behemoth Quest', huntId: 188, autor: 'Matheustlm', data: '16/10', titulo: 'The Behemoth Quest (Matheustlm, 16/10)',
@@ -8233,7 +8221,7 @@
           lure: '', skills: '', nota: '', nivel: '110–130', obs: 'Specter: "180–190k/h raw, profit 70–100k. Mages com utamo vita (sem ele morriam combados). ML 51+10, EK 62+4, RP 61+4. Proteção física no EK (spats + zao legs), ML nos mages. Para o mid level 110–130."', posicoes: 'Os 4 em linha horizontal no fundo do mar, com ~3 sqm entre cada um: da esquerda para a direita, MS (vermelho) sobre o coral rosa, Symbioth (EK, roupa azul-petróleo) na pedra clara do centro, RP (amarelo) e ED (azul) à direita.',
           chars: {
             KNIGHT: { vida: ['Great Health Potion', 30], mana: ['Mana Potion', 40], ataque: [['Fierce Berserk', 4], ['Berserk', 2], ['Lesser Front Sweep', 1], ['Brutal Strike', 1]], defesa: [['Intense Wound Cleansing', 40], ['Wound Cleansing', 85]] },
-            PALADIN: { vida: ['Great Health Potion', 30], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2], ['thunderstorm rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Divine Healing', 70]] },
+            PALADIN: { vida: ['Great Spirit Potion', 30], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2], ['thunderstorm rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Divine Healing', 70]] },
             SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Energy Wave', 2], ['thunderstorm rune', 2], ['Strong Energy Strike', 1], ['Energy Strike', 1]], defesa: [['Intense Healing', 75]], suporte: ['Enchant Party', 'Magic Shield'] },
             DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Terra Wave', 2], ['stone shower rune', 2], ['Strong Terra Strike', 1], ['Terra Strike', 1]], defesa: [['Heal Friend', 70], ['Mass Healing', 60], ['Ultimate Healing', 60]], suporte: ['Heal Party', 'Magic Shield'] } } },
         /* — 2.27.5: Quara's Domain Yalahar (id 191) não tem post no Discord. Dois setups ADAPTADOS (o dono escolhe no select): a barra da
@@ -8244,7 +8232,7 @@
           lure: 'nível 4 — 8 criaturas', skills: '', nota: '', nivel: '110–130', obs: "Ninguém postou Quara's Domain no Discord. Esta é a barra da Bottom of the Ocean do Specter (180–190k/h raw, lucro 70–100k no post dele), o mapa mais parecido: nível 130, imune a fogo e gelo. Mudou só o Druida: stone shower → thunderstorm rune e Terra Strike → Energy Strike, porque aqui energia dá +25 % e terra só +10 % (+13,6 % nas duas). Feiticeiro (tudo energia), Paladino (holy/físico, sem resistência) e Cavaleiro (físico) iguais ao post. Magos com Magic Shield: “sem ele morriam combados”. Os quaras têm 2.300–2.850 de vida. Suporte do Cavaleiro fica o seu.",
           chars: {
             KNIGHT: { vida: ['Great Health Potion', 30], mana: ['Mana Potion', 40], ataque: [['Fierce Berserk', 4], ['Berserk', 2], ['Lesser Front Sweep', 1], ['Brutal Strike', 1]], defesa: [['Intense Wound Cleansing', 40], ['Wound Cleansing', 85]] },
-            PALADIN: { vida: ['Great Health Potion', 30], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2], ['thunderstorm rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Divine Healing', 70]] },
+            PALADIN: { vida: ['Great Spirit Potion', 30], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2], ['thunderstorm rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Divine Healing', 70]] },
             SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Energy Wave', 2], ['thunderstorm rune', 2], ['Strong Energy Strike', 1], ['Energy Strike', 1]], defesa: [['Intense Healing', 75]], suporte: ['Enchant Party', 'Magic Shield'] },
             DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Terra Wave', 2], ['thunderstorm rune', 2], ['Strong Terra Strike', 1], ['Energy Strike', 1]], defesa: [['Heal Friend', 70], ['Mass Healing', 60], ['Ultimate Healing', 60]], suporte: ['Heal Party', 'Magic Shield'] } } },
         { id: 'quaradomain-bog-adapt', hunt: "Quara's Domain Yalahar", huntId: 191, autor: "Northon (base: Argonaut, Bog Raiders / Quara's entrance)", data: '20/10', titulo: "Northon - Quara's Domain Yalahar (enxuto)",
@@ -8628,14 +8616,14 @@
           lure: '', skills: '', nota: '', nivel: '110–130', obs: 'Specter: "235–240k/h raw, profit 30–60k. Mesmo setup da Bottom of the Ocean, só mudando as spells/runas da PT para gelo; proteção a fogo ajuda aqui." 2.28.2: a barra gravada até a 2.28.1 era cópia da Bottom of the Ocean (Terra Wave e stone shower no Druida, e todo lagarto é imune a terra); refeita como o Specter descreve, com a runa e os golpes de gelo que ele usa na Hive Queen Chamber.', estatisticas: { xpH: '277,2k', lucroH: '+29,6k', nivel: 147 }, posicoes: 'Symbioth (EK) fica à esquerda, isolado, junto da escada/parede com os lagartos chegando por ele (ondas de gelo visíveis em volta); RP (amarelo), ED (azul) e MS (vermelho) ficam lado a lado, adjacentes, numa linha à direita do EK.',
           chars: {
             KNIGHT: { vida: ['Great Health Potion', 30], mana: ['Mana Potion', 40], ataque: [['Fierce Berserk', 4], ['Berserk', 2], ['Lesser Front Sweep', 1], ['Brutal Strike', 1]], defesa: [['Intense Wound Cleansing', 40], ['Wound Cleansing', 85]] },
-            PALADIN: { vida: ['Great Health Potion', 30], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2], ['avalanche rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Divine Healing', 70]] },
+            PALADIN: { vida: ['Great Spirit Potion', 30], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2], ['avalanche rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Divine Healing', 70]] },
             SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Energy Wave', 2], ['avalanche rune', 2], ['Strong Energy Strike', 1], ['Ice Strike', 1]], defesa: [['Intense Healing', 75]], suporte: ['Enchant Party', 'Magic Shield'] },
             DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Strong Ice Wave', 2], ['avalanche rune', 2], ['Strong Ice Strike', 1], ['Ice Strike', 1]], defesa: [['Heal Friend', 70], ['Mass Healing', 60], ['Ultimate Healing', 60]], suporte: ['Heal Party', 'Magic Shield'] } } },
         { id: 'poi-jhefy', hunt: 'Pits of Inferno Entrance', huntId: 49, autor: 'Jhefy', data: '08/10', titulo: 'Pits of Inferno Entrance (Jhefy, 08/10)',
           lure: '', skills: '', nota: '', nivel: '', obs: 'Jhefy (nível 116): posts "POI" e "KN-PALA-SORCE-DRUID". Knight no preset 3, os outros no 1; mana do Knight e do Paladino desligada. KNIGHT: poção de mana desligada no post PALADIN: poção de mana desligada no post', estatisticas: { xpH: '98,6k', lucroH: '+83,9k', nivel: 116 }, posicoes: 'poi0: corredor de lava do POI; três personagens em fila horizontal à esquerda e o quarto (de vermelho, com nome \'Jhefy\' por cima) um pouco à direita, cercado por 6 campos/criaturas azuis em 2 colunas × 3 linhas; buraco escuro ao norte. Sessão de 5 min (168 abates), nível 116.',
           chars: {
             KNIGHT: { vida: ['Great Health Potion', 45], mana: ['Mana Potion', 0], ataque: [['Fierce Berserk', 1]], defesa: [['Intense Wound Cleansing', 40]], suporte: ['Protector'] },
-            PALADIN: { vida: ['Great Health Potion', 45], mana: ['Mana Potion', 0], ataque: [['Divine Caldera', 2], ['avalanche rune', 1]], defesa: [['Divine Healing', 50]], suporte: ['Protect Party'] },
+            PALADIN: { vida: ['Great Spirit Potion', 45], mana: ['Mana Potion', 0], ataque: [['Divine Caldera', 2], ['avalanche rune', 1]], defesa: [['Divine Healing', 50]], suporte: ['Protect Party'] },
             SORCERER: { vida: ['Health Potion', 50], mana: ['Mana Potion', 30], ataque: [['Rage of the Skies', 2], ['avalanche rune', 1]], defesa: [['Ultimate Healing', 50]], suporte: ['Enchant Party'] },
             DRUID: { vida: ['Health Potion', 50], mana: ['Great Mana Potion', 40], ataque: [['Strong Ice Wave', 2], ['avalanche rune', 1]], defesa: [['Mass Healing', 70], ['Ultimate Healing', 45]], suporte: ['Heal Party'] } } },
         { id: 'bog-malachias', hunt: 'Bog Raiders Yalahar', huntId: 151, autor: 'malachias', data: '11/10', titulo: 'Bog Raiders Yalahar (malachias, 11/10)',
@@ -8688,14 +8676,45 @@
         const cat = ctx.magias || [], nivel = Number(ctx.nivel) || 0, pocoes = new Set(ctx.pocoes || []);
         const acha = (nome) => cat.find(m => m.name === nome) || cat.find(m => dcNorm(m.name) === dcNorm(nome)) || null;
         const ehPocao = (nome) => pocoes.size ? pocoes.has(nome) : /potion/i.test(nome || '');
+        const daVoc = (m) => { const vocs = (m.vocations || []).map(v => String(v).toLowerCase()); return !vocs.length || vocs.some(v => v.includes(DC_VOC_CAT[voc])); };
+        /* v2.29.1 — magia acima do nível: a irmã de nível menor no lugar (Ultimate → Strong → simples; Intense → simples; Ultimate Healing →
+         * Intense → Light), em vez de deixar o slot vazio. Dono, 22/10: em duas contas de níveis diferentes as barras saíam diferentes. */
+        const irma = (m) => {
+            const nome = m.name, cands = [];
+            if (/^Ultimate /.test(nome)) cands.push(nome.replace(/^Ultimate /, 'Strong '), nome.replace(/^Ultimate /, 'Intense '), nome.replace(/^Ultimate /, ''));
+            if (/^(Strong|Intense) /.test(nome)) cands.push(nome.replace(/^(Strong|Intense) /, ''), nome.replace(/^(Strong|Intense) /, 'Light '));
+            if (/^Ultimate Healing$/.test(nome)) cands.unshift('Intense Healing');
+            for (const c of cands) { const x = acha(c); if (x && daVoc(x) && (!nivel || !(Number(x.level) > nivel))) return x; }
+            return null;
+        };
         const valida = (nome, onde) => {
             if (!nome || nome === '?' || /^\?/.test(nome)) { avisos.push(`${onde}: ícone não identificado ("?") — slot pulado`); return null; }
             const m = acha(nome);
             if (!m) { avisos.push(`${onde}: "${nome}" não está no catálogo — slot pulado`); return null; }
-            const vocs = (m.vocations || []).map(v => String(v).toLowerCase());
-            if (vocs.length && !vocs.some(v => v.includes(DC_VOC_CAT[voc]))) { avisos.push(`${onde}: ${m.name} não é do ${DC_VOC_PT[voc]} (vocação) — slot pulado`); return null; }
-            if (nivel && Number(m.level) > nivel) { avisos.push(`${onde}: ${m.name} pede nível ${m.level} (você tem ${nivel}) — slot pulado`); return null; }
+            if (!daVoc(m)) { avisos.push(`${onde}: ${m.name} não é do ${DC_VOC_PT[voc]} (vocação) — slot pulado`); return null; }
+            if (nivel && Number(m.level) > nivel) {
+                const x = irma(m);
+                if (x) { avisos.push(`${onde}: ${m.name} pede nível ${m.level} (você tem ${nivel}) — ${x.name} no lugar`); return x.name; }
+                avisos.push(`${onde}: ${m.name} pede nível ${m.level} (você tem ${nivel}) — slot pulado`); return null;
+            }
             return m.name;
+        };
+        /* v2.29.1 — POÇÃO pela vocação e pelo nível (dono, 22/10: "tirou o potion do Paladino, que morreu" — 7 setups davam ao Paladino a Great
+         * Health Potion, que é só do Knight, e o jogo ficava sem poção de vida). Com o catálogo de poções (ctx.pocoesCat = /potions): a poção
+         * do post só entra se a vocação bebe e o nível alcança; senão a mais forte do mesmo tipo que ele pode beber; sem nenhuma, fica a sua. */
+        const pots = Array.isArray(ctx.pocoesCat) ? ctx.pocoesCat : [];
+        const bebe = (q) => (!q.vocations || q.vocations.some(v => String(v).toUpperCase().includes(voc))) && (!nivel || ((Number(q.minLevel) || 1) <= nivel && (!q.maxLevel || nivel <= Number(q.maxLevel))));
+        const pocaoPara = (nome, tipo, onde) => {
+            if (!pots.length) return ehPocao(nome) ? nome : null;
+            const q = pots.find(x => x && x.name === nome);
+            if (!q) { if (ehPocao(nome)) return nome; avisos.push(`${onde}: "${nome}" não é uma poção conhecida — mantida a sua`); return null; }
+            if (bebe(q)) return nome;
+            /* a do mesmo tier primeiro (Great Health → Great Spirit: o mesmo frasco do post, na vocação certa); senão a mais forte que ele bebe */
+            const tier = (String(nome).match(/^(Small|Strong|Great|Ultimate|Supreme) /) || [])[1] || '';
+            const mesmas = pots.filter(x => x && (tipo === 'mana' ? x.category === 'mana' : x.category !== 'mana') && bebe(x))
+                .sort((a, b) => ((tier && b.name.startsWith(tier + ' ')) - (tier && a.name.startsWith(tier + ' '))) || (Number(b.max) || 0) - (Number(a.max) || 0) || (Number(b.minLevel) || 0) - (Number(a.minLevel) || 0));
+            if (mesmas.length) { avisos.push(`${onde}: ${nome} não é do ${DC_VOC_PT[voc]}${nivel && (Number(q.minLevel) || 1) > nivel ? ' neste nível' : ''} — ${mesmas[0].name} no lugar`); return mesmas[0].name; }
+            avisos.push(`${onde}: ${nome} não é do ${DC_VOC_PT[voc]} e não há outra — mantida a sua`); return null;
         };
         const base = atual || {};
         const cfg = {
@@ -8708,12 +8727,12 @@
         while (cfg.supports.length < 2) cfg.supports.push(null);
         if (typeof base.ammo === 'string' && base.ammo) cfg.ammo = base.ammo;
         if (Array.isArray(ch.vida) && ch.vida[0]) {
-            if (!ehPocao(ch.vida[0])) avisos.push(`vida: "${ch.vida[0]}" não é uma poção conhecida — mantida a sua`);
-            else cfg.heals = [{ name: ch.vida[0], percent: Number(ch.vida[1]) || 0 }].concat(cfg.heals.filter(h => !ehPocao(h.name)));
+            const nome = pocaoPara(ch.vida[0], 'vida', 'vida');
+            if (nome) cfg.heals = [{ name: nome, percent: Number(ch.vida[1]) || 0 }].concat(cfg.heals.filter(h => !ehPocao(h.name)));
         }
         if (Array.isArray(ch.mana) && ch.mana[0]) {
-            if (!ehPocao(ch.mana[0])) avisos.push(`mana: "${ch.mana[0]}" não é uma poção conhecida — mantida a sua`);
-            else cfg.manaPotion = { name: ch.mana[0], percent: Number(ch.mana[1]) || 0 };
+            const nome = pocaoPara(ch.mana[0], 'mana', 'mana');
+            if (nome) cfg.manaPotion = { name: nome, percent: Number(ch.mana[1]) || 0 };
         }
         if (Array.isArray(ch.defesa)) {
             const curas = [];
@@ -10696,7 +10715,7 @@
          * desmanche é a ÚNICA fonte de fragmentos (gemas). Comum sem refino vende. */
         /* v2.16.0 — o que é bom para este personagem, em palavras (regras da comunidade + wiki), ao lado da medida */
         h += aj('eq-regras-' + v, `<ul style="margin:2px 0 0 14px;padding:0">${((faseEquip(EQUIP.ctx) === 2 ? (REGRAS_FASE2[v] || []) : []).concat(REGRAS_VOCACAO[v] || [])).map(x => '<li>' + escHtml(x) + '</li>').join('')}</ul>` +
-            `<div class="tb-eq-nota" style="margin-top:4px">A nota em pt é a medida da SUA party (1 pt = 1 % do dano dos 4), com duas regras da comunidade por cima (decisão de 13/10): nos magos +1 ML vale pelo menos uma regen. de mana 2,0, e chance de crítico sozinha já conta (base 0 % no jogo; dano extra de 50 % é premissa). Fontes: wiki /forja e /guia-do-${escHtml(VOC_NOME[v])}, TV de Souza (02/10, 12/10), NunohS (11/10).</div>`,
+            `<div class="tb-eq-nota" style="margin-top:4px">A nota em pt é a medida da SUA party (1 pt = 1 % do dano dos 4), com duas regras da comunidade por cima (decisão de 13/10): nos magos +1 ML vale 3,0 de regen. de mana (decisão de 17/10), e chance de crítico sozinha já conta (base 0 % no jogo; dano extra de 50 % é premissa). Fontes: wiki /forja e /guia-do-${escHtml(VOC_NOME[v])}, TV de Souza (02/10, 12/10), NunohS (11/10).</div>`,
             `? o que é bom para o ${VOC_ROTULO[v]}`);
         const FD = filtroDesmanche(), temNegocio = FD.temNegocio, pf = FD.pf, meusIds = FD.meusIds, refPreco = FD.refPreco; // v2.26.2
         const incluirMk = !!ler('desm_incluir_mercado', false);
@@ -12943,7 +12962,7 @@
         sem_socket: 'socket do jogo não está aberto', sem_dado: 'a resposta não trouxe o dado esperado'
     };
     const mkErroTexto = (c) => MK_ERROS[c] ? MK_ERROS[c] + ' (' + c + ')' : String(c);
-    const MK_ORIGEM = { menor: 'menor −1', parecida: 'parecida −1', justo: 'ajustado pelo valor', faixa: 'faixa da raridade', meu: 'seu anúncio', media: 'média 30 d', vazio: 'sem referência', digitado: 'digitado', pendente: 'falta ler' };
+    const MK_ORIGEM = { menor: 'menor −1', parecida: 'parecida −1', justo: 'ajustado pelo valor', faixa: 'faixa da raridade', meu: 'seu anúncio', media: 'média 30 d', piso: 'piso da média 30 d', vazio: 'sem referência', digitado: 'digitado', pendente: 'falta ler' };
     const MK_MOTIVO_CAIXA = { trade_proceeds: 'venda', order_cancelled: 'ordem cancelada', order_expired: 'ordem expirada', capacity: 'não coube', offline: 'offline' };
     const MK = { premiumAte: undefined, bag: null, bagInst: null, bag_t: 0, protMeta: { nomes: [], iids: [] }, protInv: { nomes: [], iids: [] },
                  taxa: null, taxaWiki: false, tradeable: null, npc: null, restErro: null,
@@ -14306,14 +14325,20 @@
         if (seg < RADAR_VIVO_MIN_S || !(an.kills >= RADAR_VIVO_MIN_ABATES)) return null;
         const H = 3600 / seg, lootH = Math.round(an.lootGold * H), supH = Math.round(an.suppliesGold * H);
         let razao = null; try { razao = razaoResumo(RAZAO); } catch (e) { falhou('radar (ao vivo)', e); }
+        /* v2.29.1 — como no Scan: o loot de sorte (drop raro) sai do "estável" — um drop de 150k não põe o mapa em 1.º */
+        let div = null; try { div = an.drops ? scanDividirLoot(h.id, an.drops, an.kills) : null; } catch { div = null; }
         return { id: h.id, title: h.title, aoVivo: true, modelo: 'ao vivo', t: Date.now(), nivel: nivelAtual(), minutos: Math.round(seg / 60), seg: Math.round(seg),
                  abatesH: Math.round(an.kills * H), xpH: Math.round(an.xp * H), xpRawH: an.xpRaw > 0 ? Math.round(an.xpRaw * H) : null,
-                 lootH, supH, ouroH: lootH - supH, tomadoH: an.damageTaken > 0 ? Math.round(an.damageTaken * H) : null, razao };
+                 lootH, supH, ouroH: lootH - supH, estavelH: div ? Math.round(div.estavel * H) - supH : null, sorteH: div ? Math.round(div.sorte * H) : null,
+                 tomadoH: an.damageTaken > 0 ? Math.round(an.damageTaken * H) : null, razao };
     }
+    /* v2.29.1 — o ranking chama radarScanDoMapa por mapa: a caçada ao vivo (razaoResumo inteiro) vale por 3 s */
+    let _vivoMemo = { t: 0, v: null };
+    function radarAoVivoMemo() { if (Date.now() - _vivoMemo.t > 3000) _vivoMemo = { t: Date.now(), v: radarAoVivo() }; return _vivoMemo.v; }
     function radarScanDoMapa(id) {
         const nv = nivelAtual();
         const xp = (r) => Number(r.xpRawH != null ? r.xpRawH : r.xpH) || 0;
-        const vivo = radarAoVivo();
+        const vivo = radarAoVivoMemo();
         if (vivo && vivo.id === id) return vivo; // a caçada de agora manda: é o kit e o lure de hoje
         return Object.values(scanResultados() || {}).filter(r => r && r.id === id && !r.suja && !r.erro && Number(r.abatesH) > 0 && tpNivelPerto(r.nivel, nv))
             .sort((a, b) => xp(b) - xp(a) || (b.t || 0) - (a.t || 0))[0] || null;
@@ -14423,6 +14448,7 @@
     const radarCeder = () => new Promise(r => setTimeout(r, 0));
     async function rankingRodar() {
         if (RADAR.rodando) return;
+        try { corrigirScansMoedas(); } catch (e) { falhou('scan (moedas)', e); } // v2.29.1 — com as tabelas de loot já carregadas
         if (!CAT.hunts || !CAT.magias) { avisar('radar', 'radar: catálogos ainda não carregados — espere o boot ou use "Rebaixar catálogos" no Status', 'erro'); return; }
         const cfg = radarCfg(), nivel = nivelAtual();
         const lista = CAT.hunts.filter(h => h && h.id !== HUNT_ID_BOSS && Array.isArray(h.monsters) && h.monsters.length && (h.levelMin || 0) <= nivel + 5);
@@ -14744,8 +14770,8 @@
             if (novas) {
                 PCH.naoVistos += novas; pchBipe();
                 const m = PCH.ofertas.filter(o => o.ok)[0];
-                const ant = ler('pch_alerta', null);
-                guardar('pch_alerta', { t: Date.now(), n: ((ant && ant.n) || 0) + novas, nome: m.nome, preco: m.preco, avg: m.media && m.media.avg, lucro: m.lucroTot });
+                const ant = pchAlertaAtual();
+                pchGuardarAlerta({ t: Date.now(), n: ((ant && ant.n) || 0) + novas, nome: m.nome, preco: m.preco, avg: m.media && m.media.avg, lucro: m.lucroTot });
             }
             if (origem !== 'vigia') avisar('radar', `pechinchas: ${vig.length} itens vigiados, ${cand.length} candidato(s), ${PCH.ofertas.filter(o => o.ok).length} oferta(s)`, 'ok');
         } catch (e) { PCH.erro = e.message; if (origem !== 'vigia') avisar('radar', 'pechinchas: ' + e.message, 'erro'); else falhou('pechinchas (vigia)', e); }
@@ -14800,9 +14826,22 @@
             await mkCarregarRest();
             let feito = false;
             if (c.tipo === 'arbitragem' && c.compra && c.compra.id) {
-                const r = await mkPedir('market_execute', { orderId: c.compra.id, quantity: Math.min(c.qtd, c.compra.qtd), requestId: mkRid() });
-                if (r.erro) log(`pechinchas: vender para a compra aberta falhou (${mkErroTexto(r.erro)}) — anuncio no preço de revenda`, 'erro');
-                else { feito = true; log(`pechinchas: vendido ${c.qtd}× ${c.nome} para a compra aberta a ${mkFmt(c.compra.preco)}`, 'ok'); }
+                /* v2.29.1 — relê o livro: a compra aberta pode ter encolhido; vende só o que ela ainda pega e guarda o resto na lista */
+                let q = Math.min(c.qtd, c.compra.qtd);
+                const lr = await mkPedir('market_list', { asset: 'ITEM', itemName: c.nome });
+                const ord = lr && !lr.erro ? ((lr.data && lr.data.orders) || []).find(x => x && x.id === c.compra.id) : null;
+                if (!lr.erro && !ord) { q = 0; log(`pechinchas: a compra aberta de ${c.nome} já fechou — anuncio no preço de revenda`, 'info'); }
+                else if (ord) q = Math.min(q, Number(ord.quantityRemaining) || 0);
+                if (q >= 1) {
+                    const r = await mkPedir('market_execute', { orderId: c.compra.id, quantity: q, requestId: mkRid() });
+                    if (r.erro) log(`pechinchas: vender para a compra aberta falhou (${mkErroTexto(r.erro)}) — anuncio no preço de revenda`, 'erro');
+                    else {
+                        log(`pechinchas: vendido ${q}× ${c.nome} para a compra aberta a ${mkFmt(c.compra.preco)}`, 'ok');
+                        if (q < c.qtd) { c.qtd -= q; guardar('pch_compras', compras); log(`pechinchas: sobraram ${c.qtd}× ${c.nome} na lista "compradas" (a compra aberta não pegou tudo)`, 'info'); }
+                        else feito = true;
+                        if (!feito) return; // o resto fica na lista; o finally limpa a trava
+                    }
+                }
             }
             if (!feito) {
                 const npc = MK.npc ? (Number(MK.npc[mkMin(c.nome)]) || 0) : null;
@@ -14817,9 +14856,12 @@
     /* v2.29.0 — dono, 21/10: "não fico olhando muito; algo de cor forte quando achar algo que vale conferir". Faixa fixa no
      * alto da página (fora da gaveta), pulsando, e o título da aba piscando, até abrir Radar → Pechinchas ou tocar no ✕. */
     let _pchTitulo = null;
-    function pchLimparAlerta() { guardar('pch_alerta', null); PCH.naoVistos = 0; pchPintarAlerta(); }
+    /* v2.29.1 — o alerta fica em memória (lido do localStorage uma vez): o pintor roda a cada segundo */
+    const pchAlertaAtual = () => { if (PCH.alerta === undefined) PCH.alerta = ler('pch_alerta', null); return PCH.alerta; };
+    const pchGuardarAlerta = (a) => { PCH.alerta = a; guardar('pch_alerta', a); };
+    function pchLimparAlerta() { pchGuardarAlerta(null); PCH.naoVistos = 0; pchPintarAlerta(); }
     function pchPintarAlerta() {
-        const a = ler('pch_alerta', null);
+        const a = pchAlertaAtual();
         let f = document.getElementById('tb-pch-alerta');
         if (!a) {
             if (f) f.remove();
@@ -15223,7 +15265,6 @@
             h += `<div class="tb-mut" style="margin-top:6px">Lê o equipamento dos 4 e todos os equipamentos à venda no Mercado (8 categorias, ~40 s) e mostra só o que é <b>melhor do que a melhor peça que cada um já tem</b> — vestida, no depósito ou na mochila — <b>sem perder</b> regen. de mana (todos; nos magos ela pode sair para entrar nível mágico), regen. de vida (Knight) nem nível mágico/skill/dano na arma e no colar. A mesma peça anunciada várias vezes (ou com outra raridade / linha que não conta para a vocação) aparece uma vez, a mais barata. Só lê: nada é comprado sem você clicar 2 vezes.</div>`;
             return h + `</div>`;
         }
-        const top = ofertasDe(ML.res.top);
         const nEsc = (k) => Object.values(ML.res.porVoc).reduce((a, sl) => a + Object.values(sl).reduce((b, x) => b + ((x.escondidas && x.escondidas[k]) || 0), 0), 0);
         const nRegride = nEsc('regride'), nSet = nEsc('mesmoNivel');
         if (nRegride) h += `<div class="tb-mut" style="margin-top:4px">🔒 ${nRegride} wand/rod à venda menores que as de vocês ficaram de fora (nível exigido ou dano do tiro menor): só entra a do mesmo nível ou acima.</div>`;
@@ -15236,7 +15277,6 @@
             for (const o of l) { algum = true; h += mlLinhaCurta(o); }
         }
         if (!algum) h += `<div class="tb-ok" style="margin-top:4px">Nada no Mercado agora é melhor (e seguro) do que o que vocês já têm${cfg.soCabe ? ' dentro do seu ouro' : ''}.</div>`;
-        void top;
         for (const v of VOCS) {
             const slots = ML.res.porVoc[v] || {};
             const linhas = [];
@@ -15281,7 +15321,11 @@
     const fjLastroAtual = () => (FORJA_LASTRO.ouro ? { disponivel: true, ouroPorGema: FORJA_LASTRO.ouro } : null);
     function fjEstoqueAtual() {
         const b = mkBagAtual();
-        const dep = ESTADO_WS.depot && Array.isArray(ESTADO_WS.depot.entries) ? ESTADO_WS.depot.entries : [];
+        /* v2.29.1 — a foto do depósito que o Equip usa na caçada só tem equipamento (lembrado): para gemas e fragmentos vale o último
+         * depot_state de verdade; sem nenhum, só a mochila (e a tela avisa) */
+        const d0 = ESTADO_WS.depot && ESTADO_WS.depot.lembrado ? (ESTADO_WS.depotReal || null) : ESTADO_WS.depot;
+        const dep = d0 && Array.isArray(d0.entries) ? d0.entries : [];
+        FJ.semDepot = !d0;
         return fjEstoque(b ? b.bag : {}, dep);
     }
     /* origem da peça no protocolo da Forja: vestida (com a vocação), mochila ou depósito */
@@ -15332,6 +15376,7 @@
                 MK.ocupado = null; FJ.progresso = '';
             }
             FJ.estoque = fjEstoqueAtual();
+            if (FJ.semDepot) FJ.aviso = 'gemas e fragmentos contados só na mochila: o depósito ainda não foi lido nesta sessão (abra-o no jogo e leia de novo)';
             FJ.ouro = mlOuroNormal();
             FJ.custos = fjCustoGemas(fjLastroAtual(), MK.catalogo || null, FJ.estoque);
             FJ.rank = fjRanking(fjPecasPorVoc(), EQUIP.ctx, FJ.custos, FJ.ouro, FJ.estoque, { n: 400, seed: 11 });
