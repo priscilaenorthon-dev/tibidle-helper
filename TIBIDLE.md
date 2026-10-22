@@ -6005,3 +6005,29 @@ Dono: "a turma com pressa de vender coloca item muito abaixo da média; analisa 
   pelo fluxo do Mercado (piso do NPC incluído). `market_execute` numa ordem BUY ainda não foi visto ao vivo.
 - **Leilão (coins):** `auction_create {iid, origin, minPrice, buyout, durationHours, requestId}` com 0 coins →
   `insufficient_coins` (`server.leilao.saldo`); anunciar exige saldo de coins.
+
+## 2.29.1 — Magias do Discord por vocação e nível; revisão do 2.23–2.29 (22/10)
+
+Dono (22/10): testou o modelo Discord em duas contas de níveis diferentes no Fire Portal. Numa o helper **tirou a poção do
+Paladino, que morreu**; e o Druida saiu com a barra diferente em cada conta. Os setups são os posts intactos, mas:
+- **Causa da morte:** 7 setups (`fire/energy/ice-lucasdela`, `bottom-specter`, `quaradomain-specter-adapt`,
+  `lizard-specter`, `poi-jhefy`) davam ao Paladino `Great Health Potion`, que o jogo só deixa o **Knight** beber
+  (`/potions`: vocations KNIGHT/ELITE_KNIGHT). O `dcConfigDe` só conferia se o nome era uma poção, não a vocação: o
+  battle config ficava com uma poção que o Paladino nunca bebe → sem cura de vida. Nos dados o frasco virou
+  `Great Spirit Potion` (a mesma faixa, do Paladino) e o conversor passou a conferir **vocação, minLevel e maxLevel**
+  da poção (catálogo `/potions` em `ctx.pocoesCat`): a do post só entra se ele bebe; senão a do mesmo tier na vocação
+  certa, senão a mais forte que ele pode beber; sem nenhuma, fica a dele — sempre com aviso na aba e no Log.
+- **Barra diferente por conta:** a runa não depende do nível (avalanche nos dois casos); o que mudava eram as magias
+  **acima do nível** (Ultimate Ice Strike 100, Strong Ice Strike 80), que o conversor pulava, encurtando a barra da
+  conta mais baixa. Agora entra a **irmã de nível menor** (Ultimate → Strong → simples; Intense → simples; Ultimate
+  Healing → Intense → Light), com aviso "pede nível N — X no lugar"; só sem irmã o slot fica vazio.
+- Revisão do diff 2.23.0 → 2.29.0: `forjaSimular` não abre encaixe (Raridade) no plano de 1 linha quando a linha já
+  está na peça e só falta o valor; REVENDER das Pechinchas relê o livro, vende só o que a compra aberta ainda pega e
+  guarda o resto na lista; o Radar ao vivo divide o loot em estável/sorte como o Scan (`scanDividirLoot`); a correção
+  da platinum coin nos Scans só mexe em mapa cuja tabela de loot tem a moeda (marca por resultado, roda também no
+  ranking); a Forja usa o último `depot_state` de verdade (`ESTADO_WS.depotReal`) quando o Equip está na foto do
+  depósito, e avisa quando só contou a mochila; `MK_ORIGEM.piso`; a caçada ao vivo do ranking é calculada 1× por 3 s;
+  o alerta das Pechinchas fica em memória (o pintor roda a cada segundo); `danoTomadoDe`, `top` e `sg` (mortos) saíram;
+  nota do ML (3,0, não 2,0). A vigia ligada por padrão fica como está (pedido do dono).
+- Testes: 426 (4 novos no `discord.test.js`: poção por vocação, por nível, irmã de nível menor, integridade dos 84
+  setups; o de `danoTomadoDe` saiu).

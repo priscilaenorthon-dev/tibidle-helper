@@ -215,4 +215,56 @@ t('dcConfigDe com um setup real (Hive Queen Chamber do Specter) no catálogo rea
     }
 });
 
+/* 2.29.1 — dono, 22/10: "ele tirou o potion do Paladino, que morreu" e "em cada conta pôs uma runa diferente no Druida" */
+const POCOES_CAT = POTIONS.health.concat(POTIONS.mana);
+const CTX_POT = Object.assign({}, CTX, { pocoesCat: POCOES_CAT });
+t('2.29.1 poção pela vocação: Great Health Potion (só Knight) no Paladino vira Great Spirit Potion com aviso; a do Knight fica', () => {
+    const sp = { chars: { PALADIN: { vida: ['Great Health Potion', 38], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2]] }, KNIGHT: { vida: ['Great Health Potion', 38], ataque: [['Berserk', 2]] } } };
+    const r = M.dcConfigDe(sp, 'PALADIN', ATUAL, CTX_POT);
+    assert.strictEqual(r.cfg.heals[0].name, 'Great Spirit Potion', JSON.stringify(r.cfg.heals));
+    assert.strictEqual(r.cfg.heals[0].percent, 38);
+    assert(r.avisos.some(a => /Great Health Potion/.test(a) && /Paladino/.test(a) && /Great Spirit Potion no lugar/.test(a)), JSON.stringify(r.avisos));
+    const k = M.dcConfigDe(sp, 'KNIGHT', ATUAL, CTX_POT);
+    assert.strictEqual(k.cfg.heals[0].name, 'Great Health Potion'); assert.deepStrictEqual(k.avisos, []);
+    const velho = M.dcConfigDe(sp, 'PALADIN', ATUAL, CTX); // sem o catálogo de poções (ctx antigo): o nome passa, como antes
+    assert.strictEqual(velho.cfg.heals[0].name, 'Great Health Potion');
+});
+t('2.29.1 poção pelo nível: Paladino 70 não bebe Great Spirit (80) → Strong Health Potion (50); mana Ultimate (130) no Druida 90 → Great Mana', () => {
+    const sp = { chars: { PALADIN: { vida: ['Great Spirit Potion', 40], ataque: [['Divine Caldera', 2]] }, DRUID: { mana: ['Ultimate Mana Potion', 30], ataque: [['Ice Strike', 2]] } } };
+    const r = M.dcConfigDe(sp, 'PALADIN', null, Object.assign({}, CTX_POT, { nivel: 70 }));
+    assert.strictEqual(r.cfg.heals[0].name, 'Strong Health Potion', JSON.stringify(r.cfg.heals));
+    assert(r.avisos.some(a => /neste nível/.test(a) && /Strong Health Potion no lugar/.test(a)), JSON.stringify(r.avisos));
+    const d = M.dcConfigDe(sp, 'DRUID', null, Object.assign({}, CTX_POT, { nivel: 90 }));
+    assert.strictEqual(d.cfg.manaPotion.name, 'Great Mana Potion', JSON.stringify(d.cfg.manaPotion));
+    const ok = M.dcConfigDe(sp, 'PALADIN', null, Object.assign({}, CTX_POT, { nivel: 80 }));
+    assert.strictEqual(ok.cfg.heals[0].name, 'Great Spirit Potion'); assert.deepStrictEqual(ok.avisos, []);
+});
+t('2.29.1 magia acima do nível: a irmã de nível menor no lugar (Ultimate Ice Strike → Strong → Ice Strike; Intense Wound Cleansing → Wound Cleansing), com aviso', () => {
+    const sp = { chars: { DRUID: { ataque: [['Strong Ice Wave', 1], ['avalanche rune', 2], ['Strong Ice Strike', 1], ['Ultimate Ice Strike', 1]] }, KNIGHT: { defesa: [['Intense Wound Cleansing', 60]], ataque: [['Berserk', 2]] } } };
+    const r90 = M.dcConfigDe(sp, 'DRUID', null, Object.assign({}, CTX, { nivel: 90 }));
+    assert.deepStrictEqual(r90.cfg.skills, ['Strong Ice Wave', 'avalanche rune', 'Strong Ice Strike', 'Strong Ice Strike'], JSON.stringify(r90.cfg.skills));
+    assert(r90.avisos.some(a => /Ultimate Ice Strike pede nível 100/.test(a) && /Strong Ice Strike no lugar/.test(a)), JSON.stringify(r90.avisos));
+    const r70 = M.dcConfigDe(sp, 'DRUID', null, Object.assign({}, CTX, { nivel: 70 }));
+    assert.deepStrictEqual(r70.cfg.skills, ['Strong Ice Wave', 'avalanche rune', 'Ice Strike', 'Ice Strike'], JSON.stringify(r70.cfg.skills));
+    assert.strictEqual(r70.cfg.skills[1], 'avalanche rune', 'a runa não depende do nível');
+    const r40 = M.dcConfigDe(sp, 'DRUID', null, Object.assign({}, CTX, { nivel: 40 }));
+    assert.deepStrictEqual(r40.cfg.skills, ['avalanche rune', 'Ice Strike', 'Ice Strike', null], 'Strong Ice Wave (50) não tem irmã no catálogo: slot pulado ' + JSON.stringify(r40.cfg.skills));
+    const k = M.dcConfigDe(sp, 'KNIGHT', null, Object.assign({}, CTX, { nivel: 70 }));
+    assert.deepStrictEqual(k.cfg.heals, [{ name: 'Wound Cleansing', percent: 60 }], JSON.stringify(k.cfg.heals));
+    const k133 = M.dcConfigDe(sp, 'KNIGHT', null, CTX);
+    assert.deepStrictEqual(k133.cfg.heals, [{ name: 'Intense Wound Cleansing', percent: 60 }]);
+});
+t('2.29.1 SETUPS_DISCORD: toda poção de vida/mana é da vocação em que está (o Paladino nunca com a Great/Ultimate Health Potion do Knight)', () => {
+    const erros = [];
+    for (const s of M.SETUPS_DISCORD) for (const [voc, ch] of Object.entries(s.chars)) for (const k of ['vida', 'mana']) {
+        if (!ch[k]) continue;
+        const q = POCOES_CAT.find(x => x.name === ch[k][0]);
+        if (q && q.vocations && !q.vocations.some(v => v.includes(voc))) erros.push(`${s.id} ${voc} ${k}: ${ch[k][0]} → ${q.vocations.join(',')}`);
+    }
+    assert.deepStrictEqual(erros, []);
+    const fire = M.SETUPS_DISCORD.find(s => s.id === 'fire-lucasdela');
+    assert(fire && fire.chars.PALADIN.vida[0] === 'Great Spirit Potion' && fire.chars.PALADIN.vida[1] === 38, JSON.stringify(fire && fire.chars.PALADIN));
+    assert.strictEqual(fire.chars.DRUID.ataque[1][0], 'avalanche rune', 'a runa do Druida no Fire Portal é a avalanche em todas as contas');
+});
+
 console.log(n + ' testes ok' + (process.exitCode ? ' (com falhas)' : ''));
