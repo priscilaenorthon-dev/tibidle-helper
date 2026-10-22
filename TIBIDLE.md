@@ -6031,3 +6031,21 @@ Paladino, que morreu**; e o Druida saiu com a barra diferente em cada conta. Os 
   nota do ML (3,0, não 2,0). A vigia ligada por padrão fica como está (pedido do dono).
 - Testes: 426 (4 novos no `discord.test.js`: poção por vocação, por nível, irmã de nível menor, integridade dos 84
   setups; o de `danoTomadoDe` saiu).
+
+## 2.29.2 — Setups novos do Discord (22/10)
+
+Dono (22/10): "no guias da comunidade entraram setups novos para hunts, traga para nossa automação". Varredura do fórum
+`guias-da-comunidade` (14 tópicos) e das mensagens desde 20/10 nos tópicos antigos. Entraram 3 setups, o que dá **87** no total:
+- **The Behemoth Quest (Psyger-0, 22/10)** — tópico novo, hunt para profit: 97,8k xp/h e +134,5k/h no nível 93 (Cavaleiro de
+  Berserk/Groundshaker/Front Sweep/Lesser Front Sweep; magos de avalanche; Paladino com Lesser Ethereal Spear e Light Healing).
+  Mana do Cavaleiro, do Paladino e do Feiticeiro desligada. O Behemoth passa a ter 3 autores.
+- **The Hive Entrance (Psyger-0, 22/10)** — tópico novo, hunt para XP: 128,4k xp/h e +5,3k/h no nível 103 (de −10k/h no 93
+  a +11,5k/h no 104). GFB nos magos, Cavaleiro com Whirlwind Throw, Protector + Train Party. Segundo autor da hunt (Argonaut).
+- **Warzone I - Fungus (Pouca Telha, 21/10)** — 4 barras no tópico do Specter, em resposta ao Theus: 151,9k xp/h e +206,7k/h
+  no nível 141. Cavaleiro com Ultimate Health Potion e Intense Recovery a 55 % (abaixo do 130/100 o conversor da 2.29.1 troca
+  pela Great Health Potion e pelo Recovery, com aviso). O autor perdeu o Cavaleiro em 6 h de madrugada.
+- Ícones casados por correlação com os oficiais (`icons/spells`); ícone em recarga desempatado pelo texto da magia na cena.
+  A folha oficial tem **Lesser Ethereal Spear** (lança com balão), diferente da Ethereal/Strong.
+- **Fora:** o setup do LordLe (Logbook, 22/10) — energia (thunderstorm, Energy Wave) numa conversa sobre Thunderscar Peak, onde
+  Wyrm e Energy Elemental são imunes a energia, e o print não é desse mapa; a hunt não foi confirmada no Discord.
+- Teste novo no `discord.test.js` (427): os 3 entram, cada hunt com 2+ autores, sem aviso no nível do print (catálogo real).

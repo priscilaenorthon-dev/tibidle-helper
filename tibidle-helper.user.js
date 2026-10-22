@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.29.1
+// @version      2.29.2
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.29.1';
+    const VERSAO = '2.29.2';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -8656,7 +8656,38 @@
             KNIGHT: { vida: ['Strong Health Potion', 30], mana: ['Strong Mana Potion', 0], ataque: [['Fierce Berserk', 4], ['Berserk', 4], ['Lesser Front Sweep', 1], ['Brutal Strike', 1]], defesa: [['Recovery', 50], ['Wound Cleansing', 30]], suporte: ['Train Party'] },
             PALADIN: { vida: ['Strong Health Potion', 70], mana: ['Mana Potion', 0], ataque: [['Divine Caldera', 2], ['thunderstorm rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Intense Healing', 60]], suporte: ['Protect Party'], municao: 'bolt' },
             SORCERER: { vida: ['Health Potion', 60], mana: ['Great Mana Potion', 0], ataque: [['Energy Wave', 2], ['thunderstorm rune', 2], ['Energy Strike', 1]], defesa: [['Ultimate Healing', 50]] },
-            DRUID: { vida: ['Health Potion', 60], mana: ['Great Mana Potion', 10], ataque: [['Strong Ice Wave', 1], ['thunderstorm rune', 2], ['Energy Strike', 1]], defesa: [['Heal Friend', 50], ['Ultimate Healing', 60]], suporte: ['Heal Party'] } } }
+            DRUID: { vida: ['Health Potion', 60], mana: ['Great Mana Potion', 10], ataque: [['Strong Ice Wave', 1], ['thunderstorm rune', 2], ['Energy Strike', 1]], defesa: [['Heal Friend', 50], ['Ultimate Healing', 60]], suporte: ['Heal Party'] } } },
+        /* — 22/10 (2.29.2): 2 tópicos novos do Psyger-0 no fórum (uma hunt por post, 4 barras + lucro) e a Warzone I do Pouca Telha (4 barras
+         *   em resposta ao Theus no tópico do Specter). Ícones casados com os oficiais; os empates em recarga resolvidos pelo texto da magia
+         *   na cena ("exori" = Berserk, "exori gran vis" = Strong Energy Strike, "exevo gran frigo hur" = Strong Ice Wave). Ficou de fora o
+         *   setup do LordLe (Logbook, 22/10): energia na Thunderscar Peak, onde os dois monstros são imunes a energia — hunt não confirmada. */
+        { id: 'behemoth-psyger', hunt: 'The Behemoth Quest', huntId: 188, autor: 'Psyger-0', data: '22/10', titulo: 'The Behemoth Quest (Psyger-0, 22/10)',
+          lure: '', skills: 'melee 60 · distância 64 · ML 47/47 (conta principal, nível 105; a do Behemoth fica 1–2 abaixo)', nota: '', nivel: '80+',
+          obs: 'Psyger-0 (tópico "The Behemoth Quest - Ilha Principal", hunt para profit): "nível 93, 98k de XP e 128–130k de gold; um nível 80 com equipamento aceitável e encantamentos (regen. de mana, regen. de vida, ML nos magos) deve aguentar sem problemas. O mini boss pode dropar Demon Shield (def. 35) e Golden Armor (arm. 14)." Mana do Cavaleiro, do Paladino e do Feiticeiro desligada (slot vazio no post).',
+          estatisticas: { xpH: '97,8k', lucroH: '+134,5k', nivel: 93 },
+          chars: {
+            KNIGHT: { vida: ['Great Health Potion', 30], mana: ['Mana Potion', 0], ataque: [['Berserk', 2], ['Groundshaker', 2], ['Front Sweep', 1], ['Lesser Front Sweep', 1]], defesa: [['Intense Wound Cleansing', 20], ['Wound Cleansing', 50]], suporte: ['Train Party'] },
+            PALADIN: { vida: ['Great Spirit Potion', 15], mana: ['Mana Potion', 0], ataque: [['Divine Caldera', 3], ['avalanche rune', 2], ['Ethereal Spear', 1], ['Lesser Ethereal Spear', 1]], defesa: [['Salvation', 30], ['Divine Healing', 50], ['Intense Healing', 70], ['Light Healing', 85]] },
+            SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 0], ataque: [['Energy Wave', 2], ['avalanche rune', 2], ['Strong Energy Strike', 1], ['Energy Strike', 1]], defesa: [['Ultimate Healing', 60], ['Light Healing', 85]] },
+            DRUID: { vida: ['Health Potion', 60], mana: ['Mana Potion', 30], ataque: [['Strong Ice Wave', 2], ['avalanche rune', 2], ['Strong Ice Strike', 1], ['Ice Wave', 2]], defesa: [['Ultimate Healing', 50], ['Heal Friend', 60], ['Light Healing', 85]] } } },
+        { id: 'hiveentr-psyger', hunt: 'The Hive Entrance', huntId: 123, autor: 'Psyger-0', data: '22/10', titulo: 'The Hive Entrance (Psyger-0, 22/10)',
+          lure: '', skills: 'melee 60 · distância 64 · ML 47/47 (nível 105)', nota: '', nivel: '93+',
+          obs: 'Psyger-0 (tópico "The Hive Entrance - Gray Island", hunt para XP): "entrei no nível 93 com waste de −10k; no 103 já dá um pouco de lucro, no 104 subiu para 11,5k. XP perto de 130k, igual do 93 ao 103. O mini boss pode dar o Stonecutter Axe, machado muito cobiçado (melhor que a magic sword; o excedente vende por 1–2 kk)."',
+          estatisticas: { xpH: '128,4k', lucroH: '+5,3k', nivel: 103 },
+          chars: {
+            KNIGHT: { vida: ['Great Health Potion', 40], mana: ['Mana Potion', 0], ataque: [['Berserk', 4], ['Lesser Front Sweep', 1], ['Brutal Strike', 1], ['Whirlwind Throw', 1]], defesa: [['Intense Wound Cleansing', 30]], suporte: ['Protector', 'Train Party'] },
+            PALADIN: { vida: ['Health Potion', 30], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 4], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Salvation', 30], ['Divine Healing', 60], ['Intense Healing', 70], ['Light Healing', 85]], suporte: ['Protect Party'] },
+            SORCERER: { vida: ['Health Potion', 60], mana: ['Mana Potion', 30], ataque: [['Great Fire Wave', 3], ['great fireball rune', 2], ['Ultimate Flame Strike', 1], ['Strong Flame Strike', 1]], defesa: [['Ultimate Healing', 30], ['Intense Healing', 70], ['Magic Patch', 94]], suporte: ['Enchant Party'] },
+            DRUID: { vida: ['Health Potion', 60], mana: ['Mana Potion', 30], ataque: [['Strong Ice Wave', 3], ['great fireball rune', 2], ['Strong Ice Strike', 1]], defesa: [['Mass Healing', 40], ['Ultimate Healing', 30], ['Intense Healing', 65], ['Heal Friend', 65]], suporte: ['Heal Party'] } } },
+        { id: 'warzone1-pouca', hunt: 'Warzone I - Fungus', huntId: 214, autor: 'Pouca Telha', data: '21/10', titulo: 'Warzone I - Fungus (Pouca Telha, 21/10)',
+          lure: '', skills: '', nota: '', nivel: '140+',
+          obs: 'Pouca Telha (tópico do Specter, 21/10), em resposta ao Theus, que pediu as % de poção e as curas do Cavaleiro na WZ1: "ta legalzin essa WZ1". Specter: "o Pouca ainda mete as curas mais baixas que as minhas". Aviso do próprio autor em 22/10: "deixei na madrugada, durou 6h e morreu o kina" — não é hunt para deixar sozinha sem nível alto e bom equipamento. Poção de vida do Cavaleiro lida pelo ícone: Ultimate Health Potion. Munição do Paladino genérica (flecha), fora.',
+          estatisticas: { xpH: '151,9k', lucroH: '+206,7k', nivel: 141 },
+          chars: {
+            KNIGHT: { vida: ['Ultimate Health Potion', 30], mana: ['Mana Potion', 50], ataque: [['Fierce Berserk', 2], ['Berserk', 2], ['Lesser Front Sweep', 1]], defesa: [['Intense Recovery', 55], ['Intense Wound Cleansing', 30], ['Wound Cleansing', 70]], suporte: ['Protector'] },
+            PALADIN: { vida: ['Great Spirit Potion', 40], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2], ['great fireball rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Divine Healing', 60], ['Intense Healing', 70]] },
+            SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 50], ataque: [['Energy Wave', 2], ['Great Fire Wave', 2], ['great fireball rune', 2], ['Flame Strike', 1]], defesa: [['Ultimate Healing', 65], ['Intense Healing', 80]], suporte: ['Enchant Party'] },
+            DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 50], ataque: [['Strong Ice Wave', 2], ['great fireball rune', 2], ['Flame Strike', 1]], defesa: [['Heal Friend', 80], ['Mass Healing', 70], ['Ultimate Healing', 60]], suporte: ['Heal Party'] } } }
     ];
     const DC_VOC_PT = { KNIGHT: 'Cavaleiro', PALADIN: 'Paladino', SORCERER: 'Feiticeiro', DRUID: 'Druida' };
     const DC_VOC_CAT = { KNIGHT: 'knight', PALADIN: 'paladin', SORCERER: 'sorcerer', DRUID: 'druid' };

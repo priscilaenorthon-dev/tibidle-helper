@@ -267,4 +267,13 @@ t('2.29.1 SETUPS_DISCORD: toda poção de vida/mana é da vocação em que está
     assert.strictEqual(fire.chars.DRUID.ataque[1][0], 'avalanche rune', 'a runa do Druida no Fire Portal é a avalanche em todas as contas');
 });
 
+t('2.29.2 setups de 22/10 (Psyger-0 Behemoth e Hive Entrance, Pouca Telha WZ1): na lista, cada hunt com 2+ autores, e sem aviso no nível do print', () => {
+    const ctx = (nivel) => Object.assign({}, CTX_POT, { nivel, magias: SPELLS });
+    for (const [id, huntId, title, nivel] of [['behemoth-psyger', 188, 'The Behemoth Quest', 93], ['hiveentr-psyger', 123, 'The Hive Entrance', 103], ['warzone1-pouca', 214, 'Warzone I - Fungus', 141]]) {
+        const s = M.SETUPS_DISCORD.find(x => x.id === id);
+        assert(s && s.huntId === huntId && s.estatisticas && s.estatisticas.nivel === nivel, id);
+        assert(new Set(M.dcSetupsDaHunt({ id: huntId, title }).map(x => x.autor)).size >= 2, title);
+        for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx(nivel)).avisos, [], id + ' ' + voc);
+    }
+});
 console.log(n + ' testes ok' + (process.exitCode ? ' (com falhas)' : ''));
