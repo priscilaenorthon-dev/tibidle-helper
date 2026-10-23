@@ -671,4 +671,39 @@ t('@@PERFIS: aplicarConfigLocal não cria esqueleto; configAtiva null aborta sem
     igual(await P.aplicarPlanoSocket(null, 'DRUID'), { n: 0, who: null, eco: false, cacando: false });
 });
 
+t('@@PERFIS: profiles_set do helper é espelhado no estado da tela de atalhos (2.29.3)', () => {
+    const enviados = [], avisos = [];
+    const velho = { KNIGHT: { active: 0, list: [{ name: '1', config: { skills: ['Lesser Front Sweep'], supports: ['Protector', null] } }] },
+                    DRUID: { active: 0, list: [{ name: '1', config: { skills: ['Ice Wave'], supports: ['Heal Party', null] } }] } };
+    let estado = velho;
+    /* fibra raiz → filho com 2 hooks: um qualquer e o dos perfis (useState com dispatch) */
+    const hookPerfis = { memoizedState: velho, queue: { dispatch: (fn) => { estado = typeof fn === 'function' ? fn(estado) : fn; } }, next: null };
+    const filho = { memoizedState: { memoizedState: 7, queue: { dispatch() {} }, next: hookPerfis }, child: null, sibling: null };
+    const raizFibra = { child: filho, sibling: null, memoizedState: null };
+    filho.return = raizFibra;
+    const shell = { '__reactFiber$abc': filho };
+    const documento = { querySelector: (s) => (s === '[data-testid="shell"]' ? shell : null) };
+    const P = new Function('enviados', 'avisos', 'document', `
+        const ESTADO_WS = { profiles: null, battleConfigs: null, party: [], roster: ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'], eco: {} };
+        const WS = { socket: { readyState: 1, send: (s) => enviados.push(JSON.parse(s)) } };
+        const emHunt = () => false, esperarQue = async () => null, log = (m) => avisos.push(m);
+        ${trecho('/* @@PERFIS-INICIO', '/* @@PERFIS-FIM */')}
+        return { enviarWS, espelharPerfilNaTela };
+    `)(enviados, avisos, documento);
+    const novo = { active: 0, list: [{ name: '1', config: { skills: ['Strong Ice Wave', 'avalanche rune'], supports: ['Heal Party', 'Magic Shield'] } }] };
+    P.enviarWS({ type: 'profiles_set', data: { vocation: 'DRUID', profiles: novo } });
+    assert.strictEqual(enviados.length, 1);
+    igual(estado.DRUID, novo, 'a tela ficou com o perfil velho do Druida');
+    igual(estado.KNIGHT, velho.KNIGHT, 'mexeu no perfil de outra vocação');
+    assert.notStrictEqual(estado.DRUID, novo, 'a tela recebeu o mesmo objeto (tem de ser cópia)');
+    P.enviarWS({ type: 'update_battle_config', data: { who: 0 } });
+    igual(estado.DRUID, novo);
+    assert.strictEqual(avisos.length, 0);
+    /* sem a tela (lobby, jogo mudou): não lança, avisa uma vez só */
+    documento.querySelector = () => null;
+    assert.strictEqual(P.espelharPerfilNaTela('DRUID', novo), false);
+    assert.strictEqual(P.espelharPerfilNaTela('DRUID', novo), false);
+    assert.strictEqual(avisos.length, 1);
+});
+
 rodar();

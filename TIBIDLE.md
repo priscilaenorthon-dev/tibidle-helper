@@ -6049,3 +6049,65 @@ Dono (22/10): "no guias da comunidade entraram setups novos para hunts, traga pa
 - **Fora:** o setup do LordLe (Logbook, 22/10) — energia (thunderstorm, Energy Wave) numa conversa sobre Thunderscar Peak, onde
   Wyrm e Energy Elemental são imunes a energia, e o print não é desse mapa; a hunt não foi confirmada no Discord.
 - Teste novo no `discord.test.js` (427): os 3 entram, cada hunt com 2+ autores, sem aviso no nível do print (catálogo real).
+
+## Vídeos de 16–22/10, lidos em 22/10 (sem mudança de código)
+Pedido do dono (22/10): "vê se tem vídeos novos no YouTube que agreguem valor à automação, ou mudanças". Legendas pelo método timedtext,
+8 vídeos novos desde 19/10: TV de Souza "Você está jogando errado! Hive Queen sem sofrer" (19/10) e "Guia do 80+ Zao ou Grey?" (12/10, já
+coberto na 2.16); New Be "Tentei upar um item na forja" (22/10) e "Abri 50 caixas atrás da Magic Sword" (18/10); Osfurg "#6 Magic Sword"
+(20/10); Vida de Knight "1 mês jogando" (20/10); AllRichard "iniciantes e intermediários" (16/10) e "acessos e farm" (18/10).
+
+**O que é novo e serve ao helper:**
+- **Relógio das chaves (TV de Souza, 19/10, patch de 18/10)**: cada mochila de chaves a mais desconta 1 min do intervalo (T4 = −4 min); o buff
+  pago por dia desconta mais 1,5 min por mochila (ele pagou 150 mil por −6 min); com tudo, −10 min por chave (60 → 50 min ≈ +4,8 chaves/dia
+  na dificuldade máxima). O `frame.keyClock.everyMs` já deve trazer o intervalo com desconto; a tabela "chaves/h" da Progresso (`pgChavesHora`)
+  continua contando por abate (ver "Jogo 1.1.4–1.1.7").
+- **Boss barato (TV de Souza)**: (1) na cidade a mana NÃO enche — entrar numa caçada qualquer com poção de mana ligada nos 4 até encher, e só
+  então abrir o boss; (2) no boss, magos sem poção de mana: matar antes de a mana acabar (Hive Queen 7,5 mil por chave contra 50–100 mil "na
+  poção"); (3) resistência ao elemento do boss (Hive Queen = 100 % fogo: 950 → 600 de dano tomado nos magos); life ring / anel de plasma
+  (+ML, +regen. de mana) nos magos; (4) boss de Mana Drain: gastar a mana antes do dreno (ondas de gelo/terra primeiro, SD no fim), cura do
+  Cavaleiro em Strong Health 44 %, sem a poção que enche vida e mana; (5) todos atrás do boss (ele nasce olhando para o lado oposto).
+  **Bug relatado**: Cavaleiro ou Paladino SEM nenhuma magia de ataque não usa poção — deixar pelo menos a magia mais simples.
+- **Sweep de chaves** (Osfurg): abrir 37 chaves de uma vez multiplica o custo por chave; conferir o custo de 1 antes.
+- Movimento entre salas na caçada (patch de 18/10) é só visual: o tempo de respawn não mudou.
+- Depósito do jogo agora filtra por raridade e potência.
+- Forja (New Be, 10 kk numa Magic Sword 290): refino +1 80 %, +2 70 %; raridade →Incomum 55 %, →Raro 35 %, →Épico 20 % (≈340 mil) —
+  bate com `ML_RAR_CHANCE`. Ficou com dano físico + terra e raro; "o que importa são os atributos" (o mesmo que a 2.25 já diz).
+- Preços citados: Golden Armor 190 mil; Magic Sword 2,5 kk anunciada (trust box do Bonehead Cursed 2 %; key 40–50 mil); Thunderscar Spark
+  511 mil (Otherworld pede 20); Yalahar Gear Wheel ~100 mil; Cursed Gladiator Key 25–37 mil; coin ~40 mil.
+
+## Set de menor dano do Cavaleiro (22/10, análise sem mudança de código)
+Pergunta do dono: "qual o set mais forte para o Cavaleiro tomar o menor dano, com os itens do jogo, e onde caçar". Fontes públicas sem login:
+`/wiki/items` (1.263 itens) → `/item/info?ids=` (atributos, encaixes de imbuement) → `/wiki/origin?item=` (Elite/boss + caixa) e
+`/hunts` + `/islands` (ilha de cada mapa). Amuletos/anéis de carga ou duração (stone skin 5, might ring 20, prismatic/gill 750, collar/ring
+of red plasma 30 min) ficam fora: somem em minutos numa caçada idle.
+- Regra que decide (fórmulas da 2.20.0): `absorbpercentphysical` corta o golpe antes de tudo; 1 de armadura tira ~0,75 por golpe; defesa do
+  escudo pesa parecido via bloqueio. Com golpe bruto de 150, 5 % de proteção física ≈ 10 de armadura.
+- Simulação (golpe 150/250/400, Escudo 80): trocar só armadura/defesa pelas peças das ilhas já abertas = −11/−5/−3 %; o set com as 4 peças de
+  % físico = −32/−24/−20 %.
+- Melhor por slot (nível ≤ 150): elmo Zaoan helmet 9 + 5 % (Shadow Nexus, Zao) · armadura magic plate armor 17 (royal draken mail 16 + 5 %
+  só Shen-long/Zao) · calça exotic legs 8 + 4 % (Shadow Nexus) > dwarven legs 7 + 3 % (Hellgorak Seal) · bota guardian boots 3 + 2 % (Ice
+  Portal) · escudo ornate shield 36 + 5 % (Jaul, Gray Island) · colar gearwheel chain 3 (Throne of Ashfalor) · anel butterfly ring 2 (Ushuriel).
+- Já ao alcance (Pits of Inferno / Forgotten Knowledge): Throne of Verminor → Plasmother (necromancer shield 37, skull helmet 9); Throne of
+  Apocalypse → Massacre (great shield 38); Death Portal → Lady Tenebris (nightmare shield 37, knight legs 8); Throne of Ashfalor → Dracola
+  (gearwheel chain). Imbuement: MPA tem 2 encaixes e o escudo 1 de proteção elemental (Dragon Hide = até 15 % de fogo cada).
+- Loot das Elites (`/bosses/select`, público): peça de Cavaleiro sai a 2–5 % por key (1 key/h) → 20–50 h por peça; comprar no Mercado
+  rende mais que caçar atrás dela. Exceção de valor: Balerion (Thunderscar Peak) dá Thunderscar Spark a 23 % (Otherworld pede 20;
+  AllRichard 18/10: anúncios a 511 mil, ordem a ~252 mil). Mapa sugerido ao dono: Holy Portal (padrão), Death Portal (ouro), Thunderscar
+  Peak (aposta na spark); evitar Throne of Apocalypse (Cavaleiro a 28–32 % de vida no Scan de 20/10).
+- Dono (22/10): "caçar para ter o melhor set do Knight". `/wiki/drops` lista monstros do Canary: Ghastly Dragon, Draken Abomination,
+  Grimeleech, Vexclaw, Brachiodemon não existem em nenhum mapa do Tibidle → as peças com % físico só saem de Elite/boss. Rota proposta:
+  agora Throne of Ashfalor (Dracola 26,2k de vida: gearwheel chain 5 %, skull helmet 3,3 %) e Throne of Verminor (skull 3,3 %, necromancer
+  2 %, knight legs do Plaguesmith 0,25 %/abate); Gray Island → Jaul (ornate shield 7 %, depth calcei 4 %); Zao → Shen-long (Zaoan helmet,
+  royal draken mail, Zaoan legs 6 % cada); nível 200 → Ice Portal (guardian boots 2 %).
+
+## 2.29.3 — a tela de atalhos do jogo desfazia o setup do Discord (23/10)
+Dono (23/10): "se eu trocar alguma magia de suporte no setup do Discord ou poções de vida e mana, os ataques e a defesa mudam sozinhos".
+- **Causa (lida no cliente do jogo, `app/page-*.js`)**: a barra da tela de atalhos sai de um `useState` com os perfis dos 4 (componente
+  `Sz`), cheio só pelo `welcome`/`resume` (`eC.Vr`). O `profiles_set` que o helper manda não volta como eco, então esse estado fica com a
+  barra de ANTES do APLICAR. Ao salvar um slot, o `onApply` monta perfil da tela + o slot mudado e manda `update_battle_config` +
+  `profiles_set` com isso → ataques e curas antigos de volta. Com a página recém-aberta não acontece (conferido ao vivo: Train Party no
+  Cavaleiro e Magic Shield no Druida salvos pela tela, resto intacto).
+- **Correção**: `enviarWS` espelha todo `profiles_set` do helper no estado da tela (`espelharPerfilNaTela`: acha o hook dos perfis na
+  árvore de fibras e chama o `dispatch` dele). Vale para Discord, APLICAR NOS 4, Scan (devolver kits) e munição do Paladino. Sem a tela,
+  avisa 1× no Log para dar F5 antes de mexer num slot. Teste novo no `fumaca.test.js`.
+- Conferido no mesmo dia: os 4 em Ice Portal estavam iguais ao setup "Ice Portal (lucasdela, 19/10)".

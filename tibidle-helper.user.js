@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.29.2
+// @version      2.29.3
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.29.2';
+    const VERSAO = '2.29.3';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -4120,6 +4120,34 @@
     function enviarWS(obj) {
         if (!socketAberto()) throw new Error('socket do jogo não está aberto');
         WS.socket.send(JSON.stringify(obj)); // passa pelo grampo: conta em WS.enviados e observarEnviado
+        if (obj && obj.type === 'profiles_set' && obj.data) espelharPerfilNaTela(obj.data.vocation, obj.data.profiles);
+    }
+    /* v2.29.3 — a TELA DE ATALHOS do jogo mostra e salva a barra a partir de um useState com os perfis dos 4, que só o welcome/resume
+     * enchem; o profiles_set do helper não volta como eco. Sem espelhar, a tela ficava com a barra de ANTES e, ao salvar um slot
+     * (suporte, poção), mandava essa barra velha inteira com o slot novo: os ataques e as defesas do Discord voltavam aos antigos
+     * (dono, 23/10; lido no cliente: onApply = perfil da tela + o slot mudado). Aqui o perfil novo entra no mesmo estado do React.
+     * Não achou (o jogo mudou) = só avisa: o servidor já tem a barra certa, e um F5 acerta a tela. */
+    let _espelhoAvisado = false;
+    function espelharPerfilNaTela(voc, perfil) {
+        const VOC4 = ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'];
+        const ehPerfis = (o) => !!o && typeof o === 'object' && !Array.isArray(o) && Object.keys(o).length > 0
+            && Object.keys(o).every(k => VOC4.includes(k)) && Object.values(o).some(v => v && Array.isArray(v.list) && 'active' in v);
+        let fila = null;
+        try {
+            const raiz = typeof document !== 'undefined' && (document.querySelector('[data-testid="shell"]') || document.querySelector('.s-ui-root'));
+            const k = raiz && Object.keys(raiz).find(x => x.startsWith('__reactFiber$'));
+            let f = k ? raiz[k] : null; while (f && f.return) f = f.return;
+            const pilha = [f]; let g = 0;
+            while (pilha.length && g++ < 200000 && !fila) {
+                const x = pilha.pop(); if (!x) continue;
+                let h = x.memoizedState, i = 0;
+                while (h && i++ < 300 && !fila) { if (ehPerfis(h.memoizedState) && h.queue && typeof h.queue.dispatch === 'function') fila = h.queue; h = h.next; }
+                if (x.child) pilha.push(x.child); if (x.sibling) pilha.push(x.sibling);
+            }
+            if (fila && VOC4.includes(voc) && perfil) { const novo = JSON.parse(JSON.stringify(perfil)); fila.dispatch(prev => Object.assign({}, prev, { [voc]: novo })); return true; }
+        } catch (e) { fila = null; }
+        if (!_espelhoAvisado) { _espelhoAvisado = true; log('a tela de atalhos do jogo não foi atualizada: ela pode mostrar a barra antiga — dê F5 antes de mexer num slot por lá', 'erro'); }
+        return false;
     }
     const ordemParty = () => (ESTADO_WS.party.length ? ESTADO_WS.party : ESTADO_WS.roster);
     const vocDoIndice = (i) => ordemParty()[i] || null;
