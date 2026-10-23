@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.29.3
+// @version      2.29.4
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.29.3';
+    const VERSAO = '2.29.4';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -4302,7 +4302,7 @@
             r.avisos.forEach(a => log(`  ${voc}: ${a}`, 'erro'));
             try {
                 const x = await aplicarConfigSocket(voc, r.cfg); total++;
-                log(`  ${voc}: ${dcResumo(s, voc)}` + (x.cacando ? (x.eco ? ' ✓ servidor confirmou' : ' (sem eco do servidor)') : ' (na cidade: vale na próxima caçada)'), 'ok');
+                log(`  ${voc}: ${dcResumo(s, voc)}` + (r.suas && r.suas.length ? ` (poção sua, fica: ${r.suas.join(' · ')})` : '') + (x.cacando ? (x.eco ? ' ✓ servidor confirmou' : ' (sem eco do servidor)') : ' (na cidade: vale na próxima caçada)'), 'ok');
             } catch (e) { log(`  ${voc}: falhou pelo socket — ${e.message}`, 'erro'); }
             await dorme(150);
         }
@@ -8785,11 +8785,18 @@
         while (cfg.skills.length < 4) cfg.skills.push(null);
         while (cfg.supports.length < 2) cfg.supports.push(null);
         if (typeof base.ammo === 'string' && base.ammo) cfg.ammo = base.ammo;
-        if (Array.isArray(ch.vida) && ch.vida[0]) {
+        /* v2.29.4 — a POÇÃO É DO DONO (23/10): o setup do lucasdela trocou a Mana Potion do Druida pela Great (0,79 contra 0,56 de ouro por
+         * mana) e Ice Portal virou prejuízo. Quem já tem poção de vida/mana no perfil fica com a sua, nome e %; a do post só entra no
+         * slot vazio. `suas` diz na tela quais ficaram. */
+        const suas = [];
+        const vidaSua = cfg.heals.find(h => ehPocao(h.name));
+        if (vidaSua) suas.push(`vida ${vidaSua.name} ≤${vidaSua.percent} %`);
+        else if (Array.isArray(ch.vida) && ch.vida[0]) {
             const nome = pocaoPara(ch.vida[0], 'vida', 'vida');
-            if (nome) cfg.heals = [{ name: nome, percent: Number(ch.vida[1]) || 0 }].concat(cfg.heals.filter(h => !ehPocao(h.name)));
+            if (nome) cfg.heals = [{ name: nome, percent: Number(ch.vida[1]) || 0 }].concat(cfg.heals);
         }
-        if (Array.isArray(ch.mana) && ch.mana[0]) {
+        if (cfg.manaPotion && cfg.manaPotion.name) suas.push(`mana ${cfg.manaPotion.name} ≤${cfg.manaPotion.percent} %`);
+        else if (Array.isArray(ch.mana) && ch.mana[0]) {
             const nome = pocaoPara(ch.mana[0], 'mana', 'mana');
             if (nome) cfg.manaPotion = { name: nome, percent: Number(ch.mana[1]) || 0 };
         }
@@ -8811,7 +8818,7 @@
             cfg.supports = sup;
         }
         if (typeof ch.municao === 'string' && ch.municao) cfg.ammo = ch.municao;
-        return { cfg, avisos };
+        return { cfg, avisos, suas };
     }
     /* a barra em palavras, para a tela */
     function dcResumo(setup, voc) {
@@ -9906,11 +9913,11 @@
         for (const voc of VOCS) {
             const atual = configAtiva(voc);
             const r = dcConfigDe(s, voc, atual ? normalizarConfig(atual) : null, dcCtx());
-            c += `<div style="margin-top:4px"><b>${escHtml(VOC_ROTULO[voc] || voc)}</b>: <span class="tb-eq-nota">${escHtml(dcResumo(s, voc))}</span>` + (r.avisos.length ? `<div class="tb-av tb-eq-nota">${r.avisos.map(escHtml).join('<br>')}</div>` : '') + `</div>`;
+            c += `<div style="margin-top:4px"><b>${escHtml(VOC_ROTULO[voc] || voc)}</b>: <span class="tb-eq-nota">${escHtml(dcResumo(s, voc))}</span>` + (r.suas && r.suas.length ? `<div class="tb-mut tb-eq-nota">poção sua, fica: ${escHtml(r.suas.join(' · '))}</div>` : '') + (r.avisos.length ? `<div class="tb-av tb-eq-nota">${r.avisos.map(escHtml).join('<br>')}</div>` : '') + `</div>`;
         }
         c += `</div>`;
-        c += `<button type="button" class="tb-bt pri tb-larga tb-grande" id="tb-aplicar-todos" ${ocupado || !socketAberto() ? 'disabled' : ''} style="margin-top:6px" title="${socketAberto() ? 'grava a barra inteira dos 4 pelo socket (vida, mana, ataque, defesa, suporte, munição); o que o post não diz fica como está' : 'preciso do socket do jogo — F5 com o helper instalado'}">${_aplicando ? 'APLICANDO…' : 'APLICAR O SETUP NOS 4'}</button>` +
-            `<div class="tb-mut tb-eq-nota">o que o post não diz (poção, cura, suporte) fica como está no seu perfil; magia que seu nível ou vocação não permite é pulada com aviso; o lure não muda. Nada é aplicado sozinho.</div>`;
+        c += `<button type="button" class="tb-bt pri tb-larga tb-grande" id="tb-aplicar-todos" ${ocupado || !socketAberto() ? 'disabled' : ''} style="margin-top:6px" title="${socketAberto() ? 'grava a barra dos 4 pelo socket (ataque, defesa, suporte, munição); as suas poções de vida e mana ficam; o que o post não diz fica como está' : 'preciso do socket do jogo — F5 com o helper instalado'}">${_aplicando ? 'APLICANDO…' : 'APLICAR O SETUP NOS 4'}</button>` +
+            `<div class="tb-mut tb-eq-nota">a poção de vida e a de mana são sempre as suas (a do post só entra no slot vazio); o que o post não diz (cura, suporte) fica como está no seu perfil; magia que seu nível ou vocação não permite é pulada com aviso; o lure não muda. Nada é aplicado sozinho.</div>`;
         const foto = ler('dc_foto', null);
         if (foto && foto.profiles) c += `<div class="tb-linha" style="margin-top:4px"><button type="button" class="tb-bt" id="tb-dc-voltar" ${ocupado || !socketAberto() ? 'disabled' : ''} title="devolve o perfil dos 4 como estava antes do primeiro APLICAR do Discord (profiles_set; na caçada também o update_battle_config)">voltar ao que eu tinha antes do Discord</button><span class="tb-mut tb-eq-nota">foto de ${new Date(foto.t).toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}, antes de "${escHtml(foto.setup || '')}"</span></div>`;
         return c + lista;

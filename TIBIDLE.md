@@ -6111,3 +6111,13 @@ Dono (23/10): "se eu trocar alguma magia de suporte no setup do Discord ou poç�
   árvore de fibras e chama o `dispatch` dele). Vale para Discord, APLICAR NOS 4, Scan (devolver kits) e munição do Paladino. Sem a tela,
   avisa 1× no Log para dar F5 antes de mexer num slot. Teste novo no `fumaca.test.js`.
 - Conferido no mesmo dia: os 4 em Ice Portal estavam iguais ao setup "Ice Portal (lucasdela, 19/10)".
+
+## 2.29.4 — o botão do Discord não troca mais as poções (23/10)
+Dono (23/10): Ice Portal "tava dando lucro, do nada tá dando prejuízo". Medido ao vivo (nível 149, lure 4, setup do lucasdela): 18 min,
+loot 60k × gasto 90k (≈ −100k/h); o Druida era 56 % do gasto, com 294 Great Mana Potion (46k). O print do lucasdela para Ice Portal foi
+lido como Great Mana Potion ≤20 % no Druida (no Energy e no Fire Portal do mesmo autor é a Mana Potion); a Great custa 0,79 de ouro por
+mana, contra 0,56 da Mana Potion. Na mesma caçada o Druida tinha bebido Mana Potion antes: a troca veio do APLICAR.
+- `dcConfigDe`: poção de vida e de mana do perfil ficam (nome e %); a do post só entra no slot vazio (validada por vocação/nível como na
+  2.29.1). Devolve `suas` — a tela e o Log dizem "poção sua, fica: …". Vale para os setups dos membros e os "Northon - <mapa>".
+- Ao vivo, a pedido do dono: Druida trocado para Mana Potion ≤20 % pela tela de atalhos; Train Party do teste da 2.29.3 tirado do Cavaleiro.
+- Testes do `discord.test.js` ajustados à regra nova (+ caso sem poção no perfil).

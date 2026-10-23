@@ -48,18 +48,23 @@ t('dcSetupsDaHunt: acha pelo id da hunt ou pelo nome (sem caixa); sem nada → l
     assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 999, title: 'Outra' }, lista), []);
     assert.deepStrictEqual(M.dcSetupsDaHunt(null, lista), []);
 });
-t('dcConfigDe: o que o setup não diz fica como está na config atual (poção de vida, cura e suporte do Knight); ataque e mana entram como o post', () => {
+t('dcConfigDe: o que o setup não diz fica como está na config atual (cura e suporte do Knight); ataque entra como o post; a poção de mana é a sua (2.29.4)', () => {
     const r = M.dcConfigDe(SETUP, 'KNIGHT', ATUAL, CTX);
     assert.deepStrictEqual(r.cfg.skills, ['Berserk', 'Lesser Front Sweep', null, null]);
     assert.deepStrictEqual(r.cfg.minCreatures, { Berserk: 2, 'Lesser Front Sweep': 1 });
-    assert.deepStrictEqual(r.cfg.manaPotion, { name: 'Mana Potion', percent: 30 });
+    assert.deepStrictEqual(r.cfg.manaPotion, { name: 'Strong Mana Potion', percent: 25 }, 'trocou a poção de mana do dono pela do post');
+    assert.deepStrictEqual(r.suas, ['vida Great Health Potion ≤45 %', 'mana Strong Mana Potion ≤25 %']);
     assert.deepStrictEqual(r.cfg.heals, [{ name: 'Great Health Potion', percent: 45 }, { name: 'Wound Cleansing', percent: 50 }]);
     assert.deepStrictEqual(r.cfg.supports, ['Train Party', null]);
     assert.deepStrictEqual(r.avisos, []);
 });
-t('dcConfigDe: vida e defesa dadas substituem a poção e as curas (poção primeiro); suporte e munição entram', () => {
+t('dcConfigDe: defesa dada substitui as curas e a poção de vida do dono fica na frente (2.29.4); sem poção, entra a do post; suporte e munição entram', () => {
     const r = M.dcConfigDe(SETUP, 'PALADIN', { heals: [{ name: 'Health Potion', percent: 30 }, { name: 'Intense Healing', percent: 70 }], manaPotion: null, skills: [], minCreatures: {}, supports: [] }, CTX);
-    assert.deepStrictEqual(r.cfg.heals, [{ name: 'Great Spirit Potion', percent: 40 }, { name: 'Salvation', percent: 30 }, { name: 'Divine Healing', percent: 60 }]);
+    assert.deepStrictEqual(r.cfg.heals, [{ name: 'Health Potion', percent: 30 }, { name: 'Salvation', percent: 30 }, { name: 'Divine Healing', percent: 60 }]);
+    assert.deepStrictEqual(r.cfg.manaPotion, { name: 'Mana Potion', percent: 30 }, 'slot de mana vazio: entra a do post');
+    const semPocao = M.dcConfigDe(SETUP, 'PALADIN', { heals: [{ name: 'Intense Healing', percent: 70 }], manaPotion: null, skills: [], minCreatures: {}, supports: [] }, CTX);
+    assert.deepStrictEqual(semPocao.cfg.heals, [{ name: 'Great Spirit Potion', percent: 40 }, { name: 'Salvation', percent: 30 }, { name: 'Divine Healing', percent: 60 }]);
+    assert.deepStrictEqual(semPocao.suas, []);
     assert.deepStrictEqual(r.cfg.skills, ['Divine Caldera', 'thunderstorm rune', null, null]);
     assert.deepStrictEqual(r.cfg.supports, ['Sharpshooter', null]);
     assert.strictEqual(r.cfg.ammo, 'burst arrow');
@@ -220,13 +225,13 @@ const POCOES_CAT = POTIONS.health.concat(POTIONS.mana);
 const CTX_POT = Object.assign({}, CTX, { pocoesCat: POCOES_CAT });
 t('2.29.1 poção pela vocação: Great Health Potion (só Knight) no Paladino vira Great Spirit Potion com aviso; a do Knight fica', () => {
     const sp = { chars: { PALADIN: { vida: ['Great Health Potion', 38], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2]] }, KNIGHT: { vida: ['Great Health Potion', 38], ataque: [['Berserk', 2]] } } };
-    const r = M.dcConfigDe(sp, 'PALADIN', ATUAL, CTX_POT);
+    const r = M.dcConfigDe(sp, 'PALADIN', null, CTX_POT);
     assert.strictEqual(r.cfg.heals[0].name, 'Great Spirit Potion', JSON.stringify(r.cfg.heals));
     assert.strictEqual(r.cfg.heals[0].percent, 38);
     assert(r.avisos.some(a => /Great Health Potion/.test(a) && /Paladino/.test(a) && /Great Spirit Potion no lugar/.test(a)), JSON.stringify(r.avisos));
     const k = M.dcConfigDe(sp, 'KNIGHT', ATUAL, CTX_POT);
     assert.strictEqual(k.cfg.heals[0].name, 'Great Health Potion'); assert.deepStrictEqual(k.avisos, []);
-    const velho = M.dcConfigDe(sp, 'PALADIN', ATUAL, CTX); // sem o catálogo de poções (ctx antigo): o nome passa, como antes
+    const velho = M.dcConfigDe(sp, 'PALADIN', null, CTX); // sem o catálogo de poções (ctx antigo): o nome passa, como antes
     assert.strictEqual(velho.cfg.heals[0].name, 'Great Health Potion');
 });
 t('2.29.1 poção pelo nível: Paladino 70 não bebe Great Spirit (80) → Strong Health Potion (50); mana Ultimate (130) no Druida 90 → Great Mana', () => {
