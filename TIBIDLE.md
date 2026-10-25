@@ -6121,3 +6121,16 @@ mana, contra 0,56 da Mana Potion. Na mesma caçada o Druida tinha bebido Mana Po
   2.29.1). Devolve `suas` — a tela e o Log dizem "poção sua, fica: …". Vale para os setups dos membros e os "Northon - <mapa>".
 - Ao vivo, a pedido do dono: Druida trocado para Mana Potion ≤20 % pela tela de atalhos; Train Party do teste da 2.29.3 tirado do Cavaleiro.
 - Testes do `discord.test.js` ajustados à regra nova (+ caso sem poção no perfil).
+
+## 2.29.5 — Worker Golem do Matheustlm (24/10)
+Varredura do fórum `guias-da-comunidade` em 24/10 (pedido do dono): nenhum tópico novo (os mesmos 14). Mensagens novas desde 22/10 só no
+Logbook (24) e em "qual hunt abrir primeiro" (4); Hive Queen e Rota do UP sem mensagem nova (o "Há 2h" era reação).
+- **Entrou `golem-matheus`** (Yalahar Worker Golem, id 161): 4 barras do Matheustlm no Logbook (23/10), em resposta ao Bucann (nível 94).
+  Ícones casados com a folha oficial pelo `fino.py` (0,85–0,98). Cavaleiro Fierce Berserk/Berserk/Front Sweep/Annihilation, WC 85 % e
+  IWC 10 %; Paladino thunderstorm + as 2 lanças + Caldera, 4 curas (Light 85, Intense 60, Divine 50, Salvation 30); Feiticeiro Energy Wave,
+  Great Fire Wave, thunderstorm, Energy Strike; Druida Strong Ice Wave, thunderstorm, Energy Strike, Ice Wave, mana a 10 %. Mana off nos
+  outros três. Annihilation pede 110: abaixo disso o slot é pulado com aviso.
+- **Saiu `northon-161`**: "Northon -" é só para mapa sem post (o teste da 2.28.0 cobra). O gerador tinha acertado quase tudo
+  (thunderstorm nos três, Energy Wave, Energy Strike no Druida). Continuam 87 setups.
+- Ficaram fora: Hive Tower do Matheustlm e Petrified Hollow ("tudo desabilitado", 150k/h de ouro) — só o print das estatísticas, sem barra;
+  LordLe na Thunderscar (já descartado na 2.29.2).

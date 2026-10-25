@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.29.4
+// @version      2.29.5
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.29.4';
+    const VERSAO = '2.29.5';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -8325,13 +8325,6 @@
             PALADIN: { vida: ['Great Spirit Potion', 30], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2], ['great fireball rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Divine Healing', 70]] },
             SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Great Fire Wave', 2], ['great fireball rune', 2], ['Strong Flame Strike', 1], ['Flame Strike', 1]], defesa: [['Ultimate Healing', 60], ['Intense Healing', 75]], suporte: ['Enchant Party'] },
             DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Strong Ice Wave', 2], ['great fireball rune', 2], ['Strong Ice Strike', 1], ['Flame Strike', 1]], defesa: [['Heal Friend', 70], ['Mass Healing', 60], ['Ultimate Healing', 60]], suporte: ['Heal Party'] } } },
-        { id: 'northon-161', hunt: 'Yalahar Worker Golem', huntId: 161, autor: 'Northon (padrão Specter/Gus/Theus, nível 136)', data: '20/10', titulo: 'Northon - Yalahar Worker Golem',
-          lure: 'nível 4 — 8 criaturas', skills: '', nota: '', nivel: 'recomendado 70', obs: 'Nenhum post no Discord para este mapa. Montado com o padrão que a comunidade usa do nível 118 ao 158 (Specter, Gus, Theus, Zumpano), para o nível 136: Cavaleiro Fierce Berserk, Berserk, Lesser Front Sweep e Brutal Strike; Paladino Caldera, runa e as duas lanças; magos onda, runa, golpe forte e golpe do elemento da runa; a MESMA runa nos três. Conferido contra os posts de nível 110+ do Discord: a barra sai 94 % igual à do Specter. Aqui: runa da party thunderstorm rune (energia 105); Feiticeiro com Energy Wave (energia 105) e golpe Energy Strike (energia 105); Druida com Strong Ice Wave (gelo 90) e golpe Energy Strike (energia 105). Mapa abaixo do seu nível: sem Magic Shield. Lure do mapa: 8 criaturas.',
-          chars: {
-            KNIGHT: { vida: ['Great Health Potion', 30], mana: ['Mana Potion', 40], ataque: [['Fierce Berserk', 4], ['Berserk', 2], ['Lesser Front Sweep', 1], ['Brutal Strike', 1]], defesa: [['Intense Wound Cleansing', 40], ['Wound Cleansing', 85]] },
-            PALADIN: { vida: ['Great Spirit Potion', 30], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2], ['thunderstorm rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Divine Healing', 70]] },
-            SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Energy Wave', 2], ['thunderstorm rune', 2], ['Strong Energy Strike', 1], ['Energy Strike', 1]], defesa: [['Ultimate Healing', 60], ['Intense Healing', 75]], suporte: ['Enchant Party'] },
-            DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Strong Ice Wave', 2], ['thunderstorm rune', 2], ['Strong Ice Strike', 1], ['Energy Strike', 1]], defesa: [['Heal Friend', 70], ['Mass Healing', 60], ['Ultimate Healing', 60]], suporte: ['Heal Party'] } } },
         { id: 'northon-193', hunt: 'Fiehonja Stairway', huntId: 193, autor: 'Northon (padrão Specter/Gus/Theus, nível 136)', data: '20/10', titulo: 'Northon - Fiehonja Stairway',
           lure: 'nível 2 — 8 criaturas', skills: '', nota: '', nivel: 'recomendado 80', obs: 'Nenhum post no Discord para este mapa. Montado com o padrão que a comunidade usa do nível 118 ao 158 (Specter, Gus, Theus, Zumpano), para o nível 136: Cavaleiro Fierce Berserk, Berserk, Lesser Front Sweep e Brutal Strike; Paladino Caldera, runa e as duas lanças; magos onda, runa, golpe forte e golpe do elemento da runa; a MESMA runa nos três. Conferido contra os posts de nível 110+ do Discord: a barra sai 94 % igual à do Specter. Aqui: runa da party thunderstorm rune (energia 110); Feiticeiro com Energy Wave (energia 110) e golpe Energy Strike (energia 110); Druida com Terra Wave (terra 110) e golpe Energy Strike (energia 110); monstro imune a fogo, gelo. Mapa abaixo do seu nível: sem Magic Shield. Lure do mapa: 8 criaturas.',
           chars: {
@@ -8715,7 +8708,15 @@
             KNIGHT: { vida: ['Ultimate Health Potion', 30], mana: ['Mana Potion', 50], ataque: [['Fierce Berserk', 2], ['Berserk', 2], ['Lesser Front Sweep', 1]], defesa: [['Intense Recovery', 55], ['Intense Wound Cleansing', 30], ['Wound Cleansing', 70]], suporte: ['Protector'] },
             PALADIN: { vida: ['Great Spirit Potion', 40], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2], ['great fireball rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Divine Healing', 60], ['Intense Healing', 70]] },
             SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 50], ataque: [['Energy Wave', 2], ['Great Fire Wave', 2], ['great fireball rune', 2], ['Flame Strike', 1]], defesa: [['Ultimate Healing', 65], ['Intense Healing', 80]], suporte: ['Enchant Party'] },
-            DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 50], ataque: [['Strong Ice Wave', 2], ['great fireball rune', 2], ['Flame Strike', 1]], defesa: [['Heal Friend', 80], ['Mass Healing', 70], ['Ultimate Healing', 60]], suporte: ['Heal Party'] } } }
+            DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 50], ataque: [['Strong Ice Wave', 2], ['great fireball rune', 2], ['Flame Strike', 1]], defesa: [['Heal Friend', 80], ['Mass Healing', 70], ['Ultimate Healing', 60]], suporte: ['Heal Party'] } } },
+        { id: 'golem-matheus', hunt: 'Yalahar Worker Golem', huntId: 161, autor: 'Matheustlm', data: '23/10', titulo: 'Yalahar Worker Golem (Matheustlm, 23/10)',
+          lure: '', skills: 'melee 66 · distância 70 · ML 51/51 (nível 117–119)', nota: '', nivel: '94+ (Annihilation só no 110)',
+          obs: 'Matheustlm (Logbook, 23/10), em resposta ao Bucann (nível 94), que pediu o preset: "não lembro o level que comecei a ir, mas funcionou pra mim; por garantia 30 % de Great Health Potion no EK e 10 % de Mana Potion no ED. Meus sets são de mana regen, então eu colocava utito no Paladino e o Feiticeiro com 2 magias gastando mana. Se não tiver set de mana regen, deixa o RP sem utito e o Feiticeiro só dando vis hur (Energy Wave) e thunderstorm." A barra do Druida é a 2.ª imagem (a 1.ª ia sem a poção de mana). Bucann: "hunt bem bosta, faço pelo bestiário e pelas chaves"; Matheus desistiu das chaves (30 olhos para 10 gear wheels) e comprou os itens. Munição do Paladino genérica (flecha), fora. Substitui o "Northon - Yalahar Worker Golem" (2.28.1), que só existia por falta de post — e saía quase igual a este.',
+          chars: {
+            KNIGHT: { vida: ['Great Health Potion', 30], mana: ['Mana Potion', 0], ataque: [['Fierce Berserk', 2], ['Berserk', 2], ['Front Sweep', 1], ['Annihilation', 1]], defesa: [['Wound Cleansing', 85], ['Intense Wound Cleansing', 10]] },
+            PALADIN: { vida: ['Great Spirit Potion', 50], mana: ['Mana Potion', 0], ataque: [['thunderstorm rune', 2], ['Ethereal Spear', 1], ['Strong Ethereal Spear', 1], ['Divine Caldera', 2]], defesa: [['Light Healing', 85], ['Intense Healing', 60], ['Divine Healing', 50], ['Salvation', 30]] },
+            SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 0], ataque: [['Energy Wave', 2], ['Great Fire Wave', 2], ['thunderstorm rune', 2], ['Energy Strike', 1]], defesa: [['Ultimate Healing', 60], ['Light Healing', 85]] },
+            DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 10], ataque: [['Strong Ice Wave', 2], ['thunderstorm rune', 2], ['Energy Strike', 1], ['Ice Wave', 2]], defesa: [['Ultimate Healing', 60], ['Heal Friend', 60], ['Light Healing', 85], ['Mass Healing', 30]] } } }
     ];
     const DC_VOC_PT = { KNIGHT: 'Cavaleiro', PALADIN: 'Paladino', SORCERER: 'Feiticeiro', DRUID: 'Druida' };
     const DC_VOC_CAT = { KNIGHT: 'knight', PALADIN: 'paladin', SORCERER: 'sorcerer', DRUID: 'druid' };

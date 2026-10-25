@@ -281,4 +281,13 @@ t('2.29.2 setups de 22/10 (Psyger-0 Behemoth e Hive Entrance, Pouca Telha WZ1): 
         for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx(nivel)).avisos, [], id + ' ' + voc);
     }
 });
+t('2.29.5 Worker Golem do Matheustlm (23/10): 1º post real do mapa substitui o "Northon -"; sem aviso no nível dele, e no 94 só o Annihilation fica de fora', () => {
+    const s = M.SETUPS_DISCORD.find(x => x.id === 'golem-matheus');
+    assert(s && s.huntId === 161, 'golem-matheus');
+    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 161, title: 'Yalahar Worker Golem' }).map(x => x.id), ['golem-matheus']);
+    const ctx = (nivel) => Object.assign({}, CTX_POT, { nivel, magias: SPELLS });
+    for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx(117)).avisos, [], voc);
+    assert.deepStrictEqual(M.dcConfigDe(s, 'KNIGHT', null, ctx(94)).avisos, ['ataque 4: Annihilation pede nível 110 (você tem 94) — slot pulado']);
+    for (const voc of ['PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx(94)).avisos, [], voc + ' 94');
+});
 console.log(n + ' testes ok' + (process.exitCode ? ' (com falhas)' : ''));
