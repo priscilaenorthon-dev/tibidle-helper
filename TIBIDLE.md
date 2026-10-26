@@ -6134,3 +6134,16 @@ Logbook (24) e em "qual hunt abrir primeiro" (4); Hive Queen e Rota do UP sem me
   (thunderstorm nos três, Energy Wave, Energy Strike no Druida). Continuam 87 setups.
 - Ficaram fora: Hive Tower do Matheustlm e Petrified Hollow ("tudo desabilitado", 150k/h de ouro) — só o print das estatísticas, sem barra;
   LordLe na Thunderscar (já descartado na 2.29.2).
+
+## 2.29.6 (26/10) — Druida morrendo no Draken Walls
+Dono: "eu e meus colegas perdemos sempre o Druida no Draken Walls; aguenta um tempo e depois morre". Medido (Scan de 24/10, nível 157,
+lure 8): o Druida toma pouco em média (32k/h, fogo 44 % / área física 56 %), mas em picos — onda de fogo do Draken Warmaster até 495 +
+área física até 381 ≈ 876 num tique, contra 1.005 de vida; vida mínima 17 % em 5 min, mana média 13 %. Ele vestia só regen. de mana e
+resistência a sagrado/gelo (nenhuma proteção a fogo). Na fila de cura a Heal Friend ≤70 % vinha antes da cura própria: o Cavaleiro
+vive abaixo de 70 % e o Druida não se curava.
+- Setup "Northon - Draken Walls": Druida com Ultimate Healing ≤70 % → Mass Healing ≤60 % → Heal Friend ≤50 % (a tela do jogo verifica
+  os slots de cura na ordem 1 → 5 e usa o primeiro cujo gatilho bate).
+- Ao vivo (26/10, na cidade): comprados pelo Mercado do jogo magma coat (Raro, Max HP +28, resist. morte 1,5 %; 20k), magma legs (Raro,
+  resist. fogo 0,7 %, cura própria 2 %; 15k) e magma boots (Incomum, proteção mágica 0,9 %; 10k) e vestidos no Druida; calopteryx cape,
+  trousers of the ancients e leather boots (4 linhas) guardadas no depósito para a volta. Magma monocle: o amigo do dono vai dar.
+  Barra do Druida no servidor: Health Potion ≤40 · Ultimate Healing ≤70 · Mass Healing ≤60 · Heal Friend ≤50 (mana do dono intacta).
