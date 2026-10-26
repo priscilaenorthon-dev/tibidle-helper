@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.29.6
+// @version      2.29.7
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.29.6';
+    const VERSAO = '2.29.7';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -4294,10 +4294,22 @@
          * parou com as magias que eu já tinha deixado"). Só a primeira aplicação de uma sequência tira a foto. */
         /* no Scan, quem guarda e devolve a foto é o próprio Scan (v2.28.3) */
         if (!SCAN.ativo && !SCAN.ocupado && !ler('dc_foto', null) && ESTADO_WS.profiles) guardar('dc_foto', { t: Date.now(), hunt: hunt.title, setup: s.titulo, profiles: clonar(ESTADO_WS.profiles) });
+        /* v2.29.7 — setup com poção do mapa: guarda as SUAS poções antes (uma vez); o próximo setup sem a marca as devolve */
+        const guardada = ler('dc_pocao_dono', null), ctx = dcCtx();
+        if (s.pocaoDoMapa && !guardada) {
+            const g = {};
+            for (const voc of VOCS) {
+                const c = configAtiva(voc); if (!c) continue;
+                const n = normalizarConfig(c), vida = (n.heals || []).find(h => h && /potion/i.test(h.name || ''));
+                g[voc] = { vida: vida ? { name: vida.name, percent: vida.percent } : null, mana: n.manaPotion && n.manaPotion.name ? { name: n.manaPotion.name, percent: n.manaPotion.percent } : null };
+            }
+            guardar('dc_pocao_dono', { t: Date.now(), setup: s.titulo, vocs: g });
+        }
+        if (!s.pocaoDoMapa && guardada && guardada.vocs) ctx.pocaoDono = guardada.vocs;
         let total = 0;
         for (const voc of VOCS) {
             const atual = configAtiva(voc);
-            const r = dcConfigDe(s, voc, atual ? normalizarConfig(atual) : null, dcCtx());
+            const r = dcConfigDe(s, voc, atual ? normalizarConfig(atual) : null, ctx);
             if (!r.cfg) { log(`  ${voc}: ${r.avisos.join('; ')} — não mexi`, 'erro'); continue; }
             r.avisos.forEach(a => log(`  ${voc}: ${a}`, 'erro'));
             try {
@@ -4307,6 +4319,8 @@
             await dorme(150);
         }
         log(`Discord: ${total}/4 personagens configurados com "${s.titulo}"` + (s.lure ? ` · lure do post: ${s.lure} (o lure fica como está)` : ''), total ? 'ok' : 'erro');
+        if (s.pocaoDoMapa) log(`Discord: "${s.titulo}" usa as poções deste mapa; as suas voltam no próximo setup de outro mapa`, 'info');
+        else if (ctx.pocaoDono && total) { guardar('dc_pocao_dono', null); log(`Discord: as suas poções (de antes de "${guardada.setup}") voltaram`, 'ok'); }
         renderizar();
     }
     /* @@PERFIS-FIM */
@@ -8465,13 +8479,13 @@
             PALADIN: { vida: ['Great Spirit Potion', 30], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2], ['thunderstorm rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Divine Healing', 70]] },
             SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Energy Wave', 2], ['thunderstorm rune', 2], ['Strong Energy Strike', 1], ['Energy Strike', 1]], defesa: [['Ultimate Healing', 60], ['Intense Healing', 75]], suporte: ['Enchant Party', 'Magic Shield'] },
             DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Terra Wave', 2], ['thunderstorm rune', 2], ['Strong Terra Strike', 1], ['Energy Strike', 1]], defesa: [['Heal Friend', 70], ['Mass Healing', 60], ['Ultimate Healing', 60]], suporte: ['Heal Party', 'Magic Shield'] } } },
-        { id: 'northon-192', hunt: 'Draken Walls', huntId: 192, autor: 'Northon (padrão Specter/Gus/Theus, nível 136)', data: '20/10', titulo: 'Northon - Draken Walls',
-          lure: 'nível 4 — 8 criaturas', skills: '', nota: '', nivel: 'recomendado 150', obs: 'Nenhum post no Discord para este mapa. Montado com o padrão que a comunidade usa do nível 118 ao 158 (Specter, Gus, Theus, Zumpano), para o nível 136: Cavaleiro Fierce Berserk, Berserk, Lesser Front Sweep e Brutal Strike; Paladino Caldera, runa e as duas lanças; magos onda, runa, golpe forte e golpe do elemento da runa; a MESMA runa nos três. Conferido contra os posts de nível 110+ do Discord: a barra sai 94 % igual à do Specter. Aqui: runa da party avalanche rune (gelo 107); Feiticeiro com Energy Wave (energia 101) e golpe Ice Strike (gelo 107); Druida com Strong Ice Wave (gelo 107) e golpe Ice Strike (gelo 107); monstro imune a fogo, terra. Mapa perto do seu nível: Magic Shield nos magos (como o Specter na Bottom of the Ocean e na Lizard City). Lure do mapa: 8 criaturas. Druida (26/10): a cura própria vem primeiro (Ultimate Healing ≤70 %, Heal Friend ≤50 % por último) — com Heal Friend ≤70 % na frente ele curava o Cavaleiro e morria no pico de fogo + área física (~876 contra ~1.005 de vida).',
+        { id: 'northon-192', hunt: 'Draken Walls', huntId: 192, autor: 'Northon (padrão Specter/Gus/Theus, nível 136)', data: '20/10', titulo: 'Northon - Draken Walls', pocaoDoMapa: true,
+          lure: 'nível 4 — 8 criaturas', skills: '', nota: '', nivel: 'recomendado 150', obs: 'Nenhum post no Discord para este mapa. Montado com o padrão que a comunidade usa do nível 118 ao 158 (Specter, Gus, Theus, Zumpano), para o nível 136: Cavaleiro Fierce Berserk, Berserk, Lesser Front Sweep e Brutal Strike; Paladino Caldera, runa e as duas lanças; magos onda, runa, golpe forte e golpe do elemento da runa; a MESMA runa nos três. Conferido contra os posts de nível 110+ do Discord: a barra sai 94 % igual à do Specter. Aqui: runa da party avalanche rune (gelo 107); Feiticeiro com Energy Wave (energia 101) e golpe Ice Strike (gelo 107); Druida com Strong Ice Wave (gelo 107) e golpe Ice Strike (gelo 107); monstro imune a fogo, terra. Mapa perto do seu nível: Magic Shield nos magos (como o Specter na Bottom of the Ocean e na Lizard City). Lure do mapa: 8 criaturas. Druida (26/10): a cura própria vem primeiro (Ultimate Healing ≤70 %, Heal Friend ≤50 % por último) — com Heal Friend ≤70 % na frente ele curava o Cavaleiro e morria no pico de fogo + área física (~876 contra ~1.005 de vida). Poções, curas e suportes deste mapa (26/10, medido ao vivo no nível 159: o Cavaleiro toma ~225 de vida/s e desceu a 20 %; Druida e Feiticeiro zeravam a mana): Cavaleiro Intense Wound Cleansing ≤30 (emergência, 10 min de recarga), Ultimate Health Potion ≤45, Wound Cleansing ≤90, Strong Mana ≤35, Protector; Paladino Ultimate Spirit ≤40, Divine Healing ≤75, Mana Potion ≤15; Feiticeiro Ultimate Healing ≤60, Intense Healing ≤80, Health Potion ≤40 por último, Mana Potion ≤20 (sem mana o Magic Shield não segura); Druida Great Mana Potion ≤30 e a Health Potion por último. As poções valem só aqui: as suas voltam no próximo setup de outro mapa.',
           chars: {
-            KNIGHT: { vida: ['Great Health Potion', 30], mana: ['Mana Potion', 40], ataque: [['Fierce Berserk', 4], ['Berserk', 2], ['Lesser Front Sweep', 1], ['Brutal Strike', 1]], defesa: [['Intense Wound Cleansing', 40], ['Wound Cleansing', 85]] },
-            PALADIN: { vida: ['Great Spirit Potion', 30], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2], ['avalanche rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Divine Healing', 70]] },
-            SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Energy Wave', 2], ['avalanche rune', 2], ['Strong Energy Strike', 1], ['Ice Strike', 1]], defesa: [['Ultimate Healing', 60], ['Intense Healing', 75]], suporte: ['Enchant Party', 'Magic Shield'] },
-            DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Strong Ice Wave', 2], ['avalanche rune', 2], ['Strong Ice Strike', 1], ['Ice Strike', 1]], defesa: [['Ultimate Healing', 70], ['Mass Healing', 60], ['Heal Friend', 50]], suporte: ['Heal Party', 'Magic Shield'] } } },
+            KNIGHT: { mana: ['Strong Mana Potion', 35], ataque: [['Fierce Berserk', 4], ['Berserk', 2], ['Lesser Front Sweep', 1], ['Brutal Strike', 1]], defesa: [['Intense Wound Cleansing', 30], ['Ultimate Health Potion', 45], ['Wound Cleansing', 90]], suporte: ['Protector'] },
+            PALADIN: { mana: ['Mana Potion', 15], ataque: [['Divine Caldera', 2], ['avalanche rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Ultimate Spirit Potion', 40], ['Divine Healing', 75]], suporte: ['Protect Party'] },
+            SORCERER: { mana: ['Mana Potion', 20], ataque: [['Energy Wave', 2], ['avalanche rune', 2], ['Strong Energy Strike', 1], ['Ice Strike', 1]], defesa: [['Ultimate Healing', 60], ['Intense Healing', 80], ['Health Potion', 40]], suporte: ['Enchant Party', 'Magic Shield'] },
+            DRUID: { mana: ['Great Mana Potion', 30], ataque: [['Strong Ice Wave', 2], ['avalanche rune', 2], ['Strong Ice Strike', 1], ['Ice Strike', 1]], defesa: [['Ultimate Healing', 70], ['Mass Healing', 60], ['Heal Friend', 50], ['Health Potion', 40]], suporte: ['Heal Party', 'Magic Shield'] } } },
         { id: 'northon-221', hunt: 'Inquisition Entrance', huntId: 221, autor: 'Northon (padrão Specter/Gus/Theus, nível 136)', data: '20/10', titulo: 'Northon - Inquisition Entrance',
           lure: 'nível 1 — 8 criaturas', skills: '', nota: '', nivel: 'recomendado 150', obs: 'Nenhum post no Discord para este mapa. Montado com o padrão que a comunidade usa do nível 118 ao 158 (Specter, Gus, Theus, Zumpano), para o nível 136: Cavaleiro Fierce Berserk, Berserk, Lesser Front Sweep e Brutal Strike; Paladino Caldera, runa e as duas lanças; magos onda, runa, golpe forte e golpe do elemento da runa; a MESMA runa nos três. Conferido contra os posts de nível 110+ do Discord: a barra sai 94 % igual à do Specter. Aqui: runa da party avalanche rune (gelo 118); Paladino com Divine Missile (sagrado 100) no lugar das lanças (físico 51); Feiticeiro com Energy Wave (energia 73) e golpe Ice Strike (gelo 118); Druida com Strong Ice Wave (gelo 118) e golpe Ice Strike (gelo 118); monstro imune a fogo. Mapa perto do seu nível: Magic Shield nos magos (como o Specter na Bottom of the Ocean e na Lizard City). Atenção: físico só 51: o Cavaleiro bate pouco aqui. Lure do mapa: 8 criaturas.',
           chars: {
@@ -8789,10 +8803,22 @@
         /* v2.29.4 — a POÇÃO É DO DONO (23/10): o setup do lucasdela trocou a Mana Potion do Druida pela Great (0,79 contra 0,56 de ouro por
          * mana) e Ice Portal virou prejuízo. Quem já tem poção de vida/mana no perfil fica com a sua, nome e %; a do post só entra no
          * slot vazio. `suas` diz na tela quais ficaram. */
+        /* v2.29.7 — POÇÃO DO MAPA (dono, 26/10, Draken Walls: "coloque as suas poções, defesa e suporte; somente para esse mapa").
+         * Setup com `pocaoDoMapa`: a poção do post substitui a sua (vida e mana); poção listada em `defesa` entra na fila naquela posição
+         * (a cura forte pode vir antes dela). Setup sem a marca, com `ctx.pocaoDono[voc]` (a sua, guardada pelo aplicarDiscord quando um
+         * setup com poção do mapa entrou), devolve a sua antes da regra da 2.29.4. */
+        const doMapa = !!(setup && setup.pocaoDoMapa);
+        const dono = !doMapa && ctx.pocaoDono && ctx.pocaoDono[voc];
+        if (doMapa || dono) cfg.heals = cfg.heals.filter(h => !ehPocao(h.name));
+        if (dono) {
+            if (dono.vida && dono.vida.name) cfg.heals = [{ name: dono.vida.name, percent: dono.vida.percent != null ? dono.vida.percent : 0 }].concat(cfg.heals);
+            cfg.manaPotion = dono.mana && dono.mana.name ? { name: dono.mana.name, percent: dono.mana.percent != null ? dono.mana.percent : 0 } : null;
+        } else if (doMapa && Array.isArray(ch.mana) && ch.mana[0]) cfg.manaPotion = null;
+        const pocaoNaFila = doMapa && Array.isArray(ch.defesa) && ch.defesa.some(d => d && ehPocao(d[0]));
         const suas = [];
         const vidaSua = cfg.heals.find(h => ehPocao(h.name));
         if (vidaSua) suas.push(`vida ${vidaSua.name} ≤${vidaSua.percent} %`);
-        else if (Array.isArray(ch.vida) && ch.vida[0]) {
+        else if (Array.isArray(ch.vida) && ch.vida[0] && !pocaoNaFila) {
             const nome = pocaoPara(ch.vida[0], 'vida', 'vida');
             if (nome) cfg.heals = [{ name: nome, percent: Number(ch.vida[1]) || 0 }].concat(cfg.heals);
         }
@@ -8803,8 +8829,11 @@
         }
         if (Array.isArray(ch.defesa)) {
             const curas = [];
-            ch.defesa.forEach((d, i) => { const nome = valida(d && d[0], `defesa ${i + 1}`); if (nome) curas.push({ name: nome, percent: Number(d[1]) || 0 }); });
-            cfg.heals = cfg.heals.filter(h => ehPocao(h.name)).concat(curas).slice(0, 5);
+            ch.defesa.forEach((d, i) => {
+                const nome = pocaoNaFila && d && ehPocao(d[0]) ? pocaoPara(d[0], 'vida', `defesa ${i + 1}`) : valida(d && d[0], `defesa ${i + 1}`);
+                if (nome) curas.push({ name: nome, percent: Number(d[1]) || 0 });
+            });
+            cfg.heals = (pocaoNaFila ? curas : cfg.heals.filter(h => ehPocao(h.name)).concat(curas)).slice(0, 5);
         }
         if (Array.isArray(ch.ataque)) {
             const skills = [], mc = {};

@@ -6147,3 +6147,22 @@ vive abaixo de 70 % e o Druida não se curava.
   resist. fogo 0,7 %, cura própria 2 %; 15k) e magma boots (Incomum, proteção mágica 0,9 %; 10k) e vestidos no Druida; calopteryx cape,
   trousers of the ancients e leather boots (4 linhas) guardadas no depósito para a volta. Magma monocle: o amigo do dono vai dar.
   Barra do Druida no servidor: Health Potion ≤40 · Ultimate Healing ≤70 · Mass Healing ≤60 · Heal Friend ≤50 (mana do dono intacta).
+
+## 2.29.7 (26/10) — poções, curas e suportes do Draken Walls só neste mapa
+
+Dono: "coloque as suas poções, defesa e suporte de acordo com o que você acha. Somente para esse mapa."
+Medido ao vivo (nível 159, lure 4 = 8 criaturas, 15 min): Cavaleiro toma ~810 mil/h (~225 de vida/s, 80 % físico do Draken Warmaster: golpe
+154 em média, até 335; onda de fogo 321, até 428) e desceu a 20 % de vida; Paladino ~269 mil/h (64 % fogo), mínimo 56 %; Druida mínimo 36 %,
+mana chega a 0; Feiticeiro mínimo 56 %, mana chega a 0 (o Magic Shield deixa de segurar). Suprimentos 42,6 mil contra 25,9 mil de loot em
+5 min (−197 mil/h nesse trecho), quase tudo poção do Cavaleiro. Intense Wound Cleansing tem 10 min de recarga (é emergência).
+
+Barra do preset `northon-192` (marca nova `pocaoDoMapa: true`):
+- Cavaleiro: Intense Wound Cleansing ≤30 · Ultimate Health Potion ≤45 · Wound Cleansing ≤90 · Strong Mana Potion ≤35 · Protector.
+- Paladino: Ultimate Spirit Potion ≤40 · Divine Healing ≤75 · Mana Potion ≤15 · Protect Party.
+- Feiticeiro: Ultimate Healing ≤60 · Intense Healing ≤80 · Health Potion ≤40 (por último) · Mana Potion ≤20 · Enchant Party + Magic Shield.
+- Druida: Ultimate Healing ≤70 · Mass Healing ≤60 · Heal Friend ≤50 · Health Potion ≤40 (por último) · Great Mana Potion ≤30 · Heal Party + Magic Shield.
+
+Código: setup com `pocaoDoMapa` troca a poção do perfil pela do post, e poção listada em `defesa` entra na fila na posição dela (a cura forte
+vem antes da Health Potion, que só sai se a magia não puder). O `aplicarDiscord` guarda as poções do dono em `dc_pocao_dono` antes do primeiro
+setup com a marca; o próximo setup de outro mapa (sem a marca) devolve essas poções e apaga a cópia. Sem cópia guardada, segue a regra da
+2.29.4 (a poção do perfil fica). Teste novo em `testes/discord.test.js`.
