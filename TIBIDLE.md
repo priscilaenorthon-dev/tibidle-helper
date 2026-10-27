@@ -6389,3 +6389,10 @@ caiu por tempo, Magia › Boss aplicou o ataque, entrada pela Elite gastou a cha
 - **Boss "?"**: entrando pela Elite o cliente manda stop + `start_hunt {bossId}` e o `ended` da caçada velha chega no meio; o
   `ended` zerava `ultimoStart` e o `hunt_started 800` saía "boss ?" (o dano ia para `boss:?` e a Formação não aprendia). Agora o
   `hunt_started` marca o start como usado e o `ended` só zera o start já consumido. Teste em `fumaca.test.js`.
+
+## 2.33.2 — caçada do evento não vira "boss ?" depois do F5 (27/10)
+Achado no teste ao vivo: depois de um F5 a caçada 261 aparecia como "boss ?". Ela não está em `/hunts/select` e o helper só a
+reconhecia pelo acesso do evento (`EV.acesso`), que o servidor não manda de novo depois da reconexão — e "boss" trava Analisador,
+Auto Hunt e Scan. Agora a caçada que é a origem de um Elite em `/bosses/select` (`originHuntId`: 261 Pumpkin King, 262 Crowmother,
+263 The Lantern Reaper — as únicas fora do catálogo) conta como caçada; e o "?" que veio só por "fora do catálogo" sai sozinho
+quando a caçada passa a ser conhecida. Teste em `fumaca.test.js`.

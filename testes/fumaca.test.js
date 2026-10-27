@@ -422,6 +422,21 @@ t('boss (huntId 800) não apaga hunt_id nem abre a tela CAÇADAS; sem sessão', 
     assert.strictEqual(explore.cliques, 0);
 });
 
+t('caçada da estação depois do F5: origem de um Elite em /bosses é caçada, não "boss ?" (2.33.1)', async () => {
+    /* 27/10: depois do F5 o acesso do evento não volta; a 261 (fora de /hunts) virava "boss ?" e travava Analisador/Auto Hunt */
+    const rotas = Object.assign({}, ROTAS_OK, { '/bosses/select': [{ name: 'Renegade Orc', health: 3000 }, { name: 'Pumpkin King', health: 1000, originHuntId: 261 }] });
+    const W = criarMundo({ ls: Object.assign({}, DEBUG), rotas });
+    await W.avancar(0);
+    const ws = new W.window.WebSocket('wss://jogo');
+    ws.emitir({ type: 'welcome', data: {} });
+    ws.emitir({ type: 'resume', data: { huntId: 261, state: { party: party4() } } });
+    for (let s = 0; s < 3; s++) { ws.emitir(frame({ killsTotal: s })); await W.avancar(1000); }
+    assert.strictEqual(W.H.estadoWS().boss, null, 'a caçada do evento virou boss');
+    ws.emitir({ type: 'hunt_started', data: { huntId: 9999, lure: 1 } });
+    await W.avancar(1000);
+    assert.strictEqual(W.H.estadoWS().boss, '?', 'id que ninguém conhece continua sendo boss');
+});
+
 t('lerAbates nunca clica em hud-analyzer (com ou sem frame)', async () => {
     const W = criarMundo({ ls: Object.assign({}, DEBUG, { tb_helper_hunt_id: '34' }) });
     const hud = W.plantar('hud-analyzer');

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.33.1
+// @version      2.33.2
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.33.1';
+    const VERSAO = '2.33.2';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -4086,7 +4086,10 @@
     /* v2.11 — o id 800 é o "slot" de boss no servidor (TIBIDLE.md, 27/09). */
     const HUNT_ID_BOSS = 800;
     /* true/false quando o catálogo já carregou; null quando ainda não dá para saber */
-    const huntNoCatalogo = (id) => CAT.hunts ? CAT.hunts.some(x => x.id === id) || evHuntConhecida(id) /* @@EVENTO: a caçada da estação não está em /hunts */ : null;
+    /* 2.33.1 — a caçada da estação não está em /hunts e o acesso do evento não volta depois de um F5 (a 261 virava "boss ?" e
+     * travava Analisador/Auto Hunt): caçada que é a origem de um Elite em /bosses também é caçada de verdade. */
+    const huntNoCatalogo = (id) => CAT.hunts ? CAT.hunts.some(x => x.id === id) || evHuntConhecida(id) /* @@EVENTO */
+        || (id != null && (CAT.bosses || []).some(b => b && b.originHuntId != null && Number(b.originHuntId) === Number(id))) : null;
     /* `who` do servidor é a POSIÇÃO em state.party: um buraco (null) não pode
      * deslocar os outros — por isso map mantendo a posição, sem filter. */
     const vocsPorPosicao = (lista) => lista.map(p => (p && typeof p.vocation === 'string') ? p.vocation : null);
@@ -6291,6 +6294,8 @@
         /* v2.11 — id fora do catálogo = boss/torre/treino. No hunt_started o
          * catálogo às vezes ainda não carregou (boot); aqui ele já está. */
         if (!ESTADO_WS.boss && ESTADO_WS.huntId != null && huntNoCatalogo(ESTADO_WS.huntId) === false) ESTADO_WS.boss = '?';
+        /* 2.33.1 — o "?" que veio só por "fora do catálogo" sai quando a caçada passa a ser conhecida (bosses chegou depois) */
+        else if (ESTADO_WS.boss === '?' && ESTADO_WS.huntId !== HUNT_ID_BOSS && huntNoCatalogo(ESTADO_WS.huntId) === true) ESTADO_WS.boss = null;
         /* v2.11 — BOSS NÃO É CAÇADA. Durante boss (huntId 800) o socket "não
          * conhecia" a hunt: hunt_id era APAGADO e, 10 s depois, a tela CAÇADAS
          * abria sozinha no meio da luta; a sessão do Analisador media o boss
