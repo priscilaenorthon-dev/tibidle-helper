@@ -266,13 +266,14 @@ t('Magia no modelo Discord: o seletor de caçada só lista as hunts com setup da
     const mon = [{ name: 'X', health: 100, experience: 10, weight: 1, elements: [] }];
     const hunts = HUNTS.concat([{ id: 199, title: 'Hive Queen Chamber', levelMin: 80, island: 'zao', lureTiers: [{ min: 4, max: 8 }], monsters: mon },
         { id: 151, title: 'Bog Raiders Yalahar', levelMin: 70, island: 'yalahar', lureTiers: [{ min: 4, max: 8 }], monsters: mon },
-        { id: 170, title: 'Wolves Den', levelMin: 1, island: 'tibidle_island', lureTiers: [{ min: 1, max: 4 }], monsters: mon }]);
+        { id: 999, title: 'Mapa Sem Post', levelMin: 1, island: 'tibidle_island', lureTiers: [{ min: 1, max: 4 }], monsters: mon }]);
     const W = criarMundo({ rotas: { '/hunts/select': hunts }, ls: comAba('magia', { tb_helper_hunt_id: '199', tb_helper_modelo: '"discord"' }) });
     await W.avancar(0); await W.avancar(200);                // catálogo de hunts chega → repinte
     const sel = (W.html().match(/<select id="tb-hunt"[\s\S]*?<\/select>/) || [''])[0];
     const ops = [...sel.matchAll(/<option value="(\d+)"/g)].map(m => Number(m[1]));
-    assert.deepStrictEqual(ops, [151, 199], 'só Bog e Hive Queen têm setup: ' + ops.join(','));
-    assert.match(sel, /2 com setup do Discord/);
+    /* 2.33.0: Elfs Shadowthorn (32) e Orc Fortress (34), do HUNTS, ganharam "Northon - <mapa>" de nível baixo; o 999 não tem setup */
+    assert.deepStrictEqual(ops.slice().sort((x, y) => x - y), [32, 34, 151, 199], 'só os mapas com setup: ' + ops.join(','));
+    assert.match(sel, /4 com setup do Discord/);
     assert.match(sel, /value="199" selected/);
     const W2 = criarMundo({ rotas: { '/hunts/select': hunts }, ls: comAba('magia', { tb_helper_hunt_id: '199', tb_helper_modelo: '"area"' }) });
     await W2.avancar(0); await W2.avancar(200);

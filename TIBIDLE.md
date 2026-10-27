@@ -6355,3 +6355,26 @@ Testes: 456.
   Paladino Lesser Ethereal Spear; Feiticeiro Fire Wave ≥2 / Scorch ≥2 / Energy Strike ≥1; Druida Ice Wave ≥2 / Chill Out ≥2 /
   Ice Strike ≥1, Light Healing 60 e Heal Friend 50. Poções ficam as do dono. Elite Pumpkin King: imune a morte.
 - Fixture hunts-discord ganhou a 261. Testes: 456.
+
+## 2.33.0 — "Northon - <mapa>" para os 38 mapas de nível baixo (27/10, XundaBr nível 26)
+
+O dono vai voltar a caçar mapa baixo com a XundaBr quando o Halloween acabar. Magia › Discord só tinha setup em 3 mapas de recomendado
+≤ 50 (Vampire hell, Gargoyles e Djinns, posts do Argonaut/Nikelao); os outros 38 ficavam fora da lista. Cada um ganhou um "Northon -
+<mapa>" (id `northon-baixo-<huntId>`), feito pelo padrão dos posts de nível baixo para o nível recomendado + 5:
+- Cavaleiro: Berserk ≥2 + Lesser Front Sweep + Brutal Strike (35+); Lesser Front Sweep ≥2 + Brutal Strike (+ Whirlwind Throw no 28+); só
+  Lesser Front Sweep abaixo do 16. Cura Wound Cleansing 60 %.
+- Paladino: Divine Caldera (50+, sagrado ≥ 50), a runa (30+) e a lança, com a Lesser Ethereal Spear atrás (dispara quando falta mana ou
+  o nível); Divine Missile quando o físico é ruim e o sagrado bom.
+- Magos: a onda do elemento bom (Feiticeiro Fire Wave + Scorch, ou Energy Beam / Great Energy Beam sem fogo; Druida Ice Wave + Chill
+  Out; no 50+ Energy Wave/Great Fire Wave/Strong Ice Wave/Terra Wave), a MESMA runa nos três (30+, com a regra de imune da 2.28.2) e o
+  golpe do elemento da runa (sem runa, o do elemento que o mapa mais toma; abaixo do 12, Apprentice's Strike/Buzz/Mud Attack).
+  Cura própria primeiro (lição do Draken Walls), Heal Friend no Druida.
+- Poções são as suas (2.29.4); as do post só entram no slot vazio.
+Teste de volta nos 3 mapas com post: a barra sai igual à do Argonaut, mais um golpe ≥1 no fim. Magia acima do nível da conta cai para a
+irmã menor ou fica de fora (dcConfigDe); no nível 26 os mapas até o recomendado 21 saem sem nenhum aviso.
+
+Também: a caçada 1 da estação (hunt 261) não aparecia na Magia › Discord da XundaBr porque a aba rodava a 2.32.2 (o setup da faixa baixa
+entrou na 2.32.3). Os 6 monstros dela já estavam aprendidos (`ev_monstros`); com a versão nova ela aparece.
+
+Fixture `hunts-discord.json` +38 mapas; `telas.test.js` usava Wolves Den/Elfs Shadowthorn/Orc Fortress como "mapa sem setup" (agora têm).
+Testes: 457.

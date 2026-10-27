@@ -334,4 +334,39 @@ t('2.29.8 a SUA poção também passa pela vocação: Paladino com a Great Healt
     assert.strictEqual(velho.cfg.heals[0].name, 'Great Health Potion');
 });
 
+t("Northon nível baixo (2.33.0): os 38 mapas de recomendado ≤ 50 sem post — barra dos 4 sem aviso no nível de projeto, a mesma runa, golpe do elemento da runa, nenhum slot morto", () => {
+    const nb = M.SETUPS_DISCORD.filter(s => /^northon-baixo-\d+$/.test(s.id));
+    assert.strictEqual(nb.length, 38, "northon-baixo: " + nb.length);
+    const daComunidade = new Set(M.SETUPS_DISCORD.filter(s => !/^Northon/.test(s.autor)).map(s => s.huntId));
+    const sp = (n) => SPELLS.find(x => x.name === n && x.combatType && (x.vocations || []).length) || SPELLS.find(x => x.name === n);
+    const BASICO = /^(Energy|Flame|Ice|Terra) Strike$/;
+    for (const s of nb) {
+        assert.strictEqual(s.id, "northon-baixo-" + s.huntId); assert.strictEqual(s.titulo, "Northon - " + s.hunt, s.id);
+        assert(!daComunidade.has(s.huntId), s.id + ": o mapa já tem post da comunidade");
+        const rec = Number((s.nivel.match(/\d+/) || [])[0]); assert(rec > 0 && rec <= 50, s.id + " " + s.nivel);
+        const ctx = Object.assign({}, CTX_POT, { nivel: Math.max(10, rec + 5), magias: SPELLS });
+        for (const voc of ["KNIGHT", "PALADIN", "SORCERER", "DRUID"]) {
+            const ch = s.chars[voc]; assert(ch, s.id + " sem " + voc);
+            assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx).avisos, [], s.id + " " + voc);
+            const at = ch.ataque;
+            assert(at.length && at.some(a => a[1] <= 1), s.id + " " + voc + ": nenhuma ≥1");
+            assert(new Set(at.map(a => a[0])).size === at.length, s.id + " " + voc + ": repetida");
+            for (let j = 1; j < at.length; j++) for (let i = 0; i < j; i++) {
+                const a = sp(at[i][0]), b = sp(at[j][0]);
+                if ((a.cooldownMs || 2000) > 2000 || at[i][1] > at[j][1]) continue;
+                assert(!/ rune$/.test(at[i][0]) && !(!/ rune$/.test(at[j][0]) && (b.mana || 0) >= (a.mana || 0)), s.id + " " + voc + ": " + at[j][0] + " atrás de " + at[i][0] + " nunca dispara");
+            }
+        }
+        const runas = ["PALADIN", "SORCERER", "DRUID"].map(v => (s.chars[v].ataque.find(a => / rune$/.test(a[0])) || [])[0]);
+        assert(runas.every(r => r === runas[0]), s.id + ": runas " + runas.join(", "));
+        if (runas[0]) for (const voc of ["SORCERER", "DRUID"]) { const b = s.chars[voc].ataque.map(a => a[0]).find(n => BASICO.test(n)); if (b) assert.strictEqual(elemDe(b), elemDe(runas[0]), s.id + " " + voc + ": " + b + " com " + runas[0]); }
+    }
+    /* XundaBr nível 26 (27/10): os mapas até o recomendado 21 saem sem nenhum aviso; nos de cima o que pede nível maior fica de fora e a barra continua com golpe ≥1 */
+    for (const s of nb) for (const voc of ["KNIGHT", "PALADIN", "SORCERER", "DRUID"]) {
+        const r = M.dcConfigDe(s, voc, null, Object.assign({}, CTX_POT, { nivel: 26, magias: SPELLS }));
+        if (Number((s.nivel.match(/\d+/) || [])[0]) <= 21) assert.deepStrictEqual(r.avisos, [], s.id + " " + voc + " no 26");
+        assert(r.cfg.skills.filter(Boolean).length >= 1, s.id + " " + voc + ": barra vazia no 26");
+    }
+});
+
 console.log(n + ' testes ok' + (process.exitCode ? ' (com falhas)' : ''));
