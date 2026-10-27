@@ -6214,3 +6214,42 @@ que dura 2 semanas, depois a gente retira". Lido do cliente do jogo (bundle `pag
   `access_required` e o Auto Hunt para com o erro no Log (comportamento já existente).
 - **Não testado ao vivo** (sessão em nuvem, sem a conta): as formas das mensagens são as do cliente; qualquer campo
   diferente aparece no Status → DIAGNÓSTICO. Testes: 438 (7 novos).
+
+## 2.31.0 — Formação por boss: as casas que cada magia do boss cobre, e onde cada um ainda alcança (27/10)
+
+Dono (27/10): "na Magia › Boss, confira se está tudo certo para dar o maior dano no Elite e no boss; tem boss que é bom se mover,
+espalhar os personagens na melhor formação (menos o Cavaleiro); tem boss com dano em linha e em área — se afastar é melhor, mas
+longe demais a magia do Feiticeiro, do Paladino e do Druida não pega; análise precisa para atacar sem ficar na frente de um dano cheio".
+
+**O que o jogo dá (lido no cliente, 27/10):**
+- Cada magia de criatura chega no frame como `mcast {id, atk, type, cells:[[dx,dy]…], hits[{who, amount, mana}]}`. As `cells` são as
+  casas que a magia cobriu, **relativas ao Cavaleiro** (membro 0 = [0,0]) — o cliente desenha o efeito em `tileDoCavaleiro + cell`.
+  Sem `cells` é alvo único no Cavaleiro. `state.party[].pos` e `state.active[].pos` são as posições dos 4 e dos monstros no mesmo
+  referencial (o cerco é em volta do Cavaleiro).
+- Formação: duas caixas 3×3 (x −4..−2 e 2..4, y −1..1), Cavaleiro fixo no centro ("O Knight segura o centro, não pode ser
+  reposicionado"); `set_formation {vocation, pos:[x,y]}` move um dos três; só com caçada ativa ("Não há caçada ativa para
+  reposicionar"); a Sala de Treino tem lugares fixos. Botão MOVER do jogo = `formation-toggle` (toque num SQM destacado).
+- Não há mais nada sobre forma das magias de monstro no cliente/wiki: a forma vem medida, luta a luta.
+
+**O helper:**
+- Livro-razão (`@@RAZAO`): `mcast.cells` vira `crias[boss].magias[atk].celulas {'dx,dy': {n, dano médio}}`; `razaoPosicoes` guarda
+  `posParty {VOC:'x,y'}` e `posMob {nome: {'x,y': vezes}}` do frame; cada `cast` nosso com lista de acertos conta em
+  `alcance[voc]['x,y'] {casts, hits}` (lançamento de ataque sem acerto = não alcança dali). Tudo vai para o `dano_mapa`
+  (`boss:<nome>`, 3 sessões) e o `danoMapaJuntar` soma casas, alcance e fica com a posição do boss da sessão mais recente.
+- `@@FORMACAO-PURO` (`testes/formacao.test.js`, 6): `formacaoPerigo` = dano/h por casa (Σ magias: dano médio na casa ×
+  lançamentos/h); `formacaoAlcanca` = regra (varinha/rod e golpes 3 casas, arco 6; sem a posição do boss vale o pior caso: 1 casa
+  além da distância ao Cavaleiro) **ou** o medido (≥ 3 lançamentos sem acerto = não pega); `formacaoSugerir` escolhe, para
+  Feiticeiro, Druida e Paladino, a casa de menor perigo que alcança, casas distintas; empate: fica onde está, depois a linha do boss
+  (a onda sai reta), y 0, mais perto.
+- Tela: Magia › modelo Boss (Elite e boss, todos de `CAT.bosses`), abaixo do seletor: grade 9×3 com o perigo por casa (cor e
+  mil/h), C = Cavaleiro, B = boss, P/F/D = onde estão, ★ = sugerida; linha por personagem (hoje → sugerida, perigo, distância, o que
+  ainda pega ali); as 3 casas piores; **APLICAR FORMAÇÃO** (2 toques; `set_formation` só para quem muda; só na luta; guardado em
+  `formacao_<boss>`). Sem medição ainda: avisa e cuida só do alcance (magos a 2 casas do Cavaleiro, y 0).
+- Conferência do modelo Boss (pedido 1): `melhorKitBoss` simula 90 s de alvo único que não morre, com as resistências do boss
+  (`notasElementos` do `/bestiary` e do `/bosses/select`, Elites incluídos — `kind: mini`), pool = 5 longas por dano/s + 2 de maior
+  dano por lançamento + runa + 2 preenchimentos, todas as ordens, desempate por ouro e por força na frente. Está coerente com a
+  regra da fila (recarga ≤ 2 s por último). **Defeito achado e corrigido:** `huntDeBoss` devolvia `boss: true`, então
+  `danoMapaDaHunt` procurava `'boss:true'` e o dano guardado do boss nunca aparecia nas telas que o usam (Equip); agora
+  `boss: <nome>`.
+- **Não testado ao vivo** (sessão em nuvem): a leitura de `cells`/`pos` é a do cliente; a primeira luta com cada boss enche o mapa.
+  Testes: 445 (6 novos em formacao.test.js, 1 em razao.test.js).

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.30.0
+// @version      2.31.0
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.30.0';
+    const VERSAO = '2.31.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -998,7 +998,7 @@
     function huntDeBoss(nome) {
         const b = (CAT.bosses || []).find(x => x.name === nome);
         if (!b) return null;
-        return { id: 'boss:' + b.name, title: 'Boss ' + b.name, boss: true, levelMin: b.levelMin || 1,
+        return { id: 'boss:' + b.name, title: 'Boss ' + b.name, boss: b.name /* 2.31.0: o nome (era true; danoMapaDaHunt montava 'boss:true') */, levelMin: b.levelMin || 1,
                  lureTiers: [{ min: 1, max: 1 }], maxLure: 1,
                  monsters: [{ name: b.name, health: b.health, experience: b.experience, weight: 1, elements: b.elements || [] }] };
     }
@@ -4412,7 +4412,7 @@
      * amount, hits[{who, amount, mana}]} = magia de criatura, por personagem e elemento; death {who}). Guardado em
      * `crias` (por nome: golpes e magias, com média e máximo), `tomadoVoc` (por personagem e elemento) e `mortes`. */
     const razaoNovo = () => ({ t0: Date.now(), tFim: 0, tUlt: 0, magias: {}, auto: {}, tomado: { total: 0, golpes: 0, corpo: 0, golpesCorpo: 0 }, kills: 0, ondas: { n: 0, tam: 0, timer: 0, matar: 0, tOnda: 0 }, vitais: {}, hpAntes: {},
-                               vitaisPorKit: {}, kitVital: {}, nomes: {}, crias: {}, tomadoVoc: {}, mortes: [] });
+                               vitaisPorKit: {}, kitVital: {}, nomes: {}, crias: {}, tomadoVoc: {}, mortes: [], posParty: {}, posMob: {}, alcance: {} }); // 2.31.0: posições e alcance
     /* o elemento do jogo (COMBAT_FIREDAMAGE, "fire", "physical"…) no nome do helper (fogo, fisico…) */
     const ELEM_JOGO = { physical: 'fisico', fire: 'fogo', ice: 'gelo', energy: 'energia', earth: 'terra', poison: 'terra', death: 'morte', holy: 'sagrado', lifedrain: 'drenovida', manadrain: 'drenomana', drown: 'afogamento' };
     const elemDoJogo = (t) => { if (!t) return 'fisico'; const k = String(t).toLowerCase().replace(/^combat_/, '').replace(/damage$/, ''); return ELEM_JOGO[k] || k; };
@@ -4483,6 +4483,9 @@
             const voc = vocDoIndice(e.who) || ('#' + e.who), ch = voc + '|' + e.name;
             const m = L.magias[ch] || (L.magias[ch] = { voc, nome: e.name, runa: !!e.rune, casts: 0, hits: 0, dano: 0, overkill: 0, mortos: 0 });
             m.casts++;
+            /* 2.31.0 — ALCANCE MEDIDO: de onde ele lançou e se acertou alguém (lançamento de ataque sem acerto = fora do alcance dali) */
+            const pk = L.posParty && L.posParty[voc];
+            if (pk && Array.isArray(e.hits)) { const al = (L.alcance[voc] || (L.alcance[voc] = {}))[pk] || (L.alcance[voc][pk] = { casts: 0, hits: 0 }); al.casts++; if (e.hits.length) al.hits++; }
             for (const x of (e.hits || [])) {
                 m.hits++; m.dano += x.amount || 0;
                 if (x.hp <= 0) { m.mortos++; const antes = L.hpAntes[x.id]; if (antes != null) m.overkill += Math.max(0, (x.amount || 0) - antes); delete L.hpAntes[x.id]; }
@@ -4511,6 +4514,12 @@
             const c = L.crias[nome] || (L.crias[nome] = { golpes: null, magias: {} });
             const m = c.magias[atk] || (c.magias[atk] = { el, n: 0, soma: 0, max: 0, alvos: 0 });
             m.n++;
+            /* 2.31.0 — as CASAS que a magia cobriu (relativas ao Cavaleiro) e o dano médio que ela deu neste lançamento */
+            if (Array.isArray(e.cells) && e.cells.length) {
+                const vs = hits.map(h => Number(h.amount) || 0).filter(v => v > 0), med = vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null;
+                m.celulas = m.celulas || {};
+                for (const cel of e.cells) { if (!Array.isArray(cel)) continue; const q = m.celulas[cel[0] + ',' + cel[1]] || (m.celulas[cel[0] + ',' + cel[1]] = { n: 0, soma: 0, nv: 0 }); q.n++; if (med != null) { q.soma += med; q.nv++; } }
+            }
             for (const h of hits) {
                 const v = Number(h.amount) || 0; if (!(v > 0)) continue;
                 L.tomado.total += v; L.tomado.golpes++;
@@ -4522,6 +4531,22 @@
         if (k === 'kill') { L.kills++; delete L.hpAntes[e.id]; return; }
         if (k === 'wave') { L.ondas.n++; L.ondas.tOnda = agora; L.ondas.tam = e.count || L.ondas.tam; return; }
         if (k === 'wave_timer') { L.ondas.timer += e.ms || 0; if (L.ondas.tOnda) { L.ondas.matar += agora - L.ondas.tOnda; L.ondas.tOnda = 0; } }
+    }
+    /* 2.31.0 — POSIÇÕES do frame: state.party[].pos (os 4) e state.active[].pos (monstros), relativas ao Cavaleiro [0,0] */
+    function razaoPosicoes(L, st) {
+        if (!L || !st) return;
+        for (const p of (Array.isArray(st.party) ? st.party : [])) {
+            if (!p || !p.vocation) continue;
+            const pos = Array.isArray(p.pos) ? p.pos : (p.pos && typeof p.pos === 'object' ? [p.pos.x, p.pos.y] : null);
+            if (pos && Number.isFinite(Number(pos[0]))) L.posParty[String(p.vocation).toUpperCase()] = (Number(pos[0]) || 0) + ',' + (Number(pos[1]) || 0);
+        }
+        for (const m of (Array.isArray(st.active) ? st.active : [])) {
+            if (!m) continue;
+            const nome = m.name || m.nome, pos = Array.isArray(m.pos) ? m.pos : (m.pos && typeof m.pos === 'object' ? [m.pos.x, m.pos.y] : null);
+            if (!nome || !pos || !Number.isFinite(Number(pos[0]))) continue;
+            const c = L.posMob[nome] || (L.posMob[nome] = {}), k = (Number(pos[0]) || 0) + ',' + (Number(pos[1]) || 0);
+            c[k] = (c[k] || 0) + 1;
+        }
     }
     /* → { seg, danoTotal, porVoc{VOC:{dano,pct,dps,mana,ouro,manaMedia,hpMedia,hpMin}}, magias[por dano],
      *     ondas{n,tam,timer,matar,ciclo,spawnLimita}, tomado, tomadoH, kills } */
@@ -4548,7 +4573,8 @@
         if (ondas) { ondas.ciclo = Math.round((ondas.timer + ondas.matar) * 10) / 10; ondas.spawnLimita = ondas.matar < ondas.timer * 0.5; }
         /* v2.21.0 — por criatura (as 8 que mais machucam) e por personagem/elemento */
         const crias = Object.entries(L.crias || {}).map(([nome, c]) => {
-            const g = c.golpes, mg = Object.entries(c.magias || {}).map(([atk, m]) => ({ atk, el: m.el, n: m.n, medio: m.alvos ? Math.round(m.soma / m.alvos) : 0, max: m.max, porH: Math.round(m.soma / seg * 3600) }));
+            const g = c.golpes, mg = Object.entries(c.magias || {}).map(([atk, m]) => ({ atk, el: m.el, n: m.n, medio: m.alvos ? Math.round(m.soma / m.alvos) : 0, max: m.max, porH: Math.round(m.soma / seg * 3600),
+                celulas: m.celulas ? Object.entries(m.celulas).map(([k, q]) => ({ k, n: q.n, medio: q.nv ? Math.round(q.soma / q.nv) : null })) : null })); // 2.31.0
             const total = (g ? g.soma : 0) + mg.reduce((t, m) => t + m.porH * seg / 3600, 0);
             return { nome, golpes: g ? { n: g.n, medio: Math.round(g.soma / g.n), max: g.max, porH: Math.round(g.soma / seg * 3600) } : null, magias: mg.sort((a, b) => b.porH - a.porH), porH: Math.round(total / seg * 3600) };
         }).sort((a, b) => b.porH - a.porH).slice(0, 8);
@@ -4560,7 +4586,9 @@
         return { seg: Math.round(seg), danoTotal, porVoc, magias, ondas, tomado: L.tomado.total, tomadoH: Math.round(L.tomado.total / seg * 3600), kills: L.kills,
                  tomadoCorpoH: Math.round((L.tomado.corpo || 0) / seg * 3600), golpesCorpoH: Math.round((L.tomado.golpesCorpo || 0) / seg * 3600),
                  tirosH: Object.fromEntries(Object.entries(L.auto).map(([v, a]) => [v, Math.round(a.hits / seg * 3600)])),
-                 crias, elemPorVoc, mortes: (L.mortes || []).length };
+                 crias, elemPorVoc, mortes: (L.mortes || []).length,
+                 /* 2.31.0 — onde o boss costuma ficar (a casa mais vista) e o alcance medido por posição */
+                 posMob: Object.fromEntries(Object.entries(L.posMob || {}).map(([n, c]) => [n, Object.entries(c).sort((a, b) => b[1] - a[1])[0][0]])), alcance: L.alcance || {} };
     }
     /* v2.21.0 — DANO POR MAPA E POR BOSS, guardado (dano_mapa): a cada caçada normal, sem Scan. Chave 'boss:<nome>' ou
      * 'hunt:<id>'; até 3 sessões por chave (a mais nova substitui a mais velha); a leitura junta as sessões pelo tempo. */
@@ -4584,14 +4612,146 @@
             const o = crias[c.nome] || (crias[c.nome] = { nome: c.nome, porH: 0, golpes: null, magias: {} });
             o.porH += c.porH * w(x);
             if (c.golpes) { const g = o.golpes || (o.golpes = { n: 0, medio: 0, max: 0, porH: 0 }); g.medio = (g.medio * g.n + c.golpes.medio * c.golpes.n) / (g.n + c.golpes.n); g.n += c.golpes.n; g.max = Math.max(g.max, c.golpes.max); g.porH += c.golpes.porH * w(x); }
-            for (const m of (c.magias || [])) { const q = o.magias[m.atk] || (o.magias[m.atk] = { atk: m.atk, el: m.el, n: 0, medio: 0, max: 0, porH: 0 }); q.medio = (q.medio * q.n + m.medio * m.n) / (q.n + m.n); q.n += m.n; q.max = Math.max(q.max, m.max); q.porH += m.porH * w(x); }
+            for (const m of (c.magias || [])) {
+              const q = o.magias[m.atk] || (o.magias[m.atk] = { atk: m.atk, el: m.el, n: 0, medio: 0, max: 0, porH: 0, celulas: null });
+              /* 2.31.0 — casas: soma os lançamentos por casa e pondera o dano médio */
+              if (Array.isArray(m.celulas)) { const cc = q.celulas || (q.celulas = {}); for (const cel of m.celulas) { const z = cc[cel.k] || (cc[cel.k] = { k: cel.k, n: 0, medio: null, nv: 0 }); if (cel.medio != null) { z.medio = ((z.medio || 0) * z.nv + cel.medio * cel.n) / (z.nv + cel.n); z.nv += cel.n; } z.n += cel.n; } }
+              q.medio = (q.medio * q.n + m.medio * m.n) / (q.n + m.n); q.n += m.n; q.max = Math.max(q.max, m.max); q.porH += m.porH * w(x);
+            }
           }
         }
         const lista = Object.values(crias).map(c => Object.assign(c, { porH: Math.round(c.porH), golpes: c.golpes ? Object.assign(c.golpes, { medio: Math.round(c.golpes.medio), porH: Math.round(c.golpes.porH) }) : null,
-                                                                   magias: Object.values(c.magias).map(m => Object.assign(m, { medio: Math.round(m.medio), porH: Math.round(m.porH) })).sort((a, b) => b.porH - a.porH) })).sort((a, b) => b.porH - a.porH);
-        return { seg, sessoes: ss.length, t: Math.max(...ss.map(x => x.t || 0)), tomadoH: Math.round(ss.reduce((t, x) => t + (x.tomadoH || 0) * w(x), 0)), mortes: ss.reduce((t, x) => t + (x.mortes || 0), 0), elemPorVoc, crias: lista };
+                                                                   magias: Object.values(c.magias).map(m => Object.assign(m, { medio: Math.round(m.medio), porH: Math.round(m.porH), celulas: m.celulas ? Object.values(m.celulas).map(z => ({ k: z.k, n: z.n, medio: z.medio != null ? Math.round(z.medio) : null })) : null })).sort((a, b) => b.porH - a.porH) })).sort((a, b) => b.porH - a.porH);
+        /* 2.31.0 — posição do boss: a da sessão mais recente que a tem; alcance medido: soma por vocação e casa */
+        const posMob = ss.slice().reverse().map(x => x.posMob).find(p => p && Object.keys(p).length) || null, alcance = {};
+        for (const x of ss) { for (const [v, m] of Object.entries(x.alcance || {})) { for (const [k, a] of Object.entries(m || {})) { const z = (alcance[v] || (alcance[v] = {}))[k] || (alcance[v][k] = { casts: 0, hits: 0 }); z.casts += a.casts || 0; z.hits += a.hits || 0; } } }
+        return { seg, sessoes: ss.length, t: Math.max(...ss.map(x => x.t || 0)), tomadoH: Math.round(ss.reduce((t, x) => t + (x.tomadoH || 0) * w(x), 0)), mortes: ss.reduce((t, x) => t + (x.mortes || 0), 0), elemPorVoc, crias: lista, posMob, alcance };
     }
     /* @@RAZAO-FIM */
+    /* @@FORMACAO-PURO-INICIO — FORMAÇÃO POR BOSS (2.31.0). Dono, 27/10: "tem boss com dano em linha e em área: se afastar é melhor,
+     * mas longe demais a magia do Feiticeiro, do Paladino e do Druida não pega; monte uma estratégia precisa para atacar sem ficar na
+     * frente de um dano cheio". O que o jogo dá (lido no cliente, 27/10): cada magia de criatura chega no frame como `mcast {cells:
+     * [[dx,dy]…], hits[{who, amount}]}` com as casas RELATIVAS AO CAVALEIRO (membro 0, centro [0,0]); `state.party[].pos` e
+     * `state.active[].pos` são as posições dos 4 e dos monstros no mesmo referencial. As caixas da formação são duas de 3×3 (x −4..−2 e
+     * 2..4, y −1..1); o Cavaleiro é fixo; `set_formation {vocation, pos:[x,y]}` move um dos três. Então: o livro-razão anota as casas
+     * de cada magia do boss (dano por casa e por hora) e onde cada um estava quando lançou (acertou ou não = alcance medido); aqui
+     * calcula o perigo de cada casa e escolhe, para Paladino/Feiticeiro/Druida, a casa mais segura que ainda alcança o boss. */
+    const FORMACAO_CELULAS = (() => { const c = []; for (const x of [-4, -3, -2, 2, 3, 4]) { for (const y of [-1, 0, 1]) c.push([x, y]); } return c; })();
+    const fmKey = (p) => (Array.isArray(p) ? p[0] + ',' + p[1] : String(p || ''));
+    const fmPos = (k) => { const m = String(k || '').split(','); return [Number(m[0]) || 0, Number(m[1]) || 0]; };
+    const fmDist = (a, b) => Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1])); // casas (Chebyshev), como o jogo mede alcance
+    /* alcance por vocação (casas até o boss): varinha/rod 3 (auto-ataque e golpes), arco 6; a onda sai do lançador e cobre 3 à frente */
+    const FORMACAO_ALCANCE = { SORCERER: 3, DRUID: 3, PALADIN: 6 };
+    /* perigo por casa (dano/h) a partir do dano guardado do boss (danoMapaJuntar): Σ magias com casas × dano médio × lançamentos/h */
+    function formacaoPerigo(dm) {
+        const perigo = {}, porMagia = {};
+        if (!dm || !(dm.seg > 0)) return { perigo, porMagia, medido: false };
+        let medido = false;
+        for (const c of (dm.crias || [])) {
+            for (const m of (c.magias || [])) {
+                if (!Array.isArray(m.celulas) || !m.celulas.length) continue;
+                medido = true;
+                const lancH = m.n / dm.seg * 3600;
+                for (const cel of m.celulas) {
+                    const dano = (cel.medio != null ? cel.medio : m.medio) || 0, porH = dano * lancH * (cel.n / Math.max(1, m.n));
+                    perigo[cel.k] = (perigo[cel.k] || 0) + porH;
+                    (porMagia[cel.k] || (porMagia[cel.k] = [])).push({ cria: c.nome, atk: m.atk, el: m.el, porH: Math.round(porH), dano });
+                }
+            }
+        }
+        for (const k of Object.keys(perigo)) perigo[k] = Math.round(perigo[k]);
+        return { perigo, porMagia, medido };
+    }
+    /* o boss costuma ficar numa casa do cerco (dm.posMob[nome]); sem medida, vale o pior caso: 1 casa além da distância ao Cavaleiro */
+    function formacaoDistBoss(pos, posBoss) { return posBoss ? fmDist(pos, posBoss) : fmDist(pos, [0, 0]) + 1; }
+    /* alcança? regra por vocação + o que foi medido (dm.alcance[voc]['x,y'] = {casts, hits}): ≥ 3 lançamentos sem acerto = não pega */
+    function formacaoAlcanca(voc, pos, posBoss, dm) {
+        const a = dm && dm.alcance && dm.alcance[voc] && dm.alcance[voc][fmKey(pos)];
+        if (a && a.casts >= 3) return a.hits / a.casts >= 0.3;
+        return formacaoDistBoss(pos, posBoss) <= (FORMACAO_ALCANCE[voc] || 3);
+    }
+    /* a formação: para cada um dos três, a casa com menos perigo que alcança; desempate: y do boss (onda reta) > y 0 > mais perto.
+     * opc.atual {VOC:'x,y'} entra como "hoje"; opc.posBoss [dx,dy]. */
+    function formacaoSugerir(dm, opc) {
+        opc = opc || {};
+        const { perigo, porMagia, medido } = formacaoPerigo(dm);
+        const posBoss = opc.posBoss || (dm && dm.posMob ? fmPos(Object.values(dm.posMob)[0]) : null);
+        const usadas = new Set(), pos = {}, detalhe = {};
+        for (const voc of ['SORCERER', 'DRUID', 'PALADIN']) {
+            const atual = opc.atual && opc.atual[voc] ? fmKey(opc.atual[voc]) : null;
+            /* empate no perigo: fica onde já está (não mexe à toa); depois a linha do boss, y 0, mais perto, mais para dentro */
+            const cands = FORMACAO_CELULAS.filter(c => !usadas.has(fmKey(c)) && formacaoAlcanca(voc, c, posBoss, dm))
+                .map(c => ({ c, k: fmKey(c), perigo: perigo[fmKey(c)] || 0, dist: formacaoDistBoss(c, posBoss) }))
+                .sort((a, b) => a.perigo - b.perigo || (b.k === atual) - (a.k === atual) || (posBoss ? Math.abs(a.c[1] - posBoss[1]) - Math.abs(b.c[1] - posBoss[1]) : 0) || Math.abs(a.c[1]) - Math.abs(b.c[1]) || a.dist - b.dist || Math.abs(a.c[0]) - Math.abs(b.c[0]));
+            const e = cands[0];
+            if (!e) { detalhe[voc] = { motivo: 'nenhuma casa alcança o boss' }; continue; }
+            usadas.add(e.k); pos[voc] = e.c;
+            detalhe[voc] = { perigo: e.perigo, dist: e.dist, atual, perigoAtual: atual ? (perigo[atual] || 0) : null, muda: !!atual && atual !== e.k, magias: (porMagia[e.k] || []).slice(0, 3) };
+        }
+        const pior = Object.entries(perigo).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => ({ k, porH: v, magias: (porMagia[k] || []).slice(0, 2) }));
+        return { pos, detalhe, perigo, porMagia, medido, posBoss, pior };
+    }
+    /* @@FORMACAO-PURO-FIM */
+    /* 2.31.0 — FORMAÇÃO POR BOSS: a tela (aba Magia, modelo Boss, logo abaixo das resistências) e o APLICAR (set_formation ×3, 2 toques).
+     * Nada move sozinho; o Cavaleiro é fixo; o servidor valida a casa ("posição fora das caixas da formação", "ocupada"). */
+    const FM = { aplicando: false, erro: null, ok: null };
+    const FM_VOC_PT = { PALADIN: 'Paladino', SORCERER: 'Feiticeiro', DRUID: 'Druida' }, FM_INI = { PALADIN: 'P', SORCERER: 'F', DRUID: 'D' };
+    function fmPosBossAoVivo(nome) { const c = RAZAO && RAZAO.posMob && RAZAO.posMob[nome]; if (!c) return null; const k = Object.entries(c).sort((a, b) => b[1] - a[1])[0]; return k ? fmPos(k[0]) : null; }
+    function fmSugestao(alvo) {
+        const nome = alvo.boss, dm = danoMapa('boss:' + nome);
+        const atual = (RAZAO && RAZAO.posParty) || {}, posBoss = fmPosBossAoVivo(nome) || (dm && dm.posMob && dm.posMob[nome] ? fmPos(dm.posMob[nome]) : null);
+        return { dm, atual, posBoss, r: formacaoSugerir(dm, { atual, posBoss }) };
+    }
+    function telaFormacao(alvo) {
+        const { dm, atual, posBoss, r } = fmSugestao(alvo), nome = alvo.boss, salva = ler('formacao_' + nome, null);
+        const maxP = Math.max(1, ...Object.values(r.perigo));
+        const marca = (x, y) => { const k = x + ',' + y, out = []; for (const v of ['PALADIN', 'SORCERER', 'DRUID']) { if (atual[v] === k) out.push(FM_INI[v]); } const sug = Object.entries(r.pos).find(([, p]) => fmKey(p) === k); return (out.length ? out.join('') : '') + (sug ? '★' : ''); };
+        let g = `<table class="tb-t fm-grade" aria-label="casas da formação: perigo por hora e quem está onde">`;
+        for (let y = -1; y <= 1; y++) {
+            g += '<tr>';
+            for (let x = -4; x <= 4; x++) {
+                const k = x + ',' + y, caixa = Math.abs(x) >= 2, p = r.perigo[k] || 0, cor = caixa && p ? `background:rgba(201,59,51,${(0.15 + 0.6 * p / maxP).toFixed(2)})` : '';
+                const centro = x === 0 && y === 0 ? 'C' : (posBoss && posBoss[0] === x && posBoss[1] === y ? 'B' : '');
+                g += `<td class="n" style="${cor};min-width:26px;text-align:center;${caixa ? '' : 'color:var(--tb-mut)'}" title="${k}${caixa ? ' · perigo ' + mkFmt(p) + '/h' + ((r.porMagia[k] || []).slice(0, 3).map(m => ' · ' + m.atk + ' ' + mkFmt(m.porH) + '/h').join('')) : ''}">${caixa ? (p ? Math.round(p / 1000) + 'k' : '·') : (centro || '·')}${caixa ? '<br>' + (marca(x, y) || '&nbsp;') : ''}</td>`;
+            }
+            g += '</tr>';
+        }
+        g += '</table>';
+        let h = `<div class="tb-cx" style="margin-top:6px"><h4 style="margin:0 0 2px">Formação contra ${escHtml(nome)}</h4>` + g +
+            `<div class="tb-mut tb-eq-nota">C = Cavaleiro (fixo) · B = onde o boss costuma ficar${posBoss ? ' [' + posBoss.join(',') + ']' : ' (ainda não visto)'} · P/F/D = onde cada um está agora · ★ = casa sugerida · número = dano por hora que as magias do boss já deram naquela casa (mapa de ${dm && dm.sessoes ? dm.sessoes + ' luta(s), ' + fmtHoras(dm.seg / 3600) : 'nenhuma luta ainda'}).</div>`;
+        if (!r.medido) h += `<div class="tb-av tb-eq-nota">ainda sem as casas das magias deste boss: lute uma vez com ele (o helper anota cada magia dele e as casas que ela cobre); até lá a sugestão só cuida do alcance (magos a 3 casas do boss, Paladino até 6).</div>`;
+        for (const v of ['SORCERER', 'DRUID', 'PALADIN']) {
+            const d = r.detalhe[v]; if (!d) continue;
+            if (d.motivo) { h += `<div class="tb-eq-nota"><b>${FM_VOC_PT[v]}</b>: ${escHtml(d.motivo)}</div>`; continue; }
+            h += `<div class="tb-eq-nota"><b>${FM_VOC_PT[v]}</b>: ${d.atual ? 'hoje [' + d.atual + '] (' + mkFmt(d.perigoAtual) + '/h) → ' : ''}sugerida <b>[${fmKey(r.pos[v])}]</b> (${mkFmt(d.perigo)}/h, ${d.dist} casa${d.dist > 1 ? 's' : ''} do boss)${d.magias.length ? ' · ali ainda pega: ' + d.magias.map(m => escHtml(m.atk) + ' ' + mkFmt(m.porH) + '/h').join(', ') : ''}${d.muda ? '' : d.atual ? ' · <span class="tb-ok">já está lá</span>' : ''}</div>`;
+        }
+        if (r.pior.length) h += `<div class="tb-mut tb-eq-nota">casas mais perigosas: ${r.pior.map(p => '[' + p.k + '] ' + mkFmt(p.porH) + '/h (' + p.magias.map(m => escHtml(m.atk)).join(', ') + ')').join(' · ')}</div>`;
+        const muda = Object.values(r.detalhe).some(d => d && d.muda), semAtual = !Object.keys(atual).length;
+        if (FM.erro) h += `<div class="tb-cx tb-ruim">${escHtml(FM.erro)}</div>`;
+        if (FM.ok) h += `<div class="tb-cx tb-ok">${escHtml(FM.ok)}</div>`;
+        h += `<div class="tb-linha" style="margin-top:4px"><button type="button" class="tb-bt pri" id="tb-fm-aplicar" ${!emHunt() || !socketAberto() || FM.aplicando || !Object.keys(r.pos).length || (!muda && !semAtual) ? 'disabled' : ''} title="set_formation {vocation, pos} para cada um dos três que muda de casa; só na luta (caçada ativa); o Cavaleiro não se move">${FM.aplicando ? 'MOVENDO…' : 'APLICAR FORMAÇÃO'}</button>` +
+             `<span class="tb-mut tb-eq-nota">${!emHunt() ? 'só vale durante a luta (o jogo recusa fora da caçada)' : !muda && !semAtual ? 'os três já estão nas casas sugeridas' : 'move só quem muda de casa'}${salva ? ' · última aplicada ' + mkHora(salva.t) : ''}</span></div>`;
+        return h + `<div class="tb-mut tb-eq-nota">Regra: a casa com menos dano das magias do boss que ainda alcança o boss (varinha/rod e golpes 3 casas; arco 6); desempate pela linha do boss (a onda sai reta) e pela proximidade. Lançamento de ataque sem acerto vira "não alcança dali" (≥ 3 vezes). As caixas são 3×3 em x −4..−2 e 2..4; o jogo não deixa o Cavaleiro sair do centro.</div></div>`;
+    }
+    async function fmAplicar(alvo) {
+        if (!alvo || !alvo.boss || FM.aplicando) return;
+        if (!socketAberto()) { FM.erro = 'socket do jogo não está à mão — dê F5 com o helper instalado'; renderizar(); return; }
+        if (!emHunt()) { FM.erro = 'a formação só muda durante a luta (caçada ativa)'; renderizar(); return; }
+        const { atual, r } = fmSugestao(alvo);
+        FM.aplicando = true; FM.erro = null; FM.ok = null; renderizar();
+        const feitos = [];
+        try {
+            for (const v of ['SORCERER', 'DRUID', 'PALADIN']) {
+                const p = r.pos[v]; if (!p || (atual[v] && atual[v] === fmKey(p))) continue;
+                enviarWS({ type: 'set_formation', data: { vocation: v, pos: [p[0], p[1]] } });
+                feitos.push(`${FM_VOC_PT[v]} → [${fmKey(p)}]`);
+                await dorme(300);
+            }
+            if (feitos.length) { guardar('formacao_' + alvo.boss, { t: Date.now(), pos: r.pos }); FM.ok = 'enviado: ' + feitos.join(' · ') + ' (o jogo confirma movendo na cena; recusa aparece no Log como erro do servidor)'; log('formação contra ' + alvo.boss + ': ' + feitos.join(' · '), 'ok'); }
+            else FM.ok = 'ninguém precisava mudar de casa';
+        } catch (e) { FM.erro = e.message; log('formação: ' + e.message, 'erro'); }
+        finally { FM.aplicando = false; renderizar(); }
+    }
     const DANO_MAPA = { cache: null };
     const danoMapaChave = () => (ESTADO_WS.boss ? 'boss:' + ESTADO_WS.boss : ESTADO_WS.huntId != null ? 'hunt:' + ESTADO_WS.huntId : null);
     function danoMapaGuardar() {
@@ -4600,7 +4760,7 @@
         if (!(rz.seg >= DANO_MAPA_MIN_SEG) || !(rz.tomado > 0)) return;
         const tudo = ler('dano_mapa', {}) || {};
         const lista = (tudo[chave] || []).filter(x => x && x.t0 !== RAZAO.t0);
-        lista.push({ t0: RAZAO.t0, t: Date.now(), seg: rz.seg, tomadoH: rz.tomadoH, mortes: rz.mortes, elemPorVoc: rz.elemPorVoc, crias: rz.crias });
+        lista.push({ t0: RAZAO.t0, t: Date.now(), seg: rz.seg, tomadoH: rz.tomadoH, mortes: rz.mortes, elemPorVoc: rz.elemPorVoc, crias: rz.crias, posMob: rz.posMob, alcance: rz.alcance }); // 2.31.0: posições e alcance
         tudo[chave] = lista.sort((a, b) => a.t0 - b.t0).slice(-DANO_MAPA_MAX_SESSOES);
         guardar('dano_mapa', tudo); DANO_MAPA.cache = null;
     }
@@ -4736,6 +4896,7 @@
             if (Array.isArray(st.party) && st.party.length) {
                 ESTADO_WS.party = vocsPorPosicao(st.party);
                 try { razaoVitais(RAZAO, st.party, d.events); } catch (e) { falhou('livro-razão (vitais)', e); }
+                try { razaoPosicoes(RAZAO, st); } catch (e) { falhou('livro-razão (posições)', e); } // 2.31.0
                 try { anotarSkills(st.party); } catch (e) { falhou('anotarSkills', e); }
             }
             if (Array.isArray(d.events)) { const agora = Date.now(); for (const ev of d.events) {
@@ -9989,6 +10150,7 @@
             const bosses = (CAT.bosses || []).slice().sort((a, b) => (a.health || 0) - (b.health || 0) || String(a.name).localeCompare(String(b.name)));
             corpo += `<select id="tb-boss" aria-label="boss" style="margin-top:4px"><option value="">— escolha o boss —</option>` + bosses.map(b => `<option value="${escHtml(b.name)}"${b.name === bn ? ' selected' : ''}>${escHtml(b.name)} · ${numBR(b.health)} HP</option>`).join('') + `</select>`;
             alvo = huntDeBoss(bn);
+            if (alvo) { try { corpo += telaFormacao(alvo); } catch (e) { falhou('formação (tela)', e); } } // 2.31.0
             if (alvo) corpo += `<div class="tb-mut tb-resist">${escHtml((alvo.monsters[0].elements || []).map(e => rotuloElem(e.type) + ' ' + (e.percent > 0 ? '−' : '+') + Math.abs(e.percent) + '%').join(' · ') || 'sem resistências')}</div>`;
         }
         if (!alvo) return corpo + `<div class="tb-mut" style="margin-top:6px">escolha a caçada para ver o plano</div>`;
@@ -10188,6 +10350,8 @@
         $$('[data-usar-palpite]', corpo).forEach(b => { b.onclick = () => { guardar('hunt_id', parseInt(b.dataset.usarPalpite)); renderizar(); }; });
         const selBoss = $('#tb-boss');
         if (selBoss) selBoss.onchange = () => { guardar('boss_nome', selBoss.value || null); renderizar(); };
+        const fmb = $('#tb-fm-aplicar'); // 2.31.0 — formação por boss, 2 toques
+        if (fmb && !fmb.disabled) ligarDoisToques(fmb, 'fm-aplicar', 'CONFIRMAR: mover para as casas sugeridas', () => fmAplicar(alvoDoModelo()));
         const selDc = $('#tb-dc-setup');
         if (selDc) selDc.onchange = () => { const h = alvoDoModelo(); if (h) guardar('dc_setup_' + h.id, selDc.value || null); renderizar(); };
         const dcv = $('#tb-dc-voltar');

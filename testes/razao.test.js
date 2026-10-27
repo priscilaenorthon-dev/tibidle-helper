@@ -6,7 +6,7 @@ const trecho = (a, b) => { const i = src.indexOf(a), f = src.indexOf(b); assert(
 const ORDEM = ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'];
 const stubs = `const vocDoIndice = (i) => ${JSON.stringify(ORDEM)}[i] || null; const CAT = { magias: [] }; const precoRuna = () => 0; const FRAME_FRESCO_MS = 5000;
 const guardar = () => {}; const _hash = (s) => s; const amostraRegen = () => null; const medianaRegen = () => 0;`;
-const M = new Function(stubs + trecho('/* @@RAZAO-INICIO', '/* @@RAZAO-FIM */') + '\nreturn { razaoNovo, razaoEvento, razaoResumo, danoMapaJuntar, elemDoJogo };')();
+const M = new Function(stubs + trecho('/* @@RAZAO-INICIO', '/* @@RAZAO-FIM */') + '\nreturn { razaoNovo, razaoEvento, razaoResumo, danoMapaJuntar, elemDoJogo, razaoPosicoes };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 
@@ -63,4 +63,32 @@ t('dano guardado por mapa: junta sessões pelo tempo (frações ponderadas, máx
     assert.strictEqual(M.danoMapaJuntar([]), null);
     assert.strictEqual(j.mortes, 2);
 });
+t('2.31.0 casas das magias do boss (mcast.cells, relativas ao Cavaleiro), posições do frame e alcance medido por casa; o juntar soma', () => {
+    const L = M.razaoNovo(); L.t0 = 1000000; let agora = L.t0;
+    const ev = (e) => { agora += 500; M.razaoEvento(L, e, agora); };
+    M.razaoPosicoes(L, { party: [{ vocation: 'KNIGHT', pos: [0, 0] }, { vocation: 'PALADIN', pos: [-4, 0] }, { vocation: 'SORCERER', pos: [2, 0] }, { vocation: 'DRUID', pos: { x: -2, y: 1 } }], active: [{ id: 1, name: 'Dragon Lord', pos: [1, 0] }] });
+    M.razaoPosicoes(L, { party: [], active: [{ id: 1, name: 'Dragon Lord', pos: [1, 0] }, { id: 2, name: 'Dragon', pos: [0, -1] }] });
+    assert.deepStrictEqual(L.posParty, { KNIGHT: '0,0', PALADIN: '-4,0', SORCERER: '2,0', DRUID: '-2,1' });
+    ev({ kind: 'spawn', id: 1, name: 'Dragon Lord', maxHp: 2000 });
+    ev({ kind: 'mcast', id: 1, atk: 'fire beam', type: 'COMBAT_FIREDAMAGE', amount: 0, cells: [[1, 0], [2, 0], [3, 0]], hits: [{ who: 2, amount: 300, mana: 0, hp: 1 }] });
+    ev({ kind: 'mcast', id: 1, atk: 'fire beam', type: 'COMBAT_FIREDAMAGE', amount: 0, cells: [[1, 0], [2, 0], [3, 0]], hits: [] }); // ninguém na linha: casas contam, dano não
+    ev({ kind: 'cast', who: 2, name: 'Energy Wave', hits: [{ id: 1, amount: 200, hp: 1500 }] });
+    ev({ kind: 'cast', who: 3, name: 'Strong Ice Wave', hits: [] });
+    ev({ kind: 'cast', who: 3, name: 'Strong Ice Wave', hits: [] });
+    ev({ kind: 'cast', who: 3, name: 'Heal Friend' }); // sem lista de acertos: não conta como ataque
+    L.tFim = L.t0 + 60000;
+    const rz = M.razaoResumo(L);
+    const dl = rz.crias.find(c => c.nome === 'Dragon Lord'), fb = dl.magias.find(m => m.atk === 'fire beam');
+    assert(fb && fb.n === 2 && fb.medio === 300, JSON.stringify(fb));
+    assert.deepStrictEqual(fb.celulas.map(c => [c.k, c.n, c.medio]), [['1,0', 2, 300], ['2,0', 2, 300], ['3,0', 2, 300]]);
+    assert.deepStrictEqual(rz.posMob, { 'Dragon Lord': '1,0', 'Dragon': '0,-1' });
+    assert.deepStrictEqual(rz.alcance, { SORCERER: { '2,0': { casts: 1, hits: 1 } }, DRUID: { '-2,1': { casts: 2, hits: 0 } } });
+    const a = Object.assign({ t0: 1, t: 2 }, rz), b = JSON.parse(JSON.stringify(a)); b.t0 = 3; b.t = 4; b.posMob = { 'Dragon Lord': '0,1' };
+    const j = M.danoMapaJuntar([a, b]);
+    const jf = j.crias.find(c => c.nome === 'Dragon Lord').magias.find(m => m.atk === 'fire beam');
+    assert.deepStrictEqual(jf.celulas.map(c => [c.k, c.n, c.medio]), [['1,0', 4, 300], ['2,0', 4, 300], ['3,0', 4, 300]], JSON.stringify(jf.celulas));
+    assert.deepStrictEqual(j.posMob, { 'Dragon Lord': '0,1' }, 'a posição da sessão mais recente');
+    assert.deepStrictEqual(j.alcance.DRUID, { '-2,1': { casts: 4, hits: 0 } });
+});
+
 console.log(`\n${n} testes ok`);
