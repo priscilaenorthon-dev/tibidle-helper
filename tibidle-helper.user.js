@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.33.3
+// @version      2.33.4
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.33.3';
+    const VERSAO = '2.33.4';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -4959,7 +4959,10 @@
              * party, start pendente e ecos da sessão anterior não valem mais
              * (o boss "em andamento" ficava preso depois de uma queda). */
             if (o.type === 'welcome') {
-                Object.assign(ESTADO_WS, { boss: null, huntId: null, party: [], ultimoStart: null, eco: {}, frame: null });
+                /* 2.33.4 — entrando pela Elite o servidor manda ended → welcome → hunt_started 800 (visto ao vivo em 27/10):
+                 * o start ainda não consumido sobrevive ao welcome, senão o boss sai "?" */
+                const st = ESTADO_WS.ultimoStart, guardaStart = !!(st && !st.usado && Date.now() - st.t < 60000);
+                Object.assign(ESTADO_WS, { boss: null, huntId: null, party: [], ultimoStart: guardaStart ? st : null, eco: {}, frame: null });
                 if (d.account && typeof d.account === 'object' && d.account.name) {
                     ESTADO_WS.conta = { nome: String(d.account.name), main: d.account.mainVocation || null };
                     if (_gavetaSemConta) gavetaPeloWelcome(ESTADO_WS.conta);

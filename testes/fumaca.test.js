@@ -387,7 +387,8 @@ t('boss da Elite: o `ended` da caçada velha chega entre o start_hunt e o hunt_s
     ws.emitir({ type: 'hunt_started', data: { huntId: 261, state: { party: party4() } } });
     ws.send(JSON.stringify({ type: 'stop', data: {} }));
     ws.send(JSON.stringify({ type: 'start_hunt', data: { huntId: 1, lure: 1, bossId: 'Pumpkin King' } }));
-    ws.emitir({ type: 'ended', data: { summary: { huntId: 261, reason: 'stopped' } } });
+    ws.emitir({ type: 'ended', data: { summary: { huntId: 261, reason: 'stop' } } });
+    ws.emitir({ type: 'welcome', data: {} }); // 2.33.4 — ao vivo vem um welcome no meio também
     ws.emitir({ type: 'hunt_started', data: { huntId: 800, lure: 1, state: { party: party4() } } });
     assert.strictEqual(W.H.estadoWS().boss, 'Pumpkin King', 'o ended no meio apagou o start do boss');
     // o fim do boss zera o start consumido

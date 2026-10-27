@@ -6410,3 +6410,11 @@ abre as 13 abas sem estourar a largura. Mas no celular o jogo troca o layout: n�
   não enxerga o WebSocket do jogo. O site não tem CSP, então a injeção na página funciona. O Tampermonkey já roda `@grant none` na página.
 Não feito (fora do uso do dono no celular): Auto Hunt (purificar/abrir a tela CAÇADAS), Forja (menu NAVEGAÇÃO) e as leituras de
 tela de nível/XP/ouro, que já caem no frame do socket.
+
+## 2.33.4 — boss da Elite: o `welcome` também vem no meio (27/10)
+Segunda chave do Pumpkin King, ao vivo: o boss continuou "?" com a 2.33.1. O servidor responde ao stop {intent:"switch"} +
+start_hunt {bossId} com **ended (261) → welcome → hunt_started 800** — a party passa pela cidade. O `welcome` zerava `ultimoStart`.
+Agora o welcome guarda o start ainda não consumido com menos de 60 s (a queda de verdade continua zerando o resto). Teste de fumaça
+com a ordem real.
+Item 7 do roteiro (Formação na luta): APLICAR FORMAÇÃO com 2 toques no começo da luta mandou Feiticeiro → [-2,0], Druida → [2,0] e
+Paladino → [-3,0]; a cena moveu Feiticeiro e Paladino em 2,5 s. O mapa de casas não aprendia porque o dano ia para `boss:?`.
