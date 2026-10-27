@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.33.2
+// @version      2.33.3
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -10,6 +10,7 @@
 // @match        https://play.tibidle.com/*
 // @match        *://*.play.tibidle.com/*
 // @grant        none
+// @inject-into  page
 // @run-at       document-start
 // ==/UserScript==
 
@@ -26,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.33.2';
+    const VERSAO = '2.33.3';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -796,7 +797,7 @@
 
     function _huntPorFiber() {
         try {
-            const raiz = document.querySelector('[data-testid="shell"]') || document.body;
+            const raiz = raizReact() || document.body;
             if (!raiz) return null;
             const k = Object.keys(raiz).find(x => x.startsWith('__reactFiber$'));
             if (!k) return null;
@@ -4132,6 +4133,13 @@
      * ====================================================================== */
     /* @@PERFIS-INICIO — socket, perfis e aplicarPlanoSocket; testes/fumaca.test.js roda este trecho sozinho. */
     function socketAberto() { return !!(WS.socket && WS.socket.readyState === 1); }
+    /* 2.33.3 — um elemento do jogo com fibra do React, para subir até a raiz. No layout de celular (≤ ~640 px) o jogo não tem
+     * `shell` nem `.s-ui-root` (tem `mobile-shell`): a tela de atalhos não era espelhada e o roster/mochila da fibra vinham vazios. */
+    function raizReact() {
+        const q = s => document.querySelector(s);
+        return q('[data-testid="shell"]') || q('.s-ui-root') || q('[data-testid="mobile-shell"]')
+            || [...document.querySelectorAll('[data-testid]')].find(e => Object.keys(e).some(k => k.startsWith('__reactFiber$'))) || null;
+    }
     function enviarWS(obj) {
         if (!socketAberto()) throw new Error('socket do jogo não está aberto');
         WS.socket.send(JSON.stringify(obj)); // passa pelo grampo: conta em WS.enviados e observarEnviado
@@ -4149,7 +4157,7 @@
             && Object.keys(o).every(k => VOC4.includes(k)) && Object.values(o).some(v => v && Array.isArray(v.list) && 'active' in v);
         let fila = null;
         try {
-            const raiz = typeof document !== 'undefined' && (document.querySelector('[data-testid="shell"]') || document.querySelector('.s-ui-root'));
+            const raiz = typeof document !== 'undefined' && raizReact();
             const k = raiz && Object.keys(raiz).find(x => x.startsWith('__reactFiber$'));
             let f = k ? raiz[k] : null; while (f && f.return) f = f.return;
             const pilha = [f]; let g = 0;
@@ -6421,7 +6429,7 @@
     }
     function _lerShellFibra() {
         try {
-            const raiz = tid('shell') || $('.s-ui-root'); if (!raiz) return null;
+            const raiz = raizReact(); if (!raiz) return null;
             const k = Object.keys(raiz).find(x => x.startsWith('__reactFiber$')); if (!k) return null;
             let f = raiz[k]; while (f && f.return) f = f.return;
             const vistos = new Set(); let shell = null;

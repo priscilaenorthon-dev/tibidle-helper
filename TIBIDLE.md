@@ -6396,3 +6396,17 @@ reconhecia pelo acesso do evento (`EV.acesso`), que o servidor não manda de nov
 Auto Hunt e Scan. Agora a caçada que é a origem de um Elite em `/bosses/select` (`originHuntId`: 261 Pumpkin King, 262 Crowmother,
 263 The Lantern Reaper — as únicas fora do catálogo) conta como caçada; e o "?" que veio só por "fora do catálogo" sai sozinho
 quando a caçada passa a ser conhecida. Teste em `fumaca.test.js`.
+
+## 2.33.3 — helper no celular (iPhone) (27/10)
+Testado no Playwright em 390×844 (tamanho de iPhone). O modo celular do painel (`tb-cel`: trilho horizontal + gaveta de baixo)
+abre as 13 abas sem estourar a largura. Mas no celular o jogo troca o layout: não existe `shell`, `.s-ui-root`, `hud-gold`,
+`rail-level-n`, `rail-backpack-*`, `analyzer-session`, `actionbar-explore` nem `scene-slot-*` (tem `mobile-shell`, `mobile-hud-level`,
+`mobile-hud-xp`, `mobile-hud-gold`, `mobile-nav-tab-*`). O dono só vai usar pelo celular a troca de magias por mapa e o boss
+(tudo pelo socket), então só o que afeta isso foi corrigido:
+- `raizReact()` (dentro de @@PERFIS): parte do `shell`, `.s-ui-root` ou `mobile-shell` para achar a raiz do React. Sem isso, no
+  celular a tela de atalhos não era espelhada depois de APLICAR (salvar um slot por lá desfazia o setup, ver 2.29.3) e o
+  roster/mochila da fibra vinham vazios.
+- Cabeçalho `@inject-into page`: no Safari do iPhone o app **Userscripts** roda o script no mundo isolado por padrão, onde ele
+  não enxerga o WebSocket do jogo. O site não tem CSP, então a injeção na página funciona. O Tampermonkey já roda `@grant none` na página.
+Não feito (fora do uso do dono no celular): Auto Hunt (purificar/abrir a tela CAÇADAS), Forja (menu NAVEGAÇÃO) e as leituras de
+tela de nível/XP/ouro, que já caem no frame do socket.

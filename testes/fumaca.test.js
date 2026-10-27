@@ -733,6 +733,11 @@ t('@@PERFIS: profiles_set do helper é espelhado no estado da tela de atalhos (2
     P.enviarWS({ type: 'update_battle_config', data: { who: 0 } });
     igual(estado.DRUID, novo);
     assert.strictEqual(avisos.length, 0);
+    /* 2.33.3 — layout de celular: sem `shell`, só `mobile-shell` */
+    documento.querySelector = (s) => (s === '[data-testid="mobile-shell"]' ? shell : null);
+    const doCel = { active: 0, list: [{ name: '1', config: { skills: ['Ice Wave'], supports: ['Magic Shield', null] } }] };
+    P.enviarWS({ type: 'profiles_set', data: { vocation: 'DRUID', profiles: doCel } });
+    igual(estado.DRUID, doCel, 'no celular a tela de atalhos não foi espelhada');
     /* sem a tela (lobby, jogo mudou): não lança, avisa uma vez só */
     documento.querySelector = () => null;
     assert.strictEqual(P.espelharPerfilNaTela('DRUID', novo), false);
