@@ -6253,3 +6253,44 @@ longe demais a magia do Feiticeiro, do Paladino e do Druida não pega; análise 
   `boss: <nome>`.
 - **Não testado ao vivo** (sessão em nuvem): a leitura de `cells`/`pos` é a do cliente; a primeira luta com cada boss enche o mapa.
   Testes: 445 (6 novos em formacao.test.js, 1 em razao.test.js).
+
+## 2.32.0 — Caçada do Halloween na Magia (setup Discord), tela do Evento em 3 passos, subaba Chaves removida (27/10)
+
+Dono (27/10): "verifica a caçada do evento Halloween e cria um setup na Magia › Discord"; depois: "a tela do evento está bem difícil
+de entender; agora a entrada é free"; "adiciona o boss do evento na nossa lista — tem que esperar a chave cair"; e por fim "pode retirar
+essa tela chave, elas caem por hora agora".
+
+**Lido ao vivo (conta nível 167, 27/10):**
+- `agenda_state.visiveis[]` do Halloween traz `params {lojaId:'halloween_26', horas:3, modo:'gold', gold:0, coinsLastro:0}` (o preço e as
+  horas da entrada vêm AQUI) e `acesso_retrato` só `{situacao:'ativo', saldoMs, consumindoDesde:null, limite, huntId:263, gratis:true}`
+  (sem fichas, sem preço). `consumindoDesde: null` = parado; só conta com a caçada aberta. Entrada grátis, 3 h por dia, zera às 10:00.
+- Caçada 263 (fora do `/hunts`): Lantern Viscount e Hollow Bride (1.200 hp, imunes a terra/morte, sagrado +25/+10 %), Hollow Reaper
+  (3.900 hp, gelo −65 %) e Lanternbone Dragon (8.350 hp, imune a terra/fogo/morte, gelo −90 %, sagrado +25 %) — nomes do "Como obter" da
+  loja, fichas por `/bestiary/creature?name=`. Um lure só (`lureTiers [{min:8,max:8}]`), monstros SEM loot.
+- Elite **The Lantern Reaper** em `/bosses/select` (`kind: mini`, `originHuntId: 263`, 26.200 hp, imune a terra/fogo/gelo/morte, sagrado
+  −100 % = dobro, `keyItem: Lantern Reaper Key`, `boxItem: Reaper's Hollow Box`). **As abóboras saem só da caixa dele.**
+- `frame.state.keyClock {item, tierMs, everyMs: 3.540.000, count, effMs: 3.240.000, leftMs}`: a chave cai POR TEMPO (54 min efetivos
+  nesta conta). `effMs`/`leftMs` são o que a barra "Próxima chave" do jogo mostra.
+
+**Medido (livro-razão, 2 × 6 min, lure 8):** 399–406k xp/h, −166 a −178k/h (sem loot: é só poção de mana). Dano por lançamento:
+thunderstorm do Druida 935 (4,5 alvos), Energy Wave 2.499 (5 alvos), Caldera 798, Fierce Berserk 1.326; Annihilation 399 por 300 de
+mana (saiu → Brutal Strike; o Cavaleiro gastou ~20 % menos mana); Divine Missile 128 contra 64 da Ethereal Spear (fica o Missile, que
+ainda dobra no Elite). Chat global: jogadores reclamando de ~−440k nas 3 h — bate.
+
+**O helper:**
+- `evMontarHunt` (puro, `@@EVENTO-PURO`) monta a caçada 263 no formato do `/hunts/select`; `evHunt()` busca as fichas uma vez.
+  `huntDaEstacao()` (@@EVENTO) entra no `huntAtual`, no seletor de caçadas da Magia e no `hunt_started` pelo socket — a Magia escolhe
+  a caçada sozinha ao entrar nela. Setup Discord **"Northon - Caçada da Estação (Halloween)"** (id `estacao-halloween`, @@EVENTO):
+  Cav Fierce Berserk ≥3 · Berserk ≥2 · Lesser Front Sweep ≥1 · Brutal Strike ≥1; Pal Caldera ≥2 · Strong Ethereal Spear ≥1 ·
+  thunderstorm ≥2 · Divine Missile ≥1; Fei Energy Wave ≥2 · UES ≥1 · SES ≥1 · thunderstorm ≥2; Dru thunderstorm ≥2 · Energy Strike ≥1,
+  cura própria primeiro; poções do dono. Fixture `hunts-discord.json` ganhou a 263.
+- Aba Evento reescrita em 3 passos (Entrada de hoje · Chave e Elite · Trocar as abóboras), "GRÁTIS", "▶ contando / ⏸ parado",
+  "próxima chave em N min" pelo `keyClock`, Elite e caixa; o técnico foi para o "?". O Log avisa quando a Lantern Reaper Key entra na
+  mochila (`keyBag` do frame; nada é disparado).
+- `relogioChave` usa `effMs`/`leftMs` (Status › DIAGNÓSTICO › Próxima chave). `fmtHoras` arredonda os minutos antes (2,994 h saía "2h60").
+- **Progresso › Chaves removida** (a chave cai por tempo desde o 1.1.7; a conta por abate mostrava 0,000 % e "—"). Saíram pgTelaChaves,
+  pgChaveDaHunt, pgInfoChave, pgResumoElite, pgFatorLootPrey, pgChavesHora, pgLinhasChaves e os testes deles. Fica o alerta de
+  mochila de chaves cheia no topo da Progresso (a chave nova continua sendo PERDIDA com ela cheia).
+- Para tirar o evento depois: além dos pontos @@EVENTO da 2.30.0, apagar `huntDaEstacao` (e as 3 chamadas marcadas), o setup
+  `estacao-halloween` e a 263 da fixture.
+Testes: 453.

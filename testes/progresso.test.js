@@ -9,8 +9,8 @@ const src = fs.readFileSync(path.join(raiz, 'tibidle-helper.user.js'), 'utf8');
 const ini = src.indexOf('/* @@PROGRESSO-INICIO'), fim = src.indexOf('/* @@PROGRESSO-FIM */');
 assert(ini > 0 && fim > ini, 'marcadores @@PROGRESSO não encontrados');
 const M = new Function(src.slice(ini, fim) + `
-    return { PG_WIKI, PG_REFINO, PG_IMBU_BASES, pgNum, pgHoras, pgLerChaves, pgTierDaMochila, pgAvisoChaves, pgChaveDaHunt, pgInfoChave,
-             pgResumoElite, pgFatorLootPrey, pgChavesHora, pgLinhasChaves, pgAbatesPorHunt, pgMesclarBestiario, pgEstagio, pgBonusConta,
+    return { PG_WIKI, PG_REFINO, PG_IMBU_BASES, pgNum, pgHoras, pgLerChaves, pgTierDaMochila, pgAvisoChaves,
+             pgAbatesPorHunt, pgMesclarBestiario, pgEstagio, pgBonusConta,
              pgLinhasBestiario, pgTaxas, pgPlanoOffline, pgXpFalta, pgTipoPrey, pgLerPrey, pgTravasPrey, pgSugestaoPrey, pgRefino,
              pgBasesImbu, pgNomesImbu, pgMateriaisImbu, pgProtecao, pgPlanoBestiario, pgFilaBestiario, PG_ABATES_POR_LURE, pgAlertaPrey, pgAvisoInvasao };`)();
 
@@ -130,34 +130,6 @@ t('chaves cheias → aviso de chave PERDIDA (e oferta da T2 só na T1)', () => {
     assert.strictEqual(M.pgAvisoChaves({ usadas: 2, max: 10 }).nivel, 'ok');
     assert.strictEqual(M.pgAvisoChaves({ usadas: 5, max: null }).nivel, 'talvez', 'sem limite: 5 chaves = talvez cheia (T1)');
     assert.strictEqual(M.pgAvisoChaves(null), null);
-});
-t('chave → Elite e caçada pelo catálogo (sem diferenciar maiúscula: "gordzila key")', () => {
-    const i = M.pgInfoChave('Gordzila Key', FX.bosses, FX.hunts);
-    assert.strictEqual(i.elite.name, 'Gordzila'); assert.strictEqual(i.hunt.title, 'Salamander Cave'); perto(i.chance, 0.0015, 1e-9);
-    const c = M.pgChaveDaHunt(hunt('Orc Fortress'), FX.bosses);
-    assert.strictEqual(c.nome, 'Renegade Orc Key'); assert.strictEqual(c.elite.name, 'Renegade Orc'); perto(c.chance, 0.00092, 1e-9);
-    assert.strictEqual(M.pgInfoChave('Chave Inexistente', FX.bosses, FX.hunts).elite, null);
-});
-t('resumo do Elite: fraco/resiste/imune pelo `percent` do catálogo e materiais de imbuement no loot', () => {
-    const mats = new Set(FX.imbuements.imbuements.flatMap(x => x.items.map(i => i.name.toLowerCase())));
-    const e = M.pgResumoElite(FX.bosses.find(b => b.name === 'Renegade Orc'), mats);
-    assert.strictEqual(e.hp, 8500);
-    assert.deepStrictEqual(e.imune, ['fogo']);
-    assert(e.fraco.some(x => x.el === 'terra' && x.pct === -10), JSON.stringify(e.fraco));
-    assert(e.resiste.some(x => x.el === 'energia'), JSON.stringify(e.resiste));
-    assert.strictEqual(e.top[0].nome, 'spellbook of warding');
-    assert(e.materiais.includes('gloom wolf fur'), 'gloom wolf fur é material do Lich Shroud');
-    assert(e.fragmentos.includes('refine fragment t1'));
-});
-t('chaves/h = abates/h × chance × LOOT da prey; a caçada atual vem primeiro', () => {
-    perto(M.pgChavesHora(1450, 0.00092), 1.334, 0.001);
-    const prey = M.pgLerPrey({ wildcards: 3, preyBuffs: { KNIGHT: { bonus: { type: 'loot', tier: 10, percent: 10 }, msLeft: H, locked: false }, PALADIN: { bonus: { type: 'loot', tier: 5 }, msLeft: H } } });
-    perto(M.pgFatorLootPrey(prey), 1.15, 1e-9, 'LOOT ★10 + ★5 = +15%');
-    const med = M.pgAbatesPorHunt({ huntId: 34, abatesH: 1450 }, [{ id: 46, abatesH: 900, t: 1 }], []);
-    const l = M.pgLinhasChaves(FX.hunts, FX.bosses, med, 1.1, 34);
-    assert.strictEqual(l[0].hunt.title, 'Orc Fortress'); assert(l[0].atual);
-    perto(l[0].chavesH, 1450 * 0.00092 * 1.1, 1e-9); perto(l[0].cadaH, 1 / (1450 * 0.00092 * 1.1), 1e-9);
-    assert.strictEqual(l[1].chave, 'Rhaegal Key');
 });
 t('abates/h: ao vivo > Scan mais recente > sessões (média ponderada pelo tempo)', () => {
     const r = M.pgAbatesPorHunt({ huntId: 34, abatesH: 1500 },
@@ -358,30 +330,31 @@ t('formato de horas', () => {
     const aba = async (sub, msgs) => { store.set('tb_helper_prog_sub', JSON.stringify(sub)); for (const m of msgs) ws.emit(m); ws.emit({ type: 'welcome', data: { roster: [{ vocation: 'KNIGHT' }] } }); await tick(); return html['tb-corpo'] || ''; };
     const tA = async (nome, fn) => { try { await fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 
-    await tA('vm: keyBag cheio pelo socket → aba Chaves avisa e o Log registra UMA vez', async () => {
+    /* 2.32.0 — a sub-aba Chaves saiu (a chave cai por tempo); o alerta de mochila cheia fica no topo de todas as sub-abas */
+    await tA('vm: keyBag cheio pelo socket → o topo da Progresso avisa e o Log registra UMA vez', async () => {
         const meta = { meta: { wildcards: 4, blessings: [], rules: { keyBags: [{ id: 'kb1', name: 'Key Backpack T1', maxKeys: 5 }] } } };
         const h = await aba('chaves', [{ type: 'meta_state', data: meta }, { type: 'welcome', data: { keyBag: { 'Worgen Key': 3, 'Renegade Orc Key': 2 }, keyBagUsed: 5, keyBagTierId: 'kb1' } }]);
         assert(/id="tb-prog"/.test(h), 'a aba Progresso não desenhou: ' + h.slice(0, 200));
         assert(/mochila de chaves cheia \(5\/5\)/.test(h) && /PERDIDA/.test(h), 'sem o aviso de cheia');
-        assert(/Worgen Key/.test(h) && /×3/.test(h), 'lista de chaves ausente');
         ws.emit({ type: 'frame', data: { state: { keyBag: { 'Worgen Key': 3, 'Renegade Orc Key': 2 }, keyBagUsed: 5, keyBagMax: 5 } } });
         const log = JSON.parse(store.get('tb_helper_log') || '[]').filter(l => /chaves cheia/.test(l.msg));
         assert.strictEqual(log.length, 1, 'aviso no Log deveria sair uma vez só, saiu ' + log.length);
         const outra = await aba('offline', []);
-        assert(/mochila de chaves cheia \(5\/5\): chave nova será PERDIDA/.test(outra), 'nas outras sub-abas o aviso vem numa linha');
+        assert(/mochila de chaves cheia \(5\/5\)/.test(outra) && /PERDIDA/.test(outra), 'o aviso vale em todas as sub-abas');
+        assert(!/>Chaves</.test(outra), 'a sub-aba Chaves saiu');
     });
-    await tA('vm: nome de chave com HTML é escapado', async () => {
+    await tA('vm: nome de chave com HTML não vira HTML (a lista de chaves saiu; nada é desenhado cru)', async () => {
         const h = await aba('chaves', [{ type: 'meta_result', data: { action: 'x', applied: true, gold: 0, goldLocked: 0, keyBag: { '<img src=x onerror=alert(1)> Key': 1 }, keyBagUsed: 1, keyBagMax: 5 } }]);
-        assert(!/<img src=x/.test(h) && /&lt;img src=x/.test(h), 'nome de chave não escapado');
+        assert(!/<img src=x/.test(h), 'nome de chave não escapado');
     });
     await tA('vm: Prey mostra estado, travas e sugestão; Forja calcula; Offline sem caçada diz "sem dado ainda"', async () => {
         const p = await aba('prey', [{ type: 'meta_result', data: { action: 'prey_lock_set', applied: true, gold: 0, goldLocked: 0, meta: Object.assign({ blessings: [] }, META_PREY) } }]);
         assert(/Wildcards/.test(p) && /Orc Fortress/.test(p) && /DEFESA ★10 \+40%/.test(p), 'estado da prey ausente');
         assert(/as travas desligam em ~5h00/.test(p), 'simulação das travas ausente');
         assert(/Sugestão por coluna/.test(p));
-        /* 2.25.0 — a Forja virou aba própria: a sub-aba 'forja' do Progresso cai em Chaves, e as calculadoras moram na aba Forja */
+        /* 2.25.0 — a Forja virou aba própria; 2.32.0 — a sub-aba 'forja' (e a 'chaves', que saiu) cai no Bestiário */
         const f0 = await aba('forja', []);
-        assert(/Mochila de chaves|Chaves por hora/.test(f0) && !/Refino esperado/.test(f0), 'a sub-aba forja deveria cair em Chaves');
+        assert(/catálogo de caçadas ainda não carregou|sem dado ainda/.test(f0) && !/Refino esperado/.test(f0), 'a sub-aba forja deveria cair no Bestiário');
         /* (a aba Forja em si é conferida ao vivo e por telas.test.js: este harness não troca de aba do trilho) */
         const o = await aba('offline', []);
         assert(/sem dado ainda/.test(o), 'offline sem caçada deveria dizer sem dado');

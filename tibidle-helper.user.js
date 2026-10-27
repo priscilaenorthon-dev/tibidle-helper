@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.31.0
+// @version      2.32.0
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.31.0';
+    const VERSAO = '2.32.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -951,10 +951,22 @@
      * 35 hunts) — e nenhuma resolve sem perguntar. Enquanto não houver uma
      * fonte que acerte sozinha, adivinhar é pior que a lista: hunt errada =
      * elemento errado = ouro queimado. */
+    /* v2.32.0 — o relógio da chave (frame.keyClock): desde o 1.1.7 a chave do Elite cai POR TEMPO de caçada. Intervalo = effMs (com o
+     * desconto da conta) ou everyMs; o que falta = leftMs, descontado o tempo desde o frame, ou o resto do ciclo pelo tierMs. */
+    function relogioChave(kc, agora) {
+        if (!kc || !kc.item) return null;
+        const cada = kc.effMs > 0 ? kc.effMs : kc.everyMs;
+        if (!(cada > 0)) return null;
+        const desde = ESTADO_WS.frame && ESTADO_WS.frame.t ? Math.max(0, (agora || Date.now()) - ESTADO_WS.frame.t) : 0;
+        const falta = kc.leftMs != null ? kc.leftMs - desde : cada - (kc.tierMs % cada) - desde;
+        return { item: kc.item, cadaMs: cada, faltaMs: Math.max(0, falta), porVez: kc.count || 1 };
+    }
+    /* @@EVENTO (2.32.0) — a caçada da estação não está em /hunts; o bloco do Evento a monta (null fora do evento ou antes de ele carregar) */
+    function huntDaEstacao(id) { try { return id == null ? evHunt() : evHuntDe(id); } catch (e) { return null; } }
     function huntAtual() {
         const manual = ler('hunt_id', null);
         if (manual != null && CAT.hunts) {
-            const h = CAT.hunts.find(x => x.id === manual);
+            const h = CAT.hunts.find(x => x.id === manual) || huntDaEstacao(manual); // @@EVENTO
             if (h) return h;
         }
         const d = detectarHunt();
@@ -4877,7 +4889,9 @@
             ESTADO_WS.frame = {
                 t: Date.now(), cap: st.cap || null, balance: st.balance != null ? Number(st.balance) : null,
                 lureTier: st.lureTier != null ? st.lureTier : null,
-                keyClock: st.keyClock && typeof st.keyClock === 'object' ? { item: st.keyClock.item, tierMs: Number(st.keyClock.tierMs) || 0, everyMs: Number(st.keyClock.everyMs) || 0, count: Number(st.keyClock.count) || 0 } : null, // v2.22.0
+                /* v2.32.0 — effMs (intervalo com o desconto da conta) e leftMs (o que falta), quando vierem: a barra "Próxima chave" do jogo usa estes */
+                keyClock: st.keyClock && typeof st.keyClock === 'object' ? { item: st.keyClock.item, tierMs: Number(st.keyClock.tierMs) || 0, everyMs: Number(st.keyClock.everyMs) || 0, count: Number(st.keyClock.count) || 0,
+                                                                              effMs: Number(st.keyClock.effMs) || 0, leftMs: st.keyClock.leftMs != null ? Number(st.keyClock.leftMs) : null } : null, // v2.22.0
                 active: Array.isArray(st.active) ? st.active.map(m => m && (m.name || m.nome)).filter(Boolean) : [],
                 nivel: st.character && st.character.level != null ? st.character.level : null,
                 /* v2.2.0 — o analisador do PRÓPRIO jogo, por caçada: é o que o Scan mede */
@@ -4967,7 +4981,7 @@
                 log('boss em andamento (socket): ' + ESTADO_WS.boss + (d.huntId != null ? ' · id ' + d.huntId : ''), 'ok');
             } else {
                 ESTADO_WS.boss = null;
-                const h = (CAT.hunts || []).find(x => x.id === d.huntId);
+                const h = (CAT.hunts || []).find(x => x.id === d.huntId) || huntDaEstacao(d.huntId); // @@EVENTO
                 if (h) {
                     const antes = ler('hunt_id', null);
                     guardar('hunt_id', h.id); guardar('hunt_manual', h.id);
@@ -5957,7 +5971,8 @@
         });
         return { estavel, sorte, raros };
     }
-    const fmtHoras = h => !(h > 0) || !isFinite(h) ? '—' : h < 1 ? Math.round(h * 60) + 'min' : h < 48 ? Math.floor(h) + 'h' + String(Math.round((h % 1) * 60)).padStart(2, '0') : (h / 24).toFixed(1) + 'd';
+    /* v2.32.0 — arredonda os MINUTOS totais antes de separar as horas (2,994 h saía "2h60"; agora "3h00") */
+    const fmtHoras = h => { if (!(h > 0) || !isFinite(h)) return '—'; const m = Math.round(h * 60); return m < 60 ? m + 'min' : h < 48 ? Math.floor(m / 60) + 'h' + String(m % 60).padStart(2, '0') : (h / 24).toFixed(1) + 'd'; };
     function xpFaltando() { const p = lerExpTotal(); return p && p.proximo > p.atual ? p.proximo - p.atual : null; }
     function scanMedidaViva() {
         const a = anAgora(), b = SCAN.base;
@@ -8892,7 +8907,17 @@
             KNIGHT: { vida: ['Great Health Potion', 30], mana: ['Mana Potion', 0], ataque: [['Fierce Berserk', 2], ['Berserk', 2], ['Front Sweep', 1], ['Annihilation', 1]], defesa: [['Wound Cleansing', 85], ['Intense Wound Cleansing', 10]] },
             PALADIN: { vida: ['Great Spirit Potion', 50], mana: ['Mana Potion', 0], ataque: [['thunderstorm rune', 2], ['Ethereal Spear', 1], ['Strong Ethereal Spear', 1], ['Divine Caldera', 2]], defesa: [['Light Healing', 85], ['Intense Healing', 60], ['Divine Healing', 50], ['Salvation', 30]] },
             SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 0], ataque: [['Energy Wave', 2], ['Great Fire Wave', 2], ['thunderstorm rune', 2], ['Energy Strike', 1]], defesa: [['Ultimate Healing', 60], ['Light Healing', 85]] },
-            DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 10], ataque: [['Strong Ice Wave', 2], ['thunderstorm rune', 2], ['Energy Strike', 1], ['Ice Wave', 2]], defesa: [['Ultimate Healing', 60], ['Heal Friend', 60], ['Light Healing', 85], ['Mass Healing', 30]] } } }
+            DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 10], ataque: [['Strong Ice Wave', 2], ['thunderstorm rune', 2], ['Energy Strike', 1], ['Ice Wave', 2]], defesa: [['Ultimate Healing', 60], ['Heal Friend', 60], ['Light Healing', 85], ['Mass Healing', 30]] } } },
+        /* @@EVENTO (2.32.0) — Caçada da Estação do Halloween 2026 (hunt 263, fora do /hunts; a Magia a recebe do bloco do Evento). Sem post
+         * no Discord: montado em 27/10 pelas fichas do /bestiary/creature e do /bosses/select. Apagar junto com o evento. */
+        { id: 'estacao-halloween', hunt: 'Caçada da Estação (Halloween)', huntId: 263, autor: 'Northon (fichas do jogo, nível 167)', data: '27/10', titulo: 'Northon - Caçada da Estação (Halloween)',
+          lure: '', skills: '', nota: '', nivel: 'Elite 150+',
+          obs: 'Nenhum post no Discord (evento novo). Monstros: Lantern Viscount e Hollow Bride (vampiros, 1.200 hp; imunes a terra e morte, sagrado +25/+10 %), Hollow Reaper (3.900 hp; gelo −65 %, físico −25 %, energia/fogo/sagrado +10 %) e Lanternbone Dragon (8.350 hp; imune a terra, fogo e morte, gelo −90 %, sagrado +25 %). O Elite The Lantern Reaper (26.200 hp) é imune a terra, fogo, gelo e morte e toma o DOBRO de sagrado — as abóboras só saem da caixa dele. Então: sagrado no Paladino (Caldera), energia nos magos (Energy Wave, thunderstorm e os golpes de energia), físico no Cavaleiro. Medido ao vivo em 27/10 (nível 167, lure 1 = ondas de 8, 6 min): 399k xp/h; a thunderstorm do Druida (935 por runa, 4,5 alvos) e a Energy Wave (2.499 por onda, 5 alvos) fazem 50 % do dano. Saiu o Annihilation (399 por 300 de mana, o pior dano por mana; com o Brutal Strike o Cavaleiro gastou ~20 % menos mana). O Divine Missile fica no alvo único (128 por golpe contra 64 da Ethereal Spear, medido) e bate o dobro no Elite. A chave do Elite cai POR TEMPO (~1 por hora de caçada aberta), não por abate: matar mais rápido dá xp, não abóbora. O mapa não tem loot — o lucro é só o gasto (≈ −180k/h, quase tudo poção de mana). Gelo, terra, fogo e morte ficam fora (a avalanche da Lizard City bate em 90 % de resistência no dragão). Druida: thunderstorm + Energy Strike e a cura própria na frente (lição do Draken Walls). As poções continuam as suas.',
+          chars: {
+            KNIGHT: { ataque: [['Fierce Berserk', 3], ['Berserk', 2], ['Lesser Front Sweep', 1], ['Brutal Strike', 1]], defesa: [['Intense Wound Cleansing', 30], ['Wound Cleansing', 85], ['Intense Recovery', 90]], suporte: ['Protector'] },
+            PALADIN: { ataque: [['Divine Caldera', 2], ['Strong Ethereal Spear', 1], ['thunderstorm rune', 2], ['Divine Missile', 1]], defesa: [['Salvation', 50], ['Divine Healing', 75]], suporte: ['Protect Party'] },
+            SORCERER: { ataque: [['Energy Wave', 2], ['Ultimate Energy Strike', 1], ['Strong Energy Strike', 1], ['thunderstorm rune', 2]], defesa: [['Ultimate Healing', 60], ['Intense Healing', 80]], suporte: ['Enchant Party'] },
+            DRUID: { ataque: [['thunderstorm rune', 2], ['Energy Strike', 1]], defesa: [['Ultimate Healing', 65], ['Mass Healing', 60], ['Heal Friend', 55]], suporte: ['Heal Party'] } } }
     ];
     const DC_VOC_PT = { KNIGHT: 'Cavaleiro', PALADIN: 'Paladino', SORCERER: 'Feiticeiro', DRUID: 'Druida' };
     const DC_VOC_CAT = { KNIGHT: 'knight', PALADIN: 'paladin', SORCERER: 'sorcerer', DRUID: 'druid' };
@@ -9684,7 +9709,7 @@
               ${(() => { /* v2.22.0 — lido do cliente do jogo */
                 const L = legadoDaConta(), lg = L ? VOCS.filter(v => L[v]).map(v => `${VOC_CURTO[v]} ${L[v].marco ? 'marco ' + L[v].marco + ' (+' + numBR(L[v].bonusPct, 0) + ' %)' : 'sem marco'} → próx. no ${L[v].proximaSkill}`).join(' · ') : (ESTADO_WS.legado && !ESTADO_WS.legado.ativo ? 'inativo na conta' : '—');
                 const ly = ESTADO_WS.loyalty ? `${numBR(ESTADO_WS.loyalty.points)} pts → +${loyaltyBonus(ESTADO_WS.loyalty.points)} de skill` : '—';
-                const mx = xpMultiplicador(), kc = ESTADO_WS.frame && ESTADO_WS.frame.keyClock, prox = kc && kc.everyMs > 0 ? Math.ceil((kc.everyMs - (kc.tierMs % kc.everyMs)) / 60000) : null;
+                const mx = xpMultiplicador(), kc = ESTADO_WS.frame && ESTADO_WS.frame.keyClock, rk = relogioChave(kc), prox = rk ? Math.ceil(rk.faltaMs / 60000) : null;
                 const off = ESTADO_WS.offline;
                 return lin('Legado', escHtml(lg)) + lin('Loyalty', escHtml(ly)) + lin('XP real ÷ base', mx != null ? '×' + numBR(mx, 2) + ' <span class="tb-mut">(premium + boost + prey + grupo)</span>' : '—') +
                        lin('Próxima chave', kc ? `${escHtml(kc.item)} em ~${prox} min (${kc.count} por ciclo)` : '—') +
@@ -10139,7 +10164,7 @@
         /* v2.26.1 — no modelo Discord o seletor só lista as hunts que têm setup da comunidade (dono, 20/10: "tem q aparecer somente as
          * hunts q tem magias definidas no discord") */
         const soDiscord = modelo === 'discord';
-        const ordenadas = (CAT.hunts || []).filter(c => !soDiscord || dcSetupsDaHunt(c).length).slice().sort((a, b) => (a.levelMin || 0) - (b.levelMin || 0) || String(a.title).localeCompare(String(b.title)));
+        const ordenadas = (CAT.hunts || []).concat(huntDaEstacao(null) || [] /* @@EVENTO */).filter(c => !soDiscord || dcSetupsDaHunt(c).length).slice().sort((a, b) => (a.levelMin || 0) - (b.levelMin || 0) || String(a.title).localeCompare(String(b.title)));
         corpo += `<select id="tb-hunt" aria-label="caçada"><option value="">— escolha a caçada${soDiscord ? ` (${ordenadas.length} com setup do Discord)` : ''} —</option>` +
             ordenadas.map(c => `<option value="${escHtml(c.id)}"${c.id === manual ? ' selected' : ''}>[${escHtml(c.levelMin || 1)}] ${escHtml(c.title)}${(c.levelMin || 0) > nv ? ' ⚠' : ''}</option>`).join('') + `</select>` +
             (det && det.hunt && det.hunt.id !== manual ? `<div class="tb-linha tb-palpite"><span class="tb-mut">palpite: <b>${escHtml(det.hunt.title)}</b></span><button type="button" class="tb-bt mini" data-usar-palpite="${escHtml(det.hunt.id)}" aria-label="usar o palpite ${escHtml(det.hunt.title)}">usar</button></div>` : '');
@@ -11229,62 +11254,6 @@
         if (!(max > 0) && u >= PG_WIKI.mochilaT1) return { nivel: 'talvez', texto: `${u} chaves e o jogo não mandou o limite — se a mochila for a T1 (5), está cheia.` };
         return { nivel: 'ok', texto: max > 0 ? `${u}/${max} chaves` : `${u} chave(s)` };
     }
-    /* a chave de uma caçada: item do loot de /hunts/select que é keyItem de algum Elite */
-    function pgChaveDaHunt(h, bosses) {
-        if (!h || !Array.isArray(h.loot)) return null;
-        const chaves = new Set((bosses || []).map(b => b && pgNorm(b.keyItem)).filter(Boolean));
-        const it = h.loot.find(l => l && chaves.has(pgNorm(l.name))) || h.loot.find(l => l && / key$/i.test(String(l.name || '').trim()));
-        if (!it) return null;
-        const elite = (bosses || []).find(b => b && pgNorm(b.keyItem) === pgNorm(it.name)) || null;
-        return { nome: it.name, chance: pgNum(it.chance) != null ? pgNum(it.chance) / 100000 : null, elite };
-    }
-    /* chave → Elite (keyItem, sem diferenciar maiúscula: "gordzila key") e caçada que a larga */
-    function pgInfoChave(nome, bosses, hunts) {
-        const k = pgNorm(nome);
-        const elite = (bosses || []).find(b => b && pgNorm(b.keyItem) === k) || null;
-        let hunt = null, chance = null;
-        for (const h of (hunts || [])) {
-            const it = h && Array.isArray(h.loot) ? h.loot.find(l => l && pgNorm(l.name) === k) : null;
-            if (it) { hunt = h; chance = pgNum(it.chance) != null ? pgNum(it.chance) / 100000 : null; break; }
-        }
-        return { nome, elite, hunt, chance };
-    }
-    /* no catálogo `percent` é quanto o monstro ABSORVE: negativo = toma mais */
-    function pgResumoElite(b, materiais) {
-        if (!b) return null;
-        const els = (b.elements || []).filter(e => e && pgNum(e.percent)).map(e => ({ el: PG_ELEM[e.type] || String(e.type || '?').replace('COMBAT_', '').toLowerCase(), pct: pgNum(e.percent) }));
-        const loot = (b.loot || []).filter(l => l && l.name);
-        const mats = materiais instanceof Set ? materiais : new Set();
-        return {
-            nome: b.name, hp: pgNum(b.health), tipo: b.kind || null,
-            fraco: els.filter(e => e.pct < 0).sort((x, y) => x.pct - y.pct),
-            resiste: els.filter(e => e.pct > 0 && e.pct < 100).sort((x, y) => y.pct - x.pct),
-            imune: els.filter(e => e.pct >= 100).map(e => e.el),
-            top: loot.filter(l => pgNum(l.value) > 0).sort((x, y) => pgNum(y.value) - pgNum(x.value)).slice(0, 3).map(l => ({ nome: l.name, valor: pgNum(l.value), chance: pgNum(l.chance) != null ? pgNum(l.chance) / 100000 : null })),
-            fragmentos: loot.filter(l => /fragment/i.test(l.name)).map(l => l.name),
-            materiais: loot.filter(l => mats.has(pgNorm(l.name))).map(l => l.name)
-        };
-    }
-    /* /prey: LOOT multiplica a chance de cada item; as colunas SOMAM (4 × ★10 = +40 %) */
-    function pgFatorLootPrey(prey) {
-        if (!prey || !prey.buffs) return 1;
-        let s = 0;
-        for (const b of Object.values(prey.buffs)) if (b && b.tipo === 'loot' && b.pct > 0 && !(b.msLeft === 0)) s += b.pct;
-        return 1 + s / 100;
-    }
-    const pgChavesHora = (abatesH, chance, fator) => abatesH > 0 && chance > 0 ? abatesH * chance * (fator > 0 ? fator : 1) : null;
-    /* chaves/h por caçada MEDIDA (ao vivo, Scan, sessões) — a atual primeiro */
-    function pgLinhasChaves(hunts, bosses, medidos, fator, huntAtual) {
-        const out = [];
-        for (const [id, m] of Object.entries(medidos || {})) {
-            const h = (hunts || []).find(x => x && String(x.id) === String(id));
-            const c = h ? pgChaveDaHunt(h, bosses) : null;
-            if (!h || !c) continue;
-            const ch = pgChavesHora(m.abatesH, c.chance, fator);
-            out.push({ hunt: h, chave: c.nome, elite: c.elite ? c.elite.name : null, chance: c.chance, abatesH: m.abatesH, fonte: m.fonte, chavesH: ch, cadaH: ch ? 1 / ch : null, atual: String(id) === String(huntAtual) });
-        }
-        return out.sort((a, b) => (b.atual - a.atual) || ((b.chavesH || 0) - (a.chavesH || 0)));
-    }
     /* abates/h por caçada: ao vivo (analisador do jogo) > Scan (o mais recente) > sessões (média por tempo) */
     function pgAbatesPorHunt(vivo, scan, sess) {
         const r = {};
@@ -11932,7 +11901,6 @@
     const pgFresco = () => !!(PROG.estado && Date.now() - PROG.estado.t < 10000 && PROG.huntId != null);
     const pgHuntCat = (id) => id == null ? null : (CAT.hunts || []).find(h => h && h.id === id) || null;
     const pgBonusTxt = (b, v) => `+${pgInt(v)} ${escHtml(PG_BONUS[b] || b || '?')}`;
-    const pgMateriaisSet = () => new Set(((PROG.imbu && PROG.imbu.imbuements) || []).flatMap(x => (x && x.items || []).map(i => pgNorm(i && i.name))));
     const pgSemDado = (o) => `<div class="pg-cx pg-mut">${o}: sem dado ainda — abra/entre numa caçada.</div>`;
     /* 1 linha de bestiário de uma caçada ("3.412/5.000 → +6 vida máx · ~1h06"); serve ao Scan se o integrador quiser */
     function pgBestiarioTexto(huntId, medidos) {
@@ -11945,59 +11913,6 @@
         return `bestiário ${pgInt(e.kills)}/${pgInt(e.prox.kills)} → ${pgBonusTxt(e.bonus, e.prox.value)}${m && m.abatesH > 0 ? ' · ~' + pgHoras(e.falta / m.abatesH) : ''}`;
     }
 
-    function pgTelaChaves() {
-        const kb = PROG.chaves, regras = PROG.meta && PROG.meta.keyBags;
-        let h = '';
-        if (!kb) h += pgSemDado('Mochila de chaves');
-        else {
-            const t = pgTierDaMochila(kb, regras), av = pgAvisoChaves(Object.assign({}, kb, { max: t.max }));
-            const cls = av && av.nivel === 'cheia' ? 'tb-ruim' : av && (av.nivel === 'quase' || av.nivel === 'talvez') ? 'tb-av' : 'tb-ok';
-            h += `<div class="pg-lin"><b>Mochila de chaves</b><span class="${cls}">${pgInt(kb.usadas)}${t.max ? ' / ' + pgInt(t.max) : ''}</span></div>`;
-            /* v2.11.2 — o tier e o limite do JOGO (frame: keyBagTierId "keybag_t2",
-             * keyBagMax 10). Aparecia "Key Backpack T1 · T1 guarda 5" com a T2. */
-            const tierN = (String(kb.tierId || '').match(/t(\d+)$/i) || [])[1];
-            const nomeTier = tierN ? 'Key Backpack T' + tierN : t.nome;
-            h += `<div class="pg-mut pg-peq">${nomeTier ? escHtml(nomeTier) + ' · ' : ''}${t.max ? 'guarda ' + pgInt(t.max) + ' chaves. ' : ''}${t.max && t.max < PG_WIKI.mochilaT2 ? `A T2 guarda ${PG_WIKI.mochilaT2} (100 coins). ` : ''}Chave no depósito também vale para o Elite e o Sweep.</div>`;
-            if (av && (av.nivel === 'quase' || av.nivel === 'talvez')) h += `<div class="pg-atencao">${escHtml(av.texto)}</div>`;
-            const nomes = Object.keys(kb.chaves || {}).sort((a, b) => a.localeCompare(b));
-            if (!nomes.length) h += `<div class="pg-mut">nenhuma chave na mochila de chaves.</div>`;
-            const mats = pgMateriaisSet();
-            nomes.forEach((n, i) => {
-                const info = pgInfoChave(n, CAT.bosses, CAT.hunts), e = pgResumoElite(info.elite, mats);
-                const els = e ? [e.fraco.length ? 'fraco a ' + e.fraco.map(x => `${x.el} (+${-x.pct}% de dano)`).join(', ') : '',
-                                 e.resiste.length ? 'resiste ' + e.resiste.map(x => `${x.el} ${x.pct}%`).join(', ') : '',
-                                 e.imune.length ? 'imune a ' + e.imune.join(', ') : ''].filter(Boolean).join(' · ') : '';
-                h += `<details class="pg-det" data-k="pg-ch-${i}"><summary><span>${escHtml(n)} <b>×${pgInt(kb.chaves[n])}</b></span><span class="pg-mut">${e ? escHtml(e.nome) + ' · ' + pgInt(e.hp) + ' HP' : 'Elite ?'}</span></summary><div>` +
-                    (e ? `<div>${els ? escHtml(els) : 'sem fraqueza nem resistência'}</div>` +
-                         (e.top.length ? `<div>loot de valor: ${e.top.map(l => `${escHtml(l.nome)} ${pgInt(l.valor)}${l.chance != null ? ' <span class="pg-mut">(' + pgPct(l.chance, 1) + ')</span>' : ''}`).join(' · ')}</div>` : '') +
-                         (e.materiais.length ? `<div>materiais de imbuement: ${e.materiais.map(escHtml).join(', ')}</div>` : '') +
-                         (e.fragmentos.length ? `<div class="pg-mut">fragmentos de forja: ${e.fragmentos.map(escHtml).join(', ')}</div>` : '')
-                       : `<div class="pg-mut">Elite não encontrado no catálogo /bosses/select${CAT.bosses ? '' : ' (catálogo ainda não carregou)'}.</div>`) +
-                    (info.hunt ? `<div class="pg-mut">cai em ${escHtml(info.hunt.title)}${info.chance != null ? ' · ' + pgPct(info.chance, 3) + ' por abate' : ''}</div>` : '') +
-                    `</div></details>`;
-            });
-        }
-        h += `<div class="pg-tit">Chaves por hora</div>`;
-        const med = pgMedidos(), fator = pgFatorLootPrey(PROG.prey);
-        const linhas = pgLinhasChaves(CAT.hunts, CAT.bosses, med, fator, PROG.huntId);
-        if (!linhas.length) h += `<div class="pg-mut">sem abates por hora medidos — cace alguns minutos nesta aba aberta, ou rode o Scan.</div>`;
-        else {
-            h += `<table><tr><th>caçada · chave</th><th style="width:58px">abates/h</th><th style="width:84px">chaves/h</th></tr>` +
-                linhas.slice(0, 8).map(l => `<tr><td>${l.atual ? '<b>' : ''}${escHtml(l.hunt.title)}${l.atual ? '</b>' : ''}<div class="pg-mut">${escHtml(l.chave)} · ${pgPct(l.chance, 3)}</div></td>` +
-                    `<td>${pgInt(l.abatesH)}<div class="pg-mut">${escHtml(l.fonte)}</div></td><td>${pgDec(l.chavesH, 2)}<div class="pg-mut">cada ${pgHoras(l.cadaH)}</div></td></tr>`).join('') + `</table>`;
-            const at = linhas.find(l => l.atual);
-            if (at && kb) {
-                const t = pgTierDaMochila(kb, regras);
-                if (t.max > 0) {
-                    const livre = t.max - (kb.usadas || 0);
-                    h += `<div class="${livre <= 0 ? 'tb-ruim' : 'pg-mut'}" style="margin-top:3px">${livre <= 0 ? `mochila de chaves cheia: nesse ritmo, ~${pgDec(at.chavesH, 2)} chave(s) por hora serão perdidas.` : `nesse ritmo a mochila de chaves enche em ~${pgHoras(livre / at.chavesH)}.`}</div>`;
-                }
-            }
-            if (fator > 1) h += `<div class="pg-mut pg-peq">inclui o LOOT da prey (+${pgDec((fator - 1) * 100, 0)}% na chance).</div>`;
-        }
-        h += `<details class="pg-aj" data-k="pg-ch-aj"><summary>? como é a conta</summary><div>A chance vem do catálogo do jogo (é a que o card do item mostra); a wiki diz que a maioria das chaves fica entre 0,047% e 0,105% por abate (uma a cada ~950 a 2.100 abates). LOOT da prey e Chance de loot da Forja aumentam a chance. Com a mochila de chaves cheia, a chave que cai na caçada é perdida; a que vem de caixa ou prêmio vai para o depósito. Sweep: cada chave extra vira um loot do Elite (custa o suprimento da última vitória; sem xp e sem bestiário).</div></details>`;
-        return h;
-    }
 
     /* =========================================================================
      *  ⭐ v2.11.10 — COMPLETAR O BESTIÁRIO (dono, 29/09: "um botão para
@@ -12596,21 +12511,23 @@
     function telaProgresso() {
         pgGarantirCss();
         pgSincronizarBestiario();
-        const sub0 = ler('prog_sub', 'chaves'), sub = sub0 === 'forja' ? 'chaves' : sub0; // v2.25.0 — a Forja virou aba própria
-        const abas = [['chaves', 'Chaves'], ['bestiario', 'Bestiário'], ['invasao', 'Invasão'], ['offline', 'Offline'], ['prey', 'Prey']];
+        /* v2.32.0 — a subaba Chaves saiu (dono, 27/10: "elas caem por hora agora"): a chave do Elite cai por TEMPO de caçada desde o 1.1.7, a
+         * conta por abate não vale mais. Fica só o alerta de mochila de chaves cheia, aqui em cima. */
+        const sub0 = ler('prog_sub', 'bestiario'), sub = sub0 === 'forja' || sub0 === 'chaves' ? 'bestiario' : sub0; // v2.25.0 — a Forja virou aba própria
+        const abas = [['bestiario', 'Bestiário'], ['invasao', 'Invasão'], ['offline', 'Offline'], ['prey', 'Prey']];
         const kb = PROG.chaves;
         const maxKb = kb ? pgTierDaMochila(kb, PROG.meta && PROG.meta.keyBags).max : null;
         const av = kb ? pgAvisoChaves(Object.assign({}, kb, { max: maxKb })) : null;
         let h = `<div id="tb-prog"><div class="pg-sub" role="tablist">` + abas.map(([k, n]) =>
-            `<button class="pg-aba${k === sub ? ' on' : ''}" data-pg-sub="${k}" role="tab" aria-selected="${k === sub}">${n}${k === 'chaves' && av && av.nivel === 'cheia' ? ' <b class="tb-ruim">!</b>' : ''}</button>`).join('') + `</div>`;
+            `<button class="pg-aba${k === sub ? ' on' : ''}" data-pg-sub="${k}" role="tab" aria-selected="${k === sub}">${n}</button>`).join('') + `</div>`;
         /* texto inteiro na sub-aba Chaves; nas outras, uma linha (não empurra o conteúdo para baixo) */
-        if (av && av.nivel === 'cheia') h += `<div class="pg-alerta" role="alert">⚠ ${sub === 'chaves' ? escHtml(av.texto) : `mochila de chaves cheia (${pgInt(kb.usadas)}/${pgInt(maxKb)}): chave nova será PERDIDA`}</div>`;
+        if (av && av.nivel === 'cheia') h += `<div class="pg-alerta" role="alert">⚠ ${escHtml(av.texto)}</div>`;
         /* v2.14.9 — invasão (ícone da cidade) e prey: o aviso aparece em todas as sub-abas; o estado tranquilo só na de Chaves */
         const inv = pgAvisoInvasao(pgLerInvasaoDom());
-        if (inv && (inv.nivel === 'aviso' || sub === 'chaves')) h += `<div class="${inv.nivel === 'aviso' ? 'pg-atencao' : 'pg-cx'} pg-peq">${inv.nivel === 'aviso' ? '⚠ ' : inv.nivel === 'ok' ? '✓ ' : ''}${escHtml(inv.texto)}</div>`;
+        if (inv && inv.nivel === 'aviso') h += `<div class="${inv.nivel === 'aviso' ? 'pg-atencao' : 'pg-cx'} pg-peq">${inv.nivel === 'aviso' ? '⚠ ' : inv.nivel === 'ok' ? '✓ ' : ''}${escHtml(inv.texto)}</div>`;
         const ap = sub === 'prey' ? null : pgAlertaPrey(PROG.prey);
         if (ap && ap.nivel === 'aviso') h += `<div class="pg-atencao pg-peq">⚠ prey — ${escHtml(ap.texto)}</div>`;
-        h += sub === 'bestiario' ? pgTelaBestiario() : sub === 'invasao' ? pgTelaInvasao() : sub === 'offline' ? pgTelaOffline() : sub === 'prey' ? pgTelaPrey() : pgTelaChaves();
+        h += sub === 'bestiario' ? pgTelaBestiario() : sub === 'invasao' ? pgTelaInvasao() : sub === 'offline' ? pgTelaOffline() : sub === 'prey' ? pgTelaPrey() : pgTelaBestiario();
         return h + `<div class="pg-rodape">${sub === 'invasao' ? 'Só o SALVAR (ou a chave automático) envia o preset ao jogo; o resto é leitura.' : 'Só leitura: nada nesta aba envia comando ao jogo.'}</div></div>`;
     }
     function ligarProgresso() {
@@ -12618,7 +12535,6 @@
         ligarBestiario();
         ligarInvasao(); // v2.17.0
         /* o catálogo de imbuements (13 KB, público) marca materiais no loot dos Elites (a calculadora foi para a aba Forja, 2.25.0) */
-        if (ler('prog_sub', 'chaves') === 'chaves') pgCarregarImbu().catch(() => { });
         /* repinta sozinha a cada 5 s só com a aba aberta e a party caçando (é
          * leitura: ouro, mochila e abates mudam a cada frame); nunca no meio de
          * um campo em edição */
@@ -15853,10 +15769,33 @@
         for (const v of agenda.visiveis) {
             if (!v || v.tipo !== 'halloween') continue;
             const lojaId = v.params && v.params.lojaId;
-            if (typeof lojaId === 'string' && lojaId && v.inicioMs <= agora && agora < v.fimMs) return { id: v.id, inicioMs: v.inicioMs, fimMs: v.fimMs, lojaId };
+            if (typeof lojaId === 'string' && lojaId && v.inicioMs <= agora && agora < v.fimMs) {
+                /* 2.32.0 — o preço e as horas do acesso vêm aqui (params {horas, modo, gold, coins, coinsLastro}), não no acesso_retrato */
+                const p = v.params, acesso = p.horas != null || p.modo ? { horas: Number(p.horas) || null, preco: { modo: p.modo || 'gold', gold: Number(p.gold) || 0, coins: Number(p.coins) || 0, coinsLastro: Number(p.coinsLastro) || 0 } } : null;
+                return { id: v.id, inicioMs: v.inicioMs, fimMs: v.fimMs, lojaId, acesso };
+            }
         }
         return null;
     };
+    /* 2.32.0 — a caçada da estação no formato de /hunts/select, para a Magia (Discord e os outros modelos) escolhê-la. `monstros` =
+     * fichas do /bestiary/creature (nome, vida, xp, elementos); `fichas` do acesso, quando vierem, mandam na vida e no xp; `elite` = a
+     * entrada de /bosses/select com originHuntId desta caçada. Sem id ou sem monstro nenhum = null. */
+    function evMontarHunt(huntId, monstros, fichas, elite) {
+        if (huntId == null) return null;
+        const fs = Array.isArray(fichas) ? fichas.filter(f => f && f.name) : [];
+        const ms = (Array.isArray(monstros) ? monstros : []).filter(m => m && m.name).map(m => {
+            const f = fs.find(x => x.name === m.name);
+            return { name: m.name, health: Number(f && f.health) || Number(m.health) || 0, experience: Number(f && f.experience) || Number(m.experience) || 0,
+                     elements: Array.isArray(m.elements) ? m.elements.map(e => ({ type: e.type, percent: Number(e.percent) || 0 })) : [], lookType: m.lookType, weight: 1 };
+        });
+        if (!ms.length) return null;
+        const nivel = Number(elite && (elite.recommendedLevel || elite.levelMin)) || 0;
+        return { id: huntId, title: EV_HUNT_TITULO, levelMin: 1, levelMax: 0, recommendedLevel: nivel, lureTiers: [], maxLure: 0, premium: false, estacao: true,
+                 monsters: ms, loot: elite && elite.keyItem ? [{ id: (elite.keyItemIds || [])[0] || null, name: elite.keyItem, chance: 0, value: 0, slot: null }] : [] };
+    }
+    const EV_HUNT_TITULO = 'Caçada da Estação (Halloween)';
+    /* nomes lidos no "Como obter Halloween Pumpkin" da loja do jogo (27/10) — valem enquanto o acesso não trouxer as fichas */
+    const EV_MONSTROS = ['Lantern Viscount', 'Hollow Bride', 'Hollow Reaper', 'Lanternbone Dragon'];
     /* custo de uma oferta (IF do cliente): abóboras = Σ itens; gold calculado pela cotação quando coinsLastro > 0 */
     function evCustoDe(o) {
         const p = (o && o.preco) || {}, abob = (Array.isArray(p.itens) ? p.itens : []).reduce((t, x) => t + (Number(x && x.quantity) || 0), 0);
@@ -15894,16 +15833,36 @@
     const evTempoPara = (falta, porHora) => (falta <= 0 ? 0 : porHora > 0 ? falta / porHora : null);
     const evSituacaoTexto = { disponivel: 'acesso disponível (uma compra por dia)', ativo: 'acesso ATIVO', usado: 'acesso de hoje já usado — volta às 10:00', indisponivel: 'caçada indisponível no momento' };
     /* @@EVENTO-PURO-FIM */
-    const EV = { agenda: null, janela: null, acesso: null, loja: null, lojaT: 0, lendo: false, ocupado: null, erro: null, aviso: null, sel: null, qtd: 1, conf: 0, confAcesso: 0, confIr: 0, nomeAbobora: null, recibo: null };
+    const EV = { chaves: null, agenda: null, janela: null, acesso: null, loja: null, lojaT: 0, lendo: false, ocupado: null, erro: null, aviso: null, sel: null, qtd: 1, conf: 0, confAcesso: 0, confIr: 0, nomeAbobora: null, recibo: null };
     const evLojaId = () => (EV.janela && EV.janela.lojaId) || (EV.acesso && EV.acesso.lojaId) || null;
     const evHuntConhecida = (id) => !!(EV.acesso && EV.acesso.huntId != null && EV.acesso.huntId === id);
     const evSaldo = () => (EV.loja ? EV.loja : null);
-    const evRid = () => 'lhw-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+    /* 2.32.0 — a caçada da estação para a Magia: as fichas do bestiário são buscadas uma vez (4 pedidos) e a tela redesenha quando chegam */
+    const _evBest = { fichas: null, pedindo: false };
+    function evBuscarFichas() {
+        if (_evBest.fichas || _evBest.pedindo) return;
+        _evBest.pedindo = true;
+        const nomes = EV.acesso && Array.isArray(EV.acesso.fichas) && EV.acesso.fichas.length ? EV.acesso.fichas.map(f => f && f.name).filter(Boolean) : EV_MONSTROS;
+        Promise.all(nomes.map(n => buscarJSON('/bestiary/creature?name=' + encodeURIComponent(n)).catch(e => { falhou('evento (ficha ' + n + ')', e); return null; })))
+            .then(ls => { _evBest.fichas = ls.filter(Boolean); if (ABA === 'magia' || ABA === 'evento') renderizar(); })
+            .finally(() => { _evBest.pedindo = false; });
+    }
+    function evHunt() {
+        const id = EV.acesso && EV.acesso.huntId;
+        if (id == null) return null;
+        if (!_evBest.fichas) { evBuscarFichas(); return null; }
+        const elite = (CAT.bosses || []).find(b => b && Number(b.originHuntId) === Number(id)) || null;
+        return evMontarHunt(id, _evBest.fichas, EV.acesso.fichas, elite);
+    }
+    const evHuntDe = (id) => { const h = evHunt(); return h && id != null && Number(h.id) === Number(id) ? h : null; };
+    const evElite = () => { const id = EV.acesso && EV.acesso.huntId; return id == null ? null : (CAT.bosses || []).find(x => x && Number(x.originHuntId) === Number(id)) || null; };
+    const evNomeChave = () => (EV.acesso && EV.acesso.chave && EV.acesso.chave.name) || (evElite() || {}).keyItem || null;
+    const evRid =() => 'lhw-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
     function evPintarPonto() {
         const i = $('#tb-trilho .tb-ico[data-aba="evento"]'); if (!i) return;
         const dot = $('.tb-dot', i); if (!dot) return;
         const sit = EV.acesso && EV.acesso.situacao;
-        dot.className = 'tb-dot' + (sit === 'ativo' ? ' ok' : sit === 'disponivel' ? ' av' : '');
+        dot.className = 'tb-dot' + (EV.chaves > 0 || sit === 'disponivel' ? ' av' : sit === 'ativo' ? ' ok' : '');
     }
     async function evNomeAbobora() {
         if (EV.nomeAbobora) return EV.nomeAbobora;
@@ -15939,6 +15898,16 @@
             log('evento: acesso à caçada da estação liberado (' + fmtHoras((evRestanteMs(EV.acesso, Date.now()) || 0) / 3600000) + ')', 'ok'); mudou = true;
         }
         else if (t === 'error' && EV.ocupado && d.code && EV_ERROS[d.code]) { EV.erro = evErroTexto(d.code); mudou = true; }
+        /* 2.32.0 — vigia da chave do Elite (dono, 27/10: "tem que esperar a chave desse boss cair para eu ir fazer ele"): o keyBag vem em
+         * todo frame {nome: n}; quando a contagem SOBE, avisa no Log. Não entra no boss sozinho. */
+        else if (t === 'frame' && d.state && d.state.keyBag && typeof d.state.keyBag === 'object') {
+            const nome = evNomeChave();
+            if (nome) {
+                const n = Object.keys(d.state.keyBag).filter(k => k.toLowerCase() === nome.toLowerCase()).reduce((x, k) => x + (Number(d.state.keyBag[k]) || 0), 0);
+                if (EV.chaves != null && n > EV.chaves) { const el = evElite(); log(`🎃 caiu a ${nome}${el ? ' — o Elite ' + el.name + ' está liberado (Magia › Boss para a barra)' : ''}`, 'ok'); }
+                if (n !== EV.chaves) { EV.chaves = n; mudou = true; }
+            }
+        }
         if (mudou) { evPintarPonto(); if (ABA === 'evento') renderizar(); }
     }
     async function evPedir(tipo, data, rotulo) {
@@ -15964,7 +15933,7 @@
         if (!lojaId || !a || !['disponivel'].includes(a.situacao)) return;
         if (!(EV.confAcesso > Date.now())) { EV.confAcesso = Date.now() + 8000; renderizar(); return; }
         EV.confAcesso = 0;
-        const p = a.preco || {}, data = { lojaId, requestId: evRid() };
+        const p = a.preco || (EV.janela && EV.janela.acesso && EV.janela.acesso.preco) || {}, data = { lojaId, requestId: evRid() };
         if (p.modo === 'gold' && (Number(p.coinsLastro) || 0) > 0) data.goldVisto = Number(p.gold) || 0;
         await evPedir('acesso_comprar', data, 'liberar a caçada');
     }
@@ -15991,54 +15960,74 @@
         catch (e) { EV.erro = e.message; }
         renderizar();
     }
+    /* 2.32.0 — tela reescrita em 3 passos (dono, 27/10: "tá bem difícil de entender"): entrada de hoje → chave e Elite → loja. O que é
+     * técnico (ids, mensagens do socket) fica no "?" do fim. */
     function telaEvento() {
         garantirCssTelas();
         const agora = Date.now(), j = EV.janela, a = EV.acesso, L = EV.loja, ocup = !!EV.ocupado;
-        let h = `<div id="tb-ev"><div class="tb-eq-bts"><button type="button" class="tb-bt pri" id="tb-ev-ler" ${ocup || !socketAberto() ? 'disabled' : ''} title="pede loja_abrir ao jogo (só leitura): ofertas, saldo de abóboras, gold, coins e o acesso à caçada">${EV.ocupado === 'ler a loja' ? 'LENDO…' : L ? 'LER A LOJA DE NOVO' : 'LER A LOJA DE HALLOWEEN'}</button></div>`;
-        h += `<div class="tb-mut tb-eq-info">${j ? `evento até ${new Date(j.fimMs).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} · termina em <b>${fmtHoras((j.fimMs - agora) / 3600000)}</b>` : 'o jogo ainda não anunciou a janela do evento (agenda_state)'}${L ? ' · loja lida ' + mkHora(EV.lojaT) : ''}</div>`;
+        const passo = (n, tit, corpo) => `<div class="tb-cx" style="margin-top:6px"><div style="margin-bottom:3px"><b>${n}. ${tit}</b></div>${corpo}</div>`;
+        const fraco = (els) => (els || []).filter(e => e.percent < 0).map(e => rotuloElem(e.type) + (e.percent <= -100 ? ' (dobro)' : ' +' + (-e.percent) + '%')).join(', ');
+        const imune = (els) => (els || []).filter(e => e.percent >= 100 && !/DRAIN/.test(e.type)).map(e => rotuloElem(e.type)).join(', ');
+        let h = `<div id="tb-ev"><div class="tb-eq-info">🎃 <b>Halloween</b> · ${j ? `termina em <b>${fmtHoras((j.fimMs - agora) / 3600000)}</b> <span class="tb-mut">(${new Date(j.fimMs).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })})</span>` : '<span class="tb-mut">o jogo ainda não anunciou o evento</span>'}</div>`;
         if (EV.erro) h += `<div class="tb-cx tb-ruim">${escHtml(EV.erro)}</div>`;
         if (EV.recibo && agora - EV.recibo.t < 60000) h += `<div class="tb-cx tb-ok">${EV.recibo.qtd}× ${escHtml(EV.recibo.nome)} foi para a mochila</div>`;
-        /* acesso à caçada da estação */
-        h += `<h4 style="margin:8px 0 2px">Caçada da Estação</h4>`;
-        if (!a) h += `<div class="tb-mut tb-eq-nota">o jogo ainda não mandou o retrato do acesso (acesso_retrato) — leia a loja ou dê F5.</div>`;
+        /* 1 — entrada de hoje */
+        if (!a) h += passo(1, 'Entrada de hoje', `<div class="tb-mut">o jogo ainda não mandou a entrada de hoje — dê F5 ou toque em LER A LOJA lá embaixo.</div>`);
         else {
-            const p = a.preco || {}, preco = p.modo === 'coins' ? mkFmt(p.coins) + ' coins' : mkFmt(p.gold) + ' gold' + ((Number(p.coinsLastro) || 0) > 0 ? ' (pela cotação)' : '');
-            const rest = evRestanteMs(a, agora), conf2 = EV.confAcesso > agora, confIr = EV.confIr > agora;
-            h += `<div class="tb-cx"><div><b>${escHtml(evSituacaoTexto[a.situacao] || a.situacao || '?')}</b>${a.situacao === 'ativo' && rest != null ? ` · restam <b>${fmtHoras(rest / 3600000)}</b>` : ''}</div>` +
-                 `<div class="tb-mut tb-eq-nota">acesso por ${a.horas || '?'} h · ${preco} · uma compra por dia, renovada às 10:00 · hunt ${a.huntId != null ? a.huntId : '?'}${ESTADO_WS.huntId != null && ESTADO_WS.huntId === a.huntId ? ' · <span class="tb-ok">a party está nela agora</span>' : ''}</div>` +
-                 (a.chave ? `<div class="tb-mut tb-eq-nota">chave do Elite: <b>${escHtml(a.chave.name)}</b> (cai dos monstros e abre o Elite da caçada)</div>` : '') +
-                 (Array.isArray(a.fichas) && a.fichas.length ? `<div class="tb-mut tb-eq-nota">monstros: ${a.fichas.map(f => escHtml(f.name) + (f.health ? ' (' + mkFmt(f.health) + ' hp' + (f.experience ? ', ' + mkFmt(f.experience) + ' xp' : '') + (Array.isArray(f.elements) && f.elements.length ? ', ' + f.elements.map(escHtml).join('/') : '') + ')' : '')).join(' · ')}</div>` : '') +
-                 `<div class="tb-eq-bts" style="margin-top:4px">` +
-                 (a.situacao === 'disponivel' ? `<button type="button" class="tb-bt ${conf2 ? 'pri' : ''}" id="tb-ev-acesso" ${ocup || !socketAberto() ? 'disabled' : ''} title="acesso_comprar: paga ${preco} e libera a caçada por ${a.horas || '?'} h (sem reembolso)">${conf2 ? 'CONFIRMAR: pagar ' + preco : 'LIBERAR A CAÇADA · ' + preco}</button>` : '') +
-                 (['ativo', 'disponivel'].includes(a.situacao) && a.huntId != null ? `<button type="button" class="tb-bt ${confIr ? 'pri' : ''}" id="tb-ev-ir" ${ocup || !socketAberto() || emHunt() ? 'disabled' : ''} title="start_hunt na caçada da estação (a party precisa estar na cidade)">${confIr ? 'CONFIRMAR: ir para a caçada' : 'IR PARA A CAÇADA'}</button>` : '') +
-                 `</div></div>`;
+            const ja = (j && j.acesso) || {}, p = a.preco || ja.preco || {}, horas = a.horas || ja.horas;
+            const gratis = !!(a.gratis || ((a.preco || ja.preco) && p.modo !== 'coins' && !(Number(p.gold) > 0) && !(Number(p.coinsLastro) > 0)));
+            const preco = gratis ? 'grátis' : p.modo === 'coins' ? mkFmt(p.coins) + ' coins' : mkFmt(p.gold) + ' gold' + ((Number(p.coinsLastro) || 0) > 0 ? ' (pela cotação)' : '');
+            const rest = evRestanteMs(a, agora), conf2 = EV.confAcesso > agora, confIr = EV.confIr > agora, nela = ESTADO_WS.huntId != null && ESTADO_WS.huntId === a.huntId;
+            let c = '';
+            if (a.situacao === 'ativo') c += `<div><span class="tb-ok"><b>${gratis ? 'GRÁTIS' : 'PAGA'}</b></span> · restam <b>${fmtHoras((rest || 0) / 3600000)}</b> de caçada · ${a.consumindoDesde || nela ? '<span class="tb-av">▶ contando agora</span>' : '<span class="tb-mut">⏸ parado (só conta com a caçada aberta)</span>'}</div>`;
+            else if (a.situacao === 'disponivel') c += `<div>a entrada de hoje ainda não foi pega · <b>${escHtml(preco)}</b>${horas ? ' · ' + horas + ' h de caçada' : ''}</div>`;
+            else c += `<div class="tb-mut">${escHtml(evSituacaoTexto[a.situacao] || a.situacao || '?')}</div>`;
+            c += `<div class="tb-mut tb-eq-nota">uma por dia; às 10:00 o que sobrou zera.</div><div class="tb-eq-bts" style="margin-top:4px">` +
+                 (a.situacao === 'disponivel' ? `<button type="button" class="tb-bt ${conf2 ? 'pri' : ''}" id="tb-ev-acesso" ${ocup || !socketAberto() ? 'disabled' : ''} title="pega a entrada de hoje (${escHtml(preco)}, ${horas || '?'} h)">${conf2 ? 'CONFIRMAR: pegar a entrada (' + escHtml(preco) + ')' : 'PEGAR A ENTRADA · ' + escHtml(preco)}</button>` : '') +
+                 (nela ? `<span class="tb-ok">✓ a party está caçando nela</span>` : ['ativo', 'disponivel'].includes(a.situacao) && a.huntId != null ? `<button type="button" class="tb-bt ${confIr ? 'pri' : ''}" id="tb-ev-ir" ${ocup || !socketAberto() || emHunt() ? 'disabled' : ''} title="leva a party para a caçada do evento (precisa estar na cidade)">${confIr ? 'CONFIRMAR: ir para a caçada' : 'IR PARA A CAÇADA'}</button>` : '') + `</div>`;
+            h += passo(1, 'Entrada de hoje', c);
         }
-        /* abóboras e ofertas */
-        if (!L) return h + `<div class="tb-mut" style="margin-top:6px">LER A LOJA mostra as ofertas da estação com o custo (abóboras + gold ou coins), o que falta para cada uma e, caçando na caçada da estação, quanto tempo falta pelo ritmo de abóboras do analisador. Comprar é por botão, 2 toques, sem reembolso.</div></div>`;
-        const tem = evSaldoAboboras(L), an = ESTADO_WS.huntId != null && a && ESTADO_WS.huntId === a.huntId ? anAgora() : null, taxa = evTaxaAboboras(an, EV.nomeAbobora);
-        h += `<h4 style="margin:8px 0 2px">Abóboras <span class="tb-mut">(${EV.nomeAbobora ? escHtml(EV.nomeAbobora) : 'nome a confirmar'})</span></h4>`;
-        h += `<div class="tb-cx">você tem <b>${mkFmt(tem)}</b> · gold ${mkFmt(L.gold)}${L.goldLocked ? ' (travado ' + mkFmt(L.goldLocked) + ')' : ''} · coins ${mkFmt(L.coins)}` +
-             (taxa ? `<div class="tb-mut tb-eq-nota">nesta caçada: ${taxa.n} abóbora(s) em ${fmtHoras(an.elapsedMs / 3600000)} → <b>${taxa.porHora.toFixed(1)}/h</b></div>` : `<div class="tb-mut tb-eq-nota">ritmo por hora aparece depois de 1 min caçando na caçada da estação</div>`) + `</div>`;
-        const ofs = (L.offers || []).filter(Boolean).slice().sort((x, y) => (Number(x.order) || 0) - (Number(y.order) || 0) || String(x.category || '').localeCompare(String(y.category || '')));
-        if (!ofs.length) h += `<div class="tb-mut">nenhuma oferta na loja agora.</div>`;
+        /* 2 — chave e Elite */
+        const el = evElite(), nomeChave = evNomeChave(), rk = relogioChave(ESTADO_WS.frame && ESTADO_WS.frame.keyClock), rkAqui = rk && nomeChave && rk.item.toLowerCase() === nomeChave.toLowerCase();
+        if (el || nomeChave) {
+            let c = '';
+            if (EV.chaves > 0) c += `<div class="tb-ok"><b>✓ ${EV.chaves} ${escHtml(nomeChave || 'chave')} na mochila — pode fazer o Elite agora.</b></div>`;
+            else if (rkAqui) c += `<div>próxima chave em <b>${Math.ceil(rk.faltaMs / 60000)} min</b> <span class="tb-mut">(1 a cada ${Math.round(rk.cadaMs / 60000)} min de caçada)</span></div>`;
+            else c += `<div>a chave <b>${escHtml(nomeChave || '?')}</b> cai sozinha com o tempo dentro da caçada (~1 por hora).</div>`;
+            if (el) c += `<div class="tb-eq-nota">Elite <b>${escHtml(el.name)}</b> · ${mkFmt(el.health)} hp${fraco(el.elements) ? ' · fraco a <b>' + escHtml(fraco(el.elements)) + '</b>' : ''}${imune(el.elements) ? ' · imune a ' + escHtml(imune(el.elements)) : ''}</div>`;
+            c += `<div class="tb-mut tb-eq-nota"><b>As abóboras saem só da caixa do Elite</b>${el && el.boxItem ? ' (' + escHtml(el.boxItem.name) + ')' : ''}. Matar mais rápido dá xp, não abóbora. Barra: Magia › Discord › <i>${escHtml(EV_HUNT_TITULO)}</i> na caçada; Magia › Boss › <i>${escHtml(el ? el.name : 'o Elite')}</i> no Elite. Quando a chave cair, o Log avisa.</div>`;
+            const hEst = evHunt();
+            if (hEst) c += aj('ev-monstros', hEst.monsters.map(m => `<b>${escHtml(m.name)}</b> ${mkFmt(m.health)} hp${fraco(m.elements) ? ' · fraco a ' + escHtml(fraco(m.elements)) : ''}${imune(m.elements) ? ' · imune a ' + escHtml(imune(m.elements)) : ''}`).join('<br>'), 'monstros da caçada');
+            h += passo(2, 'Chave e Elite', c);
+        }
+        /* 3 — loja */
+        let c3 = `<div class="tb-eq-bts"><button type="button" class="tb-bt ${L ? '' : 'pri'}" id="tb-ev-ler" ${ocup || !socketAberto() ? 'disabled' : ''} title="só lê a loja (não compra nada)">${EV.ocupado === 'ler a loja' ? 'LENDO…' : L ? 'LER DE NOVO' : 'LER A LOJA'}</button>${L ? ` <span class="tb-mut">lida ${mkHora(EV.lojaT)}</span>` : ''}</div>`;
+        if (!L) c3 += `<div class="tb-mut tb-eq-nota">mostra quantas abóboras você tem e o que cada item custa. Comprar é por botão, 2 toques.</div>`;
         else {
-            h += `<table class="tb-t"><tr><th></th><th>oferta</th><th>categoria</th><th class="n">abóboras</th><th class="n">gold/coins</th><th>alcance</th></tr>`;
-            for (const o of ofs) {
-                const al = evAlcance(o, L), c = al.custo, horas = taxa && al.faltaAboboras > 0 ? evTempoPara(al.faltaAboboras, taxa.porHora) : null;
-                const alc = al.chega ? `<span class="tb-ok">ao alcance${al.max > 1 ? ' ×' + al.max : ''}</span>` : [al.faltaAboboras ? 'faltam ' + mkFmt(al.faltaAboboras) + ' abóboras' + (horas != null ? ' (~' + fmtHoras(horas) + ')' : '') : '', al.faltaOuro ? 'faltam ' + mkFmt(al.faltaOuro) + ' gold' : '', al.faltaCoins ? 'faltam ' + mkFmt(al.faltaCoins) + ' coins' : ''].filter(Boolean).join(' · ');
-                h += `<tr class="${EV.sel === o.id ? 'tb-sel' : ''}"><td><input type="radio" name="tb-ev-of" data-ev-sel="${escHtml(o.id)}" ${EV.sel === o.id ? 'checked' : ''} aria-label="escolher ${escHtml(o.name)}"></td><td>${escHtml(o.name)}${o.description ? ` <span class="tb-mut">${escHtml(o.description)}</span>` : ''}</td><td class="tb-mut">${escHtml(o.category || '')}</td><td class="n">${mkFmt(c.aboboras)}</td><td class="n">${c.coins ? mkFmt(c.coins) + ' c' : mkFmt(c.ouro) + (c.pelaCotacao ? '*' : '')}</td><td>${alc}</td></tr>`;
-            }
-            h += `</table><div class="tb-mut tb-eq-nota">* gold pela cotação de coins do momento: pode subir entre ler e comprar (o jogo recusa com "loja_preco_subiu"; leia de novo).</div>`;
-            const o = ofs.find(x => x.id === EV.sel);
-            if (o) {
-                const max = evMaxCompravel(o, L), conf2 = EV.conf > agora, q = Math.max(1, Math.min(Math.max(1, max), Math.trunc(Number(EV.qtd) || 1))), c = evCustoDe(o);
-                h += `<div class="tb-cx" style="margin-top:6px"><b>${escHtml(o.name)}</b> · ${mkFmt(c.aboboras)} abóboras + ${c.coins ? mkFmt(c.coins) + ' coins' : mkFmt(c.ouro) + ' gold'} cada · máx ${max}` +
-                     `<div class="tb-linha" style="margin-top:4px"><label class="tb-mut">quantidade <input type="number" id="tb-ev-qtd" min="1" max="${Math.max(1, max)}" value="${q}" style="width:56px"></label>` +
-                     `<button type="button" class="tb-bt ${conf2 ? 'pri' : ''}" id="tb-ev-comprar" ${ocup || !socketAberto() || max < 1 ? 'disabled' : ''} title="loja_comprar: troca ${mkFmt(c.aboboras * q)} abóboras + ${c.coins ? mkFmt(c.coins * q) + ' coins' : mkFmt(c.ouro * q) + ' gold'} por ${q}× ${escHtml(o.name)} (sem reembolso)">${conf2 ? `CONFIRMAR: trocar por ${q}× ${escHtml(o.name)}` : max < 1 ? 'NÃO ALCANÇA' : 'COMPRAR'}</button></div>` +
-                     (Array.isArray(o.premios) && o.premios.length ? `<div class="tb-mut tb-eq-nota">prêmios (sorteio ao abrir): ${o.premios.map(p => escHtml(p.name || p.nome || '?') + (p.chance != null ? ' ' + p.chance + ' %' : '')).join(' · ')}</div>` : '') + `</div>`;
+            const tem = evSaldoAboboras(L);
+            c3 += `<div style="margin-top:3px">você tem <b>${mkFmt(tem)} abóbora${tem === 1 ? '' : 's'}</b> <span class="tb-mut">· gold ${mkFmt(L.gold)} · coins ${mkFmt(L.coins)}</span></div>`;
+            const ofs = (L.offers || []).filter(Boolean).slice().sort((x, y) => evCustoDe(x).aboboras - evCustoDe(y).aboboras || evCustoDe(x).ouro - evCustoDe(y).ouro);
+            if (!ofs.length) c3 += `<div class="tb-mut">nenhum item na loja agora.</div>`;
+            else {
+                c3 += `<table class="tb-t"><tr><th></th><th>item</th><th class="n">custa</th><th>você</th></tr>`;
+                for (const o of ofs) {
+                    const al = evAlcance(o, L), cu = al.custo;
+                    const voce = al.chega ? `<span class="tb-ok">dá${al.max > 1 ? ' ×' + al.max : ''}</span>` : `<span class="tb-mut">${[al.faltaAboboras ? 'faltam ' + mkFmt(al.faltaAboboras) + ' 🎃' : '', al.faltaOuro ? 'falta gold' : '', al.faltaCoins ? 'faltam coins' : ''].filter(Boolean).join(' · ')}</span>`;
+                    c3 += `<tr class="${EV.sel === o.id ? 'tb-sel' : ''}"><td><input type="radio" name="tb-ev-of" data-ev-sel="${escHtml(o.id)}" ${EV.sel === o.id ? 'checked' : ''} aria-label="escolher ${escHtml(o.name)}"></td><td>${escHtml(o.name)}</td>` +
+                          `<td class="n">${mkFmt(cu.aboboras)} 🎃${cu.coins ? ' + ' + mkFmt(cu.coins) + ' coins' : cu.ouro ? ' + ' + mkFmt(cu.ouro) + (cu.pelaCotacao ? '*' : '') : ''}</td><td>${voce}</td></tr>`;
+                }
+                c3 += `</table>` + (ofs.some(o => evCustoDe(o).pelaCotacao) ? `<div class="tb-mut tb-eq-nota">* o gold segue a cotação de coins e pode subir entre ler e comprar.</div>` : '');
+                const o = ofs.find(x => x.id === EV.sel);
+                if (o) {
+                    const max = evMaxCompravel(o, L), conf2 = EV.conf > agora, q = Math.max(1, Math.min(Math.max(1, max), Math.trunc(Number(EV.qtd) || 1))), cu = evCustoDe(o);
+                    c3 += `<div class="tb-linha" style="margin-top:4px"><b>${escHtml(o.name)}</b> <label class="tb-mut">qtd <input type="number" id="tb-ev-qtd" min="1" max="${Math.max(1, max)}" value="${q}" style="width:48px"></label>` +
+                          `<button type="button" class="tb-bt ${conf2 ? 'pri' : ''}" id="tb-ev-comprar" ${ocup || !socketAberto() || max < 1 ? 'disabled' : ''} title="troca ${mkFmt(cu.aboboras * q)} abóboras${cu.coins ? ' + ' + mkFmt(cu.coins * q) + ' coins' : cu.ouro ? ' + ' + mkFmt(cu.ouro * q) + ' gold' : ''} (sem reembolso)">${conf2 ? `CONFIRMAR: ${q}× por ${mkFmt(cu.aboboras * q)} 🎃` : max < 1 ? 'NÃO DÁ AINDA' : 'COMPRAR'}</button></div>` +
+                          (Array.isArray(o.premios) && o.premios.length ? `<div class="tb-mut tb-eq-nota">prêmios (sorteio ao abrir): ${o.premios.map(pr => escHtml(pr.name || pr.nome || '?') + (pr.chance != null ? ' ' + pr.chance + ' %' : '')).join(' · ')}</div>` : '');
+                }
             }
         }
-        return h + aj('ev-ajuda', 'O que o helper lê: agenda_state (janela do evento), acesso_retrato (acesso do dia) e loja_estado (ofertas e saldos). O que ele envia, só por botão: loja_abrir (leitura), acesso_comprar e loja_comprar (2 toques, sem reembolso) e start_hunt para a caçada da estação. A caçada não está no catálogo público: o Radar e o Scan não a medem; o Analisador e o livro-razão funcionam normalmente. O Auto Hunt volta para ela enquanto o acesso durar; com o acesso vencido o jogo recusa (access_required) e o Auto Hunt para com o erro no Log.') + `</div>`;
+        h += passo(3, 'Trocar as abóboras', c3);
+        return h + aj('ev-ajuda', 'Técnico: o helper lê agenda_state (janela e preço da entrada), acesso_retrato (entrada de hoje), frame.keyClock e keyBag (chave) e loja_estado (loja). Só por botão: loja_abrir (leitura), acesso_comprar, loja_comprar (2 toques, sem reembolso) e start_hunt. A caçada do evento (hunt ' + (a && a.huntId != null ? a.huntId : '?') + ') não está no catálogo público: Radar e Scan não a medem; Analisador e livro-razão funcionam. O Auto Hunt volta para ela enquanto a entrada durar.') + `</div>`;
     }
     function ligarEvento() {
         const corpo = $('#tb-corpo');
