@@ -7,7 +7,7 @@ const raiz = path.join(__dirname, '..');
 const src = fs.readFileSync(path.join(raiz, 'tibidle-helper.user.js'), 'utf8');
 const ini = src.indexOf('/* @@EQUIP-PURO-INICIO */'), fim = src.indexOf('/* @@EQUIP-PURO-FIM */');
 assert(ini > 0 && fim > ini, 'marcadores @@EQUIP-PURO não encontrados');
-const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, pesosDaVoc, mitigacaoPct, bloqueioEscudo, reducaoArmadura, golpeBasico, efeitoOficial, legadoDe, loyaltyBonus, forjaSimular, forjaValorSorteado, forjaLinhaSorteada, FORJA_GEMA_OURO, protecaoComposta, danoRecebidoCorpo, danoRecebidoMagia, COMBATE_VOC, SUPORTE_OFICIAL, candidatosEquip, distribuirEquip, pecasDesmanche, planoForja, faixaPotencia, wikiSlug, wikiUrlPeca, EQUIP_RESERVAS, destinosSobras, chanceLinha, fragmentosDesmanche, escolherDestino, faixaRange, valorTipico, linhasUteis, REGRAS_VOCACAO, FAIXA_NOME, faseEquip, potenciaBaseForja };')();
+const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, pesosDaVoc, mitigacaoPct, bloqueioEscudo, reducaoArmadura, golpeBasico, efeitoOficial, legadoDe, loyaltyBonus, forjaSimular, forjaValorSorteado, forjaLinhaSorteada, FORJA_GEMA_OURO, protecaoComposta, danoRecebidoCorpo, danoRecebidoMagia, COMBATE_VOC, SUPORTE_OFICIAL, candidatosEquip, distribuirEquip, pecasDesmanche, planoForja, faixaPotencia, wikiSlug, wikiUrlPeca, EQUIP_RESERVAS, destinosSobras, chanceLinha, fragmentosDesmanche, escolherDestino, faixaRange, valorTipico, linhasUteis, REGRAS_VOCACAO, FAIXA_NOME, faseEquip, potenciaBaseForja, trocaVale };')();
 const le = (p) => { try { return JSON.parse(fs.readFileSync(path.join(raiz, p), 'utf8')); } catch (e) { return null; } };
 const base = {};
 for (const [nome, it] of Object.entries(le('testes/fixtures/itens.json').itens)) base[nome] = { id: it.id, attrs: it.attrs || {}, sell: it.sell || 0, equipPreview: it.equipPreview || null };
@@ -757,4 +757,26 @@ t('2.24.1 arma de 1 mão: a DEFESA da arma não conta (com escudo o jogo usa a d
     assert(pt(d2, 'defense') > 0, '2 mãos: sem escudo, a defesa da arma é o bloqueio');
     const escudo = { nome: 'vampire shield', slot: 'shield', attrs: { weaponType: 'shield', defense: 34 }, forja: F(0) };
     assert(pt(M.pontuarPeca(escudo, 'KNIGHT', ctx).detalhe, 'defense') > 0, 'escudo continua contando');
+});
+
+t('2.32.2 espaço VAZIO aceita qualquer peça que rende (nível 8: colar de 0,5 pt entrava nunca); troca de peça segue com 1 pt', () => {
+    const colar = { iid: 'c1', nome: 'wolf tooth chain', slot: 'necklace', origem: 'depósito', attrs: {}, forja: F(2, ['dano_magico', 1.1], ['dano_elem_fogo', 1.6]) };
+    const pecas = [colar];
+    const ctx = { nivel: 8 };
+    const r = M.distribuirEquip(pecas, ['SORCERER'], ctx);
+    const x = r.porVoc.SORCERER.necklace;
+    assert(x.melhor && x.melhor.iid === 'c1', 'o colar devia ser o melhor do espaço vazio');
+    assert(x.ganho > 0 && x.ganho < 1, 'o teste precisa de um ganho entre 0 e 1 (achei ' + x.ganho + ')');
+    assert(M.trocaVale(x), 'espaço vazio: qualquer ganho > 0 vale');
+    assert(!M.trocaVale(Object.assign({}, x, { atual: { iid: 'c0' }, atualPt: 2 })), 'com peça vestida que rende, o mínimo de 1 pt continua');
+    assert(M.trocaVale(Object.assign({}, x, { atual: { iid: 'c0' }, atualPt: 0 })), 'peça vestida de 0 pt (bow comum) conta como espaço vazio');
+});
+
+t('2.32.2 wand/rod acima do nível não atira (medido: everblazing nível 65 no nível 8 deu zero tiros); o ML de fábrica continua', () => {
+    const wand = { iid: 'w1', nome: 'wand of everblazing', slot: 'weapon', attrs: { weaponType: 'wand', wandType: 'fire', fromDamage: 38, toDamage: 58, mana: 13, level: 65, magiclevelpoints: 1 }, forja: F(0) };
+    const baixo = M.pontuarPeca(wand, 'SORCERER', { nivel: 8 }), alto = M.pontuarPeca(wand, 'SORCERER', { nivel: 70 });
+    const tiro = (r) => r.detalhe.filter(d => /dano da wand|mana por tiro/.test(d.id)).length;
+    assert(tiro(baixo) === 0, 'no nível 8 o tiro e a mana do tiro não entram');
+    assert(tiro(alto) === 2, 'no nível 70 entram');
+    assert(baixo.detalhe.some(d => d.id === 'magiclevelpoints' && d.pt > 0), 'o +1 de nível mágico continua valendo');
 });

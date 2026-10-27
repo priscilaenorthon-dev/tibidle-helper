@@ -526,7 +526,12 @@ t('perfis incompletos → nenhum profiles_set (APLICAR NOS 4 de ponta a ponta)',
         battleConfigs: { PALADIN: { skills: ['Ethereal Spear'], heals: [{ name: 'Health Potion', percent: 45 }] } } } });
     await aplicar(20, ws, false);
     const ps = ws.enviados('profiles_set').slice(1);
-    igual(ps.map(p => p.data.vocation).sort(), ['DRUID', 'KNIGHT'], 'profiles_set para vocação sem perfil real: ' + ps.map(p => p.data.vocation));
+    /* 2.32.1 — o welcome VIU os perfis e o Paladino não tem preset no servidor (conta nova): esqueleto com a barra dele, nada a apagar */
+    igual(ps.map(p => p.data.vocation).sort(), ['DRUID', 'KNIGHT', 'PALADIN'], 'profiles_set esperado para K, D e o Paladino sem preset: ' + ps.map(p => p.data.vocation));
+    const pa = ps.find(p => p.data.vocation === 'PALADIN').data.profiles;
+    assert.strictEqual(pa.list.length, 4); assert.strictEqual(pa.active, 0);
+    igual(pa.list[0].config.heals, [{ name: 'Health Potion', percent: 45 }], 'a cura do Paladino (battleConfigs) tem que ir junto');
+    assert(pa.list.slice(1).every(x => x.config === null), 'os outros 3 presets do esqueleto ficam vazios');
     const k = ps.find(p => p.data.vocation === 'KNIGHT').data.profiles;
     assert.strictEqual(k.list.length, 4); assert.strictEqual(k.active, 2);
     igual(k.list[0], perfilK.list[0], 'preset que não é o ativo foi alterado');
@@ -537,7 +542,6 @@ t('perfis incompletos → nenhum profiles_set (APLICAR NOS 4 de ponta a ponta)',
     assert.strictEqual(dr.list[0].extra, 'fica', 'campo do preset que o helper não conhece sumiu');
     igual(dr.list[0].config.manaPotion, { name: 'Mana Potion', percent: 50 });
     assert.strictEqual(ws.enviados('update_battle_config').length, 0, 'na cidade não sai update_battle_config');
-    assert(/PALADIN: .*o perfil de PALADIN não veio do servidor/.test(logTxt(W)), 'pular o Paladino tem que ir para o Log:\n' + logTxt(W));
     assert(/SORCERER: .*sem a configuração atual/.test(logTxt(W)), 'Feiticeiro sem config tem que abortar com log');
     // 3) caçando: Paladino (sem perfil real) recebe só update_battle_config; o eco não cria esqueleto
     ws.emitir({ type: 'hunt_started', data: { huntId: 34, state: { party: party4() } } });
@@ -545,12 +549,11 @@ t('perfis incompletos → nenhum profiles_set (APLICAR NOS 4 de ponta a ponta)',
     const antesPs = ws.enviados('profiles_set').length;
     await aplicar(30, ws, true);
     const novos = ws.enviados('profiles_set').slice(antesPs).map(p => p.data.vocation).sort();
-    igual(novos, ['DRUID', 'KNIGHT']);
+    igual(novos, ['DRUID', 'KNIGHT', 'PALADIN']);
     const ubc = ws.enviados('update_battle_config').map(p => p.data.who).sort();
     igual(ubc, [0, 1, 3], 'update_battle_config esperado para K, P e D (who 0,1,3): ' + ubc);
     ws.emitir(frame(undefined, { }));
     ws.emitir({ type: 'frame', data: { state: { party: party4() }, events: [{ kind: 'update_battle_config', who: 1, config: { skills: ['Divine Missile'] } }] } });
-    assert(!W.H.estadoWS().perfisReais.includes('PALADIN'), 'o eco criou um perfil-esqueleto do Paladino');
     igual(W.H.configAtiva('PALADIN').skills, ['Divine Missile'], 'o eco deveria atualizar a config de batalha');
 });
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.32.0
+// @version      2.32.3
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.32.0';
+    const VERSAO = '2.32.3';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -4174,7 +4174,12 @@
      * profiles_set de esqueleto para os outros três. Real = a vocação veio
      * num welcome/resume ou num profiles_set do próprio cliente (que manda o
      * perfil inteiro). */
-    const perfilReal = (v) => !!(ESTADO_WS.profiles && ESTADO_WS.profiles[v] && typeof ESTADO_WS.profiles[v] === 'object' && Array.isArray(ESTADO_WS.profiles[v].list));
+    /* v2.32.1 — CONTA NOVA (XundaBr, nível 8, 27/10): o welcome veio com `profiles` sem nenhuma vocação — ninguém salvou preset
+     * ainda; a barra de cada um mora só em battleConfigs. Aí o perfil "real" é o esqueleto de 4 presets vazios (o mesmo que o
+     * cliente monta) e o profiles_set não apaga nada. Antes o APLICAR na cidade recusava os 4 ("perfil não veio do servidor").
+     * Vale só com o welcome/resume visto (perfisDoServidor): helper instalado com o jogo aberto continua bloqueado. */
+    const perfilReal = (v) => !!(ESTADO_WS.profiles && ESTADO_WS.profiles[v] && typeof ESTADO_WS.profiles[v] === 'object' && Array.isArray(ESTADO_WS.profiles[v].list))
+        || !!(ESTADO_WS.perfisDoServidor && Array.isArray(ESTADO_WS.semPresetNoServidor) && ESTADO_WS.semPresetNoServidor.includes(v));
     function perfilDaVoc(v) { // mesmo preenchimento que o cliente faz (4 perfis)
         const p = ESTADO_WS.profiles && ESTADO_WS.profiles[v];
         const base = p ? clonar(p) : { active: 0, list: [] };
@@ -4188,6 +4193,18 @@
         const c = p.list[p.active] && p.list[p.active].config;
         if (c) return c;
         return (ESTADO_WS.battleConfigs && ESTADO_WS.battleConfigs[v]) || null;
+    }
+    /* v2.32.1 — foto dos perfis para devolver depois (Scan, bestiário, Discord). Vocação sem preset no servidor (conta nova) entra
+     * como o esqueleto com a barra de agora (battleConfigs) no preset ativo — senão a restauração não tinha o que devolver. */
+    function fotoPerfis() {
+        if (!ESTADO_WS.profiles) return null;
+        const f = clonar(ESTADO_WS.profiles);
+        for (const v of VOCS) {
+            if (f[v] && Array.isArray(f[v].list) || !perfilReal(v)) continue;
+            const c = configAtiva(v); if (!c) continue;
+            const p = perfilDaVoc(v); p.list[p.active] = Object.assign({}, p.list[p.active], { config: normalizarConfig(c) }); f[v] = p;
+        }
+        return f;
     }
     function normalizarConfig(c) { // = e3() do cliente
         c = c || {};
@@ -4305,7 +4322,7 @@
         /* foto do perfil dos 4 ANTES do Discord: o botão "voltar ao que eu tinha" devolve tudo (dono, 19/10: "depois volte para onde
          * parou com as magias que eu já tinha deixado"). Só a primeira aplicação de uma sequência tira a foto. */
         /* no Scan, quem guarda e devolve a foto é o próprio Scan (v2.28.3) */
-        if (!SCAN.ativo && !SCAN.ocupado && !ler('dc_foto', null) && ESTADO_WS.profiles) guardar('dc_foto', { t: Date.now(), hunt: hunt.title, setup: s.titulo, profiles: clonar(ESTADO_WS.profiles) });
+        if (!SCAN.ativo && !SCAN.ocupado && !ler('dc_foto', null) && ESTADO_WS.profiles) guardar('dc_foto', { t: Date.now(), hunt: hunt.title, setup: s.titulo, profiles: fotoPerfis() });
         /* v2.29.7 — setup com poção do mapa: guarda as SUAS poções antes (uma vez); o próximo setup sem a marca as devolve */
         const guardada = ler('dc_pocao_dono', null), ctx = dcCtx();
         if (s.pocaoDoMapa && !guardada) {
@@ -4945,7 +4962,11 @@
                 if (meta && meta.bossCooldowns && typeof meta.bossCooldowns === 'object') ESTADO_WS.bossCooldowns = clonar(meta.bossCooldowns);
                 if (d.offline && typeof d.offline === 'object' && Number(d.offline.elapsedMs) > 0) ESTADO_WS.offline = { t: Date.now(), elapsedMs: Number(d.offline.elapsedMs) || 0, xp: Number(d.offline.xp) || 0, kills: Number(d.offline.killsTotal) || 0, lootGold: Number(d.offline.lootGold) || 0 };
             } catch (e) { falhou('welcome (meta)', e); }
-            if (d.profiles && typeof d.profiles === 'object') { ESTADO_WS.profiles = clonar(d.profiles); ESTADO_WS.perfisDoServidor = true; }
+            if (d.profiles && typeof d.profiles === 'object') {
+                ESTADO_WS.profiles = clonar(d.profiles); ESTADO_WS.perfisDoServidor = true;
+                /* v2.32.1 — vocação que o servidor mandou SEM preset (conta nova): não há o que apagar */
+                ESTADO_WS.semPresetNoServidor = VOCS.filter(v => !(d.profiles[v] && typeof d.profiles[v] === 'object' && Array.isArray(d.profiles[v].list)));
+            }
             if (d.battleConfigs && typeof d.battleConfigs === 'object') ESTADO_WS.battleConfigs = clonar(d.battleConfigs);
             if (Array.isArray(d.roster) && d.roster.length) ESTADO_WS.roster = vocsPorPosicao(d.roster);
             if (Array.isArray(d.roster) && d.roster.length && d.roster.some(r => r && r.equipment)) {
@@ -5860,7 +5881,7 @@
         /* v2.11 — FOTO do jogo antes de mexer: mapa, lure e perfis por vocação */
         const cacando = frameFresco() && ESTADO_WS.huntId != null;
         const foto = { t: Date.now(), huntId: cacando ? ESTADO_WS.huntId : null, lureTier: cacando ? ESTADO_WS.frame.lureTier : null,
-                       profiles: ESTADO_WS.profiles ? clonar(ESTADO_WS.profiles) : null };
+                       profiles: fotoPerfis() };
         Object.assign(SCAN, { ativo: true, fila, idx: -1, huntId: null, fase: 'proximo', t0: 0, base: null, vivo: null, capMin: 100, erro: null, ocupado: false, iniciadoEm: Date.now(),
                               foto, rodada: Date.now(), restaurando: false, encerrou: null, stopEnviado: 0, endedN: WS.tipos.ended || 0, over: over || null });
         const hf = foto.huntId != null ? (CAT.hunts || []).find(h => h.id === foto.huntId) : null;
@@ -7053,7 +7074,12 @@
          * a mana é curta) em % do dano da party, menos a mana do tiro ao preço
          * da mana daquele personagem (a mesma conta da regen. de mana). */
         const R = partyDoCtx(ctx);
-        if ((a.weaponType === 'wand' || a.wandType) && a.fromDamage != null && voc !== 'KNIGHT' && voc !== 'PALADIN') {
+        /* v2.32.2 — WAND/ROD ACIMA DO NÍVEL NÃO ATIRA (medido em 27/10, XundaBr nível 8, caçada 261: 115 s, Cavaleiro e Paladino
+         * com tiros básicos, Feiticeiro e Druida com ZERO — wand of everblazing e muck rod são de nível 65; mana a 99 %). O resto da
+         * peça (o +1 de nível mágico da everblazing, as linhas da forja) continua valendo; só o tiro e a mana dele saem da conta. */
+        const semTiro = Number(a.level) > 0 && ctx && Number(ctx.nivel) > 0 && Number(a.level) > Number(ctx.nivel);
+        if ((a.weaponType === 'wand' || a.wandType) && a.fromDamage != null && voc !== 'KNIGHT' && voc !== 'PALADIN' && semTiro) add('tiro da wand: pede nível ' + a.level, 0, 0);
+        else if ((a.weaponType === 'wand' || a.wandType) && a.fromDamage != null && voc !== 'KNIGHT' && voc !== 'PALADIN') {
             const medio = (Number(a.fromDamage) + Number(a.toDamage)) / 2, tiros = R.tiroS[voc] || 0.14;
             const el = WAND_ELEM[a.wandType] || null;
             const nota = el && ctx && ctx.notas && ctx.notas[el] != null ? ctx.notas[el] / 100 : 1;
@@ -7488,6 +7514,13 @@
      * Paladino nem a 2,5 tirava (+0,8). Desde a 2.11.11 peça vestida não troca de personagem — a cadeia de 3 trocas
      * que motivou o custo não existe mais. Fica só um desempate: qualquer ganho real de encaixe vira sugestão. */
     const EQUIP_FICAR_PT = 0.1;
+    /* v2.32.2 — ESPAÇO VAZIO ACEITA QUALQUER PEÇA QUE RENDE (XundaBr, nível 8, 27/10: Paladino, Feiticeiro e Druida ficaram sem
+     * colar com 18 colares no depósito). O mínimo de 1 pt (empate técnico) existe para não trocar uma peça boa por outra quase
+     * igual; com o espaço vazio não há o que perder — no nível 8 o melhor colar de cada um rendia 0,4–0,8 pt e nunca entrava.
+     * Peça vestida que vale 0 pt conta como espaço vazio: o bow comum do Paladino (0 pt) não saía pelo icicle bow do depósito
+     * (ataque +1, acerto +4 %, dano mágico 1,8 %: +0,64 pt). */
+    const EQUIP_GANHO_TROCA = 1;
+    const trocaVale = (x) => !!(x && x.melhor && (!x.atual || x.melhor.iid !== x.atual.iid) && (x.atual && x.atualPt > 0 ? x.ganho >= EQUIP_GANHO_TROCA : x.ganho > 0));
     /* v2.28.4 — O QUE VOCÊ ESCOLHEU FICA (dono, 20/10: "compro em Melhorias e o Equip manda equipar outra coisa; toda hora que entro e
      * saio de um mapa ele pede outro item guardado"). Peça comprada na aba Melhorias ou equipada pelo EQUIPAR (ctx.escolhas = iids)
      * vale +2 pt na escolha do espaço: só sai por uma peça claramente melhor, nunca por uma diferença de régua. A tela mostra a nota
@@ -8917,16 +8950,29 @@
             KNIGHT: { ataque: [['Fierce Berserk', 3], ['Berserk', 2], ['Lesser Front Sweep', 1], ['Brutal Strike', 1]], defesa: [['Intense Wound Cleansing', 30], ['Wound Cleansing', 85], ['Intense Recovery', 90]], suporte: ['Protector'] },
             PALADIN: { ataque: [['Divine Caldera', 2], ['Strong Ethereal Spear', 1], ['thunderstorm rune', 2], ['Divine Missile', 1]], defesa: [['Salvation', 50], ['Divine Healing', 75]], suporte: ['Protect Party'] },
             SORCERER: { ataque: [['Energy Wave', 2], ['Ultimate Energy Strike', 1], ['Strong Energy Strike', 1], ['thunderstorm rune', 2]], defesa: [['Ultimate Healing', 60], ['Intense Healing', 80]], suporte: ['Enchant Party'] },
-            DRUID: { ataque: [['thunderstorm rune', 2], ['Energy Strike', 1]], defesa: [['Ultimate Healing', 65], ['Mass Healing', 60], ['Heal Friend', 55]], suporte: ['Heal Party'] } } }
+            DRUID: { ataque: [['thunderstorm rune', 2], ['Energy Strike', 1]], defesa: [['Ultimate Healing', 65], ['Mass Healing', 60], ['Heal Friend', 55]], suporte: ['Heal Party'] } } },
+        /* @@EVENTO (2.32.3) — a mesma caçada na faixa BAIXA (hunt 261, Elite Pumpkin King): XundaBr nível 20, 27/10. A 263 pede magias
+         * de nível 50+; o setup é por id (2.32.1), então a 261 ficava sem nenhum. Montado pelas fichas do /bestiary/creature e do
+         * /bosses/select; magia acima do nível cai para a irmã menor (dcConfigDe). Apagar junto com o evento. */
+        { id: 'estacao-halloween-baixa', hunt: 'Caçada da Estação (Halloween)', huntId: 261, autor: 'Northon (fichas do jogo, nível 20)', data: '27/10', titulo: 'Northon - Caçada da Estação (Halloween, faixa baixa)',
+          lure: '', skills: '', nota: '', nivel: 'faixa baixa (até ~nível 150)',
+          obs: 'Nenhum post no Discord (evento novo). Monstros desta faixa: Witch, Ghost, Pumpkin Skeleton, Ghoul, Gourd Zombie e Pumpkin Banshee — nenhum é imune a nada; Pumpkin Skeleton, Ghoul e Pumpkin Banshee tomam +25 % de sagrado. Então vale área em tudo: Cavaleiro Lesser Front Sweep (6 de mana) e Brutal Strike; magos as duas ondas de 12 casas alternando (Fire Wave/Scorch no Feiticeiro, Ice Wave/Chill Out no Druida) e um golpe para o último monstro; Paladino só tem a Lesser Ethereal Spear até o nível 20. Elite Pumpkin King (1.000 hp): imune a morte, toma +5 % de sagrado. A chave dele cai POR TEMPO de caçada. Druida: a cura própria na frente e Heal Friend para o Cavaleiro. As poções continuam as suas.',
+          chars: {
+            KNIGHT: { ataque: [['Lesser Front Sweep', 2], ['Brutal Strike', 1]], defesa: [['Wound Cleansing', 60]] },
+            PALADIN: { ataque: [['Lesser Ethereal Spear', 1]], defesa: [['Light Healing', 60]] },
+            SORCERER: { ataque: [['Fire Wave', 2], ['Scorch', 2], ['Energy Strike', 1]], defesa: [['Light Healing', 60]] },
+            DRUID: { ataque: [['Ice Wave', 2], ['Chill Out', 2], ['Ice Strike', 1]], defesa: [['Light Healing', 60], ['Heal Friend', 50]] } } }
     ];
     const DC_VOC_PT = { KNIGHT: 'Cavaleiro', PALADIN: 'Paladino', SORCERER: 'Feiticeiro', DRUID: 'Druida' };
     const DC_VOC_CAT = { KNIGHT: 'knight', PALADIN: 'paladin', SORCERER: 'sorcerer', DRUID: 'druid' };
     const dcNorm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
-    /* setups de uma hunt: pelo id do catálogo ou pelo nome */
+    /* setups de uma hunt: pelo id do catálogo; pelo nome só quando um dos dois não tem id.
+     * v2.32.1 — a caçada do Halloween tem o MESMO título em todas as faixas (261 no nível 8, 263 no 150+): pelo nome, a conta de
+     * nível 8 recebia a barra do nível 167 (Fierce Berserk, Divine Caldera…), que ela não tem. */
     function dcSetupsDaHunt(hunt, lista) {
         if (!hunt) return [];
         const nome = dcNorm(hunt.title || hunt.name);
-        return (lista || SETUPS_DISCORD).filter(s => (s.huntId != null && hunt.id != null && Number(s.huntId) === Number(hunt.id)) || (nome && dcNorm(s.hunt) === nome));
+        return (lista || SETUPS_DISCORD).filter(s => (s.huntId != null && hunt.id != null) ? Number(s.huntId) === Number(hunt.id) : !!(nome && dcNorm(s.hunt) === nome));
     }
     /* o battle config de uma vocação a partir do setup: parte da config ATUAL (o que o post não diz fica), valida cada magia no catálogo
      * (nome, vocação e nível) e devolve {cfg, avisos}. cfg null = o setup não tem esta vocação. */
@@ -10512,11 +10558,11 @@
     const SLOT_PT = { weapon: 'arma', hand: 'arma', shield: 'escudo', head: 'elmo', helmet: 'elmo', armor: 'armadura', legs: 'calça', boots: 'bota', feet: 'bota', necklace: 'colar', ring: 'anel', ammo: 'munição' };
     const slotPt = (s) => SLOT_PT[s] || s;
     /* 28/09: com 0,5 ele sugeria trocar um bonelord shield por outro quase igual (+0,55). */
-    const GANHO_MIN = 1; // abaixo disso é empate técnico: não vale a troca
+    const GANHO_MIN = EQUIP_GANHO_TROCA; // abaixo disso é empate técnico: não vale a troca (espaço vazio: qualquer ganho — trocaVale)
     /* v2.14.14 — o contador da aba, o Log e as linhas usam a MESMA regra: troca com ganho real, escudo que sai por arma de
      * 2 mãos, ou peça que vale menos que nada no mapa (ao vivo, 06/10: a snakebite rod do Druida em Petrified Hollow, terra
      * imune, só gasta mana — a aba dizia "Dru 1" e não mostrava linha nenhuma). */
-    const eqTroca = (x) => !!(x && x.ganho >= GANHO_MIN && x.melhor && (!x.atual || x.melhor.iid !== x.atual.iid));
+    const eqTroca = trocaVale;
     const eqTirar = (x) => !!(x && !x.melhor && x.atual && x.ganho < 0); // arma de 2 mãos venceu: o escudo sai
     const eqSoGasta = (x) => !!(x && !x.melhor && x.atual && x.ganho >= GANHO_MIN); // a peça vale menos que o espaço vazio aqui
     const eqMexer = (x) => eqTroca(x) || eqTirar(x) || eqSoGasta(x);
@@ -10802,7 +10848,7 @@
             const x = R.porVoc[v] && R.porVoc[v][s]; if (!x) return;
             const k = v + '|' + s; if (chaves.has(k)) return;
             if (!dependencia && EQUIP.pular.has(k)) return; // v2.16.4 — vetada pelo dono ("pular" na linha)
-            if (x.melhor && (!x.atual || x.melhor.iid !== x.atual.iid) && (dependencia || x.ganho >= GANHO_MIN)) {
+            if (x.melhor && (!x.atual || x.melhor.iid !== x.atual.iid) && (dependencia || trocaVale(x))) {
                 chaves.add(k); fila.push({ v, s, peca: x.melhor, dependencia: !!dependencia });
                 if (x.melhor.origem === 'corpo' && x.melhor.dono && x.melhor.dono !== v) addTroca(x.melhor.dono, x.melhor.slot, true);
             } else if (!x.melhor && x.atual && x.ganho < 0) tirar.push({ v, s, peca: x.atual });
@@ -11829,8 +11875,9 @@
         if (ch && ch.levelProgress) PROG.nivelProg = { xpFalta: pgXpFalta(ch.levelProgress), nivel: pgNum(ch.level), t: agora };
         const ouro = pgNum(st.balance), trav = pgNum(st.balanceLocked);
         const oz = st.cap ? pgNum(st.cap.used) : null, tot = st.cap ? pgNum(st.cap.total) : null;
-        /* ouro que paga suprimento = normal + travado (o gasto sai primeiro do travado — wiki /ouro-e-ouro-travado) */
-        PROG.estado = { t: agora, ouro: ouro != null ? ouro + (trav || 0) : null, trav, oz, tot };
+        /* ouro que paga suprimento = normal + travado (o gasto sai primeiro do travado — wiki /ouro-e-ouro-travado).
+         * v2.32.1 — `balance` JÁ É o total (o cliente mostra balance − balanceLocked como ouro normal); somar o travado contava ele 2× */
+        PROG.estado = { t: agora, ouro, trav, oz, tot };
         const ult = PROG.amostras[PROG.amostras.length - 1];
         if ((ouro != null || oz != null) && (!ult || agora - ult.t >= PG_AMOSTRA_MS)) {
             PROG.amostras.push({ t: agora, ouro: PROG.estado.ouro, oz, tot });
@@ -11970,7 +12017,7 @@
         if (ESTADO_WS.boss) { avisar('progresso', 'bestiário: boss em andamento — termina o boss antes', 'erro'); return; }
         const cacando = frameFresco() && ESTADO_WS.huntId != null;
         BEST.foto = { t: Date.now(), huntId: cacando ? ESTADO_WS.huntId : null, lureTier: cacando ? ESTADO_WS.frame.lureTier : null,
-                      profiles: ESTADO_WS.profiles ? clonar(ESTADO_WS.profiles) : null };
+                      profiles: fotoPerfis() };
         Object.assign(BEST, { ativo: true, fila, idx: 0, entrouEm: Date.now(), falhas: 0 });
         bestSalvar();
         const dest = bestDestino();
@@ -15293,9 +15340,11 @@
     const ML = { res: null, t: 0, lendo: false, progresso: '', erro: null, comprando: null, compradas: new Set(), nCands: 0, botoes: [], chave: null };
     const ML_CATS = ['armas', 'escudos', 'elmos', 'armaduras', 'pernas', 'botas', 'amuletos', 'aneis'];
     const mlCfg = () => Object.assign({ verPerdas: false, soCabe: false }, ler('melhorias_cfg', {}) || {});
-    /* ouro NORMAL (o Mercado não aceita o travado — wiki /mercado): a carteira do jogo; reserva, o frame */
+    /* ouro NORMAL (o Mercado não aceita o travado — wiki /mercado): a carteira do jogo; reserva, o frame.
+     * v2.32.1 — wallet.gold é o TOTAL (o HUD do jogo mostra gold − goldLocked). Conta nova (XundaBr, 27/10): 38.400 de total,
+     * 37.700 travados → 700 de normal, e o helper achava que havia 38.400 para gastar no Mercado. */
     function mlOuroNormal() {
-        try { const sh = lerShellFibra(); if (sh && sh.wallet && Number.isFinite(Number(sh.wallet.gold))) return Number(sh.wallet.gold); } catch { }
+        try { const sh = lerShellFibra(); if (sh && sh.wallet && Number.isFinite(Number(sh.wallet.gold))) return Math.max(0, Number(sh.wallet.gold) - (Number(sh.wallet.goldLocked) || 0)); } catch { }
         if (PROG.estado && PROG.estado.ouro != null && Date.now() - PROG.estado.t < 10 * 60000) return PROG.estado.ouro - (PROG.estado.trav || 0);
         return null;
     }
@@ -15623,7 +15672,8 @@
         const peca = l.peca, rel = { peca: peca.nome, iid: peca.iid, voc: l.voc, estrategia: e.nome, t0: Date.now(), antes: normForja(peca.forja), depois: null, passos: [], gasto: 0, fim: null };
         let inst = normForja(peca.forja), estoque = fjEstoqueAtual();
         const sh0 = lerShellFibra(), w0 = sh0 && sh0.wallet ? sh0.wallet : null;
-        let ouro = w0 && Number.isFinite(Number(w0.gold)) ? Number(w0.gold) : (FJ.ouro != null ? FJ.ouro : null), travado = w0 && Number.isFinite(Number(w0.goldLocked)) ? Number(w0.goldLocked) : 0;
+        /* v2.32.1 — gold é o total (normal + travado): ouro = a parte normal, travado = a travada, ouro + travado = o total */
+        let travado = w0 && Number.isFinite(Number(w0.goldLocked)) ? Number(w0.goldLocked) : 0, ouro = w0 && Number.isFinite(Number(w0.gold)) ? Math.max(0, Number(w0.gold) - travado) : (FJ.ouro != null ? FJ.ouro : null);
         const maxT = Math.max(3, Math.ceil(((e.gemas90 || e.gemasMedio || 4)) * 1.5));
         const ouroCriar = Object.fromEntries(FJ_GEMAS.map(g => [g, FJ.custos && FJ.custos[g] ? FJ.custos[g].ouroCriar : FORJA_GEMA_OURO[g]]));
         log(`forja: FORJANDO ${peca.nome} (${VOC_ROTULO[l.voc] || l.voc}) — ${e.nome}; orçamento ${fjK(FJ.orcamento)}, até ${maxT} tentativas`, 'info');
@@ -15643,7 +15693,7 @@
                 if (r.erro) { rel.fim = { acao: 'parar', motivo: 'o jogo recusou (' + mkErroTexto(r.erro) + ')' + (r.erro === 'too_far' ? ' — abra NAVEGAÇÃO › Forja no jogo para ir até o Uzgod' : '') }; rel.passos.push({ acao: px.acao, gema: px.gema, erro: r.erro, motivo: px.motivo }); break; }
                 const d = r.data || {};
                 if (d.instancia && d.instancia.forja) inst = normForja(d.instancia.forja);
-                if (d.gold != null) { const novo = Number(d.gold) + (Number(d.goldLocked) || 0); if (ouro != null) rel.gasto += Math.max(0, ouro + travado - novo); ouro = Number(d.gold); travado = Number(d.goldLocked) || 0; }
+                if (d.gold != null) { const novo = Number(d.gold), trv = Number(d.goldLocked) || 0; if (ouro != null) rel.gasto += Math.max(0, ouro + travado - novo); ouro = Math.max(0, novo - trv); travado = trv; }
                 estoque = fjEstoque(d.bag || (mkBagAtual() || {}).bag, (ESTADO_WS.depot && ESTADO_WS.depot.entries) || []);
                 const res = px.acao === 'craft' ? `+1 ${FJ_GEMA_PT[px.gema]}` : px.acao === 'refino' ? (d.ok ? `✓ +${inst.refino}` : `✗ ficou +${inst.refino}`) + (d.garantiaConsumida ? ' (Garantia gasta)' : '')
                     : px.acao === 'raridade' ? (d.ok ? `✓ ${RAR_PT[inst.raridade]}` : `✗ ficou ${RAR_PT[inst.raridade]}`)
@@ -15838,19 +15888,41 @@
     const evHuntConhecida = (id) => !!(EV.acesso && EV.acesso.huntId != null && EV.acesso.huntId === id);
     const evSaldo = () => (EV.loja ? EV.loja : null);
     /* 2.32.0 — a caçada da estação para a Magia: as fichas do bestiário são buscadas uma vez (4 pedidos) e a tela redesenha quando chegam */
-    const _evBest = { fichas: null, pedindo: false };
-    function evBuscarFichas() {
-        if (_evBest.fichas || _evBest.pedindo) return;
+    const _evBest = { fichas: null, pedindo: false, chave: null };
+    /* v2.32.1 — A CAÇADA DA ESTAÇÃO É POR FAIXA DE NÍVEL (conta nova XundaBr, nível 8: hunt 261, Elite Pumpkin King; a conta de nível
+     * 167 cai na 263, Lantern Reaper). Os 4 nomes fixos (EV_MONSTROS) são só da 263; nas outras os nomes vêm das fichas do acesso ou
+     * são aprendidos dos monstros vivos no frame (evAprenderMonstros), guardados por caçada em ev_monstros. Sem nome nenhum, sem hunt. */
+    function evNomesMonstros(id) {
+        if (EV.acesso && Array.isArray(EV.acesso.fichas) && EV.acesso.fichas.length) return EV.acesso.fichas.map(f => f && f.name).filter(Boolean);
+        const g = (ler('ev_monstros', {}) || {})[id];
+        if (Array.isArray(g) && g.length) return g;
+        return Number(id) === 263 ? EV_MONSTROS : null;
+    }
+    function evAprenderMonstros(id, ativos) {
+        if (id == null || !Array.isArray(ativos) || !ativos.length) return;
+        const g = ler('ev_monstros', {}) || {}, l = Array.isArray(g[id]) ? g[id] : [];
+        const novos = [...new Set(ativos.map(m => m && (m.name || m.nome)).filter(n => typeof n === 'string' && n && !l.includes(n)))];
+        if (!novos.length) return;
+        g[id] = l.concat(novos); guardar('ev_monstros', g);
+        _evBest.fichas = null; _evBest.chave = null; // refaz as fichas com o nome novo
+        log(`evento: caçada ${id} — monstro(s) novo(s) visto(s): ${novos.join(', ')}`, 'info');
+    }
+    function evBuscarFichas(id) {
+        const nomes = evNomesMonstros(id);
+        if (!nomes) return;
+        const chave = id + '|' + nomes.join(',');
+        if ((_evBest.fichas && _evBest.chave === chave) || _evBest.pedindo) return;
         _evBest.pedindo = true;
-        const nomes = EV.acesso && Array.isArray(EV.acesso.fichas) && EV.acesso.fichas.length ? EV.acesso.fichas.map(f => f && f.name).filter(Boolean) : EV_MONSTROS;
         Promise.all(nomes.map(n => buscarJSON('/bestiary/creature?name=' + encodeURIComponent(n)).catch(e => { falhou('evento (ficha ' + n + ')', e); return null; })))
-            .then(ls => { _evBest.fichas = ls.filter(Boolean); if (ABA === 'magia' || ABA === 'evento') renderizar(); })
+            .then(ls => { _evBest.fichas = ls.filter(Boolean); _evBest.chave = chave; if (ABA === 'magia' || ABA === 'evento') renderizar(); })
             .finally(() => { _evBest.pedindo = false; });
     }
     function evHunt() {
         const id = EV.acesso && EV.acesso.huntId;
         if (id == null) return null;
-        if (!_evBest.fichas) { evBuscarFichas(); return null; }
+        const nomes = evNomesMonstros(id);
+        if (!nomes) return null;
+        if (!_evBest.fichas || _evBest.chave !== id + '|' + nomes.join(',')) { evBuscarFichas(id); return null; }
         const elite = (CAT.bosses || []).find(b => b && Number(b.originHuntId) === Number(id)) || null;
         return evMontarHunt(id, _evBest.fichas, EV.acesso.fichas, elite);
     }
@@ -15900,7 +15972,10 @@
         else if (t === 'error' && EV.ocupado && d.code && EV_ERROS[d.code]) { EV.erro = evErroTexto(d.code); mudou = true; }
         /* 2.32.0 — vigia da chave do Elite (dono, 27/10: "tem que esperar a chave desse boss cair para eu ir fazer ele"): o keyBag vem em
          * todo frame {nome: n}; quando a contagem SOBE, avisa no Log. Não entra no boss sozinho. */
-        else if (t === 'frame' && d.state && d.state.keyBag && typeof d.state.keyBag === 'object') {
+        if (t === 'frame' && d.state && EV.acesso && EV.acesso.huntId != null && ESTADO_WS.huntId === EV.acesso.huntId) {
+            try { evAprenderMonstros(EV.acesso.huntId, d.state.active); } catch (e) { falhou('evento (monstros)', e); }
+        }
+        if (t === 'frame' && d.state && d.state.keyBag && typeof d.state.keyBag === 'object') {
             const nome = evNomeChave();
             if (nome) {
                 const n = Object.keys(d.state.keyBag).filter(k => k.toLowerCase() === nome.toLowerCase()).reduce((x, k) => x + (Number(d.state.keyBag[k]) || 0), 0);
@@ -15995,7 +16070,7 @@
             else if (rkAqui) c += `<div>próxima chave em <b>${Math.ceil(rk.faltaMs / 60000)} min</b> <span class="tb-mut">(1 a cada ${Math.round(rk.cadaMs / 60000)} min de caçada)</span></div>`;
             else c += `<div>a chave <b>${escHtml(nomeChave || '?')}</b> cai sozinha com o tempo dentro da caçada (~1 por hora).</div>`;
             if (el) c += `<div class="tb-eq-nota">Elite <b>${escHtml(el.name)}</b> · ${mkFmt(el.health)} hp${fraco(el.elements) ? ' · fraco a <b>' + escHtml(fraco(el.elements)) + '</b>' : ''}${imune(el.elements) ? ' · imune a ' + escHtml(imune(el.elements)) : ''}</div>`;
-            c += `<div class="tb-mut tb-eq-nota"><b>As abóboras saem só da caixa do Elite</b>${el && el.boxItem ? ' (' + escHtml(el.boxItem.name) + ')' : ''}. Matar mais rápido dá xp, não abóbora. Barra: Magia › Discord › <i>${escHtml(EV_HUNT_TITULO)}</i> na caçada; Magia › Boss › <i>${escHtml(el ? el.name : 'o Elite')}</i> no Elite. Quando a chave cair, o Log avisa.</div>`;
+            c += `<div class="tb-mut tb-eq-nota"><b>As abóboras saem só da caixa do Elite</b>${el && el.boxItem ? ' (' + escHtml(el.boxItem.name) + ')' : ''}. Matar mais rápido dá xp, não abóbora. Barra: ${a && a.huntId != null && dcSetupsDaHunt({ id: a.huntId, title: EV_HUNT_TITULO }).length ? `Magia › Discord › <i>${escHtml(EV_HUNT_TITULO)}</i>` : 'Magia › Em área (sem setup da comunidade para esta faixa; os monstros entram na conta depois da 1ª onda)'} na caçada; Magia › Boss › <i>${escHtml(el ? el.name : 'o Elite')}</i> no Elite. Quando a chave cair, o Log avisa.</div>`;
             const hEst = evHunt();
             if (hEst) c += aj('ev-monstros', hEst.monsters.map(m => `<b>${escHtml(m.name)}</b> ${mkFmt(m.health)} hp${fraco(m.elements) ? ' · fraco a ' + escHtml(fraco(m.elements)) : ''}${imune(m.elements) ? ' · imune a ' + escHtml(imune(m.elements)) : ''}`).join('<br>'), 'monstros da caçada');
             h += passo(2, 'Chave e Elite', c);

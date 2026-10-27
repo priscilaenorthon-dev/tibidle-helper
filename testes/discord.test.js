@@ -48,6 +48,11 @@ t('dcSetupsDaHunt: acha pelo id da hunt ou pelo nome (sem caixa); sem nada → l
     assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 999, title: 'Outra' }, lista), []);
     assert.deepStrictEqual(M.dcSetupsDaHunt(null, lista), []);
 });
+t('dcSetupsDaHunt (2.32.1): com id dos dois lados vale só o id — a caçada do Halloween de nível 8 (261) não pega o setup da 263', () => {
+    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 263, title: 'Caçada da Estação (Halloween)' }).map(s => s.id), ['estacao-halloween']);
+    /* 2.32.3 — a 261 tem o seu (faixa baixa) e nunca o da 263 */
+    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 261, title: 'Caçada da Estação (Halloween)' }).map(s => s.id), ['estacao-halloween-baixa']);
+});
 t('dcConfigDe: o que o setup não diz fica como está na config atual (cura e suporte do Knight); ataque entra como o post; a poção de mana é a sua (2.29.4)', () => {
     const r = M.dcConfigDe(SETUP, 'KNIGHT', ATUAL, CTX);
     assert.deepStrictEqual(r.cfg.skills, ['Berserk', 'Lesser Front Sweep', null, null]);

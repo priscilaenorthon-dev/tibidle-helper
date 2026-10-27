@@ -6294,3 +6294,64 @@ ainda dobra no Elite). Chat global: jogadores reclamando de ~−440k nas 3 h —
 - Para tirar o evento depois: além dos pontos @@EVENTO da 2.30.0, apagar `huntDaEstacao` (e as 3 chamadas marcadas), o setup
   `estacao-halloween` e a 263 da fixture.
 Testes: 453.
+
+## 2.32.1 — conta nova de nível baixo (27/10)
+
+Conta **XundaBr** (criada pelo dono, nível 8 nos 4, treinando skill: corpo a corpo 54, distância 59, ML 42/42; Premium 29 dias;
+ilhas: nenhuma). Conferido ao vivo no Playwright o que o helper faz nessa faixa:
+
+- **Magia:** no nível 8 só abrem Wolves Den e Wasps Dungeons (a próxima é no 12). O helper monta Econômica/Equilibrado/Área
+  certos com o que existe (Cav Lesser Front Sweep; Pal Lesser Ethereal Spear; Fei Scorch ≥2 > Apprentice's Strike ≥1; Dru Chill
+  Out ≥2 > Apprentice's Strike ≥1). O dano de `/spell-numbers` + o recálculo pelo ML da ficha funcionam.
+- **Defeito 1 — APLICAR na cidade recusava os 4.** O `welcome` de conta que nunca salvou preset traz `profiles` sem nenhuma
+  vocação (a barra mora só em `battleConfigs`). `perfilReal` dava falso e o `profiles_set` era pulado ("perfil não veio do
+  servidor"). Agora, com o welcome visto, vocação sem preset no servidor (`ESTADO_WS.semPresetNoServidor`) conta como real: vai o
+  esqueleto de 4 presets com a barra nova no ativo — o mesmo que o cliente faz, não há o que apagar. Helper instalado com o jogo
+  aberto (sem welcome) continua bloqueado. **Testado ao vivo:** Equilibrado em Wolves Den aplicado na cidade, F5, o welcome
+  devolveu o preset 1 do Druida com Chill Out ≥2 > Apprentice's Strike ≥1. `fotoPerfis()` (Scan, bestiário, "voltar ao que eu
+  tinha" do Discord) inclui essas vocações, senão a restauração não tinha o que devolver.
+- **Defeito 2 — ouro travado contado como normal.** `wallet.gold` e `frame.state.balance` são o TOTAL; o jogo mostra
+  `gold − goldLocked` como ouro normal (lido no cliente: `children:(0,s.ZV)(u-m)`). XundaBr: 38.400 de total, 37.700 travados → 700
+  normais; o Melhorias, as Pechinchas e a compra da Forja achavam 38.400 para gastar no Mercado. `mlOuroNormal` desconta o
+  travado; `PROG.estado.ouro` (plano offline) não soma mais o travado de novo; o FORJAR conta normal + travado = total.
+- **Defeito 3 — caçada do Halloween por faixa.** Nível 8 cai na **caçada 261** (Elite **Pumpkin King**, 1.000 de vida, sagrado
+  +5 %, chave Pumpkin King Key, caixa Pumpkin Fields Box); a 263 (Lantern Reaper) é do 150+. O `acesso_retrato` desta conta não traz
+  `fichas`, e o helper montava a 261 com os monstros fixos da 263 — e o setup Discord da 263 casava pelo **título** (igual nas
+  duas). Agora: `dcSetupsDaHunt` usa só o id quando os dois lados têm id; os monstros fixos valem só para a 263; nas outras faixas o
+  helper aprende os nomes dos monstros vivos no frame dessa caçada (`ev_monstros`, Log avisa) e busca as fichas.
+- Visto e não mexido: o trilho do helper (lugar padrão) fica em cima do medalhão da Loja de Halloween; o Inteligente põe Mana
+  Potion a 30 % no Paladino de 35 de mana; o Radar marca Wolves/Wasps "sem tabela de loot" e risco médio (party nunca caçou).
+Testes: 454.
+
+## 2.32.2 — Equip no nível baixo (27/10, XundaBr)
+
+Dono: "passei os itens que sobravam para o XundaBr e usei a tela de Equip: deixou personagens sem amuleto". Medido ao vivo:
+
+- **Colar não entrava em espaço VAZIO.** A troca exigia ganho ≥ 1 pt (empate técnico); no nível 8 o melhor colar de cada um rende
+  0,4–0,8 pt. Agora `trocaVale`: espaço vazio — ou peça vestida que vale 0 pt (o bow comum do Paladino) — aceita qualquer ganho > 0;
+  trocar uma peça que rende continua pedindo 1 pt. Ao vivo: wolf tooth chain equipado no Paladino, Feiticeiro e Druida; o icicle bow
+  (ataque +1, acerto +4 %, dano mágico 1,8 %) passou a ser sugerido no lugar do bow.
+- **Wand/rod acima do nível NÃO atira.** Caçada 261, 115 s: Cavaleiro e Paladino com tiros básicos, Feiticeiro (wand of
+  everblazing, nível 65) e Druida (muck rod, nível 65) com ZERO tiros, mana a 99 %. `pontuarPeca` tira o tiro e a mana do tiro quando
+  `attrs.level > ctx.nivel`; o +1 de nível mágico de fábrica e as linhas da forja continuam. (Mace do Cavaleiro de nível 75: bate,
+  ~109 por golpe; se é metade do normal não deu para saber.)
+- **Guardian boots × fur boots no Cavaleiro (sem mudança):** guardian = armadura 3 + 2 % físico, nível 70, 0 linha; fur boots do
+  depósito tem regen. de mana 1,7. Na régua da fase 1 a regen. de mana do Cavaleiro vale ≥ 9 pt por 1/s (regra do dono) → fur 18 pt ×
+  guardian 6 pt. Na fase 2 (≥ 110) a guardian volta a ser a bota dele. O dono pôs a guardian à mão; deixei de fora do EQUIPAR (pular).
+- **Visto e não mexido (pede decisão):** com a party MEDIDA no nível 8 (50 de dano/s, mana a 99 %) a regen. de mana do Cavaleiro
+  passa de 100 pt por 1/s (Lesser Front Sweep: 49 de dano por mana ÷ 50/s da party) e a fur boots sai com 178 pt — a mana dele nunca
+  falta, então isso é número inflado. O colar do Cavaleiro (platinum amulet: armadura 2) também segue esperando o dono.
+- Halloween ao vivo na XundaBr: entrada grátis de 3 h já ativa, IR PARA A CAÇADA levou para a 261; ondas de 8 mortas em 1,3 s com
+  11 s de espera (spawn limita).
+Testes: 456.
+
+
+## 2.32.3 — Discord na caçada do Halloween de faixa baixa (27/10, XundaBr nível 20)
+- O modelo Discord não mostrava a Caçada da Estação na XundaBr: a caçada do Halloween é por faixa de nível (nível 8–20 = hunt 261,
+  Elite Pumpkin King; 150+ = 263, Lantern Reaper) e o único setup era o da 263. Desde a 2.32.1 o setup casa só pelo id (de propósito:
+  a barra do nível 167 pede Fierce Berserk, Divine Caldera e runas que o nível 20 não tem), então a 261 ficava sem nenhum.
+- Novo setup `estacao-halloween-baixa` (huntId 261), pelas fichas do /bestiary/creature: Witch, Ghost, Pumpkin Skeleton, Ghoul,
+  Gourd Zombie, Pumpkin Banshee — ninguém imune; três tomam +25 % de sagrado. Cavaleiro Lesser Front Sweep ≥2 + Brutal Strike ≥1;
+  Paladino Lesser Ethereal Spear; Feiticeiro Fire Wave ≥2 / Scorch ≥2 / Energy Strike ≥1; Druida Ice Wave ≥2 / Chill Out ≥2 /
+  Ice Strike ≥1, Light Healing 60 e Heal Friend 50. Poções ficam as do dono. Elite Pumpkin King: imune a morte.
+- Fixture hunts-discord ganhou a 261. Testes: 456.
