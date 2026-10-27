@@ -203,7 +203,8 @@ function montarVenda(itens, opc) {
     };
     const autoHunt = () => Object.assign({ nvEquip: true, nvImbu: true, nuncaVender: [] }, opc.ah || {});
     const MEM = {};
-    const esperarQue = async (fn, timeoutMs) => { const fim = Date.now() + Math.min(timeoutMs, 400); while (Date.now() < fim) { try { const v = fn(); if (v) return v; } catch (e) { } await new Promise(r => setTimeout(r, 3)); } return null; };
+    /* 2.30.0: o teto era 400 ms e o teste da venda falhava com a máquina carregada (CI e local) */
+    const esperarQue = async (fn, timeoutMs) => { const fim = Date.now() + Math.min(timeoutMs, 1500); while (Date.now() < fim) { try { const v = fn(); if (v) return v; } catch (e) { } await new Promise(r => setTimeout(r, 3)); } return null; };
     const F = new Function('ctx', `
         const { tid, $$, autoHunt, esperarQue, J, IDS, BASE, IMBU, MEM, opc } = ctx;
         const dorme = async () => {}; const log = (m, tipo) => J.logs.push((tipo || 'info') + ': ' + m);

@@ -6177,3 +6177,40 @@ minLevel, maxLevel): a que ele não bebe sai com aviso ("a sua X não é do Pala
 conferida; sem poção no post, fica tirada com aviso para pôr uma. Sem o catálogo de poções não há como conferir e vale a
 2.29.4. Testes: 431 (1 novo no `discord.test.js`). O `autohunt.test.js` tem um teste com espera de 6 s que falha com a
 máquina carregada (passa sozinho e no CI).
+
+## 2.30.0 — aba EVENTO (Halloween 2026, temporária) (27/10)
+
+Dono: "saiu um evento novo de Halloween hoje; vê se precisamos ajustar o código ou adicionar uma tela só para esse evento,
+que dura 2 semanas, depois a gente retira". Lido do cliente do jogo (bundle `page-eb6b782a…`, i18n `lojaHalloween.*`):
+- **O evento:** Loja de Halloween (grimório da abóbora). Passo 1: pagar o **acesso do dia** (gold ou coins; uma compra por
+  dia, renovada às 10:00; vale por N horas a partir da compra, sem reembolso) libera a **Caçada da Estação**. Passo 2: as
+  abóboras caem dos monstros dela e vão para a mochila; uma **chave** também cai e abre o Elite da caçada. Passo 3: trocar
+  abóboras + gold (ou coins) pelos itens da estação (addons de outfit, montarias, caixas com prêmio sorteado — "as chances
+  somam 100 %"). O saldo de abóboras zera no fim do evento. A caçada **não está em `/hunts`** (113 hunts, nada de evento):
+  o id só vem pelo acesso.
+- **Protocolo (§13):** `agenda_state {nowMs, visiveis[{id, tipo:'halloween', inicioMs, fimMs, retaFinalMs, params:{lojaId:
+  'halloween_2026'}}]}` (também `dismantle_hot_time {percent}`); `acesso_retrato {situacao: disponivel|ativo|usado|
+  indisponivel, preco:{modo:'gold'|'coins', gold, coins, coinsLastro}, horas, huntId, fichas[{name, health, experience,
+  elements}], chave:{itemId, name}, saldoMs, consumindoDesde, limite}`; → `loja_abrir {lojaId}` ← `loja_estado {offers[{id,
+  itemId, name, category, preco:{modo, itens:[{itemId, quantity}], gold, coins, coinsLastro}, goldCalculado}], saldoAboboras
+  [{itemId, quantity}], gold, goldLocked, coins, acesso}`; → `loja_comprar {lojaId, offerId, quantidade, requestId, goldVisto?}`
+  ← `loja_compra {itemId, quantity, destino:'mochila', saldos…}`; → `acesso_comprar {lojaId, requestId, goldVisto?}` ←
+  `acesso_estado {huntId, fichas, chave, saldoMs, consumindoDesde, limite, saldos…}`. Erros: `event_closed, unknown_shop,
+  loja_preco_subiu, insufficient_gold/coins/item, hunt_unavailable, access_already_bought, access_required,
+  invalid_store_item`. Gold "pela cotação" (`coinsLastro > 0`): o preço em gold segue a cotação de coins e o cliente manda
+  `goldVisto` para o servidor recusar se subiu. Restante do acesso = saldoMs − (agora − consumindoDesde), cortado por `limite`.
+- **Aba Evento 🎃** (entre Forja e Radar), bloco `@@EVENTO-INICIO … @@EVENTO-FIM` + 7 pontos marcados `@@EVENTO` fora dele
+  (ICONES, renderizar ×2, observarRecebido, MK_RESPOSTA, MK_TIPOS_ACAO, mkCasador, huntNoCatalogo) + `testes/evento.test.js`
+  + o teste do trilho (13 ícones) — **para retirar depois do evento, apagar esses pontos e voltar o teste a 12**.
+  Mostra: janela do evento (termina em), acesso (situação, preço, horas, restante, chave, monstros), abóboras (saldo, gold,
+  coins, ritmo por hora pelo analisador caçando na caçada da estação) e as ofertas (custo, "ao alcance ×n" ou o que falta e
+  em quantas horas pelo ritmo). Botões: LER A LOJA (`loja_abrir`, só leitura), LIBERAR A CAÇADA (2 toques, `acesso_comprar`),
+  IR PARA A CAÇADA (2 toques, `start_hunt` com o lure salvo do mapa ou 1; só com a party na cidade), COMPRAR (2 toques,
+  quantidade até o máximo comprável). Os pedidos passam pelo `mkPedir` (um por vez, no ritmo do Mercado) com
+  `MK.ocupado = 'evento'`, então a vigia das Pechinchas espera.
+- **Ajuste fora da aba:** `huntNoCatalogo` passa a conhecer a caçada da estação (pelo `acesso`), senão o helper a tratava
+  como boss (`ESTADO_WS.boss = '?'`): sem sessão do Analisador e sem livro-razão. Radar e Scan continuam sem ela (sem
+  tabela de loot pública). Auto Hunt: volta para ela enquanto o acesso durar; vencido, o `start_hunt` leva
+  `access_required` e o Auto Hunt para com o erro no Log (comportamento já existente).
+- **Não testado ao vivo** (sessão em nuvem, sem a conta): as formas das mensagens são as do cliente; qualquer campo
+  diferente aparece no Status → DIAGNÓSTICO. Testes: 438 (7 novos).
