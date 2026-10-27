@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.29.8
+// @version      2.30.0
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.29.8';
+    const VERSAO = '2.30.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -4074,7 +4074,7 @@
     /* v2.11 — o id 800 é o "slot" de boss no servidor (TIBIDLE.md, 27/09). */
     const HUNT_ID_BOSS = 800;
     /* true/false quando o catálogo já carregou; null quando ainda não dá para saber */
-    const huntNoCatalogo = (id) => CAT.hunts ? CAT.hunts.some(x => x.id === id) : null;
+    const huntNoCatalogo = (id) => CAT.hunts ? CAT.hunts.some(x => x.id === id) || evHuntConhecida(id) /* @@EVENTO: a caçada da estação não está em /hunts */ : null;
     /* `who` do servidor é a POSIÇÃO em state.party: um buraco (null) não pode
      * deslocar os outros — por isso map mantendo a posição, sem filter. */
     const vocsPorPosicao = (lista) => lista.map(p => (p && typeof p.vocation === 'string') ? p.vocation : null);
@@ -4701,6 +4701,7 @@
         try { diagObservar(o); } catch { } // v2.11 — Diagnóstico: guarda só a FORMA das mensagens
         try { observarMercado(o); } catch (e) { falhou('observarMercado', e); } // v2.11 — aba Mercado: premium, mochila, protegidos, respostas do mercado
         try { radarObservar(o); } catch (e) { falhou('radar (observar)', e); } // v2.13.0 — aba Radar: loot ao vivo e o dia (só leitura)
+        try { evObservar(o); } catch (e) { falhou('evento (observar)', e); } // @@EVENTO — aba Evento (Halloween 2026, temporária)
         if (!o || !o.type) return;
         const d = (o.data && typeof o.data === 'object') ? o.data : {};
         if (o.type === 'depot_state' && Array.isArray(d.entries)) {
@@ -9086,7 +9087,7 @@
         return UI;
     };
     const guardarUI = (patch) => { UI = Object.assign(ui(), patch); guardar('ui', UI); };
-    const ICONES = [['estado', '⌂', 'Status'], ['magia', '✦', 'Magia'], ['autohunt', '↻', 'Auto Hunt'], ['scan', '◎', 'Scan'], ['equip', '⛨', 'Equip'], ['analise', '▤', 'Analisador'], ['progresso', '⚑', 'Progresso'], ['mercado', '⚖', 'Mercado'], ['melhorias', '⇧', 'Melhorias'], ['forja', '⚒', 'Forja'], ['radar', '⌖', 'Radar'], ['log', '≡', 'Log']];
+    const ICONES = [['estado', '⌂', 'Status'], ['magia', '✦', 'Magia'], ['autohunt', '↻', 'Auto Hunt'], ['scan', '◎', 'Scan'], ['equip', '⛨', 'Equip'], ['analise', '▤', 'Analisador'], ['progresso', '⚑', 'Progresso'], ['mercado', '⚖', 'Mercado'], ['melhorias', '⇧', 'Melhorias'], ['forja', '⚒', 'Forja'], ['evento', '🎃', 'Evento'] /* @@EVENTO */, ['radar', '⌖', 'Radar'], ['log', '≡', 'Log']];
     /* "?" com a explicação escondida; data-k preserva aberto/fechado ao repintar */
     const aj = (k, html, rotulo) => `<details class="tb-aj" data-k="${k}"><summary>${rotulo || '?'}</summary><div class="tb-mut">${html}</div></details>`;
 
@@ -12522,7 +12523,7 @@
     const MK_VALOR_MAX = 2e9; // teto de uma ordem (quantidade × preço)
     const MK_ESPACO_MS = 3500; // 1 pedido ao mercado a cada 3,5 s (limite 20 ações/min, com folga)
     const MK_ACOES_FOLGA = 16; // no máximo 16 ações (criar/cancelar/retirar) por minuto — o jogo aceita 20
-    const MK_TIPOS_ACAO = ['market_create', 'market_cancel', 'market_execute', 'market_claim'];
+    const MK_TIPOS_ACAO = ['market_create', 'market_cancel', 'market_execute', 'market_claim', 'loja_comprar', 'acesso_comprar' /* @@EVENTO */];
     const MK_CATS = { armas: 'Armas', armaduras: 'Armaduras', escudos: 'Escudos', elmos: 'Elmos', pernas: 'Pernas', botas: 'Botas',
                       amuletos: 'Amuletos', aneis: 'Anéis', bolsas: 'Bolsas', pocoes: 'Poções', runas: 'Runas', comida: 'Comida',
                       valiosos: 'Valiosos', despojos: 'Despojos', ferramentas: 'Ferramentas', decoracao: 'Decoração', diversos: 'Diversos' };
@@ -13044,6 +13045,7 @@
                           market_history: 'market_history_result', market_execute: 'market_execute_result',
                           depot_withdraw: 'depot_result', forge_salvage_batch: 'forge_salvage_batch_result',
                           party_get_snapshot: 'party_snapshot', forge_lastro: 'forge_lastro_result', // v2.22.0
+                          loja_abrir: 'loja_estado', loja_comprar: 'loja_compra', acesso_comprar: 'acesso_estado', // @@EVENTO
                           forge_refine: 'forge_refine_result', forge_rarity: 'forge_rarity_result', forge_attr: 'forge_attr_result', forge_craft: 'forge_craft_result',
                           forge_quote: 'forge_quote_result', forge_simulate: 'forge_simulate_result' }; // v2.25.0 — Forja (quote/simulate não têm requestId: casam pelo tipo)
     const MK_PRAZO_MS = 8000; // sem resposta nisso = para (um anúncio pode ter passado: conferir antes de repetir)
@@ -13138,7 +13140,7 @@
     }
     /* v2.18.0 — market_execute: se o resultado vier sem requestId, vale o tipo (um pedido de cada vez) — senão a compra
      * feita viraria "sem resposta" */
-    const mkCasador = (tipo, data) => (tipo === 'market_execute' ? (d) => !d || !d.requestId || d.requestId === data.requestId
+    const mkCasador = (tipo, data) => (tipo === 'market_execute' || tipo === 'loja_comprar' || tipo === 'acesso_comprar' /* @@EVENTO: a resposta pode vir sem requestId */ ? (d) => !d || !d.requestId || d.requestId === data.requestId
         : data && data.requestId ? (d) => d.requestId === data.requestId
         : tipo === 'market_list' || tipo === 'market_stats' ? (d) => mkMin(d.itemName) === mkMin(data.itemName) : () => true);
     async function mkEsperarVez(acao) {
@@ -15656,6 +15658,234 @@
     `;
     function fjGarantirCss() { if (document.getElementById('tb-fj-css')) return; const st = document.createElement('style'); st.id = 'tb-fj-css'; st.textContent = FJ_CSS; (document.head || document.documentElement).appendChild(st); }
     const fjSeloTxt = { vale: '✓ vale', estoque: 'falta gema', ouro: 'falta ouro', nao: 'não vale' };
+    /* @@EVENTO-INICIO — aba EVENTO (2.30.0, Halloween 2026). TEMPORÁRIA: o evento dura ~2 semanas; para tirar, apague este bloco
+     * inteiro (até @@EVENTO-FIM), os pontos marcados "@@EVENTO" fora dele (ICONES, renderizar, observarRecebido, MK_RESPOSTA,
+     * MK_TIPOS_ACAO, mkCasador, huntNoCatalogo) e o testes/evento.test.js. Lido do cliente do jogo em 27/10 (page-eb6b782a):
+     *  ← agenda_state {nowMs, visiveis[{id, tipo:'halloween', inicioMs, fimMs, retaFinalMs, params:{lojaId:'halloween_2026'}}]}
+     *  ← acesso_retrato {situacao: disponivel|ativo|usado|indisponivel, preco:{modo:'gold'|'coins', gold, coins, coinsLastro}, horas,
+     *                    huntId, fichas[{name, health, experience, elements[]}], chave:{itemId, name}, saldoMs, consumindoDesde, limite}
+     *  → loja_abrir {lojaId}  ← loja_estado {offers[{id, itemId, name, category, preco:{modo, itens:[{itemId, quantity}], gold, coins,
+     *                    coinsLastro}, goldCalculado}], saldoAboboras[{itemId, quantity}], gold, goldLocked, coins, acesso}
+     *  → loja_comprar {lojaId, offerId, quantidade, requestId, goldVisto?}  ← loja_compra {itemId, quantity, destino:'mochila', saldoAboboras, gold, goldLocked, coins}
+     *  → acesso_comprar {lojaId, requestId, goldVisto?}  ← acesso_estado {huntId, fichas, chave, saldoMs, consumindoDesde, limite, gold, goldLocked, coins}
+     *  ← error {code}: event_closed, unknown_shop, loja_preco_subiu, insufficient_gold/coins/item, hunt_unavailable, access_already_bought,
+     *                    access_required, invalid_store_item. A caçada da estação NÃO está em /hunts (só vem pelo acesso).
+     * Regras do dono: nada dispara sozinho — ler a loja, liberar a caçada, ir para a caçada e comprar são botões (2 toques nos que gastam). */
+    /* @@EVENTO-PURO-INICIO */
+    const EV_ERROS = { event_closed: 'o evento fechou', unknown_shop: 'loja desconhecida (o jogo mudou)', loja_preco_subiu: 'o preço em gold subiu com a cotação — leia a loja de novo',
+                       insufficient_gold: 'gold insuficiente', insufficient_coins: 'coins insuficientes', insufficient_item: 'abóboras insuficientes',
+                       hunt_unavailable: 'caçada indisponível no momento', access_already_bought: 'o acesso de hoje já foi comprado (volta às 10:00)',
+                       access_required: 'a caçada da estação exige o acesso do dia — compre na Loja de Halloween', invalid_store_item: 'oferta inválida (a loja mudou — leia de novo)' };
+    const evErroTexto = (code) => EV_ERROS[code] || String(code || '?');
+    /* tempo que resta do acesso, como o cliente conta (IP): saldo − consumido desde consumindoDesde, limitado por `limite` */
+    function evRestanteMs(acesso, agora) {
+        if (!acesso) return null;
+        const usado = acesso.consumindoDesde ? Math.max(0, agora - Date.parse(acesso.consumindoDesde)) : 0;
+        const s = Math.max(0, (Number(acesso.saldoMs) || 0) - usado);
+        return acesso.limite ? Math.min(s, Math.max(0, Date.parse(acesso.limite) - agora)) : s;
+    }
+    const evJanela = (agenda, agora) => {
+        if (!agenda || !Array.isArray(agenda.visiveis)) return null;
+        for (const v of agenda.visiveis) {
+            if (!v || v.tipo !== 'halloween') continue;
+            const lojaId = v.params && v.params.lojaId;
+            if (typeof lojaId === 'string' && lojaId && v.inicioMs <= agora && agora < v.fimMs) return { id: v.id, inicioMs: v.inicioMs, fimMs: v.fimMs, lojaId };
+        }
+        return null;
+    };
+    /* custo de uma oferta (IF do cliente): abóboras = Σ itens; gold calculado pela cotação quando coinsLastro > 0 */
+    function evCustoDe(o) {
+        const p = (o && o.preco) || {}, abob = (Array.isArray(p.itens) ? p.itens : []).reduce((t, x) => t + (Number(x && x.quantity) || 0), 0);
+        if (p.modo === 'coins') return { aboboras: abob, ouro: 0, coins: Number(p.coins) || 0, pelaCotacao: false };
+        const lastro = (Number(p.coinsLastro) || 0) > 0;
+        return { aboboras: abob, ouro: lastro ? (Number(o.goldCalculado) || 0) : (Number(p.gold) || 0), coins: 0, pelaCotacao: lastro };
+    }
+    /* quantas unidades dá para levar com o saldo (Iw do cliente) */
+    function evMaxCompravel(o, saldo) {
+        const p = (o && o.preco) || {}, abobs = Array.isArray(saldo && saldo.saldoAboboras) ? saldo.saldoAboboras : [];
+        let m = 999;
+        for (const it of (Array.isArray(p.itens) ? p.itens : [])) {
+            if (!(it && it.quantity > 0)) continue;
+            const tem = abobs.find(x => x && x.itemId === it.itemId);
+            m = Math.min(m, Math.floor((tem ? Number(tem.quantity) || 0 : 0) / it.quantity));
+        }
+        if (p.modo === 'gold') { const g = (Number(p.coinsLastro) || 0) > 0 ? (Number(o.goldCalculado) || 0) : (Number(p.gold) || 0); if (g > 0) m = Math.min(m, Math.floor((Number(saldo && saldo.gold) || 0) / g)); }
+        else if ((Number(p.coins) || 0) > 0) m = Math.min(m, Math.floor((Number(saldo && saldo.coins) || 0) / p.coins));
+        return m < 1 ? 0 : m;
+    }
+    const evSaldoAboboras = (saldo) => (Array.isArray(saldo && saldo.saldoAboboras) ? saldo.saldoAboboras : []).reduce((t, x) => t + (Number(x && x.quantity) || 0), 0);
+    /* o que falta para UMA unidade da oferta */
+    function evAlcance(o, saldo) {
+        const c = evCustoDe(o), tem = evSaldoAboboras(saldo);
+        return { chega: evMaxCompravel(o, saldo) >= 1, faltaAboboras: Math.max(0, c.aboboras - tem), faltaOuro: Math.max(0, c.ouro - (Number(saldo && saldo.gold) || 0)),
+                 faltaCoins: Math.max(0, c.coins - (Number(saldo && saldo.coins) || 0)), max: evMaxCompravel(o, saldo), custo: c };
+    }
+    /* abóboras por hora pelo analisador do jogo (drops {item: n}, elapsedMs) — só vale caçando na caçada da estação */
+    function evTaxaAboboras(an, nome) {
+        if (!an || !nome || !(an.elapsedMs > 60000)) return null;
+        const d = an.drops || {}, k = Object.keys(d).find(x => x.toLowerCase() === String(nome).toLowerCase());
+        const n = k ? Number(d[k]) || 0 : 0;
+        return { n, porHora: n / (an.elapsedMs / 3600000) };
+    }
+    const evTempoPara = (falta, porHora) => (falta <= 0 ? 0 : porHora > 0 ? falta / porHora : null);
+    const evSituacaoTexto = { disponivel: 'acesso disponível (uma compra por dia)', ativo: 'acesso ATIVO', usado: 'acesso de hoje já usado — volta às 10:00', indisponivel: 'caçada indisponível no momento' };
+    /* @@EVENTO-PURO-FIM */
+    const EV = { agenda: null, janela: null, acesso: null, loja: null, lojaT: 0, lendo: false, ocupado: null, erro: null, aviso: null, sel: null, qtd: 1, conf: 0, confAcesso: 0, confIr: 0, nomeAbobora: null, recibo: null };
+    const evLojaId = () => (EV.janela && EV.janela.lojaId) || (EV.acesso && EV.acesso.lojaId) || null;
+    const evHuntConhecida = (id) => !!(EV.acesso && EV.acesso.huntId != null && EV.acesso.huntId === id);
+    const evSaldo = () => (EV.loja ? EV.loja : null);
+    const evRid = () => 'lhw-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+    function evPintarPonto() {
+        const i = $('#tb-trilho .tb-ico[data-aba="evento"]'); if (!i) return;
+        const dot = $('.tb-dot', i); if (!dot) return;
+        const sit = EV.acesso && EV.acesso.situacao;
+        dot.className = 'tb-dot' + (sit === 'ativo' ? ' ok' : sit === 'disponivel' ? ' av' : '');
+    }
+    async function evNomeAbobora() {
+        if (EV.nomeAbobora) return EV.nomeAbobora;
+        const of = EV.loja && Array.isArray(EV.loja.offers) ? EV.loja.offers.find(o => o && o.preco && Array.isArray(o.preco.itens) && o.preco.itens.length) : null;
+        const id = of ? of.preco.itens[0].itemId : (EV.loja && Array.isArray(EV.loja.saldoAboboras) && EV.loja.saldoAboboras[0] ? EV.loja.saldoAboboras[0].itemId : null);
+        if (id == null) return null;
+        try { const ids = await idsPorNome(); const nome = Object.keys(ids).find(n => ids[n] === id); if (nome) EV.nomeAbobora = nome; } catch (e) { falhou('evento (nome da abóbora)', e); }
+        return EV.nomeAbobora;
+    }
+    function evObservar(o) {
+        if (!o || !o.type) return;
+        const d = (o.data && typeof o.data === 'object') ? o.data : {}, t = o.type;
+        let mudou = false;
+        if (t === 'agenda_state' && Array.isArray(d.visiveis)) { EV.agenda = clonar(d); EV.janela = evJanela(EV.agenda, Number(d.nowMs) || Date.now()); mudou = true; }
+        else if (t === 'acesso_retrato') { EV.acesso = clonar(d); mudou = true; }
+        else if (t === 'loja_estado' && Array.isArray(d.offers)) {
+            EV.loja = clonar(d); EV.lojaT = Date.now(); EV.erro = null;
+            if (d.acesso && typeof d.acesso === 'object') EV.acesso = Object.assign({}, EV.acesso || {}, clonar(d.acesso));
+            if (EV.sel != null && !d.offers.some(x => x && x.id === EV.sel)) EV.sel = null;
+            evNomeAbobora().then(() => { if (ABA === 'evento') renderizar(); });
+            mudou = true;
+        }
+        else if (t === 'loja_compra') {
+            if (EV.loja) Object.assign(EV.loja, { saldoAboboras: Array.isArray(d.saldoAboboras) ? clonar(d.saldoAboboras) : EV.loja.saldoAboboras, gold: d.gold, goldLocked: d.goldLocked, coins: d.coins });
+            const of = EV.loja && EV.loja.offers.find(x => x && x.itemId === d.itemId);
+            EV.recibo = { t: Date.now(), nome: of ? of.name : ('item ' + d.itemId), qtd: Number(d.quantity) || 0 };
+            log(`evento: ${EV.recibo.qtd}× ${EV.recibo.nome} foi para a mochila`, 'ok'); mudou = true;
+        }
+        else if (t === 'acesso_estado') {
+            if (EV.loja) Object.assign(EV.loja, { saldoAboboras: Array.isArray(d.saldoAboboras) ? clonar(d.saldoAboboras) : EV.loja.saldoAboboras, gold: d.gold, goldLocked: d.goldLocked, coins: d.coins });
+            EV.acesso = Object.assign({}, EV.acesso || {}, { situacao: 'ativo', huntId: d.huntId, fichas: Array.isArray(d.fichas) ? clonar(d.fichas) : (EV.acesso && EV.acesso.fichas) || [], chave: d.chave ? clonar(d.chave) : (EV.acesso && EV.acesso.chave) || null,
+                                                             saldoMs: d.saldoMs, consumindoDesde: d.consumindoDesde, limite: d.limite });
+            log('evento: acesso à caçada da estação liberado (' + fmtHoras((evRestanteMs(EV.acesso, Date.now()) || 0) / 3600000) + ')', 'ok'); mudou = true;
+        }
+        else if (t === 'error' && EV.ocupado && d.code && EV_ERROS[d.code]) { EV.erro = evErroTexto(d.code); mudou = true; }
+        if (mudou) { evPintarPonto(); if (ABA === 'evento') renderizar(); }
+    }
+    async function evPedir(tipo, data, rotulo) {
+        if (EV.ocupado) return null;
+        if (!socketAberto()) { EV.erro = 'socket do jogo não está à mão — dê F5 com o helper instalado'; renderizar(); return null; }
+        if (MK.ocupado) { EV.erro = 'o Mercado está ocupado (' + MK.ocupado + ') — espere terminar'; renderizar(); return null; }
+        EV.ocupado = rotulo; EV.erro = null; MK.ocupado = 'evento'; renderizar();
+        try {
+            const r = await mkPedir(tipo, data);
+            if (r.erro) { EV.erro = evErroTexto(r.erro === 'sem_socket' ? 'socket do jogo não está à mão' : r.erro); log('evento: ' + rotulo + ' — ' + EV.erro, 'erro'); return null; }
+            return r.data;
+        } catch (e) { EV.erro = e.message; log('evento: ' + rotulo + ' — ' + e.message, 'erro'); return null; }
+        finally { EV.ocupado = null; if (MK.ocupado === 'evento') MK.ocupado = null; renderizar(); }
+    }
+    async function evLer() {
+        const lojaId = evLojaId();
+        if (!lojaId) { EV.erro = 'o jogo ainda não anunciou o evento (agenda_state) — dê F5 e espere o jogo carregar'; renderizar(); return; }
+        EV.lendo = true;
+        try { await evPedir('loja_abrir', { lojaId }, 'ler a loja'); } finally { EV.lendo = false; }
+    }
+    async function evComprarAcesso() {
+        const lojaId = evLojaId(), a = EV.acesso;
+        if (!lojaId || !a || !['disponivel'].includes(a.situacao)) return;
+        if (!(EV.confAcesso > Date.now())) { EV.confAcesso = Date.now() + 8000; renderizar(); return; }
+        EV.confAcesso = 0;
+        const p = a.preco || {}, data = { lojaId, requestId: evRid() };
+        if (p.modo === 'gold' && (Number(p.coinsLastro) || 0) > 0) data.goldVisto = Number(p.gold) || 0;
+        await evPedir('acesso_comprar', data, 'liberar a caçada');
+    }
+    async function evComprar() {
+        const lojaId = evLojaId(), o = EV.loja && EV.loja.offers.find(x => x && x.id === EV.sel);
+        if (!lojaId || !o) return;
+        const max = evMaxCompravel(o, evSaldo()), q = Math.max(1, Math.min(max, Math.trunc(Number(EV.qtd) || 1)));
+        if (max < 1) { EV.erro = 'não dá para levar esta oferta com o saldo de hoje'; renderizar(); return; }
+        if (!(EV.conf > Date.now())) { EV.conf = Date.now() + 8000; renderizar(); return; }
+        EV.conf = 0;
+        const c = evCustoDe(o), data = { lojaId, offerId: o.id, quantidade: q, requestId: evRid() };
+        if (c.pelaCotacao) data.goldVisto = Number(o.goldCalculado) || 0;
+        await evPedir('loja_comprar', data, `comprar ${q}× ${o.name}`);
+    }
+    function evIr() {
+        const a = EV.acesso;
+        if (!a || a.huntId == null || !['ativo', 'disponivel'].includes(a.situacao)) return;
+        const imp = travaJogo(); if (imp) { EV.erro = imp + ' em andamento — espere terminar'; renderizar(); return; }
+        if (emHunt()) { EV.erro = 'a party já está caçando — encerre a caçada de agora antes de ir para a da estação'; renderizar(); return; }
+        if (!(EV.confIr > Date.now())) { EV.confIr = Date.now() + 8000; renderizar(); return; }
+        EV.confIr = 0;
+        const lure = Number((ESTADO_WS.lureTierByHunt || {})[a.huntId]) || 1;
+        try { enviarWS({ type: 'start_hunt', data: { huntId: a.huntId, lure } }); log(`evento: start_hunt enviado para a caçada da estação (hunt ${a.huntId}, lure ${lure})` + (a.situacao !== 'ativo' ? ' — sem acesso ativo o jogo vai recusar (access_required)' : ''), 'info'); }
+        catch (e) { EV.erro = e.message; }
+        renderizar();
+    }
+    function telaEvento() {
+        garantirCssTelas();
+        const agora = Date.now(), j = EV.janela, a = EV.acesso, L = EV.loja, ocup = !!EV.ocupado;
+        let h = `<div id="tb-ev"><div class="tb-eq-bts"><button type="button" class="tb-bt pri" id="tb-ev-ler" ${ocup || !socketAberto() ? 'disabled' : ''} title="pede loja_abrir ao jogo (só leitura): ofertas, saldo de abóboras, gold, coins e o acesso à caçada">${EV.ocupado === 'ler a loja' ? 'LENDO…' : L ? 'LER A LOJA DE NOVO' : 'LER A LOJA DE HALLOWEEN'}</button></div>`;
+        h += `<div class="tb-mut tb-eq-info">${j ? `evento até ${new Date(j.fimMs).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} · termina em <b>${fmtHoras((j.fimMs - agora) / 3600000)}</b>` : 'o jogo ainda não anunciou a janela do evento (agenda_state)'}${L ? ' · loja lida ' + mkHora(EV.lojaT) : ''}</div>`;
+        if (EV.erro) h += `<div class="tb-cx tb-ruim">${escHtml(EV.erro)}</div>`;
+        if (EV.recibo && agora - EV.recibo.t < 60000) h += `<div class="tb-cx tb-ok">${EV.recibo.qtd}× ${escHtml(EV.recibo.nome)} foi para a mochila</div>`;
+        /* acesso à caçada da estação */
+        h += `<h4 style="margin:8px 0 2px">Caçada da Estação</h4>`;
+        if (!a) h += `<div class="tb-mut tb-eq-nota">o jogo ainda não mandou o retrato do acesso (acesso_retrato) — leia a loja ou dê F5.</div>`;
+        else {
+            const p = a.preco || {}, preco = p.modo === 'coins' ? mkFmt(p.coins) + ' coins' : mkFmt(p.gold) + ' gold' + ((Number(p.coinsLastro) || 0) > 0 ? ' (pela cotação)' : '');
+            const rest = evRestanteMs(a, agora), conf2 = EV.confAcesso > agora, confIr = EV.confIr > agora;
+            h += `<div class="tb-cx"><div><b>${escHtml(evSituacaoTexto[a.situacao] || a.situacao || '?')}</b>${a.situacao === 'ativo' && rest != null ? ` · restam <b>${fmtHoras(rest / 3600000)}</b>` : ''}</div>` +
+                 `<div class="tb-mut tb-eq-nota">acesso por ${a.horas || '?'} h · ${preco} · uma compra por dia, renovada às 10:00 · hunt ${a.huntId != null ? a.huntId : '?'}${ESTADO_WS.huntId != null && ESTADO_WS.huntId === a.huntId ? ' · <span class="tb-ok">a party está nela agora</span>' : ''}</div>` +
+                 (a.chave ? `<div class="tb-mut tb-eq-nota">chave do Elite: <b>${escHtml(a.chave.name)}</b> (cai dos monstros e abre o Elite da caçada)</div>` : '') +
+                 (Array.isArray(a.fichas) && a.fichas.length ? `<div class="tb-mut tb-eq-nota">monstros: ${a.fichas.map(f => escHtml(f.name) + (f.health ? ' (' + mkFmt(f.health) + ' hp' + (f.experience ? ', ' + mkFmt(f.experience) + ' xp' : '') + (Array.isArray(f.elements) && f.elements.length ? ', ' + f.elements.map(escHtml).join('/') : '') + ')' : '')).join(' · ')}</div>` : '') +
+                 `<div class="tb-eq-bts" style="margin-top:4px">` +
+                 (a.situacao === 'disponivel' ? `<button type="button" class="tb-bt ${conf2 ? 'pri' : ''}" id="tb-ev-acesso" ${ocup || !socketAberto() ? 'disabled' : ''} title="acesso_comprar: paga ${preco} e libera a caçada por ${a.horas || '?'} h (sem reembolso)">${conf2 ? 'CONFIRMAR: pagar ' + preco : 'LIBERAR A CAÇADA · ' + preco}</button>` : '') +
+                 (['ativo', 'disponivel'].includes(a.situacao) && a.huntId != null ? `<button type="button" class="tb-bt ${confIr ? 'pri' : ''}" id="tb-ev-ir" ${ocup || !socketAberto() || emHunt() ? 'disabled' : ''} title="start_hunt na caçada da estação (a party precisa estar na cidade)">${confIr ? 'CONFIRMAR: ir para a caçada' : 'IR PARA A CAÇADA'}</button>` : '') +
+                 `</div></div>`;
+        }
+        /* abóboras e ofertas */
+        if (!L) return h + `<div class="tb-mut" style="margin-top:6px">LER A LOJA mostra as ofertas da estação com o custo (abóboras + gold ou coins), o que falta para cada uma e, caçando na caçada da estação, quanto tempo falta pelo ritmo de abóboras do analisador. Comprar é por botão, 2 toques, sem reembolso.</div></div>`;
+        const tem = evSaldoAboboras(L), an = ESTADO_WS.huntId != null && a && ESTADO_WS.huntId === a.huntId ? anAgora() : null, taxa = evTaxaAboboras(an, EV.nomeAbobora);
+        h += `<h4 style="margin:8px 0 2px">Abóboras <span class="tb-mut">(${EV.nomeAbobora ? escHtml(EV.nomeAbobora) : 'nome a confirmar'})</span></h4>`;
+        h += `<div class="tb-cx">você tem <b>${mkFmt(tem)}</b> · gold ${mkFmt(L.gold)}${L.goldLocked ? ' (travado ' + mkFmt(L.goldLocked) + ')' : ''} · coins ${mkFmt(L.coins)}` +
+             (taxa ? `<div class="tb-mut tb-eq-nota">nesta caçada: ${taxa.n} abóbora(s) em ${fmtHoras(an.elapsedMs / 3600000)} → <b>${taxa.porHora.toFixed(1)}/h</b></div>` : `<div class="tb-mut tb-eq-nota">ritmo por hora aparece depois de 1 min caçando na caçada da estação</div>`) + `</div>`;
+        const ofs = (L.offers || []).filter(Boolean).slice().sort((x, y) => (Number(x.order) || 0) - (Number(y.order) || 0) || String(x.category || '').localeCompare(String(y.category || '')));
+        if (!ofs.length) h += `<div class="tb-mut">nenhuma oferta na loja agora.</div>`;
+        else {
+            h += `<table class="tb-t"><tr><th></th><th>oferta</th><th>categoria</th><th class="n">abóboras</th><th class="n">gold/coins</th><th>alcance</th></tr>`;
+            for (const o of ofs) {
+                const al = evAlcance(o, L), c = al.custo, horas = taxa && al.faltaAboboras > 0 ? evTempoPara(al.faltaAboboras, taxa.porHora) : null;
+                const alc = al.chega ? `<span class="tb-ok">ao alcance${al.max > 1 ? ' ×' + al.max : ''}</span>` : [al.faltaAboboras ? 'faltam ' + mkFmt(al.faltaAboboras) + ' abóboras' + (horas != null ? ' (~' + fmtHoras(horas) + ')' : '') : '', al.faltaOuro ? 'faltam ' + mkFmt(al.faltaOuro) + ' gold' : '', al.faltaCoins ? 'faltam ' + mkFmt(al.faltaCoins) + ' coins' : ''].filter(Boolean).join(' · ');
+                h += `<tr class="${EV.sel === o.id ? 'tb-sel' : ''}"><td><input type="radio" name="tb-ev-of" data-ev-sel="${escHtml(o.id)}" ${EV.sel === o.id ? 'checked' : ''} aria-label="escolher ${escHtml(o.name)}"></td><td>${escHtml(o.name)}${o.description ? ` <span class="tb-mut">${escHtml(o.description)}</span>` : ''}</td><td class="tb-mut">${escHtml(o.category || '')}</td><td class="n">${mkFmt(c.aboboras)}</td><td class="n">${c.coins ? mkFmt(c.coins) + ' c' : mkFmt(c.ouro) + (c.pelaCotacao ? '*' : '')}</td><td>${alc}</td></tr>`;
+            }
+            h += `</table><div class="tb-mut tb-eq-nota">* gold pela cotação de coins do momento: pode subir entre ler e comprar (o jogo recusa com "loja_preco_subiu"; leia de novo).</div>`;
+            const o = ofs.find(x => x.id === EV.sel);
+            if (o) {
+                const max = evMaxCompravel(o, L), conf2 = EV.conf > agora, q = Math.max(1, Math.min(Math.max(1, max), Math.trunc(Number(EV.qtd) || 1))), c = evCustoDe(o);
+                h += `<div class="tb-cx" style="margin-top:6px"><b>${escHtml(o.name)}</b> · ${mkFmt(c.aboboras)} abóboras + ${c.coins ? mkFmt(c.coins) + ' coins' : mkFmt(c.ouro) + ' gold'} cada · máx ${max}` +
+                     `<div class="tb-linha" style="margin-top:4px"><label class="tb-mut">quantidade <input type="number" id="tb-ev-qtd" min="1" max="${Math.max(1, max)}" value="${q}" style="width:56px"></label>` +
+                     `<button type="button" class="tb-bt ${conf2 ? 'pri' : ''}" id="tb-ev-comprar" ${ocup || !socketAberto() || max < 1 ? 'disabled' : ''} title="loja_comprar: troca ${mkFmt(c.aboboras * q)} abóboras + ${c.coins ? mkFmt(c.coins * q) + ' coins' : mkFmt(c.ouro * q) + ' gold'} por ${q}× ${escHtml(o.name)} (sem reembolso)">${conf2 ? `CONFIRMAR: trocar por ${q}× ${escHtml(o.name)}` : max < 1 ? 'NÃO ALCANÇA' : 'COMPRAR'}</button></div>` +
+                     (Array.isArray(o.premios) && o.premios.length ? `<div class="tb-mut tb-eq-nota">prêmios (sorteio ao abrir): ${o.premios.map(p => escHtml(p.name || p.nome || '?') + (p.chance != null ? ' ' + p.chance + ' %' : '')).join(' · ')}</div>` : '') + `</div>`;
+            }
+        }
+        return h + aj('ev-ajuda', 'O que o helper lê: agenda_state (janela do evento), acesso_retrato (acesso do dia) e loja_estado (ofertas e saldos). O que ele envia, só por botão: loja_abrir (leitura), acesso_comprar e loja_comprar (2 toques, sem reembolso) e start_hunt para a caçada da estação. A caçada não está no catálogo público: o Radar e o Scan não a medem; o Analisador e o livro-razão funcionam normalmente. O Auto Hunt volta para ela enquanto o acesso durar; com o acesso vencido o jogo recusa (access_required) e o Auto Hunt para com o erro no Log.') + `</div>`;
+    }
+    function ligarEvento() {
+        const corpo = $('#tb-corpo');
+        const l = $('#tb-ev-ler'); if (l) l.onclick = () => evLer();
+        const ac = $('#tb-ev-acesso'); if (ac) ac.onclick = () => evComprarAcesso();
+        const ir = $('#tb-ev-ir'); if (ir) ir.onclick = () => evIr();
+        const cp = $('#tb-ev-comprar'); if (cp) cp.onclick = () => evComprar();
+        const q = $('#tb-ev-qtd'); if (q) q.onchange = () => { EV.qtd = Math.max(1, parseInt(q.value) || 1); EV.conf = 0; renderizar(); };
+        $$('[data-ev-sel]', corpo).forEach(x => { x.onchange = () => { EV.sel = x.dataset.evSel; EV.qtd = 1; EV.conf = 0; renderizar(); }; });
+    }
+    /* @@EVENTO-FIM */
     function telaForja() {
         garantirCssTelas(); fjGarantirCss();
         const ocup = FJ.lendo || FJ.forjando || FJ.simulando;
@@ -15974,7 +16204,7 @@
         const mesmaAba = _abaPintada === ABA;
         const html = ABA === 'estado' ? telaEstado() : ABA === 'autohunt' ? telaAutoHunt() : ABA === 'scan' ? telaScan()
             : ABA === 'magia' ? telaMagia() : ABA === 'analise' ? telaAnalise() : ABA === 'equip' ? telaEquip()
-            : ABA === 'progresso' ? telaProgresso() : ABA === 'mercado' ? telaMercado() : ABA === 'melhorias' ? telaMelhorias() : ABA === 'radar' ? telaRadar() : ABA === 'forja' ? telaForja() : `<div id="tb-log"></div>`;
+            : ABA === 'progresso' ? telaProgresso() : ABA === 'mercado' ? telaMercado() : ABA === 'melhorias' ? telaMelhorias() : ABA === 'radar' ? telaRadar() : ABA === 'forja' ? telaForja() : ABA === 'evento' ? telaEvento() /* @@EVENTO */ : `<div id="tb-log"></div>`;
         if (mesmaAba && html === _htmlPintado) { if (ABA === 'log') pintarLog(); return; }
         if (mesmaAba) { const f = campoEmUso(c); if (f) { adiarRepinte(f); return; } }
         /* v2.3.0 — trocar o innerHTML zera a rolagem: marcar um mapa no Scan
@@ -15997,6 +16227,7 @@
         if (ABA === 'mercado') ligarMercado();
         if (ABA === 'radar') ligarRadar(); // v2.13.0
         if (ABA === 'forja') ligarForja(); // v2.25.0
+        if (ABA === 'evento') ligarEvento(); // @@EVENTO
         if (ABA === 'melhorias') ligarMelhorias(); // v2.18.0
         if (ABA === 'scan') ligarScan(); // v2.11 — handlers do Scan ao lado da tela
         if (ABA === 'autohunt') ligarAutoHunt(); // v2.11 — handlers do Auto Hunt ao lado da tela
