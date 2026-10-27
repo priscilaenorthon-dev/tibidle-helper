@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.33.0
+// @version      2.33.1
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.33.0';
+    const VERSAO = '2.33.1';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -4986,6 +4986,7 @@
              * como boolean em hunt comum também, e a 2.10 marcava "boss em
              * andamento" numa caçada normal — travando Scan e Auto Hunt. */
             const u = ESTADO_WS.ultimoStart;
+            if (u) u.usado = true; // 2.33.1 — o `ended` só zera o start que já foi consumido
             const recente = !!(u && Date.now() - u.t < 60000);
             const bossId = recente && u.bossId ? String(u.bossId) : null;
             const torre = (recente && !!u.tower) || !!(d.state && typeof d.state === 'object' && d.state.tower != null);
@@ -5027,7 +5028,10 @@
                 ESTADO_WS.ultimoEnded = { t: Date.now(), huntId: sm.huntId != null ? sm.huntId : ESTADO_WS.huntId, reason: sm.reason || null, boss: ESTADO_WS.boss };
                 if (RAZAO && !RAZAO.tFim) RAZAO.tFim = Date.now(); // v2.14.13 — o relógio do livro-razão para aqui
                 try { danoMapaGuardar(); } catch (e) { falhou('dano por mapa', e); } // v2.21.0 — antes de zerar o huntId
-                ESTADO_WS.boss = null; ESTADO_WS.ultimoStart = null; ESTADO_WS.frame = null; ESTADO_WS.party = []; ESTADO_WS.huntId = null;
+                /* 2.33.1 — o cliente manda stop + start_hunt {bossId} e o `ended` da caçada
+                 * velha chega no meio: zerar o start aqui fazia o boss sair "?" (id 800). */
+                if (!ESTADO_WS.ultimoStart || ESTADO_WS.ultimoStart.usado) ESTADO_WS.ultimoStart = null;
+                ESTADO_WS.boss = null; ESTADO_WS.frame = null; ESTADO_WS.party = []; ESTADO_WS.huntId = null;
                 if (sm.huntId != null && sm.huntId !== HUNT_ID_BOSS && huntNoCatalogo(sm.huntId)) { guardar('hunt_id', sm.huntId); guardar('hunt_manual', sm.huntId); }
             }
             return;
@@ -8958,10 +8962,13 @@
           lure: '', skills: '', nota: '', nivel: 'faixa baixa (até ~nível 150)',
           obs: 'Nenhum post no Discord (evento novo). Monstros desta faixa: Witch, Ghost, Pumpkin Skeleton, Ghoul, Gourd Zombie e Pumpkin Banshee — nenhum é imune a nada; Pumpkin Skeleton, Ghoul e Pumpkin Banshee tomam +25 % de sagrado. Então vale área em tudo: Cavaleiro Lesser Front Sweep (6 de mana) e Brutal Strike; magos as duas ondas de 12 casas alternando (Fire Wave/Scorch no Feiticeiro, Ice Wave/Chill Out no Druida) e um golpe para o último monstro; Paladino só tem a Lesser Ethereal Spear até o nível 20. Elite Pumpkin King (1.000 hp): imune a morte, toma +5 % de sagrado. A chave dele cai POR TEMPO de caçada. Druida: a cura própria na frente e Heal Friend para o Cavaleiro. As poções continuam as suas.',
           chars: {
-            KNIGHT: { ataque: [['Lesser Front Sweep', 2], ['Brutal Strike', 1]], defesa: [['Wound Cleansing', 60]] },
-            PALADIN: { ataque: [['Lesser Ethereal Spear', 1]], defesa: [['Light Healing', 60]] },
-            SORCERER: { ataque: [['Fire Wave', 2], ['Scorch', 2], ['Energy Strike', 1]], defesa: [['Light Healing', 60]] },
-            DRUID: { ataque: [['Ice Wave', 2], ['Chill Out', 2], ['Ice Strike', 1]], defesa: [['Light Healing', 60], ['Heal Friend', 50]] } } },
+            /* 2.33.1 — teste ao vivo (XundaBr nível 29): a defesa do nível 20 (só Light Healing ≤60 %) trocava a do dono por uma mais fraca.
+             * Agora a forte primeiro e a barata atrás; Intense Healing pede nível 20 (abaixo cai para a Light Healing, dcConfigDe); a Ethereal
+             * Spear (23) na frente da Lesser, que fica de reserva. */
+            KNIGHT: { ataque: [['Lesser Front Sweep', 2], ['Brutal Strike', 1]], defesa: [['Wound Cleansing', 75]] },
+            PALADIN: { ataque: [['Ethereal Spear', 1], ['Lesser Ethereal Spear', 1]], defesa: [['Intense Healing', 50], ['Light Healing', 75]] },
+            SORCERER: { ataque: [['Fire Wave', 2], ['Scorch', 2], ['Energy Strike', 1]], defesa: [['Intense Healing', 50], ['Light Healing', 75]] },
+            DRUID: { ataque: [['Ice Wave', 2], ['Chill Out', 2], ['Ice Strike', 1]], defesa: [['Intense Healing', 45], ['Heal Friend', 60], ['Light Healing', 75]] } } },
         /* 2.33.0 (27/10) — "Northon - <mapa>" para os 38 mapas de recomendado ≤ 50 sem post (XundaBr, nível 26: dono volta a caçar mapa baixo depois
          * do Halloween). Padrão dos posts de nível baixo (Argonaut em Vampire hell, Djinns e Gargoyles; a faixa baixa do Halloween), feito para
          * o nível recomendado + 5: Cavaleiro Berserk (35+) ou Lesser Front Sweep e Brutal Strike; Paladino Caldera (50+), runa (30+) e lança

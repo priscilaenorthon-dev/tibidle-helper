@@ -6378,3 +6378,14 @@ entrou na 2.32.3). Os 6 monstros dela já estavam aprendidos (`ev_monstros`); co
 
 Fixture `hunts-discord.json` +38 mapas; `telas.test.js` usava Wolves Den/Elfs Shadowthorn/Orc Fortress como "mapa sem setup" (agora têm).
 Testes: 457.
+
+## 2.33.1 — teste ao vivo do Halloween na conta fraca (27/10, XundaBr nível 29)
+Roteiro em `docs/teste-ao-vivo-2.33.md`. Itens 1–6 e 8 ok: setup da faixa baixa aplicado nos 4 pelo socket, chave do Pumpkin King
+caiu por tempo, Magia › Boss aplicou o ataque, entrada pela Elite gastou a chave, boss morto em menos de 1 min sem mortes, caiu a
+"Pumpkin Fields Box". O item 7 (Formação) ficou para a próxima chave: a luta acabou antes. Os dois Elites da aba Jogar › Elite
+(Pumpkin King na faixa baixa, The Lantern Reaper na alta) dão Halloween Pumpkin pela caixa.
+- **Defesa da faixa baixa**: o setup do nível 20 (só Light Healing ≤ 60 %) trocava a cura do dono por uma mais fraca. Agora:
+  Cav Wound Cleansing 75 %; Pal/Fei Intense Healing 50 % + Light Healing 75 %; Dru Intense Healing 45 % + Heal Friend 60 % + Light 75 %.
+- **Boss "?"**: entrando pela Elite o cliente manda stop + `start_hunt {bossId}` e o `ended` da caçada velha chega no meio; o
+  `ended` zerava `ultimoStart` e o `hunt_started 800` saía "boss ?" (o dano ia para `boss:?` e a Formação não aprendia). Agora o
+  `hunt_started` marca o start como usado e o `ended` só zera o start já consumido. Teste em `fumaca.test.js`.

@@ -379,6 +379,22 @@ t('reconexão: welcome zera boss/hunt/party; resume sem huntId não cria frame',
     assert.strictEqual(e.ultimoEnded.reason, 'death');
 });
 
+t('boss da Elite: o `ended` da caçada velha chega entre o start_hunt e o hunt_started 800 (2.33.1)', async () => {
+    const W = criarMundo({ ls: DEBUG });
+    await W.avancar(0);
+    const ws = new W.window.WebSocket('wss://jogo');
+    ws.emitir({ type: 'welcome', data: {} });
+    ws.emitir({ type: 'hunt_started', data: { huntId: 261, state: { party: party4() } } });
+    ws.send(JSON.stringify({ type: 'stop', data: {} }));
+    ws.send(JSON.stringify({ type: 'start_hunt', data: { huntId: 1, lure: 1, bossId: 'Pumpkin King' } }));
+    ws.emitir({ type: 'ended', data: { summary: { huntId: 261, reason: 'stopped' } } });
+    ws.emitir({ type: 'hunt_started', data: { huntId: 800, lure: 1, state: { party: party4() } } });
+    assert.strictEqual(W.H.estadoWS().boss, 'Pumpkin King', 'o ended no meio apagou o start do boss');
+    // o fim do boss zera o start consumido
+    ws.emitir({ type: 'ended', data: { summary: { huntId: 800, reason: 'won' } } });
+    assert.strictEqual(W.H.estadoWS().ultimoStart, null);
+});
+
 t('boss (huntId 800) não apaga hunt_id nem abre a tela CAÇADAS; sem sessão', async () => {
     const W = criarMundo({ ls: Object.assign({}, DEBUG, { tb_helper_hunt_id: '34' }) });
     const explore = W.plantar('actionbar-explore');
