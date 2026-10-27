@@ -314,4 +314,19 @@ t('2.29.7 poção do mapa (Draken Walls, 26/10): a poção do post substitui a s
     const w = M.dcConfigDe(outro, 'KNIGHT', k.cfg, ctx);
     assert.strictEqual(w.cfg.manaPotion.name, 'Strong Mana Potion');
 });
+t('2.29.8 a SUA poção também passa pela vocação: Paladino com a Great Health Potion no perfil (bug da 2.29.0) não fica com ela — entra a do post, conferida', () => {
+    const fire = M.SETUPS_DISCORD.find(s => s.id === 'fire-lucasdela');
+    const atual = { heals: [{ name: 'Great Health Potion', percent: 38 }, { name: 'Divine Healing', percent: 60 }], manaPotion: { name: 'Ultimate Mana Potion', percent: 30 }, skills: [], supports: [], ammo: null };
+    const r = M.dcConfigDe(fire, 'PALADIN', atual, CTX_POT);
+    assert.strictEqual(r.cfg.heals[0].name, 'Great Spirit Potion', JSON.stringify(r.cfg.heals));
+    assert(!r.cfg.heals.some(h => h.name === 'Great Health Potion'));
+    assert(r.avisos.some(a => /a sua Great Health Potion/.test(a) && /entra a do post/.test(a)), JSON.stringify(r.avisos));
+    assert.strictEqual(r.cfg.manaPotion.name, 'Mana Potion', 'Ultimate Mana (só magos) sai; a do post entra: ' + JSON.stringify(r.cfg.manaPotion));
+    assert(r.suas.every(x => !/Great Health|Ultimate Mana/.test(x)), JSON.stringify(r.suas));
+    const ok = M.dcConfigDe(fire, 'PALADIN', { heals: [{ name: 'Great Spirit Potion', percent: 50 }], manaPotion: { name: 'Mana Potion', percent: 20 }, skills: [], supports: [], ammo: null }, CTX_POT);
+    assert.strictEqual(ok.cfg.heals[0].percent, 50, 'a sua, certa, fica com a sua %'); assert.deepStrictEqual(ok.avisos, []);
+    const velho = M.dcConfigDe(fire, 'PALADIN', atual, CTX); // sem o catálogo de poções: não tem como conferir, fica como a 2.29.4
+    assert.strictEqual(velho.cfg.heals[0].name, 'Great Health Potion');
+});
+
 console.log(n + ' testes ok' + (process.exitCode ? ' (com falhas)' : ''));
