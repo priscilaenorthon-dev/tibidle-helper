@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.31.0
+// @version      2.32.0
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -26,7 +26,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.31.0';
+    const VERSAO = '2.32.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -2422,6 +2422,23 @@
          * `alvos`, a última com a fração); alvo único, golpe e dano externo focam a
          * de menos vida; dano além da vida se perde (overkill). */
         const vidaM = new Float64Array(L).fill(HP), ordem = new Int16Array(L);
+        // Opcional no simulador de preset: HP de cada espécie, em vez de L cópias da média.
+        // Amostragem estratificada determinística; a rotação inclui espécies de peso pequeno ao longo das ondas.
+        const especies = (Array.isArray(o.monstros) ? o.monstros : []).filter(m => Number.isFinite(Number(m.health)) && Number(m.health) > 0);
+        const pesos = especies.map(m => Number(m.weight) > 0 && Number.isFinite(Number(m.weight)) ? Number(m.weight) : 1);
+        const somaPesos = pesos.reduce((a, b) => a + b, 0);
+        let hpOnda = L * HP;
+        const renovarOnda = onda => {
+            if (!especies.length) { vidaM.fill(HP); return; }
+            hpOnda = 0;
+            for (let i = 0; i < L; i++) {
+                const ponto = ((i + 0.5) / L + onda * 0.618033988749895) % 1 * somaPesos;
+                let j = 0, acumulado = pesos[0];
+                while (j < especies.length - 1 && ponto >= acumulado) acumulado += pesos[++j];
+                vidaM[i] = Number(especies[j].health); hpOnda += vidaM[i];
+            }
+        };
+        renovarOnda(0);
         let mortos = 0, Dtot = 0;
         const ferir = (i, d) => { const v = vidaM[i], e = d < v ? d : v; vidaM[i] = v - e; Dtot += e; if (vidaM[i] <= 1e-9) { vidaM[i] = 0; mortos++; } };
         const acertar = (porAlvo, alvos, presentes) => {
@@ -2444,7 +2461,7 @@
             }
             const presentes = t < tOnda ? 0 : cheg > 0 ? Math.min(L, 1 + Math.floor((t - tOnda) / cheg)) : L;
             if (mortos >= L) {
-                ondas++; somaT += t - tOnda; somaVivo += vivoAc; vivoAc = 0; vidaM.fill(HP); mortos = 0; Dtot = 0;
+                ondas++; somaT += t - tOnda; somaVivo += vivoAc; vivoAc = 0; renovarOnda(ondas); mortos = 0; Dtot = 0;
                 tOnda = t + E; t = Math.max(t + passo, tOnda); continue;
             }
             let vivos = presentes - mortos;
@@ -2491,7 +2508,7 @@
         const seg = fim / 1000;
         let T;
         if (ondas) T = somaT / ondas / 1000;
-        else { const r = Dtot / Math.max(1, (t - tOnda) / 1000); T = Math.min(3600, L * HP / Math.max(1e-6, r)); }
+        else { const r = Dtot / Math.max(1, (t - tOnda) / 1000); T = Math.min(3600, hpOnda / Math.max(1e-6, r)); }
         const por = {};
         for (const s of st) por[s.m.voc] = { manaMinFrac: s.max > 0 ? s.manaMin / s.max : 1, danoS: s.dano / seg, danoLutaS: luta ? s.dano / (luta / 1000) : 0, manaS: s.manaGasta / seg, ouroPocaoS: s.ouroP / seg, ouroRunaS: s.ouroR / seg, pocoesH: s.pocoes / seg * 3600, disparos: s.disparos };
         /* v2.13.4 — VIVOS × TEMPO por onda (monstro·s): quanto mais tempo o bicho fica vivo, mais ele bate
@@ -2513,10 +2530,10 @@
             return { minimo: p.minimo, runa: !!m.isRune, mana: m.isRune ? 0 : (m.mana || 0), ouro: m.isRune ? (a.custo || 0) : 0, cd: m.cooldownMs || 2000, grupo: m.groupCooldownMs || 2000,
                      sec: m.secondaryGroup || null, secMs: m.secondaryGroupCooldownMs || m.cooldownMs || 2000, d: a.dAlvo * f, casas: a.casas, fr: a.fr, unico: a.classe === 'unico' };
         });
-        const seguranca = !ctx.enxAtivo && ctx.escada.degrau >= 2 && voc === 'DRUID' ? 0.2 : 0; // v2.14.0: o enxuto não tem a poção de segurança
+        const seguranca = !ctx.perfilAtual && !ctx.enxAtivo && ctx.escada.degrau >= 2 && voc === 'DRUID' ? 0.2 : 0; // simular o preset não pode ligar uma poção que o dono desligou
         const basico = (ctx.basico[voc] || 0) * K_BASICO * mult * fis * tr;
         return { voc, slots, basico, manaMax: cv.manaMax, regen: cv.regen * (regenMul || 1) - cv.reserva - dreno, dreno, pocao: Math.max(esc.pocao || 0, seguranca),
-                 pocaoMana: ctx.pocao.mana, pocaoOuro: ctx.pocao.ouro };
+                 pocaoMana: (esc.pocaoInfo || ctx.pocao).mana, pocaoOuro: (esc.pocaoInfo || ctx.pocao).ouro };
     }
     function metricasInt(ctx, sim, extraOuroS) {
         const T = sim.T * ctx.eta, abH = ctx.L * 3600 / (T + ctx.E) * ctx.kCalib;
@@ -3376,6 +3393,61 @@
         const esc = {};
         for (const v of VOCS_INT) { const e = escolhaDoModelo(modelo, hunt, v, ctx, true); if (e.plano.length) esc[v] = e; }
         return avaliarPartyInt(ctx, esc, null);
+    }
+
+    /* 2.32.0 — simulação do PRESET ATUAL nos mapas, sem entrar e sem buscar outro kit.
+     * Não reutiliza o custo/abates do Scan de outro preset nem o teto de XP medido.
+     * O dano por alvo e a regeneração conhecidos continuam úteis. Cura recebida e
+     * poção de vida NÃO são simuladas: as notas deixam esse limite visível no Radar. */
+    function preverPerfilInt(hunt, opc) {
+        const configs = {};
+        for (const v of VOCS_INT) {
+            const c = opc && opc.perfis ? opc.perfis[v] : configDono(v);
+            if (!c || !Array.isArray(c.skills)) return { erro: 'preset de ' + v + ' ainda não lido do servidor' };
+            configs[v] = c;
+        }
+        const original = contextoInt(hunt, Object.assign({}, opc, { enxuto: false }));
+        if (!original) return { erro: 'dados do mapa ainda não carregados' };
+        // Cópia: não modifica o contexto em cache usado pela busca do Inteligente.
+        const ctx = Object.assign({}, original, { perfilAtual: true, memo: new Map(), defesa: {}, cVoc: {},
+            _semMedida: true, kCalib: 1, eta: 1, curaPorVivo: 0, custoFixoH: 0 });
+        const esc = {}, notas = ['cura e dano recebido não simulados; sobrevivência não validada',
+            'gasto inclui reserva estimada de mana para cura; poções de vida e munição não incluídas',
+            'vida individual das espécies; dano e cobertura de área aproximados pelo modelo do mapa',
+            'ataques básicos usam as referências do modelo; modificadores de equipamento não são integralmente simulados'];
+        for (const v of VOCS_INT) {
+            const c = configs[v], plano = [];
+            for (const nome of c.skills.filter(Boolean)) {
+                const av = ctx.porNome[v][nome];
+                if (!av || av.semML) return { erro: 'não foi possível simular ' + nome + ' de ' + v };
+                const mi = Number(c.minCreatures && c.minCreatures[nome]);
+                // Não reduz o mínimo ao lure: um slot que exige 8 não dispara com 4.
+                plano.push({ av, minimo: Number.isFinite(mi) && mi >= 1 ? mi : 1 });
+            }
+            const p = c.manaPotion, pct = p ? Number(p.percent) : 0;
+            const ligada = Number.isFinite(pct) && pct > 0;
+            const info = ligada ? listaPocoes('mana').find(x => x.n === p.name) : null;
+            if (ligada && (!info || !(info.media > 0))) return { erro: 'poção de mana desconhecida de ' + v };
+            esc[v] = { plano, pocao: ligada ? Math.min(100, pct) / 100 : 0,
+                sups: (c.supports || []).filter(Boolean).slice(0, 2),
+                pocaoInfo: info ? { mana: info.media, ouro: info.custo } : null };
+            ctx.defesa[v] = []; ctx.cVoc[v] = 1;
+        }
+        // A simulação aceita personagem sem ataque: ele ainda pode beber poção/sustentar buffs.
+        const train = (esc.KNIGHT.sups || []).includes('Train Party');
+        const membros = VOCS_INT.map(v => membroInt(v, esc[v], ctx, train));
+        const rodar = E => {
+            const sim = simularParty(membros, { L: ctx.L, hp: ctx.hp, E, seg: SIM_INT_SEG, monstros: hunt.monsters });
+            return { sim, met: metricasInt(Object.assign({}, ctx, { E }), sim) };
+        };
+        const r = rodar(ctx.E);
+        // Sensibilidade à espera 7–13 s: cenário, não intervalo estatístico de confiança.
+        const cenarios = [rodar(7), r, rodar(13)];
+        const faixaXpH = [Math.min(...cenarios.map(x => x.met.xpH)), Math.max(...cenarios.map(x => x.met.xpH))];
+        notas.push('XP varia com a espera entre ondas; faixa usa cenários de 7–13 s, não garantia');
+        if (!VOCS_INT.every(v => ctx.voc[v].regenMedida)) notas.push('regeneração de mana parcialmente estimada');
+        return { ctx, esc, membros, sim: r.sim, met: r.met, faixaXpH, notas,
+            seguro: seguroInt(ctx, membros, r.sim) };
     }
 
     /* =========================================================================
@@ -14070,7 +14142,7 @@
     function tpEstimar(ent) {
         const h = ent.hunt || {}, calib = ent.calib || { kAbates: 1, fatorLoot: TP_FATOR_LOOT_PADRAO, n: 0 };
         const L = tpLure(h), { hp, xp } = tpHpXpMedio(h);
-        const motor = ent.motor || null, notas = [];
+        const motor = ent.motor || null, notas = motor && motor.notas ? motor.notas.slice() : [];
         const E = ent.ritmo && tpNum(ent.ritmo.E) != null ? Math.max(0, ent.ritmo.E) : 10;
         const fPrey = tpNum(ent.fatorPrey) != null ? ent.fatorPrey : 1;
         let bloqueio = null;
@@ -14084,7 +14156,7 @@
             T = motor.T > 0 ? motor.T : motor.danoS > 0 ? L * hp / motor.danoS : null;
             abH = motor.abH > 0 ? motor.abH : calib.kAbates * L * 3600 / (T + E + 0.5 * L);
             custoH = motor.custoH != null ? motor.custoH : motor.custoPorAbate != null ? abH * motor.custoPorAbate : null;
-            if (custoH != null && calib.kCusto > 0 && calib.kCusto !== 1) custoH *= calib.kCusto; // v2.23.0 — gasto calibrado pelo medido
+            if (custoH != null && !motor.custoDireto && calib.kCusto > 0 && calib.kCusto !== 1) custoH *= calib.kCusto; // custo do preset não herda correção de outro kit
         } else notas.push('sem dano: o planejador não montou kit (dano das magias não medido?)');
         const loot = ent.loot || null;
         if (!loot) notas.push('sem tabela de loot');
@@ -14107,7 +14179,7 @@
                   ouroHMerc: lootHMerc != null && custoH != null ? Math.round(lootHMerc - custoH) : null,
                   porVoc: motor ? motor.porVoc || null : null, nota: motor && motor.nota != null ? motor.nota : null, imunes: ent.imunes || [],
                   fonte: 'estimado', medido: null, est: null, bloqueio, notas,
-                  confianca: calib.n > 0 ? 'calibrado' : 'baixa' };
+                  confianca: calib.n > 0 ? 'calibrado' : 'baixa', faixaXpH: motor && motor.faixaXpH || null };
         const m = ent.medido;
         const limpo = m && !m.suja && !m.erro && Number(m.abatesH) > 0 && tpNivelPerto(m.nivel, ent.nivel);
         if (limpo) {
@@ -14504,6 +14576,7 @@
         if (RADAR.rank === undefined) RADAR.rank = ler('radar_rank', null);
         const rank = RADAR.rank, h = (CAT.hunts || []).find(x => x.id === id);
         if (!rank || !Array.isArray(rank.linhas) || !h) return;
+        if (rank.modelo === 'motor:perfil') return; // o ranking é uma foto dos presets, não do Scan que acabou depois
         const i = rank.linhas.findIndex(l => l && l.id === id);
         if (i < 0) return;
         rank.linhas[i] = radarCompacto(estimarMapa(h, { nivel: rank.nivel, calib: rank.calib, modelo: rank.modelo }));
@@ -14515,6 +14588,7 @@
     function radarScanRapido(ids) {
         const rank = RADAR.rank;
         if (!ids || !ids.length || !rank) return;
+        if (rank.modelo === 'motor:perfil') { avisar('radar', 'Meu preset atual é só simulação: não troca de mapa nem aplica outro kit.', 'info'); return; }
         /* v2.14.6 — nunca mapa de risco alto, nem com o risco antigo (que dizia "baixo" para tudo) */
         if (!(rank.riscoV >= 2)) { avisar('radar', 'radar: o risco deste ranking é da versão antiga — CALCULAR de novo antes do Scan', 'erro'); return; }
         const seguro = new Set((rank.linhas || []).filter(l => l && !l.bloqueio && l.risco && l.risco.nivel !== 'alto' && l.risco.nivel !== 'bloqueado').map(l => l.id));
@@ -14528,6 +14602,20 @@
         } else avisar('radar', 'radar: o Scan não ligou — veja o motivo no Log', 'erro');
     }
     const MOTORES_RANK = {
+        perfil: (h) => {
+            const r = preverPerfilInt(h, RADAR.rodando && RADAR.perfilSnapshot ? { perfis: RADAR.perfilSnapshot } : null);
+            if (!r || r.erro) return { notas: [r && r.erro || 'preset indisponível'] };
+            const porVoc = {};
+            for (const v of VOCS_INT) {
+                const e = r.esc[v], s = r.sim.por[v];
+                porVoc[v] = { magia: e.plano[0] ? e.plano[0].av.m.name : '',
+                    kit: e.plano.map(p => p.av.m.name + ' ≥' + p.minimo).join(' · ') || 'sem ataques no preset',
+                    dano: s ? Math.round(s.danoS) : 0, pocao: e.pocao > 0,
+                    extras: 'suportes: ' + (e.sups.join(', ') || 'nenhum') + ' · mana: ' + Math.round(e.pocao * 100) + '%' };
+            }
+            return { abH: r.met.abH, custoH: r.met.custoH, T: r.met.T, porVoc, custoDireto: true,
+                faixaXpH: r.faixaXpH, notas: r.notas.concat(r.seguro ? [] : ['mana não se sustenta sem poção em pelo menos um personagem']) };
+        },
         atual: (h, m) => { const v = viabilidadeParty(m, h); return v && { danoS: v.danoS, custoPorAbate: v.custoPorAbate, porVoc: v.porVoc }; },
         /* v2.13.0 — o Inteligente v3 monta a party inteira contra os monstros do mapa (vida, elemento,
          * lure, mana e regeneração dos 4) e devolve abates/h e gasto/h da própria simulação — sem
@@ -14642,7 +14730,7 @@
         const loot = tab ? tpLootAbate(tab, mercado && MK.catalogo ? radarPrecoDe : null, {}) : null;
         const rit = ritmoOndas(h);
         const ent = { hunt: h, nivel: opc.nivel || nivelAtual(), premium: mkPremiumAgora(), motor, loot, ritmo: { E: rit.esperaS },
-                      calib: opc.calib || (RADAR.rank && RADAR.rank.calib) || null, medido: opc.semMedido ? null : radarScanDoMapa(h.id), extras: {},
+                      calib: opc.calib || (RADAR.rank && RADAR.rank.calib) || null, medido: opc.semMedido || nomeMotor === 'perfil' ? null : radarScanDoMapa(h.id), extras: {},
                       taxaXp: lerTaxaXp(), mortes: radarMortes(h.id), imunes: ne ? Object.keys(ne.vetos).map(rotuloElem) : [],
                       envelope: opc.envelope !== undefined ? opc.envelope : radarEnvelope(),
                       ilhas: opc.ilhas !== undefined ? opc.ilhas : ilhasDestravadas() };
@@ -14655,7 +14743,7 @@
         return { id: r.id, title: r.title, levelMin: r.levelMin, rec: r.rec || 0, premium: r.premium, L: r.L, T: r.T, abH: r.abH, xpH: r.xpH, xpHBonus: r.xpHBonus, lootH: r.lootH, lootHMerc: r.lootHMerc,
                  custoH: r.custoH, ouroH: r.ouroH, ouroHMerc: r.ouroHMerc, sorteH: r.sorteH || null, nota: r.nota, imunes: r.imunes, fonte: r.fonte, est: r.est, bloqueio: r.bloqueio,
                  medido: r.medido ? { t: r.medido.t, nivel: r.medido.nivel, minutos: r.medido.minutos, modelo: r.medido.modelo } : null, // v2.23.0 — a tela diz de onde veio
-                 confianca: r.confianca, notas: r.notas, risco: { nivel: r.risco.nivel, pts: r.risco.pts, motivos: r.risco.motivos, novo: !!r.risco.novo }, porVoc: pv };
+                 confianca: r.confianca, notas: r.notas, faixaXpH: r.faixaXpH || null, risco: { nivel: r.risco.nivel, pts: r.risco.pts, motivos: r.risco.motivos, novo: !!r.risco.novo }, porVoc: pv };
     }
     /* v2.13.2 — cópia da tabela de loot na gaveta comum com data e era: vale 7 dias e só na era atual
      * (antes não vencia nunca). O formato antigo (lista) ainda é lido até a próxima virada de era. */
@@ -14720,6 +14808,13 @@
         try { corrigirScansMoedas(); } catch (e) { falhou('scan (moedas)', e); } // v2.29.1 — com as tabelas de loot já carregadas
         if (!CAT.hunts || !CAT.magias) { avisar('radar', 'radar: catálogos ainda não carregados — espere o boot ou use "Rebaixar catálogos" no Status', 'erro'); return; }
         const cfg = radarCfg(), nivel = nivelAtual();
+        if (cfg.modelo === 'motor:perfil') {
+            const perfis = Object.fromEntries(VOCS_INT.map(v => [v, configDono(v)]));
+            if (VOCS_INT.some(v => !perfis[v] || !Array.isArray(perfis[v].skills))) {
+                avisar('radar', 'Leia os presets dos quatro personagens do servidor antes de simular (recarregue com o helper instalado).', 'erro'); return;
+            }
+            RADAR.perfilSnapshot = JSON.parse(JSON.stringify(perfis));
+        }
         const lista = CAT.hunts.filter(h => h && h.id !== HUNT_ID_BOSS && Array.isArray(h.monsters) && h.monsters.length && (h.levelMin || 0) <= nivel + 5);
         RADAR.rodando = true; RADAR.parar = false; RADAR.prog = { fase: 'tabelas de loot', i: 0, n: lista.length, nome: '' };
         renderizar();
@@ -14736,7 +14831,7 @@
                 RADAR.prog = { fase: 'calculando', i, n: lista.length, nome: lista[i].title };
                 renderizar();
                 await radarCeder(); // um mapa por giro: a tela e o jogo respiram entre eles
-                const ent = estimarMapa(lista[i], { entrada: true, nivel, envelope });
+                const ent = estimarMapa(lista[i], { entrada: true, nivel, envelope, modelo: cfg.modelo });
                 const cru = tpEstimar(Object.assign({}, ent, { medido: null, calib: { kAbates: 1, fatorLoot: 1, n: 0 } }));
                 brutos.push({ ent, cru });
             }
@@ -14746,13 +14841,13 @@
             const calib = tpCalibrar(Object.values(scanResultados() || {}).concat(vivo ? [vivo] : []), est, nivel);
             if (vivo) calib.vivo = { id: vivo.id, title: vivo.title, minutos: vivo.minutos };
             const linhas = brutos.map(b => radarCompacto(tpEstimar(Object.assign({}, b.ent, { calib }))));
-            const rank = { t: Date.now(), riscoV: 2, envelope, nivel, modelo: cfg.modelo, enxDeg: cfg.modelo === 'motor:inteligente' ? RADAR_OPC_INT.degrauEnx : null, mercado: !!(cfg.mercado && MK.catalogo), calib, parcial: !!RADAR.parar, n: lista.length, linhas };
+            const rank = { t: Date.now(), riscoV: 2, envelope, nivel, modelo: cfg.modelo, perfilSig: cfg.modelo === 'motor:perfil' ? JSON.stringify(RADAR.perfilSnapshot) : null, enxDeg: cfg.modelo === 'motor:inteligente' ? RADAR_OPC_INT.degrauEnx : null, mercado: !!(cfg.mercado && MK.catalogo), calib, parcial: !!RADAR.parar, n: lista.length, linhas };
             RADAR.rank = rank;
             guardar('radar_rank', rank);
             const top = tpOrdenar(linhas, cfg.ordem, { esconder: true, nivel })[0];
             avisar('radar', `radar: ${linhas.length} mapas calculados${RADAR.parar ? ' (interrompido)' : ''}` + (top ? ` — 1º por ${cfg.ordem === 'ouro' ? 'ouro' : cfg.ordem === 'dois' ? 'xp e ouro' : cfg.ordem === 'combo' ? 'menos combos' : 'xp'}: ${top.title}` : ''), 'ok');
         } catch (e) { falhou('radar (ranking)', e); avisar('radar', 'radar: o ranking parou — ' + e.message, 'erro'); }
-        finally { RADAR.rodando = false; RADAR.parar = false; RADAR.prog = null; renderizar(); }
+        finally { RADAR.rodando = false; RADAR.parar = false; RADAR.prog = null; RADAR.perfilSnapshot = null; renderizar(); }
     }
 
     /* ---- dia e loot ao vivo ---- */
@@ -15217,21 +15312,25 @@
         const cfg = radarCfg(), nivel = nivelAtual();
         if (RADAR.rank === undefined) RADAR.rank = ler('radar_rank', null);
         const rank = RADAR.rank;
-        const modelos = [['equilibrado', nomeModelo('equilibrado')], ['area', nomeModelo('area')]].concat(Object.keys(MOTORES_RANK).filter(k => k !== 'atual').map(k => ['motor:' + k, k]));
+        const modelos = [['equilibrado', nomeModelo('equilibrado')], ['area', nomeModelo('area')]].concat(Object.keys(MOTORES_RANK).filter(k => k !== 'atual').map(k => ['motor:' + k, k === 'perfil' ? 'Meu preset atual (simular)' : k]));
         let h = `<div class="tb-linha"><button type="button" class="tb-bt" id="rd-calc"${RADAR.rodando ? ' disabled' : ''}>${RADAR.rodando ? 'calculando…' : 'CALCULAR'}</button>` +
             (RADAR.rodando ? `<button type="button" class="tb-bt mini" id="rd-parar">parar</button>` : '') +
             `<select id="rd-modelo" aria-label="modelo do motor">${modelos.map(([k, n]) => `<option value="${escHtml(k)}"${k === cfg.modelo ? ' selected' : ''}>${escHtml(n)}</option>`).join('')}</select></div>`;
         if (RADAR.prog) h += `<div class="tb-mut" role="status">${escHtml(RADAR.prog.fase)} ${numBR(RADAR.prog.i + 1)}/${numBR(RADAR.prog.n)}${RADAR.prog.nome ? ' — ' + escHtml(RADAR.prog.nome) : ''}</div>`;
         h += `<div class="tb-seg" role="group" aria-label="ordem">` + [['xp', 'XP'], ['ouro', 'Ouro'], ['dois', 'Os dois'], ['combo', '⚡ 1 combo']].map(([k, n]) => `<button type="button" data-rd-ordem="${k}" aria-pressed="${cfg.ordem === k}">${n}</button>`).join('') + `</div>`;
         h += `<div class="tb-linha">${rdSw('rd-merc', cfg.mercado, 'preço do mercado')}${rdSw('rd-esconder', cfg.esconder, 'esconder risco alto e bloqueados')}</div>`;
+        if (cfg.modelo === 'motor:perfil') h += `<div class="rd-cx">Simula seus ataques, mínimos, suportes e poções de mana nos mapas sem entrar. Usa lure máximo. Cura e dano recebido não são simulados: lucro parcial, sobrevivência não validada. Scans antigos não substituem esta previsão.</div>`;
         if (!rank || !Array.isArray(rank.linhas)) {
             return h + `<div class="rd-cx tb-mut">Nenhum ranking ainda. CALCULAR baixa a tabela de loot de cada mapa até o nível ${numBR(nivel + 5)} (uma leitura pública a cada 0,3 s, guardada) e roda o planejador de magias com o dano medido dos 4 em cada um. Não entra em mapa nenhum.</div>`;
         }
         const c = rank.calib || {};
+        if (rank.modelo !== cfg.modelo) h += `<div class="tb-av">Modelo alterado: CALCULAR para atualizar os resultados abaixo.</div>`;
+        if (rank.modelo === 'motor:perfil' && rank.perfilSig !== JSON.stringify(Object.fromEntries(VOCS_INT.map(v => [v, configDono(v)])))) h += `<div class="tb-av">Seus presets mudaram: CALCULAR novamente para simular a configuração atual.</div>`;
         h += `<div class="tb-mut">calculado ${rdHa(rank.t)}, nível ${numBR(rank.nivel)}${rank.enxDeg != null ? ` · kit enxuto, degrau ${rank.enxDeg} (sem os seus suportes; ligue "kit enxuto" na Magia para aplicar o mesmo)` : rank.modelo === 'motor:inteligente' ? ' · <b class="tb-av">calculado com os seus suportes: recalcule</b>' : ''}${rank.parcial ? ' · <span class="tb-av">interrompido</span>' : ''}${rank.mercado ? ' · com preço do mercado' : ''}` +
              (rank.nivel !== nivel && nivel > 1 ? ` · <b class="tb-av">você está no nível ${numBR(nivel)}: recalcule</b>` : '') + `</div>`;
-        h += `<div class="tb-mut">fator de loot ${numBR(c.fatorLoot, 2)} ${c.nLoot ? `(n = ${c.nLoot} ${c.nLoot > 1 ? 'medições' : 'medição'})` : '<span class="tb-av">(padrão, sem Scan: estimado)</span>'} · abates ×${numBR(c.kAbates, 2)}${c.nAbates ? '' : ' (sem calibração)'} · gasto ×${numBR(c.kCusto != null ? c.kCusto : 1, 2)}${c.nCusto ? '' : ' <span class="tb-av">(sem calibração: o gasto estimado costuma sair alto)</span>'}${c.vivo ? ` · <span class="tb-ok">caçada atual em ${escHtml(c.vivo.title)} (${numBR(c.vivo.minutos)} min) entrou na calibração</span>` : ''}` +
-             aj('rd-calib', 'O catálogo de loot superestima 2 a 4× (TIBIDLE §12): o valor absoluto vem da mediana de <b>loot medido ÷ (abates × loot do catálogo)</b> nos Scans limpos até 8 níveis do seu (e na caçada atual, se ela já tem 3 min e 50 abates). Sem Scan, 0,35. O <b>gasto</b> estimado é corrigido do mesmo jeito (suprimentos medidos por abate ÷ estimados por abate): sem medição ele sai alto, porque a simulação cobra poção de mana nos 4. Abates/h = lure × 3600 ÷ (T + espera + 0,5 × lure), com T = lure × HP médio ÷ dano/s da party (o planejador de Magia), corrigido pela mediana medido/estimado. <b>medido</b> = a caçada atual ou o Scan limpo manda; <b>estimado</b> = conta. Com "esconder" ligado, mapa de nível 50 abaixo do seu some. O dano que o monstro dá não existe na API: o risco compara a VIDA do monstro e o nível mínimo do mapa com o mapa mais forte em que a party já caçou sem morrer (Scans e sessões de ≥ 10 min); acima disso é "nunca testado" (risco médio ou alto). Também contam a margem de nível, a nota do elemento, o hp mínimo do Knight e as mortes. Risco alto nunca entra no Scan rápido.') + `</div>`;
+        if (rank.modelo === 'motor:perfil') h += `<div class="tb-mut">fator de loot ${numBR(c.fatorLoot, 2)} · gasto calculado do preset, sem fator de outro kit · XP estimado pelo combate</div>`;
+        else { h += `<div class="tb-mut">fator de loot ${numBR(c.fatorLoot, 2)} ${c.nLoot ? `(n = ${c.nLoot} ${c.nLoot > 1 ? 'medições' : 'medição'})` : '<span class="tb-av">(padrão, sem Scan: estimado)</span>'} · abates ×${numBR(c.kAbates, 2)}${c.nAbates ? '' : ' (sem calibração)'} · gasto ×${numBR(c.kCusto != null ? c.kCusto : 1, 2)}${c.nCusto ? '' : ' <span class="tb-av">(sem calibração: o gasto estimado costuma sair alto)</span>'}${c.vivo ? ` · <span class="tb-ok">caçada atual em ${escHtml(c.vivo.title)} (${numBR(c.vivo.minutos)} min) entrou na calibração</span>` : ''}` +
+             aj('rd-calib', 'O catálogo de loot superestima 2 a 4× (TIBIDLE §12): o valor absoluto vem da mediana de <b>loot medido ÷ (abates × loot do catálogo)</b> nos Scans limpos até 8 níveis do seu (e na caçada atual, se ela já tem 3 min e 50 abates). Sem Scan, 0,35. O <b>gasto</b> estimado é corrigido do mesmo jeito (suprimentos medidos por abate ÷ estimados por abate): sem medição ele sai alto, porque a simulação cobra poção de mana nos 4. Abates/h = lure × 3600 ÷ (T + espera + 0,5 × lure), com T = lure × HP médio ÷ dano/s da party (o planejador de Magia), corrigido pela mediana medido/estimado. <b>medido</b> = a caçada atual ou o Scan limpo manda; <b>estimado</b> = conta. Com "esconder" ligado, mapa de nível 50 abaixo do seu some. O dano que o monstro dá não existe na API: o risco compara a VIDA do monstro e o nível mínimo do mapa com o mapa mais forte em que a party já caçou sem morrer (Scans e sessões de ≥ 10 min); acima disso é "nunca testado" (risco médio ou alto). Também contam a margem de nível, a nota do elemento, o hp mínimo do Knight e as mortes. Risco alto nunca entra no Scan rápido.') + `</div>`; }
         const linhas = tpOrdenar(rank.linhas, cfg.ordem, { esconder: cfg.esconder, nivel });
         /* v2.14.3 — SCAN RÁPIDO (dono, 02/10: "onde eu desse play ele fazia um scan bem rápido"): os N primeiros da
          * ordem atual, com o mesmo kit que o ranking simulou, RADAR_SCAN_MIN cada. É o Scan de sempre (devolve o jogo
@@ -15241,7 +15340,7 @@
         const riscoVelho = !(rank.riscoV >= 2);
         if (riscoVelho) h += `<div class="rd-cx tb-ruim">⚠ o risco deste ranking foi calculado pela versão antiga, que marcava todo mapa como seguro. CALCULAR de novo antes de escolher um mapa.</div>`;
         /* v2.14.6 — o Scan rápido NUNCA entra em mapa de risco alto (o dono morreu num mapa do topo, 02/10) */
-        const podeScan = (l) => !l.bloqueio && !riscoVelho && l.risco && l.risco.nivel !== 'alto' && l.risco.nivel !== 'bloqueado';
+        const podeScan = (l) => rank.modelo !== 'motor:perfil' && !l.bloqueio && !riscoVelho && l.risco && l.risco.nivel !== 'alto' && l.risco.nivel !== 'bloqueado';
         RADAR.topIds = linhas.filter(podeScan).slice(0, RADAR_SCAN_TOP).map(l => l.id);
         if (RADAR.topIds.length) {
             h += `<div class="tb-linha"><button type="button" class="tb-bt" id="rd-scan-top"${scanOcup ? ' disabled' : ''} title="mede os ${RADAR.topIds.length} primeiros desta ordem com o kit do ranking (lure máximo) e volta para onde estava">▶ Scan rápido dos ${RADAR.topIds.length} primeiros · ~${numBR(Math.round(RADAR.topIds.length * (RADAR_SCAN_MIN + 0.5)))} min</button>` +
@@ -15249,7 +15348,7 @@
         }
         const falta = xpFaltando();
         const ouroDe = (l) => rank.mercado && l.ouroHMerc != null ? l.ouroHMerc : l.ouroH;
-        h += `<div class="rd-cab"><span>mapa</span><span>xp/h</span><span>ouro/h</span><span>risco</span></div>`;
+        h += `<div class="rd-cab"><span>mapa</span><span>xp/h</span><span>${rank.modelo === 'motor:perfil' ? 'ouro parcial/h' : 'ouro/h'}</span><span>risco</span></div>`;
         for (const l of linhas) {
             const tags = [l.fonte === 'medido' ? `<span class="tb-tag tb-ok" title="${l.medido && l.medido.modelo === 'ao vivo' ? 'a caçada atual, pelo analisador do jogo' : 'o melhor Scan limpo deste mapa'}${l.medido && l.medido.nivel ? ' (nível ' + numBR(l.medido.nivel) + ')' : ''}">medido${l.medido && l.medido.modelo ? ' · ' + (l.medido.modelo === 'ao vivo' ? 'caçada atual' : escHtml(nomeModelo(l.medido.modelo))) : ''}</span>` : '<span class="tb-tag">estimado</span>',
                           (c => c === 1 ? '<span class="tb-tag tb-ok" title="a party limpa a onda na 1ª rajada">⚡ 1 combo</span>' : c ? `<span class="tb-tag" title="rajadas (a cada 2 s) para limpar a onda">${c} combos</span>` : '')(tpCombos(l.T)),
@@ -15263,12 +15362,13 @@
                  `<span><span class="rd-r ${escHtml(l.risco.nivel)}">${escHtml(l.risco.nivel)}</span></span></summary><div>` +
                  `<div>lure ${numBR(l.L)} · ${l.abH != null ? numBR(l.abH) + ' abates/h' : 'sem abates'}${l.T != null ? ` · onda limpa em ${numBR(l.T, 1)} s (${tpCombos(l.T)} combo${tpCombos(l.T) > 1 ? 's' : ''})` : ''}${xpReal && falta ? ` · próximo nível em ${escHtml(fmtHoras(falta / xpReal))}` : ''}</div>` +
                  `<div>loot ${rdK(l.lootH)}/h${l.lootHMerc != null && l.lootHMerc !== l.lootH ? ` (mercado ${rdK(l.lootHMerc)})` : ''} · gasto ${rdK(l.custoH)}/h${l.sorteH ? ` · sorte no Scan ${rdSinal(l.sorteH)}/h (fora do ouro: raro não se repete)` : ''}${l.xpHBonus ? ` · xp com bônus ${rdK(l.xpHBonus)}/h` : ''}</div>` +
+                 (l.faixaXpH ? `<div class="tb-mut">XP RAW/h por espera de 7–13 s: ${rdK(l.faixaXpH[0])} a ${rdK(l.faixaXpH[1])} (cenários, não garantia)</div>` : '') +
                  (l.est && l.fonte === 'medido' ? `<div class="tb-mut">est.: ${rdK(l.est.xpH)} xp/h · ${rdSinal(l.est.ouroH)} ouro/h</div>` : '') +
                  (l.nota != null ? `<div>nota da party contra o mapa: ${numBR(l.nota)}</div>` : '') + pv +
                  (l.imunes && l.imunes.length ? `<div class="tb-av">imunes: ${escHtml(l.imunes.join(', '))}</div>` : '') +
                  (l.risco.motivos.length ? `<div class="tb-mut">risco: ${l.risco.motivos.map(escHtml).join('; ')}</div>` : '') +
                  (l.notas && l.notas.length ? `<div class="tb-mut">${l.notas.map(escHtml).join(' · ')}</div>` : '') +
-                 (!podeScan(l) && !l.bloqueio ? `<div class="tb-ruim">sem Scan automático aqui: risco ${escHtml(l.risco.nivel)}${riscoVelho ? ' (recalcule)' : ''}. Se quiser testar, entre você mesmo, com lure baixo.</div>` : '') +
+                 (!podeScan(l) && !l.bloqueio && rank.modelo !== 'motor:perfil' ? `<div class="tb-ruim">sem Scan automático aqui: risco ${escHtml(l.risco.nivel)}${riscoVelho ? ' (recalcule)' : ''}. Se quiser testar, entre você mesmo, com lure baixo.</div>` : '') +
                  (podeScan(l) ? `<div class="tb-linha"><button type="button" class="tb-bt mini" data-rd-scan="${escHtml(String(l.id))}"${scanOcup ? ' disabled' : ''} title="entra no mapa, aplica este kit nos 4 e mede ${RADAR_SCAN_MIN} min (pede confirmação)">▶ medir ${RADAR_SCAN_MIN} min</button></div>` : '') + `</div></details>`;
         }
         if (!linhas.length) h += `<div class="rd-cx tb-mut">Nenhum mapa passou no filtro.</div>`;
