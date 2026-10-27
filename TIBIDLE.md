@@ -6166,3 +6166,14 @@ Código: setup com `pocaoDoMapa` troca a poção do perfil pela do post, e poç�
 vem antes da Health Potion, que só sai se a magia não puder). O `aplicarDiscord` guarda as poções do dono em `dc_pocao_dono` antes do primeiro
 setup com a marca; o próximo setup de outro mapa (sem a marca) devolve essas poções e apaga a cópia. Sem cópia guardada, segue a regra da
 2.29.4 (a poção do perfil fica). Teste novo em `testes/discord.test.js`.
+
+## 2.29.8 — a SUA poção também passa pela vocação (27/10)
+
+Conferência do 2.29.2 → 2.29.7 (suíte, ESLint e o diff). Achado: a regra "a poção é do dono" (2.29.4) mantinha a poção
+que já estava no perfil **sem conferir vocação nem nível**. Um Paladino que ficou com a `Great Health Potion` (só do
+Knight) no perfil — pelo bug da 2.29.0, ou por um deslize na tela de atalhos — voltava a caçar sem poção de vida com
+"poção sua, fica". Agora a sua poção de vida e a de mana passam pela mesma conferência da 2.29.1 (`/potions`: vocação,
+minLevel, maxLevel): a que ele não bebe sai com aviso ("a sua X não é do Paladino — entra a do post") e a do post entra,
+conferida; sem poção no post, fica tirada com aviso para pôr uma. Sem o catálogo de poções não há como conferir e vale a
+2.29.4. Testes: 431 (1 novo no `discord.test.js`). O `autohunt.test.js` tem um teste com espera de 6 s que falha com a
+máquina carregada (passa sozinho e no CI).
