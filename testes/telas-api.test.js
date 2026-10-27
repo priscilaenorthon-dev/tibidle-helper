@@ -173,6 +173,16 @@ t('tpEstimar: motor null dá "sem dano"; motor v3 falso com abH e custoH é usad
     const extras = P.tpEstimar(entBase({ extras: { municaoH: 100, vidaH: 200 } }));
     perto(extras.custoH - P.tpEstimar(entBase()).custoH, 300, 1, 'munição e cura medidas entram no gasto');
 });
+
+t('2.32: custo direto do preset não recebe fator de custo de outro kit; preserva cenários e limites', () => {
+    const motor = { abH: 1000, custoH: 5000, custoDireto: true, faixaXpH: [20000, 30000], notas: ['cura não simulada'] };
+    const r = P.tpEstimar(entBase({ motor, calib: { fatorLoot: 0.35, kCusto: 2, n: 1 } }));
+    assert.strictEqual(r.custoH, 5000);
+    assert.deepStrictEqual(r.faixaXpH, [20000, 30000]);
+    assert(r.notas.includes('cura não simulada'));
+    const antigo = P.tpEstimar(entBase({ motor: Object.assign({}, motor, { custoDireto: false }), calib: { fatorLoot: 0.35, kCusto: 2, n: 1 } }));
+    assert.strictEqual(antigo.custoH, 10000, 'motores antigos mantêm sua calibração');
+});
 t('tpRisco: cada motivo e cada faixa', () => {
     const base = { nivel: 62, levelMin: 30, L: 5, xpAbate: 100, T: 5, notaParty: 90 };
     assert.deepStrictEqual([P.tpRisco(base).nivel, P.tpRisco(base).pts], ['baixo', 0]);
@@ -607,6 +617,35 @@ t('Radar/Mapas: ranking completo é SÓ LEITURA (nada no socket, GETs públicos)
     const W2 = criarMundo({ ls: Object.fromEntries(W.store) });
     await W2.avancar(0);
     assert(/Vampire hell/.test(W2.html()) && /nível 62/.test(W2.html()), 'o ranking não voltou depois do F5');
+    assert.deepStrictEqual(W.errosTimer, []);
+});
+
+t('2.32: preset atual calcula sem visitar, não vira Scan antigo nem oferece troca de mapa', async () => {
+    const velho = { id: 46, nivel: 62, abatesH: 999999, xpRawH: 99999999, supH: 1, lootH: 99999999, minutos: 10, seg: 600, t: 1 };
+    const W = criarMundo({ ls: comAba('mapas', {
+        tb_helper_radar_cfg: JSON.stringify({ modelo: 'motor:perfil', esconder: false }),
+        tb_helper_scan_resultados: JSON.stringify({ antigo: velho })
+    }) });
+    await W.avancar(0);
+    const ws = await conectar(W);
+    const vocs = ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'];
+    const nomes = ['Berserk', 'Divine Caldera', 'Energy Wave', 'Strong Ice Wave'];
+    ws.emitir({ type: 'welcome', data: { battleConfigs: Object.fromEntries(vocs.map((v, i) => [v, {
+        skills: [nomes[i]], minCreatures: {}, supports: [], manaPotion: { name: 'Mana Potion', percent: 30 }
+    }])) } });
+    await W.avancar(0);
+    W.el('rd-calc').click();
+    await W.avancar(1000);
+    // Uma alteração no seletor durante a leitura não mistura motores no mesmo ranking.
+    W.store.set('tb_helper_radar_cfg', JSON.stringify({ modelo: 'area', esconder: false }));
+    await W.avancar(300000);
+    const rank = W.lsGet('tb_helper_radar_rank');
+    assert(rank && rank.modelo === 'motor:perfil');
+    assert(rank.linhas.some(l => l.xpH > 0 && Array.isArray(l.faixaXpH)));
+    assert(rank.linhas.every(l => l.fonte === 'estimado' && l.medido === null));
+    assert(!/data-rd-scan=|id="rd-scan-top"/.test(W.html()));
+    assert(/ouro parcial\/h|lucro parcial/.test(W.html()));
+    assert.deepStrictEqual(enviados(ws), [], 'o simulador não pode enviar ações');
     assert.deepStrictEqual(W.errosTimer, []);
 });
 
