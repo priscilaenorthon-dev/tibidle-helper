@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.34.2
+// @version      2.34.3
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.34.2';
+    const VERSAO = '2.34.3';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -6629,6 +6629,8 @@
     const WC_HP_POR_MANA = 2.5; // v2.23.1 — HP de Wound Cleansing por mana do Knight que vira defesa (medido 17/10: 95–164 HP / 40 mana ≈ 3,2; ~¼ sobra com a vida cheia)
     /* elemento das magias de cada mago (dono, 29/09): Feiticeiro energia e fogo, Druida gelo e terra */
     const ELEM_DO_MAGO = { SORCERER: ['energia', 'fogo'], DRUID: ['gelo', 'terra'] };
+    /* v2.34.3 — quanto 1 ponto de Distância soma na média das Spears (fórmulas do catálogo): Ethereal 2/3 por ponto, Strong 5,6 */
+    const ES_SKILL = 2 / 3, SES_SKILL = 5.6;
     /* v2.16.3 — +1 ML nos magos vale no mínimo 2,0 de regen. de mana (dono, 13/10, seguindo os vídeos).
      * v2.23.0 — 3,0 (dono, 17/10: "é melhor que regen. de mana para eles itens com Magic Level, tanto a wand ou rod quanto
      * equipamentos"): a melhor linha de regen. de mana da forja é 2,0/s, então +1 ML (de fábrica ou forjado) agora bate
@@ -6648,6 +6650,7 @@
         fracMagica: { KNIGHT: 0.9, PALADIN: 0.95, SORCERER: 1, DRUID: 1 }, // magia de ataque + runa + wand (Dano mágico da forja)
         fracMagia: { KNIGHT: 0.9, PALADIN: 0.5, SORCERER: 0.87, DRUID: 0.88 }, // só magia: ML de item não vale na runa
         fracSagrado: 0.5, // Paladino: Caldera + Divine Missile
+        fracDist: 0.3, // v2.34.3 — Paladino: Ethereal Spear + Strong Ethereal Spear (usam DISTÂNCIA, não ML; setups do Discord levam as duas)
         tiroS: { SORCERER: 0.14, DRUID: 0.14 }, // tiros da wand/rod por segundo (medido: mana curta)
         tomadoS: 30, fisico: 0.65, golpesS: 0.45, // Knight: dano tomado/s, parte corpo a corpo, golpes/s
         hpMinK: null, // v2.18.2 — vida mínima MEDIDA do Knight (%), quando há; sem medida, a defesa vale cheia
@@ -6813,7 +6816,7 @@
      * foi medido (Scans e caçadas) é SOMADO pelo tempo de cada medida: o perfil sai o mesmo em qualquer mapa e só anda devagar,
      * conforme você caça mais. rzs = [{seg, danoTotal, porVoc, magias, tirosH, tomadoH, tomadoCorpoH, golpesCorpoH, elemPorVoc}]
      * (livro-razão), dms = [danoMapaJuntar(...)] (dano guardado por mapa), bebe = {VOC: bool}, sagrado = Set de magias de holy. */
-    function partyConsolidada(rzs, dms, bebe, sagrado) {
+    function partyConsolidada(rzs, dms, bebe, sagrado, distancia) {
         const R = (rzs || []).filter(r => r && r.seg > 0 && r.danoTotal > 0), D = (dms || []).filter(d => d && d.seg > 0 && d.tomadoH > 0);
         if (!R.length && !D.length) return null;
         const P = { share: {}, dpm: {}, mana: {}, bebe: Object.assign({}, bebe || {}), fracMagica: {}, fracMagia: {}, tiroS: {}, n: R.length + D.length };
@@ -6821,7 +6824,7 @@
             const seg = R.reduce((t, r) => t + r.seg, 0), tot = R.reduce((t, r) => t + r.danoTotal, 0);
             P.dps = tot / seg;
             for (const v of VOCS_EQUIP) {
-                let dano = 0, spD = 0, spM = 0, todoM = 0, holy = 0, manaW = 0, manaS = 0, tiros = 0, tirosS = 0;
+                let dano = 0, spD = 0, spM = 0, todoM = 0, holy = 0, spear = 0, manaW = 0, manaS = 0, tiros = 0, tirosS = 0;
                 for (const r of R) {
                     const pv = r.porVoc && r.porVoc[v]; if (!pv || !(pv.dano > 0)) continue;
                     dano += pv.dano;
@@ -6829,7 +6832,7 @@
                     for (const m of (r.magias || [])) {
                         if (m.voc !== v || !(m.dano > 0)) continue;
                         todoM += m.dano;
-                        if (!m.runa) { spD += m.dano; spM += m.mana || 0; if (sagrado && sagrado.has(m.nome)) holy += m.dano; }
+                        if (!m.runa) { spD += m.dano; spM += m.mana || 0; if (sagrado && sagrado.has(m.nome)) holy += m.dano; if (distancia && distancia.has(m.nome)) spear += m.dano; }
                     }
                     if (r.tirosH && r.tirosH[v] != null) { tiros += r.tirosH[v] * r.seg / 3600; tirosS += r.seg; }
                 }
@@ -6839,7 +6842,7 @@
                 if (spM > 0 && spD > 0) P.dpm[v] = spD / spM;
                 P.fracMagia[v] = spD / dano;
                 P.fracMagica[v] = v === 'SORCERER' || v === 'DRUID' ? 1 : todoM / dano;
-                if (v === 'PALADIN') P.fracSagrado = holy / dano;
+                if (v === 'PALADIN') { P.fracSagrado = holy / dano; P.fracDist = spear / dano; } // v2.34.3: fracDist
                 if (tirosS) P.tiroS[v] = tiros / tirosS;
             }
             const hp = R.filter(r => r.porVoc && r.porVoc.KNIGHT && Number.isFinite(Number(r.porVoc.KNIGHT.hpMin)));
@@ -6889,7 +6892,7 @@
         P.dano_fisico = _r(s * (voc === 'KNIGHT' ? 1 : voc === 'PALADIN' ? 1 - fm : 0));
         for (const e of ELEM) {
             const w = voc === 'KNIGHT' ? 0 // tudo do Knight é físico
-                : voc === 'PALADIN' ? (e === 'sagrado' ? R.fracSagrado : Math.max(0, fm - R.fracSagrado) / 4)
+                : voc === 'PALADIN' ? (e === 'sagrado' ? R.fracSagrado : Math.max(0, fm - R.fracSagrado - (R.fracDist || 0)) / 4) // v2.34.3: as Spears são físicas
                 : (ELEM_DO_MAGO[voc] || []).includes(e) ? 0.6 : 0;
             P['dano_elem_' + e] = _r(s * w);
         }
@@ -6906,12 +6909,19 @@
             /* v2.16.0 — update 1.0.13 (30/09) + wiki /como-o-dano-e-calculado (12/10): o mínimo do tiro passou a ser 60 %
              * do máximo (era nível/5). Média = 0,8 × máx; a parte de cada ponto de distância sobe um pouco. */
             const tiroMax = n5 + 0.09 * MUNICAO_GRATIS.arrow * sk.dist;
-            P.distancia = P.skilldist = _r(s * (1 - fm) * _pct(0.09 * MUNICAO_GRATIS.arrow, tiroMax));
+            /* v2.34.3 — dono, 28/10: "os maiores danos do arqueiro são sagrado e Distância". A DISTÂNCIA também faz as Ethereal
+             * Spears (catálogo do jogo: Ethereal Spear = nível/5 + (skill+25)/3 … nível/5 + skill + 25; Strong = (2·skill)·2,3 + nível/5
+             * + 7 … (2·skill)·3,3 + nível/5 + 13), que o livro-razão contava como "magia" — a régua só via o tiro básico (5 % do
+             * dano na referência). Agora: tiro × (1 − fm) + Spears × fracDist (medido; referência 30 %). */
+            const fd = Math.max(0, Math.min(fm, R.fracDist || 0));
+            const avgES = n5 + (sk.dist + 25) * ES_SKILL, avgSES = n5 + 10 + SES_SKILL * sk.dist;
+            const pctSpear = (_pct(ES_SKILL, avgES) + _pct(SES_SKILL, avgSES)) / 2;
+            P.distancia = P.skilldist = _r(s * ((1 - fm) * _pct(0.09 * MUNICAO_GRATIS.arrow, tiroMax) + fd * pctSpear));
             P.municao_atk = _r(s * (1 - fm) * _pct(0.09 * sk.dist, tiroMax)); // por ponto de ataque da munição grátis
             /* v2.18.1 — dono, 14/10: "arco e besta têm status e dano também". O ataque do arco/besta (/item/info: composite
              * hornbow 3) soma ao da munição no tiro — vale o mesmo que 1 ponto de ataque da munição. */
             P.attack = P.municao_atk;
-            P.nivel_magico = P.magiclevelpoints = _r(s * fs * _pct(4, n5 + 4 * sk.ml)); // Caldera/Missile (a runa ignora ML de item)
+            P.nivel_magico = P.magiclevelpoints = _r(s * Math.max(0, fs - fd) * _pct(4, n5 + 4 * sk.ml)); // Caldera/Missile (a runa ignora ML de item; v2.34.3: as Spears não usam ML)
         } else {
             const onda = voc === 'SORCERER' ? _pct(6.75, n5 + 6.75 * sk.ml) // Energy Wave: n/5 + 4,5–9·ML
                                             : _pct(6.05, n5 + 6.05 * sk.ml + 34); // Strong Ice Wave: n/5 + 4,5–7,6·ML + 20–48
@@ -7443,7 +7453,8 @@
     const REGRAS_FASE2 = {
         KNIGHT: ['FASE 2: "depois do 110–120 não se brinca mais de regen. de mana" — defesa BASE alta (Royal/Demon/Zaoan Helmet; Golden Armor → Dragon Scale Mail → Magic Plate Armor → prismático da Isolda; Golden → Zaoan Legs) com proteção mágica + resistência a fogo nos encaixes; regen. "no final do final"',
                  'FASE 2: arma de maior ataque refinada só até +4; colar a potência 400 para cair corpo a corpo 2; linhas de arma/colar: corpo a corpo + dano físico % + chance de crítico; base de forja só com potência ≥ 350 (meta 600)'],
-        PALADIN: ['FASE 2: o Paladino é o último a receber ("filho esquecido; o dano principal é dos magos") — mas tudo que aparecer para ele vai: distância, dano físico + sagrado + crítico na arma e no colar; no corpo resist. a fogo + proteção mágica + vida'],
+        PALADIN: ['FASE 2: o Paladino é o último a receber ("filho esquecido; o dano principal é dos magos") — mas tudo que aparecer para ele vai: distância, dano físico + sagrado + crítico na arma e no colar; no corpo resist. a fogo + proteção mágica + vida',
+                  '2.34.3 (dono, 28/10): o que faz o Paladino forte é regen. de mana, crítico, DISTÂNCIA e DANO SAGRADO. A Distância faz o tiro (0,09 × munição × Distância + nível/5) E as Ethereal Spears; o sagrado faz Divine Missile e Caldera. Dano sagrado é linha nobre na arma e no colar dele.'],
         SORCERER: ['FASE 2: wand e colar = dano de ENERGIA + dano mágico % + ML (crítico "não bobeia"); no corpo resist. ao elemento + proteção mágica + VIDA ("mago que morre não dá dano"; com resistência alta dá para caçar sem Magic Shield); potência ≥ 350, meta 600'],
         DRUID: ['FASE 2: rod e colar = dano de GELO + dano mágico % + ML; no corpo resist. ao elemento + proteção mágica + VIDA; "set de terra" subiu o lucro de uma hunt de ~200k/h; potência ≥ 350, meta 600']
     };
@@ -7586,7 +7597,8 @@
     /* v2.11.19 — por vocação: regen. de vida só é nobre no Knight; na arma/colar, o que aquela vocação usa. */
     const NOBRE_DEFESA = { KNIGHT: ['regen_mana', 'regen_vida'], PALADIN: ['regen_mana'], SORCERER: ['regen_mana'], DRUID: ['regen_mana'] };
     /* v2.16.3 — chance de crítico é nobre para Paladino e magos (vídeos: "arma: ML ou crítico"; base 0 % no jogo) */
-    const NOBRE_ATAQUE = { KNIGHT: ['corpo_a_corpo', 'dano_fisico'], PALADIN: ['distancia', 'nivel_magico', 'dano_magico', 'dano_fisico', 'critico_chance'],
+    /* v2.34.3 — dono, 28/10: "Paladino: regen. de mana, crítico, Distância e Dano Sagrado" — dano sagrado é nobre na arma e no colar dele */
+    const NOBRE_ATAQUE = { KNIGHT: ['corpo_a_corpo', 'dano_fisico'], PALADIN: ['distancia', 'dano_elem_sagrado', 'nivel_magico', 'dano_magico', 'dano_fisico', 'critico_chance'],
                            SORCERER: ['nivel_magico', 'dano_magico', 'critico_chance'], DRUID: ['nivel_magico', 'dano_magico', 'critico_chance'] };
     const nobresDe = (slot, voc) => ((slot === 'weapon' || slot === 'necklace' ? NOBRE_ATAQUE : NOBRE_DEFESA)[voc] || []);
     function encaixeNobre(p, voc) {
@@ -7819,7 +7831,11 @@
         /* poções */
         if (nivel > 0) out.push({ chave: 'pocoes', nivel: 'ok', titulo: `Poções do nível ${nivel}`, texto: VOCS_EQUIP.map(v => { const q = SB_POCOES[v](nivel); return `${SB_VOC_PT[v]}: ${q.vida} ≤ ${v === 'KNIGHT' ? 45 : 40} % · ${q.mana} ≤ ${v === 'DRUID' ? 30 : 20} %`; }).join(' · ') + '. Cura de emergência cedo: Intense Wound Cleansing ≤ 30 % na frente da leve; Druida com Ultimate Healing ≤ 50 % antes do Heal Friend.' });
         /* lure */
-        out.push({ chave: 'lure', nivel: 'ok', titulo: 'Lure baixo primeiro', texto: `Entre na lure 1 ou 2 e suba só com a vida mínima do Cavaleiro acima de 50 % (Status → vitais). Cada criatura a mais no cerco é um golpe a mais a cada 2 s${alvo.levelMin ? ` · nível mínimo ${alvo.levelMin}` : ''}${alvo.recommendedLevel ? ` · recomendado ${alvo.recommendedLevel}` : ''}.` });
+        /* v2.34.3 — mapa de lure FIXA (Ushuriel Seal, Hellgorak Seal: lureTiers [{8,8}], maxLure 1): não dá para começar baixo */
+        const lt = Array.isArray(alvo.lureTiers) ? alvo.lureTiers : [], lureFixa = lt.length === 1 && lt[0] && Number(lt[0].min) === Number(lt[0].max) && Number(lt[0].min) > 0 ? Number(lt[0].min) : 0;
+        const cauda = `${alvo.levelMin ? ` · nível mínimo ${alvo.levelMin}` : ''}${alvo.recommendedLevel ? ` · recomendado ${alvo.recommendedLevel}` : ''}.`;
+        if (lureFixa) out.push({ chave: 'lure', nivel: 'av', titulo: `Lure fixa em ${lureFixa}: o cerco já entra cheio`, texto: `Este mapa não tem lure baixa: são ${lureFixa} criaturas em volta do Cavaleiro desde o primeiro segundo. Entre só com o plano acima pronto (Protector, prey de DEFESA, poção certa) e saia se a vida mínima dele ficar abaixo de 40 % (Status → vitais)${cauda}` });
+        else out.push({ chave: 'lure', nivel: 'ok', titulo: 'Lure baixo primeiro', texto: `Entre na lure 1 ou 2 e suba só com a vida mínima do Cavaleiro acima de 50 % (Status → vitais). Cada criatura a mais no cerco é um golpe a mais a cada 2 s${cauda}` });
         return out;
     }
     /* @@SOBREVIVER-PURO-FIM */
@@ -11170,7 +11186,9 @@
         const dms = [];
         try { for (const l of Object.values(ler('dano_mapa', {}) || {})) { const d = danoMapaJuntar(l); if (d) dms.push(d); } } catch (e) { falhou('equip (dano guardado)', e); }
         const sagrado = new Set((CAT.magias || []).filter(m => m.combatType === 'COMBAT_HOLYDAMAGE').map(m => m.name));
-        const P = partyConsolidada(rzs, dms, bebeConsolidado(hist, bebeAgora()), sagrado);
+        /* v2.34.3 — magias que usam a SKILL (as Ethereal Spears do Paladino: fórmula com "skill" no catálogo), para a régua da Distância */
+        const distancia = new Set((CAT.magias || []).filter(m => !m.isRune && m.formula && /\bskill\b/.test(JSON.stringify(m.formula))).map(m => m.name));
+        const P = partyConsolidada(rzs, dms, bebeConsolidado(hist, bebeAgora()), sagrado, distancia);
         if (P) P.fonte = `consolidada: ${nScan} Scan(s)${vivo ? ' + a caçada de agora' : ''} + dano guardado de ${dms.length} mapa(s) — a mesma em todo mapa`;
         return P;
     }
@@ -16675,7 +16693,7 @@
             SB.cons = sbConsumiveis(EQUIP.pecas, SB.res.porVoc, VOCS_EQUIP, SB.ctx);
             let hpMinK = null; try { for (const r of Object.values(scanResultados() || {})) { if (r && r.id === alvo.id && r.razao && r.razao.porVoc && r.razao.porVoc.KNIGHT && r.razao.porVoc.KNIGHT.hpMin != null) hpMinK = Number(r.razao.porVoc.KNIGHT.hpMin); } } catch { hpMinK = null; }
             const cobre = !!(c.dm && (c.dm.crias || []).some(cr => (cr.magias || []).some(m => Array.isArray(m.celulas) && m.celulas.length >= 18)));
-            SB.plano = sbPlano({ nivel: nivelAtual(), party: SB.ctx.party, medido: c.medido, mortes: c.mortes + (alvo.id != null ? (radarMortes(alvo.id) || 0) : 0), hpMinK, prey: sbPreyBuffs(), alvo: { boss: alvo.boss, title: alvo.title, levelMin: alvo.levelMin, recommendedLevel: alvo.recommendedLevel }, celulasCobremTudo: cobre });
+            SB.plano = sbPlano({ nivel: nivelAtual(), party: SB.ctx.party, medido: c.medido, mortes: c.mortes + (alvo.id != null ? (radarMortes(alvo.id) || 0) : 0), hpMinK, prey: sbPreyBuffs(), alvo: { boss: alvo.boss, title: alvo.title, levelMin: alvo.levelMin, recommendedLevel: alvo.recommendedLevel, lureTiers: alvo.lureTiers, maxLure: alvo.maxLure }, celulasCobremTudo: cobre });
             sbMercadoRecalcular();
             SB.t = Date.now();
             const trocas = Object.values(SB.res.porVoc).reduce((n, v) => n + Object.values(v).filter(eqMexer).length, 0);
