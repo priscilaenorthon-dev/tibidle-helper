@@ -147,7 +147,7 @@ t('Northon (2.28.0): título "Northon - <mapa>", a barra dos 4, nenhum mapa repe
     const ctx = { nivel: 136, magias: SPELLS, pocoes: NOMES_POCOES };
     for (const s of nn) {
         assert.strictEqual(s.titulo, 'Northon - ' + s.hunt, s.id);
-        assert(!daComunidade.has(s.huntId), s.id + ': o mapa já tem post da comunidade');
+        assert(s.comPost || !daComunidade.has(s.huntId), s.id + ': o mapa já tem post da comunidade'); // comPost: o dono pediu o nosso ao lado (2.33.6)
         for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) {
             assert(s.chars[voc], s.id + ' sem ' + voc);
             assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx).avisos, [], s.id + ' ' + voc);
@@ -293,8 +293,20 @@ t('2.33.5 varredura de 27/10 (Psyger-0 Hive Tower e Bog, lucasdela Shadow Nexus,
         assert(s && s.huntId === huntId && s.estatisticas && s.estatisticas.nivel === nivel, id);
         for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx(nivel)).avisos, [], id + ' ' + voc);
     }
-    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 222, title: 'Shadow Nexus' }).map(x => x.id), ['shadownexus-lucasdela']);
+    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 222, title: 'Shadow Nexus' }).map(x => x.id), ['shadownexus-lucasdela', 'northon-222']);
     assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 198, title: 'Hive Tower' }).map(x => x.autor), ['Specter', 'Psyger-0']);
+});
+t('2.33.6 "Northon - Shadow Nexus" ao lado do post (pedido do dono): poções do mapa fixas, Druida na Great Mana Potion, sem Magic Shield, Protector no Cavaleiro; sem aviso no nível 167', () => {
+    const s = M.SETUPS_DISCORD.find(x => x.id === 'northon-222');
+    assert(s && s.pocaoDoMapa === true && s.comPost === true, 'northon-222');
+    const ctx = Object.assign({}, CTX_POT, { nivel: 167, magias: SPELLS });
+    for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx).avisos, [], voc);
+    const d = M.dcConfigDe(s, 'DRUID', null, ctx);
+    assert.strictEqual(d.cfg.manaPotion.name, 'Great Mana Potion');
+    assert.deepStrictEqual(d.cfg.heals.map(h => h.name), ['Ultimate Healing', 'Health Potion', 'Mass Healing', 'Heal Friend']);
+    for (const voc of ['SORCERER', 'DRUID']) assert(!(s.chars[voc].suporte || []).includes('Magic Shield'), voc + ' sem Magic Shield');
+    assert(s.chars.KNIGHT.suporte.includes('Protector'));
+    assert.strictEqual(M.dcConfigDe(s, 'KNIGHT', null, ctx).cfg.manaPotion.name, 'Mana Potion');
 });
 t('2.29.5 Worker Golem do Matheustlm (23/10): 1º post real do mapa substitui o "Northon -"; sem aviso no nível dele, e no 94 só o Annihilation fica de fora', () => {
     const s = M.SETUPS_DISCORD.find(x => x.id === 'golem-matheus');

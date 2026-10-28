@@ -6432,3 +6432,15 @@ Fórum `guias-da-comunidade` com 17 tópicos (3 novos) + mensagens novas do Logb
   ≈ −180k/h no 167) continua como 1ª opção; os três aparecem no seletor. Apagar os dois junto com o evento.
 Fora: Guztav (só o print do lucro), Zumpano1 WZ1 (só a barra de um personagem), Theus (equipamento e resumo da Bottom). Munição
 dos posts (diamond arrow 200/flecha, infernal bolt) não entra: fica a do dono.
+
+## 2.33.6 — "Northon - Shadow Nexus" ao lado do post do lucasdela (28/10)
+Pedido do dono depois de caçar o Shadow Nexus com a ShamanBr (167): "monta o padrão igual o nosso". Entrou `northon-222` com
+`comPost: true` (exceção pedida à regra "Northon só em mapa sem post") e `pocaoDoMapa: true`. Base = gerador da 2.28.1; corrigido pela
+medida ao vivo (lure 2, magma nos magos):
+- Dano tomado ~62 % físico (no Cavaleiro) + fogo/energia em área cobrindo todas as casas da formação — mover não reduz.
+- Sem Magic Shield (magos com vida mín. 53–71 %; o escudo vira gasto de poção). Protector no Cavaleiro (regra do lucasdela sem prey de defesa).
+- Druida em Great Mana Potion: com Mana Potion ele zerou a mana e morreu na lure 3. Os outros na Mana Potion (a Strong custa o dobro).
+- Cura do Cavaleiro mais cedo (IWC 40, UHP 45) e do Druida com Ultimate Healing na frente (50 %).
+- Achado de gasto: o Paladino estava de diamond arrow (200/flecha, ~300k/h). O setup não mexe na munição.
+Medido na lure 2: sem morte, ~440k xp/h, gasto ~325k/h (era ~680k/h). Lição do helper: aplicar o post mantém a poção de mana do dono
+(2.29.4) — no Shadow Nexus isso deixou o Druida com a poção errada; mapas assim precisam de `pocaoDoMapa`.
