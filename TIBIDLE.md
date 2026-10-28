@@ -6478,3 +6478,17 @@ o amigo disse prey de defesa no Knight ou utamo tempo".
   avisa que a primeira luta grava o dano real.
 - **Magia › Boss**: bloco "Consumíveis para a luta" (item 6) com os mesmos anéis e colares, pelo contexto do boss.
 - Não testado ao vivo. Testes: 456 (contagem `^ok` da suíte).
+
+## 2.34.1 — modo "preciso de fragmentos" no desmanche (28/10)
+
+Dono: "faz tempo que não dropo um item que você sugere desmanchar; vou precisar de fragmentos agora". Causa: o desmanche exigia, na
+mesma sessão, Mercado lido, cópias lidas (PROCURAR MELHORIAS) e a peça valer menos em ouro do que em fragmentos — quase nunca sobrava.
+- **Interruptor "preciso de fragmentos"** (Equip, `desm_fragmentos`): ligado, `escolherDestino(…, {fragmentos:true})` manda para o
+  desmanche a sobra cujo Mercado líquido fica abaixo de 3× o valor dos fragmentos (`FRAG_MODO_FATOR`) e a sobra sem preço lido de faixa
+  II ou mais (≥ 3 fragmentos); faixa I sem preço continua "você decide". Comum, linha nobre e base de forja não mudam.
+- **ATUALIZAR do Equip lê o Mercado para o desmanche** (`equipLerMercadoParaDesmanche`): com o modo ligado, na cidade, Mercado livre e
+  Premium, lê o catálogo, as suas ordens e as cópias das 8 categorias que tenham mais de 6 h (só leituras, pela fila do Mercado).
+- **Por que ficou fora**: linha de contagem por motivo (Comum, linha nobre, vale mais no Mercado, sem preço lido); `pecasDesmanche`
+  devolve `fragmentos` por peça e o DESMANCHAR manda primeiro quem rende mais.
+- Fontes melhores de fragmento, pela wiki: Grimório do Halloween (1 abóbora = 100 Rarity Fragment T1 ou 300 Attribute Fragment T1,
+  até 05/11) e COMPRAR O QUE FALTA na Forja (Mercado). Testes: 457 (1 novo no equip.test.js).

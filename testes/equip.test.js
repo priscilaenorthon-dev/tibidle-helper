@@ -699,6 +699,21 @@ t('2.22.0 simulador da forja: determinístico com semente; valor uniforme nos pa
     assert(Math.abs(e.ouro - (e.porGema.refino * 12000 + e.porGema.refino_maior * 40000 + e.porGema.garantia * 16000)) < 200, 'ouro com os preços dados: ' + e.ouro);
     assert.strictEqual(M.FORJA_GEMA_OURO.atributo, 20000);
 });
+t('2.34.1 modo "preciso de fragmentos": Mercado líquido abaixo de 3× os fragmentos → desmanche; sem preço, faixa II+ → desmanche, faixa I → você decide; a lista sai por fragmentos', () => {
+    const inc2 = { nome: 'crystal ring', slot: 'ring', forja: { raridade: 1, refino: 0, potenciaBase: 250, atributos: [{ id: 'max_hp', valor: 20 }] } }; // faixa II Incomum: 3 fragmentos
+    const inc1 = { nome: 'crystal ring', slot: 'ring', forja: { raridade: 1, refino: 0, potenciaBase: 100, atributos: [{ id: 'max_hp', valor: 20 }] } }; // faixa I: 1 fragmento
+    const n = M.escolherDestino(inc2, 8000, 2000), f = M.escolherDestino(inc2, 8000, 2000, { fragmentos: true });
+    assert.strictEqual(n.destino, 'mercado', 'normal: 7.600 líquido > 6.000 em fragmentos');
+    assert.strictEqual(f.destino, 'desmanche', 'modo fragmentos: 7.600 < 3 × 6.000'); assert.strictEqual(f.modoFrag, true);
+    assert.strictEqual(M.escolherDestino(inc2, 30000, 2000, { fragmentos: true }).destino, 'mercado', '28.500 líquido > 18.000: ainda vale o Mercado');
+    assert.strictEqual(M.escolherDestino(inc2, null, 2000, { fragmentos: true }).destino, 'desmanche', 'sem preço e faixa II: desmancha');
+    assert.strictEqual(M.escolherDestino(inc1, null, 2000, { fragmentos: true }).destino, 'mercado?', 'sem preço e faixa I: você decide');
+    assert.strictEqual(M.escolherDestino(inc2, null, 2000).destino, 'mercado?', 'sem o modo, sem preço: você decide');
+    const sobra = (iid, pot, r) => ({ iid, nome: 'crystal ring', slot: 'ring', origem: 'mochila', forja: { raridade: r, refino: 0, potenciaBase: pot, atributos: [] } });
+    const d = M.pecasDesmanche({ dispensaveis: [sobra('a', 100, 1), sobra('b', 450, 3), sobra('c', 250, 2)] }, () => false);
+    assert.deepStrictEqual(d.map(x => x.iid + ':' + x.fragmentos), ['a:1', 'b:21', 'c:6'], 'fragmentos por peça (a ordem do lote é feita no botão)');
+});
+
 console.log(`\n${n} testes ok` + (pulados ? ` · ${pulados} pulados (sem o estado da conta em data/)` : ''));
 
 /* ===== 2.24.0 — FASE 2 (vídeos de 13–17/10: TV de Souza "depois do 110–120 não se brinca mais de regen. de mana") ===== */
