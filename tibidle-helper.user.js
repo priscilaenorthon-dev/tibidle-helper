@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.33.4
+// @version      2.33.5
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.33.4';
+    const VERSAO = '2.33.5';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -8863,13 +8863,6 @@
             PALADIN: { vida: ['Great Spirit Potion', 30], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2], ['stone shower rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Divine Healing', 60], ['Intense Healing', 70]] },
             SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Great Fire Wave', 2], ['stone shower rune', 2], ['Strong Flame Strike', 1], ['Terra Strike', 1]], defesa: [['Ultimate Healing', 60], ['Intense Healing', 75]], suporte: ['Enchant Party', 'Magic Shield'] },
             DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Terra Wave', 2], ['stone shower rune', 2], ['Strong Terra Strike', 1], ['Terra Strike', 1]], defesa: [['Heal Friend', 70], ['Mass Healing', 60], ['Ultimate Healing', 60]], suporte: ['Heal Party', 'Magic Shield'] } } },
-        { id: 'northon-222', hunt: 'Shadow Nexus', huntId: 222, autor: 'Northon (padrão Specter/Gus/Theus, nível 136)', data: '20/10', titulo: 'Northon - Shadow Nexus',
-          lure: 'nível 4 — 8 criaturas', skills: '', nota: '', nivel: 'recomendado 250', obs: 'Nenhum post no Discord para este mapa. Montado com o padrão que a comunidade usa do nível 118 ao 158 (Specter, Gus, Theus, Zumpano), para o nível 136: Cavaleiro Fierce Berserk, Berserk, Lesser Front Sweep e Brutal Strike; Paladino Caldera, runa e as duas lanças; magos onda, runa, golpe forte e golpe do elemento da runa; a MESMA runa nos três. Conferido contra os posts de nível 110+ do Discord: a barra sai 94 % igual à do Specter. Aqui: runa da party thunderstorm rune (energia 78); Feiticeiro com Energy Wave (energia 78) e golpe Energy Strike (energia 78); Druida com Strong Ice Wave (gelo 88) e golpe Energy Strike (energia 78); monstro imune a fogo, terra, morte. Mapa acima do seu nível: Magic Shield nos magos, Intense Recovery no Cavaleiro e duas curas no Paladino (como o Specter na Warzone, nível 158). Atenção: recomendado 250, 114 acima do seu nível: comece com lure baixo. Lure do mapa: 8 criaturas.',
-          chars: {
-            KNIGHT: { vida: ['Great Health Potion', 30], mana: ['Mana Potion', 40], ataque: [['Fierce Berserk', 4], ['Berserk', 2], ['Lesser Front Sweep', 1], ['Brutal Strike', 1]], defesa: [['Intense Recovery', 85], ['Intense Wound Cleansing', 40], ['Wound Cleansing', 85]] },
-            PALADIN: { vida: ['Great Spirit Potion', 30], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2], ['thunderstorm rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Divine Healing', 60], ['Intense Healing', 70]] },
-            SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Energy Wave', 2], ['thunderstorm rune', 2], ['Strong Energy Strike', 1], ['Energy Strike', 1]], defesa: [['Ultimate Healing', 60], ['Intense Healing', 75]], suporte: ['Enchant Party', 'Magic Shield'] },
-            DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Strong Ice Wave', 2], ['thunderstorm rune', 2], ['Strong Ice Strike', 1], ['Energy Strike', 1]], defesa: [['Heal Friend', 70], ['Mass Healing', 60], ['Ultimate Healing', 60]], suporte: ['Heal Party', 'Magic Shield'] } } },
         { id: 'northon-65', hunt: 'Warzone III - Crystal Caves', huntId: 65, autor: 'Northon (padrão Specter/Gus/Theus, nível 136)', data: '20/10', titulo: 'Northon - Warzone III - Crystal Caves',
           lure: 'nível 2 — 8 criaturas', skills: '', nota: '', nivel: 'recomendado 250', obs: 'Nenhum post no Discord para este mapa. Montado com o padrão que a comunidade usa do nível 118 ao 158 (Specter, Gus, Theus, Zumpano), para o nível 136: Cavaleiro Fierce Berserk, Berserk, Lesser Front Sweep e Brutal Strike; Paladino Caldera, runa e as duas lanças; magos onda, runa, golpe forte e golpe do elemento da runa; a MESMA runa nos três. Conferido contra os posts de nível 110+ do Discord: a barra sai 94 % igual à do Specter. Aqui: runa da party thunderstorm rune (energia 92); Feiticeiro com Energy Wave (energia 92) e golpe Energy Strike (energia 92); Druida com Strong Ice Wave (gelo 85) e golpe Energy Strike (energia 92); monstro imune a terra. Mapa acima do seu nível: Magic Shield nos magos, Intense Recovery no Cavaleiro e duas curas no Paladino (como o Specter na Warzone, nível 158). Atenção: recomendado 250, 114 acima do seu nível: comece com lure baixo. Lure do mapa: 8 criaturas.',
           chars: {
@@ -8961,6 +8954,37 @@
             PALADIN: { vida: ['Great Spirit Potion', 50], mana: ['Mana Potion', 0], ataque: [['thunderstorm rune', 2], ['Ethereal Spear', 1], ['Strong Ethereal Spear', 1], ['Divine Caldera', 2]], defesa: [['Light Healing', 85], ['Intense Healing', 60], ['Divine Healing', 50], ['Salvation', 30]] },
             SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 0], ataque: [['Energy Wave', 2], ['Great Fire Wave', 2], ['thunderstorm rune', 2], ['Energy Strike', 1]], defesa: [['Ultimate Healing', 60], ['Light Healing', 85]] },
             DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 10], ataque: [['Strong Ice Wave', 2], ['thunderstorm rune', 2], ['Energy Strike', 1], ['Ice Wave', 2]], defesa: [['Ultimate Healing', 60], ['Heal Friend', 60], ['Light Healing', 85], ['Mass Healing', 30]] } } },
+        /* — 27/10 (2.33.5): varredura nova do fórum. Psyger-0 abriu mais 2 tópicos (Hive Tower e Bog Raiders, 1 hunt por post, 4 barras + lucro);
+         *   lucasdela postou no tópico do Specter o Shadow Nexus (fotos da tela pelo celular, barras lidas ampliadas) — 1º post real do mapa,
+         *   então o "Northon - Shadow Nexus" saiu. Ícones casados com os oficiais (fino.py); os em recarga pelo selo/forma (Lesser Front Sweep
+         *   tem o selo redondo; Enchant Party escuro, Heal Party claro). Munição fora: diamond arrow custa 200 por flecha. */
+        { id: 'hivetower-psyger', hunt: 'Hive Tower', huntId: 198, autor: 'Psyger-0', data: '27/10', titulo: 'Hive Tower (Psyger-0, 27/10)',
+          lure: '', skills: '', nota: '', nivel: '105+',
+          obs: 'Psyger-0 (tópico "Hive Tower - Gray Island"): "melhor que a The Hive Entrance, dá mais XP e gold, mas não tem drop chamativo. Cuidado em nível mais baixo: o EK sofre e pode morrer — o dano é 66 % físico e 33 % terra, então foque defesa em físico e terra. Não uso Utamo Tempo no EK (defesa aceitável, mais lucro). Os outros recebem um pouco de dano de terra: nunca deixe o druid sem mana." Depois: "a cura do EK está em 70 %; em 60 % ela fica quase toda no druida e sobra mana para o EK atacar — mas em nível baixo deixe como está". Lucro subiu para 123k/h alguns níveis depois. Mana do Cavaleiro desligada (slot vazio no post).',
+          estatisticas: { xpH: '153,5k', lucroH: '+109k', nivel: 123 },
+          chars: {
+            KNIGHT: { vida: ['Great Health Potion', 30], mana: ['Mana Potion', 0], ataque: [['Fierce Berserk', 2], ['Berserk', 2], ['Lesser Front Sweep', 1], ['Brutal Strike', 1]], defesa: [['Intense Wound Cleansing', 40], ['Wound Cleansing', 70]] },
+            PALADIN: { vida: ['Great Spirit Potion', 30], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2], ['thunderstorm rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Intense Healing', 70]] },
+            SORCERER: { vida: ['Health Potion', 70], mana: ['Mana Potion', 50], ataque: [['Energy Wave', 2], ['thunderstorm rune', 2], ['Strong Energy Strike', 1], ['Energy Strike', 1]], defesa: [['Intense Healing', 70]], suporte: ['Enchant Party'] },
+            DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 50], ataque: [['Strong Ice Wave', 2], ['thunderstorm rune', 2], ['Strong Ice Strike', 1], ['Energy Strike', 1]], defesa: [['Mass Healing', 50], ['Ultimate Healing', 40], ['Intense Healing', 80], ['Heal Friend', 70]], suporte: ['Heal Party'] } } },
+        { id: 'bog-psyger', hunt: 'Bog Raiders Yalahar', huntId: 151, autor: 'Psyger-0', data: '26/10', titulo: 'Bog Raiders Yalahar (Psyger-0, 26/10)',
+          lure: '', skills: '', nota: '', nivel: '80+',
+          obs: 'Psyger-0 (tópico "Bog Raiders - Yalahar"): "mudei algumas vezes; o lucro ficava igual mas o XP diminuía, então deixei assim. Boa para alts sem acesso às ilhas (dá os Yalahar Gear Wheel). Conta nível 112 com equipamento que sobrou da principal; no nível 80 o XP deve manter, o gold/h cai um pouco. Para priorizar XP com as rodas: Worker Golem, ou Quara\'s Domain se a conta for mais forte." Mana do Cavaleiro, do Paladino e do Feiticeiro desligada (slot vazio no post); munição genérica (flecha), fora.',
+          estatisticas: { xpH: '75,4k', lucroH: '+99,9k', nivel: 112 },
+          chars: {
+            KNIGHT: { vida: ['Great Health Potion', 30], mana: ['Mana Potion', 0], ataque: [['Berserk', 4], ['Groundshaker', 4], ['Lesser Front Sweep', 1]], defesa: [['Intense Wound Cleansing', 40]], suporte: ['Train Party'] },
+            PALADIN: { vida: ['Great Spirit Potion', 50], mana: ['Mana Potion', 0], ataque: [['Divine Caldera', 4], ['thunderstorm rune', 3], ['Lesser Ethereal Spear', 1]], defesa: [['Salvation', 40], ['Divine Healing', 50], ['Intense Healing', 70], ['Light Healing', 85]], suporte: ['Sharpshooter'] },
+            SORCERER: { vida: ['Health Potion', 60], mana: ['Mana Potion', 0], ataque: [['Energy Wave', 3], ['thunderstorm rune', 2], ['Energy Strike', 1]], defesa: [['Ultimate Healing', 50], ['Intense Healing', 70], ['Light Healing', 85]], suporte: ['Enchant Party'] },
+            DRUID: { vida: ['Health Potion', 60], mana: ['Mana Potion', 30], ataque: [['Strong Ice Wave', 3], ['thunderstorm rune', 2], ['Energy Strike', 1]], defesa: [['Mass Healing', 43], ['Ultimate Healing', 40], ['Intense Healing', 70], ['Heal Friend', 70]], suporte: ['Heal Party'] } } },
+        { id: 'shadownexus-lucasdela', hunt: 'Shadow Nexus', huntId: 222, autor: 'lucasdela', data: '27/10', titulo: 'Shadow Nexus (lucasdela, 27/10)',
+          lure: 'Extremo', skills: '', nota: '', nivel: '180+ (recomendado 250)',
+          obs: 'lucasdela (tópico do Specter, 27/10), que abriu o acesso de Inquisition: "com meu main e set bem ruim tá indo tranquilo na hunt mais difícil. Sem prey de ataque fica em 400–500k de raw xp; ativei as preys só para maximizar. Sem prey de defesa o kina vai de Utamo Tempo. A configuração do ED é para não morrer: sem Utamo Vita, só presetar o ED para o Mass Healing sair bastante — o que pode matar é o combo das UE do demon; com set de fogo fica mais suave. Com Utamo Vita não sustenta. Set magma bem fuleira do market, todo de regen. de mana." Morreu 2 vezes em mais de 15 horas. Paladino de diamond arrow (200 por flecha): a munição fica a sua. Medido no print: 782k xp/h com −19k/h (nível 180) e 776k xp/h com +302k/h (nível 181, drops bons).',
+          estatisticas: { xpH: '776,1k', lucroH: '+302,5k', nivel: 181 },
+          chars: {
+            KNIGHT: { vida: ['Ultimate Health Potion', 36], mana: ['Mana Potion', 20], ataque: [['Fierce Berserk', 2], ['Berserk', 2], ['Groundshaker', 2], ['Lesser Front Sweep', 1]], defesa: [['Intense Recovery', 94], ['Wound Cleansing', 50], ['Intense Wound Cleansing', 30]], suporte: ['Train Party'] },
+            PALADIN: { vida: ['Ultimate Spirit Potion', 40], mana: ['Mana Potion', 10], ataque: [['Divine Caldera', 2], ['thunderstorm rune', 2], ['Strong Ethereal Spear', 1], ['Divine Missile', 1]], defesa: [['Salvation', 50], ['Intense Healing', 85]], suporte: ['Protect Party'] },
+            SORCERER: { vida: ['Health Potion', 40], mana: ['Mana Potion', 10], ataque: [['Energy Wave', 2], ['thunderstorm rune', 2], ['Ultimate Energy Strike', 1], ['Energy Strike', 1]], defesa: [['Ultimate Healing', 50], ['Intense Healing', 85]], suporte: ['Enchant Party'] },
+            DRUID: { vida: ['Health Potion', 40], mana: ['Great Mana Potion', 20], ataque: [['Strong Ice Wave', 2], ['thunderstorm rune', 2], ['Strong Ice Strike', 1], ['Energy Strike', 1]], defesa: [['Mass Healing', 70], ['Ultimate Healing', 40], ['Heal Friend', 75]], suporte: ['Heal Party'] } } },
         /* @@EVENTO (2.32.0) — Caçada da Estação do Halloween 2026 (hunt 263, fora do /hunts; a Magia a recebe do bloco do Evento). Sem post
          * no Discord: montado em 27/10 pelas fichas do /bestiary/creature e do /bosses/select. Apagar junto com o evento. */
         { id: 'estacao-halloween', hunt: 'Caçada da Estação (Halloween)', huntId: 263, autor: 'Northon (fichas do jogo, nível 167)', data: '27/10', titulo: 'Northon - Caçada da Estação (Halloween)',
@@ -8971,6 +8995,25 @@
             PALADIN: { ataque: [['Divine Caldera', 2], ['Strong Ethereal Spear', 1], ['thunderstorm rune', 2], ['Divine Missile', 1]], defesa: [['Salvation', 50], ['Divine Healing', 75]], suporte: ['Protect Party'] },
             SORCERER: { ataque: [['Energy Wave', 2], ['Ultimate Energy Strike', 1], ['Strong Energy Strike', 1], ['thunderstorm rune', 2]], defesa: [['Ultimate Healing', 60], ['Intense Healing', 80]], suporte: ['Enchant Party'] },
             DRUID: { ataque: [['thunderstorm rune', 2], ['Energy Strike', 1]], defesa: [['Ultimate Healing', 65], ['Mass Healing', 60], ['Heal Friend', 55]], suporte: ['Heal Party'] } } },
+        /* @@EVENTO (2.33.5) — os dois primeiros posts da Caçada da Estação (hunt 263) no Discord, 27/10. Apagar junto com o evento. */
+        { id: 'estacao-souza', hunt: 'Caçada da Estação (Halloween)', huntId: 263, autor: 'TV de Souza', data: '27/10', titulo: 'Caçada da Estação (TV de Souza, 27/10)',
+          lure: '', skills: '', nota: '', nivel: 'Elite 150+',
+          obs: 'TV de Souza (tópico "TV de Souza - Pre set"): "o pre-set que estou usando no evento; assim que melhorar eu atualizo. Prioridade: gastar pouco e pegar o máximo possível de exp. Se quiser mais exp, coloca mana no knight e no paladino." Mana do Cavaleiro, do Paladino e do Feiticeiro desligada (slot vazio no post); munição genérica (flecha), fora. O Druida bate com Physical Strike (físico: os monstros do mapa não resistem).',
+          estatisticas: { xpH: '409,1k', lucroH: '−72,7k', nivel: 165 },
+          chars: {
+            KNIGHT: { vida: ['Great Health Potion', 41], mana: ['Mana Potion', 0], ataque: [['Berserk', 2], ['Groundshaker', 2], ['Lesser Front Sweep', 1], ['Whirlwind Throw', 1]], defesa: [['Intense Wound Cleansing', 30], ['Intense Recovery', 70]], suporte: ['Protector', 'Train Party'] },
+            PALADIN: { vida: ['Great Spirit Potion', 50], mana: ['Mana Potion', 0], ataque: [['Divine Caldera', 3], ['thunderstorm rune', 3], ['Strong Ethereal Spear', 1], ['Divine Missile', 1]], defesa: [['Salvation', 50], ['Divine Healing', 75]], suporte: ['Protect Party'] },
+            SORCERER: { vida: ['Health Potion', 60], mana: ['Mana Potion', 0], ataque: [['Energy Wave', 2], ['thunderstorm rune', 2], ['Ultimate Energy Strike', 1], ['Energy Strike', 1]], defesa: [['Ultimate Healing', 50], ['Intense Healing', 70], ['Light Healing', 85]], suporte: ['Enchant Party'] },
+            DRUID: { vida: ['Health Potion', 60], mana: ['Mana Potion', 10], ataque: [['thunderstorm rune', 2], ['Physical Strike', 1]], defesa: [['Mass Healing', 70], ['Ultimate Healing', 30], ['Heal Friend', 77]], suporte: ['Heal Party'] } } },
+        { id: 'estacao-kairusz', hunt: 'Caçada da Estação (Halloween)', huntId: 263, autor: 'KairusZ', data: '27/10', titulo: 'Caçada da Estação (KairusZ, 27/10)',
+          lure: '1', skills: '', nota: '', nivel: 'Elite 170+ (full imbuement)',
+          obs: 'KairusZ (Logbook, 27/10), print do Histórico da caçada Reaper\'s Hollow: "full waste, mas rendeu bem de XP; full imbuement". 3 h, nível 172→173: 631,6k xp/h (465,9k raw), −235,4k/h — gasto quase todo em Mana Potion (10 mil em 3 h) e infernal bolt; 3 Lantern Reaper Key no loot. Paladino de besta com infernal bolt: a munição fica a sua.',
+          estatisticas: { xpH: '631,6k', lucroH: '−235,4k', nivel: 172 },
+          chars: {
+            KNIGHT: { vida: ['Ultimate Health Potion', 50], mana: ['Mana Potion', 50], ataque: [['Fierce Berserk', 2], ['Berserk', 2], ['Brutal Strike', 1], ['Annihilation', 1]], defesa: [['Wound Cleansing', 70], ['Intense Recovery', 85], ['Intense Wound Cleansing', 30]], suporte: ['Train Party'] },
+            PALADIN: { vida: ['Ultimate Spirit Potion', 50], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2], ['thunderstorm rune', 2], ['Divine Missile', 1]], defesa: [['Salvation', 85], ['Divine Healing', 70], ['Intense Recovery', 91]], suporte: ['Protect Party', 'Sharpshooter'] },
+            SORCERER: { vida: ['Health Potion', 50], mana: ['Mana Potion', 30], ataque: [['Energy Wave', 4], ['thunderstorm rune', 2], ['Ultimate Energy Strike', 1], ['Strong Energy Strike', 1]], defesa: [['Intense Healing', 85], ['Ultimate Healing', 50]], suporte: ['Magic Shield', 'Enchant Party'] },
+            DRUID: { vida: ['Health Potion', 70], mana: ['Mana Potion', 30], ataque: [['Strong Ice Wave', 4], ['thunderstorm rune', 2], ['Energy Strike', 1]], defesa: [['Heal Friend', 60], ['Intense Healing', 70], ['Mass Healing', 44]], suporte: ['Magic Shield'] } } },
         /* @@EVENTO (2.32.3) — a mesma caçada na faixa BAIXA (hunt 261, Elite Pumpkin King): XundaBr nível 20, 27/10. A 263 pede magias
          * de nível 50+; o setup é por id (2.32.1), então a 261 ficava sem nenhum. Montado pelas fichas do /bestiary/creature e do
          * /bosses/select; magia acima do nível cai para a irmã menor (dcConfigDe). Apagar junto com o evento. */

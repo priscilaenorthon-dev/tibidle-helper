@@ -6418,3 +6418,17 @@ Agora o welcome guarda o start ainda não consumido com menos de 60 s (a queda d
 com a ordem real.
 Item 7 do roteiro (Formação na luta): APLICAR FORMAÇÃO com 2 toques no começo da luta mandou Feiticeiro → [-2,0], Druida → [2,0] e
 Paladino → [-3,0]; a cena moveu Feiticeiro e Paladino em 2,5 s. O mapa de casas não aprendia porque o dano ia para `boss:?`.
+
+## 2.33.5 — varredura do Discord de 27/10: 5 setups novos
+Fórum `guias-da-comunidade` com 17 tópicos (3 novos) + mensagens novas do Logbook e do tópico do Specter desde 24/10.
+- **Hive Tower (Psyger-0)** — 2º setup da 198, ao lado do Specter. Nível 123: 153,5k xp/h, +109k/h (123k/h uns níveis depois).
+  Dano 66 % físico + 33 % terra; sem Utamo Tempo no EK.
+- **Bog Raiders (Psyger-0)** — 4º setup da 151. Nível 112, alt sem equipamento: 75,4k xp/h, +99,9k/h. Bom para as Gear Wheel.
+- **Shadow Nexus (lucasdela)** — 1º post real da 222 (Inquisition, recomendado 250): nível 180–181, ~780k xp/h (com prey de
+  ataque; 400–500k raw sem). O "Northon - Shadow Nexus" saiu. Sem Utamo Vita; o ED segura com Mass Healing. Fotos da tela pelo
+  celular, lidas ampliadas.
+- **Caçada da Estação (hunt 263, @@EVENTO)**: TV de Souza (nível 165, 409k xp/h, −72,7k/h — "gastar pouco"; Druida de thunderstorm
+  + Physical Strike) e KairusZ (nível 172 full imbuement, 631,6k xp/h, −235,4k/h). O "Northon - Caçada da Estação" (medido: 399k,
+  ≈ −180k/h no 167) continua como 1ª opção; os três aparecem no seletor. Apagar os dois junto com o evento.
+Fora: Guztav (só o print do lucro), Zumpano1 WZ1 (só a barra de um personagem), Theus (equipamento e resumo da Bottom). Munição
+dos posts (diamond arrow 200/flecha, infernal bolt) não entra: fica a do dono.
