@@ -38,27 +38,44 @@ t('candidatos: cópias viram peças com slot, preço e ordem; ignora a sua, a se
     assert.deepStrictEqual(c.map(x => [x.orderId, x.slot, x.preco]), [[1, 'boots', 900]]);
     assert.strictEqual(c[0].forja.atributos[0].id, 'regen_mana');
 });
-t('regen. de mana maior à venda (bota de nível acima) vira melhoria; regen. menor não aparece', () => {
+t('regen. de mana maior à venda (bota de nível acima) vira melhoria; regen. menor só entra como TROCA se a régua ainda ganha ≥ 1 pt (2.34.2)', () => {
     const porVoc = cenario(vestidos());
     const c = M.mlCandidatosMercado({ botas: [copia(10, 'steel boots', 2000, F(1, ['regen_mana', 3.4])), copia(11, 'steel boots', 100, F(1, ['regen_mana', 1.9]))] }, BASE);
     const r = M.mlAvaliar(porVoc, c, null, { ouro: 5000 });
     for (const v of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) {
         const of = r.porVoc[v].boots.ofertas;
-        assert.deepStrictEqual(of.map(o => o.orderId), [10], v + ': ' + JSON.stringify(of.map(o => [o.orderId, o.ganho])));
-        assert(of[0].seguro && of[0].cabe === true && of[0].ganho > 0 && of[0].pagaH > 0);
+        assert.strictEqual(of[0].orderId, 10, v + ': ' + JSON.stringify(of.map(o => [o.orderId, o.ganho])));
+        assert(of[0].seguro && of[0].cabe === true && of[0].ganho > 0 && of[0].pagaH > 0 && !of[0].trocas.length);
+        for (const o of of.slice(1)) assert(o.orderId === 11 && o.seguro && o.ganho >= 1 && o.trocas.length === 1 && o.trocas[0].id === 'regen_mana' && o.trocas[0].de === 2 && o.trocas[0].para === 1.9, v + ': ' + JSON.stringify(o));
     }
-    assert.strictEqual(r.top.length, 1, 'a mesma cópia aparece uma vez só nas melhores compras');
+    assert(r.top.length >= 1 && r.top.filter(o => o.orderId === 10).length === 1, 'a mesma cópia aparece uma vez só nas melhores compras');
 });
-t('SEGURANÇA: oferta com mais pontos mas que PERDE a regen. de mana fica fora (e aparece só pedindo)', () => {
+t('SEGURANÇA (2.34.2): regen. de mana que sai só passa como TROCA quando a régua ainda ganha ≥ 1 pt; no Knight (regen. 1,5 ≈ 13,5 pt) o anel de loot/HP continua fora', () => {
     const porVoc = cenario(vestidos());
-    /* anel com chance de loot alta + max HP: ganha pontos no Knight? — perde a regen. de mana 1,5 de qualquer jeito */
+    /* anel com chance de loot alta + max HP: no Knight a regen. 1,5 vale mais que tudo isso → fora; nos outros a régua decide */
     const c = M.mlCandidatosMercado({ aneis: [copia(20, 'crystal ring', 300, F(3, ['chance_de_loot', 3], ['max_hp', 100], ['capacidade', 530]))] }, BASE);
     const seguro = M.mlAvaliar(porVoc, c, null, {});
-    for (const v of Object.keys(seguro.porVoc)) assert.strictEqual(seguro.porVoc[v].ring.ofertas.length, 0, v + ' viu oferta que perde regen.');
+    assert.strictEqual(seguro.porVoc.KNIGHT.ring.ofertas.length, 0, 'Knight viu oferta que perde regen. sem compensar');
+    for (const v of Object.keys(seguro.porVoc)) for (const o of seguro.porVoc[v].ring.ofertas) {
+        assert(o.seguro && o.ganho >= 1 && o.trocas.some(p => p.id === 'regen_mana' && p.de === 1.5) && !o.perdas.length, v + ': ' + JSON.stringify(o));
+    }
     const tudo = M.mlAvaliar(porVoc, c, null, { verPerdas: true });
-    const algum = Object.values(tudo.porVoc).flatMap(x => x.ring.ofertas);
-    if (algum.length) assert(algum.every(o => !o.seguro && o.perdas.some(p => p.id === 'regen_mana' && p.de === 1.5)), JSON.stringify(algum[0]));
-    assert.strictEqual(tudo.top.length, 0, 'oferta insegura nunca entra nas melhores compras');
+    const inseg = Object.values(tudo.porVoc).flatMap(x => x.ring.ofertas).filter(o => !o.seguro);
+    for (const o of inseg) assert(o.perdas.some(p => p.id === 'regen_mana' && p.de === 1.5) && o.ganho < 1, JSON.stringify(o));
+    assert(tudo.top.every(o => o.seguro), 'oferta insegura nunca entra nas melhores compras');
+    /* o caso do dono: calça do Knight com regen. 1,5 × Zaoan com resist. física 2 % e +2 de refino (armadura): ganha → troca */
+    BASE['zaoan legs'] = { attrs: { slot: 'legs', armor: 8, vocation: 'knight, paladin' } };
+    BASE['knight legs'] = { attrs: { slot: 'legs', armor: 8, vocation: 'knight' } };
+    const porVoc2 = cenario(vestidos().concat([corpo('kl', 'knight legs', 'legs', 'KNIGHT', F(1, ['regen_mana', 1.5]))]));
+    const c2 = M.mlCandidatosMercado({ pernas: [copia(40, 'zaoan legs', 5000, Object.assign(F(1, ['resist_fisica', 2]), { refino: 2, potenciaBase: 400 }))] }, BASE);
+    const r2 = M.mlAvaliar(porVoc2, c2, { nivel: 160 }, {});
+    const of = r2.porVoc.KNIGHT.legs.ofertas;
+    assert(of.length === 1 && of[0].seguro && of[0].recomendada && of[0].trocas.length === 1 && of[0].trocas[0].id === 'regen_mana', 'Zaoan +2 resist. física: ' + JSON.stringify(of.map(o => [o.nome, o.ganho, o.perdas, o.trocas, o.potenciaBaixa])));
+    assert.strictEqual(r2.porVoc.KNIGHT.legs.escondidas.mesmoNivel, 0, 'mesma armadura (8 = 8) não esconde mais quando a régua ganha');
+    /* sem o refino a Zaoan de resist. 2 % perde para a regen. 1,5 pela régua (55 × 57 pt) → não aparece: a regra não dá presente */
+    const c3 = M.mlCandidatosMercado({ pernas: [copia(41, 'zaoan legs', 5000, Object.assign(F(1, ['resist_fisica', 2]), { potenciaBase: 400 }))] }, BASE);
+    const r3 = M.mlAvaliar(porVoc2, c3, { nivel: 160 }, {});
+    assert.strictEqual(r3.porVoc.KNIGHT.legs.ofertas.length, 0, JSON.stringify(r3.porVoc.KNIGHT.legs.ofertas.map(o => [o.nome, o.ganho])));
 });
 t('2.23.2 magos: regen. de mana que sai para entrar nível mágico NÃO é perda (spellbook +2 ML no lugar do escudo com regen.); sem ML a mais, continua perda', () => {
     BASE['spellbook of mind control'] = { attrs: { weaponType: 'spellbook', defense: 18, magiclevelpoints: 2, vocation: 'sorcerer, druid' } };
@@ -257,17 +274,19 @@ t('2.19.5 elemento neutro na compra e nível exigido acima do da conta fica de f
 });
 /* 2.19.6 — dono, 16/10: "faz isso para o set também; você pega a mesma linha de equipamento e só vê se tem regen. melhor;
  * tem que ter armadura melhor; bloquear o nível que já tenho e recomendar nível superior" */
-t('2.19.6 set: a MESMA peça (leather boots) com regen. maior fica de fora — contada como do mesmo nível', () => {
+t('2.19.6 → 2.34.2 set: a MESMA peça (leather boots) só entra se o encaixe ganha ≥ 1 pt pela régua; com ganho pequeno continua "mesmo nível"', () => {
     const porVoc = cenario(vestidos());
-    const c = M.mlCandidatosMercado({ botas: [copia(300, 'leather boots', 2000, F(1, ['regen_mana', 3.4])), copia(301, 'leather boots', 900, F(2, ['regen_mana', 2.5], ['regen_vida', 2]))] }, BASE);
+    const c = M.mlCandidatosMercado({ botas: [copia(300, 'leather boots', 2000, F(1, ['regen_mana', 3.4])), copia(301, 'leather boots', 900, F(2, ['regen_mana', 2.5], ['regen_vida', 2])),
+                                               copia(302, 'leather boots', 50, F(1, ['regen_mana', 2.05]))] }, BASE);
     const r = M.mlAvaliar(porVoc, c, null, { verPerdas: true });
     for (const v of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) {
         const x = r.porVoc[v].boots;
-        assert.strictEqual(x.ofertas.length, 0, v + ': ' + JSON.stringify(x.ofertas.map(o => [o.nome, o.ganho])));
-        assert.strictEqual(x.escondidas.mesmoNivel, 2, v);
+        assert.deepStrictEqual(x.ofertas.map(o => o.orderId).sort(), [300, 301], v + ': ' + JSON.stringify(x.ofertas.map(o => [o.orderId, o.ganho])));
+        assert(x.ofertas.every(o => o.seguro && o.ganho >= 1 && !o.nivelSet && !o.soArmadura), v + ': ' + JSON.stringify(x.ofertas.map(o => [o.orderId, o.ganho, o.nivelSet])));
+        assert.strictEqual(x.escondidas.mesmoNivel, 1, v + ': a de regen. 2,05 (ganho < 1 pt) fica escondida');
         assert.strictEqual(x.pisoSet.valor, 1);
     }
-    assert.strictEqual(r.top.length, 0);
+    assert(r.top.length >= 1 && r.top.every(o => o.orderId !== 302));
 });
 t('2.19.6 set: nível acima com a mesma regen. — no Knight a armadura conta e é recomendada; no mago aparece sem botão', () => {
     const porVoc = cenario(vestidos());
