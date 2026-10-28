@@ -6451,3 +6451,30 @@ Potion 40 → Ultimate Healing 50 → Intense Healing 85, como o lucasdela) e a 
 daquele momento como o "Northon". Lida do helper (que registra os profiles_set da tela) e conferida com o kit/poções do frame do servidor.
 Cavaleiro e Druida iguais à 2.33.6. Munição continua fora do setup (fica a do dono).
 Teste novo: partindo de uma barra totalmente diferente, o setup troca vida, mana, ataque, defesa e suporte dos 4 (pedido do dono: "tem que mudar o setup todo").
+
+## 2.34.0 — aba SOBREVIVER 🛡, base de forja por potência, lista fixa do nunca-vender e consumíveis do boss (28/10)
+
+Pesquisa de 28/10 (wiki oficial inteira, notas 1.1.7–1.1.9, Companion, bot em Go): a lógica do Equip bate com a wiki; os furos eram
+peça de potência alta sem linha indo para o NPC, a proteção dos materiais presa a um arquivo do jogo e nenhum uso dos anéis/colares de
+carga. Dono: "faça o 2, 4, 6 e uma tela nova para aguentar mapa de nível 150+ e boss forte — no Shadow Nexus o set magma não bastou;
+o amigo disse prey de defesa no Knight ou utamo tempo".
+- **Base por potência** (`distribuirEquip`): peça com potência base ≥ 400 e item bom para o espaço (nota de fábrica ≥ 70 % da peça que
+  alguma vocação veste ali, ou espaço vazio) fica como base de forja mesmo sem linha (wiki /forja: a faixa define o valor de toda
+  linha futura; Godlike só em peça de Boss com base 500). `ptBase` = nota sem os encaixes.
+- **Nunca vender, lista fixa** (`NUNCA_VENDER_WIKI`, 42 materiais de imbuement + fragmentos e tokens de ilha + itens do Silas e das
+  tentativas de boss + abóbora): soma sempre à lista do `imbuements.json`; se o arquivo não vem (404 em patch), vale a lista e o Log
+  avisa — o Auto Hunt não trava mais em "nada vendido" por isso. Equipamento continua protegido por `idsPorNome`.
+- **Modo aguentar** (`ctx.sobreviver`): em `pesosDaVoc` os pesos de defesa (`SB_IDS_DEFESA`) pesam 3× e a folga da vida mínima some;
+  `mlAvaliar` com `opc.sobreviver` não marca "só defesa". `equiparTrocas(vocs, res)` aceita um plano próprio; `EQUIP.pecas` guarda as
+  peças lidas.
+- **@@SOBREVIVER-PURO** (`testes/sobreviver.test.js`, 4): `sbPartyDoDano` (o grupo visto pelo alvo: tomado/s do Cavaleiro, % físico,
+  golpes/s, elemVoc dos laterais, ladoApanha 4 quando lateral apanha); `sbConsumiveis` (anel e colar com carga ou tempo que ganham ≥
+  0,5 pt da peça vestida, um por personagem e espaço); `SB_POCOES` por nível (wiki); `sbPlano` (medição, laterais, Protector −15 %,
+  prey de DEFESA ★N = −4N % de todo dano, poções, lure).
+- **Aba Sobreviver 🛡** (entre Forja e Evento; trilho denso de 31 px com 13+ ícones): escolhe mapa de nível 150+ (ou todos) ou
+  Elite/boss; O QUE VESTIR PARA AGUENTAR lê o Equip e ranqueia corpo, mochila e depósito com o dano guardado do alvo; mostra o plano,
+  as trocas (EQUIPAR PARA AGUENTAR, 2 toques, só na cidade, o mesmo fluxo do Equip), os consumíveis (VESTIR CONSUMÍVEIS, 2 toques)
+  e o Mercado (PROCURAR NO MERCADO = leitura da Melhorias; comprar 2 toques pelo `mlComprar`). Sem medição do alvo, usa a referência e
+  avisa que a primeira luta grava o dano real.
+- **Magia › Boss**: bloco "Consumíveis para a luta" (item 6) com os mesmos anéis e colares, pelo contexto do boss.
+- Não testado ao vivo. Testes: 456 (contagem `^ok` da suíte).
