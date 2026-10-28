@@ -546,12 +546,14 @@ t('Log: mensagem maliciosa escapada; sem mudança o Log não é reescrito', asyn
 });
 
 t('sobe sem exceção e sem erro de timer em nenhuma aba', async () => {
-    for (const aba of ['estado', 'magia', 'equip', 'analise', 'log']) {
-        const W = criarMundo({ ls: comAba(aba, { tb_helper_hunt_id: '34' }) });
+    for (const aba of ['estado', 'magia', 'equip', 'analise', 'sobreviver', 'evento', 'log']) { // 2.34.2: Sobreviver e Evento também
+        const W = criarMundo({ ls: comAba(aba, { tb_helper_hunt_id: '34', tb_helper_sb_alvo: '"hunt:34"' }) });
         await W.avancar(0); await W.avancar(5000);
         assert(!W.errosTimer.length, aba + ': timer estourou: ' + W.errosTimer.join(' | '));
         assert(!W.avisos.some(a => /ERRO|falhou em desenhar/.test(a)), aba + ': ' + W.avisos.filter(a => /ERRO|falhou/.test(a)).join(' | '));
         assert(!/falha em desenhar a tela/.test(logTxt(W)), aba + ': ' + logTxt(W));
+        if (aba === 'sobreviver') { const h = W.html(); assert(/O QUE VESTIR PARA AGUENTAR/.test(h) && /id="tb-sb-alvo"/.test(h) && /todos os mapas/.test(h) && /Clique em O QUE VESTIR/.test(h), 'Sobreviver: botão, seletor de alvo e dica'); }
+        if (aba === 'evento') assert(/Halloween/.test(W.html()), 'Evento: título');
     }
 });
 

@@ -6492,3 +6492,28 @@ mesma sessão, Mercado lido, cópias lidas (PROCURAR MELHORIAS) e a peça valer 
   devolve `fragmentos` por peça e o DESMANCHAR manda primeiro quem rende mais.
 - Fontes melhores de fragmento, pela wiki: Grimório do Halloween (1 abóbora = 100 Rarity Fragment T1 ou 300 Attribute Fragment T1,
   até 05/11) e COMPRAR O QUE FALTA na Forja (Mercado). Testes: 457 (1 novo no equip.test.js).
+
+## 2.34.2 — Melhorias: troca compensada e set do mesmo nível (28/10)
+
+Dono: "tô com uma calça no meu kina que dá regen. de mana; por que o Mercado não sugere a Zaoan de −2 % dano físico, que o pessoal
+fala que é melhor?" → "Pode ser. E verifica para os outros personagens também" → "Os colares também".
+- **Causa (duas regras duras empilhadas)**: (1) "nunca perder regen. de mana/vida" (`mlPerdas`) escondia qualquer oferta sem a regen.,
+  por mais que ganhasse no resto; (2) "o set só sobe de nível" (2.19.6) escondia a Zaoan Legs porque a armadura base é igual à da
+  Knight Legs (8 = 8) — "🔒 à venda do mesmo nível ou abaixo".
+- **Troca compensada** (`mlAvaliar`, `@@MELHORIAS`): a linha nobre que sai (regen. de mana/vida; na arma e no colar as de ataque da
+  vocação) vira `trocas` da oferta — não `perdas` — quando o ganho líquido pela régua (que já desconta a linha perdida) é
+  ≥ `ML_RECOMENDA_MIN` (1 pt). Vale para os 4 personagens e todo espaço. A tela mostra "↔ troca regen. de mana 1,5 → 0 e ainda ganha
+  +N pt". Ganho < 1 pt: continua perda e escondida (com "mostrar também" aparece como antes). A exceção dos magos por ML (2.23.2), a
+  wand/rod que não regride e o nível exigido continuam como estavam.
+- **Set do MESMO nível** passa quando o encaixe ganha ≥ 1 pt (`setNaoDesce`): Zaoan 8 sobre Knight Legs 8 com resist. física 2 % e +2
+  aparece recomendada; a mesma bota com regen. 2,05 sobre 2,0 (ganho 0,45 pt) continua "mesmo nível"; nível ABAIXO (chain helmet 2
+  sobre steel 6, dwarven 26 sobre vampire 34) segue escondido, como o dono pediu na 2.19.6.
+- **Equipar** (`distribuirEquip`) já era por personagem pela régua (`pesosDaVoc`): sem regra de "perda" lá; nada mudou.
+- **Régua conferida contra o set de um amigo (nível 187, aguenta o Shadow Nexus, fotos de 28/10)**: Cavaleiro regen. mana +25/s e vida
+  +11,5/s, mitigação 1,8 %, cura própria +5,7 %, armadura 23, crítico 2,9 %; Paladino crítico 12,4 %/+57 % de dano crítico, regen. mana
+  +19,5/s; Feiticeiro ML 52 (+5), Legado III +9 %, resist. fogo 18 %, regen. +21/s; Druida ML 56 (+6), Legado IV +14 %, resist. fogo 15 %.
+  Os quatro empilham regen. de mana (≈ 20–25/s) — confirma o peso alto da regen. na régua; a troca só passa quando o resto cobre a
+  regen. perdida. Nada de peso mudou.
+- Testes: 457, nenhum novo (melhorias.test.js: SEGURANÇA refeito com o caso da Zaoan e o contraexemplo sem refino; bota de regen. menor como troca;
+  set do mesmo nível; mercado.test.js: fixture da Leather Boots passou a regen. 2,05; telas.test.js: o teste "sobe sem exceção" passa
+  também por Sobreviver e Evento e confere botão, seletor e dica da aba Sobreviver). Não testado ao vivo — o dono testa hoje.

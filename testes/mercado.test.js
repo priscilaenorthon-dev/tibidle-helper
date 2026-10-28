@@ -895,10 +895,10 @@ t('vm (2.15.1): VENDER NO NPC das sobras — outra peça de mesmo nome na mochil
 
 /* v2.18.0 — aba Melhorias: PROCURAR só lê; COMPRAR = 2 toques, relê o anúncio e manda market_execute {orderId, quantity, requestId} */
 async function mundoMelhorias(extra) {
-    /* 2.19.6: à venda, Steel Boots (armadura 3) — nível acima da Leather Boots (1) que o Druida veste; a Leather Boots com
-     * regen. 5 (c3) é do MESMO nível e não pode aparecer */
+    /* 2.19.6: à venda, Steel Boots (armadura 3) — nível acima da Leather Boots (1) que o Druida veste; a Leather Boots do MESMO
+     * nível com regen. 2,05 (c3) ganha < 1 pt pela régua e não aparece (2.34.2: só entra se o encaixe ganha ≥ 1 pt) */
     const cop = (orderId, preco, regen, nome) => ({ orderId, unitPrice: preco, sellerName: 'Outro', instance: { iid: 'i-' + orderId, name: nome || 'Steel Boots', forja: { raridade: 1, atributos: [{ id: 'regen_mana', valor: regen }] } } });
-    const copias = { botas: [cop('c1', 1500, 3.4), cop('c2', 100, 1.0), cop('meu', 50, 5), cop('c3', 200, 5, 'Leather Boots')] };
+    const copias = { botas: [cop('c1', 1500, 3.4), cop('c2', 100, 1.0), cop('meu', 50, 5), cop('c3', 200, 2.05, 'Leather Boots')] };
     const M = await mundoMercado(Object.assign({ catalogo: CAT_BASE, copias, minhas: [{ id: 'meu', side: 'SELL', asset: 'ITEM', itemName: 'Steel Boots', unitPrice: 50, quantityTotal: 1, quantityRemaining: 1, status: 'OPEN', expiresAt: 1790000000000 }],
         ls: { tb_helper_ui: JSON.stringify({ aba: 'melhorias', aberta: true, oculto: false }) },
         rotas: { '/assets/v185/items-by-name.json': { 'Leather Boots': 3552, 'Steel Boots': 3554 },
