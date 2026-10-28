@@ -308,6 +308,24 @@ t('2.33.6 "Northon - Shadow Nexus" ao lado do post (pedido do dono): poções do
     assert(s.chars.KNIGHT.suporte.includes('Protector'));
     assert.strictEqual(M.dcConfigDe(s, 'KNIGHT', null, ctx).cfg.manaPotion.name, 'Mana Potion');
 });
+t('2.33.7 "Northon - Shadow Nexus" troca a barra INTEIRA (vida, mana, ataque, defesa e suporte dos 4) mesmo partindo de outra barra', () => {
+    const s = M.SETUPS_DISCORD.find(x => x.id === 'northon-222');
+    const ctx = Object.assign({}, CTX_POT, { nivel: 167, magias: SPELLS });
+    const outra = { heals: [{ name: 'Great Health Potion', percent: 70 }, { name: 'Light Healing', percent: 90 }], manaPotion: { name: 'Strong Mana Potion', percent: 60 },
+                    skills: ['Annihilation', null, null, null], minCreatures: { Annihilation: 1 }, supports: ['Blood Rage', 'Magic Shield'], ammo: 'onyx arrow' };
+    const esperado = {
+        KNIGHT: { heals: ['Intense Wound Cleansing 40', 'Ultimate Health Potion 45', 'Wound Cleansing 85', 'Intense Recovery 90'], mana: 'Mana Potion 20', skills: ['Fierce Berserk', 'Berserk', 'Lesser Front Sweep', 'Brutal Strike'], sup: ['Protector', 'Train Party'] },
+        PALADIN: { heals: ['Great Spirit Potion 40', 'Salvation 50', 'Intense Healing 85'], mana: 'Mana Potion 10', skills: ['Divine Caldera', 'thunderstorm rune', 'Strong Ethereal Spear', 'Divine Missile'], sup: ['Protect Party'] },
+        SORCERER: { heals: ['Health Potion 40', 'Ultimate Healing 50', 'Intense Healing 85'], mana: 'Mana Potion 10', skills: ['Energy Wave', 'thunderstorm rune', 'Ultimate Energy Strike', 'Energy Strike'], sup: ['Enchant Party'] },
+        DRUID: { heals: ['Ultimate Healing 50', 'Health Potion 45', 'Mass Healing 70', 'Heal Friend 75'], mana: 'Great Mana Potion 20', skills: ['Strong Ice Wave', 'thunderstorm rune', 'Strong Ice Strike', 'Energy Strike'], sup: ['Heal Party'] } };
+    for (const [voc, e] of Object.entries(esperado)) {
+        const r = M.dcConfigDe(s, voc, JSON.parse(JSON.stringify(outra)), ctx);
+        assert.deepStrictEqual(r.cfg.heals.map(h => h.name + ' ' + h.percent), e.heals, voc + ' curas/vida');
+        assert.strictEqual(r.cfg.manaPotion.name + ' ' + r.cfg.manaPotion.percent, e.mana, voc + ' mana');
+        assert.deepStrictEqual(r.cfg.skills, e.skills, voc + ' ataque');
+        assert.deepStrictEqual((r.cfg.supports || []).filter(Boolean), e.sup, voc + ' suporte');
+    }
+});
 t('2.29.5 Worker Golem do Matheustlm (23/10): 1º post real do mapa substitui o "Northon -"; sem aviso no nível dele, e no 94 só o Annihilation fica de fora', () => {
     const s = M.SETUPS_DISCORD.find(x => x.id === 'golem-matheus');
     assert(s && s.huntId === 161, 'golem-matheus');

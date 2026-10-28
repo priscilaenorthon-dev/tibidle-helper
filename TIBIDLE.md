@@ -6444,3 +6444,10 @@ medida ao vivo (lure 2, magma nos magos):
 - Achado de gasto: o Paladino estava de diamond arrow (200/flecha, ~300k/h). O setup não mexe na munição.
 Medido na lure 2: sem morte, ~440k xp/h, gasto ~325k/h (era ~680k/h). Lição do helper: aplicar o post mantém a poção de mana do dono
 (2.29.4) — no Shadow Nexus isso deixou o Druida com a poção errada; mapas assim precisam de `pocaoDoMapa`.
+
+## 2.33.7 — "Northon - Shadow Nexus" = a barra que deu lucro (28/10)
+O dono ajustou à mão na caçada (Paladino com Salvation 50 e Divine Missile; Feiticeiro com Ultimate Energy Strike e a cura Health
+Potion 40 → Ultimate Healing 50 → Intense Healing 85, como o lucasdela) e a sessão empatou/lucrou com drop bom. Pediu para salvar a barra
+daquele momento como o "Northon". Lida do helper (que registra os profiles_set da tela) e conferida com o kit/poções do frame do servidor.
+Cavaleiro e Druida iguais à 2.33.6. Munição continua fora do setup (fica a do dono).
+Teste novo: partindo de uma barra totalmente diferente, o setup troca vida, mana, ataque, defesa e suporte dos 4 (pedido do dono: "tem que mudar o setup todo").

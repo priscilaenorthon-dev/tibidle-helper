@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.33.6
+// @version      2.33.7
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.33.6';
+    const VERSAO = '2.33.7';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -8988,13 +8988,13 @@
         /* 2.33.6 (28/10) — "Northon - Shadow Nexus" AO LADO do post do lucasdela, a pedido do dono ("monta o padrão igual o nosso"): o
          *   gerador da 2.28.1 corrigido pela medida da ShamanBr (nível 167, lure 2, 28/10). comPost = exceção pedida à regra "Northon só
          *   em mapa sem post". */
-        { id: 'northon-222', hunt: 'Shadow Nexus', huntId: 222, autor: 'Northon (padrão Specter/Gus/Theus + medida ao vivo, nível 167)', data: '28/10', titulo: 'Northon - Shadow Nexus', pocaoDoMapa: true, comPost: true,
+        { id: 'northon-222', hunt: 'Shadow Nexus', huntId: 222, autor: 'Northon (padrão + ajustes do dono ao vivo, nível 167)', data: '28/10', titulo: 'Northon - Shadow Nexus', pocaoDoMapa: true, comPost: true,
           lure: 'nível 2 — 5 criaturas (medido); 3+ só com o Dragon Hide no Cavaleiro', skills: '', nota: '', nivel: '167+ (recomendado 250)',
-          obs: 'Nosso padrão (o mesmo gerador dos "Northon -": Cavaleiro Fierce Berserk, Berserk, Lesser Front Sweep e Brutal Strike; Paladino Caldera, runa e as duas lanças; magos onda, runa, golpe forte e golpe do elemento da runa; a MESMA runa nos três — thunderstorm, energia) com o que a medida da ShamanBr mostrou em 28/10 (nível 167, magma nos magos): dano tomado ~62 % físico (Juggernaut/Demons no Cavaleiro) e ~30–45 % fogo/energia em área que cobre TODAS as casas da formação (mover não adianta). Mudanças sobre o gerador: SEM Magic Shield (os magos ficaram com vida mínima 53–71 %, e o escudo faz o dano sair da mana = mais poção; o lucasdela também caça sem); Protector no Cavaleiro (a regra do lucasdela para quem não tem prey de defesa); poções FIXAS do mapa — Druida Great Mana Potion (com Mana Potion ele zerou a mana e morreu na lure 3), os outros Mana Potion (a mais barata; a Strong custa o dobro); cura do Cavaleiro mais cedo (Intense Wound Cleansing 40 e Ultimate Health Potion 45 — em 36 % um golpe de Juggernaut + magia leva metade da vida) e do Druida com o Ultimate Healing na frente (50 %). Munição: a sua — diamond arrow custa 200 por flecha (~300k/h a mais). Medido assim na lure 2: ninguém morre, ~440k xp/h, gasto ~325k/h; o mapa só se paga com lure alta (mais monstros por magia) ou drop raro.',
+          obs: 'A barra que DEU LUCRO na ShamanBr em 28/10 (nível 167, lure 2, magma nos magos), salva a pedido do dono: o nosso padrão (Cavaleiro Fierce Berserk, Berserk, Lesser Front Sweep e Brutal Strike; thunderstorm nos três; Druida Strong Ice Wave) com os ajustes que o dono fez à mão — Paladino com Salvation e Divine Missile e Feiticeiro com Ultimate Energy Strike e a cura do lucasdela. Medido: dano tomado ~62 % físico (Juggernaut/Demons no Cavaleiro) e fogo/energia em área cobrindo todas as casas da formação (mover não adianta). Sem Magic Shield (o escudo vira gasto de poção; os magos ficam com vida mínima 53–71 %); Protector no Cavaleiro (regra do lucasdela sem prey de defesa); poções FIXAS do mapa — Druida Great Mana Potion (com Mana Potion ele zerou a mana e morreu na lure 3), os outros Mana Potion (a Strong custa o dobro); cura do Cavaleiro cedo (Intense Wound Cleansing 40, Ultimate Health Potion 45) e Druida com o Ultimate Healing na frente (50 %). Munição: a sua — a diamond arrow custa 200 por flecha (~216k/h); com onyx arrow (7) o gasto ficou ~400k/h e a sessão empatou com drop bom.',
           chars: {
             KNIGHT: { mana: ['Mana Potion', 20], ataque: [['Fierce Berserk', 4], ['Berserk', 2], ['Lesser Front Sweep', 1], ['Brutal Strike', 1]], defesa: [['Intense Wound Cleansing', 40], ['Ultimate Health Potion', 45], ['Wound Cleansing', 85], ['Intense Recovery', 90]], suporte: ['Protector', 'Train Party'] },
-            PALADIN: { mana: ['Mana Potion', 10], ataque: [['Divine Caldera', 2], ['thunderstorm rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Great Spirit Potion', 40], ['Divine Healing', 60], ['Intense Healing', 85]], suporte: ['Protect Party'] },
-            SORCERER: { mana: ['Mana Potion', 10], ataque: [['Energy Wave', 2], ['thunderstorm rune', 2], ['Strong Energy Strike', 1], ['Energy Strike', 1]], defesa: [['Ultimate Healing', 50], ['Health Potion', 40], ['Intense Healing', 85]], suporte: ['Enchant Party'] },
+            PALADIN: { mana: ['Mana Potion', 10], ataque: [['Divine Caldera', 2], ['thunderstorm rune', 2], ['Strong Ethereal Spear', 1], ['Divine Missile', 1]], defesa: [['Great Spirit Potion', 40], ['Salvation', 50], ['Intense Healing', 85]], suporte: ['Protect Party'] },
+            SORCERER: { mana: ['Mana Potion', 10], ataque: [['Energy Wave', 2], ['thunderstorm rune', 2], ['Ultimate Energy Strike', 1], ['Energy Strike', 1]], defesa: [['Health Potion', 40], ['Ultimate Healing', 50], ['Intense Healing', 85]], suporte: ['Enchant Party'] },
             DRUID: { mana: ['Great Mana Potion', 20], ataque: [['Strong Ice Wave', 2], ['thunderstorm rune', 2], ['Strong Ice Strike', 1], ['Energy Strike', 1]], defesa: [['Ultimate Healing', 50], ['Health Potion', 45], ['Mass Healing', 70], ['Heal Friend', 75]], suporte: ['Heal Party'] } } },
         /* @@EVENTO (2.32.0) — Caçada da Estação do Halloween 2026 (hunt 263, fora do /hunts; a Magia a recebe do bloco do Evento). Sem post
          * no Discord: montado em 27/10 pelas fichas do /bestiary/creature e do /bosses/select. Apagar junto com o evento. */
