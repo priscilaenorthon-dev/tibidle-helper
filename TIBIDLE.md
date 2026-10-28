@@ -6517,3 +6517,27 @@ fala que é melhor?" → "Pode ser. E verifica para os outros personagens també
 - Testes: 457, nenhum novo (melhorias.test.js: SEGURANÇA refeito com o caso da Zaoan e o contraexemplo sem refino; bota de regen. menor como troca;
   set do mesmo nível; mercado.test.js: fixture da Leather Boots passou a regen. 2,05; telas.test.js: o teste "sobe sem exceção" passa
   também por Sobreviver e Evento e confere botão, seletor e dica da aba Sobreviver). Não testado ao vivo — o dono testa hoje.
+
+## 2.34.3 — Paladino: Distância nas Spears, Dano Sagrado nobre; lure fixa na aba Sobreviver (28/10)
+
+Dono: "Paladino: regen. de mana, crítico, Nível de Distância e Dano Sagrado. Os maiores danos do arqueiro são sagrado e Distância
+por causa dos arcos. Tem que mudar isso no nosso código."
+- **Causa**: a régua só via a Distância no tiro básico (5 % do dano do Paladino na referência, medida no nível 67): as três Ethereal
+  Spears entravam no livro-razão como "magia" e caíam no peso do Nível Mágico — mas, pelo catálogo do jogo, elas usam a SKILL
+  (Ethereal Spear = nível/5 + (skill+25)/3 … nível/5 + skill + 25; Strong = (2·skill)·2,3 + nível/5 + 7 … (2·skill)·3,3 + nível/5 + 13;
+  wiki /como-o-dano-e-calculado: "as Ethereal Spears do Paladin usam a Distância"). +1 de Distância valia 0,031 pt.
+- **`partyConsolidada(…, sagrado, distancia)`**: `fracDist` = dano das magias com `skill` na fórmula ÷ dano do Paladino (referência
+  `PARTY_REF.fracDist` 0,3 — os setups do Discord levam Ethereal + Strong Ethereal). `pesosDaVoc` PALADIN: Distância = tiro × (1 − fm)
+  + Spears × fracDist (`ES_SKILL` 2/3 e `SES_SKILL` 5,6 por ponto, média das duas); o Nível Mágico dele só conta (fs − fracDist); os
+  elementos que não são sagrado dividem só o que sobra (fm − fracSagrado − fracDist). Na referência: Distância 0,031 → 0,176 pt por
+  ponto (5,7×); ML 0,459 → 0,183; dano sagrado continua 0,13 pt por 1 % (fracSagrado 0,5 × fatia 0,26). Medido ao vivo, manda a medida.
+- **`NOBRE_ATAQUE.PALADIN`** ganha `dano_elem_sagrado`: dano sagrado na arma e no colar do Paladino é linha nobre (não vai para
+  sobras/desmanche, e a Melhorias só troca por ganho ≥ 1 pt).
+- **Aba Sobreviver**: Ushuriel Seal (rec. 180) e Hellgorak Seal (rec. 200) têm `lureTiers [{8,8}]`, `maxLure 1` — a dica "lure baixo
+  primeiro" não existia lá. `sbPlano` recebe `lureTiers/maxLure` do alvo e diz "Lure fixa em 8: o cerco já entra cheio" (aviso).
+- Catálogo do cliente (`pub_hunts_select`, resistência em %): Ushuriel Seal = Behemoth (4 000 hp; terra 80, fogo 30, sagrado 30, físico
+  10; fraco a gelo −10 e morte −5) + Juggernaut (9 000 hp; físico 30, fogo 30, terra 20, gelo 10; fraco a energia −10 e sagrado −5).
+  Hellgorak Seal = Juggernaut + Hellhound (7 500; fogo 100, terra 20, energia 10; fraco a gelo e sagrado −5) + Angry Demon (8 200,
+  xp 1 480; fogo 100, energia 50, terra 40, físico 25, morte 20; fraco a gelo e sagrado −12) + Weakened Demon (5 500, tudo 0).
+  Setups guardados (lucasdela): avalanche + Energy Wave + Strong Ice Wave; gelo é o elemento certo nos dois, energia só no Juggernaut.
+- Testes: 458 (+1 em equip.test.js: fracDist, ML, sagrado nobre; sobreviver.test.js: lure fixa × Shadow Nexus). Não testado ao vivo.

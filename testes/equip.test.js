@@ -7,7 +7,7 @@ const raiz = path.join(__dirname, '..');
 const src = fs.readFileSync(path.join(raiz, 'tibidle-helper.user.js'), 'utf8');
 const ini = src.indexOf('/* @@EQUIP-PURO-INICIO */'), fim = src.indexOf('/* @@EQUIP-PURO-FIM */');
 assert(ini > 0 && fim > ini, 'marcadores @@EQUIP-PURO não encontrados');
-const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, pesosDaVoc, mitigacaoPct, bloqueioEscudo, reducaoArmadura, golpeBasico, efeitoOficial, legadoDe, loyaltyBonus, forjaSimular, forjaValorSorteado, forjaLinhaSorteada, FORJA_GEMA_OURO, protecaoComposta, danoRecebidoCorpo, danoRecebidoMagia, COMBATE_VOC, SUPORTE_OFICIAL, candidatosEquip, distribuirEquip, pecasDesmanche, planoForja, faixaPotencia, wikiSlug, wikiUrlPeca, EQUIP_RESERVAS, destinosSobras, chanceLinha, fragmentosDesmanche, escolherDestino, faixaRange, valorTipico, linhasUteis, REGRAS_VOCACAO, FAIXA_NOME, faseEquip, potenciaBaseForja, trocaVale };')();
+const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, pesosDaVoc, mitigacaoPct, bloqueioEscudo, reducaoArmadura, golpeBasico, efeitoOficial, legadoDe, loyaltyBonus, forjaSimular, forjaValorSorteado, forjaLinhaSorteada, FORJA_GEMA_OURO, protecaoComposta, danoRecebidoCorpo, danoRecebidoMagia, COMBATE_VOC, SUPORTE_OFICIAL, candidatosEquip, distribuirEquip, pecasDesmanche, planoForja, faixaPotencia, wikiSlug, wikiUrlPeca, EQUIP_RESERVAS, destinosSobras, chanceLinha, fragmentosDesmanche, escolherDestino, faixaRange, valorTipico, linhasUteis, REGRAS_VOCACAO, FAIXA_NOME, faseEquip, potenciaBaseForja, trocaVale, encaixeNobre };')();
 const le = (p) => { try { return JSON.parse(fs.readFileSync(path.join(raiz, p), 'utf8')); } catch (e) { return null; } };
 const base = {};
 for (const [nome, it] of Object.entries(le('testes/fixtures/itens.json').itens)) base[nome] = { id: it.id, attrs: it.attrs || {}, sell: it.sell || 0, equipPreview: it.equipPreview || null };
@@ -547,13 +547,31 @@ t('2.16.0: Épico sem linha útil vai para as sobras (não é base de forja); É
     assert(pm.linhasAlvo.every(x => typeof x.chance === 'number' && Array.isArray(x.range)), 'linhas-alvo levam chance e range');
     assert.strictEqual(pm.faixaNome, 'I Simples');
 });
-t('2.16.0: Paladino — mínimo do tiro é 60 % do máximo (update 1.0.13): +1 de distância vale um pouco mais que antes', () => {
+t('2.16.0: Paladino — mínimo do tiro é 60 % do máximo (update 1.0.13): +1 de distância vale um pouco mais que antes; 2.34.3: + as Ethereal Spears', () => {
     /* nível 67, distância 36 (REF_SK): antes 0,045·25/(13,4 + 0,045·25·36) = 2,08 % do tiro; agora 0,09·25/(13,4 + 0,09·25·36) = 2,40 % */
     const P = M.pesosDaVoc('PALADIN', null);
-    const esperado = 0.26 * 0.05 * 100 * (0.09 * 25) / (67 / 5 + 0.09 * 25 * 36);
+    const tiro = 100 * (0.09 * 25) / (67 / 5 + 0.09 * 25 * 36);
+    /* 2.34.3: as Spears (fórmulas do catálogo) também sobem com a Distância — referência: 30 % do dano dele */
+    const spear = (100 * (2 / 3) / (67 / 5 + (36 + 25) * 2 / 3) + 100 * 5.6 / (67 / 5 + 10 + 5.6 * 36)) / 2;
+    const esperado = 0.26 * (0.05 * tiro + 0.3 * spear);
     assert(Math.abs(P.distancia - esperado) < 0.01, `distância ${P.distancia} ≠ ${esperado}`);
+    assert(P.distancia > 5 * 0.26 * 0.05 * tiro, 'com as Spears a Distância vale mais de 5× o que valia só pelo tiro');
     assert(P.distancia > 0.26 * 0.05 * 100 * (0.045 * 25) / (67 / 5 + 0.045 * 25 * 36), 'deveria valer mais que pela fórmula antiga');
     assert(M.REGRAS_VOCACAO.PALADIN.some(x => /BESTA/.test(x)) && M.REGRAS_VOCACAO.SORCERER.some(x => /NÍVEL MÁGICO/.test(x)), 'regras por vocação em palavras');
+});
+t('2.34.3 Paladino: Distância medida nas Spears manda (fracDist), ML dele cai o que as Spears não usam, dano sagrado é nobre na arma e no colar', () => {
+    const ref = M.pesosDaVoc('PALADIN', null);
+    const comSpear = M.pesosDaVoc('PALADIN', { party: { fracDist: 0.6, fracMagica: { PALADIN: 0.95 } } });
+    const semSpear = M.pesosDaVoc('PALADIN', { party: { fracDist: 0, fracMagica: { PALADIN: 0.95 } } });
+    assert(comSpear.distancia > ref.distancia && ref.distancia > semSpear.distancia && semSpear.distancia > 0, JSON.stringify([semSpear.distancia, ref.distancia, comSpear.distancia]));
+    assert(comSpear.nivel_magico < ref.nivel_magico && ref.nivel_magico < semSpear.nivel_magico, 'as Spears não usam ML: ' + JSON.stringify([semSpear.nivel_magico, ref.nivel_magico, comSpear.nivel_magico]));
+    assert(Math.abs(comSpear.dano_elem_sagrado - ref.dano_elem_sagrado) < 1e-9 && ref.dano_elem_sagrado > ref.dano_elem_fogo * 5, 'sagrado = fracSagrado × fatia; os outros elementos só o resto');
+    /* tudo medido (Spears + sagrado = toda a magia): nada sobra para os outros elementos, e nunca negativo */
+    const cheio = M.pesosDaVoc('PALADIN', { party: { fracDist: 0.5, fracSagrado: 0.5, fracMagica: { PALADIN: 0.95 } } });
+    assert(cheio.dano_elem_fogo === 0 && cheio.distancia > 0, JSON.stringify([cheio.dano_elem_fogo, cheio.distancia]));
+    const colar = (id) => ({ nome: 'x', slot: 'necklace', attrs: {}, forja: F(1, [id, 5]) });
+    assert(M.encaixeNobre(colar('dano_elem_sagrado'), 'PALADIN') && !M.encaixeNobre(colar('dano_elem_sagrado'), 'KNIGHT') && !M.encaixeNobre(colar('dano_elem_sagrado'), 'SORCERER'), 'dano sagrado: nobre só para o Paladino');
+    assert(M.encaixeNobre({ nome: 'y', slot: 'legs', attrs: {}, forja: F(1, ['dano_elem_sagrado', 5]) }, 'PALADIN') === false, 'na calça não é nobre (só arma e colar)');
 });
 /* 2.18.1 — dono: "arco e besta têm status e dano também": o ataque e o acerto do arco/besta contam no Paladino */
 t('arco/besta: ataque (composite hornbow 3) e acerto (elvish bow 5) contam no Paladino; arco simples continua 0', () => {

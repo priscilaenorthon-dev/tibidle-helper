@@ -61,7 +61,13 @@ t('sbPlano: medido → Protector e prey de DEFESA em alerta (200/s, morte), late
     assert(por.protector.nivel === 'av' && /30\/s a menos/.test(por.protector.texto), por.protector.texto);
     assert(por.prey.nivel === 'ruim' && /xp ★3/.test(por.prey.texto), por.prey.texto);
     assert(/Cavaleiro: Ultimate Health Potion/.test(por.pocoes.texto) && /Paladino: Ultimate Spirit Potion/.test(por.pocoes.texto) && /Druida: Health Potion ≤ 40 % · Ultimate Mana Potion/.test(por.pocoes.texto), por.pocoes.texto);
-    assert(/nível mínimo 150/.test(por.lure.texto));
+    assert(/nível mínimo 150/.test(por.lure.texto) && por.lure.nivel === 'ok' && /Lure baixo primeiro/.test(por.lure.titulo));
+    /* 2.34.3 — Ushuriel Seal e Hellgorak Seal: lure fixa em 8 (lureTiers [{8,8}], maxLure 1) — não existe "lure baixo primeiro" */
+    const fixa = M.sbPlano({ nivel: 180, party, medido: false, prey: {}, alvo: { title: 'Ushuriel Seal', levelMin: 80, recommendedLevel: 180, lureTiers: [{ min: 8, max: 8 }], maxLure: 1 } });
+    const pf = Object.fromEntries(fixa.map(x => [x.chave, x]));
+    assert(pf.lure.nivel === 'av' && /Lure fixa em 8/.test(pf.lure.titulo) && /8 criaturas/.test(pf.lure.texto) && /recomendado 180/.test(pf.lure.texto), JSON.stringify(pf.lure));
+    const varia = M.sbPlano({ nivel: 180, party, medido: false, prey: {}, alvo: { title: 'Shadow Nexus', lureTiers: [{ min: 3, max: 3 }, { min: 5, max: 5 }, { min: 7, max: 7 }, { min: 8, max: 8 }], maxLure: 4 } });
+    assert(/Lure baixo primeiro/.test(Object.fromEntries(varia.map(x => [x.chave, x])).lure.titulo), 'Shadow Nexus tem 4 lures: continua "baixo primeiro"');
     const ok = M.sbPlano({ nivel: 100, party, medido: true, mortes: 0, prey: { KNIGHT: { tipo: 'defesa', tier: 5 } }, alvo: { boss: 'Beelzebub' } });
     const p2 = Object.fromEntries(ok.map(x => [x.chave, x]));
     assert(p2.prey.nivel === 'ok' && /★5/.test(p2.prey.titulo) && /−20 %/.test(p2.prey.titulo), p2.prey.titulo);
