@@ -101,12 +101,13 @@ t('faixa de retorno: aviso da aba, linha do Log depois do clique, 10 s, outra ab
     assert.strictEqual(C.escolherAviso(null, clique, { t: 2000 + 61000, msg: 'muito depois' }, 'estado', 2000 + 62000), null);
     assert.strictEqual(C.escolherAviso({ t: 2600, msg: 'avisar', tipo: 'ok' }, clique, linha, 'estado', 3000).msg, 'avisar', 'o mais novo vence');
 });
-t('2.25.0: trilho com 13 ícones (Radar, Melhorias, Forja + o Evento temporário da 2.30.0) cabe inteiro em 1366×768 e no celular rola na horizontal', () => {
+t('2.25.0: trilho com 14 ícones (Radar, Melhorias, Forja, Aguentar + o Evento temporário da 2.30.0) cabe inteiro em 1366×768 e no celular rola na horizontal', () => {
     const icones = (src.match(/const ICONES = \[(.*)\];/) || [])[1] || '';
     const nIco = (icones.match(/\['\w+', '/g) || []).length;
-    assert.strictEqual(nIco, 13, 'ICONES: ' + nIco); // @@EVENTO: volta a 12 quando a aba Evento sair
-    /* TH = 312 px com 9 ícones (34 px + 1 de vão cada); do 10º ao 13º somam 35 cada */
-    const TH10 = TH + 140;
+    assert.strictEqual(nIco, 14, 'ICONES: ' + nIco); // @@EVENTO: volta a 13 quando a aba Evento sair
+    /* TH = 312 px com 9 ícones (34 px + 1 de vão cada); com 13+ ícones o trilho fica denso (2.34.0: 31 px cada): 14 × 32 = 448 + 27 de folga */
+    assert(/#tb-trilho\.tb-denso \.tb-ico\{height:31px\}/.test(src), 'trilho denso (31 px) com 13+ ícones');
+    const TH10 = TH - 9 * 3 + 5 * 32;
     const { J } = jogo(1366, 768);
     const p = C.lugarDoTrilho(1366, 768, TW, TH10, PADRAO, null, J);
     assert(p.y >= 38 && p.y + TH10 <= J.acao.top, 'trilho padrão desce na barra de ação: ' + (p.y + TH10) + ' > ' + J.acao.top);

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.33.7
+// @version      2.34.0
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.33.7';
+    const VERSAO = '2.34.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -5391,15 +5391,32 @@
     /* v2.11 — NUNCA VENDER. Materiais de imbuement: /assets/<versão>/imbuements.json
      * (cache 7 dias). Equipamento: /item/info pelo nome (basePorNome/idsPorNome
      * da área Equip, que já guardam cache). */
+    /* v2.34.0 — LISTA FIXA DO QUE NUNCA SE VENDE (wiki oficial, lida em 28/10): os 42 materiais de imbuement (/imbuements), os
+     * fragmentos de token de ilha (/isolda), os itens que o Silas pede pelas ilhas e pelas tentativas de boss (/acesso-as-ilhas,
+     * /acesso-aos-bosses) e a abóbora do evento. Vale como reserva quando o imbuements.json do jogo some num patch (já deu 404 na
+     * 1.1.0: o Auto Hunt ficava "nada vendido" e a mochila enchia) e soma sempre ao que o catálogo traz. */
+    const NUNCA_VENDER_WIKI = [
+        'vampire teeth', 'bloody pincers', 'piece of dead brain', 'rope belt', 'silencer claws', 'some grimeleech wings', 'protective charm', 'sabretooth',
+        'vexclaw talon', 'flask of embalming fluid', 'gloom wolf fur', 'mystical hourglass', 'piece of swampling wood', 'snake skin', 'brimstone fangs',
+        'green dragon leather', 'blazing bone', 'draken sulphur', 'winter wolf fur', 'thick fur', 'deepling warts', 'wyvern talisman', 'crawler head plating',
+        'wyrm scale', 'cultish robe', 'cultish mask', 'hellspawn tail', "lion's mane", "mooh'tah shell", 'war crystal', 'elven scouting glass', 'elven hoof',
+        'metal spike', 'piece of scarab shell', 'brimstone shell', 'frazzle skin', 'elvish talisman', 'broken shamanic staff', 'strand of medusa hair',
+        'damselfly wing', 'compass', 'waspoid wing',
+        'silver token fragment', 'gold token fragment', 'minor cristaline token', 'forgotten silver token', 'otherworld gold token', 'major crystaline token',
+        'yalahar soul fragment', 'yalahar gear wheel', 'thunderscar spark', 'inquisition badge', "bazir's relic", "infernatil's relic", "tafariel's relic",
+        "apocalypse's relic", "ashfalor's relic", "pumin's relic", "verminor's relic", 'warzone voucher', 'dwarven pickaxe', 'unholy book',
+        'the orb of light undying', 'yalahari figurine', 'trophy of tanjis', 'trophy of obujos', "the inquisitor's circlet", 'necronomicon', 'halloween pumpkin'
+    ].map(normNomeItem);
     let _materiaisImbu = null;
     async function materiaisImbuement() {
         if (_materiaisImbu) return _materiaisImbu;
         const c = ler('imbu_materiais', null);
-        if (c && c.t && Date.now() - c.t < 7 * 864e5 && Array.isArray(c.m) && c.m.length) return (_materiaisImbu = c.m);
-        const m = materiaisDoCatalogo(await buscarAsset('imbuements.json'));
-        if (!m.length) throw new Error('imbuements.json veio sem materiais');
-        _materiaisImbu = m; guardar('imbu_materiais', { t: Date.now(), m });
-        return m;
+        if (c && c.t && Date.now() - c.t < 7 * 864e5 && Array.isArray(c.m) && c.m.length) return (_materiaisImbu = [...new Set(c.m.concat(NUNCA_VENDER_WIKI))]);
+        let m = [];
+        try { m = materiaisDoCatalogo(await buscarAsset('imbuements.json')); if (!m.length) throw new Error('imbuements.json veio sem materiais'); guardar('imbu_materiais', { t: Date.now(), m }); }
+        catch (e) { log('nunca vender: o imbuements.json do jogo não veio (' + e.message + ') — vale a lista fixa da wiki (42 materiais + itens de quest)', 'erro'); }
+        _materiaisImbu = [...new Set(m.concat(NUNCA_VENDER_WIKI))];
+        return _materiaisImbu;
     }
     let _nomesNorm = null, _nomesNormDe = null;
     function nomesNormalizados(ids) {
@@ -6592,6 +6609,10 @@
     const SLOTS_EQUIP = ['weapon', 'shield', 'head', 'armor', 'legs', 'boots', 'necklace', 'ring'];
     const ELEM = ['fogo', 'gelo', 'energia', 'terra', 'morte', 'sagrado'];
     const ELEM_EN = { fogo: 'fire', gelo: 'ice', energia: 'energy', terra: 'earth', morte: 'death', sagrado: 'holy' };
+    /* v2.34.0 — modo AGUENTAR (aba Sobreviver): os pesos de defesa que pesam SB_FATOR× quando ctx.sobreviver */
+    const SB_FATOR = 3, SB_NIVEL_MIN = 150;
+    const SB_IDS_DEFESA = ['resist_fisica', 'absorbpercentphysical', 'protecao_magica', 'armor', 'defense', 'extradef', 'escudo', 'skillshield', 'max_hp', 'regen_vida', 'cura_propria', 'absorbpercentpoison']
+        .concat(ELEM.map(e => 'resist_' + e), ELEM.map(e => 'absorbpercent' + ELEM_EN[e]));
     const VOCS_EQUIP = ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'];
     const PT_OURO_H = 450;
     const VIDA_PT_KNIGHT = 3.6, VIDA_PT_LADO = 0.5;
@@ -6933,7 +6954,7 @@
             /* v2.24.0 — na fase 2 a folga some: a vida mínima fica alta porque ele BEBE poção (medido 17/10: ~145k/h de cura, mais
              * que o loot) — cada ponto de vida que a armadura/resistência evita é um ponto que não se paga. Vídeos: "viver é mais
              * importante do que recuperar dois de mana". */
-            const folga = fase2 ? 1 : (R.hpMinK == null ? 1 : R.hpMinK >= 60 ? 0.5 : R.hpMinK >= 40 ? 0.75 : 1);
+            const folga = fase2 || (ctx && ctx.sobreviver) ? 1 : (R.hpMinK == null ? 1 : R.hpMinK >= 60 ? 0.5 : R.hpMinK >= 40 ? 0.75 : 1); // v2.34.0: no modo aguentar a defesa vale cheia
             const bloqueiosS = Math.min(R.golpesS, 1);
             /* v2.20.0 — PELA REGRA OFICIAL (wiki /como-o-dano-e-calculado + Canary, 16/10), com o que o Knight veste hoje
              * (ctx.kn: defesa do escudo e armadura total; sem leitura, uma referência) e a skill Escudo vista no frame:
@@ -6985,6 +7006,8 @@
          * (acerto de base ~90 %); só o Paladino atira — nos outros vale 0 */
         P.hitchance = voc === 'PALADIN' ? _r(s * (1 - fm) * 1.1) : 0;
         P.fase = fase2 ? 2 : 1; // v2.24.0
+        /* v2.34.0 — modo AGUENTAR (aba Sobreviver e consumíveis do boss): a defesa pesa SB_FATOR× — a peça é escolhida para sobreviver ao alvo */
+        if (ctx && ctx.sobreviver) { for (const k of SB_IDS_DEFESA) if (P[k]) P[k] = _r(P[k] * SB_FATOR); P.sobreviver = true; }
         return P;
     }
     /* v2.11.6 — PARES (crítico e roubo de vida): o ganho de uma peça depende do
@@ -7182,6 +7205,10 @@
      * sobe de faixa (1–199, 200–399, 400–599, 600–799, 800+); a faixa é o teto das linhas de skill (ML, distância,
      * corpo a corpo: faixa 2 → até +2, faixa 3 → até +3). Uma Snakebite Rod ML+1 com 300+ vira ML+3 na forja. */
     const POTENCIA_BASE_FORJA = 300, SKILL_FORJA = ['nivel_magico', 'distancia', 'corpo_a_corpo'];
+    /* v2.34.0 — BASE POR POTÊNCIA (wiki /forja, 28/10: a faixa da potência total define o valor de TODA linha futura; Godlike só em
+     * peça de Boss com base 500; Elite 50–420, Boss 250–500): peça de item bom para o espaço com potência base ≥ 400 fica como base
+     * mesmo sem linha — antes ia para o NPC (Comum) ou para o desmanche. Dono, 28/10: "não jogar nada fora". */
+    const POTENCIA_BASE_ALTA = 400, BASE_ALTA_FRACAO = 0.7;
     /* v2.24.0 — fase 2: "item base só vale com potência 350–400; abaixo disso você gasta e não chega" (TV de Souza 13 e 15/10) */
     const potenciaBaseForja = (ctx) => (faseEquip(ctx) === 2 ? 350 : POTENCIA_BASE_FORJA);
     const potenciaDe = p => Number(p && p.forja && p.forja.potenciaBase) || 0;
@@ -7562,6 +7589,8 @@
         const vocs = voc ? [voc] : VOCS_EQUIP;
         return vocs.some(v => at.some(a => nobresDe(p.slot, v).includes(a.id) && Number(a.valor) > 0));
     }
+    /* v2.34.0 — a nota do ITEM sem os encaixes (ataque, armadura, defesa, proteções de fábrica): "é um item bom para o espaço?" */
+    function ptBase(p, voc, ctx) { if (!p) return 0; return pontuarPeca(Object.assign({}, p, { forja: Object.assign({}, p.forja || {}, { atributos: [] }) }), voc, ctx).pontos; }
     /* só a parte nobre da nota (pt), para comparar com a peça que a vocação veste/vai vestir */
     function ptNobre(p, voc, ctx) {
         if (!p) return 0;
@@ -7681,8 +7710,11 @@
          * Atributo T1; TV de Souza 02/10: "uma Mace com 500 de potência é item de noob — desencanta"). Base de forja
          * = potência ≥ 300 com linha de skill, OU Épico+ com pelo menos uma linha que vale para quem pode vestir. */
         const temLinhaUtil = p => vocs.some(v => linhasUteis(p, v, ctx).length > 0);
+        /* v2.34.0 — item bom para o espaço: a nota de fábrica chega a 70 % da peça que alguma vocação que o veste usa ali (ou o espaço está vazio) */
+        const bomParaOEspaco = p => vocs.some(v => { if (!vocacaoPode(p.attrs, v) || !porVoc[v] || !porVoc[v][p.slot]) return false; const m = porVoc[v][p.slot].melhor; return !m || ptBase(p, v, ctx) >= BASE_ALTA_FRACAO * ptBase(m, v, ctx); });
         const baseDeForja = p => (potenciaDe(p) >= potenciaBaseForja(ctx) && ((p.forja && p.forja.atributos) || []).some(a => SKILL_FORJA.includes(a.id) && Number(a.valor) > 0))
-            || (((p.forja && p.forja.raridade) || 0) >= RARIDADE_BASE_FORJA && temLinhaUtil(p));
+            || (((p.forja && p.forja.raridade) || 0) >= RARIDADE_BASE_FORJA && temLinhaUtil(p))
+            || (potenciaDe(p) >= POTENCIA_BASE_ALTA && bomParaOEspaco(p)); // v2.34.0 — base por potência
         const bases = pecas.filter(p => !usadas.has(p.iid) && !ehTemporaria(p) && baseDeForja(p));
         /* v2.11.19 — dono, 30/09: "caso todos já estejam equipados com itens bons quero ter a opção de vender".
          * A peça de encaixe nobre só é guardada se o encaixe dela SUPERA o da peça que alguma vocação que a
@@ -7706,6 +7738,86 @@
         return { porVoc, reservas, dispensaveis, usadas, temporarios, bases, nobres };
     }
     /* @@EQUIP-PURO-FIM */
+    /* @@SOBREVIVER-PURO-INICIO — aba SOBREVIVER (2.34.0): contas puras; testes/sobreviver.test.js roda EQUIP-PURO + este trecho.
+     * Dono, 28/10: "uma tela só para aguentar um mapa de nível 150+ ou um boss forte: que itens pegar do depósito e vestir, o que
+     * comprar no Mercado, que prey usar — no Shadow Nexus o set magma não bastou; o amigo disse prey de defesa no Knight ou utamo tempo". */
+    /* o grupo visto pelo ALVO: o dano guardado daquele mapa/boss (danoMapaJuntar) diz o que cada um toma, de que elemento; o resto
+     * (fatia de dano, mana, quem bebe) continua o do grupo consolidado */
+    function sbPartyDoDano(dm, base) {
+        const p = Object.assign({}, base || {});
+        if (!dm || !(dm.seg > 0) || !(dm.tomadoH > 0)) return { party: p, medido: false, mortes: 0 };
+        const ev = dm.elemPorVoc || {}, k = ev.KNIGHT;
+        if (k && k.tomadoH > 0) {
+            p.tomadoS = k.tomadoH / 3600;
+            if (k.frac && k.frac.fisico != null) p.fisico = k.frac.fisico;
+            if (k.golpesH > 0) p.golpesS = k.golpesH / 3600 * (k.frac && k.frac.fisico != null ? k.frac.fisico : 1);
+        } else p.tomadoS = dm.tomadoH / 3600;
+        const elemVoc = {}; let lado = false;
+        for (const [v, x] of Object.entries(ev)) { if (!x || !(x.tomadoH > 0)) continue; elemVoc[v] = { tomadoS: x.tomadoH / 3600, frac: Object.assign({}, x.frac || {}) }; if (v !== 'KNIGHT') lado = true; }
+        if (Object.keys(elemVoc).length) p.elemVoc = elemVoc;
+        p.ladoApanha = lado ? 4 : 1;
+        p.hpMinK = null; // no modo aguentar a defesa vale cheia
+        return { party: p, medido: true, mortes: Number(dm.mortes) || 0 };
+    }
+    /* consumíveis (anel e colar com cargas ou tempo) que valem para ESTA luta: a nota com o contexto do alvo contra a peça vestida ali.
+     * Um por personagem e espaço; só quem ganha ≥ 0,5 pt. `pecas` = candidatosEquip (corpo, mochila, depósito). */
+    function sbConsumiveis(pecas, porVoc, vocs, ctx) {
+        const out = [];
+        for (const v of (vocs || VOCS_EQUIP)) {
+            for (const slot of ['ring', 'necklace']) {
+                const x = porVoc && porVoc[v] && porVoc[v][slot], atual = x ? (x.atual || null) : null;
+                const ptAtual = atual ? pontuarPeca(atual, v, ctx).pontos : 0;
+                let melhor = null;
+                for (const p of (pecas || [])) {
+                    if (!p || p.slot !== slot || !ehTemporaria(p) || !vocacaoPode(p.attrs, v)) continue;
+                    if (p.origem === 'corpo' && p.dono !== v) continue; // vestido em outro: dele
+                    const r = pontuarPeca(p, v, ctx), ganho = r.pontos - ptAtual;
+                    if (!(ganho >= 0.5)) continue;
+                    if (!melhor || r.pontos > melhor.pt) melhor = { voc: v, slot, peca: p, pt: r.pontos, ptAtual, ganho, detalhe: r.detalhe.filter(d => d.pt > 0).sort((a, b) => b.pt - a.pt).slice(0, 3), jaVestido: p.origem === 'corpo' && p.dono === v };
+                }
+                if (melhor && !melhor.jaVestido) out.push(melhor);
+            }
+        }
+        return out.sort((a, b) => b.ganho - a.ganho);
+    }
+    /* poção de vida e de mana pela faixa de nível (wiki /guia-do-*, 28/10) */
+    const SB_POCOES = {
+        KNIGHT: (n) => ({ vida: n >= 200 ? 'Supreme Health Potion' : n >= 130 ? 'Ultimate Health Potion' : n >= 80 ? 'Great Health Potion' : n >= 50 ? 'Strong Health Potion' : 'Health Potion', mana: n >= 50 ? 'Strong Mana Potion' : 'Mana Potion' }),
+        PALADIN: (n) => ({ vida: n >= 130 ? 'Ultimate Spirit Potion' : n >= 80 ? 'Great Spirit Potion' : n >= 50 ? 'Strong Health Potion' : 'Health Potion', mana: n >= 80 ? 'Great Mana Potion' : n >= 50 ? 'Strong Mana Potion' : 'Mana Potion' }),
+        SORCERER: (n) => ({ vida: 'Health Potion', mana: n >= 130 ? 'Ultimate Mana Potion' : n >= 80 ? 'Great Mana Potion' : n >= 50 ? 'Strong Mana Potion' : 'Mana Potion' }),
+        DRUID: (n) => ({ vida: 'Health Potion', mana: n >= 130 ? 'Ultimate Mana Potion' : n >= 80 ? 'Great Mana Potion' : n >= 50 ? 'Strong Mana Potion' : 'Mana Potion' })
+    };
+    const SB_VOC_PT = { KNIGHT: 'Cavaleiro', PALADIN: 'Paladino', SORCERER: 'Feiticeiro', DRUID: 'Druida' };
+    const SB_ELEM_PT = { fisico: 'físico', fogo: 'fogo', gelo: 'gelo', energia: 'energia', terra: 'terra', morte: 'morte', sagrado: 'sagrado', drenovida: 'dreno de vida', drenomana: 'dreno de mana', afogamento: 'afogamento' };
+    /* O PLANO em palavras e números. ent = { nivel, party (do alvo), medido, mortes, hpMinK, prey: {VOC: {tipo, tier, pct}}, alvo: {boss, title,
+     * levelMin, recommendedLevel}, celulasCobremTudo }. Devolve [{chave, titulo, texto, nivel: 'ok'|'av'|'ruim'}]. */
+    function sbPlano(ent) {
+        ent = ent || {};
+        const P = ent.party || {}, nivel = Number(ent.nivel) || 0, out = [], alvo = ent.alvo || {};
+        const tS = Number(P.tomadoS) || 0, fis = P.fisico != null ? Number(P.fisico) : 0.65, prey = ent.prey || {};
+        const pct = (x) => Math.round(x * 100);
+        const alvoNome = alvo.boss || alvo.title || 'o alvo';
+        if (!ent.medido) out.push({ chave: 'medida', nivel: 'av', titulo: 'Sem medição deste alvo', texto: `O helper ainda não viu ${alvoNome}: a conta abaixo usa a referência (Cavaleiro tomando ${Math.round(tS)}/s, ${pct(fis)} % físico, fogo nas magias). Uma luta ou caçada de 2 minutos com o helper aberto grava o dano real por personagem e elemento, e a tela refaz tudo.` });
+        else out.push({ chave: 'medida', nivel: 'ok', titulo: 'O que o alvo faz', texto: `Cavaleiro toma ${Math.round(tS)}/s (${pct(fis)} % corpo a corpo${P.elemVoc && P.elemVoc.KNIGHT ? ', ' + Object.entries(P.elemVoc.KNIGHT.frac || {}).filter(([e]) => e !== 'fisico').sort((a, b) => b[1] - a[1]).slice(0, 2).map(([e, f]) => pct(f) + ' % ' + (SB_ELEM_PT[e] || e)).join(', ') : ''}).` + (ent.mortes > 0 ? ` ${ent.mortes} morte(s) registrada(s) aqui.` : '') + (ent.hpMinK != null ? ` Vida mínima do Cavaleiro já vista: ${Math.round(ent.hpMinK)} %.` : '') });
+        /* laterais */
+        const lados = ['PALADIN', 'SORCERER', 'DRUID'].filter(v => P.elemVoc && P.elemVoc[v] && P.elemVoc[v].tomadoS > 0);
+        if (lados.length) out.push({ chave: 'laterais', nivel: 'av', titulo: 'Magia de área cobre as casas laterais', texto: lados.map(v => { const x = P.elemVoc[v]; const top = Object.entries(x.frac || {}).sort((a, b) => b[1] - a[1])[0]; return `${SB_VOC_PT[v]} toma ${Math.round(x.tomadoS)}/s${top ? ' (' + pct(top[1]) + ' % ' + (SB_ELEM_PT[top[0]] || top[0]) + ')' : ''}`; }).join(' · ') + `. Para eles: resistência ao elemento (anel, colar, forja, imbuement) e Magic Shield nos magos (o dano vai para a mana; mantenha a poção de mana). Vida máxima também conta: mago morto encerra a caçada.` + (ent.celulasCobremTudo ? ' As magias cobrem todas as casas da formação: mover não reduz.' : alvo.boss ? ' Na aba Magia › Boss a grade de formação mostra a casa mais segura.' : '') });
+        else if (ent.medido) out.push({ chave: 'laterais', nivel: 'ok', titulo: 'Laterais não tomam dano aqui', texto: 'Só o Cavaleiro apanha: Magic Shield nos magos só gasta mana; Paladino, Feiticeiro e Druida podem ir de ataque e regen.' });
+        /* Protector × Blood Rage */
+        const forte = tS >= 80 || ent.mortes > 0 || (ent.hpMinK != null && ent.hpMinK < 40);
+        out.push({ chave: 'protector', nivel: forte ? 'av' : 'ok', titulo: forte ? 'Protector (utamo tempo) no suporte do Cavaleiro' : 'Protector só se precisar',
+                   texto: `Protector: dano recebido −15 % (${Math.round(tS * 0.15)}/s a menos), Escudo ×2,2 no bloqueio, e dano causado −35 %. Blood Rage faz o contrário (+15 % recebido, sem bloqueio): nunca os dois.` + (forte ? ` Aqui o Cavaleiro toma ${Math.round(tS)}/s: vale a troca de dano por vida.` : ' Com o dano tomado baixo, deixe o Blood Rage.') });
+        /* prey de defesa */
+        const pk = prey.KNIGHT || null, tierDef = pk && pk.tipo === 'defesa' ? Number(pk.tier) || 0 : 0;
+        out.push({ chave: 'prey', nivel: tierDef > 0 ? 'ok' : forte ? 'ruim' : 'av', titulo: tierDef > 0 ? `Prey de DEFESA ★${tierDef} no Cavaleiro: −${tierDef * 4} % de todo dano` : 'Prey de DEFESA no Cavaleiro',
+                   texto: `Cada estrela de DEFESA tira 4 % de todo dano que o personagem recebe (★5 = −20 %, ★10 = −40 %), magia incluída; a prey vale só na caçada escolhida, por 2 h. Hoje no Cavaleiro: ${pk ? (pk.tipo || '?') + (pk.tier ? ' ★' + pk.tier : '') : 'sem prey lida (abra a janela Prey do jogo ou dê F5)'}. Sorteie a coluna do Cavaleiro até cair DEFESA e trave; o tier só sobe sorteando antes de acabar.` });
+        /* poções */
+        if (nivel > 0) out.push({ chave: 'pocoes', nivel: 'ok', titulo: `Poções do nível ${nivel}`, texto: VOCS_EQUIP.map(v => { const q = SB_POCOES[v](nivel); return `${SB_VOC_PT[v]}: ${q.vida} ≤ ${v === 'KNIGHT' ? 45 : 40} % · ${q.mana} ≤ ${v === 'DRUID' ? 30 : 20} %`; }).join(' · ') + '. Cura de emergência cedo: Intense Wound Cleansing ≤ 30 % na frente da leve; Druida com Ultimate Healing ≤ 50 % antes do Heal Friend.' });
+        /* lure */
+        out.push({ chave: 'lure', nivel: 'ok', titulo: 'Lure baixo primeiro', texto: `Entre na lure 1 ou 2 e suba só com a vida mínima do Cavaleiro acima de 50 % (Status → vitais). Cada criatura a mais no cerco é um golpe a mais a cada 2 s${alvo.levelMin ? ` · nível mínimo ${alvo.levelMin}` : ''}${alvo.recommendedLevel ? ` · recomendado ${alvo.recommendedLevel}` : ''}.` });
+        return out;
+    }
+    /* @@SOBREVIVER-PURO-FIM */
     /* @@MELHORIAS-INICIO — v2.18.0: aba Melhorias (funções puras; testes/melhorias.test.js roda EQUIP-PURO + este trecho).
      *  Dono, 14/10: "verificar todos os equipamentos de cada personagem e verificar no mercado itens melhores, com o
      *  valor, para eu ter noção do que posso comprar — sem perder mana reg e outros status primordiais".
@@ -7941,7 +8053,7 @@
                     const defesa = pos.filter(f => ML_IDS_DEFESA.has(f.id)).reduce((a, f) => a + f.pt, 0);
                     /* no set, armadura melhor é o que o dono pediu: o aviso "só defesa" fica para os outros espaços */
                     /* v2.24.0 — na fase 2 defesa é exatamente o que se compra para o Knight: o aviso "só defesa" é só da fase 1 */
-                    const soDefesa = !fase2 && !ehSet && v === 'KNIGHT' && somaPos > 0 && defesa > 0.6 * somaPos;
+                    const soDefesa = !opc.sobreviver && !fase2 && !ehSet && v === 'KNIGHT' && somaPos > 0 && defesa > 0.6 * somaPos; // v2.34.0: na aba Sobreviver defesa é o objetivo
                     /* v2.24.0 — fase 2: peça TRABALHADA (refino ≥ 1) com potência total < 350 não se compra ("a pessoa enfia o preço que
                      * gastou num item que não vale"; a base certa é ≥ 350 e aí se trabalha) */
                     const potencia = potenciaTotal(c0), potenciaBaixa = fase2 && (Number(c.forja && c.forja.refino) || 0) >= 1 && potencia < 350;
@@ -9580,6 +9692,7 @@
     label.tb-l input[type=checkbox],label.tb-l input[type=radio]{width:15px;height:15px;margin:0}
     #tb-corpo [style*="font-size:8"],#tb-corpo [style*="font-size:9"],#tb-corpo [style*="font-size:10px"]{font-size:var(--tb-fmin)!important}
     #tb-caixa.tb-cel{--tb-fmin:12px;--tb-alvo:40px;left:0;right:0}
+    #tb-trilho.tb-denso .tb-ico{height:31px}
     .tb-cel #tb-trilho{width:auto;flex-direction:row;align-items:stretch;padding:2px;gap:0;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
     .tb-cel .tb-ico{flex:1 1 0;min-width:40px;height:52px;font-size:19px;gap:4px}
     .tb-cel .tb-ico .tb-rot{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:9px/1 system-ui,-apple-system,sans-serif;letter-spacing:.2px}
@@ -9668,7 +9781,7 @@
         return UI;
     };
     const guardarUI = (patch) => { UI = Object.assign(ui(), patch); guardar('ui', UI); };
-    const ICONES = [['estado', '⌂', 'Status'], ['magia', '✦', 'Magia'], ['autohunt', '↻', 'Auto Hunt'], ['scan', '◎', 'Scan'], ['equip', '⛨', 'Equip'], ['analise', '▤', 'Analisador'], ['progresso', '⚑', 'Progresso'], ['mercado', '⚖', 'Mercado'], ['melhorias', '⇧', 'Melhorias'], ['forja', '⚒', 'Forja'], ['evento', '🎃', 'Evento'] /* @@EVENTO */, ['radar', '⌖', 'Radar'], ['log', '≡', 'Log']];
+    const ICONES = [['estado', '⌂', 'Status'], ['magia', '✦', 'Magia'], ['autohunt', '↻', 'Auto Hunt'], ['scan', '◎', 'Scan'], ['equip', '⛨', 'Equip'], ['analise', '▤', 'Analisador'], ['progresso', '⚑', 'Progresso'], ['mercado', '⚖', 'Mercado'], ['melhorias', '⇧', 'Melhorias'], ['forja', '⚒', 'Forja'], ['sobreviver', '🛡', 'Aguentar'], ['evento', '🎃', 'Evento'] /* @@EVENTO */, ['radar', '⌖', 'Radar'], ['log', '≡', 'Log']];
     /* "?" com a explicação escondida; data-k preserva aberto/fechado ao repintar */
     const aj = (k, html, rotulo) => `<details class="tb-aj" data-k="${k}"><summary>${rotulo || '?'}</summary><div class="tb-mut">${html}</div></details>`;
 
@@ -9804,7 +9917,7 @@
          * <div> sem tabindex: o Tab não chegava a nada); aria-pressed marca a
          * aba aberta. O trilho vem antes da gaveta no DOM (ordem do Tab). */
         const bt = (id, cls, rot, txt) => `<button type="button" id="${id}"${cls ? ` class="${cls}"` : ''} title="${rot}" aria-label="${rot}">${txt}</button>`;
-        const t = document.createElement('div'); t.id = 'tb-trilho';
+        const t = document.createElement('div'); t.id = 'tb-trilho'; if (ICONES.length >= 13) t.classList.add('tb-denso'); // v2.34.0 — 14 ícones: 31 px cada para caber em 1366×768
         t.setAttribute('role', 'group'); t.setAttribute('aria-label', 'Tibidle Helper');
         t.innerHTML = bt('tb-alca', '', 'mover o helper (arraste ou use as setas; duplo clique volta ao lugar padrão)', '') +
             ICONES.map(([k, ic, nome]) => `<button type="button" class="tb-ico" data-aba="${k}" title="${nome}" aria-label="${nome}" aria-pressed="false" aria-controls="tb-gaveta"><span aria-hidden="true">${ic}</span><span class="tb-rot" aria-hidden="true">${ROTULO_CURTO[k] || nome}</span><span class="tb-dot"></span>${k === 'log' || k === 'radar' ? '<span class="tb-cont" hidden></span>' : ''}</button>`).join('') +
@@ -10571,6 +10684,7 @@
             corpo += `<select id="tb-boss" aria-label="boss" style="margin-top:4px"><option value="">— escolha o boss —</option>` + bosses.map(b => `<option value="${escHtml(b.name)}"${b.name === bn ? ' selected' : ''}>${escHtml(b.name)} · ${numBR(b.health)} HP</option>`).join('') + `</select>`;
             alvo = huntDeBoss(bn);
             if (alvo) { try { corpo += telaFormacao(alvo); } catch (e) { falhou('formação (tela)', e); } } // 2.31.0
+            if (alvo) { try { corpo += telaConsumiveisBoss(alvo); } catch (e) { falhou('consumíveis do boss (tela)', e); } } // 2.34.0
             if (alvo) corpo += `<div class="tb-mut tb-resist">${escHtml((alvo.monsters[0].elements || []).map(e => rotuloElem(e.type) + ' ' + (e.percent > 0 ? '−' : '+') + Math.abs(e.percent) + '%').join(' · ') || 'sem resistências')}</div>`;
         }
         if (!alvo) return corpo + `<div class="tb-mut" style="margin-top:6px">escolha a caçada para ver o plano</div>`;
@@ -11164,6 +11278,7 @@
             for (const e of mochila) if (e && e.name) nomes.push(e.name);
             EQUIP.base = await basePorNome(nomes);
             const pecas = candidatosEquip(roster, d.depot || null, EQUIP.base, mochila);
+            EQUIP.pecas = pecas; // v2.34.0 — a aba Sobreviver e os consumíveis do boss ranqueiam as mesmas peças com outro contexto
             /* v2.7.3 — elemento da wand/rod contra o mapa atual.
              * v2.23.0 — DESLIGADO (dono, 17/10: "o que a hunt interfere no melhor equipamento? Mudo de várias hunts, isso não
              * tem lógica"): a peça é julgada pelo que ela é, igual em qualquer mapa (notas de elemento neutras). */
@@ -11190,9 +11305,9 @@
     /* 2.5.2 — quem DOA a peça entra na fila junto, mesmo com ganho pequeno:
      * em 28/09 "só Feiticeiro" nunca pegava a fur armor do Paladino porque a
      * troca do Paladino (+0,8) ficava abaixo do GANHO_MIN e ele não liberava. */
-    const slotsTrocas = (vocs) => {
+    const slotsTrocas = (vocs, resOpt) => {
         const fila = [], tirar = [], chaves = new Set();
-        const R = EQUIP.res; if (!R) return { fila, tirar };
+        const R = resOpt || EQUIP.res; if (!R) return { fila, tirar }; // v2.34.0 — resOpt: o plano da aba Sobreviver
         const addTroca = (v, s, dependencia) => {
             const x = R.porVoc[v] && R.porVoc[v][s]; if (!x) return;
             const k = v + '|' + s; if (chaves.has(k)) return;
@@ -11245,13 +11360,13 @@
         enviarWS({ type: 'profiles_set', data: { vocation: 'PALADIN', profiles: perfil } });
         log(`equip: Paladino agora usa ${arma.name} — munição trocada de ${atual.ammo || 'nenhuma'} para ${nova.ammo} (vale na próxima caçada)`, 'ok');
     }
-    async function equiparTrocas(vocs) {
+    async function equiparTrocas(vocs, resOpt) {
         if (EQUIP.equipando) return;
-        if (!EQUIP.res) { log('equip: clique ATUALIZAR antes', 'erro'); return; }
+        if (!(resOpt || EQUIP.res)) { log('equip: clique ATUALIZAR antes', 'erro'); return; }
         if (emHunt()) { log('equip: só na cidade — na caçada o depósito é só leitura', 'erro'); return; }
         if (!socketAberto()) { log('equip: socket do jogo não está à mão — dá um F5 com o helper instalado', 'erro'); return; }
         if (_cicloEmCurso || SCAN.ativo) { log('equip: ciclo de venda ou Scan em andamento — espera terminar', 'erro'); return; }
-        const { fila, tirar } = slotsTrocas(vocs);
+        const { fila, tirar } = slotsTrocas(vocs, resOpt);
         for (const t of tirar) log(`equip: ${VOC_ROTULO[t.v]} ${t.s}: tirar ${t.peca.nome} à mão (arma de 2 mãos) — o jogo não tem mensagem de tirar`, 'info');
         if (!fila.length) { log('equip: nada para trocar', 'info'); return; }
         EQUIP.equipando = true; renderizar();
@@ -16463,6 +16578,174 @@
         $$('[data-ev-sel]', corpo).forEach(x => { x.onchange = () => { EV.sel = x.dataset.evSel; EV.qtd = 1; EV.conf = 0; renderizar(); }; });
     }
     /* @@EVENTO-FIM */
+    /* @@SOBREVIVER-INICIO — aba SOBREVIVER 🛡 (2.34.0): para um mapa de nível 150+ ou um boss/Elite forte, o que vestir (corpo, mochila,
+     * depósito) com a defesa pesando 3×, os consumíveis da luta, o que comprar no Mercado e o plano (Protector, prey de defesa,
+     * poções, lure). Só lê; EQUIPAR, CONSUMÍVEIS e COMPRAR são botões de 2 toques, só na cidade. */
+    const SB = { alvo: null, res: null, ctx: null, cons: null, mercado: null, plano: null, medido: false, t: 0, lendo: false, erro: null, aviso: null, conf: 0, confCons: 0, todos: false, ocupado: false };
+    function sbAlvos() {
+        const todos = SB.todos || !!ler('sb_todos', false), nivel = nivelAtual();
+        const hunts = (CAT.hunts || []).filter(h => h && h.id !== HUNT_ID_BOSS && Array.isArray(h.monsters) && h.monsters.length && (todos || Math.max(Number(h.levelMin) || 0, Number(h.recommendedLevel) || 0) >= SB_NIVEL_MIN || (nivel && Number(h.levelMin) > nivel - 10)))
+            .slice().sort((a, b) => (Number(b.levelMin) || 0) - (Number(a.levelMin) || 0) || String(a.title).localeCompare(String(b.title)));
+        const bosses = (CAT.bosses || []).slice().sort((a, b) => (Number(b.health) || 0) - (Number(a.health) || 0) || String(a.name).localeCompare(String(b.name)));
+        return { hunts, bosses };
+    }
+    const sbChave = (alvo) => (alvo ? (alvo.boss ? 'boss:' + alvo.boss : 'hunt:' + alvo.id) : null);
+    function sbAlvoAtual() {
+        const k = SB.alvo || ler('sb_alvo', null); if (!k) return null;
+        if (/^boss:/.test(k)) return huntDeBoss(k.slice(5));
+        const h = (CAT.hunts || []).find(x => x && x.id === Number(k.slice(5))); return h || null;
+    }
+    function sbCtxPara(alvo) {
+        if (!EQUIP.ctx) return null;
+        const dm = danoMapa(sbChave(alvo));
+        const base = sbPartyDoDano(dm, EQUIP.ctx.party || {});
+        return { ctx: Object.assign({}, EQUIP.ctx, { party: base.party, notas: null, sobreviver: true, memo: new Map() }), dm, medido: base.medido, mortes: base.mortes };
+    }
+    function sbPreyBuffs() { const p = PROG && PROG.prey; return p && p.buffs ? p.buffs : {}; }
+    async function sbLer() {
+        if (SB.lendo) return;
+        const alvo = sbAlvoAtual();
+        if (!alvo) { SB.erro = 'escolha o mapa ou o boss'; renderizar(); return; }
+        SB.lendo = true; SB.erro = null; SB.aviso = null; renderizar();
+        try {
+            if (!EQUIP.res || !EQUIP.pecas || Date.now() - (EQUIP.t || 0) > 10 * 60000) { await equipAtualizar({ manterLiberadas: true }); }
+            if (!EQUIP.res || !EQUIP.pecas) throw new Error('o Equip não leu o equipamento dos 4' + (EQUIP.erro ? ' (' + EQUIP.erro + ')' : ''));
+            const c = sbCtxPara(alvo);
+            SB.ctx = c.ctx; SB.medido = c.medido;
+            SB.res = distribuirEquip(EQUIP.pecas, undefined, SB.ctx);
+            SB.cons = sbConsumiveis(EQUIP.pecas, SB.res.porVoc, VOCS_EQUIP, SB.ctx);
+            let hpMinK = null; try { for (const r of Object.values(scanResultados() || {})) { if (r && r.id === alvo.id && r.razao && r.razao.porVoc && r.razao.porVoc.KNIGHT && r.razao.porVoc.KNIGHT.hpMin != null) hpMinK = Number(r.razao.porVoc.KNIGHT.hpMin); } } catch { hpMinK = null; }
+            const cobre = !!(c.dm && (c.dm.crias || []).some(cr => (cr.magias || []).some(m => Array.isArray(m.celulas) && m.celulas.length >= 18)));
+            SB.plano = sbPlano({ nivel: nivelAtual(), party: SB.ctx.party, medido: c.medido, mortes: c.mortes + (alvo.id != null ? (radarMortes(alvo.id) || 0) : 0), hpMinK, prey: sbPreyBuffs(), alvo: { boss: alvo.boss, title: alvo.title, levelMin: alvo.levelMin, recommendedLevel: alvo.recommendedLevel }, celulasCobremTudo: cobre });
+            sbMercadoRecalcular();
+            SB.t = Date.now();
+            const trocas = Object.values(SB.res.porVoc).reduce((n, v) => n + Object.values(v).filter(eqMexer).length, 0);
+            log(`sobreviver: ${alvo.boss ? 'boss ' + alvo.boss : alvo.title} — ${trocas} troca(s) para aguentar, ${SB.cons.length} consumível(is) ${c.medido ? '(dano medido)' : '(sem medição: referência)'}`, 'ok');
+        } catch (e) { SB.erro = e.message; log('sobreviver: ' + e.message, 'erro'); }
+        SB.lendo = false; renderizar();
+    }
+    function sbMercadoRecalcular() {
+        SB.mercado = null;
+        if (!SB.res || !SB.ctx) return;
+        const copias = {}; let lidas = 0;
+        for (const c of ML_CATS) { const x = MK.copias['cat:' + c]; if (x && !x.erro) { copias[c] = x.copies || []; lidas++; } }
+        if (!lidas) return;
+        const meus = new Set((MK.minhas || []).map(o => o.id));
+        const cands = mlCandidatosMercado(copias, EQUIP.base || {}, meus).filter(c => !ML.compradas.has(c.orderId));
+        let pf = null; try { const x = precoFragmento(); pf = x.estimado ? null : x.preco; } catch { pf = null; }
+        SB.mercado = mlAvaliar(SB.res.porVoc, cands, SB.ctx, { ouro: mlOuroNormal(), verPerdas: false, precoFrag: pf, sobreviver: true });
+    }
+    async function sbProcurarMercado() {
+        await mlProcurar(); // lê as categorias do Mercado (pela aba Melhorias, só leitura) e recalcula o Equip normal
+        sbMercadoRecalcular(); renderizar();
+    }
+    async function sbEquipar() {
+        if (!SB.res) return;
+        if (!(SB.conf > Date.now())) { SB.conf = Date.now() + 8000; renderizar(); return; }
+        SB.conf = 0;
+        await equiparTrocas(VOCS_EQUIP, SB.res); // o mesmo fluxo do Equip (só na cidade; retira do depósito; guarda a mochila)
+        SB.res = null; SB.cons = null; renderizar(); // o Equip foi relido: LER de novo para a nova foto
+    }
+    async function sbEquiparConsumiveis() {
+        if (!SB.cons || !SB.cons.length || SB.ocupado) return;
+        if (!(SB.confCons > Date.now())) { SB.confCons = Date.now() + 8000; renderizar(); return; }
+        SB.confCons = 0;
+        if (emHunt()) { SB.erro = 'consumíveis só na cidade (o depósito é só leitura na caçada)'; renderizar(); return; }
+        if (!socketAberto()) { SB.erro = 'socket do jogo não está à mão — dê F5 com o helper instalado'; renderizar(); return; }
+        SB.ocupado = true; SB.erro = null; renderizar();
+        let feitos = 0;
+        try {
+            for (const c of SB.cons) {
+                const w = ondeEsta(c.peca.iid);
+                if (!w) { log(`sobreviver: ${c.peca.nome} não está em lugar nenhum que eu veja — pulei`, 'erro'); continue; }
+                if (w.lugar === 'depósito') { const r = await retirarDoDepot(c.peca); if (r.erro) { log('sobreviver: ' + r.erro, 'erro'); continue; } }
+                const r2 = await equiparPeca(c.peca, c.voc, c.slot);
+                if (r2.erro) { log('sobreviver: ' + r2.erro, 'erro'); continue; }
+                feitos++; log(`sobreviver: ${VOC_ROTULO[c.voc]} ${slotPt(c.slot)} ← ${c.peca.nome} (consumível para a luta)`, 'ok');
+                await dorme(350);
+            }
+            SB.aviso = `${feitos} de ${SB.cons.length} consumível(is) vestido(s) — eles gastam só caçando; depois da luta o Equip sugere voltar à peça fixa`;
+        } catch (e) { SB.erro = e.message; }
+        SB.ocupado = false; SB.cons = null;
+        try { await equipAtualizar(); } catch { }
+        renderizar();
+    }
+    function sbLinhaPeca(p, v, ctx) {
+        if (!p) return '—';
+        const r = pontuarPeca(p, v, ctx), top = r.detalhe.filter(d => d.pt > 0).sort((a, b) => b.pt - a.pt).slice(0, 3).map(d => (ROTULO[d.id] || d.id) + ' ' + numBR(d.valor, 1)).join(', ');
+        return `<b>${escHtml(p.nome)}</b>${p.forja && p.forja.raridade ? ' ' + (RAR_PT[p.forja.raridade] || '') : ''}${p.forja && p.forja.refino ? ' +' + p.forja.refino : ''} <span class="tb-mut">(${numBR(r.pontos, 1)} pt${top ? ': ' + escHtml(top) : ''}${p.origem !== 'corpo' ? ' · ' + p.origem : ''})</span>`;
+    }
+    function telaSobreviver() {
+        garantirCssTelas();
+        const { hunts, bosses } = sbAlvos(), alvo = sbAlvoAtual(), k = sbChave(alvo), ocup = SB.lendo || SB.ocupado || EQUIP.lendo || EQUIP.equipando;
+        let h = `<div id="tb-sb"><div class="tb-eq-bts"><button type="button" class="tb-bt pri" id="tb-sb-ler" ${ocup || !alvo ? 'disabled' : ''} title="lê o equipamento dos 4 (corpo, mochila, depósito) e ranqueia com a defesa pesando 3× contra o dano deste alvo">${SB.lendo ? 'LENDO…' : 'O QUE VESTIR PARA AGUENTAR'}</button></div>`;
+        h += `<div class="tb-linha" style="margin-top:4px"><select id="tb-sb-alvo" aria-label="mapa ou boss" style="max-width:100%"><option value="">— escolha o mapa ou o boss —</option><optgroup label="Caçadas (nível ${SB_NIVEL_MIN}+)">` +
+             hunts.map(x => `<option value="hunt:${x.id}" ${k === 'hunt:' + x.id ? 'selected' : ''}>${escHtml(x.title)} · nv ${x.levelMin || '?'}${x.recommendedLevel ? ' (rec. ' + x.recommendedLevel + ')' : ''}</option>`).join('') +
+             `</optgroup><optgroup label="Elites e bosses">` + bosses.map(b => `<option value="boss:${escHtml(b.name)}" ${k === 'boss:' + b.name ? 'selected' : ''}>${escHtml(b.name)} · ${numBR(b.health)} hp${b.kind === 'mini' ? ' · Elite' : ''}</option>`).join('') + `</optgroup></select>` +
+             `<label class="tb-l tb-mut"><input type="checkbox" id="tb-sb-todos" ${(SB.todos || ler('sb_todos', false)) ? 'checked' : ''}> todos os mapas</label></div>`;
+        if (SB.erro) h += `<div class="tb-cx tb-ruim">${escHtml(SB.erro)}</div>`;
+        if (SB.aviso) h += `<div class="tb-cx tb-av">${escHtml(SB.aviso)}</div>`;
+        if (!alvo) return h + `<div class="tb-mut" style="margin-top:6px">Escolha um mapa de nível 150+ ou um boss. A tela mostra o que o alvo faz (dano medido por personagem e elemento), as trocas de equipamento para aguentar (defesa pesando 3×, pegando do depósito), os anéis e colares de carga para a luta, o que comprar no Mercado e o plano: Protector, prey de defesa, poções e lure.</div></div>`;
+        if (!SB.res || !SB.plano) return h + `<div class="tb-mut" style="margin-top:6px">Clique em O QUE VESTIR PARA AGUENTAR. ${danoMapa(k) ? 'Este alvo já tem dano medido.' : 'Este alvo ainda não foi medido: a conta usa a referência até a primeira luta com o helper aberto.'}</div></div>`;
+        /* plano */
+        h += `<h4 style="margin:8px 0 2px">Plano contra ${escHtml(alvo.boss || alvo.title)}</h4>`;
+        for (const it of SB.plano) h += `<div class="tb-cx ${it.nivel === 'ruim' ? 'tb-ruim' : it.nivel === 'av' ? 'tb-av' : ''}" style="margin-top:3px"><b>${escHtml(it.titulo)}</b><div class="tb-eq-nota">${escHtml(it.texto)}</div></div>`;
+        /* trocas */
+        const ctx = SB.ctx, muda = [];
+        for (const v of VOCS_EQUIP) { for (const [s, x] of Object.entries(SB.res.porVoc[v] || {})) { if (x && eqMexer(x)) muda.push({ v, s, x }); } }
+        h += `<h4 style="margin:8px 0 2px">Equipamento para aguentar <span class="tb-mut">(defesa ×3 contra este alvo)</span></h4>`;
+        if (!muda.length) h += `<div class="tb-mut tb-eq-nota">os 4 já vestem o melhor que você tem para este alvo.</div>`;
+        else {
+            h += `<table class="tb-t"><tr><th>quem</th><th>espaço</th><th>hoje</th><th>vestir</th><th class="n">ganho</th></tr>`;
+            for (const m of muda) h += `<tr><td>${VOC_ROTULO[m.v]}</td><td>${slotPt(m.s)}</td><td>${sbLinhaPeca(m.x.atual, m.v, ctx)}</td><td>${sbLinhaPeca(m.x.melhor, m.v, ctx)}</td><td class="n">+${numBR(m.x.ganho, 1)}</td></tr>`;
+            h += `</table>`;
+            h += `<div class="tb-eq-bts" style="margin-top:4px"><button type="button" class="tb-bt ${SB.conf > Date.now() ? 'pri' : ''}" id="tb-sb-equipar" ${ocup || emHunt() || !socketAberto() ? 'disabled' : ''} title="o mesmo fluxo do EQUIPAR do Equip: retira do depósito, veste pelo socket, guarda a mochila; só na cidade">${SB.conf > Date.now() ? 'CONFIRMAR: vestir para aguentar' : 'EQUIPAR PARA AGUENTAR'}</button><span class="tb-mut tb-eq-nota">${emHunt() ? 'só na cidade' : 'depois da luta, o Equip volta a sugerir o set de dano'}</span></div>`;
+        }
+        /* consumíveis */
+        h += `<h4 style="margin:8px 0 2px">Consumíveis para a luta <span class="tb-mut">(anel e colar com cargas ou tempo; gastam só caçando)</span></h4>`;
+        if (!SB.cons || !SB.cons.length) h += `<div class="tb-mut tb-eq-nota">nenhum anel ou colar de carga na mochila ou no depósito ganha da peça vestida contra este alvo.</div>`;
+        else {
+            h += `<table class="tb-t"><tr><th>quem</th><th>espaço</th><th>vestir</th><th class="n">ganho</th></tr>`;
+            for (const c of SB.cons) { const a = c.peca.attrs || {}; const dura = a.charges > 0 ? a.charges + ' cargas' : c.peca.equipPreview && c.peca.equipPreview.durationS ? fmtHoras(c.peca.equipPreview.durationS / 3600) + ' de caçada' : ''; h += `<tr><td>${VOC_ROTULO[c.voc]}</td><td>${slotPt(c.slot)}</td><td>${sbLinhaPeca(c.peca, c.voc, ctx)}${dura ? ' <span class="tb-mut">' + dura + '</span>' : ''}</td><td class="n">+${numBR(c.ganho, 1)}</td></tr>`; }
+            h += `</table><div class="tb-eq-bts" style="margin-top:4px"><button type="button" class="tb-bt ${SB.confCons > Date.now() ? 'pri' : ''}" id="tb-sb-cons" ${ocup || emHunt() || !socketAberto() ? 'disabled' : ''} title="veste os consumíveis pelo socket (retira do depósito se precisar); só na cidade">${SB.confCons > Date.now() ? 'CONFIRMAR: vestir consumíveis' : 'VESTIR CONSUMÍVEIS'}</button></div>`;
+        }
+        /* mercado */
+        h += `<h4 style="margin:8px 0 2px">Comprar no Mercado <span class="tb-mut">(ganho de defesa contra este alvo)</span></h4>`;
+        if (!SB.mercado) h += `<div class="tb-linha"><button type="button" class="tb-bt" id="tb-sb-mercado" ${ocup || ML.lendo || MK.ocupado || !socketAberto() ? 'disabled' : ''} title="lê as 8 categorias do Mercado (só leitura, ~40 s) e avalia as peças à venda com a defesa pesando 3×">PROCURAR NO MERCADO</button><span class="tb-mut tb-eq-nota">${ML.lendo ? 'lendo o Mercado…' : 'nada lido ainda'}</span></div>`;
+        else {
+            const ofs = []; for (const v of VOCS_EQUIP) { for (const [s, x] of Object.entries(SB.mercado.porVoc[v] || {})) { for (const o of (x.ofertas || [])) if (o.recomendada) ofs.push(o); } }
+            ofs.sort((a, b) => b.ganho - a.ganho);
+            if (!ofs.length) h += `<div class="tb-mut tb-eq-nota">nenhuma peça à venda ganha, com segurança, da que ele vai vestir. <button type="button" class="tb-bt mini" id="tb-sb-mercado" ${ocup || ML.lendo || MK.ocupado ? 'disabled' : ''}>reler</button></div>`;
+            else {
+                h += `<table class="tb-t"><tr><th>quem</th><th>espaço</th><th>peça</th><th class="n">preço</th><th class="n">ganho</th><th></th></tr>`;
+                for (const o of ofs.slice(0, 12)) h += `<tr><td>${VOC_ROTULO[o.voc]}</td><td>${slotPt(o.slot)}</td><td><b>${escHtml(o.nome)}</b>${o.refino ? ' +' + o.refino : ''} <span class="tb-mut">${escHtml((o.fontes || []).slice(0, 2).map(f => (ROTULO[f.id] || f.id) + ' ' + numBR(f.pt, 1)).join(', '))}</span></td><td class="n">${mkFmt(o.preco)}${o.cabe === false ? ' <span class="tb-ruim">sem ouro</span>' : ''}</td><td class="n">+${numBR(o.ganho, 1)}</td><td><button type="button" class="tb-bt mini" data-sb-comprar="${escHtml(o.orderId)}" ${ocup || MK.ocupado || o.cabe === false ? 'disabled' : ''}>comprar</button></td></tr>`;
+                h += `</table><div class="tb-mut tb-eq-nota">comprar = 2 toques; o helper relê o anúncio e o preço antes de pagar (fluxo da Melhorias). <button type="button" class="tb-bt mini" id="tb-sb-mercado" ${ocup || ML.lendo || MK.ocupado ? 'disabled' : ''}>reler o Mercado</button></div>`;
+            }
+        }
+        return h + aj('sb-ajuda', 'A tela usa o dano guardado do alvo (livro-razão: por personagem e elemento, 3 lutas) como o grupo que a peça precisa aguentar, e ranqueia corpo, mochila e depósito com as fórmulas oficiais (bloqueio, armadura, mitigação, proteção) pesando a defesa 3×. Consumíveis são anel e colar com carga ou tempo, que o Equip normal nunca escolhe. O Mercado é avaliado com o mesmo contexto. Nada dispara sozinho: EQUIPAR, VESTIR CONSUMÍVEIS e comprar são 2 toques, só na cidade.') + `</div>`;
+    }
+    function ligarSobreviver() {
+        const corpo = $('#tb-corpo');
+        const sel = $('#tb-sb-alvo'); if (sel) sel.onchange = () => { SB.alvo = sel.value || null; guardar('sb_alvo', SB.alvo); SB.res = null; SB.plano = null; SB.cons = null; SB.mercado = null; SB.erro = null; renderizar(); };
+        const td = $('#tb-sb-todos'); if (td) td.onchange = () => { SB.todos = td.checked; guardar('sb_todos', td.checked); renderizar(); };
+        const l = $('#tb-sb-ler'); if (l) l.onclick = () => sbLer();
+        const e = $('#tb-sb-equipar'); if (e) e.onclick = () => sbEquipar();
+        const c = $('#tb-sb-cons'); if (c) c.onclick = () => sbEquiparConsumiveis();
+        const m = $('#tb-sb-mercado'); if (m) m.onclick = () => sbProcurarMercado();
+        $$('[data-sb-comprar]', corpo).forEach(b => { b.onclick = () => { const id = b.dataset.sbComprar; let o = null; for (const v of Object.values((SB.mercado && SB.mercado.porVoc) || {})) for (const x of Object.values(v)) { const f = (x.ofertas || []).find(y => String(y.orderId) === id); if (f) o = f; } if (o) ligarDoisToques(b, 'sb-comprar-' + id, 'CONFIRMAR: comprar por ' + mkFmt(o.preco), () => mlComprar(o).then(() => { sbMercadoRecalcular(); renderizar(); })); }; });
+    }
+    /* item 6 (dono, 28/10): na aba Magia › Boss, os consumíveis que valem para a luta com o boss escolhido */
+    function telaConsumiveisBoss(alvo) {
+        if (!alvo || !alvo.boss) return '';
+        if (!EQUIP.res || !EQUIP.pecas || !EQUIP.ctx) return `<div class="tb-mut tb-eq-nota" style="margin-top:4px">Consumíveis para a luta: clique ATUALIZAR no Equip (lê corpo, mochila e depósito) e volte aqui.</div>`;
+        const c = sbCtxPara(alvo); if (!c) return '';
+        const cons = sbConsumiveis(EQUIP.pecas, EQUIP.res.porVoc, VOCS_EQUIP, c.ctx);
+        let h = `<div class="tb-cx" style="margin-top:6px"><b>Consumíveis para a luta</b> <span class="tb-mut">(anel e colar com carga, contra ${escHtml(alvo.boss)}${c.medido ? ', dano medido' : ', sem medição: referência'})</span>`;
+        if (!cons.length) return h + `<div class="tb-mut tb-eq-nota">nenhum anel ou colar de carga seu ganha da peça vestida contra este boss.</div></div>`;
+        for (const x of cons) h += `<div class="tb-eq-nota">${VOC_ROTULO[x.voc]} ${slotPt(x.slot)}: ${sbLinhaPeca(x.peca, x.voc, c.ctx)} <span class="tb-ok">+${numBR(x.ganho, 1)} pt</span></div>`;
+        return h + `<div class="tb-mut tb-eq-nota">Para vestir: aba Sobreviver 🛡 com este boss escolhido (VESTIR CONSUMÍVEIS, 2 toques, só na cidade).</div></div>`;
+    }
+    /* @@SOBREVIVER-FIM */
     function telaForja() {
         garantirCssTelas(); fjGarantirCss();
         const ocup = FJ.lendo || FJ.forjando || FJ.simulando;
@@ -16781,7 +17064,7 @@
         const mesmaAba = _abaPintada === ABA;
         const html = ABA === 'estado' ? telaEstado() : ABA === 'autohunt' ? telaAutoHunt() : ABA === 'scan' ? telaScan()
             : ABA === 'magia' ? telaMagia() : ABA === 'analise' ? telaAnalise() : ABA === 'equip' ? telaEquip()
-            : ABA === 'progresso' ? telaProgresso() : ABA === 'mercado' ? telaMercado() : ABA === 'melhorias' ? telaMelhorias() : ABA === 'radar' ? telaRadar() : ABA === 'forja' ? telaForja() : ABA === 'evento' ? telaEvento() /* @@EVENTO */ : `<div id="tb-log"></div>`;
+            : ABA === 'progresso' ? telaProgresso() : ABA === 'mercado' ? telaMercado() : ABA === 'melhorias' ? telaMelhorias() : ABA === 'radar' ? telaRadar() : ABA === 'forja' ? telaForja() : ABA === 'sobreviver' ? telaSobreviver() : ABA === 'evento' ? telaEvento() /* @@EVENTO */ : `<div id="tb-log"></div>`;
         if (mesmaAba && html === _htmlPintado) { if (ABA === 'log') pintarLog(); return; }
         if (mesmaAba) { const f = campoEmUso(c); if (f) { adiarRepinte(f); return; } }
         /* v2.3.0 — trocar o innerHTML zera a rolagem: marcar um mapa no Scan
@@ -16805,6 +17088,7 @@
         if (ABA === 'radar') ligarRadar(); // v2.13.0
         if (ABA === 'forja') ligarForja(); // v2.25.0
         if (ABA === 'evento') ligarEvento(); // @@EVENTO
+        if (ABA === 'sobreviver') ligarSobreviver(); // v2.34.0
         if (ABA === 'melhorias') ligarMelhorias(); // v2.18.0
         if (ABA === 'scan') ligarScan(); // v2.11 — handlers do Scan ao lado da tela
         if (ABA === 'autohunt') ligarAutoHunt(); // v2.11 — handlers do Auto Hunt ao lado da tela
