@@ -6593,3 +6593,9 @@ venda, a situação dele — para ir analisando e criando melhorias. Eu ligo o n
   comum do navegador (`tb_helper_comum_*`): nos 3 navegadores é ligar e colar o token; a conta cada um descobre sozinho.
 - Regra do dono preservada: só sai informação; nada do jogo é comandado por aqui. Testes: 466 (+6 nuvem, +1 telas). Não testado
   ao vivo: o dono liga, cola o token e vê "último envio" na tela.
+
+## 2.35.1 — Log na nuvem ligado por padrão, token dentro do script (29/10)
+
+Dono: "coloca esse token direto na atualização, sem eu precisar fazer nada". `NUVEM_TOKEN_PADRAO` no script e `nuvem_on` padrão
+`true` (o interruptor em Status › avançado desliga). O token só dá direito de escrever no log, nunca de ler; se vazar, o pior é lixo
+no banco — troca-se o valor em `tibidle.cfg` e no script. Nos 3 navegadores basta atualizar o helper. Testes: 466 (um ajustado).

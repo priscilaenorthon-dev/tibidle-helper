@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.35.0
+// @version      2.35.1
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.35.0';
+    const VERSAO = '2.35.1';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -534,6 +534,9 @@
      * aqui — só SAI informação, e só com o interruptor "Log na nuvem" ligado (Status › avançado). Contas puras; testes/nuvem.test.js. */
     const NUVEM_URL_PADRAO = 'https://ysuiabhylwafhdsjqdjd.supabase.co';
     const NUVEM_KEY_PADRAO = 'sb_publishable_nRih292xwSl1_YoP38zXSw_htrtiyVP';
+    /* v2.35.1 — dono, 29/10: "coloca esse token direto na atualização, sem eu precisar fazer nada". O token só dá direito de ESCREVER
+     * no log (nunca ler); se vazar, o pior é lixo no banco — e aí troca-se o token em tibidle.cfg e aqui. Ligado por padrão. */
+    const NUVEM_TOKEN_PADRAO = 'mHcTs_4T0GyIHRV6deMzpcdgfRnVFbR4';
     const NUVEM_MAX_FILA = 600, NUVEM_LOTE = 200, NUVEM_CADA_MS = 60000, NUVEM_FOTO_CADA_MS = 5 * 60000, NUVEM_MSG_MAX = 2000;
     function nuvemConfigOk(cfg) {
         return !!(cfg && cfg.on && /^https:\/\/[^\s/]+\.supabase\.co$/.test(String(cfg.url || '').replace(/\/+$/, '')) && String(cfg.key || '').length >= 20
@@ -640,7 +643,7 @@
         if (it) nuvemEnfileirar(NUVEM.fila, it);
     }
     function nuvemFrame(d, agora) { // chamado em cada frame do socket, só com o interruptor ligado
-        if (!lerComum('nuvem_on', false)) return;
+        if (!lerComum('nuvem_on', true)) return;
         agora = agora || Date.now();
         if (NUVEM.bat && (agora - NUVEM.bat.t0 >= NUVEM_BAT_MS || (ESTADO_WS.huntId != null && NUVEM.bat.huntId != null && NUVEM.bat.huntId !== ESTADO_WS.huntId))) nuvemBatalhaFlush(agora);
         if (!NUVEM.bat) NUVEM.bat = nuvemBatalhaNovo(agora, ESTADO_WS.huntId);
@@ -663,11 +666,11 @@
         NUVEM.tCarga = Date.now();
     }
     function nuvemCfg() {
-        return { on: !!lerComum('nuvem_on', false), url: lerComum('nuvem_url', '') || NUVEM_URL_PADRAO, key: lerComum('nuvem_key', '') || NUVEM_KEY_PADRAO,
-                 token: lerComum('nuvem_token', '') || '', conta: (CONTA && CONTA.nome && CONTA.nome !== '?') ? CONTA.nome : (lerComum('nuvem_conta', '') || '') };
+        return { on: !!lerComum('nuvem_on', true), url: lerComum('nuvem_url', '') || NUVEM_URL_PADRAO, key: lerComum('nuvem_key', '') || NUVEM_KEY_PADRAO,
+                 token: lerComum('nuvem_token', '') || NUVEM_TOKEN_PADRAO, conta: (CONTA && CONTA.nome && CONTA.nome !== '?') ? CONTA.nome : (lerComum('nuvem_conta', '') || '') };
     }
     function nuvemAnotar(item) { // nunca chama log(): log() chama isto
-        try { if (lerComum('nuvem_on', false)) nuvemEnfileirar(NUVEM.fila, item); } catch (e) { /* a nuvem nunca derruba o helper */ }
+        try { if (lerComum('nuvem_on', true)) nuvemEnfileirar(NUVEM.fila, item); } catch (e) { /* a nuvem nunca derruba o helper */ }
     }
     async function nuvemTick(forcar) {
         const cfg = nuvemCfg();
@@ -695,7 +698,7 @@
         const st = !cfg.on ? 'desligado' : NUVEM.erro ? `<span class="tb-ruim">erro: ${escHtml(NUVEM.erro)}</span>` : NUVEM.ultimoOk ? `<span class="tb-ok">último envio ${hora(NUVEM.ultimoOk)}</span> · ${NUVEM.enviados} linhas enviadas` : (ok ? 'aguardando o primeiro envio (até 1 min)' : 'falta o token');
         return `<div class="tb-cx" id="tb-nuvem"><div class="tb-linha"><label class="tb-l"><input type="checkbox" id="tb-nv-on" ${cfg.on ? 'checked' : ''}> <b>Log na nuvem</b></label><span class="tb-mut tb-eq-nota">conta: ${escHtml(cfg.conta || '?')} · fila ${NUVEM.fila.length}</span></div>
           <div class="tb-eq-nota">${st}</div>
-          <div class="tb-linha" style="margin-top:3px"><input type="password" class="tb-in" id="tb-nv-token" value="${escHtml(cfg.token)}" placeholder="token (o Claude te passa)" style="flex:1 1 auto;min-width:0" aria-label="token do log na nuvem"><button type="button" class="tb-bt mini" id="tb-nv-enviar" ${!ok || NUVEM.enviando ? 'disabled' : ''}>enviar agora</button></div>
+          <div class="tb-linha" style="margin-top:3px"><input type="password" class="tb-in" id="tb-nv-token" value="${escHtml(cfg.token)}" placeholder="token (já vem no script)" style="flex:1 1 auto;min-width:0" aria-label="token do log na nuvem"><button type="button" class="tb-bt mini" id="tb-nv-enviar" ${!ok || NUVEM.enviando ? 'disabled' : ''}>enviar agora</button></div>
           <div class="tb-eq-nota tb-mut">Manda para o banco do dono (Supabase) as linhas do Log, o resumo de cada caçada, as sessões do livro-razão, o log de batalha do jogo cru por minuto (dano dado e recebido, magias, poções, vida e mana dos 4), o livro-razão consolidado e a foto do boneco a cada 5 min (nível, ouro, mapa, vida e mana dos 4) e, ao abrir (e a cada 6 h), a carga: a ficha dos 4 (equipamento com forja, skills, perfis, legado, depósito) e o que acumulou fechado (sessões, Radar, mortes, dano por mapa, magias, Scan, Auto Hunt, Log). Só sai informação; nada do jogo é comandado por aqui.</div>
           ${aj('nv-av', `<div>URL <input type="text" class="tb-in" id="tb-nv-url" value="${escHtml(cfg.url)}" style="width:100%" aria-label="URL do Supabase"></div><div>chave publicável <input type="text" class="tb-in" id="tb-nv-key" value="${escHtml(cfg.key)}" style="width:100%" aria-label="chave publicável"></div><div>nome da conta (se o jogo não disser) <input type="text" class="tb-in" id="tb-nv-conta" value="${escHtml(lerComum('nuvem_conta', ''))}" style="width:100%" aria-label="nome da conta"></div>`, 'avançado')}
         </div>`;
