@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.34.3
+// @version      2.34.4
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.34.3';
+    const VERSAO = '2.34.4';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -10178,6 +10178,12 @@
     #tb-corpo .tb-eq{grid-template-columns:5.6em minmax(0,1fr) 12px minmax(0,1fr)}
     .tb-eq:focus-visible{outline:2px solid var(--tb-ouro);outline-offset:1px}
     .tb-eq-nota{font-size:var(--tb-fmin)}
+    .tb-sb-nome{display:inline-block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;cursor:help}
+    .tb-sb-lin{display:flex;align-items:center;gap:6px;padding:2px 0;border-bottom:1px dotted #1f2531;min-width:0}
+    .tb-sb-lin>.tb-sb-q{flex:0 0 auto;color:var(--tb-mut);font-size:var(--tb-fmin);min-width:66px}
+    .tb-sb-lin>.tb-sb-n{flex:1 1 auto;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+    .tb-sb-lin>.tb-sb-g{flex:0 0 auto;font-size:var(--tb-fmin);white-space:nowrap}
+    .tb-sb-plano .tb-sb-it{display:flex;gap:5px;padding:2px 0;cursor:help}
     .tb-lk{color:inherit;text-decoration:none;border-bottom:1px dotted currentColor}
     table.tb-an{width:100%;border-collapse:collapse;table-layout:fixed;font-size:var(--tb-fmin);margin:4px 0}
     table.tb-an th,table.tb-an td{padding:3px 2px;border-bottom:1px dotted #1f2531;vertical-align:top;text-align:right;white-space:nowrap;overflow:hidden}
@@ -16747,10 +16753,22 @@
         try { await equipAtualizar(); } catch { }
         renderizar();
     }
-    function sbLinhaPeca(p, v, ctx) {
+    /* v2.34.4 — dono, 29/10: "a tela ficou gigante e complicada de entender; os nomes do que sugeriu comprar ficaram gigantes".
+     * Nome curto com reticências (.tb-sb-nome) e o detalhe (pontos, linhas que contam, origem) no title — passar o mouse ou toque longo. */
+    const SB_VOC_ABR = { KNIGHT: 'Cav', PALADIN: 'Pal', SORCERER: 'Fei', DRUID: 'Dru' }, SB_RAR_ABR = ['', 'Inc', 'Raro', 'Ép', 'Lend', 'Mít'], SB_MERCADO_MAX = 8;
+    function sbDetalhePeca(p, v, ctx) {
+        const r = pontuarPeca(p, v, ctx), top = r.detalhe.filter(d => d.pt > 0).sort((a, b) => b.pt - a.pt).slice(0, 4).map(d => (ROTULO[d.id] || d.id) + ' ' + numBR(d.valor, 1) + ' = ' + numBR(d.pt, 1) + ' pt').join(', ');
+        return `${p.nome}${p.forja && p.forja.raridade ? ' · ' + (RAR_PT[p.forja.raridade] || '') : ''}${p.forja && p.forja.refino ? ' +' + p.forja.refino : ''} · ${numBR(r.pontos, 1)} pt${top ? ' · ' + top : ''}${p.origem && p.origem !== 'corpo' ? ' · ' + p.origem : ''}`;
+    }
+    function sbNome(p, v, ctx, max) {
         if (!p) return '—';
-        const r = pontuarPeca(p, v, ctx), top = r.detalhe.filter(d => d.pt > 0).sort((a, b) => b.pt - a.pt).slice(0, 3).map(d => (ROTULO[d.id] || d.id) + ' ' + numBR(d.valor, 1)).join(', ');
-        return `<b>${escHtml(p.nome)}</b>${p.forja && p.forja.raridade ? ' ' + (RAR_PT[p.forja.raridade] || '') : ''}${p.forja && p.forja.refino ? ' +' + p.forja.refino : ''} <span class="tb-mut">(${numBR(r.pontos, 1)} pt${top ? ': ' + escHtml(top) : ''}${p.origem !== 'corpo' ? ' · ' + p.origem : ''})</span>`;
+        const rar = p.forja && p.forja.raridade ? ' ' + (SB_RAR_ABR[p.forja.raridade] || '') : '', ref = p.forja && p.forja.refino ? ' +' + p.forja.refino : '';
+        return `<span class="tb-sb-nome" style="max-width:${max || 150}px" title="${escHtml(sbDetalhePeca(p, v, ctx))}"><b>${escHtml(p.nome)}</b>${rar}${ref}</span>`;
+    }
+    const sbQuem = (v, slot) => `<span class="tb-sb-q" title="${VOC_ROTULO[v]}">${SB_VOC_ABR[v]} · ${escHtml(slotPt(slot))}</span>`;
+    function sbLinhaPeca(p, v, ctx) { // Magia › Boss (consumíveis) usa a versão curta também
+        if (!p) return '—';
+        return sbNome(p, v, ctx, 170) + ` <span class="tb-mut">${numBR(pontuarPeca(p, v, ctx).pontos, 1)} pt</span>`;
     }
     function telaSobreviver() {
         garantirCssTelas();
@@ -16764,42 +16782,44 @@
         if (SB.aviso) h += `<div class="tb-cx tb-av">${escHtml(SB.aviso)}</div>`;
         if (!alvo) return h + `<div class="tb-mut" style="margin-top:6px">Escolha um mapa de nível 150+ ou um boss. A tela mostra o que o alvo faz (dano medido por personagem e elemento), as trocas de equipamento para aguentar (defesa pesando 3×, pegando do depósito), os anéis e colares de carga para a luta, o que comprar no Mercado e o plano: Protector, prey de defesa, poções e lure.</div></div>`;
         if (!SB.res || !SB.plano) return h + `<div class="tb-mut" style="margin-top:6px">Clique em O QUE VESTIR PARA AGUENTAR. ${danoMapa(k) ? 'Este alvo já tem dano medido.' : 'Este alvo ainda não foi medido: a conta usa a referência até a primeira luta com o helper aberto.'}</div></div>`;
-        /* plano */
-        h += `<h4 style="margin:8px 0 2px">Plano contra ${escHtml(alvo.boss || alvo.title)}</h4>`;
-        for (const it of SB.plano) h += `<div class="tb-cx ${it.nivel === 'ruim' ? 'tb-ruim' : it.nivel === 'av' ? 'tb-av' : ''}" style="margin-top:3px"><b>${escHtml(it.titulo)}</b><div class="tb-eq-nota">${escHtml(it.texto)}</div></div>`;
+        /* plano — uma linha por item; o texto fica no title e em "por quê" */
+        const ico = { ruim: '<span class="tb-ruim">✗</span>', av: '<span class="tb-av">⚠</span>', ok: '<span class="tb-ok">✓</span>' };
+        h += `<div class="tb-cx tb-sb-plano"><b>Plano contra ${escHtml(alvo.boss || alvo.title)}</b>` +
+             SB.plano.map(it => `<div class="tb-sb-it" title="${escHtml(it.texto)}">${ico[it.nivel] || ico.ok} ${escHtml(it.titulo)}</div>`).join('') +
+             aj('sb-plano-pq', SB.plano.map(it => `<div style="margin-top:3px"><b>${escHtml(it.titulo)}</b> ${escHtml(it.texto)}</div>`).join(''), 'por quê') + `</div>`;
         /* trocas */
         const ctx = SB.ctx, muda = [];
         for (const v of VOCS_EQUIP) { for (const [s, x] of Object.entries(SB.res.porVoc[v] || {})) { if (x && eqMexer(x)) muda.push({ v, s, x }); } }
-        h += `<h4 style="margin:8px 0 2px">Equipamento para aguentar <span class="tb-mut">(defesa ×3 contra este alvo)</span></h4>`;
+        h += `<h4 style="margin:8px 0 2px">Vestir para aguentar <span class="tb-mut">(defesa ×3)</span></h4>`;
         if (!muda.length) h += `<div class="tb-mut tb-eq-nota">os 4 já vestem o melhor que você tem para este alvo.</div>`;
         else {
-            h += `<table class="tb-t"><tr><th>quem</th><th>espaço</th><th>hoje</th><th>vestir</th><th class="n">ganho</th></tr>`;
-            for (const m of muda) h += `<tr><td>${VOC_ROTULO[m.v]}</td><td>${slotPt(m.s)}</td><td>${sbLinhaPeca(m.x.atual, m.v, ctx)}</td><td>${sbLinhaPeca(m.x.melhor, m.v, ctx)}</td><td class="n">+${numBR(m.x.ganho, 1)}</td></tr>`;
-            h += `</table>`;
-            h += `<div class="tb-eq-bts" style="margin-top:4px"><button type="button" class="tb-bt ${SB.conf > Date.now() ? 'pri' : ''}" id="tb-sb-equipar" ${ocup || emHunt() || !socketAberto() ? 'disabled' : ''} title="o mesmo fluxo do EQUIPAR do Equip: retira do depósito, veste pelo socket, guarda a mochila; só na cidade">${SB.conf > Date.now() ? 'CONFIRMAR: vestir para aguentar' : 'EQUIPAR PARA AGUENTAR'}</button><span class="tb-mut tb-eq-nota">${emHunt() ? 'só na cidade' : 'depois da luta, o Equip volta a sugerir o set de dano'}</span></div>`;
+            for (const m of muda) h += `<div class="tb-sb-lin">${sbQuem(m.v, m.s)}<span class="tb-sb-n">${sbNome(m.x.atual, m.v, ctx, 120)} → ${sbNome(m.x.melhor, m.v, ctx, 120)}</span><span class="tb-sb-g tb-ok">+${numBR(m.x.ganho, 1)}</span></div>`;
+            h += `<div class="tb-eq-bts" style="margin-top:4px"><button type="button" class="tb-bt ${SB.conf > Date.now() ? 'pri' : ''}" id="tb-sb-equipar" ${ocup || emHunt() || !socketAberto() ? 'disabled' : ''} title="o mesmo fluxo do EQUIPAR do Equip: retira do depósito, veste pelo socket, guarda a mochila; só na cidade">${SB.conf > Date.now() ? 'CONFIRMAR: vestir para aguentar' : 'EQUIPAR PARA AGUENTAR'}</button><span class="tb-mut tb-eq-nota">${emHunt() ? 'só na cidade' : 'depois, o Equip volta ao set de dano'}</span></div>`;
         }
         /* consumíveis */
-        h += `<h4 style="margin:8px 0 2px">Consumíveis para a luta <span class="tb-mut">(anel e colar com cargas ou tempo; gastam só caçando)</span></h4>`;
-        if (!SB.cons || !SB.cons.length) h += `<div class="tb-mut tb-eq-nota">nenhum anel ou colar de carga na mochila ou no depósito ganha da peça vestida contra este alvo.</div>`;
+        h += `<h4 style="margin:8px 0 2px">Consumíveis <span class="tb-mut">(anel e colar com carga ou tempo)</span></h4>`;
+        if (!SB.cons || !SB.cons.length) h += `<div class="tb-mut tb-eq-nota">nenhum anel ou colar de carga seu ganha da peça vestida contra este alvo.</div>`;
         else {
-            h += `<table class="tb-t"><tr><th>quem</th><th>espaço</th><th>vestir</th><th class="n">ganho</th></tr>`;
-            for (const c of SB.cons) { const a = c.peca.attrs || {}; const dura = a.charges > 0 ? a.charges + ' cargas' : c.peca.equipPreview && c.peca.equipPreview.durationS ? fmtHoras(c.peca.equipPreview.durationS / 3600) + ' de caçada' : ''; h += `<tr><td>${VOC_ROTULO[c.voc]}</td><td>${slotPt(c.slot)}</td><td>${sbLinhaPeca(c.peca, c.voc, ctx)}${dura ? ' <span class="tb-mut">' + dura + '</span>' : ''}</td><td class="n">+${numBR(c.ganho, 1)}</td></tr>`; }
-            h += `</table><div class="tb-eq-bts" style="margin-top:4px"><button type="button" class="tb-bt ${SB.confCons > Date.now() ? 'pri' : ''}" id="tb-sb-cons" ${ocup || emHunt() || !socketAberto() ? 'disabled' : ''} title="veste os consumíveis pelo socket (retira do depósito se precisar); só na cidade">${SB.confCons > Date.now() ? 'CONFIRMAR: vestir consumíveis' : 'VESTIR CONSUMÍVEIS'}</button></div>`;
+            for (const c of SB.cons) { const a = c.peca.attrs || {}; const dura = a.charges > 0 ? a.charges + ' cargas' : c.peca.equipPreview && c.peca.equipPreview.durationS ? fmtHoras(c.peca.equipPreview.durationS / 3600) : ''; h += `<div class="tb-sb-lin">${sbQuem(c.voc, c.slot)}<span class="tb-sb-n">${sbNome(c.peca, c.voc, ctx, 150)}${dura ? ' <span class="tb-mut">' + escHtml(dura) + '</span>' : ''}</span><span class="tb-sb-g tb-ok">+${numBR(c.ganho, 1)}</span></div>`; }
+            h += `<div class="tb-eq-bts" style="margin-top:4px"><button type="button" class="tb-bt ${SB.confCons > Date.now() ? 'pri' : ''}" id="tb-sb-cons" ${ocup || emHunt() || !socketAberto() ? 'disabled' : ''} title="veste os consumíveis pelo socket (retira do depósito se precisar); só na cidade">${SB.confCons > Date.now() ? 'CONFIRMAR: vestir consumíveis' : 'VESTIR CONSUMÍVEIS'}</button></div>`;
         }
         /* mercado */
-        h += `<h4 style="margin:8px 0 2px">Comprar no Mercado <span class="tb-mut">(ganho de defesa contra este alvo)</span></h4>`;
+        h += `<h4 style="margin:8px 0 2px">Comprar no Mercado <span class="tb-mut">(defesa contra este alvo)</span></h4>`;
         if (!SB.mercado) h += `<div class="tb-linha"><button type="button" class="tb-bt" id="tb-sb-mercado" ${ocup || ML.lendo || MK.ocupado || !socketAberto() ? 'disabled' : ''} title="lê as 8 categorias do Mercado (só leitura, ~40 s) e avalia as peças à venda com a defesa pesando 3×">PROCURAR NO MERCADO</button><span class="tb-mut tb-eq-nota">${ML.lendo ? 'lendo o Mercado…' : 'nada lido ainda'}</span></div>`;
         else {
             const ofs = []; for (const v of VOCS_EQUIP) { for (const [s, x] of Object.entries(SB.mercado.porVoc[v] || {})) { for (const o of (x.ofertas || [])) if (o.recomendada) ofs.push(o); } }
             ofs.sort((a, b) => b.ganho - a.ganho);
-            if (!ofs.length) h += `<div class="tb-mut tb-eq-nota">nenhuma peça à venda ganha, com segurança, da que ele vai vestir. <button type="button" class="tb-bt mini" id="tb-sb-mercado" ${ocup || ML.lendo || MK.ocupado ? 'disabled' : ''}>reler</button></div>`;
+            const reler = `<button type="button" class="tb-bt mini" id="tb-sb-mercado" ${ocup || ML.lendo || MK.ocupado ? 'disabled' : ''}>reler</button>`;
+            if (!ofs.length) h += `<div class="tb-mut tb-eq-nota">nenhuma peça à venda ganha, com segurança, da que ele vai vestir. ${reler}</div>`;
             else {
-                h += `<table class="tb-t"><tr><th>quem</th><th>espaço</th><th>peça</th><th class="n">preço</th><th class="n">ganho</th><th></th></tr>`;
-                for (const o of ofs.slice(0, 12)) h += `<tr><td>${VOC_ROTULO[o.voc]}</td><td>${slotPt(o.slot)}</td><td><b>${escHtml(o.nome)}</b>${o.refino ? ' +' + o.refino : ''} <span class="tb-mut">${escHtml((o.fontes || []).slice(0, 2).map(f => (ROTULO[f.id] || f.id) + ' ' + numBR(f.pt, 1)).join(', '))}</span></td><td class="n">${mkFmt(o.preco)}${o.cabe === false ? ' <span class="tb-ruim">sem ouro</span>' : ''}</td><td class="n">+${numBR(o.ganho, 1)}</td><td><button type="button" class="tb-bt mini" data-sb-comprar="${escHtml(o.orderId)}" ${ocup || MK.ocupado || o.cabe === false ? 'disabled' : ''}>comprar</button></td></tr>`;
-                h += `</table><div class="tb-mut tb-eq-nota">comprar = 2 toques; o helper relê o anúncio e o preço antes de pagar (fluxo da Melhorias). <button type="button" class="tb-bt mini" id="tb-sb-mercado" ${ocup || ML.lendo || MK.ocupado ? 'disabled' : ''}>reler o Mercado</button></div>`;
+                for (const o of ofs.slice(0, SB_MERCADO_MAX)) {
+                    const det = `${o.nome}${o.refino ? ' +' + o.refino : ''} · ${mkFmt(o.preco)} de ouro · +${numBR(o.ganho, 1)} pt · ${(o.fontes || []).slice(0, 3).map(f => (ROTULO[f.id] || f.id) + ' ' + numBR(f.pt, 1) + ' pt').join(', ')}${o.vendedor ? ' · ' + o.vendedor : ''}`;
+                    h += `<div class="tb-sb-lin">${sbQuem(o.voc, o.slot)}<span class="tb-sb-n"><span class="tb-sb-nome" style="max-width:130px" title="${escHtml(det)}"><b>${escHtml(o.nome)}</b>${o.refino ? ' +' + o.refino : ''}</span></span><span class="tb-sb-g">${mkFmt(o.preco)} · <span class="tb-ok">+${numBR(o.ganho, 1)}</span></span><button type="button" class="tb-bt mini" data-sb-comprar="${escHtml(o.orderId)}" ${ocup || MK.ocupado || o.cabe === false ? 'disabled' : ''} title="${o.cabe === false ? 'sem ouro para esta' : 'comprar (2 toques)'}">comprar</button></div>`;
+                }
+                h += `<div class="tb-mut tb-eq-nota">${ofs.length > SB_MERCADO_MAX ? `as ${SB_MERCADO_MAX} melhores de ${ofs.length} · ` : ''}comprar = 2 toques; o helper relê o anúncio antes de pagar. ${reler}</div>`;
             }
         }
-        return h + aj('sb-ajuda', 'A tela usa o dano guardado do alvo (livro-razão: por personagem e elemento, 3 lutas) como o grupo que a peça precisa aguentar, e ranqueia corpo, mochila e depósito com as fórmulas oficiais (bloqueio, armadura, mitigação, proteção) pesando a defesa 3×. Consumíveis são anel e colar com carga ou tempo, que o Equip normal nunca escolhe. O Mercado é avaliado com o mesmo contexto. Nada dispara sozinho: EQUIPAR, VESTIR CONSUMÍVEIS e comprar são 2 toques, só na cidade.') + `</div>`;
+        return h + aj('sb-ajuda', 'Passe o mouse (ou toque e segure) no nome da peça para ver pontos, linhas e origem. A tela usa o dano guardado do alvo (por personagem e elemento) e ranqueia corpo, mochila e depósito com a defesa pesando 3×. Nada dispara sozinho: EQUIPAR, VESTIR CONSUMÍVEIS e comprar são 2 toques, só na cidade.') + `</div>`;
     }
     function ligarSobreviver() {
         const corpo = $('#tb-corpo');
@@ -17268,7 +17288,7 @@
         // v2.4.0 — Equip (leituras e modelo puro)
         lerShellFibra, lerRosterFibra, rosterEquip, basePorNome, idsPorNome,
         pontuarPeca, candidatosEquip, distribuirEquip, vocacaoPode, mochilaEquip, ondeEsta, slotsTrocas,
-        get EQUIP() { return EQUIP; }, get PESOS_EQUIP() { return PESOS_EQUIP; },
+        get EQUIP() { return EQUIP; }, get PESOS_EQUIP() { return PESOS_EQUIP; }, get SB() { return SB; }, // v2.34.4: SB
         // v2.1.0 — socket/REST (leituras; /spell-numbers só LÊ do servidor)
         socketAberto, configAtiva, perfilDaVoc, perfilReal, normalizarConfig, payloadBattleConfig, aprenderDanosPorRest,
         // v2.2.0 — Scan (leituras)

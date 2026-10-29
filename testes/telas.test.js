@@ -545,6 +545,39 @@ t('Log: mensagem maliciosa escapada; sem mudança o Log não é reescrito', asyn
     assert(lg.isConnected, 'o #tb-log foi recriado sem mudança');
 });
 
+/* 2.34.4 — dono, 29/10: "a tela ficou gigante e complicada; os nomes do que sugeriu comprar ficaram gigantes" */
+t('Sobreviver compacta: plano em 1 linha por item, trocas/consumíveis/Mercado em linhas com nome curto e detalhe no title; no máximo 8 compras', async () => {
+    const W = criarMundo({ ls: comAba('sobreviver', { tb_helper_hunt_id: '34', tb_helper_sb_alvo: '"hunt:34"' }) });
+    await W.avancar(0);
+    const H = W.H, SB = H.SB;
+    const F = (r, ...at) => ({ raridade: r, atributos: at.map(([id, valor]) => ({ id, valor })) });
+    const peca = (iid, nome, slot, forja, origem) => ({ iid, nome, slot, attrs: { slot, armor: 8 }, forja: Object.assign(F(2, ['resist_fisica', 2], ['regen_mana', 1.2]), forja || {}), origem: origem || 'corpo' });
+    const longo = 'Calça Mítica do Guardião da Montanha Eterna ' + XSS(3);
+    SB.ctx = null; SB.medido = false;
+    SB.plano = [{ chave: 'medida', nivel: 'av', titulo: 'Sem medição deste alvo', texto: 'texto longo da medida '.repeat(8) },
+                { chave: 'prey', nivel: 'ruim', titulo: 'Prey de DEFESA no Cavaleiro', texto: 'cada estrela tira 4 %' },
+                { chave: 'lure', nivel: 'ok', titulo: 'Lure baixo primeiro', texto: 'entre na lure 1 ou 2' }];
+    SB.res = { porVoc: { KNIGHT: { legs: { atual: peca('a', longo, 'legs'), melhor: null, ganho: 2 } }, PALADIN: {}, SORCERER: {}, DRUID: {} } };
+    SB.cons = [{ voc: 'DRUID', slot: 'ring', peca: peca('c', 'might ring', 'ring', { raridade: 0, atributos: [] }, 'depósito'), ganho: 1.4 }];
+    Object.assign(SB.cons[0].peca.attrs, { charges: 20 });
+    const oferta = (n) => ({ voc: 'SORCERER', slot: 'legs', orderId: 'o' + n, nome: longo + ' ' + n, preco: 1000 * n, ganho: 10 - n / 10, recomendada: true, cabe: n !== 2, refino: n === 1 ? 3 : 0, fontes: [{ id: 'resist_fisica', pt: 2.2 }], vendedor: 'Fulano' });
+    SB.mercado = { porVoc: { SORCERER: { legs: { ofertas: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(oferta) } } } };
+    new W.window.WebSocket('wss://jogo').emitir({ type: 'welcome', data: {} }); // repinta
+    await W.avancar(0);
+    const h = W.html(), sb = h.slice(h.indexOf('id="tb-sb"'));
+    semXss(h, 'Sobreviver');
+    assert.strictEqual((sb.match(/class="tb-sb-it"/g) || []).length, 3, 'plano: uma linha por item');
+    assert(/tb-sb-it" title="texto longo da medida/.test(sb) && /⚠<\/span> Sem medição/.test(sb) && /✗<\/span> Prey de DEFESA/.test(sb) && /✓<\/span> Lure baixo/.test(sb), 'plano: ícone + título, texto no title');
+    assert(/data-k="sb-plano-pq"/.test(sb) && !/<table/.test(sb), 'detalhes atrás de "por quê"; sem tabela');
+    assert(/tb-sb-q" title="Cavaleiro">Cav · calça<\/span>/.test(sb), 'quem: abreviado com o nome inteiro no title');
+    assert(/tb-sb-nome" style="max-width:120px" title="Calça Mítica[^"]*· Raro · [0-9,]+ pt · regen mana 1,2 = [0-9,]+ pt, armor 8 = [0-9,]+ pt, resist física 2 = [0-9,]+ pt"/.test(sb), 'troca: nome com reticências e o detalhe (raridade, pt, linhas) no title');
+    assert(/Dru · anel<\/span>[\s\S]{0,400}20 cargas/.test(sb), 'consumível em linha com as cargas');
+    assert.strictEqual((sb.match(/data-sb-comprar=/g) || []).length, 8, 'Mercado: no máximo 8 compras');
+    assert(/as 8 melhores de 10/.test(sb), 'diz quantas ficaram de fora');
+    assert(/data-sb-comprar="o2" disabled title="sem ouro para esta"/.test(sb), 'sem ouro: botão desligado com o motivo no title');
+    assert(/tb-sb-nome" style="max-width:130px" title="Calça Mítica[^"]*\+3 · 1\.000 de ouro · \+9,9 pt · resist física 2,2 pt · Fulano"><b>Calça Mítica/.test(sb), 'compra: nome curto, detalhe no title');
+    assert(sb.length < 14000, 'tela compacta: ' + sb.length + ' chars');
+});
 t('sobe sem exceção e sem erro de timer em nenhuma aba', async () => {
     for (const aba of ['estado', 'magia', 'equip', 'analise', 'sobreviver', 'evento', 'log']) { // 2.34.2: Sobreviver e Evento também
         const W = criarMundo({ ls: comAba(aba, { tb_helper_hunt_id: '34', tb_helper_sb_alvo: '"hunt:34"' }) });
