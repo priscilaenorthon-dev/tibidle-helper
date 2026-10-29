@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.35.5
+// @version      2.35.6
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.35.5';
+    const VERSAO = '2.35.6';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -6998,16 +6998,20 @@
             P.fichaDefesa = { skEscudo: skE, defEscudo: defE, armadura: armE, bloq, arm, mit, bloqueiosS, golpesS: R.golpesS, tomadoS: R.tomadoS, lido: !!(kn.defEscudo > 0 || kn.armadura != null) };
         } else {
             const la = R.ladoApanha > 0 ? R.ladoApanha : 1;
-            /* v2.24.0 — fase 2: vida conta nos laterais (vídeos: resistência → proteção mágica → VIDA; o Magic Shield come mana) */
-            P.regen_vida = _r(VIDA_PT_LADO * la); P.max_hp = _r((fase2 ? 0.04 : 0.01) * la);
             /* v2.21.0 — lateral medido: o que ELE toma por segundo de cada elemento (magia de área de criatura) */
             const ev = R.elemVoc && R.elemVoc[voc], tS = ev ? ev.tomadoS : 0;
+            /* v2.24.0 — fase 2: vida conta nos laterais (vídeos: resistência → proteção mágica → VIDA; o Magic Shield come mana)
+             * v2.35.6 — COM O DANO MEDIDO, 1 de regen. de vida/s = 1 de vida/s que a resistência poupa (VIDA_PT_LADO nos dois). O ×la
+             * ("mapa de magia") é o palpite de quando não há medida; somado à medida contava 4 vezes: no Shadow Nexus (29/10) a aba
+             * Aguentar mandava o Feiticeiro trocar a magma legs (+6 % fogo) pela terra legs (−6 % fogo, regen. de vida 2,5). */
+            const laV = ev ? 1 : la;
+            P.regen_vida = _r(VIDA_PT_LADO * laV); P.max_hp = _r((fase2 ? 0.04 : 0.01) * laV);
             P.resist_fisica = P.absorbpercentphysical = _r(ev ? tS / 100 * VIDA_PT_LADO * (ev.frac.fisico || 0) : 0.02 * la);
             P.protecao_magica = _r(ev ? tS / 100 * VIDA_PT_LADO * (1 - (ev.frac.fisico || 0)) : 0.15 * la);
             for (const e of ELEM) P['resist_' + e] = P['absorbpercent' + ELEM_EN[e]] = _r(ev ? tS / 100 * VIDA_PT_LADO * (ev.frac[e] || 0) : (fase2 ? (e === 'fogo' ? 0.15 : 0.03) : 0.05) * la); // v2.24.0: fogo por padrão na fase 2
             P.absorbpercentpoison = P.resist_terra;
             P.elemMedido = !!ev;
-            P.cura_propria = _r(0.05 * la);
+            P.cura_propria = _r(ev ? tS / 200 * VIDA_PT_LADO : 0.05 * la); // v2.35.6: medido = metade do que ele toma volta pela cura própria
             P.armor = P.defense = P.extradef = P.escudo = P.skillshield = 0; // armadura e escudo só seguram corpo a corpo
         }
         /* ---- conta ---- */
@@ -7026,6 +7030,42 @@
      * Crítico: dano extra = chance% × dano% ÷ 100 do dano dele. Roubo de vida:
      * vida/s = dano/s × chance% × quantia% ÷ 10.000. Base 0 (wiki: não existe
      * crítico de base). */
+    /* v2.35.6 — IMBUEMENT (dono, 29/10: "a aba Aguentar não conta os imbuements"). Catálogo do jogo (/assets/…/imbuements.json, lido
+     * em 29/10): categoria → efeito; tiers Basic/Intricate/Powerful. Leech e proteção em %, skill em pontos, Strike = chance 10 % e dano
+     * extra X %. Vale para quem veste a peça imbuída: a peça imbuída vale mais que a cópia sem imbuement (trocar perde o imbuement). */
+    const IMB_VALORES = { 1: [5, 10, 25], 2: [3, 5, 8], 3: [15, 25, 50], 4: [2, 5, 10], 5: [3, 8, 15], 6: [3, 8, 15], 7: [3, 8, 15], 8: [3, 8, 15], 9: [3, 8, 15],
+                          10: [0, 0, 0], 12: [1, 2, 4], 14: [1, 2, 4], 15: [1, 2, 4], 16: [1, 2, 4] };
+    const IMB_ELEM = { 4: 'morte', 5: 'terra', 6: 'fogo', 7: 'gelo', 8: 'energia', 9: 'sagrado' };
+    const IMB_NOME = { 1: 'Vampirism', 2: 'Void', 3: 'Strike', 4: 'Lich Shroud', 5: 'Snake Skin', 6: 'Dragon Hide', 7: 'Quara Scale', 8: 'Cloud Fabric', 9: 'Demon Presence',
+                       10: 'Swiftness', 12: 'Slash', 14: 'Blockade', 15: 'Precision', 16: 'Epiphany' };
+    /* o espaço da peça (attrs do /item/info) → a categoria que ele aceita */
+    const IMB_CAT_ATTR = { 'life leech': 1, 'mana leech': 2, 'critical hit': 3, 'elemental protection death': 4, 'elemental protection earth': 5,
+                           'elemental protection fire': 6, 'elemental protection ice': 7, 'elemental protection energy': 8, 'elemental protection holy': 9,
+                           'skillboost sword': 12, 'skillboost shielding': 14, 'skillboost distance': 15, 'skillboost magic level': 16 };
+    const IMB_CRIT_CHANCE = 10;
+    /* valor de um imbuement {category, base, effect}: o do efeito quando ele vem (reduction.value; lifeleech/manaleech bonus/100), senão a tabela */
+    function imbValor(im) {
+        const cat = Number(im && im.category), tier = Math.max(1, Math.min(3, Number(im && im.base) || 1)), e = (im && im.effect) || {};
+        if (e.type === 'reduction' && Number(e.value) > 0) return Number(e.value);
+        if (e.type === 'skill' && /leech/.test(String(e.value)) && Number(e.bonus) > 0) return Number(e.bonus) / 100;
+        return (IMB_VALORES[cat] || [0, 0, 0])[tier - 1];
+    }
+    /* pt de um imbuement no personagem: leech pelo dano que ELE causa (vida/s × peso da regen. de vida; mana/s × peso da regen. de mana) */
+    function imbPontos(im, voc, ctx, P0, R0) {
+        const cat = Number(im && im.category); if (!cat) return null;
+        const P = P0 || pesosDaVoc(voc, ctx), R = R0 || partyDoCtx(ctx), v = imbValor(im);
+        const danoDele = (R.share[voc] || 0) * R.dps;
+        let pt = 0;
+        if (cat === 1) pt = danoDele * v / 100 * (P.regen_vida || 0);
+        else if (cat === 2) pt = danoDele * v / 100 * (P.regen_mana || 0);
+        else if (cat === 3) pt = IMB_CRIT_CHANCE * (v + CRIT_DANO_BASE) / 100 * (R.share[voc] || 0);
+        else if (IMB_ELEM[cat]) pt = v * (P['resist_' + IMB_ELEM[cat]] || 0);
+        else if (cat === 12) pt = v * (P.corpo_a_corpo || 0);
+        else if (cat === 14) pt = v * (P.escudo || 0);
+        else if (cat === 15) pt = v * (P.distancia || 0);
+        else if (cat === 16) pt = v * (P.nivel_magico || 0);
+        return { id: 'imbuement ' + (im.name || IMB_NOME[cat] || cat), valor: v, pt };
+    }
     const PARES = { critico_chance: ['critico', 'c'], critico_dano: ['critico', 'd'], roubo_vida_chance: ['roubo', 'c'], roubo_vida_quantia: ['roubo', 'd'] };
     function outrosDoPar(ctx, voc, slot) {
         const t = { critico: { c: 0, d: 0 }, roubo: { c: 0, d: 0 } };
@@ -7157,6 +7197,7 @@
             if (q) { add(f.id, f.valor, ganhoPar(q[0], q[1])); continue; }
             const p = P[f.id]; add(f.id, f.valor, (p || 0) * Number(f.valor));
         }
+        for (const im of (Array.isArray(peca.imbuements) ? peca.imbuements : [])) { const x = im ? imbPontos(im, voc, ctx, P, R) : null; if (x) add(x.id, x.valor, x.pt); } // v2.35.6
         const pontos = Math.round(detalhe.reduce((s, d) => s + d.pt, 0) * 100) / 100;
         const contam = detalhe.filter(d => d.pt > 0).sort((x, y) => y.pt - x.pt);
         const mortos = detalhe.filter(d => d.pt === 0 && !/^munição grátis/.test(d.id)).map(d => d.id);
@@ -7183,7 +7224,7 @@
             const k = b(e.name);
             const slot = slotDaBase(k.attrs);
             if (!slot || !SLOTS_EQUIP.includes(slot)) continue;
-            out.push({ iid: e.iid, nome: e.name, slot, attrs: k.attrs, forja: normForja(e.forja), equipPreview: k.equipPreview,
+            out.push({ iid: e.iid, nome: e.name, slot, attrs: k.attrs, forja: normForja(e.forja), imbuements: e.imbuements || null, equipPreview: k.equipPreview,
                        sell: k.sell || 0, origem: 'mochila', dono: null, duasMaos: k.attrs.slotType === 'two-handed' });
         }
         for (const r of (roster || [])) { for (const [slot, it] of Object.entries(r.equipment || {})) {
@@ -7196,7 +7237,7 @@
         for (const e of ((depot && depot.entries) || [])) {
             if (!e.forja || !e.slot) continue;
             const k = b(e.itemName);
-            out.push({ iid: e.iid, nome: e.itemName, slot: normalizarSlot(e.slot), attrs: k.attrs, forja: normForja(e.forja), equipPreview: k.equipPreview,
+            out.push({ iid: e.iid, nome: e.itemName, slot: normalizarSlot(e.slot), attrs: k.attrs, forja: normForja(e.forja), imbuements: e.imbuements || null, equipPreview: k.equipPreview,
                        sell: k.sell || 0, origem: 'depósito', dono: null, duasMaos: k.attrs.slotType === 'two-handed' });
         }
         return out;
@@ -7841,6 +7882,42 @@
         if (lureFixa) out.push({ chave: 'lure', nivel: 'av', titulo: `Lure fixa em ${lureFixa}: o cerco já entra cheio`, texto: `Este mapa não tem lure baixa: são ${lureFixa} criaturas em volta do Cavaleiro desde o primeiro segundo. Entre só com o plano acima pronto (Protector, prey de DEFESA, poção certa) e saia se a vida mínima dele ficar abaixo de 40 % (Status → vitais)${cauda}` });
         else out.push({ chave: 'lure', nivel: 'ok', titulo: 'Lure baixo primeiro', texto: `Entre na lure 1 ou 2 e suba só com a vida mínima do Cavaleiro acima de 50 % (Status → vitais). Cada criatura a mais no cerco é um golpe a mais a cada 2 s${cauda}` });
         return out;
+    }
+    /* v2.35.6 — ONDE PÔR IMBUEMENT (dono, 29/10). porVoc = distribuirEquip(…).porVoc (a peça que cada um vai vestir em cada espaço);
+     * cat = /assets/…/imbuements.json ({bases, imbuements[{name, base, category, items}]}); precoDe(nome) → ouro por unidade ou null.
+     * Para cada espaço livre: cada categoria que a peça aceita e que ela ainda não tem, nos 3 tiers, com pt (imbPontos, a régua do contexto:
+     * no modo aguentar a vida e a proteção pesam 3×) e custo = materiais + taxa + proteção (100 % de chance). Dura 20 h de caçada. */
+    function sbImbuSugestoes(porVoc, ctx, cat, precoDe) {
+        const bases = (cat && Array.isArray(cat.bases) ? cat.bases : []), lista = (cat && Array.isArray(cat.imbuements) ? cat.imbuements : []);
+        const out = [], ja = [];
+        for (const [voc, slots] of Object.entries(porVoc || {})) {
+            for (const [slot, x] of Object.entries(slots || {})) {
+                const p = x && (x.melhor || x.atual); if (!p) continue;
+                const a = p.attrs || {}, n = Number(a.imbuementslot) || (Array.isArray(p.imbuements) ? p.imbuements.length : 0); if (!n) continue; // sem a linha no catálogo, o jogo manda [null] por encaixe
+                const tem = (Array.isArray(p.imbuements) ? p.imbuements : []).filter(Boolean);
+                for (const im of tem) { const r = imbPontos(im, voc, ctx); ja.push({ voc, slot, peca: p, nome: im.name || IMB_NOME[im.category], tier: Number(im.base) || 1, pt: r ? r.pt : 0, restaMs: Number(im.remainingMs) || null }); }
+                const livres = n - tem.length; if (livres <= 0) continue;
+                const temCat = new Set(tem.map(im => Number(im.category)));
+                const opcoes = [];
+                for (const [k, c] of Object.entries(IMB_CAT_ATTR)) {
+                    if (!(k in a) || temCat.has(c)) continue;
+                    const tiers = [1, 2, 3].map(t => {
+                        const r = imbPontos({ category: c, base: t }, voc, ctx);
+                        const def = lista.find(i => i && Number(i.category) === c && Number(i.base) === t) || null, b = bases.find(z => Number(z.id) === t) || {};
+                        let mats = def ? 0 : null, semPreco = [];
+                        for (const it of ((def && def.items) || [])) { const pu = precoDe ? precoDe(it.name) : null; if (pu == null) semPreco.push(it.name); else mats += pu * (Number(it.count) || 0); }
+                        const taxa = (Number(b.price) || 0) + (Number(b.protectionPrice) || 0);
+                        return { tier: t, valor: imbValor({ category: c, base: t }), pt: r ? Math.round(r.pt * 100) / 100 : 0, mats, semPreco, taxa, custo: mats != null && !semPreco.length ? mats + taxa : null,
+                                 itens: ((def && def.items) || []).map(it => it.count + ' ' + it.name) };
+                    });
+                    if (tiers[2].pt > 0) opcoes.push({ cat: c, nome: IMB_NOME[c] || ('categoria ' + c), tiers });
+                }
+                opcoes.sort((u, w) => w.tiers[1].pt - u.tiers[1].pt);
+                if (opcoes.length) out.push({ voc, slot, peca: p, livres, opcoes });
+            }
+        }
+        out.sort((u, w) => w.opcoes[0].tiers[1].pt - u.opcoes[0].tiers[1].pt);
+        return { sugestoes: out, ja };
     }
     /* @@SOBREVIVER-PURO-FIM */
     /* @@MELHORIAS-INICIO — v2.18.0: aba Melhorias (funções puras; testes/melhorias.test.js roda EQUIP-PURO + este trecho).
@@ -16723,6 +16800,13 @@
             SB.ctx = c.ctx; SB.medido = c.medido;
             SB.res = distribuirEquip(EQUIP.pecas, undefined, SB.ctx);
             SB.cons = sbConsumiveis(EQUIP.pecas, SB.res.porVoc, VOCS_EQUIP, SB.ctx);
+            /* v2.35.6 — onde pôr imbuement: o catálogo do jogo e o menor anúncio de cada material (market_catalog, só leitura) */
+            try { await pgCarregarImbu(); } catch (e) { falhou('sobreviver (catálogo de imbuements)', e); }
+            if (!MK.catalogo && socketAberto() && !MK.ocupado && mkPremiumAgora() !== false) {
+                MK.ocupado = 'sobreviver';
+                try { if (MK.taxa == null) { MK.taxa = MK_TAXA_WIKI; MK.taxaWiki = true; } await mkPedir('market_catalog', {}); } catch (e) { falhou('sobreviver (preços do Mercado)', e); }
+                finally { if (MK.ocupado === 'sobreviver') MK.ocupado = null; }
+            }
             let hpMinK = null; try { for (const r of Object.values(scanResultados() || {})) { if (r && r.id === alvo.id && r.razao && r.razao.porVoc && r.razao.porVoc.KNIGHT && r.razao.porVoc.KNIGHT.hpMin != null) hpMinK = Number(r.razao.porVoc.KNIGHT.hpMin); } } catch { hpMinK = null; }
             const cobre = !!(c.dm && (c.dm.crias || []).some(cr => (cr.magias || []).some(m => Array.isArray(m.celulas) && m.celulas.length >= 18)));
             SB.plano = sbPlano({ nivel: nivelAtual(), party: SB.ctx.party, medido: c.medido, mortes: c.mortes + (alvo.id != null ? (radarMortes(alvo.id) || 0) : 0), hpMinK, prey: sbPreyBuffs(), alvo: { boss: alvo.boss, title: alvo.title, levelMin: alvo.levelMin, recommendedLevel: alvo.recommendedLevel, lureTiers: alvo.lureTiers, maxLure: alvo.maxLure }, celulasCobremTudo: cobre });
@@ -16829,6 +16913,8 @@
             for (const c of SB.cons) { const a = c.peca.attrs || {}; const dura = a.charges > 0 ? a.charges + ' cargas' : c.peca.equipPreview && c.peca.equipPreview.durationS ? fmtHoras(c.peca.equipPreview.durationS / 3600) : ''; h += `<div class="tb-sb-lin">${sbQuem(c.voc, c.slot)}<span class="tb-sb-n">${sbNome(c.peca, c.voc, ctx, 150)}${dura ? ' <span class="tb-mut">' + escHtml(dura) + '</span>' : ''}</span><span class="tb-sb-g tb-ok">+${numBR(c.ganho, 1)}</span></div>`; }
             h += `<div class="tb-eq-bts" style="margin-top:4px"><button type="button" class="tb-bt ${SB.confCons > Date.now() ? 'pri' : ''}" id="tb-sb-cons" ${ocup || emHunt() || !socketAberto() ? 'disabled' : ''} title="veste os consumíveis pelo socket (retira do depósito se precisar); só na cidade">${SB.confCons > Date.now() ? 'CONFIRMAR: vestir consumíveis' : 'VESTIR CONSUMÍVEIS'}</button></div>`;
         }
+        /* v2.35.6 — imbuements */
+        h += sbTelaImbu(ctx);
         /* mercado */
         h += `<h4 style="margin:8px 0 2px">Comprar no Mercado <span class="tb-mut">(defesa contra este alvo)</span></h4>`;
         if (!SB.mercado) h += `<div class="tb-linha"><button type="button" class="tb-bt" id="tb-sb-mercado" ${ocup || ML.lendo || MK.ocupado || !socketAberto() ? 'disabled' : ''} title="lê as 8 categorias do Mercado (só leitura, ~40 s) e avalia as peças à venda com a defesa pesando 3×">PROCURAR NO MERCADO</button><span class="tb-mut tb-eq-nota">${ML.lendo ? 'lendo o Mercado…' : 'nada lido ainda'}</span></div>`;
@@ -16846,6 +16932,23 @@
             }
         }
         return h + aj('sb-ajuda', 'Passe o mouse (ou toque e segure) no nome da peça para ver pontos, linhas e origem. A tela usa o dano guardado do alvo (por personagem e elemento) e ranqueia corpo, mochila e depósito com a defesa pesando 3×. Nada dispara sozinho: EQUIPAR, VESTIR CONSUMÍVEIS e comprar são 2 toques, só na cidade.') + `</div>`;
+    }
+    /* v2.35.6 — "Onde pôr imbuement": a melhor opção de cada espaço livre, em tier médio, e o que já está vestido */
+    function sbTelaImbu(ctx) {
+        let h = `<h4 style="margin:8px 0 2px">Imbuements <span class="tb-mut">(nas peças que cada um vai vestir; duram 20 h de caçada)</span></h4>`;
+        if (!PROG.imbu) return h + `<div class="tb-mut tb-eq-nota">${PROG.imbuErro ? 'o catálogo de imbuements não carregou (' + escHtml(PROG.imbuErro) + ')' : 'carregando o catálogo de imbuements…'}</div>`;
+        const precoDe = (nome) => { const c = MK.catalogo && MK.catalogo[mkMin(nome)]; return c && Number(c.sellOrders) > 0 && Number(c.minSell) > 0 ? Number(c.minSell) : null; };
+        const r = sbImbuSugestoes(SB.res.porVoc, ctx, PROG.imbu, precoDe);
+        if (r.ja.length) h += `<div class="tb-mut tb-eq-nota">já vestidos: ${r.ja.map(j => `${SB_VOC_ABR[j.voc]} ${escHtml(slotPt(j.slot))} ${escHtml(j.nome)} ${['', 'T1', 'T2', 'T3'][j.tier] || ''}${j.restaMs ? ' (' + fmtHoras(j.restaMs / 3600000) + ')' : ''} = ${numBR(j.pt, 1)} pt`).join(' · ')}</div>`;
+        if (!r.sugestoes.length) return h + `<div class="tb-mut tb-eq-nota">nenhum espaço livre que valha contra este alvo.</div>`;
+        const custo = (t) => (t.custo != null ? mkFmt(t.custo) : t.semPreco.length ? 'sem preço de ' + t.semPreco.join(', ') : '—');
+        for (const s of r.sugestoes.slice(0, 8)) {
+            const o = s.opcoes[0], t2 = o.tiers[1], t3 = o.tiers[2];
+            const det = `${s.peca.nome} · ${s.livres} espaço(s) livre(s) · T2: ${t2.itens.join(', ')} + ${mkFmt(t2.taxa)} de taxa e proteção · T3: ${t3.itens.join(', ')}` + (s.opcoes.length > 1 ? ' · outras: ' + s.opcoes.slice(1, 3).map(x => x.nome + ' ' + numBR(x.tiers[1].pt, 1) + ' pt').join(', ') : '');
+            h += `<div class="tb-sb-lin">${sbQuem(s.voc, s.slot)}<span class="tb-sb-n"><span class="tb-sb-nome" style="max-width:170px" title="${escHtml(det)}"><b>${escHtml(o.nome)}</b> ${t2.valor}${o.cat === 3 ? '' : o.cat >= 12 ? '' : ' %'} (T2) · ${t3.valor} (T3)</span></span><span class="tb-sb-g"><span class="tb-ok">+${numBR(t2.pt, 1)}</span> · ${custo(t2)}</span></div>`;
+        }
+        if (!MK.catalogo) h += `<div class="tb-mut tb-eq-nota">preço dos materiais: leia o Mercado (PROCURAR NO MERCADO ou aba Mercado → ATUALIZAR).</div>`;
+        return h + `<div class="tb-mut tb-eq-nota">custo = menor anúncio de cada material + taxa + proteção (100 %). Passe o mouse no nome para ver os materiais. O imbuement é feito por você na janela do jogo.</div>`;
     }
     function ligarSobreviver() {
         const corpo = $('#tb-corpo');

@@ -5,7 +5,7 @@ const fs = require('fs'), path = require('path'), assert = require('assert');
 const src = fs.readFileSync(path.join(__dirname, '..', 'tibidle-helper.user.js'), 'utf8');
 const trecho = (a, b) => { const i = src.indexOf(a), f = src.indexOf(b); assert(i > 0 && f > i, 'marcador ausente: ' + a); return src.slice(i, f); };
 const M = new Function(trecho('/* @@EQUIP-PURO-INICIO */', '/* @@EQUIP-PURO-FIM */') + trecho('/* @@SOBREVIVER-PURO-INICIO', '/* @@SOBREVIVER-PURO-FIM */') +
-    '\nreturn { sbPartyDoDano, sbConsumiveis, sbPlano, pesosDaVoc, pontuarPeca, SB_IDS_DEFESA, SB_FATOR, SB_POCOES };')();
+    '\nreturn { sbPartyDoDano, sbConsumiveis, sbPlano, pesosDaVoc, pontuarPeca, SB_IDS_DEFESA, SB_FATOR, SB_POCOES, imbValor, imbPontos, sbImbuSugestoes };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 const DM = { seg: 1800, sessoes: 2, tomadoH: 900000, mortes: 1, elemPorVoc: { KNIGHT: { tomadoH: 720000, golpesH: 7200, frac: { fisico: 0.62, fogo: 0.3, energia: 0.08 } }, SORCERER: { tomadoH: 90000, golpesH: 0, frac: { fogo: 0.7, energia: 0.3 } }, DRUID: { tomadoH: 90000, frac: { fogo: 1 } } }, crias: [] };
@@ -75,5 +75,65 @@ t('sbPlano: medido → Protector e prey de DEFESA em alerta (200/s, morte), late
     const sem = M.sbPlano({ nivel: 160, party: { tomadoS: 140, fisico: 0.65 }, medido: false, prey: {}, alvo: { title: 'X' } });
     assert(sem[0].chave === 'medida' && sem[0].nivel === 'av' && /ainda não viu X/.test(sem[0].texto));
     assert.strictEqual(M.SB_POCOES.KNIGHT(201).vida, 'Supreme Health Potion'); assert.strictEqual(M.SB_POCOES.PALADIN(79).vida, 'Strong Health Potion');
+});
+t('2.35.6 lateral com dano medido: regen. de vida vale 0,5 pt (×3 no aguentar), sem o ×ladoApanha; sem medida o palpite ×la continua', () => {
+    const party = M.sbPartyDoDano(DM, {}).party; // ladoApanha 4, Feiticeiro medido
+    assert.strictEqual(party.ladoApanha, 4);
+    const med = M.pesosDaVoc('SORCERER', { nivel: 160, party }), ag = M.pesosDaVoc('SORCERER', { nivel: 160, party, sobreviver: true });
+    assert(Math.abs(med.regen_vida - 0.5) < 1e-9, 'medido: ' + med.regen_vida);
+    assert(Math.abs(ag.regen_vida - 1.5) < 1e-9, 'aguentar: ' + ag.regen_vida);
+    /* 1 % de fogo = o HP/s de fogo que ele deixa de tomar (25/s × 70 % ÷ 100 = 0,175 de regen. de vida). Antes o ×4 da vida fazia
+     * a terra legs (regen. de vida 2,5) passar a magma legs (+6 % fogo) no Shadow Nexus (29/10) */
+    assert(Math.abs(ag.resist_fogo / ag.regen_vida - 25 * 0.7 / 100) < 0.005, `fogo/vida ${ag.resist_fogo / ag.regen_vida}`);
+    const palpite = M.pesosDaVoc('PALADIN', { nivel: 160, party: { tomadoS: 140, fisico: 0.65, golpesS: 2, ladoApanha: 4 } });
+    assert(Math.abs(palpite.regen_vida - 2) < 1e-9, 'sem medida do lateral: 0,5 × 4 = ' + palpite.regen_vida);
+});
+t('2.35.6 imbuement: valor pelo efeito do jogo (redução 8, leech bonus/100) ou pela tabela; Dragon Hide vale 8 × peso do fogo e pesa 3× no aguentar', () => {
+    assert.strictEqual(M.imbValor({ category: 6, base: 2, effect: { type: 'reduction', combat: 'fire', value: 8 } }), 8);
+    assert.strictEqual(M.imbValor({ category: 1, base: 2, effect: { type: 'skill', value: 'lifeleech', bonus: 1000, chance: 100 } }), 10);
+    assert.strictEqual(M.imbValor({ category: 2, base: 3 }), 8);
+    assert.strictEqual(M.imbValor({ category: 16, base: 1 }), 1);
+    const party = M.sbPartyDoDano(DM, {}).party, ctx = { nivel: 160, party }, ctxA = { nivel: 160, party, sobreviver: true };
+    const dh = { name: 'Dragon Hide', category: 6, base: 2 };
+    const n = M.imbPontos(dh, 'SORCERER', ctx), a = M.imbPontos(dh, 'SORCERER', ctxA);
+    assert(Math.abs(n.pt - 8 * M.pesosDaVoc('SORCERER', ctx).resist_fogo) < 1e-6, 'pt = 8 × peso: ' + n.pt);
+    assert(Math.abs(a.pt / n.pt - M.SB_FATOR) < 0.05, 'aguentar ×3: ' + a.pt / n.pt);
+    assert.strictEqual(n.id, 'imbuement Dragon Hide');
+    assert(M.imbPontos({ category: 1, base: 2 }, 'KNIGHT', ctx).pt > 0, 'Vampirism no Cavaleiro vale');
+    assert.strictEqual(M.imbPontos({}, 'KNIGHT', ctx), null);
+});
+t('2.35.6 pontuarPeca conta o imbuement vestido: a espada imbuída vale mais que a mesma sem imbuement', () => {
+    const party = M.sbPartyDoDano(DM, {}).party, ctx = { nivel: 160, party, sobreviver: true };
+    const base = { nome: 'magic sword', slot: 'weapon', attrs: { attack: 48, 'life leech': 1, imbuementslot: 1 }, forja: { raridade: 0, atributos: [] } };
+    const com = Object.assign({}, base, { imbuements: [{ name: 'Vampirism', category: 1, base: 2, effect: { type: 'skill', value: 'lifeleech', bonus: 1000, chance: 100 } }] });
+    const a = M.pontuarPeca(base, 'KNIGHT', ctx), b = M.pontuarPeca(com, 'KNIGHT', ctx);
+    assert(b.pontos > a.pontos + 1, `com ${b.pontos} × sem ${a.pontos}`);
+    assert(b.motivos.some(m => /Vampirism/.test(m)), b.motivos.join(' | '));
+    assert.strictEqual(M.pontuarPeca(Object.assign({}, base, { imbuements: [null] }), 'KNIGHT', ctx).pontos, a.pontos, 'encaixe vazio não soma');
+});
+t('2.35.6 sbImbuSugestoes: espaço livre → categorias que a peça aceita, custo = materiais × preço + taxa + proteção; encaixe [null] sem a linha do catálogo conta; já imbuída vai para "já"', () => {
+    const party = M.sbPartyDoDano(DM, {}).party, ctx = { nivel: 160, party, sobreviver: true };
+    const cat = { bases: [{ id: 1, price: 5000, protectionPrice: 10000 }, { id: 2, price: 30000, protectionPrice: 30000 }, { id: 3, price: 200000, protectionPrice: 50000 }],
+        imbuements: [{ name: 'Intricate Dragon Hide', category: 6, base: 2, items: [{ name: 'green dragon leather', count: 20 }, { name: 'blazing bone', count: 10 }] },
+                     { name: 'Intricate Void', category: 2, base: 2, items: [{ name: 'rope belt', count: 25 }, { name: 'silencer claws', count: 25 }] }] };
+    const preco = { 'green dragon leather': 1000, 'blazing bone': 500 };
+    const casaco = { iid: 'c1', nome: 'magma coat', slot: 'armor', attrs: { 'elemental protection fire': 1, imbuementslot: 1 }, forja: { raridade: 0, atributos: [] } };
+    const chapeu = { iid: 'h1', nome: 'jade hat', slot: 'head', attrs: { 'mana leech': 1 }, imbuements: [null], forja: { raridade: 0, atributos: [] } };
+    const escudo = { iid: 's1', nome: 'wooden spellbook', slot: 'shield', attrs: { 'elemental protection fire': 1, imbuementslot: 1 }, imbuements: [{ name: 'Dragon Hide', category: 6, base: 2, remainingMs: 3600000 }], forja: { raridade: 0, atributos: [] } };
+    const porVoc = { SORCERER: { armor: { melhor: casaco, atual: casaco }, head: { atual: chapeu, melhor: null } }, DRUID: { shield: { atual: escudo, melhor: escudo } } };
+    const r = M.sbImbuSugestoes(porVoc, ctx, cat, nm => preco[nm] != null ? preco[nm] : null);
+    const c = r.sugestoes.find(x => x.peca.iid === 'c1');
+    assert(c && c.opcoes[0].nome === 'Dragon Hide', JSON.stringify(r.sugestoes.map(x => x.peca.nome)));
+    const t2 = c.opcoes[0].tiers[1];
+    assert.strictEqual(t2.valor, 8); assert.strictEqual(t2.taxa, 60000);
+    assert.strictEqual(t2.mats, 25000); assert.strictEqual(t2.custo, 85000);
+    assert(t2.itens.includes('20 green dragon leather'));
+    assert.strictEqual(c.opcoes[0].tiers[0].custo, null, 'tier sem receita no catálogo: sem custo');
+    const h = r.sugestoes.find(x => x.peca.iid === 'h1');
+    assert(h && h.opcoes[0].nome === 'Void', 'jade hat com [null] e sem imbuementslot entra');
+    assert.strictEqual(h.opcoes[0].tiers[1].custo, null, 'material sem preço → custo desconhecido');
+    assert.deepStrictEqual(h.opcoes[0].tiers[1].semPreco, ['rope belt', 'silencer claws']);
+    assert(!r.sugestoes.some(x => x.peca.iid === 's1'), 'spellbook já imbuído e sem espaço livre');
+    assert(r.ja.length === 1 && r.ja[0].voc === 'DRUID' && r.ja[0].nome === 'Dragon Hide' && r.ja[0].tier === 2 && r.ja[0].pt > 0);
 });
 console.log(`\n${n} testes ok`);

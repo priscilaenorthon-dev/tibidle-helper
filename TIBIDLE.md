@@ -6662,3 +6662,25 @@ que vender mais; e de batalha também, completo e estruturado, o que usou e o da
   `shadownexus-lucasdela` foi atualizado (mesmo id); `northon-222` (comPost) continua.
 - Ficou de fora: Matheustlm descreveu em texto um Bog Raiders "de memória" (28/10), sem os mínimos de criaturas nem o nome das poções.
   Não entrou, para não ter número inventado. Logbook e tópico do Specter lidos desde 27/10; o resto são prints de lucro ou perguntas.
+
+## 2.35.6 (29/10) — aba Aguentar: imbuements contados, onde imbuir e quanto custa; laterais sem a vida inflada
+
+Dono, no Shadow Nexus: "vê se a tela Aguentar indicou tudo certo — os itens para cada um usar e os imbuements". Faltavam três coisas.
+- **Regen. de vida dos laterais** (`pesosDaVoc`): com o dano DELE medido (`elemVoc`), 1 de regen. de vida/s vale o mesmo que 1 HP/s
+  poupado pela resistência (`VIDA_PT_LADO` nos dois). O `×ladoApanha` fica só para quando não há medida. Antes os dois somavam, e a
+  vida contava 4×: a aba mandava o Feiticeiro trocar a magma legs (+6 % fogo) pela terra legs (−6 % fogo, regen. de vida 2,5).
+  `cura_propria` medida = metade do que ele toma.
+- **Imbuement vestido conta na nota da peça** (`imbValor`, `imbPontos`, em EQUIP-PURO): o valor vem do `effect` do jogo
+  (`reduction.value`; leech `bonus/100`) ou da tabela do `/assets/…/imbuements.json`. Vampirism = vida/s do dano dele × peso da
+  regen. de vida; Void = mana/s × peso da regen. de mana; Strike = chance 10 % × dano; proteções = % × peso da resistência;
+  Slash/Blockade/Precision/Epiphany = pontos de skill. A peça imbuída vale mais que a cópia sem imbuement (trocar perde o
+  imbuement). `candidatosEquip` leva os `imbuements` da mochila e do depósito.
+- **Seção "Onde pôr imbuement"** na aba Aguentar (`sbImbuSugestoes` + `sbTelaImbu`). Para cada peça que cada um vai vestir: os já
+  colocados (com o tempo que resta) e, nos espaços livres, as categorias que a peça aceita (`life leech`, `mana leech`,
+  `elemental protection X`, `skillboost …` nos attrs), em T2/T3, com pt e custo. Custo = materiais × preço do Mercado (média de
+  30 dias, lida por `market_catalog`, Premium) + taxa + proteção (100 % de chance). Sem o slot no catálogo, conta os `[null]` do item.
+- **Medido no Shadow Nexus** (dados de 29/10): o Feiticeiro fica com a magma. O Druida continua com a troca de magma por peças de
+  +1 ML/regen. de mana (rubber cap, spirit cloak, plate legs de regen. 2,3). A regen. de mana dele mede 4,8 pt por mana/s neste
+  mapa (falta mana), o que bate com o lucasdela ("o único imbuement que ajudou foi mana leech 5 % — o ED não falhou a cura").
+  Testado tirar o piso do ML no modo aguentar: ficou pior (punha uma halberd no Druida). Ficou como está.
+  Imbuements de maior ganho: Dragon Hide no escudo/armadura do Cavaleiro (41 pt no T2, ~268 mil), Blockade no Zaoan helmet.
