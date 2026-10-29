@@ -61,6 +61,14 @@ select conta, t, msg, dados->'danoTotal' dano, dados->'tomadoH' tomado_h, dados-
 - [ ] Nada do log na nuvem aparece na aba **Log** do helper (falha de envio fica só na tela do bloco).
 - [ ] F5 no jogo: nova carga (`tCarga` zera por página); sem F5, a carga seguinte só depois de 6 h.
 
+## 4b. Tamanho do banco (plano free: 500 MB) 🟢
+```sql
+select pg_size_pretty(pg_total_relation_size('tibidle.log')) log_tam, pg_size_pretty(pg_database_size(current_database())) banco_tam,
+       (select min(recebido) from tibidle.log) mais_velho, (select count(*) from tibidle.log) linhas;
+```
+- [ ] `mais_velho` nunca com mais de 10 dias; `carga` com no máximo 3 por (conta, msg); `log_tam` bem abaixo de 250 MB.
+- [ ] Depois de uma noite com as 3 contas: medir o crescimento por dia e anotar aqui (estimativa: ~10 MB/dia).
+
 ## 5. Análise (a razão de tudo isso) 🟢
 - [ ] Mortes do Druida (Hellgorak Seal, Shadow Nexus): em `carga/radar_mortes` e `carga/dano_mapa` (histórico) e, nas caçadas
       novas, em `batalha`/`razao`/`resumo` — qual elemento, qual criatura, vida mínima dele antes, poção e mana no minuto.

@@ -6567,8 +6567,13 @@ venda, a situação dele — para ir analisando e criando melhorias. Eu ligo o n
   `log` (t, conta, versão, tipo, nível, msg, dados jsonb), `estado` (a última foto por conta), `cfg` (o token). RLS ligado e sem
   política: a chave pública não lê nem escreve nada direto (`GET /rest/v1/log` → "Invalid schema"). A única porta é a função
   `public.tb_log_enviar(p_token, p_conta, p_versao, p_itens, p_estado)` (security definer): confere o token em `cfg`, insere até
-  500 itens por chamada, faz upsert da foto, apaga com 2 % de chance o que tem mais de 45 dias. Token errado → 403. Conferido de
-  ponta a ponta por curl (HTTP 200, 1 linha).
+  500 itens por chamada, faz upsert da foto e, em ~1 de cada 20 chamadas, chama `tibidle.limpar()`. Token errado → 403. Conferido
+  de ponta a ponta por curl (HTTP 200, 1 linha).
+- **Retenção (dono, 29/10: "armazenar por 10 dias para não lotar o Supabase; são 3 contas e a conta é free")**: `tibidle.limpar()`
+  apaga o que tem mais de **10 dias**; da `carga` (cada F5 manda tudo de novo) guarda só as 3 últimas por conta e bloco; e, se a
+  tabela passar de 250 MB (o plano free dá 500 MB para o banco inteiro), apaga o quarto mais velho. Item acima de 300 mil chars é
+  descartado na entrada. Conta de volume: ~15 KB por minuto caçando por conta (batalha) + carga de ~1 MB por F5 → 3 contas × 2 h/dia
+  ≈ 10 MB/dia ≈ 100 MB em 10 dias.
 - **`@@NUVEM-PURO`** (`testes/nuvem.test.js`, 5): `nuvemConfigOk` (ligado + URL *.supabase.co + chave + token ≥ 16 + conta),
   `nuvemEnfileirar` (teto 600, msg 2000), `nuvemMontar` (URL da função, cabeçalhos apikey/Bearer, lote de 200, foto), `nuvemFoto`
   (nível, ouro, caçando, mapa, boss, lure, criaturas, vida/mana/distância dos 4, analisador do jogo, Auto Hunt, Scan, aba, último
