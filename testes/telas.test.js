@@ -621,8 +621,12 @@ t('Log na nuvem: ligado, resumo/log vão num POST para a função do Supabase co
     assert.strictEqual(await H.nuvemTick(true), false); await W.avancar(0);
     assert(H.NUVEM.fila.some(i => i.tipo === 'log' && i.msg === 'x') && H.NUVEM.fila.length <= 2 && /HTTP 401/.test(H.NUVEM.erro) && logTxt(W).length === nLog, JSON.stringify([H.NUVEM.fila.length, H.NUVEM.erro])); // o tick forçado também enfileira o livro-razão
     assert(/erro: HTTP 401/.test(W.html()), 'erro na tela');
-    /* desligado: nada entra na fila nem sai */
-    const W2 = criarMundo({ ls: comAba('estado', {}) }); await W2.avancar(0);
+    /* 2.35.1 — ligado por padrão, com o token do script: sem configurar nada já tem fila e configuração válida */
+    const W3 = criarMundo({ ls: comAba('estado', { tb_helper_comum_nuvem_conta: '"Conta Tres"' }) }); await W3.avancar(0);
+    W3.H.nuvemAnotar({ tipo: 'log', msg: 'y' });
+    assert(W3.H.NUVEM.fila.length >= 1 && W3.H.nuvemCfg().on && W3.H.nuvemCfg().token.length >= 16, 'padrão ligado com token');
+    /* desligado de propósito: nada entra na fila nem sai */
+    const W2 = criarMundo({ ls: comAba('estado', { tb_helper_comum_nuvem_on: 'false' }) }); await W2.avancar(0);
     W2.H.nuvemAnotar({ tipo: 'log', msg: 'x' });
     assert.strictEqual(W2.H.NUVEM.fila.length, 0); assert.strictEqual(await W2.H.nuvemTick(true), false);
     assert(/Log na nuvem/.test(W2.html()) && /desligado/.test(W2.html()));
