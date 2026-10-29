@@ -6541,3 +6541,20 @@ por causa dos arcos. Tem que mudar isso no nosso código."
   xp 1 480; fogo 100, energia 50, terra 40, físico 25, morte 20; fraco a gelo e sagrado −12) + Weakened Demon (5 500, tudo 0).
   Setups guardados (lucasdela): avalanche + Energy Wave + Strong Ice Wave; gelo é o elemento certo nos dois, energia só no Juggernaut.
 - Testes: 458 (+1 em equip.test.js: fracDist, ML, sagrado nobre; sobreviver.test.js: lure fixa × Shadow Nexus). Não testado ao vivo.
+
+## 2.34.4 — aba Sobreviver compacta (29/10)
+
+Dono: "a tela de sugestão de equipamentos para o mapa ficou gigante e complicada de entender, e os nomes do material que sugeriu para
+comprar ficaram gigantes".
+- **Plano**: uma linha por item (✓ ok · ⚠ atenção · ✗ ruim + título); o texto inteiro fica no `title` (passar o mouse / toque longo) e
+  atrás de "por quê" (`aj('sb-plano-pq')`). Antes eram 6 caixas de texto corrido.
+- **Trocas, consumíveis e Mercado** viraram linhas (`.tb-sb-lin`): "Cav · calça | nome hoje → nome a vestir | +ganho". O nome da peça
+  é `sbNome()`: negrito com reticências (`.tb-sb-nome`, 120–150 px), raridade abreviada (Inc/Raro/Ép/Lend/Mít) e refino; o detalhe
+  (raridade por extenso, pontos, as 4 linhas que mais contam com os pontos de cada uma, origem) vai para o `title` via
+  `sbDetalhePeca()`. Vocação abreviada (Cav/Pal/Fei/Dru) com o nome inteiro no `title`. Sem `<table>`.
+- **Mercado**: no máximo 8 compras (`SB_MERCADO_MAX`), "as 8 melhores de N"; preço · +ganho na mesma linha; o botão fica desligado com
+  "sem ouro para esta" no `title`; as fontes do ganho e o vendedor só no `title` do nome.
+- `sbLinhaPeca()` (Magia › Boss, consumíveis) usa a mesma versão curta. Gancho de teste expõe `SB`.
+- Testes: 459 (+1 em telas.test.js: plano em 3 linhas, title com o detalhe, 8 compras, sem ouro, tela < 14 mil chars). Não testado ao vivo.
+- Mortes do Druida (Hellgorak Seal e Shadow Nexus, 28/10): não dá para ver daqui — os dados ficam no navegador do dono (`radar_mortes`,
+  `dano_mapa`, Log). Pedido ao dono: aba Log filtrada por "morreu"/"morte", ou Análise → "copiar JSON".
