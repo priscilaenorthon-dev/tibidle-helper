@@ -570,7 +570,19 @@
      * sessões do livro-razão, dias do Radar, mortes, dano por mapa, tabela de dano das magias, Auto Hunt e o Log inteiro.
      * nuvemCapar: cada bloco cabe em NUVEM_CARGA_MAX chars — lista fica com a cauda (o mais novo), objeto com as últimas chaves. */
     const NUVEM_CARGA_MAX = 200000, NUVEM_CARGA_CADA_MS = 6 * 3600000;
-    const NUVEM_CARGA_CHAVES = ['sessoes', 'radar_dias', 'radar_mortes', 'dano_mapa', 'danos_KNIGHT', 'danos_PALADIN', 'danos_SORCERER', 'danos_DRUID', 'ah', 'hunt_id', 'modelo', 'log'];
+    /* dono, 29/10: "no log tem que saber tudo: equipamentos, status de cada personagem, tudo que a gente puder recolher" */
+    const NUVEM_CARGA_CHAVES = ['sessoes', 'radar_dias', 'radar_mortes', 'dano_mapa', 'danos_KNIGHT', 'danos_PALADIN', 'danos_SORCERER', 'danos_DRUID', 'auto_hunt', 'hunt_id', 'modelo',
+                                'skills_vistas', 'equip_depot', 'equip_escolhas', 'equip_bebe', 'scan_resultados', 'ciclos_hist', 'prog_bestiario', 'best_estado', 'pch_compras', 'dc_foto', 'inv_modelos', 'melhorias_cfg', 'log'];
+    /* a ficha dos personagens, do que o socket já trouxe: roster com equipamento (ficha + forja de cada peça), skills, perfis do
+     * servidor, configs de batalha, legado, loyalty, economia, cooldown de boss e o depósito lido */
+    function nuvemPersonagens(ent) {
+        ent = ent || {};
+        const out = { t: Date.now(), conta: ent.conta || null, nivel: ent.nivel || null, roster: ent.rosterFull || ent.roster || null, skills: ent.sk || null, perfis: ent.perfisDoServidor || ent.profiles || null,
+                      battleConfigs: ent.battleConfigs || null, legado: ent.legado || null, loyalty: ent.loyalty || null, eco: ent.eco || null, bossCooldowns: ent.bossCooldowns || null,
+                      depot: ent.depot || null, party: ent.party || null, prey: ent.prey || null, keyBag: ent.keyBag || null };
+        for (const k of Object.keys(out)) if (out[k] == null) delete out[k];
+        return out;
+    }
     function nuvemCapar(v, max) {
         max = max || NUVEM_CARGA_MAX;
         const tam = (x) => { try { return JSON.stringify(x).length; } catch (e) { return Infinity; } };
@@ -593,6 +605,12 @@
             const c = nuvemCapar(v);
             nuvemEnfileirar(NUVEM.fila, { t: Date.now(), tipo: 'carga', nivel: c.cortado ? 'av' : 'info', msg: k + (c.cortado ? ' (cortado: só o mais novo)' : ''), dados: c.dados }, NUVEM_MAX_FILA + NUVEM_CARGA_CHAVES.length);
         }
+        try {
+            const pj = nuvemPersonagens({ conta: CONTA, nivel: nivelAtual(), rosterFull: ESTADO_WS.rosterFull, roster: ESTADO_WS.roster, sk: ESTADO_WS.sk, perfisDoServidor: ESTADO_WS.perfisDoServidor, profiles: ESTADO_WS.profiles,
+                                           battleConfigs: ESTADO_WS.battleConfigs, legado: ESTADO_WS.legado, loyalty: ESTADO_WS.loyalty, eco: ESTADO_WS.eco, bossCooldowns: ESTADO_WS.bossCooldowns, depot: ESTADO_WS.depot, party: ESTADO_WS.party });
+            const c = nuvemCapar(pj);
+            nuvemEnfileirar(NUVEM.fila, { t: Date.now(), tipo: 'carga', nivel: c.cortado ? 'av' : 'info', msg: 'personagens' + (c.cortado ? ' (cortado)' : ''), dados: c.dados }, NUVEM_MAX_FILA + NUVEM_CARGA_CHAVES.length + 1);
+        } catch (e) { NUVEM.erro = 'carga (personagens): ' + String(e && e.message || e); }
         NUVEM.tCarga = Date.now();
     }
     function nuvemCfg() {
@@ -627,7 +645,7 @@
         return `<div class="tb-cx" id="tb-nuvem"><div class="tb-linha"><label class="tb-l"><input type="checkbox" id="tb-nv-on" ${cfg.on ? 'checked' : ''}> <b>Log na nuvem</b></label><span class="tb-mut tb-eq-nota">conta: ${escHtml(cfg.conta || '?')} · fila ${NUVEM.fila.length}</span></div>
           <div class="tb-eq-nota">${st}</div>
           <div class="tb-linha" style="margin-top:3px"><input type="password" class="tb-in" id="tb-nv-token" value="${escHtml(cfg.token)}" placeholder="token (o Claude te passa)" style="flex:1 1 auto;min-width:0" aria-label="token do log na nuvem"><button type="button" class="tb-bt mini" id="tb-nv-enviar" ${!ok || NUVEM.enviando ? 'disabled' : ''}>enviar agora</button></div>
-          <div class="tb-eq-nota tb-mut">Manda para o banco do dono (Supabase) as linhas do Log, o resumo de cada caçada, as sessões do livro-razão, a cada 5 min a foto do boneco (nível, ouro, mapa, vida e mana dos 4) e, ao abrir (e a cada 6 h), a carga do que acumulou fechado (Radar, mortes, dano por mapa, magias, Auto Hunt, Log). Só sai informação; nada do jogo é comandado por aqui.</div>
+          <div class="tb-eq-nota tb-mut">Manda para o banco do dono (Supabase) as linhas do Log, o resumo de cada caçada, as sessões do livro-razão, a cada 5 min a foto do boneco (nível, ouro, mapa, vida e mana dos 4) e, ao abrir (e a cada 6 h), a carga: a ficha dos 4 (equipamento com forja, skills, perfis, legado, depósito) e o que acumulou fechado (sessões, Radar, mortes, dano por mapa, magias, Scan, Auto Hunt, Log). Só sai informação; nada do jogo é comandado por aqui.</div>
           ${aj('nv-av', `<div>URL <input type="text" class="tb-in" id="tb-nv-url" value="${escHtml(cfg.url)}" style="width:100%" aria-label="URL do Supabase"></div><div>chave publicável <input type="text" class="tb-in" id="tb-nv-key" value="${escHtml(cfg.key)}" style="width:100%" aria-label="chave publicável"></div><div>nome da conta (se o jogo não disser) <input type="text" class="tb-in" id="tb-nv-conta" value="${escHtml(lerComum('nuvem_conta', ''))}" style="width:100%" aria-label="nome da conta"></div>`, 'avançado')}
         </div>`;
     }

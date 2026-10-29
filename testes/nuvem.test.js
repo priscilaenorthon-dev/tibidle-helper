@@ -4,7 +4,7 @@ const fs = require('fs'), path = require('path'), assert = require('assert');
 const src = fs.readFileSync(path.join(__dirname, '..', 'tibidle-helper.user.js'), 'utf8');
 const trecho = (a, b) => { const i = src.indexOf(a), f = src.indexOf(b); assert(i > 0 && f > i, 'marcador ausente: ' + a); return src.slice(i, f); };
 const M = new Function(trecho('/* @@NUVEM-PURO-INICIO', '/* @@NUVEM-PURO-FIM */') +
-    '\nreturn { nuvemConfigOk, nuvemEnfileirar, nuvemMontar, nuvemFoto, nuvemCapar, NUVEM_CARGA_CHAVES, NUVEM_MAX_FILA, NUVEM_LOTE, NUVEM_URL_PADRAO, NUVEM_KEY_PADRAO, NUVEM_MSG_MAX };')();
+    '\nreturn { nuvemConfigOk, nuvemEnfileirar, nuvemMontar, nuvemFoto, nuvemCapar, nuvemPersonagens, NUVEM_CARGA_CHAVES, NUVEM_MAX_FILA, NUVEM_LOTE, NUVEM_URL_PADRAO, NUVEM_KEY_PADRAO, NUVEM_MSG_MAX };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 const CFG = { on: true, url: M.NUVEM_URL_PADRAO, key: M.NUVEM_KEY_PADRAO, token: 'tok-de-teste-123456', conta: 'Conta Um' };
@@ -54,6 +54,10 @@ t('carga: bloco que cabe passa inteiro; lista grande fica com a cauda; objeto gr
     const ks = Object.keys(o.dados);
     assert(o.cortado && ks.length < 15 && ks[ks.length - 1] === '2026-09-60' && JSON.stringify(o.dados).length <= 3000, 'últimas chaves: ' + ks.join(','));
     assert.deepStrictEqual(M.nuvemCapar('x'.repeat(50), 10), { dados: 'x'.repeat(10), cortado: true });
-    for (const k of ['sessoes', 'radar_dias', 'radar_mortes', 'dano_mapa', 'danos_DRUID', 'ah', 'log']) assert(M.NUVEM_CARGA_CHAVES.includes(k), k);
+    for (const k of ['sessoes', 'radar_dias', 'radar_mortes', 'dano_mapa', 'danos_DRUID', 'auto_hunt', 'skills_vistas', 'equip_depot', 'scan_resultados', 'ciclos_hist', 'prog_bestiario', 'pch_compras', 'log']) assert(M.NUVEM_CARGA_CHAVES.includes(k), k);
+    const pj = M.nuvemPersonagens({ conta: { id: 1, nome: 'A' }, nivel: 187, rosterFull: [{ vocation: 'knight', equipment: { legs: { name: 'zaoan legs', forja: { raridade: 2 } } } }], sk: { KNIGHT: { melee: 90 } }, legado: { KNIGHT: 3 }, depot: null });
+    assert.deepStrictEqual(Object.keys(pj).sort(), ['conta', 'legado', 'nivel', 'roster', 'skills', 't'].sort(), 'só o que existe: ' + Object.keys(pj));
+    assert.strictEqual(pj.roster[0].equipment.legs.forja.raridade, 2, 'a forja de cada peça vai junto');
+    assert.strictEqual(M.nuvemPersonagens({ roster: [1] }).roster[0], 1, 'sem rosterFull cai no roster');
 });
 console.log(`\n${n} testes ok`);

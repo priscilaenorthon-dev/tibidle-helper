@@ -597,7 +597,9 @@ t('Log na nuvem: ligado, resumo/log vão num POST para a função do Supabase co
     assert(r && r.nivel === 'erro' && r.dados.reason === 'death' && r.t === 1000, JSON.stringify(r));
     assert(b.p_estado && 'nivel' in b.p_estado && Array.isArray(b.p_estado.party) && 'cacando' in b.p_estado, 'foto do boneco');
     const carga = b.p_itens.filter(i => i.tipo === 'carga').map(i => i.msg);
-    assert(carga.includes('log') && carga.includes('danos_DRUID') && !carga.includes('sessoes') && !carga.includes('hunt_id'), 'carga no primeiro envio: o que existe na gaveta (log, danos dos 4), sem o que está vazio: ' + carga.join(','));
+    assert(carga.includes('log') && carga.includes('danos_DRUID') && carga.includes('personagens') && !carga.includes('sessoes') && !carga.includes('hunt_id'), 'carga no primeiro envio: ficha dos personagens + o que existe na gaveta (log, danos dos 4), sem o que está vazio: ' + carga.join(','));
+    const pj = b.p_itens.find(i => i.tipo === 'carga' && i.msg === 'personagens').dados;
+    assert(pj && 'nivel' in pj && pj.t > 0, 'ficha dos personagens: ' + JSON.stringify(Object.keys(pj)));
     assert.strictEqual(H.NUVEM.fila.length, 0, 'fila esvaziada depois do envio');
     const h = W.html(); semXss(h, 'Status (nuvem)');
     assert(/Log na nuvem/.test(h) && /último envio/.test(h) && /conta: Conta Um/.test(h) && /type="password"/.test(h), 'aba Status mostra o bloco, o último envio, a conta e o token escondido');

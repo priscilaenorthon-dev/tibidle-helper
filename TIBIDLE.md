@@ -6575,8 +6575,11 @@ venda, a situação dele — para ir analisando e criando melhorias. Eu ligo o n
   `ended`), `nuvemCapar` (bloco da carga cabe em 200 mil chars: lista fica com a cauda, objeto com as últimas chaves).
 - **O que sai**: cada linha do `log()` (tipo `log`), o `ended.summary` inteiro (tipo `resumo`; nível `erro` se o motivo for morte),
   cada sessão fechada do livro-razão (tipo `sessao`), a foto a cada 5 min (`estado`) e, no primeiro envio de cada página aberta e a
-  cada 6 h, a **carga** (tipo `carga`): `sessoes`, `radar_dias`, `radar_mortes`, `dano_mapa`, `danos_<VOC>`, `ah`, `hunt_id`,
-  `modelo`, `log`. Envio a cada 60 s por `fetch` POST (a página já faz fetch cruzado para o GitHub; sem `@grant`). Falha: a fila
+  cada 6 h, a **carga** (tipo `carga`): a ficha dos personagens (`personagens`: roster com o equipamento e a forja de cada peça,
+  skills vistas, perfis do servidor, configs de batalha, legado, loyalty, economia, cooldown de boss, depósito lido, party) e as
+  gavetas `sessoes`, `radar_dias`, `radar_mortes`, `dano_mapa`, `danos_<VOC>`, `auto_hunt`, `hunt_id`, `modelo`, `skills_vistas`,
+  `equip_depot`, `equip_escolhas`, `equip_bebe`, `scan_resultados`, `ciclos_hist`, `prog_bestiario`, `best_estado`, `pch_compras`,
+  `dc_foto`, `inv_modelos`, `melhorias_cfg`, `log` (dono: "equipamentos, status de cada personagem, tudo que der para recolher"). Envio a cada 60 s por `fetch` POST (a página já faz fetch cruzado para o GitHub; sem `@grant`). Falha: a fila
   fica (teto 600), o erro aparece só na tela — nunca no Log (viraria laço).
 - **Tela**: Status › avançado › "Log na nuvem": interruptor (padrão DESLIGADO), token (campo escondido), "enviar agora", último
   envio/linhas/erro, e em "avançado" URL, chave e nome da conta (o nome vem de `/auth/me`; o campo é reserva). URL e chave
