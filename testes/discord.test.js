@@ -288,13 +288,27 @@ t('2.29.2 setups de 22/10 (Psyger-0 Behemoth e Hive Entrance, Pouca Telha WZ1): 
 });
 t('2.33.5 varredura de 27/10 (Psyger-0 Hive Tower e Bog, lucasdela Shadow Nexus, TV de Souza e KairusZ no evento): sem aviso no nível do print; o post real tira o "Northon - Shadow Nexus"', () => {
     const ctx = (nivel) => Object.assign({}, CTX_POT, { nivel, magias: SPELLS });
-    for (const [id, huntId, nivel] of [['hivetower-psyger', 198, 123], ['bog-psyger', 151, 112], ['shadownexus-lucasdela', 222, 181], ['estacao-souza', 263, 165], ['estacao-kairusz', 263, 172]]) {
+    for (const [id, huntId, nivel] of [['hivetower-psyger', 198, 123], ['bog-psyger', 151, 112], ['shadownexus-lucasdela', 222, 185], ['estacao-souza', 263, 165], ['estacao-kairusz', 263, 172]]) {
         const s = M.SETUPS_DISCORD.find(x => x.id === id);
         assert(s && s.huntId === huntId && s.estatisticas && s.estatisticas.nivel === nivel, id);
         for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx(nivel)).avisos, [], id + ' ' + voc);
     }
     assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 222, title: 'Shadow Nexus' }).map(x => x.id), ['shadownexus-lucasdela', 'northon-222']);
     assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 198, title: 'Hive Tower' }).map(x => x.autor), ['Specter', 'Psyger-0']);
+});
+t('2.35.5 varredura de 29/10: Theus (Throne of Bazir e Verminor) tira os "Northon -" dos dois tronos; lucasdela troca a barra do Shadow Nexus; sem aviso no nível 170', () => {
+    const ctx = Object.assign({}, CTX_POT, { nivel: 170, magias: SPELLS });
+    for (const [id, huntId] of [['bazir-theus', 206], ['verminor-theus', 200]]) {
+        const s = M.SETUPS_DISCORD.find(x => x.id === id);
+        assert(s && s.huntId === huntId && s.autor === 'Theus', id);
+        for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx).avisos, [], id + ' ' + voc);
+        assert.deepStrictEqual(M.dcSetupsDaHunt({ id: huntId, title: s.hunt }).map(x => x.id), [id], 'o Northon do trono saiu');
+    }
+    assert.deepStrictEqual(M.SETUPS_DISCORD.find(x => x.id === 'bazir-theus').chars.KNIGHT.ataque, [], 'Bazir: Cavaleiro não ataca (Phantasm imune a físico)');
+    const sn = M.SETUPS_DISCORD.find(x => x.id === 'shadownexus-lucasdela');
+    assert.strictEqual(sn.data, '29/10');
+    assert.deepStrictEqual(sn.chars.KNIGHT.suporte, ['Protector']);
+    assert.deepStrictEqual(sn.chars.DRUID.defesa.map(d => d[0]), ['Ultimate Healing', 'Mass Healing', 'Heal Friend']);
 });
 t('2.33.6 "Northon - Shadow Nexus" ao lado do post (pedido do dono): poções do mapa fixas, Druida na Great Mana Potion, sem Magic Shield, Protector no Cavaleiro; sem aviso no nível 167', () => {
     const s = M.SETUPS_DISCORD.find(x => x.id === 'northon-222');

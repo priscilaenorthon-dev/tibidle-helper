@@ -6648,3 +6648,17 @@ que vender mais; e de batalha também, completo e estruturado, o que usou e o da
   - `venderSobrasNpc`, `liberarParaMercado` e `mkAnunciarUm` conferem `estaProtegida` na hora do clique/envio (proteger
     depois do ATUALIZAR já vale).
   - Mercado: sem a lista do cadeado lida do jogo (`MK.protLido`), nenhuma linha fica pronta ("dê F5").
+
+## 2.35.5 (29/10) — varredura do Discord: tronos da Inquisition (Theus) e Shadow Nexus novo (lucasdela)
+
+- Fórum `guias-da-comunidade`: tópico novo **"Acessos pra Inqui - Setups"** (Theus, 1565326132843257857, 29/10) com
+  **Throne of Bazir** (206) e **Throne of Verminor** (200), prints do Histórico, ícones casados com os oficiais (casar.py).
+  Entraram `bazir-theus` e `verminor-theus`; saíram `northon-206` e `northon-200` ("Northon -" só em mapa sem post).
+  Bazir: o Cavaleiro não ataca (Phantasm imune a físico). Verminor: dano de terra, magos com Sudden Death no último slot.
+- **Shadow Nexus** (tópico do Specter, 29/10 01:42): lucasdela trocou a barra — a de 27/10 "hora ou outra morria"; a nova mata os
+  demons em menos turnos. Cavaleiro com Protector, defesa Intense Recovery 94 / Intense Wound Cleansing 30 / Wound Cleansing 91;
+  Druida Ultimate Healing 60 / Mass Healing 65 / Heal Friend 78, Great Mana 20, runa avalanche (em recarga na foto, lida pela cor);
+  Feiticeiro Energy Wave ≥1 e Ice Strike. Imbuement que ajudou: mana leech médio (5 %) no Druida. Medido: 634,8k xp/h, +3,9k/h, nível 185.
+  `shadownexus-lucasdela` foi atualizado (mesmo id); `northon-222` (comPost) continua.
+- Ficou de fora: Matheustlm descreveu em texto um Bog Raiders "de memória" (28/10), sem os mínimos de criaturas nem o nome das poções.
+  Não entrou, para não ter número inventado. Logbook e tópico do Specter lidos desde 27/10; o resto são prints de lucro ou perguntas.
