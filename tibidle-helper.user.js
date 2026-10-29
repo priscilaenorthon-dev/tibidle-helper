@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.35.1
+// @version      2.35.2
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.35.1';
+    const VERSAO = '2.35.2';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -108,6 +108,7 @@
                 WS.tipos[t] = (WS.tipos[t] || 0) + 1;
                 if (!WS.amostras[t]) WS.amostras[t] = semSegredos(o).slice(0, 400);
                 try { observarRecebido(o); } catch (e) { falhou('observarRecebido', e); }
+                try { nuvemProtoAnotar(o, 'in'); } catch (e) { /* v2.35.2 — a nuvem nunca derruba o grampo */ }
             };
             const ouvir = (ws) => {
                 try {
@@ -604,9 +605,10 @@
      * casas, kill, death, wave, wave_timer…) e a party com vida/mana/poções bebidas (supplyUsed). Tudo vai cru, empacotado por
      * minuto (tipo `batalha`), e o livro-razão consolidado vai a cada 5 min (tipo `razao`). */
     const NUVEM_BAT_MS = 60000, NUVEM_BAT_MAX_EV = 3000;
-    function nuvemBatalhaNovo(agora, huntId) { return { t0: agora || Date.now(), huntId: huntId != null ? huntId : null, eventos: [], vitais: {}, n: 0, cortado: false }; }
+    function nuvemBatalhaNovo(agora, huntId) { return { t0: agora || Date.now(), huntId: huntId != null ? huntId : null, eventos: [], vitais: {}, nomes: {}, n: 0, cortado: false }; }
     function nuvemBatalhaEvento(B, ev, agora) {
         if (!B || !ev || typeof ev !== 'object' || !ev.kind) return;
+        if (ev.kind === 'spawn' && ev.id != null && ev.name) B.nomes[ev.id] = ev.name; // id → nome da criatura (os hits só trazem o id)
         B.n++;
         if (B.eventos.length >= NUVEM_BAT_MAX_EV) { B.cortado = true; return; }
         const c = { k: ev.kind, dt: Math.max(0, (agora || Date.now()) - B.t0) };
@@ -630,11 +632,60 @@
     }
     function nuvemBatalhaFechar(B, agora) {
         if (!B || (!B.n && !Object.keys(B.vitais).length)) return null;
-        const t1 = agora || Date.now(), c = nuvemCapar({ t0: B.t0, t1, huntId: B.huntId, eventos: B.eventos, vitais: B.vitais, nEventos: B.n });
+        const t1 = agora || Date.now(), c = nuvemCapar({ t0: B.t0, t1, huntId: B.huntId, eventos: B.eventos, vitais: B.vitais, nomes: B.nomes, nEventos: B.n });
         return { t: B.t0, tipo: 'batalha', nivel: B.cortado || c.cortado ? 'av' : 'info', msg: `${B.n} eventos em ${Math.round((t1 - B.t0) / 1000)} s` + (B.cortado ? ' (cortado em ' + NUVEM_BAT_MAX_EV + ')' : ''), dados: c.dados };
     }
+    /* v2.35.2 — MERCADO, VENDAS E COMANDOS COMPLETOS (dono, 29/10: "quero todas as informações de mercado, o que comprou, o que
+     * vendeu, para um estudo completo: onde está lucrando mais, o que vender mais"). O grampo do socket já vê toda mensagem; daqui
+     * vai, crua e sem segredos, cada mensagem de mercado/venda/loja/forja que CHEGA (tipo `mercado`) e cada comando que SAI
+     * (tipo `mercado` se é de mercado/venda, `comando` se é do jogo: start_hunt, stop, equip, perfis…). Leituras grandes do
+     * Mercado (cópias, lista, catálogo, estatísticas) vão cruas no máximo 1× a cada 30 min por categoria/item; no meio-tempo vai
+     * só um resumo por item (n, mínimo, média, máximo) para o banco não inchar. */
+    const NUVEM_PROTO_IN = /^(market_|sell_result$|loja_|acesso_|forge|purif|key_|depot_withdraw|equip)/;
+    const NUVEM_PROTO_OUT = /^(market_|sell$|sell_|loja_|acesso_|forge|purif|key_|equip$|depot_withdraw$|start_hunt$|stop$|set_lure$|set_formation$|profiles_set$|update_battle_config$|analyzer_reset$)/;
+    const NUVEM_PROTO_MERCADO = /^(market_|sell|loja_|acesso_|forge|purif|key_)/;
+    const NUVEM_PROTO_GRANDE = /^(market_copies_result|market_list_result|market_catalog_result|market_stats_result|market_history_result)$/;
+    const NUVEM_PROTO_GRANDE_CADA_MS = 30 * 60000;
+    function nuvemResumoCopias(lista) {
+        const por = {};
+        for (const c of (Array.isArray(lista) ? lista : [])) {
+            if (!c) continue;
+            const nome = (c.instance && c.instance.name) || c.itemName || c.name || '?', p = Number(c.unitPrice != null ? c.unitPrice : c.price);
+            const x = por[nome] || (por[nome] = { n: 0, min: null, max: null, soma: 0, np: 0 });
+            x.n++; if (Number.isFinite(p)) { x.np++; x.soma += p; x.min = x.min == null ? p : Math.min(x.min, p); x.max = x.max == null ? p : Math.max(x.max, p); }
+        }
+        for (const x of Object.values(por)) { x.media = x.np ? Math.round(x.soma / x.np) : null; delete x.soma; delete x.np; }
+        return por;
+    }
+    function nuvemProto(o, dir, agora, vistos) {
+        if (!o || typeof o.type !== 'string') return null;
+        const t = o.type, entra = dir === 'in';
+        if (!(entra ? NUVEM_PROTO_IN : NUVEM_PROTO_OUT).test(t)) return null;
+        const d = o.data && typeof o.data === 'object' ? o.data : {};
+        const cat = d.category || d.itemName || d.asset || (d.page != null ? 'p' + d.page : '');
+        let dados = d, nivel = 'info', msg = (entra ? '← ' : '→ ') + t + (cat ? ' ' + cat : '');
+        if (entra && NUVEM_PROTO_GRANDE.test(t)) {
+            const chave = t + '|' + cat, ult = vistos ? vistos[chave] : null;
+            if (ult != null && (agora || 0) - ult < NUVEM_PROTO_GRANDE_CADA_MS) {
+                const lista = d.copies || d.orders || d.items || d.entries || [];
+                dados = { resumido: true, n: Array.isArray(lista) ? lista.length : 0, porItem: nuvemResumoCopias(lista), stats: d.stats || null };
+                msg += ' (resumo)';
+            } else if (vistos) vistos[chave] = agora || Date.now();
+        }
+        if (d.error || d.erro || d.ok === false) nivel = 'av';
+        const c = nuvemCapar(dados);
+        return { t: agora || Date.now(), tipo: NUVEM_PROTO_MERCADO.test(t) ? 'mercado' : 'comando', nivel: c.cortado ? 'av' : nivel, msg: msg + (c.cortado ? ' (cortado)' : ''), dados: c.dados };
+    }
     /* @@NUVEM-PURO-FIM */
-    const NUVEM = { fila: [], enviando: false, ultimo: 0, ultimoOk: 0, erro: null, enviados: 0, tFoto: 0, tCarga: 0, bat: null };
+    const NUVEM = { fila: [], enviando: false, ultimo: 0, ultimoOk: 0, erro: null, enviados: 0, tFoto: 0, tCarga: 0, bat: null, vistos: {} };
+    /* o grampo chama para toda mensagem; só as de mercado/venda/comando passam (regex por tipo antes de qualquer custo) */
+    function nuvemProtoAnotar(o, dir) {
+        if (!o || typeof o.type !== 'string' || !(dir === 'in' ? NUVEM_PROTO_IN : NUVEM_PROTO_OUT).test(o.type)) return;
+        if (!lerComum('nuvem_on', true)) return;
+        const limpo = JSON.parse(semSegredos(o)); // ticket/token/senha viram '***' antes de sair
+        const it = nuvemProto(limpo, dir, Date.now(), NUVEM.vistos);
+        if (it) nuvemEnfileirar(NUVEM.fila, it);
+    }
     /* o pacote de batalha do minuto: fecha a cada NUVEM_BAT_MS, no `ended` e quando a hunt muda */
     function nuvemBatalhaFlush(agora) {
         agora = agora || Date.now();
@@ -699,7 +750,7 @@
         return `<div class="tb-cx" id="tb-nuvem"><div class="tb-linha"><label class="tb-l"><input type="checkbox" id="tb-nv-on" ${cfg.on ? 'checked' : ''}> <b>Log na nuvem</b></label><span class="tb-mut tb-eq-nota">conta: ${escHtml(cfg.conta || '?')} · fila ${NUVEM.fila.length}</span></div>
           <div class="tb-eq-nota">${st}</div>
           <div class="tb-linha" style="margin-top:3px"><input type="password" class="tb-in" id="tb-nv-token" value="${escHtml(cfg.token)}" placeholder="token (já vem no script)" style="flex:1 1 auto;min-width:0" aria-label="token do log na nuvem"><button type="button" class="tb-bt mini" id="tb-nv-enviar" ${!ok || NUVEM.enviando ? 'disabled' : ''}>enviar agora</button></div>
-          <div class="tb-eq-nota tb-mut">Manda para o banco do dono (Supabase) as linhas do Log, o resumo de cada caçada, as sessões do livro-razão, o log de batalha do jogo cru por minuto (dano dado e recebido, magias, poções, vida e mana dos 4), o livro-razão consolidado e a foto do boneco a cada 5 min (nível, ouro, mapa, vida e mana dos 4) e, ao abrir (e a cada 6 h), a carga: a ficha dos 4 (equipamento com forja, skills, perfis, legado, depósito) e o que acumulou fechado (sessões, Radar, mortes, dano por mapa, magias, Scan, Auto Hunt, Log). Só sai informação; nada do jogo é comandado por aqui.</div>
+          <div class="tb-eq-nota tb-mut">Manda para o banco do dono (Supabase) as linhas do Log, o resumo de cada caçada, as sessões do livro-razão, cada mensagem de Mercado/venda/loja/forja que chega e cada comando que sai (anúncio, compra, cancelamento, venda ao NPC, minhas ordens, histórico, preços lidos), o log de batalha do jogo cru por minuto (dano dado e recebido, magias, poções, vida e mana dos 4), o livro-razão consolidado e a foto do boneco a cada 5 min (nível, ouro, mapa, vida e mana dos 4) e, ao abrir (e a cada 6 h), a carga: a ficha dos 4 (equipamento com forja, skills, perfis, legado, depósito) e o que acumulou fechado (sessões, Radar, mortes, dano por mapa, magias, Scan, Auto Hunt, Log). Só sai informação; nada do jogo é comandado por aqui.</div>
           ${aj('nv-av', `<div>URL <input type="text" class="tb-in" id="tb-nv-url" value="${escHtml(cfg.url)}" style="width:100%" aria-label="URL do Supabase"></div><div>chave publicável <input type="text" class="tb-in" id="tb-nv-key" value="${escHtml(cfg.key)}" style="width:100%" aria-label="chave publicável"></div><div>nome da conta (se o jogo não disser) <input type="text" class="tb-in" id="tb-nv-conta" value="${escHtml(lerComum('nuvem_conta', ''))}" style="width:100%" aria-label="nome da conta"></div>`, 'avançado')}
         </div>`;
     }
@@ -5053,6 +5104,7 @@
     }
     function observarEnviado(o) {
         if (!o || !o.type) return;
+        try { nuvemProtoAnotar(o, 'out'); } catch (e) { /* v2.35.2 */ }
         try { mkObservarEnviado(o); } catch (e) { falhou('mercado (enviado)', e); } // v2.11 — conta as ações do mercado (limite 20/min por conta)
         const d = (o.data && typeof o.data === 'object') ? o.data : {};
         if (o.type === 'start_hunt') { ESTADO_WS.ultimoStart = Object.assign({ t: Date.now() }, d); return; }
