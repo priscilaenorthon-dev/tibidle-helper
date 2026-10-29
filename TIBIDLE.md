@@ -6558,3 +6558,29 @@ comprar ficaram gigantes".
 - Testes: 459 (+1 em telas.test.js: plano em 3 linhas, title com o detalhe, 8 compras, sem ouro, tela < 14 mil chars). Não testado ao vivo.
 - Mortes do Druida (Hellgorak Seal e Shadow Nexus, 28/10): não dá para ver daqui — os dados ficam no navegador do dono (`radar_mortes`,
   `dano_mapa`, Log). Pedido ao dono: aba Log filtrada por "morreu"/"morte", ou Análise → "copiar JSON".
+
+## 2.35.0 — Log na nuvem (29/10)
+
+Dono: "tenho o bot em 3 navegadores com 3 contas; quero que você tenha acesso ao log de tudo que o boneco faz — batalha, compra e
+venda, a situação dele — para ir analisando e criando melhorias. Eu ligo o notebook 1–2 h por dia; aí você cata todos os dados."
+- **Destino**: o Supabase do dono (projeto já conectado a esta sessão do Claude; o Claude lê direto por lá). Schema `tibidle`:
+  `log` (t, conta, versão, tipo, nível, msg, dados jsonb), `estado` (a última foto por conta), `cfg` (o token). RLS ligado e sem
+  política: a chave pública não lê nem escreve nada direto (`GET /rest/v1/log` → "Invalid schema"). A única porta é a função
+  `public.tb_log_enviar(p_token, p_conta, p_versao, p_itens, p_estado)` (security definer): confere o token em `cfg`, insere até
+  500 itens por chamada, faz upsert da foto, apaga com 2 % de chance o que tem mais de 45 dias. Token errado → 403. Conferido de
+  ponta a ponta por curl (HTTP 200, 1 linha).
+- **`@@NUVEM-PURO`** (`testes/nuvem.test.js`, 5): `nuvemConfigOk` (ligado + URL *.supabase.co + chave + token ≥ 16 + conta),
+  `nuvemEnfileirar` (teto 600, msg 2000), `nuvemMontar` (URL da função, cabeçalhos apikey/Bearer, lote de 200, foto), `nuvemFoto`
+  (nível, ouro, caçando, mapa, boss, lure, criaturas, vida/mana/distância dos 4, analisador do jogo, Auto Hunt, Scan, aba, último
+  `ended`), `nuvemCapar` (bloco da carga cabe em 200 mil chars: lista fica com a cauda, objeto com as últimas chaves).
+- **O que sai**: cada linha do `log()` (tipo `log`), o `ended.summary` inteiro (tipo `resumo`; nível `erro` se o motivo for morte),
+  cada sessão fechada do livro-razão (tipo `sessao`), a foto a cada 5 min (`estado`) e, no primeiro envio de cada página aberta e a
+  cada 6 h, a **carga** (tipo `carga`): `sessoes`, `radar_dias`, `radar_mortes`, `dano_mapa`, `danos_<VOC>`, `ah`, `hunt_id`,
+  `modelo`, `log`. Envio a cada 60 s por `fetch` POST (a página já faz fetch cruzado para o GitHub; sem `@grant`). Falha: a fila
+  fica (teto 600), o erro aparece só na tela — nunca no Log (viraria laço).
+- **Tela**: Status › avançado › "Log na nuvem": interruptor (padrão DESLIGADO), token (campo escondido), "enviar agora", último
+  envio/linhas/erro, e em "avançado" URL, chave e nome da conta (o nome vem de `/auth/me`; o campo é reserva). URL e chave
+  publicável vêm por padrão no script (`NUVEM_URL_PADRAO`, `NUVEM_KEY_PADRAO`); o token NÃO vai no repositório. Configuração é
+  comum do navegador (`tb_helper_comum_*`): nos 3 navegadores é ligar e colar o token; a conta cada um descobre sozinho.
+- Regra do dono preservada: só sai informação; nada do jogo é comandado por aqui. Testes: 465 (+5 nuvem, +1 telas). Não testado
+  ao vivo: o dono liga, cola o token e vê "último envio" na tela.
