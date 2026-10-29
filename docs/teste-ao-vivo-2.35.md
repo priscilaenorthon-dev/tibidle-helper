@@ -54,12 +54,30 @@ select conta, t, msg, dados->'danoTotal' dano, dados->'tomadoH' tomado_h, dados-
 - [ ] Ao encerrar a caçada (ou morrer): chega `resumo` com `dados.reason` (e `deathCause[]` na morte) **depois** do último `batalha`
       daquele minuto (o `ended` fecha o pacote antes).
 
+## 3b. Mercado e comandos (2.35.2) 🟢
+```sql
+select conta, t, msg, nivel, left(dados::text, 160) from tibidle.log where tipo in ('mercado', 'comando') order by t desc limit 30;
+```
+- [ ] Ao abrir a aba Mercado/Melhorias e PROCURAR: chegam `← market_copies_result <categoria>` (8), a 1ª crua, as seguintes em 30 min "(resumo)".
+- [ ] Anunciar 1 item (2 toques): `→ market_create` e `← market_create_result` com preço/qtd; cancelar: `→ market_cancel` / `← …_result`.
+- [ ] Venda rápida na cidade: `→ sell` e `← sell_result` com `goldCredited` e `entries`.
+- [ ] Entrar/sair da caçada: `→ start_hunt` (huntId, lure) e `→ stop` como `comando`.
+- [ ] Nenhum `dados` com ticket/token/senha fora de '***' (`select count(*) from tibidle.log where dados::text ~* '(ticket|token|senha)"\s*:\s*"[^*]'` = 0).
+
 ## 4. Robustez 🟢
 - [ ] Desligar a rede 2 min com o jogo aberto: a tela mostra "erro: Failed to fetch", a fila cresce (contador "fila N"); ao voltar,
       um envio só com tudo (fila ≤ 600; linhas mais velhas saem primeiro).
 - [ ] Interruptor desligado: para de enfileirar na hora (fila não cresce) e nada chega no banco daquela conta.
 - [ ] Nada do log na nuvem aparece na aba **Log** do helper (falha de envio fica só na tela do bloco).
 - [ ] F5 no jogo: nova carga (`tCarga` zera por página); sem F5, a carga seguinte só depois de 6 h.
+
+## 4b. Tamanho do banco (plano free: 500 MB) 🟢
+```sql
+select pg_size_pretty(pg_total_relation_size('tibidle.log')) log_tam, pg_size_pretty(pg_database_size(current_database())) banco_tam,
+       (select min(recebido) from tibidle.log) mais_velho, (select count(*) from tibidle.log) linhas;
+```
+- [ ] `mais_velho` nunca com mais de 10 dias; `carga` com no máximo 3 por (conta, msg); `log_tam` bem abaixo de 250 MB.
+- [ ] Depois de uma noite com as 3 contas: medir o crescimento por dia e anotar aqui (estimativa: ~10 MB/dia).
 
 ## 5. Análise (a razão de tudo isso) 🟢
 - [ ] Mortes do Druida (Hellgorak Seal, Shadow Nexus): em `carga/radar_mortes` e `carga/dano_mapa` (histórico) e, nas caçadas

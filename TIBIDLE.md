@@ -6567,8 +6567,13 @@ venda, a situação dele — para ir analisando e criando melhorias. Eu ligo o n
   `log` (t, conta, versão, tipo, nível, msg, dados jsonb), `estado` (a última foto por conta), `cfg` (o token). RLS ligado e sem
   política: a chave pública não lê nem escreve nada direto (`GET /rest/v1/log` → "Invalid schema"). A única porta é a função
   `public.tb_log_enviar(p_token, p_conta, p_versao, p_itens, p_estado)` (security definer): confere o token em `cfg`, insere até
-  500 itens por chamada, faz upsert da foto, apaga com 2 % de chance o que tem mais de 45 dias. Token errado → 403. Conferido de
-  ponta a ponta por curl (HTTP 200, 1 linha).
+  500 itens por chamada, faz upsert da foto e, em ~1 de cada 20 chamadas, chama `tibidle.limpar()`. Token errado → 403. Conferido
+  de ponta a ponta por curl (HTTP 200, 1 linha).
+- **Retenção (dono, 29/10: "armazenar por 10 dias para não lotar o Supabase; são 3 contas e a conta é free")**: `tibidle.limpar()`
+  apaga o que tem mais de **10 dias**; da `carga` (cada F5 manda tudo de novo) guarda só as 3 últimas por conta e bloco; e, se a
+  tabela passar de 250 MB (o plano free dá 500 MB para o banco inteiro), apaga o quarto mais velho. Item acima de 300 mil chars é
+  descartado na entrada. Conta de volume: ~15 KB por minuto caçando por conta (batalha) + carga de ~1 MB por F5 → 3 contas × 2 h/dia
+  ≈ 10 MB/dia ≈ 100 MB em 10 dias.
 - **`@@NUVEM-PURO`** (`testes/nuvem.test.js`, 5): `nuvemConfigOk` (ligado + URL *.supabase.co + chave + token ≥ 16 + conta),
   `nuvemEnfileirar` (teto 600, msg 2000), `nuvemMontar` (URL da função, cabeçalhos apikey/Bearer, lote de 200, foto), `nuvemFoto`
   (nível, ouro, caçando, mapa, boss, lure, criaturas, vida/mana/distância dos 4, analisador do jogo, Auto Hunt, Scan, aba, último
@@ -6599,3 +6604,22 @@ venda, a situação dele — para ir analisando e criando melhorias. Eu ligo o n
 Dono: "coloca esse token direto na atualização, sem eu precisar fazer nada". `NUVEM_TOKEN_PADRAO` no script e `nuvem_on` padrão
 `true` (o interruptor em Status › avançado desliga). O token só dá direito de escrever no log, nunca de ler; se vazar, o pior é lixo
 no banco — troca-se o valor em `tibidle.cfg` e no script. Nos 3 navegadores basta atualizar o helper. Testes: 466 (um ajustado).
+
+## 2.35.2 — Log na nuvem: Mercado, vendas e comandos completos; nomes das criaturas na batalha (29/10)
+
+Dono: "quero todas as informações de mercado, o que comprou, o que vendeu, para um estudo completo: onde está lucrando mais, o
+que vender mais; e de batalha também, completo e estruturado, o que usou e o dano que levou".
+- **Pelo grampo do socket** (`nuvemProtoAnotar` em `receber` e em `observarEnviado`): toda mensagem de Mercado/venda/loja/forja
+  que CHEGA (`market_*_result`, `sell_result`, `loja_*`, `acesso_*`, forja, purificação, chaves, `depot_withdraw`, `equip`) vira
+  item tipo `mercado`; todo comando que SAI vira `mercado` (market_*, sell, loja, acesso, forja…) ou `comando` (start_hunt, stop,
+  set_lure, set_formation, equip, depot_withdraw, profiles_set, update_battle_config, analyzer_reset). Sempre com `semSegredos`
+  (ticket/token/senha → '***'; testado). Frame, ping e pong nunca passam (regex por tipo antes de qualquer custo).
+- **Leituras grandes** (`market_copies_result`, `market_list_result`, `market_catalog_result`, `market_stats_result`,
+  `market_history_result`): cruas 1× a cada 30 min por categoria/item; no meio-tempo só o resumo por item (n, mínimo, média,
+  máximo) + `stats`. Erro do servidor (`error`/`ok:false`) → nível `av`.
+- **Batalha**: o pacote do minuto ganha `nomes` (id → nome da criatura, do `spawn`), para o estudo não precisar cruzar.
+- Com isso o estudo de lucro tem: `sessao` (ouro/h, xp/h, loot/h, suprimentos/h, custo real por abate, motivo do fim), `resumo`
+  (`ended.summary`: lootGold, suppliesGold, xp, kills, mortes), `razao` (dano por personagem, dano por mana e por ouro de cada
+  magia, overkill, dano tomado por elemento), `batalha` (cru), `mercado` (cada anúncio, compra, cancelamento, venda ao NPC com
+  `goldCredited`, minhas ordens, inbox, histórico de 30 dias, preços lidos) e `carga` (`pch_compras`, `ciclos_hist`, `radar_dias`).
+- Testes: 467 (+1 nuvem: mercado/comandos; telas: mensagem de mercado pelo grampo com segredo mascarado).

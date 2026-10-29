@@ -592,6 +592,12 @@ t('Log na nuvem: ligado, resumo/log vão num POST para a função do Supabase co
     await W.avancar(0);
     assert(H.NUVEM.bat && H.NUVEM.bat.n === 2 && Object.keys(H.NUVEM.bat.vitais).length === 4, 'pacote do minuto com 2 eventos e os 4 vitais: ' + JSON.stringify(H.NUVEM.bat && [H.NUVEM.bat.n, Object.keys(H.NUVEM.bat.vitais)]));
     H.nuvemBatalhaFlush();
+    /* 2.35.2 — mercado pelo grampo: o que chega e o que sai, sem segredos */
+    ws.emitir({ type: 'market_create_result', data: { entry: { id: 9, itemName: 'crystal ring', unitPrice: 1200 }, worldToken: 'SEGREDO-XYZ' } });
+    ws.send(JSON.stringify({ type: 'market_cancel', data: { orderId: 9, ticket: 'SEGREDO-ABC' } }));
+    await W.avancar(0);
+    const mk = H.NUVEM.fila.filter(i => i.tipo === 'mercado');
+    assert(mk.length === 2 && mk[0].msg === '← market_create_result' && mk[0].dados.entry.unitPrice === 1200 && mk[0].dados.worldToken === '***' && mk[1].msg === '→ market_cancel' && mk[1].dados.ticket === '***', 'mercado: ' + JSON.stringify(mk));
     H.nuvemAnotar({ t: 1000, tipo: 'resumo', nivel: 'erro', msg: 'caçada encerrada: death', dados: { reason: 'death', deathCause: [{ x: 1 }] } });
     assert(H.NUVEM.fila.some(i => i.tipo === 'resumo'), 'entrou na fila');
     const ok = await H.nuvemTick(true); await W.avancar(0);
