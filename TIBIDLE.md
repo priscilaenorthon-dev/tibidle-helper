@@ -6635,3 +6635,16 @@ que vender mais; e de batalha também, completo e estruturado, o que usou e o da
   recusada no teste. Para limpar: `drop function public.tb_log_enviar(text, text, text, jsonb, jsonb); drop schema tibidle cascade;`
   no SQL Editor. Sem o helper mandando nada, os dados param de crescer.
 - O teste ao vivo de 29/10 (ShamanBr) está em `docs/resultado-2.35.md`; o roteiro `docs/teste-ao-vivo-2.35.md` ficou sem uso.
+
+## 2.35.4 (29/10) — Pechinchas desligada ao abrir; o cadeado do jogo (Proteger) manda
+
+- **Pechinchas**: a vigia não liga mais sozinha a cada abertura do jogo (dono: "deixa que eu ativo"). Cada abertura começa
+  DESLIGADA; ligar é a chave "vigiar a cada" em Radar → Pechinchas.
+- **Proteger** (dono: "o que eu colocar como Proteger no item não pode ser vendido no mercado"). Visto ao vivo: o jogo protege
+  por cópia — `protect_item {name, protegido}` → `meta_result {action:'protect_item', applied, meta}` com `meta.protectedIids`
+  novo (e `meta.protectPorCopia`); `meta.protected` (por nome) veio vazio. O helper já guardava a lista; agora:
+  - Equip: `marcarProtegidas(res)` põe `p.protegida` nas sobras com cadeado; `destinosSobras` e `pecasDesmanche` as deixam
+    fora (VENDER NO NPC, ANUNCIAR NO MERCADO e DESMANCHAR), nem com "incluir". A tela conta "N com cadeado".
+  - `venderSobrasNpc`, `liberarParaMercado` e `mkAnunciarUm` conferem `estaProtegida` na hora do clique/envio (proteger
+    depois do ATUALIZAR já vale).
+  - Mercado: sem a lista do cadeado lida do jogo (`MK.protLido`), nenhuma linha fica pronta ("dê F5").

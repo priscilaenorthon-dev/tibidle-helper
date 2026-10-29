@@ -475,7 +475,21 @@ t('destinosSobras: comum vai ao NPC, incomum+ ao Mercado, peça no corpo fica à
     assert.strictEqual(d.npcOuro, 14000);
     assert.deepStrictEqual(d.mercado.map(p => p.iid), ['3', '4'], 'incomum ou refinada: o NPC não compra');
     assert.deepStrictEqual(d.corpo.map(p => p.iid), ['5']);
-    assert.deepStrictEqual(M.destinosSobras(null), { npc: [], mercado: [], corpo: [], npcOuro: 0 });
+    assert.deepStrictEqual(M.destinosSobras(null), { npc: [], mercado: [], corpo: [], protegidas: [], npcOuro: 0 });
+});
+t('2.35.4 cadeado do jogo (Proteger): peça protegida não vai ao NPC, ao Mercado nem ao desmanche, nem com "incluir"', () => {
+    const res = { dispensaveis: [
+        { iid: '1', nome: 'lightning robe', origem: 'depósito', sell: 11000, forja: F(0), protegida: true },
+        { iid: '2', nome: 'blue robe', origem: 'mochila', sell: 3000, forja: F(0) },
+        { iid: '3', nome: 'plate armor', origem: 'depósito', sell: 400, forja: F(1), protegida: true },
+        { iid: '4', nome: 'plate armor', origem: 'mochila', sell: 400, forja: F(1) }] };
+    const d = M.destinosSobras(res);
+    assert.deepStrictEqual(d.npc.map(p => p.iid), ['2']);
+    assert.strictEqual(d.npcOuro, 3000, 'o ouro do NPC não conta a protegida');
+    assert.deepStrictEqual(d.mercado.map(p => p.iid), ['4']);
+    assert.deepStrictEqual(d.protegidas.map(p => p.iid), ['1', '3']);
+    assert.deepStrictEqual(M.pecasDesmanche(res, () => false).map(x => x.iid), ['4']);
+    assert.deepStrictEqual(M.pecasDesmanche(res, null, true).map(x => x.iid), ['4'], 'nem com incluir marcado');
 });
 t('2.16.0: chance de cada linha por Atributo T1 (wiki /forja: ML cai 1 em 89 na arma, regen. de mana 10 em 132 na defesa)', () => {
     assert(Math.abs(M.chanceLinha('nivel_magico', 'weapon', []) - 1 / 89) < 1e-9, 'ML na arma = 1/89');

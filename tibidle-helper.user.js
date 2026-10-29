@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.35.3
+// @version      2.35.4
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.35.3';
+    const VERSAO = '2.35.4';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -7233,12 +7233,15 @@
     const wikiUrlPeca = (nome) => 'https://tibidle.com/wiki/database/equipamentos/' + wikiSlug(nome);
     /* v2.15.0 — as sobras por destino: comum sem refino → NPC (o NPC não compra Incomum+ nem refinada, visto em 04/10);
      * o resto → Mercado; peça ainda no corpo de alguém fica à parte (tirar à mão antes). */
+    /* v2.35.4 — peça com CADEADO do jogo (p.protegida, marcada por marcarProtegidas) não vai a destino nenhum: nem NPC, nem
+     * Mercado, nem desmanche (dono, 29/10: "o que eu colocar como Proteger no item não pode ser vendido no mercado"). */
     function destinosSobras(res) {
-        const disp = (res && res.dispensaveis) || [];
+        const todas = (res && res.dispensaveis) || [];
+        const disp = todas.filter(p => !p.protegida), protegidas = todas.filter(p => p.protegida);
         const corpo = disp.filter(p => p.origem === 'corpo');
         const fora = disp.filter(p => p.origem !== 'corpo');
         const npc = fora.filter(vendivelNpc), mercado = fora.filter(p => !vendivelNpc(p));
-        return { npc, mercado, corpo, npcOuro: npc.reduce((s, p) => s + (Number(p.sell) || 0), 0) };
+        return { npc, mercado, corpo, protegidas, npcOuro: npc.reduce((s, p) => s + (Number(p.sell) || 0), 0) };
     }
     /* v2.14.10 — PLANO DE FORJA (dono, 04/10: "não sei usar a forja: me indica o que fazer e quais atributos
      * encontrar"). Regras do jogo (cliente, 04/10) e da wiki /forja: potência atual = base + 50 × refino; faixas a
@@ -7566,7 +7569,7 @@
          * Mercado, pois são muito raros"). Uma sobra pode ter regen. de mana/vida, ML, skill, dano ou crítico e ainda assim sobrar
          * (todos já vestem igual ou melhor): essa vai para ANUNCIAR NO MERCADO, nunca para fragmento — nem com "incluir" marcado. */
         const vai = (p) => incluir || !temNegocio(p.nome) || (typeof destinoDe === 'function' && destinoDe(p) === 'desmanche');
-        return ((res && res.dispensaveis) || []).filter(p => p && p.iid && ORIG[p.origem] && !vendivelNpc(p) && !encaixeNobre(p) && vai(p))
+        return ((res && res.dispensaveis) || []).filter(p => p && p.iid && ORIG[p.origem] && !p.protegida && !vendivelNpc(p) && !encaixeNobre(p) && vai(p)) // v2.35.4: cadeado fica
             .map(p => ({ iid: p.iid, origem: ORIG[p.origem], nome: p.nome, fragmentos: fragmentosDesmanche(p).n })); // v2.34.1: fragmentos por peça
     }
     /* v2.11.2 — TROCA TEM CUSTO. Com 0,05 de bônus para ficar, o otimizador
@@ -11225,6 +11228,7 @@
     const DESM_LOTE = 10;
     async function desmancharSobras() {
         const FD = filtroDesmanche(); // v2.26.2 — mesmo critério da tela (veredito por peça)
+        marcarProtegidas(EQUIP.res); // v2.35.4
         const alvos = pecasDesmanche(EQUIP.res, FD.temNegocio, !!ler('desm_incluir_mercado', false), FD.destinoDe)
             .sort((a, b) => (b.fragmentos || 0) - (a.fragmentos || 0)); // v2.34.1 — quem rende mais primeiro (lotes de 10: o que importa sai antes)
         if (!alvos.length || EQUIP.equipando || EQUIP.lendo) return;
@@ -11251,7 +11255,7 @@
     /* v2.15.0 — botões ANUNCIAR das caixinhas do Equip: libera as peças para a aba Mercado (MK.liberadas), marca cada uma
      * ('i:'+iid) e abre a aba. A confirmação continua lá: 2 toques, taxa escrita. Nada é anunciado aqui. */
     function liberarParaMercado(pecas) {
-        const lista = (pecas || []).filter(p => p && p.iid && p.origem !== 'corpo');
+        const lista = (pecas || []).filter(p => p && p.iid && p.origem !== 'corpo' && !estaProtegida(p)); // v2.35.4: cadeado fica
         if (!lista.length) { EQUIP.aviso = 'nada para anunciar nesta lista'; renderizar(); return; }
         for (const p of lista) { MK.liberadas.add(p.iid); MK.marcados.add('i:' + p.iid); }
         MK.conf = null;
@@ -11266,7 +11270,7 @@
      * conhece o nome: ela iria junto), abre VENDER, desmarca tudo que não é da lista e confirma. Sucesso medido pelo
      * ouro (venderNoNpc). A mochila conferida é a que o depot_result devolve; sem ela, a última vista (mkBagAtual). */
     async function venderSobrasNpc(pecas) {
-        const lista = (pecas || []).filter(p => p && p.origem !== 'corpo');
+        const lista = (pecas || []).filter(p => p && p.origem !== 'corpo' && !estaProtegida(p)); // v2.35.4: cadeado fica
         if (!lista.length || EQUIP.equipando || EQUIP.lendo) return;
         if (emHunt()) { EQUIP.aviso = 'vender só na cidade'; renderizar(); return; }
         if (!socketAberto()) { EQUIP.aviso = 'o socket do jogo não foi capturado — F5 com o helper instalado'; renderizar(); return; }
@@ -11581,9 +11585,10 @@
         if (!linhas) h += `<div class="tb-ok" style="margin:4px 0">${VOC_ROTULO[v]}: nada a trocar — o que está no corpo já é o melhor que você tem.</div>`;
         /* v2.16.0 — resumo do estoque em uma linha: onde cada peça vai parar (dono, 12/10: "saber o que é bom para cada
          * personagem e o que não presta para desmanchar ou vender") */
+        marcarProtegidas(R); // v2.35.4 — cadeado do jogo: fora de NPC, Mercado e desmanche
         { const Dv = destinosSobras(R), nb = (R.bases || []).length, nn = (R.nobres || []).length, nr = R.reservas.size;
           const fragSob = Dv.mercado.reduce((s, p) => s + fragmentosDesmanche(p).n, 0);
-          h += `<div class="tb-mut tb-eq-nota" style="margin:2px 0 4px">Estoque: <b>${nr}</b> reserva${nr === 1 ? '' : 's'} · <b>${nb}</b> base${nb === 1 ? '' : 's'} de forja · <b>${nn}</b> com encaixe que o Mercado paga · sobras: <b>${Dv.npc.length}</b> para o NPC (${milBR(Dv.npcOuro)}) e <b>${Dv.mercado.length}</b> Incomum+ para Mercado ou desmanche (${numBR(fragSob)} fragmentos se desmanchar todas)${Dv.corpo.length ? ` · ${Dv.corpo.length} no corpo que ninguém usa` : ''}.</div>`; }
+          h += `<div class="tb-mut tb-eq-nota" style="margin:2px 0 4px">Estoque: <b>${nr}</b> reserva${nr === 1 ? '' : 's'} · <b>${nb}</b> base${nb === 1 ? '' : 's'} de forja · <b>${nn}</b> com encaixe que o Mercado paga · sobras: <b>${Dv.npc.length}</b> para o NPC (${milBR(Dv.npcOuro)}) e <b>${Dv.mercado.length}</b> Incomum+ para Mercado ou desmanche (${numBR(fragSob)} fragmentos se desmanchar todas)${Dv.corpo.length ? ` · ${Dv.corpo.length} no corpo que ninguém usa` : ''}${Dv.protegidas.length ? ` · <b>${Dv.protegidas.length}</b> com cadeado (Proteger): não vendo, não anuncio, não desmancho` : ''}.</div>`; }
         /* v2.11.6 — wiki /forja: peça Incomum ou melhor (ou refinada) NÃO vende na
          * cidade, no Auto Selling nem no Mercado — só se usa ou se desmancha, e o
          * desmanche é a ÚNICA fonte de fragmentos (gemas). Comum sem refino vende. */
@@ -13511,6 +13516,7 @@
         const liquido = ok ? preco * b.qtd - taxa : null;
         const abaixo = ok && npc != null ? liquido <= npc * b.qtd : null;
         const bloqueio = !e.tradeable ? 'a lista de negociáveis (/tradeable) não carregou — ATUALIZAR'
+            : e.protLido === false ? 'a lista dos itens com cadeado ainda não chegou do jogo — dê F5' // v2.35.4
             : npc == null ? 'o preço do NPC (/prices) não carregou — ATUALIZAR'
             : b.bloq ? b.bloq
             : origem === 'pendente' ? (r.pendente.erro ? 'não consegui ler o preço — digite um' : 'falta ler o preço — ATUALIZAR')
@@ -13743,7 +13749,7 @@
     const mkErroTexto = (c) => MK_ERROS[c] ? MK_ERROS[c] + ' (' + c + ')' : String(c);
     const MK_ORIGEM = { menor: 'menor −1', parecida: 'parecida −1', justo: 'ajustado pelo valor', faixa: 'faixa da raridade', meu: 'seu anúncio', media: 'média 30 d', piso: 'piso da média 30 d', vazio: 'sem referência', digitado: 'digitado', pendente: 'falta ler' };
     const MK_MOTIVO_CAIXA = { trade_proceeds: 'venda', order_cancelled: 'ordem cancelada', order_expired: 'ordem expirada', capacity: 'não coube', offline: 'offline' };
-    const MK = { premiumAte: undefined, bag: null, bagInst: null, bag_t: 0, protMeta: { nomes: [], iids: [] }, protInv: { nomes: [], iids: [] },
+    const MK = { premiumAte: undefined, bag: null, bagInst: null, bag_t: 0, protMeta: { nomes: [], iids: [] }, protInv: { nomes: [], iids: [] }, protLido: false,
                  taxa: null, taxaWiki: false, tradeable: null, npc: null, restErro: null,
                  catalogo: null, catalogo_t: 0, minhas: null, minhas_t: 0, inbox: null, inbox_t: 0, livros: {}, copias: {}, stats: {},
                  envios: [], ultimoEnvio: 0, pausaAte: 0, pend: null, ocupado: null, progresso: null, parar: false, erro: null, t: 0,
@@ -13755,6 +13761,18 @@
         if (Array.isArray(iids)) alvo.iids = iids.filter(x => typeof x === 'string');
     }
     const mkProtegidos = () => ({ nomes: MK.protMeta.nomes.concat(MK.protInv.nomes), iids: MK.protMeta.iids.concat(MK.protInv.iids) });
+    /* v2.35.4 — O CADEADO DO JOGO MANDA (dono, 29/10). O jogo protege por cópia: protect_item → meta_result com
+     * meta.protectedIids novo (visto ao vivo), que observarMercado já guarda. Estas duas valem na hora do clique, não na
+     * leitura do Equip: proteger depois do ATUALIZAR já tira a peça da venda, do anúncio e do desmanche. */
+    function estaProtegida(p) {
+        if (!p) return false;
+        const pr = mkProtegidos();
+        return !!((p.iid && pr.iids.includes(p.iid)) || (p.nome && pr.nomes.some(n => mkMin(n) === mkMin(p.nome))));
+    }
+    function marcarProtegidas(res) {
+        for (const p of ((res && res.dispensaveis) || [])) if (p) p.protegida = estaProtegida(p);
+        return res;
+    }
 
     /* Uma linha em observarEnviado: conta TODO market_* que sai (do helper ou
      * da janela do jogo) — o limite de 20 ações/min é por conta. */
@@ -13774,7 +13792,7 @@
         if (t === 'welcome' && d.account && typeof d.account === 'object' && 'premiumUntil' in d.account) MK.premiumAte = d.account.premiumUntil || null;
         if (t === 'meta_result' && typeof d.premiumUntil === 'string') MK.premiumAte = d.premiumUntil;
         const meta = d.meta && typeof d.meta === 'object' ? d.meta : t === 'meta_state' ? d : null;
-        if (meta && (Array.isArray(meta.protected) || Array.isArray(meta.protectedIids))) mkAnotarProt(MK.protMeta, meta.protected, meta.protectedIids);
+        if (meta && (Array.isArray(meta.protected) || Array.isArray(meta.protectedIids))) { mkAnotarProt(MK.protMeta, meta.protected, meta.protectedIids); MK.protLido = true; }
         const inv = Array.isArray(d.inventory) ? d.inventory : (d.state && Array.isArray(d.state.inventory) ? d.state.inventory : null);
         if (inv) {
             const nomes = [], iids = [];
@@ -13876,7 +13894,7 @@
         const b = mkBagAtual(), R = EQUIP.res;
         return { bag: b ? b.bag : null, bagInst: b ? b.inst : null, depot: ESTADO_WS.depot ? ESTADO_WS.depot.entries : null,
                  tradeable: MK.tradeable, npc: MK.npc, taxa: MK.taxa, catalogo: MK.catalogo, minhas: MK.minhas, livros: MK.livros, copias: MK.copias, stats: MK.stats,
-                 prot: mkProtegidos(), nunca: autoHunt().nuncaVender || [], equip: R ? { usadas: [...(R.usadas || [])], reservas: [...(R.reservas || []), ...(R.nobres || []).map(p => p.iid), ...(R.bases || []).map(p => p.iid)],
+                 prot: mkProtegidos(), protLido: MK.protLido, nunca: autoHunt().nuncaVender || [], equip: R ? { usadas: [...(R.usadas || [])], reservas: [...(R.reservas || []), ...(R.nobres || []).map(p => p.iid), ...(R.bases || []).map(p => p.iid)],
                                                                          sobras: (R.dispensaveis || []).map(p => p.iid).filter(Boolean) } : null,
                  naCidade: !emHunt(), digitados: MK.digitados, marcados: [...MK.marcados], liberadas: [...MK.liberadas] };
     }
@@ -13995,6 +14013,8 @@
         if (qtd < it.qtd) log(`mercado: ${it.nome}: só ${qtd} de ${it.qtd} na mochila — anuncio ${qtd}`, 'info');
         /* o piso do NPC de novo: a quantidade pode ter mudado */
         if (mkAbaixoDoNpc(it.preco, qtd, it.npc, MK.taxa) !== false) { log(`mercado: ${it.nome} a ${mkFmt(it.preco)} não passa do NPC — não anunciei`, 'erro'); return { ok: false }; }
+        /* v2.35.4 — o cadeado de novo, na hora de mandar: o dono pode ter protegido depois de marcar */
+        if (!MK.protLido || estaProtegida({ iid: it.iid, nome: it.nome })) { log(`mercado: ${it.nome} ${MK.protLido ? 'está com cadeado (Proteger)' : '— a lista do cadeado não chegou do jogo'} — não anunciei`, 'erro'); return { ok: false }; }
         /* 3) a ordem */
         const data = { side: 'SELL', asset: 'ITEM', itemName: it.nome, unitPrice: it.preco, quantity: qtd, requestId: mkRid() };
         if (it.iid) data.iid = it.iid;
@@ -14919,7 +14939,7 @@
      * Dono, 21/10: "a turma com pressa de vender coloca item muito abaixo da média; analisa esse mercado para a gente
      * comprar e revender". Vigia só keys de Elite e itens de quest (ilhas e bosses), que giram muito e têm preço estável.
      * Decisões dele: vigia de 5 min ligada por ele, até 1 milhão por compra, e cada oferta mostra a média de 30 dias. */
-    const PCH_PADRAO = { vigiar: true, min: 5, lucroPct: 0.15, lucroMin: 2000, teto: 1000000, negMin: 50, extras: [], fora: [] };
+    const PCH_PADRAO = { vigiar: false, min: 5, lucroPct: 0.15, lucroMin: 2000, teto: 1000000, negMin: 50, extras: [], fora: [] };
     const PCH_TAXA = 0.05; // taxa de criação do anúncio de revenda (wiki /mercado); vender para uma compra aberta não paga
     const pchMin = (s) => String(s == null ? '' : s).toLowerCase().trim();
     /* bosses = /bosses/select (Elites `kind: mini` com keyItem; bosses com access.items), ilhas = /islands (access.items),
@@ -17260,10 +17280,11 @@
         setInterval(() => verificarAtualizacao().catch(() => { }), 30 * 60 * 1000);
         /* v2.13.0 — Radar: o vigiar dos alertas (só age se o dono ligou) e o dia salvo ao sair */
         setInterval(radarVigia, 60000);
-        /* v2.29.0 — dono, 21/10: a vigia das pechinchas fica LIGADA sempre que o navegador abre (só lê o Mercado; comprar é por botão) */
+        /* v2.29.0 — a vigia das pechinchas ligava sozinha a cada abertura. v2.35.4 — dono, 29/10: "deixa que eu ativo": cada abertura do
+         * jogo começa com ela DESLIGADA; ligar é a chave "vigiar a cada" em Radar → Pechinchas (vale até o próximo F5). */
         /* 21/10 — o mínimo de 30 mil no total barrava as keys (média 15–40 mil): vira 2 mil; o filtro é o lucro de 15 % por unidade */
         try { const pc = ler('pch_cfg', null); if (pc && pc.lucroMin === 30000) guardarPchCfg({ lucroMin: PCH_PADRAO.lucroMin }); } catch (e) { falhou('pechinchas (migrar)', e); }
-        try { if (!pchCfg().vigiar) { guardarPchCfg({ vigiar: true }); log('pechinchas: vigia ligada (padrão a cada abertura) — só lê o Mercado a cada ' + pchCfg().min + ' min', 'info'); } } catch (e) { falhou('pechinchas (ligar vigia)', e); }
+        try { if (pchCfg().vigiar) guardarPchCfg({ vigiar: false }); } catch (e) { falhou('pechinchas (desligar vigia)', e); }
         setInterval(pchVigia, 60000);
         setInterval(() => { try { pchPintarAlerta(); } catch (e) { /* só o aviso */ } }, 1000); // o título da aba pisca a cada segundo
         setInterval(() => { try { if (emHunt()) danoMapaGuardar(); } catch (e) { falhou('dano por mapa', e); } }, 120000); // v2.21.0

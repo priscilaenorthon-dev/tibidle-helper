@@ -45,6 +45,17 @@ const base = (x) => Object.assign({ tradeable: TRAD, npc: NPC, taxa: 0.05, catal
     prot: { nomes: [], iids: [] }, nunca: [], equip: { usadas: [], reservas: [] }, naCidade: true, digitados: {}, marcados: [] }, x || {});
 const linha = (r, chave) => r.linhas.find(l => l.chave === chave);
 
+t('2.35.4 cadeado: sem a lista de protegidos do jogo (protLido false) nada fica pronto; com ela, a cópia protegida sai da lista', () => {
+    const cat = { 'small ruby': { trades30d: 4, avgPrice30d: 900 } };
+    let r = P.mkMontar(base({ bag: { 'small ruby': 2 }, catalogo: cat, livros: { 'small ruby': { orders: [{ id: 'x', side: 'SELL', unitPrice: 950, quantityRemaining: 1 }] } }, protLido: false }));
+    assert(/cadeado/.test(linha(r, 'n:small ruby').bloqueio), 'sem a lista do cadeado: ' + linha(r, 'n:small ruby').bloqueio);
+    r = P.mkMontar(base({ bag: { 'small ruby': 2 }, catalogo: cat, livros: { 'small ruby': { orders: [{ id: 'x', side: 'SELL', unitPrice: 950, quantityRemaining: 1 }] } }, protLido: true }));
+    assert(!/cadeado/.test(linha(r, 'n:small ruby').bloqueio || ''), 'com a lista lida e nada protegido, o cadeado não barra');
+    r = P.mkMontar(base({ bagInst: [{ iid: 'e9', name: 'elvish bow', forja: { raridade: 1 } }], bag: { 'elvish bow': 1 }, protLido: true,
+        prot: { nomes: [], iids: ['e9'] }, equip: { usadas: [], reservas: [], sobras: ['e9'] }, liberadas: ['e9'] }));
+    assert(!linha(r, 'i:e9'), 'protegida virou linha mesmo liberada pelo Equip');
+    assert(/protegido/.test((r.fora.find(f => f.iid === 'e9') || {}).motivo));
+});
 t('taxa = max(1, floor(preço × qtd × 5 %)) — igual ao cliente', () => {
     assert.strictEqual(P.mkTaxa(100, 1, 0.05), 5);
     assert.strictEqual(P.mkTaxa(10, 1, 0.05), 1, 'mínimo de 1');
