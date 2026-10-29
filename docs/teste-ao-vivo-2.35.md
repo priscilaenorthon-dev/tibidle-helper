@@ -1,3 +1,5 @@
+> **Sem uso desde a 2.35.3 (29/10): o Log na nuvem saiu do helper a pedido do dono.**
+
 # Roteiro de teste ao vivo — Tibidle Helper 2.35 (Log na nuvem)
 
 Para o Claude rodar quando o dono chegar em casa (dono, 29/10: "anota isso no código para a gente testar quando eu chegar em

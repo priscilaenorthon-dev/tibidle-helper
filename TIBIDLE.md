@@ -6623,3 +6623,15 @@ que vender mais; e de batalha também, completo e estruturado, o que usou e o da
   magia, overkill, dano tomado por elemento), `batalha` (cru), `mercado` (cada anúncio, compra, cancelamento, venda ao NPC com
   `goldCredited`, minhas ordens, inbox, histórico de 30 dias, preços lidos) e `carga` (`pch_compras`, `ciclos_hist`, `radar_dias`).
 - Testes: 467 (+1 nuvem: mercado/comandos; telas: mensagem de mercado pelo grampo com segredo mascarado).
+
+## 2.35.3 — o Log na nuvem saiu (29/10)
+- Dono, 29/10, depois do teste ao vivo: "cancela qualquer coisa da nossa automação com o Supabase, vai ajudar de nada" e "pode
+  retirar da nossa automação gerar log para o Supabase". Saiu tudo o que a 2.35.0–2.35.2 punha no helper: o bloco `@@NUVEM-PURO`,
+  o envio a cada minuto, os ganchos no grampo do socket, no `log()`, no frame, no `ended` e no fechamento da sessão, o bloco
+  "Log na nuvem" da aba Status (avançado) e o token embutido. Nada do jogo sai mais do navegador. `testes/nuvem.test.js` e o teste
+  da nuvem em `telas.test.js` saíram junto.
+- O que ficou no Supabase (`ysuiabhylwafhdsjqdjd`, schema `tibidle`: tabelas `log`, `estado`, `cfg` e a função
+  `public.tb_log_enviar`) NÃO foi apagado: o projeto é compartilhado com outro sistema do dono e a ferramenta de migração foi
+  recusada no teste. Para limpar: `drop function public.tb_log_enviar(text, text, text, jsonb, jsonb); drop schema tibidle cascade;`
+  no SQL Editor. Sem o helper mandando nada, os dados param de crescer.
+- O teste ao vivo de 29/10 (ShamanBr) está em `docs/resultado-2.35.md`; o roteiro `docs/teste-ao-vivo-2.35.md` ficou sem uso.

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.35.2
+// @version      2.35.3
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.35.2';
+    const VERSAO = '2.35.3';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -108,7 +108,6 @@
                 WS.tipos[t] = (WS.tipos[t] || 0) + 1;
                 if (!WS.amostras[t]) WS.amostras[t] = semSegredos(o).slice(0, 400);
                 try { observarRecebido(o); } catch (e) { falhou('observarRecebido', e); }
-                try { nuvemProtoAnotar(o, 'in'); } catch (e) { /* v2.35.2 — a nuvem nunca derruba o grampo */ }
             };
             const ouvir = (ws) => {
                 try {
@@ -520,7 +519,6 @@
     function log(msg, tipo) {
         const linha = { t: Date.now(), msg: String(msg), tipo: tipo || 'info' };
         LOG.push(linha);
-        nuvemAnotar({ t: linha.t, tipo: 'log', nivel: linha.tipo, msg: linha.msg }); // v2.35.0 — log na nuvem (só com o interruptor ligado)
         while (LOG.length > 300) LOG.shift();
         if (linha.tipo === 'erro') ERROS.naoLidos++;
         guardar('log', LOG);
@@ -528,237 +526,7 @@
         try { console.log('[TB]', linha.msg); } catch (e) { }
     }
     /* @@ARMAZEM-FIM */
-    /* @@NUVEM-PURO-INICIO — v2.35.0: LOG NA NUVEM (dono, 29/10: "tenho o bot em 3 navegadores com 3 contas; quero que você tenha
-     * acesso ao log de tudo que o boneco faz — batalha, compra e venda, a situação dele — e vá analisando e criando melhorias").
-     * Destino: o Supabase do dono, função public.tb_log_enviar(token, conta, versão, itens[], estado). O token é conferido no
-     * servidor (tabela tibidle.cfg, sem leitura pública); a chave publicável é pública por desenho. Nada do jogo é comandado por
-     * aqui — só SAI informação, e só com o interruptor "Log na nuvem" ligado (Status › avançado). Contas puras; testes/nuvem.test.js. */
-    const NUVEM_URL_PADRAO = 'https://ysuiabhylwafhdsjqdjd.supabase.co';
-    const NUVEM_KEY_PADRAO = 'sb_publishable_nRih292xwSl1_YoP38zXSw_htrtiyVP';
-    /* v2.35.1 — dono, 29/10: "coloca esse token direto na atualização, sem eu precisar fazer nada". O token só dá direito de ESCREVER
-     * no log (nunca ler); se vazar, o pior é lixo no banco — e aí troca-se o token em tibidle.cfg e aqui. Ligado por padrão. */
-    const NUVEM_TOKEN_PADRAO = 'mHcTs_4T0GyIHRV6deMzpcdgfRnVFbR4';
-    const NUVEM_MAX_FILA = 600, NUVEM_LOTE = 200, NUVEM_CADA_MS = 60000, NUVEM_FOTO_CADA_MS = 5 * 60000, NUVEM_MSG_MAX = 2000;
-    function nuvemConfigOk(cfg) {
-        return !!(cfg && cfg.on && /^https:\/\/[^\s/]+\.supabase\.co$/.test(String(cfg.url || '').replace(/\/+$/, '')) && String(cfg.key || '').length >= 20
-                  && String(cfg.token || '').length >= 16 && String(cfg.conta || '').trim().length > 0);
-    }
-    function nuvemEnfileirar(fila, item, max) {
-        if (!item || !item.tipo) return fila;
-        fila.push({ t: Number(item.t) || Date.now(), tipo: String(item.tipo), nivel: item.nivel ? String(item.nivel) : null,
-                    msg: item.msg == null ? null : String(item.msg).slice(0, NUVEM_MSG_MAX), dados: item.dados === undefined ? null : item.dados });
-        const teto = max || NUVEM_MAX_FILA;
-        while (fila.length > teto) fila.shift();
-        return fila;
-    }
-    function nuvemMontar(cfg, fila, foto, versao) {
-        const itens = fila.slice(0, NUVEM_LOTE);
-        return { url: String(cfg.url).replace(/\/+$/, '') + '/rest/v1/rpc/tb_log_enviar',
-                 headers: { 'Content-Type': 'application/json', apikey: cfg.key, Authorization: 'Bearer ' + cfg.key },
-                 corpo: { p_token: cfg.token, p_conta: String(cfg.conta).trim().slice(0, 64), p_versao: versao, p_itens: itens, p_estado: foto || null }, n: itens.length };
-    }
-    /* a foto do boneco: o que preciso para saber "a situação em que ele se encontra" */
-    function nuvemFoto(ent) {
-        ent = ent || {};
-        const f = ent.frame || null;
-        return { t: Date.now(), nivel: ent.nivel || null, ouro: ent.ouro != null ? ent.ouro : null, cacando: !!ent.emHunt, hunt: ent.hunt || null,
-                 huntId: ent.huntId != null ? ent.huntId : null, boss: ent.boss || null, lure: f && f.lureTier != null ? f.lureTier : null, cap: f && f.cap ? f.cap : null,
-                 criaturas: f && Array.isArray(f.active) ? f.active.slice(0, 12) : [],
-                 party: ((f && f.party) || []).map(p => ({ voc: p.voc, hp: p.hp, maxHp: p.maxHp, mana: p.mana, maxMana: p.maxMana, dist: p.dist })),
-                 analisador: f && f.an ? { xpH: f.an.xpPerHour, kills: f.an.kills, lootGold: f.an.lootGold, suppliesGold: f.an.suppliesGold, damageDealt: f.an.damageDealt,
-                                           damageTaken: f.an.damageTaken, healingDone: f.an.healingDone, elapsedMs: f.an.elapsedMs } : null,
-                 autoHunt: !!ent.autoHunt, scan: !!ent.scan, aba: ent.aba || null, ultimoEnded: ent.ultimoEnded || null };
-    }
-    /* v2.35.0 — CARGA: o dono fica 1–2 h por dia com o helper aberto ("eu ligo o notebook e aí você cata todos os dados importantes
-     * daquela conta"). No primeiro envio de cada página aberta (e a cada 6 h) vai o que o helper acumulou enquanto esteve fechado:
-     * sessões do livro-razão, dias do Radar, mortes, dano por mapa, tabela de dano das magias, Auto Hunt e o Log inteiro.
-     * nuvemCapar: cada bloco cabe em NUVEM_CARGA_MAX chars — lista fica com a cauda (o mais novo), objeto com as últimas chaves. */
-    const NUVEM_CARGA_MAX = 200000, NUVEM_CARGA_CADA_MS = 6 * 3600000;
-    /* dono, 29/10: "no log tem que saber tudo: equipamentos, status de cada personagem, tudo que a gente puder recolher" */
-    const NUVEM_CARGA_CHAVES = ['sessoes', 'radar_dias', 'radar_mortes', 'dano_mapa', 'danos_KNIGHT', 'danos_PALADIN', 'danos_SORCERER', 'danos_DRUID', 'auto_hunt', 'hunt_id', 'modelo',
-                                'skills_vistas', 'equip_depot', 'equip_escolhas', 'equip_bebe', 'scan_resultados', 'ciclos_hist', 'prog_bestiario', 'best_estado', 'pch_compras', 'dc_foto', 'inv_modelos', 'melhorias_cfg', 'log'];
-    /* a ficha dos personagens, do que o socket já trouxe: roster com equipamento (ficha + forja de cada peça), skills, perfis do
-     * servidor, configs de batalha, legado, loyalty, economia, cooldown de boss e o depósito lido */
-    function nuvemPersonagens(ent) {
-        ent = ent || {};
-        const out = { t: Date.now(), conta: ent.conta || null, nivel: ent.nivel || null, roster: ent.rosterFull || ent.roster || null, skills: ent.sk || null, perfis: ent.perfisDoServidor || ent.profiles || null,
-                      battleConfigs: ent.battleConfigs || null, legado: ent.legado || null, loyalty: ent.loyalty || null, eco: ent.eco || null, bossCooldowns: ent.bossCooldowns || null,
-                      depot: ent.depot || null, party: ent.party || null, prey: ent.prey || null, keyBag: ent.keyBag || null };
-        for (const k of Object.keys(out)) if (out[k] == null) delete out[k];
-        return out;
-    }
-    function nuvemCapar(v, max) {
-        max = max || NUVEM_CARGA_MAX;
-        const tam = (x) => { try { return JSON.stringify(x).length; } catch (e) { return Infinity; } };
-        if (tam(v) <= max) return { dados: v, cortado: false };
-        if (Array.isArray(v)) { let a = v.slice(); while (a.length > 1 && tam(a) > max) a = a.slice(Math.ceil(a.length / 2)); return { dados: a, cortado: true }; }
-        if (v && typeof v === 'object') {
-            let ks = Object.keys(v).sort(); const o = {};
-            while (ks.length > 1 && tam(Object.fromEntries(ks.map(k => [k, v[k]]))) > max) ks = ks.slice(Math.ceil(ks.length / 2));
-            for (const k of ks) o[k] = v[k];
-            return { dados: o, cortado: true };
-        }
-        return { dados: String(v).slice(0, max), cortado: true };
-    }
-    /* v2.35.0 — LOG DE BATALHA (dono, 29/10: "tem uma aba log no jogo de batalha: quanto dá de dano, quanto recebeu, magias, poção —
-     * quero o máximo de informação, tudo completo"). Cada frame do socket traz `events` (spawn, cast com hits, hit, mhit, mcast com
-     * casas, kill, death, wave, wave_timer…) e a party com vida/mana/poções bebidas (supplyUsed). Tudo vai cru, empacotado por
-     * minuto (tipo `batalha`), e o livro-razão consolidado vai a cada 5 min (tipo `razao`). */
-    const NUVEM_BAT_MS = 60000, NUVEM_BAT_MAX_EV = 3000;
-    function nuvemBatalhaNovo(agora, huntId) { return { t0: agora || Date.now(), huntId: huntId != null ? huntId : null, eventos: [], vitais: {}, nomes: {}, n: 0, cortado: false }; }
-    function nuvemBatalhaEvento(B, ev, agora) {
-        if (!B || !ev || typeof ev !== 'object' || !ev.kind) return;
-        if (ev.kind === 'spawn' && ev.id != null && ev.name) B.nomes[ev.id] = ev.name; // id → nome da criatura (os hits só trazem o id)
-        B.n++;
-        if (B.eventos.length >= NUVEM_BAT_MAX_EV) { B.cortado = true; return; }
-        const c = { k: ev.kind, dt: Math.max(0, (agora || Date.now()) - B.t0) };
-        for (const f of ['who', 'id', 'name', 'rune', 'amount', 'hp', 'maxHp', 'mana', 'type', 'atk', 'count', 'ms', 'item', 'reason']) if (ev[f] !== undefined && ev[f] !== null) c[f] = ev[f];
-        if (Array.isArray(ev.hits)) c.hits = ev.hits.map(h => { const o = {}; for (const f of ['who', 'id', 'amount', 'hp', 'mana']) if (h && h[f] !== undefined && h[f] !== null) o[f] = h[f]; return o; });
-        if (Array.isArray(ev.cells)) c.cells = ev.cells.length;
-        B.eventos.push(c);
-    }
-    function nuvemBatalhaVitais(B, party) {
-        if (!B || !Array.isArray(party)) return;
-        for (const p of party) {
-            if (!p || !p.vocation) continue;
-            const v = String(p.vocation).toUpperCase(), x = B.vitais[v] || (B.vitais[v] = { hpMin: null, hpFim: null, maxHp: null, manaMin: null, manaFim: null, maxMana: null, supplyUsed: null, suppliesGold: null });
-            const hp = Number(p.hp), mana = Number(p.mana);
-            if (Number.isFinite(hp)) { x.hpFim = hp; x.hpMin = x.hpMin == null ? hp : Math.min(x.hpMin, hp); }
-            if (Number.isFinite(mana)) { x.manaFim = mana; x.manaMin = x.manaMin == null ? mana : Math.min(x.manaMin, mana); }
-            if (p.maxHp != null) x.maxHp = p.maxHp; if (p.maxMana != null) x.maxMana = p.maxMana;
-            if (p.supplyUsed && typeof p.supplyUsed === 'object') x.supplyUsed = p.supplyUsed;
-            if (p.suppliesGold != null) x.suppliesGold = Number(p.suppliesGold) || 0;
-        }
-    }
-    function nuvemBatalhaFechar(B, agora) {
-        if (!B || (!B.n && !Object.keys(B.vitais).length)) return null;
-        const t1 = agora || Date.now(), c = nuvemCapar({ t0: B.t0, t1, huntId: B.huntId, eventos: B.eventos, vitais: B.vitais, nomes: B.nomes, nEventos: B.n });
-        return { t: B.t0, tipo: 'batalha', nivel: B.cortado || c.cortado ? 'av' : 'info', msg: `${B.n} eventos em ${Math.round((t1 - B.t0) / 1000)} s` + (B.cortado ? ' (cortado em ' + NUVEM_BAT_MAX_EV + ')' : ''), dados: c.dados };
-    }
-    /* v2.35.2 — MERCADO, VENDAS E COMANDOS COMPLETOS (dono, 29/10: "quero todas as informações de mercado, o que comprou, o que
-     * vendeu, para um estudo completo: onde está lucrando mais, o que vender mais"). O grampo do socket já vê toda mensagem; daqui
-     * vai, crua e sem segredos, cada mensagem de mercado/venda/loja/forja que CHEGA (tipo `mercado`) e cada comando que SAI
-     * (tipo `mercado` se é de mercado/venda, `comando` se é do jogo: start_hunt, stop, equip, perfis…). Leituras grandes do
-     * Mercado (cópias, lista, catálogo, estatísticas) vão cruas no máximo 1× a cada 30 min por categoria/item; no meio-tempo vai
-     * só um resumo por item (n, mínimo, média, máximo) para o banco não inchar. */
-    const NUVEM_PROTO_IN = /^(market_|sell_result$|loja_|acesso_|forge|purif|key_|depot_withdraw|equip)/;
-    const NUVEM_PROTO_OUT = /^(market_|sell$|sell_|loja_|acesso_|forge|purif|key_|equip$|depot_withdraw$|start_hunt$|stop$|set_lure$|set_formation$|profiles_set$|update_battle_config$|analyzer_reset$)/;
-    const NUVEM_PROTO_MERCADO = /^(market_|sell|loja_|acesso_|forge|purif|key_)/;
-    const NUVEM_PROTO_GRANDE = /^(market_copies_result|market_list_result|market_catalog_result|market_stats_result|market_history_result)$/;
-    const NUVEM_PROTO_GRANDE_CADA_MS = 30 * 60000;
-    function nuvemResumoCopias(lista) {
-        const por = {};
-        for (const c of (Array.isArray(lista) ? lista : [])) {
-            if (!c) continue;
-            const nome = (c.instance && c.instance.name) || c.itemName || c.name || '?', p = Number(c.unitPrice != null ? c.unitPrice : c.price);
-            const x = por[nome] || (por[nome] = { n: 0, min: null, max: null, soma: 0, np: 0 });
-            x.n++; if (Number.isFinite(p)) { x.np++; x.soma += p; x.min = x.min == null ? p : Math.min(x.min, p); x.max = x.max == null ? p : Math.max(x.max, p); }
-        }
-        for (const x of Object.values(por)) { x.media = x.np ? Math.round(x.soma / x.np) : null; delete x.soma; delete x.np; }
-        return por;
-    }
-    function nuvemProto(o, dir, agora, vistos) {
-        if (!o || typeof o.type !== 'string') return null;
-        const t = o.type, entra = dir === 'in';
-        if (!(entra ? NUVEM_PROTO_IN : NUVEM_PROTO_OUT).test(t)) return null;
-        const d = o.data && typeof o.data === 'object' ? o.data : {};
-        const cat = d.category || d.itemName || d.asset || (d.page != null ? 'p' + d.page : '');
-        let dados = d, nivel = 'info', msg = (entra ? '← ' : '→ ') + t + (cat ? ' ' + cat : '');
-        if (entra && NUVEM_PROTO_GRANDE.test(t)) {
-            const chave = t + '|' + cat, ult = vistos ? vistos[chave] : null;
-            if (ult != null && (agora || 0) - ult < NUVEM_PROTO_GRANDE_CADA_MS) {
-                const lista = d.copies || d.orders || d.items || d.entries || [];
-                dados = { resumido: true, n: Array.isArray(lista) ? lista.length : 0, porItem: nuvemResumoCopias(lista), stats: d.stats || null };
-                msg += ' (resumo)';
-            } else if (vistos) vistos[chave] = agora || Date.now();
-        }
-        if (d.error || d.erro || d.ok === false) nivel = 'av';
-        const c = nuvemCapar(dados);
-        return { t: agora || Date.now(), tipo: NUVEM_PROTO_MERCADO.test(t) ? 'mercado' : 'comando', nivel: c.cortado ? 'av' : nivel, msg: msg + (c.cortado ? ' (cortado)' : ''), dados: c.dados };
-    }
-    /* @@NUVEM-PURO-FIM */
-    const NUVEM = { fila: [], enviando: false, ultimo: 0, ultimoOk: 0, erro: null, enviados: 0, tFoto: 0, tCarga: 0, bat: null, vistos: {} };
-    /* o grampo chama para toda mensagem; só as de mercado/venda/comando passam (regex por tipo antes de qualquer custo) */
-    function nuvemProtoAnotar(o, dir) {
-        if (!o || typeof o.type !== 'string' || !(dir === 'in' ? NUVEM_PROTO_IN : NUVEM_PROTO_OUT).test(o.type)) return;
-        if (!lerComum('nuvem_on', true)) return;
-        const limpo = JSON.parse(semSegredos(o)); // ticket/token/senha viram '***' antes de sair
-        const it = nuvemProto(limpo, dir, Date.now(), NUVEM.vistos);
-        if (it) nuvemEnfileirar(NUVEM.fila, it);
-    }
-    /* o pacote de batalha do minuto: fecha a cada NUVEM_BAT_MS, no `ended` e quando a hunt muda */
-    function nuvemBatalhaFlush(agora) {
-        agora = agora || Date.now();
-        if (!NUVEM.bat) return;
-        const it = nuvemBatalhaFechar(NUVEM.bat, agora); NUVEM.bat = null;
-        if (it) nuvemEnfileirar(NUVEM.fila, it);
-    }
-    function nuvemFrame(d, agora) { // chamado em cada frame do socket, só com o interruptor ligado
-        if (!lerComum('nuvem_on', true)) return;
-        agora = agora || Date.now();
-        if (NUVEM.bat && (agora - NUVEM.bat.t0 >= NUVEM_BAT_MS || (ESTADO_WS.huntId != null && NUVEM.bat.huntId != null && NUVEM.bat.huntId !== ESTADO_WS.huntId))) nuvemBatalhaFlush(agora);
-        if (!NUVEM.bat) NUVEM.bat = nuvemBatalhaNovo(agora, ESTADO_WS.huntId);
-        if (Array.isArray(d.events)) for (const ev of d.events) nuvemBatalhaEvento(NUVEM.bat, ev, agora);
-        if (d.state && Array.isArray(d.state.party)) nuvemBatalhaVitais(NUVEM.bat, d.state.party);
-    }
-    function nuvemCarga() {
-        for (const k of NUVEM_CARGA_CHAVES) {
-            let v; try { v = ler(k, null); } catch (e) { v = null; }
-            if (v == null || (Array.isArray(v) && !v.length) || (typeof v === 'object' && !Array.isArray(v) && !Object.keys(v).length)) continue;
-            const c = nuvemCapar(v);
-            nuvemEnfileirar(NUVEM.fila, { t: Date.now(), tipo: 'carga', nivel: c.cortado ? 'av' : 'info', msg: k + (c.cortado ? ' (cortado: só o mais novo)' : ''), dados: c.dados }, NUVEM_MAX_FILA + NUVEM_CARGA_CHAVES.length);
-        }
-        try {
-            const pj = nuvemPersonagens({ conta: CONTA, nivel: nivelAtual(), rosterFull: ESTADO_WS.rosterFull, roster: ESTADO_WS.roster, sk: ESTADO_WS.sk, perfisDoServidor: ESTADO_WS.perfisDoServidor, profiles: ESTADO_WS.profiles,
-                                           battleConfigs: ESTADO_WS.battleConfigs, legado: ESTADO_WS.legado, loyalty: ESTADO_WS.loyalty, eco: ESTADO_WS.eco, bossCooldowns: ESTADO_WS.bossCooldowns, depot: ESTADO_WS.depot, party: ESTADO_WS.party });
-            const c = nuvemCapar(pj);
-            nuvemEnfileirar(NUVEM.fila, { t: Date.now(), tipo: 'carga', nivel: c.cortado ? 'av' : 'info', msg: 'personagens' + (c.cortado ? ' (cortado)' : ''), dados: c.dados }, NUVEM_MAX_FILA + NUVEM_CARGA_CHAVES.length + 1);
-        } catch (e) { NUVEM.erro = 'carga (personagens): ' + String(e && e.message || e); }
-        NUVEM.tCarga = Date.now();
-    }
-    function nuvemCfg() {
-        return { on: !!lerComum('nuvem_on', true), url: lerComum('nuvem_url', '') || NUVEM_URL_PADRAO, key: lerComum('nuvem_key', '') || NUVEM_KEY_PADRAO,
-                 token: lerComum('nuvem_token', '') || NUVEM_TOKEN_PADRAO, conta: (CONTA && CONTA.nome && CONTA.nome !== '?') ? CONTA.nome : (lerComum('nuvem_conta', '') || '') };
-    }
-    function nuvemAnotar(item) { // nunca chama log(): log() chama isto
-        try { if (lerComum('nuvem_on', true)) nuvemEnfileirar(NUVEM.fila, item); } catch (e) { /* a nuvem nunca derruba o helper */ }
-    }
-    async function nuvemTick(forcar) {
-        const cfg = nuvemCfg();
-        if (!nuvemConfigOk(cfg)) { if (cfg.on) NUVEM.erro = 'configuração incompleta: falta o token' + (!String(cfg.conta || '').trim() ? ' e o nome da conta' : ''); return false; }
-        if (NUVEM.enviando) return false;
-        const agora = Date.now(), comFoto = !!forcar || agora - NUVEM.tFoto >= NUVEM_FOTO_CADA_MS;
-        if (agora - NUVEM.tCarga >= NUVEM_CARGA_CADA_MS) { try { nuvemCarga(); } catch (e) { NUVEM.erro = 'carga: ' + String(e && e.message || e); } }
-        if (NUVEM.bat && agora - NUVEM.bat.t0 >= NUVEM_BAT_MS) nuvemBatalhaFlush(agora);
-        if (comFoto) { try { if (RAZAO && (Object.keys(RAZAO.magias || {}).length || (RAZAO.tomado && RAZAO.tomado.total))) nuvemEnfileirar(NUVEM.fila, { t: agora, tipo: 'razao', msg: 'livro-razão: ' + ((huntAtual() || {}).title || ESTADO_WS.boss || '?'), dados: nuvemCapar(Object.assign(razaoResumo(RAZAO), { huntId: ESTADO_WS.huntId, boss: ESTADO_WS.boss, t0: RAZAO.t0, tFim: RAZAO.tFim || null, mortes: RAZAO.mortes, alcance: RAZAO.alcance, posParty: RAZAO.posParty, posMob: RAZAO.posMob })).dados }); } catch (e) { NUVEM.erro = 'razão: ' + String(e && e.message || e); } }
-        if (!NUVEM.fila.length && !comFoto) return false;
-        let foto = null;
-        if (comFoto) { try { foto = nuvemFoto({ nivel: nivelAtual(), ouro: ouroAtual(), emHunt: emHunt(), hunt: (huntAtual() || {}).title, huntId: ESTADO_WS.huntId, boss: ESTADO_WS.boss, frame: ESTADO_WS.frame, autoHunt: autoHunt().on, scan: SCAN.ativo, aba: ABA, ultimoEnded: ESTADO_WS.ultimoEnded }); } catch (e) { foto = { t: Date.now(), erro: String(e && e.message || e) }; } }
-        const m = nuvemMontar(cfg, NUVEM.fila, foto, VERSAO);
-        NUVEM.enviando = true; NUVEM.ultimo = agora;
-        try {
-            const r = await fetch(m.url, { method: 'POST', headers: m.headers, body: JSON.stringify(m.corpo) });
-            if (!r || !r.ok) { let txt = ''; try { txt = await r.text(); } catch (e) { } throw new Error('HTTP ' + (r ? r.status : '?') + (txt ? ' ' + txt.slice(0, 160) : '')); }
-            NUVEM.fila.splice(0, m.n); NUVEM.enviados += m.n; NUVEM.ultimoOk = Date.now(); NUVEM.erro = null; if (comFoto) NUVEM.tFoto = Date.now();
-            return true;
-        } catch (e) { NUVEM.erro = String((e && e.message) || e); return false; }
-        finally { NUVEM.enviando = false; if (ABA === 'estado') { try { renderizar(); } catch (e) { /* só a tela */ } } }
-    }
-    function telaNuvem() {
-        const cfg = nuvemCfg(), ok = nuvemConfigOk(cfg), hora = (t) => new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-        const st = !cfg.on ? 'desligado' : NUVEM.erro ? `<span class="tb-ruim">erro: ${escHtml(NUVEM.erro)}</span>` : NUVEM.ultimoOk ? `<span class="tb-ok">último envio ${hora(NUVEM.ultimoOk)}</span> · ${NUVEM.enviados} linhas enviadas` : (ok ? 'aguardando o primeiro envio (até 1 min)' : 'falta o token');
-        return `<div class="tb-cx" id="tb-nuvem"><div class="tb-linha"><label class="tb-l"><input type="checkbox" id="tb-nv-on" ${cfg.on ? 'checked' : ''}> <b>Log na nuvem</b></label><span class="tb-mut tb-eq-nota">conta: ${escHtml(cfg.conta || '?')} · fila ${NUVEM.fila.length}</span></div>
-          <div class="tb-eq-nota">${st}</div>
-          <div class="tb-linha" style="margin-top:3px"><input type="password" class="tb-in" id="tb-nv-token" value="${escHtml(cfg.token)}" placeholder="token (já vem no script)" style="flex:1 1 auto;min-width:0" aria-label="token do log na nuvem"><button type="button" class="tb-bt mini" id="tb-nv-enviar" ${!ok || NUVEM.enviando ? 'disabled' : ''}>enviar agora</button></div>
-          <div class="tb-eq-nota tb-mut">Manda para o banco do dono (Supabase) as linhas do Log, o resumo de cada caçada, as sessões do livro-razão, cada mensagem de Mercado/venda/loja/forja que chega e cada comando que sai (anúncio, compra, cancelamento, venda ao NPC, minhas ordens, histórico, preços lidos), o log de batalha do jogo cru por minuto (dano dado e recebido, magias, poções, vida e mana dos 4), o livro-razão consolidado e a foto do boneco a cada 5 min (nível, ouro, mapa, vida e mana dos 4) e, ao abrir (e a cada 6 h), a carga: a ficha dos 4 (equipamento com forja, skills, perfis, legado, depósito) e o que acumulou fechado (sessões, Radar, mortes, dano por mapa, magias, Scan, Auto Hunt, Log). Só sai informação; nada do jogo é comandado por aqui.</div>
-          ${aj('nv-av', `<div>URL <input type="text" class="tb-in" id="tb-nv-url" value="${escHtml(cfg.url)}" style="width:100%" aria-label="URL do Supabase"></div><div>chave publicável <input type="text" class="tb-in" id="tb-nv-key" value="${escHtml(cfg.key)}" style="width:100%" aria-label="chave publicável"></div><div>nome da conta (se o jogo não disser) <input type="text" class="tb-in" id="tb-nv-conta" value="${escHtml(lerComum('nuvem_conta', ''))}" style="width:100%" aria-label="nome da conta"></div>`, 'avançado')}
-        </div>`;
-    }
-    function ligarNuvem() {
-        const on = $('#tb-nv-on'); if (on) on.onchange = () => { guardarComum('nuvem_on', !!on.checked); NUVEM.erro = null; renderizar(); if (on.checked) nuvemTick(true).catch(() => { }); };
-        for (const [id, k] of [['tb-nv-token', 'nuvem_token'], ['tb-nv-url', 'nuvem_url'], ['tb-nv-key', 'nuvem_key'], ['tb-nv-conta', 'nuvem_conta']]) { const el = $('#' + id); if (el) el.onchange = () => { guardarComum(k, String(el.value || '').trim()); NUVEM.erro = null; renderizar(); }; }
-        const env = $('#tb-nv-enviar'); if (env) env.onclick = () => { nuvemTick(true).catch(() => { }); renderizar(); };
-    }
+    /* v2.35.3 — o Log na nuvem (Supabase, 2.35.0–2.35.2) saiu a pedido do dono (29/10): nada do jogo sai mais do navegador. */
     /* v2.10 — FAIXA DE RETORNO (auditoria de UI, 29/09): "Venda rápida" fora
      * da cidade não mostrava nada na aba — o erro ia só para o Log, com um
      * ponto vermelho que sumia na linha seguinte. avisar() grava no Log (via
@@ -5104,7 +4872,6 @@
     }
     function observarEnviado(o) {
         if (!o || !o.type) return;
-        try { nuvemProtoAnotar(o, 'out'); } catch (e) { /* v2.35.2 */ }
         try { mkObservarEnviado(o); } catch (e) { falhou('mercado (enviado)', e); } // v2.11 — conta as ações do mercado (limite 20/min por conta)
         const d = (o.data && typeof o.data === 'object') ? o.data : {};
         if (o.type === 'start_hunt') { ESTADO_WS.ultimoStart = Object.assign({ t: Date.now() }, d); return; }
@@ -5175,7 +4942,6 @@
                 try { razaoPosicoes(RAZAO, st); } catch (e) { falhou('livro-razão (posições)', e); } // 2.31.0
                 try { anotarSkills(st.party); } catch (e) { falhou('anotarSkills', e); }
             }
-            try { nuvemFrame(d, Date.now()); } catch (e) { NUVEM.erro = 'batalha: ' + String(e && e.message || e); } // v2.35.0 — log de batalha na nuvem
             if (Array.isArray(d.events)) { const agora = Date.now(); for (const ev of d.events) {
                 if (!ev || typeof ev !== 'object') continue;
                 try { razaoEvento(RAZAO, ev, agora); } catch (e) { falhou('livro-razão (eventos)', e); }
@@ -5271,8 +5037,6 @@
         if (o.type === 'ended' || o.type === 'exit_pending') {
             if (o.type === 'ended') {
                 const sm = (d.summary && typeof d.summary === 'object') ? d.summary : {};
-                try { nuvemBatalhaFlush(Date.now()); } catch (e) { /* nunca derruba */ } // v2.35.0 — o minuto da morte não se perde
-                nuvemAnotar({ t: Date.now(), tipo: 'resumo', nivel: /death|dead|morte|died|killed/i.test(String(sm.reason || '')) ? 'erro' : 'info', msg: 'caçada encerrada: ' + (sm.reason || '?'), dados: sm }); // v2.35.0
                 /* v2.11 — `ended` = fora da caçada: huntId zera junto (o Scan e o
                  * Auto Hunt viam "ainda na hunt X" depois de uma morte). O que
                  * acabou fica em ultimoEnded para quem precisar do motivo. */
@@ -6529,7 +6293,6 @@
             s.fatorReal = Math.round(s.custoRealAbate / Math.max(0.01, semFator) * 100) / 100;
         }
         guardarSessao(s);
-        nuvemAnotar({ t: Date.now(), tipo: 'sessao', nivel: s.suja ? 'av' : 'ok', msg: 'sessão: ' + s.hunt, dados: s }); // v2.35.0
         log(`sessão fechada: ${s.hunt} · ${s.ouroH >= 0 ? '+' : ''}${s.ouroH} ouro/h · ${s.expH || '?'} exp/h${s.suja ? ' ⚠ SUJA (mochila)' : ''}`, s.suja ? 'erro' : 'ok');
         SESSAO = null;
     }
@@ -10487,7 +10250,6 @@
           </div>
           ${aj('estado-ajuda', 'Venda rápida: encerra a caçada (se estiver nela — pede confirmação) → purifica todos → vende no NPC → guarda no depot, e fica na cidade. Finalizar hunt: só encerra e fecha o resumo. DIAGNÓSTICO: confere o que o helper precisa (socket, catálogos, perfis) e diz o que falta.')}
           <details class="tb-aj" data-k="estado-av"><summary>avançado</summary><div>
-            ${telaNuvem()}
             <div class="tb-cx">
               ${lin('Vocação na tela', escHtml(VOC_ROTULO[voc] || voc))}
               ${lin('Lure máx', h ? numBR(lureMax(h)) + ' criaturas' : '—')}
@@ -10516,7 +10278,6 @@
      * estado ANTES do primeiro await e repinta; o clique repetido é recusado
      * pelo estado, não pelo botão. */
     function ligarEstado() {
-        ligarNuvem(); // v2.35.0
         const vr = $('#tb-venda-rapida'); if (vr) ligarDoisToques(vr, 'venda', 'confirmar: encerrar e vender?', () => { if (!_cicloEmCurso) cicloDeVenda('venda'); }, emHunt);
         const bat = $('#tb-bt-atualizar'); if (bat) bat.onclick = abrirAtualizacao;
         const fh = $('#tb-finalizar'); if (fh) fh.onclick = () => { if (!_cicloEmCurso) cicloDeVenda('finalizar'); };
@@ -17499,7 +17260,6 @@
         setInterval(() => verificarAtualizacao().catch(() => { }), 30 * 60 * 1000);
         /* v2.13.0 — Radar: o vigiar dos alertas (só age se o dono ligou) e o dia salvo ao sair */
         setInterval(radarVigia, 60000);
-        setInterval(() => { nuvemTick(false).catch(() => { }); }, NUVEM_CADA_MS); // v2.35.0 — log na nuvem (só com o interruptor ligado)
         /* v2.29.0 — dono, 21/10: a vigia das pechinchas fica LIGADA sempre que o navegador abre (só lê o Mercado; comprar é por botão) */
         /* 21/10 — o mínimo de 30 mil no total barrava as keys (média 15–40 mil): vira 2 mil; o filtro é o lucro de 15 % por unidade */
         try { const pc = ler('pch_cfg', null); if (pc && pc.lucroMin === 30000) guardarPchCfg({ lucroMin: PCH_PADRAO.lucroMin }); } catch (e) { falhou('pechinchas (migrar)', e); }
@@ -17530,7 +17290,6 @@
         lerShellFibra, lerRosterFibra, rosterEquip, basePorNome, idsPorNome,
         pontuarPeca, candidatosEquip, distribuirEquip, vocacaoPode, mochilaEquip, ondeEsta, slotsTrocas,
         get EQUIP() { return EQUIP; }, get PESOS_EQUIP() { return PESOS_EQUIP; }, get SB() { return SB; }, // v2.34.4: SB
-        get NUVEM() { return NUVEM; }, nuvemTick, nuvemAnotar, nuvemCfg, nuvemBatalhaFlush, // v2.35.0
         // v2.1.0 — socket/REST (leituras; /spell-numbers só LÊ do servidor)
         socketAberto, configAtiva, perfilDaVoc, perfilReal, normalizarConfig, payloadBattleConfig, aprenderDanosPorRest,
         // v2.2.0 — Scan (leituras)
