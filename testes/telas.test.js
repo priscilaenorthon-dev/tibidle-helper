@@ -578,6 +578,55 @@ t('Sobreviver compacta: plano em 1 linha por item, trocas/consumíveis/Mercado e
     assert(/tb-sb-nome" style="max-width:130px" title="Calça Mítica[^"]*\+3 · 1\.000 de ouro · \+9,9 pt · resist física 2,2 pt · Fulano"><b>Calça Mítica/.test(sb), 'compra: nome curto, detalhe no title');
     assert(sb.length < 14000, 'tela compacta: ' + sb.length + ' chars');
 });
+/* 2.35.0 — log na nuvem (dono, 29/10: "3 navegadores, 3 contas; quero que você veja tudo que o boneco faz") */
+t('Log na nuvem: ligado, resumo/log vão num POST para a função do Supabase com token, conta, versão e a foto do boneco; desligado nada entra na fila', async () => {
+    const W = criarMundo({ ls: comAba('estado', { tb_helper_comum_nuvem_on: 'true', tb_helper_comum_nuvem_token: '"tok-de-teste-123456"', tb_helper_comum_nuvem_conta: '"Conta Um"' }) });
+    const posts = [];
+    W.ctx.fetch = ((orig) => async (url, init) => { if (/supabase\.co\/rest\/v1\/rpc\/tb_log_enviar$/.test(String(url))) { posts.push({ url, init }); return { ok: true, status: 200, json: async () => 1, text: async () => '1' }; } return orig(url); })(W.ctx.fetch);
+    await W.avancar(0);
+    const H = W.H;
+    /* log de batalha: um frame com eventos do jogo vira um pacote "batalha" (fechado aqui à força; ao vivo fecha a cada minuto e no ended) */
+    const ws = new W.window.WebSocket('wss://jogo');
+    ws.emitir(Object.assign(frame({ lureTier: 3 }), {}));
+    ws.emitir({ type: 'frame', data: Object.assign(frame().data, { events: [{ kind: 'cast', who: 2, name: 'Energy Wave', hits: [{ id: 7, amount: 250, hp: 900 }] }, { kind: 'mhit', id: 7, amount: 120, hp: 2000 }] }) });
+    await W.avancar(0);
+    assert(H.NUVEM.bat && H.NUVEM.bat.n === 2 && Object.keys(H.NUVEM.bat.vitais).length === 4, 'pacote do minuto com 2 eventos e os 4 vitais: ' + JSON.stringify(H.NUVEM.bat && [H.NUVEM.bat.n, Object.keys(H.NUVEM.bat.vitais)]));
+    H.nuvemBatalhaFlush();
+    H.nuvemAnotar({ t: 1000, tipo: 'resumo', nivel: 'erro', msg: 'caçada encerrada: death', dados: { reason: 'death', deathCause: [{ x: 1 }] } });
+    assert(H.NUVEM.fila.some(i => i.tipo === 'resumo'), 'entrou na fila');
+    const ok = await H.nuvemTick(true); await W.avancar(0);
+    assert(ok === true && posts.length === 1, 'um POST: ' + posts.length + ' · erro: ' + H.NUVEM.erro);
+    assert.strictEqual(posts[0].init.method, 'POST');
+    assert.strictEqual(posts[0].init.headers.apikey, H.nuvemCfg().key);
+    const b = JSON.parse(posts[0].init.body);
+    assert.deepStrictEqual([b.p_token, b.p_conta, b.p_versao], ['tok-de-teste-123456', 'Conta Um', H.versao]);
+    const r = b.p_itens.find(i => i.tipo === 'resumo');
+    assert(r && r.nivel === 'erro' && r.dados.reason === 'death' && r.t === 1000, JSON.stringify(r));
+    assert(b.p_estado && 'nivel' in b.p_estado && Array.isArray(b.p_estado.party) && 'cacando' in b.p_estado, 'foto do boneco');
+    const bat = b.p_itens.find(i => i.tipo === 'batalha');
+    assert(bat && bat.dados.eventos.length === 2 && bat.dados.eventos[0].k === 'cast' && bat.dados.eventos[0].hits[0].amount === 250 && bat.dados.vitais.KNIGHT && 'hpMin' in bat.dados.vitais.KNIGHT, 'batalha: ' + JSON.stringify(bat && bat.dados).slice(0, 300));
+    const rz = b.p_itens.find(i => i.tipo === 'razao');
+    assert(rz && rz.dados.danoTotal === 250 && Array.isArray(rz.dados.magias) && rz.dados.tomado === 120 && Array.isArray(rz.dados.mortes), 'livro-razão consolidado: ' + JSON.stringify(rz && rz.dados).slice(0, 300));
+    const carga = b.p_itens.filter(i => i.tipo === 'carga').map(i => i.msg);
+    assert(carga.includes('log') && carga.includes('danos_DRUID') && carga.includes('personagens') && !carga.includes('sessoes') && !carga.includes('hunt_id'), 'carga no primeiro envio: ficha dos personagens + o que existe na gaveta (log, danos dos 4), sem o que está vazio: ' + carga.join(','));
+    const pj = b.p_itens.find(i => i.tipo === 'carga' && i.msg === 'personagens').dados;
+    assert(pj && 'nivel' in pj && pj.t > 0, 'ficha dos personagens: ' + JSON.stringify(Object.keys(pj)));
+    assert.strictEqual(H.NUVEM.fila.length, 0, 'fila esvaziada depois do envio');
+    const h = W.html(); semXss(h, 'Status (nuvem)');
+    assert(/Log na nuvem/.test(h) && /último envio/.test(h) && /conta: Conta Um/.test(h) && /type="password"/.test(h), 'aba Status mostra o bloco, o último envio, a conta e o token escondido');
+    /* envio que falha: a fila fica, o erro aparece na tela, nada vai para o Log (senão vira laço) */
+    W.ctx.fetch = async () => ({ ok: false, status: 401, text: async () => '{"message":"token inválido"}' });
+    H.nuvemAnotar({ tipo: 'log', nivel: 'info', msg: 'x' });
+    const nLog = logTxt(W).length;
+    assert.strictEqual(await H.nuvemTick(true), false); await W.avancar(0);
+    assert(H.NUVEM.fila.some(i => i.tipo === 'log' && i.msg === 'x') && H.NUVEM.fila.length <= 2 && /HTTP 401/.test(H.NUVEM.erro) && logTxt(W).length === nLog, JSON.stringify([H.NUVEM.fila.length, H.NUVEM.erro])); // o tick forçado também enfileira o livro-razão
+    assert(/erro: HTTP 401/.test(W.html()), 'erro na tela');
+    /* desligado: nada entra na fila nem sai */
+    const W2 = criarMundo({ ls: comAba('estado', {}) }); await W2.avancar(0);
+    W2.H.nuvemAnotar({ tipo: 'log', msg: 'x' });
+    assert.strictEqual(W2.H.NUVEM.fila.length, 0); assert.strictEqual(await W2.H.nuvemTick(true), false);
+    assert(/Log na nuvem/.test(W2.html()) && /desligado/.test(W2.html()));
+});
 t('sobe sem exceção e sem erro de timer em nenhuma aba', async () => {
     for (const aba of ['estado', 'magia', 'equip', 'analise', 'sobreviver', 'evento', 'log']) { // 2.34.2: Sobreviver e Evento também
         const W = criarMundo({ ls: comAba(aba, { tb_helper_hunt_id: '34', tb_helper_sb_alvo: '"hunt:34"' }) });
