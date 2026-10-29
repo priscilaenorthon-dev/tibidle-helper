@@ -596,8 +596,57 @@
         }
         return { dados: String(v).slice(0, max), cortado: true };
     }
+    /* v2.35.0 — LOG DE BATALHA (dono, 29/10: "tem uma aba log no jogo de batalha: quanto dá de dano, quanto recebeu, magias, poção —
+     * quero o máximo de informação, tudo completo"). Cada frame do socket traz `events` (spawn, cast com hits, hit, mhit, mcast com
+     * casas, kill, death, wave, wave_timer…) e a party com vida/mana/poções bebidas (supplyUsed). Tudo vai cru, empacotado por
+     * minuto (tipo `batalha`), e o livro-razão consolidado vai a cada 5 min (tipo `razao`). */
+    const NUVEM_BAT_MS = 60000, NUVEM_BAT_MAX_EV = 3000;
+    function nuvemBatalhaNovo(agora, huntId) { return { t0: agora || Date.now(), huntId: huntId != null ? huntId : null, eventos: [], vitais: {}, n: 0, cortado: false }; }
+    function nuvemBatalhaEvento(B, ev, agora) {
+        if (!B || !ev || typeof ev !== 'object' || !ev.kind) return;
+        B.n++;
+        if (B.eventos.length >= NUVEM_BAT_MAX_EV) { B.cortado = true; return; }
+        const c = { k: ev.kind, dt: Math.max(0, (agora || Date.now()) - B.t0) };
+        for (const f of ['who', 'id', 'name', 'rune', 'amount', 'hp', 'maxHp', 'mana', 'type', 'atk', 'count', 'ms', 'item', 'reason']) if (ev[f] !== undefined && ev[f] !== null) c[f] = ev[f];
+        if (Array.isArray(ev.hits)) c.hits = ev.hits.map(h => { const o = {}; for (const f of ['who', 'id', 'amount', 'hp', 'mana']) if (h && h[f] !== undefined && h[f] !== null) o[f] = h[f]; return o; });
+        if (Array.isArray(ev.cells)) c.cells = ev.cells.length;
+        B.eventos.push(c);
+    }
+    function nuvemBatalhaVitais(B, party) {
+        if (!B || !Array.isArray(party)) return;
+        for (const p of party) {
+            if (!p || !p.vocation) continue;
+            const v = String(p.vocation).toUpperCase(), x = B.vitais[v] || (B.vitais[v] = { hpMin: null, hpFim: null, maxHp: null, manaMin: null, manaFim: null, maxMana: null, supplyUsed: null, suppliesGold: null });
+            const hp = Number(p.hp), mana = Number(p.mana);
+            if (Number.isFinite(hp)) { x.hpFim = hp; x.hpMin = x.hpMin == null ? hp : Math.min(x.hpMin, hp); }
+            if (Number.isFinite(mana)) { x.manaFim = mana; x.manaMin = x.manaMin == null ? mana : Math.min(x.manaMin, mana); }
+            if (p.maxHp != null) x.maxHp = p.maxHp; if (p.maxMana != null) x.maxMana = p.maxMana;
+            if (p.supplyUsed && typeof p.supplyUsed === 'object') x.supplyUsed = p.supplyUsed;
+            if (p.suppliesGold != null) x.suppliesGold = Number(p.suppliesGold) || 0;
+        }
+    }
+    function nuvemBatalhaFechar(B, agora) {
+        if (!B || (!B.n && !Object.keys(B.vitais).length)) return null;
+        const t1 = agora || Date.now(), c = nuvemCapar({ t0: B.t0, t1, huntId: B.huntId, eventos: B.eventos, vitais: B.vitais, nEventos: B.n });
+        return { t: B.t0, tipo: 'batalha', nivel: B.cortado || c.cortado ? 'av' : 'info', msg: `${B.n} eventos em ${Math.round((t1 - B.t0) / 1000)} s` + (B.cortado ? ' (cortado em ' + NUVEM_BAT_MAX_EV + ')' : ''), dados: c.dados };
+    }
     /* @@NUVEM-PURO-FIM */
-    const NUVEM = { fila: [], enviando: false, ultimo: 0, ultimoOk: 0, erro: null, enviados: 0, tFoto: 0, tCarga: 0 };
+    const NUVEM = { fila: [], enviando: false, ultimo: 0, ultimoOk: 0, erro: null, enviados: 0, tFoto: 0, tCarga: 0, bat: null };
+    /* o pacote de batalha do minuto: fecha a cada NUVEM_BAT_MS, no `ended` e quando a hunt muda */
+    function nuvemBatalhaFlush(agora) {
+        agora = agora || Date.now();
+        if (!NUVEM.bat) return;
+        const it = nuvemBatalhaFechar(NUVEM.bat, agora); NUVEM.bat = null;
+        if (it) nuvemEnfileirar(NUVEM.fila, it);
+    }
+    function nuvemFrame(d, agora) { // chamado em cada frame do socket, só com o interruptor ligado
+        if (!lerComum('nuvem_on', false)) return;
+        agora = agora || Date.now();
+        if (NUVEM.bat && (agora - NUVEM.bat.t0 >= NUVEM_BAT_MS || (ESTADO_WS.huntId != null && NUVEM.bat.huntId != null && NUVEM.bat.huntId !== ESTADO_WS.huntId))) nuvemBatalhaFlush(agora);
+        if (!NUVEM.bat) NUVEM.bat = nuvemBatalhaNovo(agora, ESTADO_WS.huntId);
+        if (Array.isArray(d.events)) for (const ev of d.events) nuvemBatalhaEvento(NUVEM.bat, ev, agora);
+        if (d.state && Array.isArray(d.state.party)) nuvemBatalhaVitais(NUVEM.bat, d.state.party);
+    }
     function nuvemCarga() {
         for (const k of NUVEM_CARGA_CHAVES) {
             let v; try { v = ler(k, null); } catch (e) { v = null; }
@@ -626,6 +675,8 @@
         if (NUVEM.enviando) return false;
         const agora = Date.now(), comFoto = !!forcar || agora - NUVEM.tFoto >= NUVEM_FOTO_CADA_MS;
         if (agora - NUVEM.tCarga >= NUVEM_CARGA_CADA_MS) { try { nuvemCarga(); } catch (e) { NUVEM.erro = 'carga: ' + String(e && e.message || e); } }
+        if (NUVEM.bat && agora - NUVEM.bat.t0 >= NUVEM_BAT_MS) nuvemBatalhaFlush(agora);
+        if (comFoto) { try { if (RAZAO && (Object.keys(RAZAO.magias || {}).length || (RAZAO.tomado && RAZAO.tomado.total))) nuvemEnfileirar(NUVEM.fila, { t: agora, tipo: 'razao', msg: 'livro-razão: ' + ((huntAtual() || {}).title || ESTADO_WS.boss || '?'), dados: nuvemCapar(Object.assign(razaoResumo(RAZAO), { huntId: ESTADO_WS.huntId, boss: ESTADO_WS.boss, t0: RAZAO.t0, tFim: RAZAO.tFim || null, mortes: RAZAO.mortes, alcance: RAZAO.alcance, posParty: RAZAO.posParty, posMob: RAZAO.posMob })).dados }); } catch (e) { NUVEM.erro = 'razão: ' + String(e && e.message || e); } }
         if (!NUVEM.fila.length && !comFoto) return false;
         let foto = null;
         if (comFoto) { try { foto = nuvemFoto({ nivel: nivelAtual(), ouro: ouroAtual(), emHunt: emHunt(), hunt: (huntAtual() || {}).title, huntId: ESTADO_WS.huntId, boss: ESTADO_WS.boss, frame: ESTADO_WS.frame, autoHunt: autoHunt().on, scan: SCAN.ativo, aba: ABA, ultimoEnded: ESTADO_WS.ultimoEnded }); } catch (e) { foto = { t: Date.now(), erro: String(e && e.message || e) }; } }
@@ -645,7 +696,7 @@
         return `<div class="tb-cx" id="tb-nuvem"><div class="tb-linha"><label class="tb-l"><input type="checkbox" id="tb-nv-on" ${cfg.on ? 'checked' : ''}> <b>Log na nuvem</b></label><span class="tb-mut tb-eq-nota">conta: ${escHtml(cfg.conta || '?')} · fila ${NUVEM.fila.length}</span></div>
           <div class="tb-eq-nota">${st}</div>
           <div class="tb-linha" style="margin-top:3px"><input type="password" class="tb-in" id="tb-nv-token" value="${escHtml(cfg.token)}" placeholder="token (o Claude te passa)" style="flex:1 1 auto;min-width:0" aria-label="token do log na nuvem"><button type="button" class="tb-bt mini" id="tb-nv-enviar" ${!ok || NUVEM.enviando ? 'disabled' : ''}>enviar agora</button></div>
-          <div class="tb-eq-nota tb-mut">Manda para o banco do dono (Supabase) as linhas do Log, o resumo de cada caçada, as sessões do livro-razão, a cada 5 min a foto do boneco (nível, ouro, mapa, vida e mana dos 4) e, ao abrir (e a cada 6 h), a carga: a ficha dos 4 (equipamento com forja, skills, perfis, legado, depósito) e o que acumulou fechado (sessões, Radar, mortes, dano por mapa, magias, Scan, Auto Hunt, Log). Só sai informação; nada do jogo é comandado por aqui.</div>
+          <div class="tb-eq-nota tb-mut">Manda para o banco do dono (Supabase) as linhas do Log, o resumo de cada caçada, as sessões do livro-razão, o log de batalha do jogo cru por minuto (dano dado e recebido, magias, poções, vida e mana dos 4), o livro-razão consolidado e a foto do boneco a cada 5 min (nível, ouro, mapa, vida e mana dos 4) e, ao abrir (e a cada 6 h), a carga: a ficha dos 4 (equipamento com forja, skills, perfis, legado, depósito) e o que acumulou fechado (sessões, Radar, mortes, dano por mapa, magias, Scan, Auto Hunt, Log). Só sai informação; nada do jogo é comandado por aqui.</div>
           ${aj('nv-av', `<div>URL <input type="text" class="tb-in" id="tb-nv-url" value="${escHtml(cfg.url)}" style="width:100%" aria-label="URL do Supabase"></div><div>chave publicável <input type="text" class="tb-in" id="tb-nv-key" value="${escHtml(cfg.key)}" style="width:100%" aria-label="chave publicável"></div><div>nome da conta (se o jogo não disser) <input type="text" class="tb-in" id="tb-nv-conta" value="${escHtml(lerComum('nuvem_conta', ''))}" style="width:100%" aria-label="nome da conta"></div>`, 'avançado')}
         </div>`;
     }
@@ -5069,6 +5120,7 @@
                 try { razaoPosicoes(RAZAO, st); } catch (e) { falhou('livro-razão (posições)', e); } // 2.31.0
                 try { anotarSkills(st.party); } catch (e) { falhou('anotarSkills', e); }
             }
+            try { nuvemFrame(d, Date.now()); } catch (e) { NUVEM.erro = 'batalha: ' + String(e && e.message || e); } // v2.35.0 — log de batalha na nuvem
             if (Array.isArray(d.events)) { const agora = Date.now(); for (const ev of d.events) {
                 if (!ev || typeof ev !== 'object') continue;
                 try { razaoEvento(RAZAO, ev, agora); } catch (e) { falhou('livro-razão (eventos)', e); }
@@ -5164,6 +5216,7 @@
         if (o.type === 'ended' || o.type === 'exit_pending') {
             if (o.type === 'ended') {
                 const sm = (d.summary && typeof d.summary === 'object') ? d.summary : {};
+                try { nuvemBatalhaFlush(Date.now()); } catch (e) { /* nunca derruba */ } // v2.35.0 — o minuto da morte não se perde
                 nuvemAnotar({ t: Date.now(), tipo: 'resumo', nivel: /death|dead|morte|died|killed/i.test(String(sm.reason || '')) ? 'erro' : 'info', msg: 'caçada encerrada: ' + (sm.reason || '?'), dados: sm }); // v2.35.0
                 /* v2.11 — `ended` = fora da caçada: huntId zera junto (o Scan e o
                  * Auto Hunt viam "ainda na hunt X" depois de uma morte). O que
@@ -17422,7 +17475,7 @@
         lerShellFibra, lerRosterFibra, rosterEquip, basePorNome, idsPorNome,
         pontuarPeca, candidatosEquip, distribuirEquip, vocacaoPode, mochilaEquip, ondeEsta, slotsTrocas,
         get EQUIP() { return EQUIP; }, get PESOS_EQUIP() { return PESOS_EQUIP; }, get SB() { return SB; }, // v2.34.4: SB
-        get NUVEM() { return NUVEM; }, nuvemTick, nuvemAnotar, nuvemCfg, // v2.35.0
+        get NUVEM() { return NUVEM; }, nuvemTick, nuvemAnotar, nuvemCfg, nuvemBatalhaFlush, // v2.35.0
         // v2.1.0 — socket/REST (leituras; /spell-numbers só LÊ do servidor)
         socketAberto, configAtiva, perfilDaVoc, perfilReal, normalizarConfig, payloadBattleConfig, aprenderDanosPorRest,
         // v2.2.0 — Scan (leituras)

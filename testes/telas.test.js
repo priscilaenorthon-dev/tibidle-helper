@@ -585,6 +585,13 @@ t('Log na nuvem: ligado, resumo/log vão num POST para a função do Supabase co
     W.ctx.fetch = ((orig) => async (url, init) => { if (/supabase\.co\/rest\/v1\/rpc\/tb_log_enviar$/.test(String(url))) { posts.push({ url, init }); return { ok: true, status: 200, json: async () => 1, text: async () => '1' }; } return orig(url); })(W.ctx.fetch);
     await W.avancar(0);
     const H = W.H;
+    /* log de batalha: um frame com eventos do jogo vira um pacote "batalha" (fechado aqui à força; ao vivo fecha a cada minuto e no ended) */
+    const ws = new W.window.WebSocket('wss://jogo');
+    ws.emitir(Object.assign(frame({ lureTier: 3 }), {}));
+    ws.emitir({ type: 'frame', data: Object.assign(frame().data, { events: [{ kind: 'cast', who: 2, name: 'Energy Wave', hits: [{ id: 7, amount: 250, hp: 900 }] }, { kind: 'mhit', id: 7, amount: 120, hp: 2000 }] }) });
+    await W.avancar(0);
+    assert(H.NUVEM.bat && H.NUVEM.bat.n === 2 && Object.keys(H.NUVEM.bat.vitais).length === 4, 'pacote do minuto com 2 eventos e os 4 vitais: ' + JSON.stringify(H.NUVEM.bat && [H.NUVEM.bat.n, Object.keys(H.NUVEM.bat.vitais)]));
+    H.nuvemBatalhaFlush();
     H.nuvemAnotar({ t: 1000, tipo: 'resumo', nivel: 'erro', msg: 'caçada encerrada: death', dados: { reason: 'death', deathCause: [{ x: 1 }] } });
     assert(H.NUVEM.fila.some(i => i.tipo === 'resumo'), 'entrou na fila');
     const ok = await H.nuvemTick(true); await W.avancar(0);
@@ -596,6 +603,10 @@ t('Log na nuvem: ligado, resumo/log vão num POST para a função do Supabase co
     const r = b.p_itens.find(i => i.tipo === 'resumo');
     assert(r && r.nivel === 'erro' && r.dados.reason === 'death' && r.t === 1000, JSON.stringify(r));
     assert(b.p_estado && 'nivel' in b.p_estado && Array.isArray(b.p_estado.party) && 'cacando' in b.p_estado, 'foto do boneco');
+    const bat = b.p_itens.find(i => i.tipo === 'batalha');
+    assert(bat && bat.dados.eventos.length === 2 && bat.dados.eventos[0].k === 'cast' && bat.dados.eventos[0].hits[0].amount === 250 && bat.dados.vitais.KNIGHT && 'hpMin' in bat.dados.vitais.KNIGHT, 'batalha: ' + JSON.stringify(bat && bat.dados).slice(0, 300));
+    const rz = b.p_itens.find(i => i.tipo === 'razao');
+    assert(rz && rz.dados.danoTotal === 250 && Array.isArray(rz.dados.magias) && rz.dados.tomado === 120 && Array.isArray(rz.dados.mortes), 'livro-razão consolidado: ' + JSON.stringify(rz && rz.dados).slice(0, 300));
     const carga = b.p_itens.filter(i => i.tipo === 'carga').map(i => i.msg);
     assert(carga.includes('log') && carga.includes('danos_DRUID') && carga.includes('personagens') && !carga.includes('sessoes') && !carga.includes('hunt_id'), 'carga no primeiro envio: ficha dos personagens + o que existe na gaveta (log, danos dos 4), sem o que está vazio: ' + carga.join(','));
     const pj = b.p_itens.find(i => i.tipo === 'carga' && i.msg === 'personagens').dados;
@@ -608,7 +619,7 @@ t('Log na nuvem: ligado, resumo/log vão num POST para a função do Supabase co
     H.nuvemAnotar({ tipo: 'log', nivel: 'info', msg: 'x' });
     const nLog = logTxt(W).length;
     assert.strictEqual(await H.nuvemTick(true), false); await W.avancar(0);
-    assert(H.NUVEM.fila.length === 1 && /HTTP 401/.test(H.NUVEM.erro) && logTxt(W).length === nLog, JSON.stringify([H.NUVEM.fila.length, H.NUVEM.erro]));
+    assert(H.NUVEM.fila.some(i => i.tipo === 'log' && i.msg === 'x') && H.NUVEM.fila.length <= 2 && /HTTP 401/.test(H.NUVEM.erro) && logTxt(W).length === nLog, JSON.stringify([H.NUVEM.fila.length, H.NUVEM.erro])); // o tick forçado também enfileira o livro-razão
     assert(/erro: HTTP 401/.test(W.html()), 'erro na tela');
     /* desligado: nada entra na fila nem sai */
     const W2 = criarMundo({ ls: comAba('estado', {}) }); await W2.avancar(0);

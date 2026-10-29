@@ -6573,6 +6573,12 @@ venda, a situação dele — para ir analisando e criando melhorias. Eu ligo o n
   `nuvemEnfileirar` (teto 600, msg 2000), `nuvemMontar` (URL da função, cabeçalhos apikey/Bearer, lote de 200, foto), `nuvemFoto`
   (nível, ouro, caçando, mapa, boss, lure, criaturas, vida/mana/distância dos 4, analisador do jogo, Auto Hunt, Scan, aba, último
   `ended`), `nuvemCapar` (bloco da carga cabe em 200 mil chars: lista fica com a cauda, objeto com as últimas chaves).
+- **Log de batalha** (dono: "a aba log de batalha do jogo: dano dado, recebido, magias, poção — tudo completo"): cada frame do socket
+  passa por `nuvemFrame`: os `events` crus (spawn, cast com hits, hit, mhit, mcast, kill, death, wave…) compactados
+  (`nuvemBatalhaEvento`: kind, who, id, name, amount, hp, type, atk, hits[], nº de casas) e os vitais da party por minuto
+  (`nuvemBatalhaVitais`: hp/mana mínimo e final, maxHp/maxMana, `supplyUsed` = poções bebidas, `suppliesGold`). O pacote fecha a
+  cada 60 s, no `ended` e na troca de hunt (tipo `batalha`, teto 3 000 eventos, cabe em 200 mil chars). A cada 5 min vai o
+  livro-razão consolidado (tipo `razao`: `razaoResumo` + mortes, alcance, posições da party e dos monstros).
 - **O que sai**: cada linha do `log()` (tipo `log`), o `ended.summary` inteiro (tipo `resumo`; nível `erro` se o motivo for morte),
   cada sessão fechada do livro-razão (tipo `sessao`), a foto a cada 5 min (`estado`) e, no primeiro envio de cada página aberta e a
   cada 6 h, a **carga** (tipo `carga`): a ficha dos personagens (`personagens`: roster com o equipamento e a forja de cada peça,
@@ -6585,5 +6591,5 @@ venda, a situação dele — para ir analisando e criando melhorias. Eu ligo o n
   envio/linhas/erro, e em "avançado" URL, chave e nome da conta (o nome vem de `/auth/me`; o campo é reserva). URL e chave
   publicável vêm por padrão no script (`NUVEM_URL_PADRAO`, `NUVEM_KEY_PADRAO`); o token NÃO vai no repositório. Configuração é
   comum do navegador (`tb_helper_comum_*`): nos 3 navegadores é ligar e colar o token; a conta cada um descobre sozinho.
-- Regra do dono preservada: só sai informação; nada do jogo é comandado por aqui. Testes: 465 (+5 nuvem, +1 telas). Não testado
+- Regra do dono preservada: só sai informação; nada do jogo é comandado por aqui. Testes: 466 (+6 nuvem, +1 telas). Não testado
   ao vivo: o dono liga, cola o token e vê "último envio" na tela.
