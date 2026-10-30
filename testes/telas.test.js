@@ -449,6 +449,19 @@ t('Equip: escape de itens, slots e vocações em português, "8 slots" como inte
     await W.avancar(0);
     let h = W.html();
     semXss(h, 'Equip');
+    /* 2.36.0 — RELATÓRIO: botão no Equip gera o JSON de todo o equipamento numa caixa (baixar/copiar); sem segredo; XSS escapado */
+    assert(/id="tb-eq-relatorio"/.test(h), 'botão RELATÓRIO');
+    E.pecas = H.candidatosEquip(roster, depot, base, []);
+    W.porId.get('tb-eq-relatorio').onclick(); await W.avancar(5000);
+    const hr = W.html(); semXss(hr, 'Equip (relatório)');
+    assert(/id="tb-eq-rel-caixa"/.test(hr) && /tibidle-helper equipamento/.test(hr) && /id="tb-eq-rel-baixar"/.test(hr) && /id="tb-eq-rel-copiar"/.test(hr), 'caixa do relatório');
+    const rel = JSON.parse(H.EQUIP.relatorio.texto);
+    assert(rel.itens.length === E.pecas.length && rel.itens.some(i => i.origem === 'depósito' && i.porVoc) && rel.personagens.KNIGHT && /^tibidle-equip-.*\.json$/.test(H.EQUIP.relatorio.nome), 'conteúdo: ' + rel.itens.length + ' itens, ' + H.EQUIP.relatorio.nome);
+    assert(!/token|ticket|senha/i.test(H.EQUIP.relatorio.texto), 'segredo no relatório');
+    assert(/relatório de equipamento: \d+ itens/.test(logTxt(W)), logTxt(W));
+    W.porId.get('tb-eq-rel-fechar').onclick(); await W.avancar(0);
+    assert(!/id="tb-eq-rel-caixa"/.test(W.html()), 'fechar some com a caixa');
+    h = W.html();
     /* 2.15.0 — as caixinhas viram destinos com botão: NPC, Mercado, bases, encaixe nobre; links da wiki nas peças */
     assert(/id="tb-eq-vender-npc"/.test(h), 'botão VENDER NO NPC');
     assert(/id="tb-eq-anunciar-sobras"/.test(h) && /id="tb-eq-anunciar-nobres"/.test(h) && /id="tb-eq-anunciar-bases"/.test(h), 'botões ANUNCIAR');
