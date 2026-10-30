@@ -225,6 +225,13 @@ function montarVenda(itens, opc) {
         const cliqueCompleto = (e) => e.click();
         const lerOuroNum = () => J.ouro;
         class MouseEvent { constructor(t) { this.type = t; } } class PointerEvent extends MouseEvent { }
+        /* 2.36.1 — a cópia Comum do equipamento sai pelo socket depois do painel (venderEquipComunsSocket) */
+        const falhou = (onde, e) => J.logs.push('erro: ' + onde + ': ' + (e && e.message));
+        const socketAberto = () => !!opc.socket, frameFresco = () => false, EQUIP = { res: opc.equipRes || null }, MK = {};
+        const lerShellFibra = () => (opc.socket ? { bag: opc.socket.bag, bagInstances: opc.socket.inst } : null);
+        const mkPedir = async (tipo, d) => { J.socket = (J.socket || []).concat([{ tipo, d }]); return { data: { goldCredited: 77 * d.items.length } }; };
+        const estaProtegida = (p) => (opc.cadeado || []).includes(p.iid), mkMin = s => String(s || '').toLowerCase(), mkFmt = String, mkErroTexto = String;
+        const RAR_PT = ['Comum', 'Incomum', 'Raro', 'Épico'], POTENCIA_BASE_ALTA = 400, RARIDADE_BASE_FORJA = 3, potenciaDe = p => Number(p.forja.potenciaBase) || 0;
         ${PURO}
         ${VENDA_SRC}
         return { venderNoNpc };
@@ -240,6 +247,29 @@ await t('venda: desmarca equipamento, material e a lista do dono; vende o resto'
     assert.deepStrictEqual(V.J.vendidos.sort(), ['goblin ear', 'orc tooth']);
     assert.strictEqual(r.total, 140 + 450, 'o total vendido é só o do lixo');
     assert.deepStrictEqual(r.guardados.map(g => g.nome).sort(), ['elvish bow', 'leather boots', 'vampire teeth', 'white mushroom']);
+});
+/* 2.36.1 — dono, 30/10: "tem que vender item comum de equipamento, mesmo com potência alta". O painel vende por nome e guarda a linha;
+ * depois, pelo socket e com o iid, saem só as cópias Comuns sem refino (potência alta ou não); forjada, refinada, cadeado, a que o Equip
+ * usa e a sem forja ficam. Sem o socket, tudo fica no depot como antes. */
+await t('venda (2.36.1): o painel guarda o equipamento; depois as cópias Comuns saem pelo socket com o iid, mesmo com potência alta', async () => {
+    const inst = [{ iid: 'b1', name: 'Elvish Bow', forja: { raridade: 0, potenciaBase: 480 } }, { iid: 'b2', name: 'Elvish Bow', forja: { raridade: 1, potenciaBase: 90 } },
+                  { iid: 'b3', name: 'Elvish Bow', forja: { raridade: 0, refino: 2 } }, { iid: 'b4', name: 'Elvish Bow', forja: { raridade: 0 } }, { iid: 'b5', name: 'Elvish Bow', forja: { raridade: 0 } },
+                  { iid: 'b6', name: 'Elvish Bow' }, { iid: 'l1', name: 'leather boots', forja: { raridade: 0, potenciaBase: 30 } }];
+    const V = montarVenda(loteIncidente(), { socket: { bag: { 'Elvish Bow': 6, 'leather boots': 1 }, inst }, cadeado: ['b4'], equipRes: { usadas: ['b5'], reservas: [] } });
+    const r = await V.venderNoNpc();
+    assert(r.ok && !r.erro, JSON.stringify(r));
+    assert.deepStrictEqual(V.J.vendidos.sort(), ['goblin ear', 'orc tooth', 'white mushroom'], 'o painel continua sem vender equipamento');
+    assert.strictEqual(V.J.socket.length, 1);
+    assert.deepStrictEqual(V.J.socket[0].d.items, [{ name: 'Elvish Bow', count: 1, iid: 'b1' }, { name: 'leather boots', count: 1, iid: 'l1' }], 'só as Comuns sem refino, pelo nome da mochila');
+    assert.strictEqual(r.total, 140 + 450 + 12 + 154, 'o total soma o painel e o socket');
+    const lg = V.J.logs.join('\n');
+    assert(/forjada \(Incomum\)/.test(lg) && /refinada \(\+2\)/.test(lg) && /cadeado/.test(lg) && /o Equip usa/.test(lg) && /sem a forja da cópia/.test(lg) && /equipamento Comum vendido/.test(lg), lg);
+    const V2 = montarVenda(loteIncidente(), { socket: { bag: { 'Elvish Bow': 1 }, inst: [{ iid: 'b2', name: 'Elvish Bow', forja: { raridade: 2, potenciaBase: 90 } }] }, ah: { nvEquip: false } });
+    const r2 = await V2.venderNoNpc();
+    assert(r2.ok && !V2.J.socket && V2.J.vendidos.includes('elvish bow'), '"nunca vender equipamento" desligado: o painel vende tudo por nome, como antes');
+    const V3 = montarVenda(loteIncidente());
+    const r3 = await V3.venderNoNpc();
+    assert(r3.ok && !V3.J.socket && r3.total === 602 &&/socket do jogo não está à mão/.test(V3.J.logs.join('\n')), 'sem socket: o equipamento fica');
 });
 await t('venda: caixa que não desmarca = NADA vendido, painel fechado', async () => {
     const V = montarVenda(loteIncidente(), { ignora: ['elvish bow'] });

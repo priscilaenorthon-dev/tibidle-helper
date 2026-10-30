@@ -967,7 +967,7 @@ const cidadeSocket = (vendas) => (o) => {
     return undefined;
 };
 const LS_ESTADO = { tb_helper_ui: JSON.stringify({ aba: 'estado', aberta: true, oculto: false }), tb_helper_comum_assets_ver: '"v185"' };
-t('vm (2.35.7) celular: Venda rápida na cidade sem a tela do computador — purify_all → sell_loot (só o que o NPC compra; equipamento, NPC 0 e cadeado ficam) → depot_store_all, pelo socket', async () => {
+t('vm (2.35.7) celular: Venda rápida na cidade sem a tela do computador — purify_all → sell_loot (só o que o NPC compra; equipamento Comum vai com o iid — 2.36.1; NPC 0 e cadeado ficam) → depot_store_all, pelo socket', async () => {
     const vendas = [];
     const M = await mundoMercado({ bag: { 'small ruby': 3, 'orc tooth': 2, 'leather boots': 1, 'wild honey': 4 }, inst: [{ iid: 'b1', name: 'leather boots', forja: { raridade: 0, atributos: [] } }],
         protegidos: ['wild honey'], rotas: ROTAS_CIDADE, interceptar: cidadeSocket(vendas),
@@ -976,10 +976,10 @@ t('vm (2.35.7) celular: Venda rápida na cidade sem a tela do computador — pur
     await M.clicar('tb-venda-rapida'); // fora da caçada o 1.º toque já vale (não há o que confirmar)
     await M.W.avancar(90000);
     igual(M.S.recebidos.map(x => x.o.type).filter(t => !/^market_|^depot_get$/.test(t)), ['purify_all', 'sell_loot', 'depot_store_all'], 'passos pelo socket, sem stop (já na cidade) e sem start_hunt (Venda rápida fica na cidade)');
-    igual(vendas, [[{ name: 'small ruby', count: 3 }]], 'vende só o small ruby: orc tooth (NPC 0), leather boots (equipamento), wild honey (cadeado) ficam');
+    igual(vendas, [[{ name: 'small ruby', count: 3 }, { name: 'leather boots', count: 1, iid: 'b1' }]], 'vende o small ruby e a leather boots Comum (2.36.1); orc tooth (NPC 0) e wild honey (cadeado) ficam');
     const lg = logTxt(M.W);
-    assert(/purificados \(pelo socket\)/.test(lg) && /vendido ao NPC \(pelo socket\): 1 item\(ns\) por 300/.test(lg) && /guardei tudo pelo socket.*depot 7 de 100/.test(lg) && /ciclo de venda terminado/.test(lg), lg);
-    assert(/orc tooth \(o NPC paga 0/.test(lg) && /leather boots \(equipamento/.test(lg) && /wild honey \(cadeado/.test(lg), 'motivos: ' + lg);
+    assert(/purificados \(pelo socket\)/.test(lg) && /vendido ao NPC \(pelo socket\): 2 item\(ns\) por 300/.test(lg) && /guardei tudo pelo socket.*depot 7 de 100/.test(lg) && /ciclo de venda terminado/.test(lg), lg);
+    assert(/orc tooth \(o NPC paga 0/.test(lg) && /wild honey \(cadeado/.test(lg) && !/leather boots \(/.test(lg), 'motivos: ' + lg);
 });
 t('vm (2.35.7) celular: Auto Hunt dispara em caçada — stop → ended → summary_closed → purify_all → sell_loot → depot_store_all → start_hunt com o lure salvo, pelo socket', async () => {
     const vendas = [];
@@ -998,13 +998,13 @@ t('vm (2.35.7) celular: Auto Hunt dispara em caçada — stop → ended → summ
     const lg = logTxt(M.W);
     assert(/caçada encerrada \(pelo socket/.test(lg) && /de volta à caçada \(id 34, pelo socket, lure 3\)/.test(lg) && /ciclo de venda terminado/.test(lg), lg);
 });
-t('vm (2.35.8) celular: com "nunca vender equipamento" desligado, a cópia com potência ≥ 400 ou Épico+ fica; a comum vai com o iid', async () => {
+t('vm (2.35.8 → 2.36.1) celular: com "nunca vender equipamento" desligado, a Épico+ fica; a Comum vai com o iid mesmo com potência ≥ 400', async () => {
     const vendas = [];
     const M = await mundoMercado({ bag: { 'leather boots': 3 }, inst: [{ iid: 'e1', name: 'leather boots', forja: { raridade: 0, atributos: [], potenciaBase: 120 } }, { iid: 'e2', name: 'leather boots', forja: { raridade: 0, atributos: [], potenciaBase: 450 } }, { iid: 'e3', name: 'leather boots', forja: { raridade: 3, atributos: [], potenciaBase: 90 } }],
         rotas: ROTAS_CIDADE, interceptar: cidadeSocket(vendas),
         ls: Object.assign({ tb_helper_auto_hunt: JSON.stringify({ nvImbu: false, nvEquip: false }) }, LS_ESTADO) });
     await M.clicar('tb-venda-rapida'); await M.W.avancar(90000);
-    igual(vendas, [[{ name: 'leather boots', count: 1, iid: 'e1' }]], 'só a cópia comum de potência baixa');
+    igual(vendas, [[{ name: 'leather boots', count: 1, iid: 'e1' }, { name: 'leather boots', count: 1, iid: 'e2' }]], 'as duas Comuns (2.36.1: a de potência 450 também)');
     assert(/leather boots \(potência\/raridade de base de forja\)/.test(logTxt(M.W)), logTxt(M.W));
 });
 t('vm (2.35.7) celular: erro do servidor no sell_loot para o ciclo com o motivo e desliga o Auto Hunt; nada mais é mandado', async () => {

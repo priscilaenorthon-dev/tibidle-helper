@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.36.0
+// @version      2.36.1
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.36.0';
+    const VERSAO = '2.36.1';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -5170,7 +5170,7 @@
             const n = normNomeItem(l.nome);
             const real = o.nomes ? (o.nomes[n] || null) : null;
             const nome = real || l.nome;
-            let motivo = null;
+            let motivo = null, equip = false;
             if (lista.has(n) || (real && lista.has(normNomeItem(real)))) motivo = 'sua lista';
             else if (NUNCA_VENDER_OUTFIT_SET.has(n) || (real && NUNCA_VENDER_OUTFIT_SET.has(normNomeItem(real)))) motivo = 'item de outfit/montaria (Hugo/Palomino)'; // v2.35.8
             else if (o.imbu && (mats.has(n) || (real && mats.has(normNomeItem(real))))) motivo = 'material de imbuement';
@@ -5181,12 +5181,13 @@
                 const b = real && o.base ? (o.base[real] || baseMin[normNomeItem(real)] || null) : null;
                 if (!real) motivo = 'nome não reconhecido — guardado por segurança';
                 else if (!b) motivo = 'sem dados do item — guardado por segurança';
-                else if (ehEquipamento(b)) motivo = 'equipamento' + (b.attrs && (b.attrs.slot || b.attrs.slotType) ? ' (' + (b.attrs.slot || b.attrs.slotType) + ')' : '');
+                /* v2.36.1 — `equip`: o painel vende por nome e guarda a linha; a cópia Comum sai depois pelo socket (motivoGuardarCopia) */
+                else if (ehEquipamento(b)) { motivo = 'equipamento' + (b.attrs && (b.attrs.slot || b.attrs.slotType) ? ' (' + (b.attrs.slot || b.attrs.slotType) + ')' : ''); equip = b.sell !== 0; }
                 /* v2.11.7 — NPC que paga 0 não compra: "vender" = jogar fora. Wild
                  * Honey (0 no NPC, ~40 no Mercado) estava marcado no painel. */
                 else if (b.sell === 0) motivo = 'o NPC paga 0 — guardado (vale no Mercado)';
             }
-            if (motivo) guardar.push(Object.assign({}, l, { nome, motivo })); else vender.push(nome);
+            if (motivo) guardar.push(Object.assign({}, l, { nome, motivo }, equip ? { equip: true } : {})); else vender.push(nome);
         }
         return { guardar, vender };
     }
@@ -5565,6 +5566,56 @@
         return null;
     }
     const SELL_LOTE = 20;
+    /* v2.36.1 — dono, 30/10: "tem que vender item comum de equipamento, mesmo com potência alta". Cópia por cópia (a mochila traz a forja
+     * de cada uma): Comum sem refino vende sempre; refinada nunca; forjada (Incomum+) fica com "nunca vender equipamento" ligado e, com
+     * ele desligado, só a de base de forja (Épico+ ou potência ≥ 400) fica. Cadeado e peça que o Equip usa ou reserva ficam sempre.
+     * Sem a forja da cópia não dá para saber se é Comum: fica. */
+    function motivoGuardarCopia(x, nvEquip, usadas) {
+        if (estaProtegida({ iid: x.iid, nome: x.name })) return 'cadeado (Proteger)';
+        if (usadas.has(x.iid)) return 'o Equip usa';
+        const f = x.forja;
+        if (!f || typeof f !== 'object') return 'equipamento sem a forja da cópia — guardado por segurança';
+        const rar = Number(f.raridade) || 0, ref = Number(f.refino) || 0;
+        if (ref > 0) return `refinada (+${ref})`;
+        if (rar === 0) return null;
+        if (nvEquip) return `forjada (${RAR_PT[rar] || 'raridade ' + rar})`;
+        if (potenciaDe({ forja: f }) >= POTENCIA_BASE_ALTA || rar >= RARIDADE_BASE_FORJA) return 'potência/raridade de base de forja';
+        return null;
+    }
+    const usadasDoEquip = () => new Set([...((EQUIP.res && EQUIP.res.usadas) || []), ...((EQUIP.res && EQUIP.res.reservas) || [])]);
+    async function venderLotesSocket(itens) {
+        let ouro = 0, n = 0;
+        for (let i = 0; i < itens.length; i += SELL_LOTE) {
+            const lote = itens.slice(i, i + SELL_LOTE);
+            const r = await mkPedir('sell_loot', { items: lote, requestId: 'tb-sell-' + Date.now() + '-' + i });
+            if (r.erro) return { erro: `sell_loot pelo socket: ${mkErroTexto(r.erro)} — ${n ? n + ' item(ns) já vendido(s) por ' + mkFmt(ouro) : 'nada vendido'}`, ouro, n };
+            ouro += Number((r.data || {}).goldCredited) || 0; n += lote.length;
+        }
+        return { ouro, n };
+    }
+    /* v2.36.1 — tela do computador: o painel do NPC vende por NOME (não vê a forja), então guarda toda linha de equipamento; depois
+     * desta venda, as cópias Comuns dessas linhas saem pelo socket com o iid (sell_loot). Sem o socket ficam no depot, como antes. */
+    async function venderEquipComunsSocket(guardados, prot) {
+        const nomes = new Set((guardados || []).filter(g => g && g.equip).map(g => normNomeItem(g.nome)));
+        if (!nomes.size) return { ouro: 0, n: 0 };
+        if (!socketAberto()) { log('equipamento Comum: o socket do jogo não está à mão — fica no depot', 'info'); return { ouro: 0, n: 0 }; }
+        await dorme(600); // a mochila do jogo termina de atualizar depois da venda do painel
+        const m = mochilaAgora();
+        if (!m) { log('equipamento Comum: não li a mochila — fica no depot', 'info'); return { ouro: 0, n: 0 }; }
+        const chave = {}; for (const k of Object.keys(m.bag || {})) chave[normNomeItem(k)] = k;
+        const usadas = usadasDoEquip(), itens = [], ficam = [];
+        for (const x of m.inst) {
+            if (!x || !x.iid || !nomes.has(normNomeItem(x.name))) continue;
+            const mot = motivoGuardarCopia(x, prot.equip, usadas);
+            if (mot) ficam.push(x.name + ' (' + mot + ')'); else itens.push({ name: chave[normNomeItem(x.name)] || x.name, count: 1, iid: x.iid });
+        }
+        if (ficam.length) log('equipamento que fica: ' + ficam.join(', '), 'info');
+        if (!itens.length) return { ouro: 0, n: 0 };
+        const r = await venderLotesSocket(itens);
+        if (r.erro) { log('equipamento Comum: ' + r.erro + ' — o resto fica no depot', 'erro'); return { ouro: r.ouro, n: r.n }; }
+        log(`equipamento Comum vendido ao NPC (pelo socket): ${r.n} peça(s) por ${mkFmt(r.ouro)} de ouro — ${itens.map(i => i.name).join(', ')}`, 'ok');
+        return r;
+    }
     async function venderNoNpcSocket(opts) {
         opts = opts || {};
         if (!socketAberto()) return { erro: 'botão VENDER não está na tela e o socket do jogo não está à mão' };
@@ -5580,12 +5631,14 @@
         if (opts.apenas) { for (const l of linhas) { if (opts.apenas.has(normNomeItem(l.nome))) vender.push(l.nome); else guardados.push(Object.assign({}, l, { motivo: 'não é sobra do Equip' })); } }
         else {
             if (prot.equip) { const reais = linhas.map(l => prot.nomes[normNomeItem(l.nome)]).filter(Boolean); try { prot.base = await basePorNome(reais); } catch (e) { prot.base = {}; } }
-            const e = escolherDesmarcar(linhas, prot); guardados = e.guardar; vender = e.vender;
+            const e = escolherDesmarcar(linhas, prot); guardados = e.guardar.filter(g => !g.equip); vender = e.vender;
+            /* v2.36.1 — o equipamento volta para a decisão cópia por cópia (motivoGuardarCopia) */
+            for (const g of e.guardar) if (g.equip) vender.push(g.nome);
         }
         /* só o que o NPC compra (sell > 0) e sem cadeado; o nome que vai é o da mochila (o jogo conhece esse) */
         const porNorm = {}; for (const l of linhas) porNorm[normNomeItem(l.nome)] = l;
         let base = {}; try { base = await basePorNome(vender.map(n => (prot.nomes && prot.nomes[normNomeItem(n)]) || n)); } catch (e) { base = {}; }
-        const usadas = new Set([...((EQUIP.res && EQUIP.res.usadas) || []), ...((EQUIP.res && EQUIP.res.reservas) || [])]);
+        const usadas = usadasDoEquip();
         const itens = [];
         for (const n of vender) {
             const l = porNorm[normNomeItem(n)]; if (!l) continue;
@@ -5593,28 +5646,31 @@
             if (b && b.sell === 0) { guardados.push(Object.assign({}, l, { motivo: 'o NPC paga 0' })); continue; }
             if (estaProtegida({ nome: l.nome })) { guardados.push(Object.assign({}, l, { motivo: 'cadeado (Proteger)' })); continue; }
             const inst = m.inst.filter(x => x && x.iid && mkMin(x.name) === mkMin(l.nome));
-            /* v2.35.8 — dono, 30/10: "não vender itens com potência boa". Com "nunca vender equipamento" desligado, uma cópia com potência de base de
-             * forja (≥ 400) ou Épico+ fica mesmo assim; nas sobras do Equip (`apenas`) a decisão já foi do Equip (bases nunca viram sobra). */
-            const boa = (x) => !opts.apenas && x.forja && (potenciaDe({ forja: x.forja }) >= POTENCIA_BASE_ALTA || (Number(x.forja.raridade) || 0) >= RARIDADE_BASE_FORJA);
-            if (inst.length) { for (const x of inst) { const mot = estaProtegida({ iid: x.iid, nome: x.name }) ? 'cadeado (Proteger)' : usadas.has(x.iid) ? 'o Equip usa' : boa(x) ? 'potência/raridade de base de forja' : null; if (mot) { guardados.push({ nome: l.nome, motivo: mot }); continue; } itens.push({ name: l.nome, count: 1, iid: x.iid }); } }
+            /* nas sobras do Equip (`apenas`) a decisão já foi do Equip: só cadeado e peça usada ficam. Fora dela vale motivoGuardarCopia
+             * (v2.36.1: Comum vende mesmo com potência alta; a 2.35.8 guardava a Comum de potência ≥ 400) */
+            const mot = (x) => opts.apenas ? (estaProtegida({ iid: x.iid, nome: x.name }) ? 'cadeado (Proteger)' : usadas.has(x.iid) ? 'o Equip usa' : null) : motivoGuardarCopia(x, prot.equip, usadas);
+            if (inst.length) { for (const x of inst) { const mt = mot(x); if (mt) { guardados.push({ nome: l.nome, motivo: mt }); continue; } itens.push({ name: l.nome, count: 1, iid: x.iid }); } }
+            else if (b && ehEquipamento(b)) guardados.push(Object.assign({}, l, { motivo: 'equipamento sem a cópia na mochila — guardado por segurança' }));
             else itens.push({ name: l.nome, count: l.count });
         }
         if (guardados.length) log(`${opts.apenas ? 'fora das sobras' : 'nunca vender'}: ${guardados.map(g => g.nome + ' (' + g.motivo + ')').join(', ')}`, 'info');
         if (!itens.length) { log('nada para vender' + (guardados.length ? ' — tudo que havia está na lista "nunca vender"' : ''), 'info'); return { ok: true, vazio: true, guardados }; }
-        let ouro = 0, n = 0;
-        for (let i = 0; i < itens.length; i += SELL_LOTE) {
-            const lote = itens.slice(i, i + SELL_LOTE);
-            const r = await mkPedir('sell_loot', { items: lote, requestId: 'tb-sell-' + Date.now() + '-' + i });
-            if (r.erro) return { erro: `sell_loot pelo socket: ${mkErroTexto(r.erro)} — ${n ? n + ' item(ns) já vendido(s) por ' + mkFmt(ouro) : 'nada vendido'}` };
-            ouro += Number((r.data || {}).goldCredited) || 0; n += lote.length;
-        }
-        log(`vendido ao NPC (pelo socket): ${n} item(ns) por ${mkFmt(ouro)} de ouro`, 'ok');
-        return { ok: true, total: ouro, guardados };
+        const r = await venderLotesSocket(itens);
+        if (r.erro) return { erro: r.erro };
+        log(`vendido ao NPC (pelo socket): ${r.n} item(ns) por ${mkFmt(r.ouro)} de ouro`, 'ok');
+        return { ok: true, total: r.ouro, guardados };
     }
     async function venderNoNpc(opts) {
         opts = opts || {};
         const abrir = tid('actionbar-selling');
         if (!abrir) return venderNoNpcSocket(opts); // v2.35.7 — celular
+        const r = await venderNoNpcPainel(opts, abrir);
+        if (r.erro || opts.apenas || !r.prot) return r;
+        /* v2.36.1 — as cópias Comuns do equipamento que o painel guardou */
+        let e = { ouro: 0, n: 0 }; try { e = await venderEquipComunsSocket(r.guardados, r.prot); } catch (er) { falhou('venda (equipamento Comum)', er); }
+        return Object.assign({}, r, { total: (r.total || 0) + (e.ouro || 0), vazio: r.vazio && !e.n });
+    }
+    async function venderNoNpcPainel(opts, abrir) {
         let prot;
         try { prot = opts.apenas ? { equip: false } : await protecaoVenda(); }
         catch (e) { return { erro: 'não consegui montar a lista "nunca vender" (' + e.message + ') — nada vendido' }; }
@@ -5670,7 +5726,7 @@
             fecharPainel();
             await dorme(400);
             log('nada para vender (total ' + total + ')' + (guardados.length ? ' — tudo que havia está na lista "nunca vender"' : ''), 'info');
-            return { ok: true, vazio: true, guardados };
+            return { ok: true, vazio: true, guardados, prot };
         }
         const ouroAntes = lerOuroNum();
         const vendeu = () => lerOuroNum() > ouroAntes;
@@ -5689,7 +5745,7 @@
         if (tid('sell-panel')) fecharPainel();
         await dorme(400);
         log(`vendido no NPC: ${total} ouro · ${ouroAntes.toLocaleString('pt-BR')} → ${lerOuroNum().toLocaleString('pt-BR')}`, 'ok');
-        return { ok: true, total: totalNum, guardados };
+        return { ok: true, total: totalNum, guardados, prot };
     }
     /* @@AUTOHUNT-VENDA-FIM */
 
@@ -6648,17 +6704,20 @@
     async function basePorNome(nomes) {
         const cache = ler('equip_base', {});
         const ids = await idsPorNome();
-        const faltam = [...new Set(nomes)].filter(n => !cache[n] && ids[n] != null);
+        /* v2.36.1 — o items-by-name.json tem as chaves em minúsculas ("zaoan halberd") e o depósito manda "Zaoan halberd": sem
+         * este segundo olhar a peça ficava sem ficha (sem vocação, sem armadura de base) e o Equip punha a halberd no Feiticeiro */
+        const norm = nomesNormalizados(ids), idDe = n => (ids[n] != null ? ids[n] : norm[normNomeItem(n)] != null ? ids[norm[normNomeItem(n)]] : null);
+        const faltam = [...new Set(nomes)].filter(n => !cache[n] && idDe(n) != null);
         for (let i = 0; i < faltam.length; i += 100) {
             const lote = faltam.slice(i, i + 100);
             try {
-                const lista = await buscarJSON('/item/info?ids=' + lote.map(n => ids[n]).join(','));
+                const lista = await buscarJSON('/item/info?ids=' + [...new Set(lote.map(idDe))].join(','));
                 for (const it of lista) {
                     /* v2.11.7 — guardado também pelo nome PEDIDO ("wild honey"), não só pelo
                      * que o /item/info devolve ("Wild Honey"); sell desconhecido = null, não 0 */
                     const v = { id: it.id, attrs: it.attrs || {}, sell: it.sell != null ? Number(it.sell) || 0 : null, equipPreview: it.equipPreview || null };
                     cache[it.name] = v;
-                    for (const n of lote) if (ids[n] === it.id) cache[n] = v;
+                    for (const n of lote) if (idDe(n) === it.id) cache[n] = v;
                 }
             } catch (e) { log('equip: /item/info falhou: ' + e.message, 'erro'); }
         }
@@ -7909,7 +7968,9 @@
             } }
             if (((p.forja && p.forja.raridade) || 0) >= RARIDADE_BASE_FORJA) return Object.assign({}, p, { motivo: `${RAR_PT[p.forja.raridade] || 'Épico'} sem linha útil: ${(p.forja.atributos || []).map(a => rotulo(a.id)).join(', ') || 'sem encaixe'} — rolar skill cai 1 em 89 por gema; anuncie (o Mercado paga os encaixes) ou desmanche` });
             if (encaixeNobre(p) && vocs.some(v => vocacaoPode(p.attrs, v))) return Object.assign({}, p, { motivo: 'encaixe bom, mas todos que a vestem já usam igual ou melhor' + (melhorUso ? ` (${melhorUso.top.nome}, ${melhorUso.v.toLowerCase()})` : '') });
-            return Object.assign({}, p, { motivo: melhorUso ? `superada por ${melhorUso.top.nome} (${melhorUso.v.toLowerCase()}, −${Math.round(melhorUso.d * 10) / 10} pt)` : 'nenhuma vocação usa' });
+            /* v2.36.1 — arma de 2 mãos sozinha pode pontuar MAIS que a arma vestida e perder para arma + escudo (relatório 30/10: "−-54 pt") */
+            const dif = melhorUso && (melhorUso.d > 0 ? `, −${Math.round(melhorUso.d * 10) / 10} pt` : p.duasMaos ? ', 2 mãos: perde para arma + escudo' : '');
+            return Object.assign({}, p, { motivo: melhorUso ? `superada por ${melhorUso.top.nome} (${melhorUso.v.toLowerCase()}${dif})` : 'nenhuma vocação usa' });
         }).sort((a, b) => (b.sell || 0) - (a.sell || 0));
         return { porVoc, reservas, dispensaveis, usadas, temporarios, bases, nobres };
     }
@@ -10725,10 +10786,10 @@
           <div class="tb-linha"><span class="tb-mut">agora</span><span>${c ? `${c.pct}% · ${c.ozTxt} oz livres` : '—'}</span>${mochilaNoLimite() ? '<span class="tb-tag tb-ruim">no limite</span>' : ''}</div>
           <label class="tb-l"><input type="checkbox" id="tb-ah-voltar" ${a.voltar ? 'checked' : ''}> voltar para a hunt depois de vender</label>
           <details class="tb-aj" data-k="ah-nunca"><summary>nunca vender: ${prot.length ? escHtml(prot.join(' + ')) : '<span class="tb-ruim">NADA</span>'}</summary><div>
-            <div><label class="tb-l"><input type="checkbox" id="tb-ah-nv-equip" ${a.nvEquip !== false ? 'checked' : ''}> equipamento (tudo que veste ou empunha)</label></div>
+            <div><label class="tb-l"><input type="checkbox" id="tb-ah-nv-equip" ${a.nvEquip !== false ? 'checked' : ''}> equipamento forjado ou refinado (o Comum vende sempre, mesmo com potência alta)</label></div>
             <div><label class="tb-l"><input type="checkbox" id="tb-ah-nv-imbu" ${a.nvImbu !== false ? 'checked' : ''}> materiais de imbuement</label></div>
             <div class="tb-linha"><input class="tb-in" id="tb-ah-lista" placeholder="sua lista: nomes separados por vírgula" value="${escHtml(lista.join(', '))}" style="flex:1" aria-label="sua lista de itens para nunca vender"></div>
-            <div class="tb-mut">Antes de confirmar a venda no NPC o helper desmarca estes itens no painel (vale também para a Venda rápida). Se não conseguir desmarcar algum, não vende nada e registra no Log — o ciclo para. O que não é vendido vai para o depot.</div>
+            <div class="tb-mut">Antes de confirmar a venda no NPC o helper desmarca estes itens no painel (vale também para a Venda rápida). Se não conseguir desmarcar algum, não vende nada e registra no Log — o ciclo para. Depois, o equipamento <b>Comum</b> (sem forja e sem refino) sai pelo socket, peça por peça, mesmo com potência alta; forjada, refinada, com cadeado ou que o Equip usa fica. O que não é vendido vai para o depot.</div>
           </div></details>
           <details class="tb-aj" data-k="ah-hist"><summary>histórico (${hist.length})${nHora ? ' · ' + nHora + ' na última hora' : ''}</summary><div>
             ${hist.length ? `<table class="tb-ah-hist"><tr><th style="width:23%">hora</th><th style="width:19%">ouro</th><th style="width:22%">oz</th><th style="width:14%">depot</th><th>resultado</th></tr>${linhasHist}</table>` : '<div class="tb-mut">nenhum ciclo ainda</div>'}

@@ -56,4 +56,21 @@ t('Mercado: só as suas ordens de VENDA abertas; cópia anunciada vem com a peç
     const vazio = M.relatorioEquip({});
     assert(vazio.itens.length === 0 && vazio.mercado.length === 0 && vazio.conta === null && vazio.fase === null, 'sem nada: relatório vazio, sem erro');
 });
-console.log(`\n${n} testes ok`);
+
+/* 2.36.1 — os 3 relatórios de 30/10 vieram com Zaoan halberd/legs/shoes de ficha vazia ("vai vestir: SORCERER weapon"): o
+ * items-by-name.json tem as chaves em minúsculas e o depósito manda "Zaoan halberd". Extrai basePorNome com dublês do impuro. */
+const fn = (ini) => { const i = src.indexOf(ini), m = /\r?\n    \}\r?\n/.exec(src.slice(i)); assert(i > 0 && m, 'função ausente: ' + ini); return src.slice(i, i + m.index + m[0].length); };
+const ta = (nome, fn) => fn().then(() => { n++; console.log('ok  ', nome); }, (e) => { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; });
+ta('basePorNome acha a ficha pelo nome em outra caixa ("Zaoan halberd" × "zaoan halberd") e guarda pelo nome pedido', async () => {
+    const pedidos = [], salvo = {};
+    const B = new Function('ler', 'guardar', 'idsPorNome', 'buscarJSON', 'log',
+        src.slice(src.indexOf('const normNomeItem ='), src.indexOf('\n', src.indexOf('const normNomeItem ='))) + '\nlet _nomesNorm = null, _nomesNormDe = null;\n' +
+        fn('function nomesNormalizados(') + fn('async function basePorNome(') + '\nreturn basePorNome;')(
+        (k, d) => d, (k, v) => { salvo[k] = v; }, async () => ({ 'zaoan halberd': 10406, 'magic sword': 2400 }),
+        async (url) => { pedidos.push(url); return [{ id: 10406, name: 'zaoan halberd', attrs: { weaponType: 'axe', attack: 43, slotType: 'two-handed' }, sell: 500 }, { id: 2400, name: 'magic sword', attrs: { weaponType: 'sword' }, sell: 0 }]; }, () => {});
+    const base = await B(['Zaoan halberd', 'magic sword', 'Zaoan halberd', 'item que não existe']);
+    assert.strictEqual(pedidos.length, 1); assert(/ids=10406,2400$/.test(pedidos[0]), 'pede cada id uma vez: ' + pedidos[0]);
+    assert(base['Zaoan halberd'] && base['Zaoan halberd'].attrs.weaponType === 'axe', 'ficha guardada pelo nome que o depósito manda');
+    assert(base['magic sword'].attrs.weaponType === 'sword' && !base['item que não existe']);
+    assert(salvo.equip_base && salvo.equip_base['Zaoan halberd']);
+}).then(() => console.log(`\n${n} testes ok`));

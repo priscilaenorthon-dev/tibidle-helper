@@ -6745,3 +6745,22 @@ os 3 arquivos e você analisar qual vale a pena usar em qual mapa, ou deixar uma
   usa a última leitura e avisa no JSON em `mercadoNota`), monta o JSON, baixa o arquivo, e deixa uma caixa na aba com "baixar .json",
   "copiar" e o texto (no iPhone a caixa + copiar é o caminho). Tudo é leitura: nada muda no jogo.
 - Testes: 473 (+2 relatorio, telas: botão, caixa, JSON, sem segredo, fechar).
+
+## 2.36.1 — Equip: peça com o nome em outra caixa ("Zaoan halberd") volta a ter ficha; Venda rápida vende o equipamento Comum (30/10)
+
+Os 3 relatórios de 30/10 (ShamanBr, u2tag, XundaBr) mostraram **Zaoan halberd, Zaoan legs e Zaoan shoes com ficha vazia** (30 cópias):
+sem vocação, sem armadura/defesa de base, notas só pela forja. Na ShamanBr o Equip dava "vai vestir: SORCERER weapon" a uma halberd.
+- Causa: o `items-by-name.json` do jogo tem as chaves em minúsculas (`zaoan halberd`) e o depósito manda `Zaoan halberd`; o
+  `basePorNome` procurava o id pelo nome exato. Agora cai no `nomesNormalizados` (o mesmo da venda) quando o exato não existe.
+- Sobra de arma de 2 mãos: o motivo dizia "−-54 pt" (a arma sozinha pontua mais que a vestida e perde para arma + escudo); agora diz
+  "2 mãos: perde para arma + escudo".
+- **Venda rápida / Auto Hunt vendem o equipamento Comum** (dono, 30/10: "tem que vender item comum de equipamento, mesmo com potência
+  alta"). Decisão cópia por cópia (`motivoGuardarCopia`, a mochila traz a forja de cada uma): **Comum sem refino vende sempre**,
+  qualquer potência (a 2.35.8 guardava a Comum de potência ≥ 400); **refinada nunca**; **forjada** (Incomum+) fica com "nunca vender
+  equipamento" ligado e, desligado, só a de base de forja (Épico+ ou potência ≥ 400) fica; cadeado e peça que o Equip usa/reserva
+  ficam sempre; cópia sem a forja fica. Tela do computador: o painel do NPC vende por nome e continua guardando toda linha de
+  equipamento; logo depois, as cópias Comuns dessas linhas saem pelo socket (`sell_loot` com o iid, `venderEquipComunsSocket`) — sem o
+  socket ficam no depot, como antes, e o Log diz. Celular: o mesmo critério dentro do `venderNoNpcSocket`. A venda das sobras do Equip
+  (`apenas`) não muda. A caixa do Auto Hunt agora diz "equipamento forjado ou refinado (o Comum vende sempre…)".
+- Testes: 475 (+1 relatorio: basePorNome com nome em outra caixa; +1 autohunt: painel + socket com Comum de potência 480, Incomum,
+  refinada, cadeado, usada pelo Equip e sem forja; 2 do mercado atualizados para a regra nova).
