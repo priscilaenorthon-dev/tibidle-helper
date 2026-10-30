@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.36.1
+// @version      2.36.2
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.36.1';
+    const VERSAO = '2.36.2';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -12029,9 +12029,23 @@
         return h;
     }
     /* v2.36.0 — RELATÓRIO DE EQUIPAMENTO: só leitura (as suas ordens do Mercado são lidas pelo socket se ele estiver livre) */
-    function relBaixar(nome, texto) {
-        try { const u = URL.createObjectURL(new Blob([texto], { type: 'application/json;charset=utf-8' })); const a = document.createElement('a'); a.href = u; a.download = nome; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 60000); return true; }
-        catch (e) { avisar('equip', 'o navegador não deixou baixar — use "copiar" ou a caixa abaixo', 'erro'); return false; }
+    /* v2.36.2 — no Chrome do dono o link blob: saía com o nome do próprio link (um UUID, sem .json): o `download` foi ignorado.
+     * Agora: o botão "baixar .json" (clique direto) abre o "Salvar como" do navegador (showSaveFilePicker) com o nome certo; o
+     * download automático usa um link data: (o Chrome respeita o `download` nele) e o link fica na página até o download sair. */
+    async function relBaixar(nome, texto, gesto) {
+        if (gesto && typeof window.showSaveFilePicker === 'function') {
+            try {
+                const fh = await window.showSaveFilePicker({ suggestedName: nome, types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }] });
+                const w = await fh.createWritable(); await w.write(texto); await w.close();
+                avisar('equip', 'relatório salvo: ' + (fh.name || nome), 'ok'); return true;
+            } catch (e) { if (e && e.name === 'AbortError') return false; } // cancelou o "Salvar como": nada a fazer; outro erro: cai no link
+        }
+        try {
+            const a = document.createElement('a');
+            a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(texto); a.download = nome; a.rel = 'noopener'; a.style.display = 'none';
+            (document.body || document.documentElement).appendChild(a); a.click(); setTimeout(() => a.remove(), 3000);
+            return true;
+        } catch (e) { avisar('equip', 'o navegador não deixou baixar — use "copiar" ou a caixa abaixo', 'erro'); return false; }
     }
     function relCopiar(texto) {
         let p; try { p = navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(texto) : Promise.reject(new Error('sem clipboard')); } catch (e) { p = Promise.reject(e); }
@@ -12068,7 +12082,7 @@
         const e4 = $('#tb-eq-equipar4'); if (e4) e4.onclick = () => { if (!EQUIP.equipando) equiparTrocas(VOCS); };
         const e1 = $('#tb-eq-equipar1'); if (e1) e1.onclick = () => { if (!EQUIP.equipando) equiparTrocas([EQUIP.voc]); };
         const rl = $('#tb-eq-relatorio'); if (rl) rl.onclick = () => { if (!EQUIP.relatorioLendo) equipRelatorio().catch(e => falhou('relatório de equipamento', e)); }; // v2.36.0
-        const rb = $('#tb-eq-rel-baixar'); if (rb) rb.onclick = () => { if (EQUIP.relatorio) relBaixar(EQUIP.relatorio.nome, EQUIP.relatorio.texto); };
+        const rb = $('#tb-eq-rel-baixar'); if (rb) rb.onclick = () => { if (EQUIP.relatorio) relBaixar(EQUIP.relatorio.nome, EQUIP.relatorio.texto, true); };
         const rc = $('#tb-eq-rel-copiar'); if (rc) rc.onclick = () => { if (EQUIP.relatorio) relCopiar(EQUIP.relatorio.texto); };
         const rf = $('#tb-eq-rel-fechar'); if (rf) rf.onclick = () => { EQUIP.relatorio = null; renderizar(); };
         const dfr = $('#tb-eq-desm-frag'); if (dfr) dfr.onchange = () => { guardar('desm_fragmentos', dfr.checked); EQUIP.desmConf = null; renderizar(); }; // v2.34.1

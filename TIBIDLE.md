@@ -6764,3 +6764,12 @@ sem vocação, sem armadura/defesa de base, notas só pela forja. Na ShamanBr o 
   (`apenas`) não muda. A caixa do Auto Hunt agora diz "equipamento forjado ou refinado (o Comum vende sempre…)".
 - Testes: 475 (+1 relatorio: basePorNome com nome em outra caixa; +1 autohunt: painel + socket com Comum de potência 480, Incomum,
   refinada, cadeado, usada pelo Equip e sem forja; 2 do mercado atualizados para a regra nova).
+
+## 2.36.2 — Relatório do Equip baixa com o nome certo (30/10)
+
+- Teste ao vivo da 2.36.1 (ShamanBr, Playwright): a Venda rápida guardou a plate legs Comum (potência 342) no painel do NPC, vendeu o
+  resto (10.145) e logo depois vendeu a plate legs pelo socket (115). A Zaoan halberd tem ficha (machado de 2 mãos, ataque 37) e só
+  pontua no Cavaleiro; a Zaoan legs vai vestir no Cavaleiro.
+- No Chrome do dono o download do RELATÓRIO saía com o nome do link blob (um UUID, sem `.json`): o `download` foi ignorado. Agora o
+  botão "baixar .json" abre o "Salvar como" do navegador (`showSaveFilePicker`) com o nome certo, e o download automático usa um link
+  `data:` (o Chrome respeita o `download` nele), que fica na página até o download sair. O conteúdo não mudou.
