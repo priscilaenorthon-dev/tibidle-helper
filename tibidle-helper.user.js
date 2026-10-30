@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.36.6
+// @version      2.36.8
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.36.6';
+    const VERSAO = '2.36.8';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -9307,7 +9307,7 @@
             PALADIN: { vida: ['Great Spirit Potion', 30], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2], ['stone shower rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Divine Healing', 60], ['Intense Healing', 70]] },
             SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Great Fire Wave', 2], ['stone shower rune', 2], ['Strong Flame Strike', 1], ['Terra Strike', 1]], defesa: [['Ultimate Healing', 60], ['Intense Healing', 75]], suporte: ['Enchant Party', 'Magic Shield'] },
             DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Terra Wave', 2], ['stone shower rune', 2], ['Strong Terra Strike', 1], ['Terra Strike', 1]], defesa: [['Heal Friend', 70], ['Mass Healing', 60], ['Ultimate Healing', 60]], suporte: ['Heal Party', 'Magic Shield'] } } },
-        { id: 'northon-212', hunt: 'Hellgorak Seal', huntId: 212, autor: 'Northon (padrão Specter/Gus/Theus, nível 136)', data: '20/10', titulo: 'Northon - Hellgorak Seal',
+        { id: 'northon-212', hunt: 'Hellgorak Seal', huntId: 212, autor: 'Northon (padrão Specter/Gus/Theus, nível 136)', data: '20/10', titulo: 'Northon - Hellgorak Seal', comPost: true,
           lure: 'nível 1 — 8 criaturas', skills: '', nota: '', nivel: 'recomendado 200', obs: 'Nenhum post no Discord para este mapa. Montado com o padrão que a comunidade usa do nível 118 ao 158 (Specter, Gus, Theus, Zumpano), para o nível 136: Cavaleiro Fierce Berserk, Berserk, Lesser Front Sweep e Brutal Strike; Paladino Caldera, runa e as duas lanças; magos onda, runa, golpe forte e golpe do elemento da runa; a MESMA runa nos três. Conferido contra os posts de nível 110+ do Discord: a barra sai 94 % igual à do Specter. Aqui: runa da party avalanche rune (gelo 101); Feiticeiro com Energy Wave (energia 95) e golpe Ice Strike (gelo 101); Druida com Strong Ice Wave (gelo 101) e golpe Ice Strike (gelo 101); monstro imune a fogo. Mapa acima do seu nível: Magic Shield nos magos, Intense Recovery no Cavaleiro e duas curas no Paladino (como o Specter na Warzone, nível 158). Atenção: recomendado 200, 64 acima do seu nível: comece com lure baixo. Lure do mapa: 8 criaturas.',
           chars: {
             KNIGHT: { vida: ['Great Health Potion', 30], mana: ['Mana Potion', 40], ataque: [['Fierce Berserk', 4], ['Berserk', 2], ['Lesser Front Sweep', 1], ['Brutal Strike', 1]], defesa: [['Intense Recovery', 85], ['Intense Wound Cleansing', 40], ['Wound Cleansing', 85]] },
@@ -9470,6 +9470,24 @@
             KNIGHT: { vida: ['Ultimate Health Potion', 35], mana: ['Mana Potion', 30], ataque: [['Fierce Berserk', 2], ['Berserk', 2], ['Groundshaker', 2], ['Lesser Front Sweep', 1]], defesa: [['Intense Recovery', 94], ['Intense Wound Cleansing', 30], ['Wound Cleansing', 91]], suporte: ['Protector'] },
             PALADIN: { vida: ['Ultimate Spirit Potion', 38], mana: ['Mana Potion', 10], ataque: [['Divine Caldera', 2], ['thunderstorm rune', 2], ['Strong Ethereal Spear', 1], ['Divine Missile', 1]], defesa: [['Salvation', 50], ['Intense Healing', 70]], suporte: ['Protect Party'] },
             SORCERER: { vida: ['Health Potion', 38], mana: ['Mana Potion', 5], ataque: [['Energy Wave', 1], ['thunderstorm rune', 2], ['Ultimate Energy Strike', 1], ['Ice Strike', 1]], defesa: [['Ultimate Healing', 50], ['Intense Healing', 70]], suporte: ['Enchant Party'] },
+            DRUID: { vida: ['Health Potion', 45], mana: ['Great Mana Potion', 20], ataque: [['Strong Ice Wave', 1], ['avalanche rune', 2], ['Strong Ice Strike', 1], ['Ice Strike', 1]], defesa: [['Ultimate Healing', 60], ['Mass Healing', 65], ['Heal Friend', 78]], suporte: ['Heal Party'] } } },
+        /* — 30/10 (2.36.7): barra de um amigo do dono no WhatsApp, 4 fotos da tela (Shadow Nexus, lure Extremo). Ícones lidos pela cor e
+         *   pelo formato, comparados com o post do lucasdela de 29/10 (o Druida é idêntico a ele). */
+        { id: 'shadownexus-amigo-whatsapp', hunt: 'Shadow Nexus', huntId: 222, autor: 'Amigo do Whatsapp', data: '30/10', titulo: 'Amigo do Whatsapp (Shadow Nexus, 30/10)', pocaoDoMapa: true,
+          lure: 'Extremo', skills: '', nota: '', nivel: '180+ (recomendado 250)',
+          obs: 'Setup de um amigo do dono no WhatsApp (4 fotos da tela, 30/10, lure Extremo). Parecido com o do lucasdela de 29/10: o Druida é igual; o Cavaleiro só segura (Lesser Front Sweep e as três curas, com Protector); o Paladino leva a Caldera a partir de 4 criaturas; o Feiticeiro bate com os dois golpes de energia. Lido pelos ícones da foto: no Feiticeiro, o 1.º ataque (em recarga na foto) foi lido como Energy Wave e os dois rosas como Ultimate e Strong Energy Strike; no Cavaleiro, o único ataque (em recarga) como Lesser Front Sweep; poções pela cor do frasco. Paladino de flecha: a munição fica a sua.',
+          chars: {
+            KNIGHT: { vida: ['Ultimate Health Potion', 38], mana: ['Mana Potion', 15], ataque: [['Lesser Front Sweep', 1]], defesa: [['Intense Recovery', 94], ['Wound Cleansing', 85], ['Intense Wound Cleansing', 30]], suporte: ['Protector'] },
+            PALADIN: { vida: ['Ultimate Spirit Potion', 38], mana: ['Mana Potion', 10], ataque: [['Divine Caldera', 4], ['thunderstorm rune', 2], ['Strong Ethereal Spear', 1], ['Divine Missile', 1]], defesa: [['Salvation', 50], ['Intense Healing', 85]], suporte: ['Protect Party'] },
+            SORCERER: { vida: ['Health Potion', 38], mana: ['Mana Potion', 10], ataque: [['Energy Wave', 1], ['thunderstorm rune', 2], ['Ultimate Energy Strike', 1], ['Strong Energy Strike', 1]], defesa: [['Ultimate Healing', 50], ['Intense Healing', 85]], suporte: ['Enchant Party'] },
+            DRUID: { vida: ['Health Potion', 45], mana: ['Great Mana Potion', 20], ataque: [['Strong Ice Wave', 1], ['avalanche rune', 2], ['Strong Ice Strike', 1], ['Ice Strike', 1]], defesa: [['Ultimate Healing', 60], ['Mass Healing', 65], ['Heal Friend', 78]], suporte: ['Heal Party'] } } },
+        { id: 'hellgorak-amigo-whatsapp', hunt: 'Hellgorak Seal', huntId: 212, autor: 'Amigo do Whatsapp', data: '30/10', titulo: 'Amigo do Whatsapp (Hellgorak Seal, 30/10)', pocaoDoMapa: true,
+          lure: 'nível 1 — 8 criaturas', skills: '', nota: '', nivel: 'recomendado 200',
+          obs: 'A mesma barra do Amigo do Whatsapp no Shadow Nexus (4 fotos, 30/10), posta aqui a pedido do dono. Hellgorak Seal: monstro imune a fogo; a thunderstorm e os golpes de energia do Feiticeiro e a Strong Ice Wave e a avalanche do Druida batem. Lure fixa em 8 criaturas desde o começo: entre com Protector e a prey de DEFESA no Cavaleiro. Paladino de flecha: a munição fica a sua.',
+          chars: {
+            KNIGHT: { vida: ['Ultimate Health Potion', 38], mana: ['Mana Potion', 15], ataque: [['Lesser Front Sweep', 1]], defesa: [['Intense Recovery', 94], ['Wound Cleansing', 85], ['Intense Wound Cleansing', 30]], suporte: ['Protector'] },
+            PALADIN: { vida: ['Ultimate Spirit Potion', 38], mana: ['Mana Potion', 10], ataque: [['Divine Caldera', 4], ['thunderstorm rune', 2], ['Strong Ethereal Spear', 1], ['Divine Missile', 1]], defesa: [['Salvation', 50], ['Intense Healing', 85]], suporte: ['Protect Party'] },
+            SORCERER: { vida: ['Health Potion', 38], mana: ['Mana Potion', 10], ataque: [['Energy Wave', 1], ['thunderstorm rune', 2], ['Ultimate Energy Strike', 1], ['Strong Energy Strike', 1]], defesa: [['Ultimate Healing', 50], ['Intense Healing', 85]], suporte: ['Enchant Party'] },
             DRUID: { vida: ['Health Potion', 45], mana: ['Great Mana Potion', 20], ataque: [['Strong Ice Wave', 1], ['avalanche rune', 2], ['Strong Ice Strike', 1], ['Ice Strike', 1]], defesa: [['Ultimate Healing', 60], ['Mass Healing', 65], ['Heal Friend', 78]], suporte: ['Heal Party'] } } },
         { id: 'bazir-theus', hunt: 'Throne of Bazir', huntId: 206, autor: 'Theus', data: '29/10', titulo: 'Throne of Bazir (Theus, 29/10)',
           lure: '', skills: '', nota: '', nivel: 'recomendado 130',

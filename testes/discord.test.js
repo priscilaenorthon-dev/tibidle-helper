@@ -293,7 +293,7 @@ t('2.33.5 varredura de 27/10 (Psyger-0 Hive Tower e Bog, lucasdela Shadow Nexus,
         assert(s && s.huntId === huntId && s.estatisticas && s.estatisticas.nivel === nivel, id);
         for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx(nivel)).avisos, [], id + ' ' + voc);
     }
-    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 222, title: 'Shadow Nexus' }).map(x => x.id), ['shadownexus-lucasdela', 'northon-222']);
+    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 222, title: 'Shadow Nexus' }).map(x => x.id), ['shadownexus-lucasdela', 'shadownexus-amigo-whatsapp', 'northon-222']);
     assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 198, title: 'Hive Tower' }).map(x => x.autor), ['Specter', 'Psyger-0']);
 });
 t('2.35.5 varredura de 29/10: Theus (Throne of Bazir e Verminor) tira os "Northon -" dos dois tronos; lucasdela troca a barra do Shadow Nexus; sem aviso no nível 170', () => {
@@ -423,4 +423,38 @@ t("Northon nível baixo (2.33.0): os 38 mapas de recomendado ≤ 50 sem post —
     }
 });
 
+t('2.36.7 Amigo do Whatsapp no Shadow Nexus (4 fotos, 30/10): barra completa dos 4, sem aviso no nível 185', () => {
+    const s = M.SETUPS_DISCORD.find(x => x.id === 'shadownexus-amigo-whatsapp');
+    assert(s && s.huntId === 222 && s.autor === 'Amigo do Whatsapp' && /Amigo do Whatsapp/.test(s.titulo));
+    const ctx = Object.assign({}, CTX_POT, { nivel: 185, magias: SPELLS });
+    for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) {
+        const ch = s.chars[voc];
+        assert(ch.vida && ch.mana && ch.ataque.length && ch.defesa.length && ch.suporte.length, voc);
+        assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx).avisos, [], voc);
+    }
+    assert.deepStrictEqual(s.chars.KNIGHT.ataque, [['Lesser Front Sweep', 1]]);
+    assert.deepStrictEqual(s.chars.PALADIN.ataque[0], ['Divine Caldera', 4]);
+});
+t('2.36.8 Amigo do Whatsapp também no Hellgorak Seal: mesma barra, sem aviso no nível 185', () => {
+    const a = M.SETUPS_DISCORD.find(x => x.id === 'shadownexus-amigo-whatsapp'), s = M.SETUPS_DISCORD.find(x => x.id === 'hellgorak-amigo-whatsapp');
+    assert(s && s.huntId === 212 && s.autor === 'Amigo do Whatsapp');
+    assert.deepStrictEqual(s.chars, a.chars);
+    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 212, title: 'Hellgorak Seal' }).map(x => x.id), ['northon-212', 'hellgorak-amigo-whatsapp']);
+    const ctx = Object.assign({}, CTX_POT, { nivel: 185, magias: SPELLS });
+    for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx).avisos, [], voc);
+});
+t('2.36.8 Amigo do Whatsapp é a barra das fotos inteira: vida, mana, ataque, defesa e suporte (as poções também)', () => {
+    const ctx = Object.assign({}, CTX_POT, { nivel: 185, magias: SPELLS });
+    const atual = { heals: [{ name: 'Strong Health Potion', percent: 70 }, { name: 'Light Healing', percent: 90 }], manaPotion: { name: 'Strong Mana Potion', percent: 60 }, skills: ['Berserk', null, null, null], minCreatures: { Berserk: 2 }, supports: ['Train Party', null], ammo: 'arrow' };
+    for (const id of ['shadownexus-amigo-whatsapp', 'hellgorak-amigo-whatsapp']) {
+        const s = M.SETUPS_DISCORD.find(x => x.id === id);
+        assert(s.pocaoDoMapa, id);
+        const k = M.dcConfigDe(s, 'KNIGHT', atual, ctx).cfg;
+        assert.deepStrictEqual(k.heals, [{ name: 'Ultimate Health Potion', percent: 38 }, { name: 'Intense Recovery', percent: 94 }, { name: 'Wound Cleansing', percent: 85 }, { name: 'Intense Wound Cleansing', percent: 30 }]);
+        assert.deepStrictEqual(k.manaPotion, { name: 'Mana Potion', percent: 15 });
+        assert.deepStrictEqual(k.skills, ['Lesser Front Sweep', null, null, null]);
+        assert.deepStrictEqual(k.supports, ['Protector', null]);
+        assert.strictEqual(k.ammo, 'arrow'); // munição: fica a sua
+    }
+});
 console.log(n + ' testes ok' + (process.exitCode ? ' (com falhas)' : ''));

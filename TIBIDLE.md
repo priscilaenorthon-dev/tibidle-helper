@@ -6818,3 +6818,13 @@ Conferido o resto dos mapas medidos (ShamanBr, nível 175) e corrigidas três co
 Resultado com o que a conta veste: magma só no Shadow Nexus; nos outros mapas os magos voltam ao set de ataque (tomam 0–16/s);
 o Cavaleiro mantém o Zaoan nos mapas pesados e vai para o set de regen. nos leves (Thunderscar Peak, Zao Caverns, Frozen Hell);
 o Paladino não muda. Testes novos em sobreviver e razao.
+
+## 2.36.7 / 2.36.8 — Discord: setup do "Amigo do Whatsapp" (30/10)
+- **2.36.7**: a barra de um amigo do dono (4 fotos da tela, Shadow Nexus, lure Extremo) entra no modelo Discord como
+  `shadownexus-amigo-whatsapp`, ao lado do lucasdela e do "Northon - Shadow Nexus". Leitura dos ícones: Druida igual ao do
+  lucasdela de 29/10; Cavaleiro só Lesser Front Sweep + Intense Recovery 94 / Wound Cleansing 85 / Intense Wound Cleansing 30 +
+  Protector; Paladino Caldera ≥4; Feiticeiro Energy Wave, thunderstorm e os dois golpes de energia. Dúvidas da foto no `obs`.
+- **2.36.8**: a mesma barra no Hellgorak Seal (`hellgorak-amigo-whatsapp`, a pedido do dono). `northon-212` ganha `comPost: true`
+  (fica ao lado, como no Shadow Nexus). Os dois setups do amigo têm `pocaoDoMapa: true`: o APLICAR põe a barra **inteira** das
+  fotos — poção de vida, poção de mana, ataque, defesa e suporte; só a munição fica a do dono. As poções dele voltam no próximo
+  setup de outro mapa (regra da 2.29.7).
