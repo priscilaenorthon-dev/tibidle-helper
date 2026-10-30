@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.36.5
+// @version      2.36.6
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.36.5';
+    const VERSAO = '2.36.6';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -4456,7 +4456,11 @@
                                vitaisPorKit: {}, kitVital: {}, nomes: {}, crias: {}, tomadoVoc: {}, mortes: [], posParty: {}, posMob: {}, alcance: {} }); // 2.31.0: posições e alcance
     /* o elemento do jogo (COMBAT_FIREDAMAGE, "fire", "physical"…) no nome do helper (fogo, fisico…) */
     const ELEM_JOGO = { physical: 'fisico', fire: 'fogo', ice: 'gelo', energy: 'energia', earth: 'terra', poison: 'terra', death: 'morte', holy: 'sagrado', lifedrain: 'drenovida', manadrain: 'drenomana', drown: 'afogamento' };
-    const elemDoJogo = (t) => { if (!t) return 'fisico'; const k = String(t).toLowerCase().replace(/^combat_/, '').replace(/damage$/, ''); return ELEM_JOGO[k] || k; };
+    /* v2.36.6 — dano de condição (o frame manda CONDITION_POISON, CONDITION_BLEEDING…, visto no dano guardado de 22 mapas em 30/10):
+     * veneno é terra e sangramento é físico, como no Tibia; antes caíam como elemento à parte e a resistência a terra/física não valia nada contra eles */
+    const ELEM_CONDICAO = { poison: 'terra', bleeding: 'fisico', fire: 'fogo', burning: 'fogo', energy: 'energia', electrify: 'energia', freezing: 'gelo', cursed: 'morte', dazzled: 'sagrado', drown: 'afogamento' };
+    const elemNorm = (k) => { const m = /^condition_(.+)$/.exec(String(k || '')); return m ? ELEM_CONDICAO[m[1]] || k : k; };
+    const elemDoJogo = (t) => { if (!t) return 'fisico'; const k = String(t).toLowerCase().replace(/^combat_/, '').replace(/damage$/, ''); return ELEM_JOGO[k] || elemNorm(k); };
     const _tomadoVoc = (L, voc, el, v) => { const t = L.tomadoVoc[voc] || (L.tomadoVoc[voc] = { total: 0, golpes: 0, elems: {} }); t.total += v; t.golpes++; t.elems[el] = (t.elems[el] || 0) + v; };
     const razaoFim = (L) => L.tFim || (L.tUlt && Date.now() - L.tUlt > FRAME_FRESCO_MS ? L.tUlt : Date.now());
     let RAZAO = razaoNovo();
@@ -4643,7 +4647,7 @@
             for (const [v, e] of Object.entries(x.elemPorVoc || {})) {
                 const o = elemPorVoc[v] || (elemPorVoc[v] = { tomadoH: 0, golpesH: 0, frac: {} });
                 o.tomadoH += e.tomadoH * w(x); o.golpesH += e.golpesH * w(x);
-                for (const [el, f] of Object.entries(e.frac || {})) o.frac[el] = (o.frac[el] || 0) + f * e.tomadoH * w(x);
+                for (const [el, f] of Object.entries(e.frac || {})) { const k = elemNorm(el); o.frac[k] = (o.frac[k] || 0) + f * e.tomadoH * w(x); } // v2.36.6: o dano guardado antes da correção
             }
         }
         for (const o of Object.values(elemPorVoc)) { const t = Object.values(o.frac).reduce((a, b) => a + b, 0) || 1; for (const el of Object.keys(o.frac)) o.frac[el] = Math.round(o.frac[el] / t * 1000) / 1000; o.tomadoH = Math.round(o.tomadoH); o.golpesH = Math.round(o.golpesH); }
@@ -4794,7 +4798,8 @@
         finally { FM.aplicando = false; renderizar(); }
     }
     const DANO_MAPA = { cache: null };
-    const danoMapaChave = () => (ESTADO_WS.boss ? 'boss:' + ESTADO_WS.boss : ESTADO_WS.huntId != null ? 'hunt:' + ESTADO_WS.huntId : null);
+    /* v2.36.6 — boss sem nome ('?', torre, treino) não grava: 'boss:?' misturava bosses diferentes e a aba Aguentar nunca o achava */
+    const danoMapaChave = () => (ESTADO_WS.boss ? (/^(\?|torre|treino)$/.test(ESTADO_WS.boss) ? null : 'boss:' + ESTADO_WS.boss) : ESTADO_WS.huntId != null ? 'hunt:' + ESTADO_WS.huntId : null);
     function danoMapaGuardar() {
         const chave = danoMapaChave(); if (!chave || !RAZAO || !RAZAO.t0) return;
         const rz = razaoResumo(RAZAO);
@@ -8067,7 +8072,10 @@
         } else p.tomadoS = dm.tomadoH / 3600;
         const elemVoc = {}; let lado = false;
         for (const [v, x] of Object.entries(ev)) { if (!x || !(x.tomadoH > 0)) continue; elemVoc[v] = { tomadoS: x.tomadoH / 3600, frac: Object.assign({}, x.frac || {}) }; if (v !== 'KNIGHT') lado = true; }
-        if (Object.keys(elemVoc).length) p.elemVoc = elemVoc;
+        /* v2.36.6 — o alvo foi medido e o lateral não aparece no dano: ele não apanhou ali. Vale zero, não a referência de "mapa de
+         * magia" (no Magma Dungeon, só o Paladino apanhava, e a tela tirava o spellbook +2 ML do Feiticeiro por um black shield) */
+        for (const v of ['PALADIN', 'SORCERER', 'DRUID']) if (!elemVoc[v]) elemVoc[v] = { tomadoS: 0, frac: {} };
+        p.elemVoc = elemVoc;
         p.ladoApanha = lado ? 4 : 1;
         p.hpMinK = null; // no modo aguentar a defesa vale cheia
         return { party: p, medido: true, mortes: Number(dm.mortes) || 0 };
@@ -11778,7 +11786,8 @@
         enviarWS({ type: 'profiles_set', data: { vocation: 'PALADIN', profiles: perfil } });
         log(`equip: Paladino agora usa ${arma.name} — munição trocada de ${atual.ammo || 'nenhuma'} para ${nova.ammo} (vale na próxima caçada)`, 'ok');
     }
-    async function equiparTrocas(vocs, resOpt) {
+    /* v2.36.6 — opc.naMochila (aba Aguentar, dono 30/10: "o que ele remover tem que ficar na mochila, não no depósito, para eu ver"): não guarda a mochila no depósito no fim */
+    async function equiparTrocas(vocs, resOpt, opc) {
         if (EQUIP.equipando) return;
         if (!(resOpt || EQUIP.res)) { log('equip: clique ATUALIZAR antes', 'erro'); return; }
         if (emHunt()) { log('equip: só na cidade — na caçada o depósito é só leitura', 'erro'); return; }
@@ -11810,7 +11819,7 @@
             if (fila.some(f => f.v === 'PALADIN' && f.s === 'weapon')) { try { ajustarMunicaoDoPaladino(); } catch (e) { log('equip: munição do Paladino não ajustada — ' + e.message, 'erro'); } }
             /* ⚠ o jogo só tem "guardar tudo" (depot_store_all): vai a mochila
              * INTEIRA, loot incluído — não só as peças que saíram do corpo. */
-            if (ler('equip_guardar', true) && feitas) {
+            if (!(opc && opc.naMochila) && ler('equip_guardar', true) && feitas) {
                 const g = await guardarNoDepot();
                 if (g.erro) log('equip: guardar a mochila no depósito falhou — ' + g.erro, 'erro');
             }
@@ -17153,7 +17162,7 @@
         if (!SB.res) return;
         if (!(SB.conf > Date.now())) { SB.conf = Date.now() + 8000; renderizar(); return; }
         SB.conf = 0;
-        await equiparTrocas(VOCS_EQUIP, SB.res); // o mesmo fluxo do Equip (só na cidade; retira do depósito; guarda a mochila)
+        await equiparTrocas(VOCS_EQUIP, SB.res, { naMochila: true }); // o mesmo fluxo do Equip (só na cidade; retira do depósito); as peças tiradas ficam na mochila
         SB.res = null; SB.cons = null; renderizar(); // o Equip foi relido: LER de novo para a nova foto
     }
     async function sbEquiparConsumiveis() {
@@ -17221,7 +17230,7 @@
         if (!muda.length) h += `<div class="tb-mut tb-eq-nota">os 4 já vestem o melhor que você tem para este alvo.</div>`;
         else {
             for (const m of muda) h += `<div class="tb-sb-lin">${sbQuem(m.v, m.s)}<span class="tb-sb-n">${sbNome(m.x.atual, m.v, ctx, 120)} → ${sbNome(m.x.melhor, m.v, ctx, 120)}</span><span class="tb-sb-g tb-ok">+${numBR(m.x.ganho, 1)}</span></div>`;
-            h += `<div class="tb-eq-bts" style="margin-top:4px"><button type="button" class="tb-bt ${SB.conf > Date.now() ? 'pri' : ''}" id="tb-sb-equipar" ${ocup || emHunt() || !socketAberto() ? 'disabled' : ''} title="o mesmo fluxo do EQUIPAR do Equip: retira do depósito, veste pelo socket, guarda a mochila; só na cidade">${SB.conf > Date.now() ? 'CONFIRMAR: vestir para aguentar' : 'EQUIPAR PARA AGUENTAR'}</button><span class="tb-mut tb-eq-nota">${emHunt() ? 'só na cidade' : 'depois, o Equip volta ao set de dano'}</span></div>`;
+            h += `<div class="tb-eq-bts" style="margin-top:4px"><button type="button" class="tb-bt ${SB.conf > Date.now() ? 'pri' : ''}" id="tb-sb-equipar" ${ocup || emHunt() || !socketAberto() ? 'disabled' : ''} title="o mesmo fluxo do EQUIPAR do Equip: retira do depósito e veste pelo socket; as peças tiradas ficam na MOCHILA (não vão para o depósito); só na cidade">${SB.conf > Date.now() ? 'CONFIRMAR: vestir para aguentar' : 'EQUIPAR PARA AGUENTAR'}</button><span class="tb-mut tb-eq-nota">${emHunt() ? 'só na cidade' : 'as peças tiradas ficam na mochila; depois, o Equip volta ao set de dano'}</span></div>`;
         }
         /* consumíveis */
         h += `<h4 style="margin:8px 0 2px">Consumíveis <span class="tb-mut">(anel e colar com carga ou tempo)</span></h4>`;

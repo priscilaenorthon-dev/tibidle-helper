@@ -91,4 +91,11 @@ t('2.31.0 casas das magias do boss (mcast.cells, relativas ao Cavaleiro), posiç
     assert.deepStrictEqual(j.alcance.DRUID, { '-2,1': { casts: 4, hits: 0 } });
 });
 
+t('2.36.6 dano de condição: veneno → terra, sangramento → físico (na leitura e no dano já guardado)', () => {
+    assert.strictEqual(M.elemDoJogo('CONDITION_POISON'), 'terra');
+    assert.strictEqual(M.elemDoJogo('CONDITION_BLEEDING'), 'fisico');
+    const j = M.danoMapaJuntar([{ t0: 1, t: 2, seg: 100, tomadoH: 1000, elemPorVoc: { PALADIN: { tomadoH: 1000, golpesH: 0, frac: { condition_poison: 0.5, gelo: 0.3, terra: 0.2 } } }, crias: [] }]);
+    assert.strictEqual(j.elemPorVoc.PALADIN.frac.terra, 0.7);
+    assert(!('condition_poison' in j.elemPorVoc.PALADIN.frac));
+});
 console.log(`\n${n} testes ok`);

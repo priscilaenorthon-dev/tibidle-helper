@@ -6801,3 +6801,20 @@ que não é defesa (ML, dano, regen. de mana dos magos e do Paladino, capacidade
 peças compradas/equipadas pelo helper não valem no set de aguentar). Conferido na ShamanBr com o dano medido do mapa 222:
 Feiticeiro e Druida trocam elmo, armadura, calça e bota pelos magmas do depósito (+1 a +4,3 pt cada); o Cavaleiro não muda.
 
+
+## 2.36.6 — Aguentar: peças tiradas ficam na mochila; os outros mapas conferidos (30/10)
+
+O dono: "o que ele remover tem que ficar na mochila, não no depósito, para eu ver". EQUIPAR PARA AGUENTAR chama `equiparTrocas`
+com `{ naMochila: true }`: o "guardar a mochila no depósito" do fim fica de fora só nessa aba (o EQUIPAR do Equip segue igual).
+
+Conferido o resto dos mapas medidos (ShamanBr, nível 175) e corrigidas três coisas:
+- **dano de condição**: o frame manda `CONDITION_POISON`, `CONDITION_BLEEDING`… e o helper guardava como elemento à parte (22 mapas
+  com dano guardado assim): resistência a terra/física não valia contra eles. `elemNorm` (veneno → terra, sangramento → físico,
+  queimadura → fogo, eletrificado → energia, congelado → gelo, amaldiçoado → morte, ofuscado → sagrado) entra em `elemDoJogo` e em
+  `danoMapaJuntar` (o dano já guardado também é corrigido na leitura).
+- **lateral que não apanha**: no alvo medido, o mago sem dano caía na referência de "mapa de magia" e a aba trocava peça boa por
+  defesa inútil (spellbook of mind control +2 ML → black shield). `sbPartyDoDano` põe `tomadoS: 0` em quem não aparece no dano.
+- **boss sem nome**: `boss:?` misturava bosses diferentes; `danoMapaChave` não grava boss '?', torre nem treino.
+Resultado com o que a conta veste: magma só no Shadow Nexus; nos outros mapas os magos voltam ao set de ataque (tomam 0–16/s);
+o Cavaleiro mantém o Zaoan nos mapas pesados e vai para o set de regen. nos leves (Thunderscar Peak, Zao Caverns, Frozen Hell);
+o Paladino não muda. Testes novos em sobreviver e razao.
