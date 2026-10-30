@@ -6790,3 +6790,14 @@ oficiais (`casar.py`); runa verde = stone shower nos três. O autor diz que Pala
 são para não morrer; na conversa outro jogador (EduardoLacerda) diz que é cura demais. Medido no print: 159,6k xp/h, +185,2k/h,
 nível 138. O resto (Specter, Logbook, "Acessos pra Inqui") só tem perguntas e prints de estatística, sem barra nova.
 
+## 2.36.5 — Aba Aguentar: defesa manda, imbuement não conta (30/10)
+
+O dono, no Shadow Nexus: a aba Aguentar não recomendava os magmas do baú. Eles apareciam, e o cadeado não tinha nada a ver; perdiam
+na nota. A defesa pesava 3×, mas o +1 ML de fábrica da spirit cloak e da calopteryx cape (14,4 pt) e a regen. de mana da plate legs
+ainda venciam o magma coat (8 % fogo, ~8 pt), com o Druida tomando ~300k/h, 40 % fogo. Agora, no modo aguentar (`ctx.sobreviver`), tudo
+que não é defesa (ML, dano, regen. de mana dos magos e do Paladino, capacidade, tiro da wand, imbuement de ataque/mana) vale
+`SB_ATAQUE` = 0,25× em `pontuarPeca`; no Cavaleiro a regen. de mana é cura (Wound Cleansing) e fica cheia. A aba passa `semImbu`
+(o imbuement vestido não entra na nota: ele vai para a peça escolhida, a seção Imbuements diz onde) e `escolhas: []` (os +2 pt das
+peças compradas/equipadas pelo helper não valem no set de aguentar). Conferido na ShamanBr com o dano medido do mapa 222:
+Feiticeiro e Druida trocam elmo, armadura, calça e bota pelos magmas do depósito (+1 a +4,3 pt cada); o Cavaleiro não muda.
+

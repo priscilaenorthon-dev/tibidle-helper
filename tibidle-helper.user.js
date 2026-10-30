@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.36.4
+// @version      2.36.5
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.36.4';
+    const VERSAO = '2.36.5';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -6785,6 +6785,11 @@
     const ELEM_EN = { fogo: 'fire', gelo: 'ice', energia: 'energy', terra: 'earth', morte: 'death', sagrado: 'holy' };
     /* v2.34.0 — modo AGUENTAR (aba Sobreviver): os pesos de defesa que pesam SB_FATOR× quando ctx.sobreviver */
     const SB_FATOR = 3, SB_NIVEL_MIN = 150;
+    /* v2.36.5 — dono, 30/10: no Shadow Nexus a aba Aguentar não punha os magmas nos magos. A defesa já pesava 3×, mas o +1 ML da
+     * spirit cloak/calopteryx cape (14,4 pt) e a regen. de mana da plate legs ainda venciam o magma coat (8 % fogo, ~8 pt). No modo
+     * aguentar o que não é defesa (ML, dano, regen. de mana, capacidade, tiro da wand) vale SB_ATAQUE×: a peça é escolhida para não
+     * morrer, e o ataque só desempata. No Cavaleiro a regen. de mana é cura (Wound Cleansing) e conta como defesa. */
+    const SB_ATAQUE = 0.25;
     const SB_IDS_DEFESA = ['resist_fisica', 'absorbpercentphysical', 'protecao_magica', 'armor', 'defense', 'extradef', 'escudo', 'skillshield', 'max_hp', 'regen_vida', 'cura_propria', 'absorbpercentpoison']
         .concat(ELEM.map(e => 'resist_' + e), ELEM.map(e => 'absorbpercent' + ELEM_EN[e]));
     const VOCS_EQUIP = ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'];
@@ -7237,6 +7242,7 @@
         else if (cat === 14) pt = v * (P.escudo || 0);
         else if (cat === 15) pt = v * (P.distancia || 0);
         else if (cat === 16) pt = v * (P.nivel_magico || 0);
+        if (ctx && ctx.sobreviver && [2, 3, 12, 15, 16].includes(cat)) pt *= SB_ATAQUE; // v2.36.5 — imbuement de ataque/mana no modo aguentar
         return { id: 'imbuement ' + (im.name || IMB_NOME[cat] || cat), valor: v, pt };
     }
     const PARES = { critico_chance: ['critico', 'c'], critico_dano: ['critico', 'd'], roubo_vida_chance: ['roubo', 'c'], roubo_vida_quantia: ['roubo', 'd'] };
@@ -7370,7 +7376,10 @@
             if (q) { add(f.id, f.valor, ganhoPar(q[0], q[1])); continue; }
             const p = P[f.id]; add(f.id, f.valor, (p || 0) * Number(f.valor));
         }
-        for (const im of (Array.isArray(peca.imbuements) ? peca.imbuements : [])) { const x = im ? imbPontos(im, voc, ctx, P, R) : null; if (x) add(x.id, x.valor, x.pt); } // v2.35.6
+        /* v2.36.5 — ctx.semImbu (aba Aguentar, dono 30/10: "os melhores itens sem levar em conta os que estão com imbuement"): a
+         * peça vale pelo que ela é; o imbuement passa para a que for vestida (a seção Imbuements da aba diz onde pôr) */
+        if (!(ctx && ctx.semImbu)) for (const im of (Array.isArray(peca.imbuements) ? peca.imbuements : [])) { const x = im ? imbPontos(im, voc, ctx, P, R) : null; if (x) add(x.id, x.valor, x.pt); } // v2.35.6
+        if (ctx && ctx.sobreviver) { const def = new Set(SB_IDS_DEFESA.concat(['roubo_vida_chance', 'roubo_vida_quantia'], voc === 'KNIGHT' ? ['regen_mana'] : [])); for (const d of detalhe) if (!def.has(d.id) && !/^imbuement /.test(d.id)) d.pt = Math.round(d.pt * SB_ATAQUE * 1000) / 1000; } // v2.36.5
         const pontos = Math.round(detalhe.reduce((s, d) => s + d.pt, 0) * 100) / 100;
         const contam = detalhe.filter(d => d.pt > 0).sort((x, y) => y.pt - x.pt);
         const mortos = detalhe.filter(d => d.pt === 0 && !/^munição grátis/.test(d.id)).map(d => d.id);
@@ -17093,7 +17102,7 @@
         if (!EQUIP.ctx) return null;
         const dm = danoMapa(sbChave(alvo));
         const base = sbPartyDoDano(dm, EQUIP.ctx.party || {});
-        return { ctx: Object.assign({}, EQUIP.ctx, { party: base.party, notas: null, sobreviver: true, memo: new Map() }), dm, medido: base.medido, mortes: base.mortes };
+        return { ctx: Object.assign({}, EQUIP.ctx, { party: base.party, notas: null, sobreviver: true, semImbu: true, escolhas: [], memo: new Map() }), dm, medido: base.medido, mortes: base.mortes };
     }
     function sbPreyBuffs() { const p = PROG && PROG.prey; return p && p.buffs ? p.buffs : {}; }
     async function sbLer() {

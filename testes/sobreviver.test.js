@@ -5,7 +5,7 @@ const fs = require('fs'), path = require('path'), assert = require('assert');
 const src = fs.readFileSync(path.join(__dirname, '..', 'tibidle-helper.user.js'), 'utf8');
 const trecho = (a, b) => { const i = src.indexOf(a), f = src.indexOf(b); assert(i > 0 && f > i, 'marcador ausente: ' + a); return src.slice(i, f); };
 const M = new Function(trecho('/* @@EQUIP-PURO-INICIO */', '/* @@EQUIP-PURO-FIM */') + trecho('/* @@SOBREVIVER-PURO-INICIO', '/* @@SOBREVIVER-PURO-FIM */') +
-    '\nreturn { sbPartyDoDano, sbConsumiveis, sbPlano, pesosDaVoc, pontuarPeca, SB_IDS_DEFESA, SB_FATOR, SB_POCOES, imbValor, imbPontos, sbImbuSugestoes };')();
+    '\nreturn { sbPartyDoDano, sbConsumiveis, sbPlano, pesosDaVoc, pontuarPeca, SB_IDS_DEFESA, SB_FATOR, SB_ATAQUE, SB_POCOES, imbValor, imbPontos, sbImbuSugestoes };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 const DM = { seg: 1800, sessoes: 2, tomadoH: 900000, mortes: 1, elemPorVoc: { KNIGHT: { tomadoH: 720000, golpesH: 7200, frac: { fisico: 0.62, fogo: 0.3, energia: 0.08 } }, SORCERER: { tomadoH: 90000, golpesH: 0, frac: { fogo: 0.7, energia: 0.3 } }, DRUID: { tomadoH: 90000, frac: { fogo: 1 } } }, crias: [] };
