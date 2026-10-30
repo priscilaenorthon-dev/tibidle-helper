@@ -281,12 +281,12 @@ t('Magia no modelo Discord: o seletor de caçada só lista as hunts com setup da
     assert.strictEqual([...sel2.matchAll(/<option value="(\d+)"/g)].length, 5, 'nos outros modelos a lista é inteira');
     assert(!/com setup do Discord/.test(sel2));
 });
-t('Magia: controle segmentado (Eco · Equil · Área · Intel · Boss · Discord) com aria-pressed — o Inteligente voltou (2.12.0); Discord na 2.26.0', async () => {
+t('Magia: controle segmentado (Eco · Equil · Área · Mana · Boss · Discord) com aria-pressed — o Inteligente saiu e entrou o Mana (2.37.0)', async () => {
     const W = criarMundo({ ls: comAba('magia', { tb_helper_hunt_id: '34', tb_helper_modelo: '"area"' }) });
     await W.avancar(0);
     const seg = (W.html().match(/<div class="tb-seg"[\s\S]*?<\/div>/) || [''])[0];
     const bts = [...seg.matchAll(/<button[^>]*data-modelo="(\w+)"[^>]*aria-pressed="(true|false)"[^>]*>([^<]*)<\/button>/g)].map(m => [m[1], m[2], m[3]]);
-    assert.deepStrictEqual(bts.map(b => b[2]), ['Eco', 'Equil', 'Área', 'Intel', 'Boss', 'Discord']);
+    assert.deepStrictEqual(bts.map(b => b[2]), ['Eco', 'Equil', 'Área', 'Mana', 'Boss', 'Discord']);
     assert.deepStrictEqual(bts.filter(b => b[1] === 'true').map(b => b[0]), ['area']);
 });
 
@@ -313,21 +313,19 @@ t('Magia: escape de hunt, boss, magia e bestiário; "2+ alvos" (sem "mana Mana")
     assert(!/\bvalue="[^"]*"[^ >]/.test(h2.replace(/<option value="[^"]*"( selected)?>/g, '')), 'aspas soltas num value');
 });
 
-t('Magia 2.12.0: variante antiga do Inteligente vira Inteligente; ele só calcula no clique (CALCULAR) e mostra a decisão', async () => {
+t('Magia 2.37.0: o Inteligente guardado (e as variantes) vira Em área; o Mana não pede caçada e mostra ENCHER', async () => {
     const W = criarMundo({ ls: comAba('magia', { tb_helper_hunt_id: '34', tb_helper_modelo: '"inteligente_mana"' }) });
     await W.avancar(0);
     await W.avancar(200);
-    let h = W.html();
-    semXss(h, 'Magia/Inteligente');
-    assert.strictEqual(W.lsGet('tb_helper_modelo'), 'inteligente', 'inteligente_mana guardado não virou inteligente');
-    assert(/data-modelo="inteligente" aria-pressed="true"/.test(h), 'Intel selecionado');
-    assert(/id="tb-int-calc"[^>]*>CALCULAR O KIT</.test(h) && !/id="tb-aplicar-todos"/.test(h), 'sem clique: nada calculado, botão CALCULAR e sem APLICAR');
-    W.el('tb-int-calc').onclick();
-    await W.avancar(200);
-    h = W.html();
-    semXss(h, 'Magia/Inteligente calculado');
-    assert(/id="tb-aplicar-todos"/.test(h) && /kit novo/.test(h) && /previsto: [\d.,]+k xp\/h/.test(h), 'depois do clique: plano, decisão e previsão: ' + (h.match(/tb-ver.{0,300}/) || [''])[0]);
-    assert(/replanejar do zero/.test(h) && /XP absoluto/.test(h), 'controles do Inteligente');
+    assert.strictEqual(W.lsGet('tb_helper_modelo'), 'area', 'inteligente_mana guardado não virou Em área');
+    assert(!/tb-int-calc|Ajuste fino/.test(W.html()), 'sobrou UI do Inteligente');
+    const W2 = criarMundo({ ls: comAba('magia', { tb_helper_modelo: '"mana"' }) });
+    await W2.avancar(0);
+    await W2.avancar(200);
+    const h = W2.html();
+    semXss(h, 'Magia/Mana');
+    assert(/data-modelo="mana" aria-pressed="true"/.test(h), 'Mana selecionado');
+    assert(/Encher vida e mana/.test(h) && /id="tb-aplicar-todos"/.test(h) && !/escolha a caçada para ver o plano/.test(h), 'tela do Mana');
 });
 
 t('Magia 2.11.2: com ≥10 min no mapa o selo é o MEDIDO pelo jogo (Banshee: 143 estimado × 28,6 real)', async () => {

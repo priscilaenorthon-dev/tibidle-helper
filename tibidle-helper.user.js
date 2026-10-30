@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.36.8
-// @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
+// @version      2.37.0
+// @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
 // @updateURL    https://raw.githubusercontent.com/priscilaenorthon-dev/tibidle-helper/main/tibidle-helper.user.js
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.36.8';
+    const VERSAO = '2.37.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -281,7 +281,7 @@
      * Inteligente voltou: ele e as variantes antigas dele (inteligente_mana,
      * _semruna, _seco) viram 'inteligente'; só o que não existe vira Em área. */
     function migrarModelos() {
-        const conv = m => m == null || MODELOS[m] ? m : /^inteligente/.test(String(m)) ? 'inteligente' : 'area';
+        const conv = m => m == null || MODELOS[m] ? m : 'area'; // v2.37.0 — o Inteligente (e as variantes dele) vira Em área
         let mudou = false;
         const mo = ler('modelo', null);
         if (conv(mo) !== mo) { guardar('modelo', conv(mo)); mudou = true; }
@@ -292,7 +292,7 @@
         }
         const bc = ler('best_cfg', null);
         if (bc && conv(bc.modelo) !== bc.modelo) { guardar('best_cfg', Object.assign({}, bc, { modelo: conv(bc.modelo) })); mudou = true; }
-        if (mudou) log('modelo guardado que não existe mais convertido (variante do Inteligente → Inteligente; o resto → Em área)', 'info');
+        if (mudou) log('modelo guardado que não existe mais convertido em Em área (o Inteligente saiu do menu na 2.37.0)', 'info');
     }
 
     /* =========================================================================
@@ -371,9 +371,10 @@
             nome: 'Em área',
             dica: 'As duas magias de área mais fortes e as duas runas de área mais fortes.'
         },
-        inteligente: {
-            nome: 'Inteligente',
-            dica: 'Busca a party inteira no simulador (os 4 juntos contra a onda): quantas magias (1 a 4), a ordem, o mínimo de criaturas, poção e suporte de cada um saem da conta, não de regra fixa. Mesma régua de dano dentro e fora do kit (a medição corrige a forma inteira). Fica com o de mais XP entre os que se pagam (±3 %), e entre esses o de mais lucro. Só troca o kit aplicado se o novo for 3–5 % melhor, nunca nos 10 min depois de um APLICAR. Calcula só no clique.'
+        /* v2.37.0 — o Inteligente saiu do menu (dono, 30/10: "não vou mais usar"); no lugar, Mana: encher vida e mana num mapa fraco */
+        mana: {
+            nome: 'Mana',
+            dica: 'Para encher antes de ir a um mapa forte: entre num mapa fraco e aplique. A poção de vida e a de mana dos 4 passam a disparar a ≤100 % (bebem até encher); ataque, curas e suportes ficam como estão. Quando os 4 estiverem cheios, VOLTAR AO QUE EU TINHA devolve as suas poções.'
         },
         boss: {
             nome: 'Boss',
@@ -391,7 +392,7 @@
      * busca a party inteira. As VARIANTES antigas (_mana, _semruna, _seco)
      * saíram: poção e suporte agora são decisão da busca (migrarModelos as
      * converte em 'inteligente'). */
-    const nomeModelo = (m) => (MODELOS[m] || { nome: m }).nome;
+    const nomeModelo = (m) => (MODELOS[m] || { nome: m === 'inteligente' ? 'Inteligente' : m }).nome; // o motor do Inteligente segue no Radar
     /* @@MODELOS-FIM */
 
     /* =========================================================================
@@ -3494,6 +3495,7 @@
         const voc = vocForcada || vocacaoAtual();
         if (!hunt) return { erro: 'não achei as resistências dessa hunt no catálogo' };
         if (modelo === 'discord') return { erro: 'o modelo Discord não calcula plano: ele aplica o setup da comunidade escolhido na aba Magia' };
+        if (modelo === 'mana') return { erro: 'o modelo Mana não calcula plano: ele só põe as poções dos 4 a ≤100 % para encher' };
         const cat = [CAT.magias, CAT.precos, CAT.pocoes, CAT.bosses, CAT.municao, _ammoCat];
         /* v2.14.5 — catálogo de munição (/ammo, CAT.municao) chegando NÃO derruba a party do Inteligente: ele só muda a
          * munição (extrasInt), não a busca. Ao vivo (02/10, Orc Fortress): o /ammo chegou no meio do APLICAR, entre o
@@ -3889,6 +3891,10 @@
         try { await _aplicarEmTodos(modelo, hunt, opcInt); } finally { _aplicando = false; renderizar(); }
     }
     async function _aplicarEmTodos(modelo, hunt, opcInt) {
+        if (modelo === 'mana') { await aplicarModoMana(); return; }
+        /* v2.37.0 — antes de qualquer outro APLICAR, devolve o que o modo Mana e o padrão de boss mexeram (senão o setup novo
+         * partiria das poções a 100 % ou da barra do boss) */
+        try { await desfazerTemporarios(); } catch (e) { falhou('desfazer Mana/boss', e); }
         if (modelo === 'discord') { await aplicarDiscord(hunt); return; }
         /* v1.8.2 — CONTA NOVA SEM DANO MEDIDO. Numa conta de teste (23/09) o
          * APLICAR saiu com 1 runa por mago e nada no Cavaleiro: o plano só
@@ -3923,6 +3929,7 @@
                 const r = montarPlano(modelo, hunt, voc, { opcInt, resInt: intRes });
                 if (r.erro) { log(`  ${voc}: ${r.erro}`, 'erro'); continue; }
                 if (!r.plano.length) { log(`  ${voc}: plano vazio (nenhuma magia com dano conhecido) — slots não tocados`, 'erro'); continue; }
+                if (modelo === 'boss' && bossPadraoLigado()) r.extras = extrasBoss(voc); // v2.37.0 — vida, mana, defesa e suporte do padrão
                 try {
                     const x = await aplicarPlanoSocket(r, voc);
                     total += x.n; if (x.cacando && !x.eco) semEco++;
@@ -3948,7 +3955,7 @@
             await dorme(250);
             const r = montarPlano(modelo, hunt, undefined, { opcInt, resInt: intRes });
             if (r.erro) { log(`  ${voc}: ${r.erro}`, 'erro'); continue; }
-            if (r.extras) semExtras = true;
+            if (r.extras || (modelo === 'boss' && bossPadraoLigado())) semExtras = true;
             total += await aplicarPlano(r, true);
         }
         const volta = tid('party-member-' + original);
@@ -3957,7 +3964,7 @@
         if (intRes && total) registrarAplicacaoInt(hunt, intRes);
         /* v2.9.0 — pelos diálogos só os ataques mudam: poção, cura, suporte e
          * munição do Inteligente só saem pelo socket. Antes isso era calado. */
-        if (semExtras) log('⚠ sem o socket, só os 4 slots de ataque foram trocados — poção, cura, suporte e munição do Inteligente NÃO foram aplicados. Recarregue a página (F5) com o helper instalado e aplique de novo.', 'erro');
+        if (semExtras) log('⚠ sem o socket, só os 4 slots de ataque foram trocados — poção, cura, suporte e munição (do padrão de boss) NÃO foram aplicados. Recarregue a página (F5) com o helper instalado e aplique de novo.', 'erro');
         renderizar();
     }
 
@@ -4336,17 +4343,20 @@
         /* no Scan, quem guarda e devolve a foto é o próprio Scan (v2.28.3) */
         if (!SCAN.ativo && !SCAN.ocupado && !ler('dc_foto', null) && ESTADO_WS.profiles) guardar('dc_foto', { t: Date.now(), hunt: hunt.title, setup: s.titulo, profiles: fotoPerfis() });
         /* v2.29.7 — setup com poção do mapa: guarda as SUAS poções antes (uma vez); o próximo setup sem a marca as devolve */
-        const guardada = ler('dc_pocao_dono', null), ctx = dcCtx();
-        if (s.pocaoDoMapa && !guardada) {
+        let guardada = ler('dc_pocao_dono', null);
+        const ctx = dcCtx(), completo = dcCompleto(s);
+        if (completo && !guardada) {
             const g = {};
             for (const voc of VOCS) {
                 const c = configAtiva(voc); if (!c) continue;
                 const n = normalizarConfig(c), vida = (n.heals || []).find(h => h && /potion/i.test(h.name || ''));
                 g[voc] = { vida: vida ? { name: vida.name, percent: vida.percent } : null, mana: n.manaPotion && n.manaPotion.name ? { name: n.manaPotion.name, percent: n.manaPotion.percent } : null };
             }
-            guardar('dc_pocao_dono', { t: Date.now(), setup: s.titulo, vocs: g });
+            guardada = { t: Date.now(), setup: s.titulo, vocs: g };
+            guardar('dc_pocao_dono', guardada);
         }
-        if (!s.pocaoDoMapa && guardada && guardada.vocs) ctx.pocaoDono = guardada.vocs;
+        /* v2.36.9 — também no post completo: a poção que o post não mostra volta a ser a sua (a guardada) */
+        if (guardada && guardada.vocs) ctx.pocaoDono = guardada.vocs;
         let total = 0;
         for (const voc of VOCS) {
             const atual = configAtiva(voc);
@@ -4360,11 +4370,117 @@
             await dorme(150);
         }
         log(`Discord: ${total}/4 personagens configurados com "${s.titulo}"` + (s.lure ? ` · lure do post: ${s.lure} (o lure fica como está)` : ''), total ? 'ok' : 'erro');
-        if (s.pocaoDoMapa) log(`Discord: "${s.titulo}" usa as poções deste mapa; as suas voltam no próximo setup de outro mapa`, 'info');
+        if (completo) log(`Discord: "${s.titulo}" aplicado como está no post (poções incluídas); as suas voltam no próximo "Northon - <mapa>"`, 'info');
         else if (ctx.pocaoDono && total) { guardar('dc_pocao_dono', null); log(`Discord: as suas poções (de antes de "${guardada.setup}") voltaram`, 'ok'); }
         renderizar();
     }
     /* @@PERFIS-FIM */
+    /* =========================================================================
+     *  ⭐ v2.37.0 — MODO MANA e PADRÃO DE BOSS (o modelo puro do boss mora em @@BOSS-PADRAO)
+     *
+     *  MANA (dono, 30/10: "eu vou entrar num mapa fraco e selecionar; ela vai colocar tudo 100 life e mana para encher, para eu
+     *  ir ao mapa que quero com tudo cheio — hoje entro no mapa com tudo quase acabando e o gasto só aumenta"): a poção de vida e a
+     *  de mana dos 4 a ≤100 %; a sua poção fica (se a vocação bebe), senão a melhor do nível. Foto antes; VOLTAR AO QUE EU TINHA (e
+     *  qualquer outro APLICAR da Magia) devolve a barra. Só por botão.
+     *  BOSS: com "aplicar sozinho" ligado (o dono pediu: "quando eu entrar no boss ele já aplica tudo"), no hunt_started de um boss
+     *  o helper manda update_battle_config com o ataque do modelo Boss e o padrão forte — SÓ para aquela luta (sem profiles_set: o
+     *  preset fica intacto) — e devolve a barra de antes no hunt_started seguinte, quando o jogo volta à caçada.
+     * ====================================================================== */
+    const ehPocaoNome = (n) => /potion/i.test(String(n || ''));
+    function podeBeberPocao(nome, tipo, voc, lvl) {
+        const q = listaPocoes(tipo).find(x => x && x.n === nome);
+        if (!q) return true; // fora do catálogo: não dá para conferir
+        return (q.lvl || 1) <= lvl && lvl <= (q.lvlMax || Infinity) && (!q.voc || !q.voc.length || q.voc.some(v => String(v).toUpperCase().includes(voc)));
+    }
+    function configMana(voc, atual, lvl) {
+        const c = normalizarConfig(atual || {});
+        const vidaSua = (c.heals || []).find(h => h && ehPocaoNome(h.name) && podeBeberPocao(h.name, 'vida', voc, lvl));
+        const vida = vidaSua ? vidaSua.name : melhorPocao('vida', voc, lvl);
+        const mana = c.manaPotion && c.manaPotion.name && podeBeberPocao(c.manaPotion.name, 'mana', voc, lvl) ? c.manaPotion.name : melhorPocao('mana', voc, lvl);
+        const curas = (c.heals || []).filter(h => h && h.name && !ehPocaoNome(h.name));
+        c.heals = (vida ? [{ name: vida, percent: 100 }] : []).concat(curas).slice(0, 5);
+        if (mana) c.manaPotion = { name: mana, percent: 100 };
+        return { cfg: c, vida, mana };
+    }
+    async function aplicarModoMana() {
+        if (!socketAberto() || !ESTADO_WS.perfisDoServidor) { avisar('magia', 'Mana: preciso do socket do jogo e dos perfis do servidor — dê F5 com o helper instalado', 'erro'); return; }
+        try { await bossRestaurar(); } catch (e) { falhou('boss (devolver antes do Mana)', e); }
+        if (!ler('mana_foto', null) && ESTADO_WS.profiles) guardar('mana_foto', { t: Date.now(), profiles: fotoPerfis() });
+        const lvl = nivelAtual();
+        let n = 0;
+        log('Mana: pondo a poção de vida e a de mana dos 4 a ≤100 % para encher…');
+        for (const voc of VOCS) {
+            const atual = configAtiva(voc);
+            if (!atual) { log(`  ${voc}: sem a barra atual — não mexi`, 'erro'); continue; }
+            const r = configMana(voc, atual, lvl);
+            try {
+                const x = await aplicarConfigSocket(voc, r.cfg); n++;
+                log(`  ${voc}: ${r.vida || 'sem poção de vida'} e ${r.mana || 'sem poção de mana'} a ≤100 %` + (x.cacando ? (x.eco ? ' ✓ servidor confirmou' : ' (sem eco do servidor)') : ' (na cidade: vale na próxima caçada)'), 'ok');
+            } catch (e) { log(`  ${voc}: falhou pelo socket — ${e.message}`, 'erro'); }
+            await dorme(150);
+        }
+        avisar('magia', `Mana: ${n}/4 com as poções a ≤100 % — quando os 4 estiverem cheios, VOLTAR AO QUE EU TINHA`, n ? 'ok' : 'erro');
+    }
+    async function manaVoltar(silencioso) {
+        const foto = ler('mana_foto', null);
+        if (!foto || !foto.profiles) return false;
+        if (!socketAberto()) { if (!silencioso) avisar('magia', 'Mana: preciso do socket do jogo para devolver a barra', 'erro'); return false; }
+        await scanRestaurarPerfis({ profiles: foto.profiles }, 'modo Mana');
+        guardar('mana_foto', null);
+        return true;
+    }
+    const bossPadraoLigado = () => ler('boss_padrao', true) !== false;
+    const bossAutoLigado = () => ler('boss_auto', true) !== false;
+    function extrasBoss(voc) {
+        const lvl = nivelAtual();
+        return padraoBoss(voc, lvl, n => temMagia(n, voc, lvl), { vida: listaPocoes('vida'), mana: listaPocoes('mana') });
+    }
+    async function bossAutoAplicar(nome) {
+        if (!bossAutoLigado() || !socketAberto() || _aplicando || !ESTADO_WS.boss) return;
+        const h = huntDeBoss(nome);
+        if (!h) { log('boss ' + nome + ': não está no catálogo de bosses — padrão não aplicado', 'info'); return; }
+        if (!ler('boss_foto', null)) {
+            const cfgs = {};
+            for (const v of VOCS) { const c = configAtiva(v); if (c) cfgs[v] = normalizarConfig(c); }
+            guardar('boss_foto', { t: Date.now(), boss: nome, cfgs });
+        }
+        _aplicando = true; renderizar();
+        let n = 0; const partes = [];
+        try {
+            for (const voc of VOCS) {
+                const who = indiceDaVoc(voc), atual = configAtiva(voc);
+                if (who == null || !atual) continue;
+                const nova = normalizarConfig(atual), r = montarPlano('boss', h, voc);
+                if (r && !r.erro && r.plano.length) {
+                    const sk = [null, null, null, null], mc = {};
+                    r.plano.slice(0, 4).forEach((p, i) => { sk[i] = p.av.m.name; mc[p.av.m.name] = p.minimo; });
+                    nova.skills = sk; nova.minCreatures = mc;
+                }
+                if (bossPadraoLigado()) { const x = extrasBoss(voc); if (x) Object.assign(nova, { heals: x.heals, manaPotion: x.manaPotion, supports: x.supports }); }
+                enviarWS({ type: 'update_battle_config', data: payloadBattleConfig(nova, who) });
+                n++; partes.push(VOC_CURTO[voc] + ': ' + (nova.skills.filter(Boolean).join(', ') || '—'));
+                await dorme(150);
+            }
+            log(`boss ${nome}: ${bossPadraoLigado() ? 'ataque + padrão forte (vida, mana, defesa, suporte)' : 'ataque'} aplicado nos ${n} — só nesta luta; na volta à caçada a barra de antes volta · ` + partes.join(' · '), n ? 'ok' : 'erro');
+        } catch (e) { falhou('boss (aplicar sozinho)', e); }
+        finally { _aplicando = false; renderizar(); }
+    }
+    /* devolve a barra de antes do boss: caçando, por update_battle_config; na cidade, só a cópia local (o preset nunca foi tocado) */
+    async function bossRestaurar() {
+        const f = ler('boss_foto', null);
+        if (!f || !f.cfgs || ESTADO_WS.boss) return false;
+        const cacando = emHunt() && socketAberto();
+        for (const voc of VOCS) {
+            const c = f.cfgs[voc]; if (!c) continue;
+            const who = cacando ? indiceDaVoc(voc) : null;
+            if (who != null) { enviarWS({ type: 'update_battle_config', data: payloadBattleConfig(c, who) }); await dorme(150); }
+            else aplicarConfigLocal(voc, c);
+        }
+        guardar('boss_foto', null);
+        log(`boss ${f.boss || ''}: a barra de antes do boss voltou${cacando ? '' : ' (na cidade: só a cópia local; o preset do servidor nunca foi tocado)'}`, 'ok');
+        return true;
+    }
+    async function desfazerTemporarios() { await bossRestaurar(); await manaVoltar(true); }
 
     /* Dano real de TODAS as magias e runas numa chamada, com o worldToken.
      * v2.11 — a leitura automática (amostrar) só baixa a bandeira
@@ -5023,10 +5139,13 @@
             if (ehBoss) {
                 ESTADO_WS.boss = bossId || (torre ? 'torre' : d.training === true ? 'treino' : '?');
                 if (bossId) { guardar('boss_nome', bossId); }
+                /* v2.37.0 — ataque + padrão forte só nesta luta (chave 'aplicar sozinho ao entrar no boss', aba Magia › Boss) */
+                if (bossId && o.type === 'hunt_started') setTimeout(() => bossAutoAplicar(bossId).catch(e => falhou('boss (aplicar sozinho)', e)), 1500);
                 log('boss em andamento (socket): ' + ESTADO_WS.boss + (d.huntId != null ? ' · id ' + d.huntId : ''), 'ok');
             } else {
                 ESTADO_WS.boss = null;
                 const h = (CAT.hunts || []).find(x => x.id === d.huntId) || huntDaEstacao(d.huntId); // @@EVENTO
+                if (ler('boss_foto', null)) setTimeout(() => bossRestaurar().catch(e => falhou('boss (devolver a barra)', e)), 1500); // v2.37.0 — de volta à caçada
                 if (h) {
                     const antes = ler('hunt_id', null);
                     guardar('hunt_id', h.id); guardar('hunt_manual', h.id);
@@ -9832,6 +9951,9 @@
             SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 40], ataque: [['Great Fire Wave', 2], ['great fireball rune', 2], ['Flame Strike', 1]], defesa: [['Ultimate Healing', 40], ['Intense Healing', 70]] },
             DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 40], ataque: [['great fireball rune', 2], ['Flame Strike', 1]], defesa: [['Ultimate Healing', 40], ['Intense Healing', 70], ['Heal Friend', 50]] } } }
     ];
+    /* v2.36.9 — post de jogador (todo setup que não é "Northon - <mapa>") aplica a barra inteira, poções incluídas; os gerados
+     * pelo helper só com `pocaoDoMapa` (Draken Walls, Shadow Nexus) */
+    const dcCompleto = (s) => !!(s && (s.pocaoDoMapa || !/^Northon[ (-]|^Northon$/.test(String(s.autor || ''))));
     const DC_VOC_PT = { KNIGHT: 'Cavaleiro', PALADIN: 'Paladino', SORCERER: 'Feiticeiro', DRUID: 'Druida' };
     const DC_VOC_CAT = { KNIGHT: 'knight', PALADIN: 'paladin', SORCERER: 'sorcerer', DRUID: 'druid' };
     const dcNorm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -9909,13 +10031,17 @@
          * Setup com `pocaoDoMapa`: a poção do post substitui a sua (vida e mana); poção listada em `defesa` entra na fila naquela posição
          * (a cura forte pode vir antes dela). Setup sem a marca, com `ctx.pocaoDono[voc]` (a sua, guardada pelo aplicarDiscord quando um
          * setup com poção do mapa entrou), devolve a sua antes da regra da 2.29.4. */
-        const doMapa = !!(setup && setup.pocaoDoMapa);
-        const dono = !doMapa && ctx.pocaoDono && ctx.pocaoDono[voc];
-        if (doMapa || dono) cfg.heals = cfg.heals.filter(h => !ehPocao(h.name));
-        if (dono) {
-            if (dono.vida && dono.vida.name) cfg.heals = [{ name: dono.vida.name, percent: dono.vida.percent != null ? dono.vida.percent : 0 }].concat(cfg.heals);
-            cfg.manaPotion = dono.mana && dono.mana.name ? { name: dono.mana.name, percent: dono.mana.percent != null ? dono.mana.percent : 0 } : null;
-        } else if (doMapa && Array.isArray(ch.mana) && ch.mana[0]) cfg.manaPotion = null;
+        /* v2.36.9 — POST DO DISCORD = BARRA INTEIRA (dono, 30/10: "se eu clicar para aplicar, aplica tudo como está no post; eu altero
+         * manual se quiser"): todo post de jogador conta como `pocaoDoMapa` (dcCompleto). A poção que o post NÃO mostra (os de texto do
+         * Argonaut) fica a sua: a guardada em ctx.pocaoDono, ou a do perfil se ainda não houver guardada. */
+        const doMapa = dcCompleto(setup);
+        const dono = ctx.pocaoDono && ctx.pocaoDono[voc];
+        const postVida = !!((Array.isArray(ch.vida) && ch.vida[0]) || (Array.isArray(ch.defesa) && ch.defesa.some(d => d && ehPocao(d[0]))));
+        const postMana = !!(Array.isArray(ch.mana) && ch.mana[0]);
+        if ((doMapa && postVida) || dono) cfg.heals = cfg.heals.filter(h => !ehPocao(h.name));
+        if (dono && !(doMapa && postVida) && dono.vida && dono.vida.name) cfg.heals = [{ name: dono.vida.name, percent: dono.vida.percent != null ? dono.vida.percent : 0 }].concat(cfg.heals);
+        if (doMapa && postMana) cfg.manaPotion = null;
+        else if (dono) cfg.manaPotion = dono.mana && dono.mana.name ? { name: dono.mana.name, percent: dono.mana.percent != null ? dono.mana.percent : 0 } : null;
         const pocaoNaFila = doMapa && Array.isArray(ch.defesa) && ch.defesa.some(d => d && ehPocao(d[0]));
         /* v2.29.8 — a SUA poção também passa pela vocação e pelo nível: um perfil que ficou com a Great Health Potion no Paladino (bug
          * da 2.29.0, ou um deslize na tela de atalhos) não pode "ficar" — sai com aviso e a do post entra (conferida) no lugar */
@@ -9984,6 +10110,41 @@
         return [...out];
     }
     /* @@DISCORD-FIM */
+    /* @@BOSS-PADRAO-INICIO — padrão forte de boss (2.37.0): funções puras; testes/boss-padrao.test.js roda este trecho no node.
+     * Dono, 30/10: "na guia Boss, tirando o ataque que muda de acordo com o boss, as outras guias estão as melhores? Faça um padrão
+     * forte para todos os bosses: a melhor vida, mana, defesa e suporte para todos os personagens, levando em conta que uso 3 contas
+     * de nível diferente; quando eu entrar no boss ele já aplica tudo". Até a 2.36 o modelo Boss trocava só os 4 ataques: poção,
+     * cura e suporte ficavam os da caçada (mana do Feiticeiro ≤10 %, uma cura só). Aqui: a poção MAIS FORTE que a vocação bebe no
+     * nível (no boss o ouro pesa pouco; morte encerra a tentativa), curas da forte (gatilho baixo) para a leve, até 3, e os dois
+     * suportes de luta. Magia que o nível ainda não tem sai (as contas de nível baixo ficam com o que têm); poção da vocação errada
+     * nunca entra. Gatilho de mana moderado: a poção e a runa dividem a mesma recarga de 1 s. */
+    const BOSS_PADRAO = {
+        KNIGHT: { vida: 55, mana: 30, maxCuras: 2, curas: [['Intense Wound Cleansing', 35], ['Wound Cleansing', 75]], sups: ['Protector', 'Train Party'] },
+        PALADIN: { vida: 50, mana: 35, maxCuras: 3, curas: [['Salvation', 40], ['Divine Healing', 65], ['Intense Healing', 80], ['Light Healing', 85]], sups: ['Sharpshooter', 'Protect Party'] },
+        SORCERER: { vida: 45, mana: 40, maxCuras: 3, curas: [['Ultimate Healing', 50], ['Intense Healing', 75], ['Light Healing', 85]], sups: ['Enchant Party', 'Magic Shield'] },
+        DRUID: { vida: 45, mana: 40, maxCuras: 3, curas: [['Ultimate Healing', 50], ['Mass Healing', 60], ['Heal Friend', 70], ['Intense Healing', 80], ['Light Healing', 85]], sups: ['Heal Party', 'Magic Shield'] }
+    };
+    /* poções {vida: [{n, lvl, lvlMax, voc, media, custo}], mana: [...]} (o formato de listaPocoes); a mais forte que ele bebe */
+    function bossPocaoForte(lista, voc, lvl) {
+        const bebe = p => p && p.n && (Number(p.lvl) || 1) <= lvl && lvl <= (Number(p.lvlMax) || Infinity) && (Number(p.media) || 0) > 0
+            && (!p.voc || !p.voc.length || p.voc.some(v => String(v).toUpperCase().includes(voc)));
+        return (lista || []).filter(bebe).sort((a, b) => (b.media - a.media) || ((a.custo || 0) - (b.custo || 0)))[0] || null;
+    }
+    /* → {heals[5], manaPotion, supports[2]} no formato do battle config; tem(nome) = a vocação já tem a magia neste nível */
+    function padraoBoss(voc, lvl, tem, pocoes) {
+        const P = BOSS_PADRAO[voc];
+        if (!P) return null;
+        let curas = P.curas.filter(([n]) => tem(n));
+        if (curas.some(([n]) => n === 'Intense Healing')) curas = curas.filter(([n]) => n !== 'Light Healing');
+        curas = curas.slice(0, P.maxCuras).map(([name, percent]) => ({ name, percent }));
+        const pv = bossPocaoForte(pocoes && pocoes.vida, voc, lvl), pm = bossPocaoForte(pocoes && pocoes.mana, voc, lvl);
+        const heals = curas.concat(pv ? [{ name: pv.n, percent: P.vida }] : []).sort((a, b) => a.percent - b.percent).slice(0, 5);
+        while (heals.length < 5) heals.push(null);
+        const supports = P.sups.filter(n => tem(n)).slice(0, 2);
+        while (supports.length < 2) supports.push(null);
+        return { heals, manaPotion: pm ? { name: pm.n, percent: P.mana } : { percent: 0 }, supports };
+    }
+    /* @@BOSS-PADRAO-FIM */
 
     /* =========================================================================
      *  TELAS
@@ -10907,7 +11068,7 @@
      * caixa ficava colada no mapa errado). */
     /* v2.28.3 — o Scan também mede o setup do Discord do mapa (o escolhido na aba Magia; nos 51 mapas sem post, o
      * "Northon - <mapa>"). Com o estudo de variantes, Discord × Em área no mesmo mapa dão o veredito lado a lado. */
-    const MODELOS_SCAN = ['equilibrado', 'economica', 'area', 'inteligente', 'discord'];
+    const MODELOS_SCAN = ['equilibrado', 'economica', 'area', 'discord'];
     const FIM_SCAN = [['voltar', 'fim: voltar'], ['ficar', 'fim: ficar'], ['xp', 'fim: melhor XP'], ['ouro', 'fim: melhor ouro']];
     function telaScan() {
         garantirCssAH();
@@ -11028,7 +11189,7 @@
      *  personagem o gasto/h e as runas/h, fichas com "2+ alvos", extras em
      *  português ("poção de mana ≤30%" — saía "mana Mana ≤30") e os slots que a
      *  Magia cortou por nunca dispararem (r.mortos) numa linha discreta. */
-    const MODELO_CURTO = { economica: 'Eco', equilibrado: 'Equil', area: 'Área', inteligente: 'Intel', boss: 'Boss', discord: 'Discord' };
+    const MODELO_CURTO = { economica: 'Eco', equilibrado: 'Equil', area: 'Área', mana: 'Mana', boss: 'Boss', discord: 'Discord' };
     /* nome da poção como o painel fala: "Strong Mana Potion" → "poção de mana forte" */
     function nomePocao(n) {
         const s = String(n || '');
@@ -11062,8 +11223,8 @@
             c += `<div style="margin-top:4px"><b>${escHtml(VOC_ROTULO[voc] || voc)}</b>: <span class="tb-eq-nota">${escHtml(dcResumo(s, voc))}</span>` + (r.suas && r.suas.length ? `<div class="tb-mut tb-eq-nota">poção sua, fica: ${escHtml(r.suas.join(' · '))}</div>` : '') + (r.avisos.length ? `<div class="tb-av tb-eq-nota">${r.avisos.map(escHtml).join('<br>')}</div>` : '') + `</div>`;
         }
         c += `</div>`;
-        c += `<button type="button" class="tb-bt pri tb-larga tb-grande" id="tb-aplicar-todos" ${ocupado || !socketAberto() ? 'disabled' : ''} style="margin-top:6px" title="${socketAberto() ? 'grava a barra dos 4 pelo socket (ataque, defesa, suporte, munição); as suas poções de vida e mana ficam; o que o post não diz fica como está' : 'preciso do socket do jogo — F5 com o helper instalado'}">${_aplicando ? 'APLICANDO…' : 'APLICAR O SETUP NOS 4'}</button>` +
-            `<div class="tb-mut tb-eq-nota">a poção de vida e a de mana são sempre as suas (a do post só entra no slot vazio); o que o post não diz (cura, suporte) fica como está no seu perfil; magia que seu nível ou vocação não permite é pulada com aviso; o lure não muda. Nada é aplicado sozinho.</div>`;
+        c += `<button type="button" class="tb-bt pri tb-larga tb-grande" id="tb-aplicar-todos" ${ocupado || !socketAberto() ? 'disabled' : ''} style="margin-top:6px" title="${socketAberto() ? (dcCompleto(s) ? 'grava a barra dos 4 pelo socket como está no post (vida, mana, ataque, defesa, suporte); o que o post não mostra fica como está no seu perfil' : 'grava a barra dos 4 pelo socket (ataque, defesa, suporte); as suas poções de vida e mana ficam') : 'preciso do socket do jogo — F5 com o helper instalado'}">${_aplicando ? 'APLICANDO…' : 'APLICAR O SETUP NOS 4'}</button>` +
+            `<div class="tb-mut tb-eq-nota">${dcCompleto(s) ? 'aplica como está no post: poção de vida, poção de mana, ataque, defesa e suporte; a poção que o post não mostra continua a sua, e as suas voltam no próximo "Northon - &lt;mapa&gt;"' : 'setup montado pelo helper: a poção de vida e a de mana são as suas (a do setup só entra no slot vazio)'}; o que o post não diz (cura, suporte) fica como está no seu perfil; magia ou poção que seu nível ou vocação não permite troca pela mais próxima (ou é pulada) com aviso; o lure e a munição não mudam (só se o post disser a munição). Depois, altere à mão o que quiser. Nada é aplicado sozinho.</div>`;
         const foto = ler('dc_foto', null);
         if (foto && foto.profiles) c += `<div class="tb-linha" style="margin-top:4px"><button type="button" class="tb-bt" id="tb-dc-voltar" ${ocupado || !socketAberto() ? 'disabled' : ''} title="devolve o perfil dos 4 como estava antes do primeiro APLICAR do Discord (profiles_set; na caçada também o update_battle_config)">voltar ao que eu tinha antes do Discord</button><span class="tb-mut tb-eq-nota">foto de ${new Date(foto.t).toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}, antes de "${escHtml(foto.setup || '')}"</span></div>`;
         return c + lista;
@@ -11083,6 +11244,7 @@
         let h = huntAtual();
         let corpo = `<div class="tb-seg" role="group" aria-label="modelo de magia">` + Object.keys(MODELOS).map(k =>
             `<button type="button" data-modelo="${k}" aria-pressed="${k === modelo}" aria-label="${escHtml(MODELOS[k].nome)}" title="${escHtml(MODELOS[k].nome + ' — ' + maisAlvos(MODELOS[k].dica))}">${escHtml(MODELO_CURTO[k] || MODELOS[k].nome)}</button>`).join('') + `</div>`;
+        if (modelo === 'mana') return corpo + telaMana(); // v2.37.0 — não depende de caçada
         /* v2.26.1 — no modelo Discord o seletor só lista as hunts que têm setup da comunidade (dono, 20/10: "tem q aparecer somente as
          * hunts q tem magias definidas no discord") */
         const soDiscord = modelo === 'discord';
@@ -11100,6 +11262,9 @@
             if (alvo) { try { corpo += telaFormacao(alvo); } catch (e) { falhou('formação (tela)', e); } } // 2.31.0
             if (alvo) { try { corpo += telaConsumiveisBoss(alvo); } catch (e) { falhou('consumíveis do boss (tela)', e); } } // 2.34.0
             if (alvo) corpo += `<div class="tb-mut tb-resist">${escHtml((alvo.monsters[0].elements || []).map(e => rotuloElem(e.type) + ' ' + (e.percent > 0 ? '−' : '+') + Math.abs(e.percent) + '%').join(' · ') || 'sem resistências')}</div>`;
+            /* v2.37.0 — padrão forte (vida, mana, defesa, suporte) e aplicar sozinho ao entrar */
+            corpo += `<div class="tb-linha" style="margin-top:4px"><label class="tb-l" title="a poção mais forte que cada um bebe no nível, curas da forte para a leve (até 3) e os dois suportes de luta; o ataque continua o do boss escolhido"><input type="checkbox" id="tb-boss-padrao" ${bossPadraoLigado() ? 'checked' : ''}> padrão forte (vida, mana, defesa, suporte)</label>` +
+                `<label class="tb-l" title="no início de qualquer luta de boss: ataque do boss + padrão só naquela luta (o preset não muda); na volta à caçada, a barra de antes volta"><input type="checkbox" id="tb-boss-auto" ${bossAutoLigado() ? 'checked' : ''}> aplicar sozinho ao entrar no boss</label></div>`;
         }
         if (!alvo) return corpo + `<div class="tb-mut" style="margin-top:6px">escolha a caçada para ver o plano</div>`;
         h = alvo;
@@ -11107,38 +11272,8 @@
         const r = montarPlano(modelo, h);
         if (r.erro) return corpo + `<div class="tb-cx tb-ruim">${escHtml(r.erro)}</div>`;
         const ocupado = _aplicando || _aprendendo;
-        /* v2.12.0 — o Inteligente NÃO calcula no desenho: só no clique */
-        const modoXp = ler('int_modo', 'lucro') === 'xp', intEnx = !!ler('int_enxuto', false);
-        const intCtl = `<div class="tb-linha" style="margin-top:4px"><button type="button" class="tb-bt" id="tb-int-calc" ${ocupado ? 'disabled' : ''}>${r.pendente ? 'CALCULAR O KIT' : 'recalcular'}</button>` +
-            `<button type="button" class="tb-bt mini" id="tb-int-zerar" ${ocupado ? 'disabled' : ''} title="esquece o kit aplicado neste mapa e a trava de 10 min: a próxima conta parte do zero">replanejar do zero</button>` +
-            `<label class="tb-l" style="margin-left:auto" title="ε = 0,5 %: fica com o de mais XP mesmo que custe bem mais ouro (o padrão, 3 %, prefere o mais barato entre os quase iguais)"><input type="checkbox" id="tb-int-xp" ${modoXp ? 'checked' : ''}> XP absoluto</label>` +
-            `<label class="tb-l" title="kit enxuto (2.14): sem os seus suportes e curas por magia, toda a mana no ataque e Mana Potion como a conta mandar — como os setups do Discord. A cura volta pela escada (0 só poções · 1 + Heal Friend no Druida · 2 + cura do Knight e do Paladino · 3 o seu kit completo), medida no mapa. Desligado, o Inteligente não mexe nos seus suportes e curas."><input type="checkbox" id="tb-int-enx" ${intEnx ? 'checked' : ''}> kit enxuto</label></div>`;
-        /* v2.19.0 — no Inteligente, o AJUSTE FINO da barra do dono vem primeiro (recomendado); montar do zero fica abaixo */
-        const zeroTit = `<div class="tb-mut" style="margin-top:10px;border-top:1px solid #8884;padding-top:6px"><b>Montar a party do zero</b> (experimental — troca a barra inteira; prefira o ajuste fino acima)</div>`;
-        if (modelo === 'inteligente') corpo += ajusteFinoHtml(h, ocupado);
-        if (modelo === 'inteligente' && r.pendente) {
-            return corpo + zeroTit + calibracaoHtmlInt(h) + intCtl + `<div class="tb-mut">o Inteligente simula a party inteira (≈ 0,1–0,3 s) — só quando você clica. Nada é aplicado sozinho.</div>`;
-        }
-        if (modelo === 'inteligente') corpo += zeroTit;
         const vp = r.viab ? viabilidadeParty(modelo, h) : null;
-        corpo += `<button type="button" class="tb-bt pri tb-larga tb-grande" id="tb-aplicar-todos" ${ocupado ? 'disabled' : ''} style="margin-top:6px">${_aplicando ? 'APLICANDO…' : _aprendendo ? 'MEDINDO O DANO…' : modelo === 'inteligente' ? 'APLICAR O KIT DO ZERO NOS 4' : 'APLICAR NOS 4'}</button>`;
-        if (modelo === 'inteligente' && r.int) {
-            const it = r.int, m = it.met, dec = { NOVO: 'kit novo', IGUAL: 'o kit aplicado já é o melhor', MANTER: 'mantém o kit aplicado', MOSTRADO: 'mantém o kit calculado antes (o novo quase não ganha)', TROCAR: 'TROCAR: o novo é melhor', ESPERAR: 'mantém (menos de 10 min desde o APLICAR)' }[it.decisao] || it.decisao;
-            const ganho = it.ganho != null && it.decisao !== 'IGUAL' && it.decisao !== 'NOVO' ? ` (novo ${it.ganho >= 0 ? '+' : ''}${Math.round(it.ganho * 1000) / 10} %)` : '';
-            corpo += calibracaoHtmlInt(h) + intCtl + `<div class="tb-ver ${it.aviso ? 'ruim' : 'ok'}"><b>${escHtml(dec)}</b>${escHtml(ganho)}${it.desatualizado ? ' <span class="tb-av">(as medidas mudaram — recalcule)</span>' : ''}` +
-                `<div class="tb-mut">previsto: ${milBR(m.xpH)} xp/h · ${numBR(Math.round(m.abH))} abates/h${m.T != null ? ` · onda limpa em ${numBR(Math.round(m.T * 10) / 10, 1)} s (${tpCombos(m.T) === 1 ? '⚡ 1 combo' : tpCombos(m.T) + ' combos'})` : ''} · lucro ${m.lucroH >= 0 ? '+' : ''}${milBR(m.lucroH)}/h (garantido ${milBR(m.LCB)}) · gasto em poção/runa ${milBR(m.ouroH)}/h${m.curaH > 0 ? ` (cura ${milBR(m.curaH)}/h pelo tempo que os bichos ficam vivos)` : ''}</div>` +
-                `<div class="tb-mut">${regenTexto()}</div>` +
-                (m.medido ? `<div class="tb-av">${m.medido.banda ? 'a simulação já se mostrou otimista neste mapa: kit não medido vale o que o kit medido logo acima dele rendeu' : 'este kit foi MEDIDO aqui'}: ${milBR(m.medido.xpRawH)} xp/h (previsto ${milBR(m.medido.previsto)}) — a medida vale mais que a simulação</div>` : '') +
-                (it.medidoVig && !m.medido ? `<div class="tb-av">o kit aplicado foi medido aqui a ${milBR(it.medidoVig.xpRawH)} xp/h (previsto ${milBR(it.medidoVig.previsto)}): por isso a troca</div>` : '') +
-                (it.escEnx ? `<div class="${it.escEnx.alerta ? 'tb-ruim' : 'tb-mut'}">kit enxuto: degrau <b>${it.escEnx.degrau}</b> — ${escHtml(['só poções', '+ Heal Friend no Druida', '+ cura do Knight e do Paladino', 'o seu kit completo (suportes e curas)'][it.escEnx.degrau])} (${escHtml(it.escEnx.motivo)})${it.escEnx.alerta ? ' ⚠ arriscado: CALCULAR de novo e APLICAR sobe a cura' : ''}</div>` : '') +
-                `<div class="tb-mut">defesa: degrau ${it.escada.degrau} (${escHtml(it.escada.motivo)})${it.escada.degrau >= 4 ? ' <span class="tb-ruim">⚠ mapa acima da party</span>' : ''} · ${numBR(it.cont.sim)} triagens + ${numBR(it.cont.party)} parties em ${numBR(it.ms)} ms</div>` +
-                (it.aviso ? `<div class="tb-ruim">${escHtml(it.aviso)}</div>` : '') + `</div>`;
-        }
-        /* v2.14.0 — aviso AO VIVO do kit enxuto (só lê o livro-razão; nada muda sozinho) */
-        if (modelo === 'inteligente' && ler('int_enxuto', false) && !(r.int && r.int.escEnx && r.int.escEnx.alerta)) {
-            const ee = escadaEnxuta(h);
-            if (ee.alerta) corpo += `<div class="tb-cx tb-ruim" role="status">⚠ kit enxuto: ${escHtml(ee.motivo)} — CALCULAR e APLICAR sobem a cura (nada muda sozinho)</div>`;
-        }
+        corpo += `<button type="button" class="tb-bt pri tb-larga tb-grande" id="tb-aplicar-todos" ${ocupado ? 'disabled' : ''} style="margin-top:6px">${_aplicando ? 'APLICANDO…' : _aprendendo ? 'MEDINDO O DANO…' : modelo === 'boss' && bossPadraoLigado() ? 'APLICAR NOS 4 (ataque + padrão de boss)' : 'APLICAR NOS 4'}</button>`;
         /* v2.10 — o veredito é do kit inteiro pela fila simulada (runa incluída,
          * mana só de quem bebe), com a poção que o PLANO usa. v2.11 (D2): selo
          * "✓ se paga"/"✗ não se paga" + custo por abate contra o teto (80 % do
@@ -11170,7 +11305,7 @@
             const rv = montarPlano(modelo, h, v);
             const cab = `<b title="${VOC_ROTULO[v]}">${VOC_CURTO[v]}</b>`;
             if (rv.erro) return `<div class="tb-mv">${cab}<div class="tb-ruim">${escHtml(rv.erro)}</div></div>`;
-            const x = rv.extras, pv = vp && vp.porVoc ? vp.porVoc[v] : null;
+            const x = rv.extras || (modelo === 'boss' && bossPadraoLigado() ? extrasBoss(v) : null), pv = vp && vp.porVoc ? vp.porVoc[v] : null;
             const gasto = pv ? (pv.ouroH > 0 ? `gasta ~${milBR(pv.ouroH)}/h` : 'sem gasto de ouro') + (pv.runasH ? ` · ${numBR(pv.runasH)} runas/h` : '') + (x ? '' : ` · poção de mana ${pv.pocao ? 'ligada' : 'desligada'}`) : '';
             const mortos = (rv.mortos || []).map(m => `${m.nome} ${alvosTxt(m.minimo)}: ${maisAlvos(m.motivo)}`);
             return `<div class="tb-mv">${cab}<div>${rv.plano.map(ficha).join('') || '<span class="tb-ruim">sem magia com dano conhecido</span>'}` +
@@ -11181,9 +11316,33 @@
         const linhas = [];
         if (emHunt() && RAZAO.kills) { const rz = razaoResumo(RAZAO); if (rz.danoTotal) linhas.push(`<div><b>grupo ao vivo</b> — ${numBR(Math.round(rz.seg / 60))} min · ${numBR(rz.kills)} abates · tomou ${milBR(rz.tomadoH)}/h</div>${razaoHtml(rz, false)}${rz.tomado > 0 ? danoMapaHtml(Object.assign({ sessoes: 0 }, rz), null) : ''}`); }
         if (h.bestiary && h.bestiary.stages && h.bestiary.stages.length) linhas.push(`<div><b>bestiário</b>: ${escHtml(h.bestiary.bonus)} <span class="tb-tag">${h.bestiary.stages.map(e => `${numBR(e.kills / 1000, 1)}k → +${escHtml(e.value)}`).join(' · ')}</span></div>`);
-        linhas.push(`<div>${MODELOS[modelo] ? escHtml(maisAlvos(MODELOS[modelo].dica)) : ''} Nada é aplicado sozinho. ${socketAberto() && ESTADO_WS.perfisDoServidor ? 'Aplica pelo socket, sem abrir janela.' : 'Aplica pelos diálogos do jogo (só os 4 ataques).'}</div>`);
+        linhas.push(`<div>${MODELOS[modelo] ? escHtml(maisAlvos(MODELOS[modelo].dica)) : ''} ${modelo === 'boss' && bossAutoLigado() ? 'Com "aplicar sozinho" ligado, ao entrar num boss o helper aplica ataque e padrão só naquela luta e devolve a barra de antes na volta à caçada.' : 'Nada é aplicado sozinho.'}${socketAberto() && ESTADO_WS.perfisDoServidor ? 'Aplica pelo socket, sem abrir janela.' : 'Aplica pelos diálogos do jogo (só os 4 ataques).'}</div>`);
         corpo += aj('magia-mais', linhas.join(''), 'detalhes');
         return corpo;
+    }
+    /* v2.37.0 — a tela do modo Mana: vida e mana dos 4 ao vivo (frame), a poção que cada um vai usar, ENCHER e VOLTAR */
+    function telaMana() {
+        const fr = frameFresco() && ESTADO_WS.frame ? (ESTADO_WS.frame.party || []) : [];
+        const foto = ler('mana_foto', null), lvl = nivelAtual(), ocupado = _aplicando || _aprendendo;
+        let linhas = '', todos = fr.length > 0;
+        for (const voc of VOCS) {
+            const p = fr.find(x => x && x.voc === voc), atual = configAtiva(voc), r = atual ? configMana(voc, atual, lvl) : null;
+            const hp = p && p.maxHp ? Math.round(p.hp / p.maxHp * 100) : null, mp = p && p.maxMana ? Math.round(p.mana / p.maxMana * 100) : null;
+            const cheio = hp != null && mp != null && hp >= 99 && mp >= 99;
+            if (!cheio) todos = false;
+            linhas += `<div class="tb-mv"><b title="${VOC_ROTULO[voc]}">${VOC_CURTO[voc]}</b><div>` +
+                (hp != null ? `vida <b>${hp} %</b> · mana <b>${mp != null ? mp : '—'} %</b>${cheio ? ' <span class="tb-ok">✓ cheio</span>' : ''}` : '<span class="tb-mut">vida e mana aparecem caçando</span>') +
+                `<div class="tb-mx">${r ? escHtml((r.vida || 'sem poção de vida') + ' e ' + (r.mana || 'sem poção de mana') + ' a ≤100 %') : 'sem a barra atual (perfis do servidor)'}</div></div></div>`;
+        }
+        let h = `<div class="tb-cx" style="margin-top:6px"><b>Encher vida e mana</b><div class="tb-mut tb-eq-nota">Entre num mapa fraco e aplique: a poção de vida e a de mana dos 4 passam a disparar a ≤100 % (bebem até encher). A sua poção fica, se a vocação bebe; senão, a melhor do nível. Ataque, curas e suportes não mudam. Cheio, toque em VOLTAR AO QUE EU TINHA e vá para o mapa forte.</div></div>`;
+        h += `<div class="tb-cx">${linhas}</div>`;
+        if (todos && foto) h += `<div class="tb-cx tb-ok">✓ os 4 estão cheios — toque em VOLTAR AO QUE EU TINHA e vá para o mapa forte</div>`;
+        h += `<button type="button" class="tb-bt pri tb-larga tb-grande" id="tb-aplicar-todos" ${ocupado || !socketAberto() ? 'disabled' : ''} style="margin-top:6px">${_aplicando ? 'APLICANDO…' : foto ? 'APLICAR DE NOVO (poções a ≤100 %)' : 'ENCHER: poções a ≤100 % nos 4'}</button>`;
+        if (foto) {
+            h += `<button type="button" class="tb-bt tb-larga" id="tb-mana-voltar" ${ocupado || !socketAberto() ? 'disabled' : ''} style="margin-top:4px" title="devolve a barra dos 4 como estava antes do modo Mana">VOLTAR AO QUE EU TINHA</button>` +
+                `<div class="tb-mut tb-eq-nota">foto de ${new Date(foto.t).toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}. Qualquer outro APLICAR da Magia (Discord, Boss, Em área…) também devolve a barra antes.</div>`;
+        }
+        return h;
     }
     /* v2.11.2 — gasto e loot por abate do analisador do jogo, se a party está
      * NO mapa mostrado há ≥ 10 min (a sessão do jogo zera ao trocar de mapa). */
@@ -11206,90 +11365,6 @@
         _buscandoMagia.add(chave);
         Promise.resolve().then(fazer).catch(() => { }).finally(() => _buscandoMagia.delete(chave));
     }
-    /* v2.19.0 — AJUSTE FINO (a conta é ajusteFinoInt, @@MAGIA): a barra de hoje vem do jogo (preset ativo de cada um);
-     * calcula sozinho ao escolher o mapa (só leitura, ~10–70 ms, guardado por mapa + barra + minuto); aplicar = 2 toques,
-     * só os 4 slots de ataque e os mínimos daquele personagem (aplicarPlanoSocket sem extras: cura, suporte e poção ficam). */
-    const AJ = { chave: null, res: null, erro: null };
-    function barrasDoJogo() {
-        const b = {};
-        for (const v of VOCS) {
-            let c = null;
-            try { c = configAtiva(v); } catch { c = null; }
-            if (!c) continue;
-            const n = normalizarConfig(c);
-            b[v] = { skills: n.skills.slice(0, 4), minCreatures: n.minCreatures, pocao: n.manaPotion && n.manaPotion.name && n.manaPotion.percent > 0 ? n.manaPotion.percent / 100 : 0,
-                     sups: (n.supports || []).filter(Boolean) };
-        }
-        return Object.keys(b).length ? b : null;
-    }
-    function vivoDaCacada(h) {
-        const a = anAgora();
-        if (!a || ESTADO_WS.huntId !== h.id || !(a.elapsedMs >= 180000) || !(Number(a.kills) > 0)) return null;
-        const kills = Number(a.kills), horas = a.elapsedMs / 3600000;
-        /* v2.19.2 — loot por abate e poções/h do Analisador (≥ 100 abates) calibram o lucro do simulador */
-        return { abH: kills / horas, seg: a.elapsedMs / 1000, kills,
-                 lootAbate: kills >= 100 && Number.isFinite(Number(a.lootGold)) ? Number(a.lootGold) / kills : null,
-                 supH: kills >= 100 && Number.isFinite(Number(a.suppliesGold)) ? Number(a.suppliesGold) / horas : null };
-    }
-    function ajusteDe(h) {
-        const barras = barrasDoJogo();
-        if (!barras) return { semBarra: true };
-        const vivo = vivoDaCacada(h);
-        const chave = h.id + '|' + JSON.stringify(barras) + '|' + Math.floor(Date.now() / 60000) + '|' + (vivo ? [Math.round(vivo.abH / 50), vivo.lootAbate != null ? Math.round(vivo.lootAbate) : '-', vivo.supH != null ? Math.round(vivo.supH / 5000) : '-'].join(',') : '-');
-        if (AJ.chave !== chave) {
-            AJ.chave = chave; AJ.erro = null;
-            /* v2.19.2 — a sugestão da tela anterior (mesmo mapa) só sai se a nova ganhar dela de verdade (histerese) */
-            const preferir = AJ.res && AJ.hunt === h.id && Array.isArray(AJ.res.sugestoes) ? AJ.res.sugestoes.map(sg => ({ voc: sg.voc, nomes: sg.nomes, desc: sg.desc })) : null;
-            AJ.hunt = h.id;
-            try { AJ.res = ajusteFinoInt(h, barras, { vivo, preferir }); } catch (e) { AJ.res = null; AJ.erro = e.message; falhou('ajuste fino', e); }
-        }
-        return AJ.res;
-    }
-    const ajKit = (lista) => (lista || []).map(([n, m]) => `${n} ≥${m}`).join(' > ') || '—';
-    function ajusteFinoHtml(h, ocupado) {
-        if (!h || h.boss) return '';
-        const r = ajusteDe(h);
-        let x = `<div class="tb-cx" style="margin-top:6px"><b>Ajuste fino da sua barra</b> <span class="tb-mut">— parte do que você usa hoje e testa trocas pequenas; nunca mexe em cura, suporte nem poção</span>`;
-        if (r && r.semBarra) return x + `<div class="tb-av">a sua barra ainda não chegou do jogo (perfis do servidor) — dê F5 com o helper instalado</div></div>`;
-        if (!r) return x + `<div class="tb-mut">${AJ.erro ? 'a conta falhou: ' + escHtml(AJ.erro) : 'sem dados deste mapa ainda (catálogo/monstros)'}</div></div>`;
-        const b = r.base, comb = (T) => (T != null ? ` · onda limpa em ${numBR(Math.round(T * 10) / 10, 1)} s (${tpCombos(T) === 1 ? '⚡ 1 combo' : tpCombos(T) + ' combos'})` : '');
-        x += `<div class="tb-mut">sua barra hoje, prevista: <b>${milBR(b.xpH)} xp/h</b> · lucro ${b.lucroH >= 0 ? '+' : ''}${milBR(b.lucroH)}/h${comb(b.T)}${r.kCalibVivo != null ? ` · <span class="tb-ok">abates calibrados por esta caçada (×${numBR(r.kCalibVivo, 2)})${r.lootVivo != null ? `; loot ${numBR(r.lootVivo, 1)}/abate${r.supVivo != null ? ` e poções ${milBR(r.supVivo)}/h` : ''} medidos nela</span>` : '</span>'}` : ''}</div>`;
-        if (r.naoSimulavel.length) x += `<div class="tb-av">${r.naoSimulavel.map(v => escHtml(VOC_ROTULO[v] || v)).join(', ')}: alguma magia da barra não entra na simulação — esse personagem fica como está</div>`;
-        if (!r.sugestoes.length) return x + `<div class="tb-ok" style="margin-top:4px">✓ A sua barra já está no melhor que a simulação acha neste mapa: nenhuma troca dá +2 % de XP (ou +3k/h de lucro com o mesmo XP) sem tirar mana de ninguém.</div></div>`;
-        r.sugestoes.forEach((sg, i) => {
-            x += `<div style="margin-top:6px;border-top:1px dashed #8884;padding-top:4px"><b>${escHtml(VOC_ROTULO[sg.voc] || sg.voc)}</b>: ${escHtml(sg.desc)}${sg.mantida ? ' <span class="tb-mut">(mantida: a conta nova não ganha dela por 1 %)</span>' : ''}` +
-                 `<div class="tb-mut">hoje: ${escHtml(ajKit(sg.antes))}<br>depois: ${escHtml(ajKit(sg.nomes))}</div>` +
-                 `<div><span class="${sg.dXp > 0 ? 'tb-ok' : ''}">${sg.dXp >= 0 ? '+' : ''}${numBR(sg.dXp, 1)} % xp</span> · <span class="${sg.dLucro >= 0 ? 'tb-ok' : 'tb-ruim'}">lucro ${sg.dLucro >= 0 ? '+' : ''}${milBR(sg.dLucro)}/h</span> · <span class="tb-mut">mana mínima ${sg.manaMinAntes} → ${sg.manaMin} %${comb(sg.T)}</span></div>` +
-                 /* v2.19.1 — a descida aceita cada passo contra a party JÁ ajustada; sozinha, a troca pode não passar no corte
-                  * (visto ao vivo em 15/10: Cavaleiro +0,1 % xp e −1,5k/h). Então ela só vai com APLICAR TODOS. */
-                 (sg.sozinhaValida === false
-                     ? `<div class="tb-mut" style="font-size:10.5px">só compensa junto com os outros ajustes (sozinha não passa no corte: +2 % de XP ou +3k/h sem perder XP, mana e segurança da party) — vai com APLICAR TODOS</div></div>`
-                     : `<button type="button" class="tb-bt pri mini" id="tb-aj-${i}" ${ocupado ? 'disabled' : ''} style="margin-top:3px">APLICAR ESTE AJUSTE (2 toques)</button></div>`);
-        });
-        if (r.combinado && r.sugestoes.length > 1) {
-            const c = r.combinado;
-            x += `<div style="margin-top:6px"><b>Tudo junto:</b> ${milBR(c.xpH)} xp/h (${c.xpH >= b.xpH ? '+' : ''}${numBR((c.xpH / b.xpH - 1) * 100, 1)} %) · lucro ${c.lucroH >= 0 ? '+' : ''}${milBR(c.lucroH)}/h${comb(c.T)}` +
-                 `<button type="button" class="tb-bt mini" id="tb-aj-todos" ${ocupado ? 'disabled' : ''} style="margin-left:6px">APLICAR TODOS</button></div>`;
-        }
-        x += `<div class="tb-mut" style="font-size:10.5px;margin-top:4px">É simulação: confira o resultado na caçada (Analisador) ou num Scan curto. Depois de aplicar, a conta parte da barra nova.</div>`;
-        return x + `</div>`;
-    }
-    async function ajAplicar(lista) {
-        if (!lista || !lista.length) return;
-        if (_aplicando || _aprendendo) { log('ajuste fino: já estou aplicando/medindo — espera terminar', 'info'); return; }
-        if (SCAN.ativo || scanOcupado()) { log('ajuste fino: Scan em andamento — espera terminar', 'erro'); return; }
-        const ocup = travaJogo(); if (ocup) { log('ajuste fino: ' + ocup + ' em andamento — espera terminar', 'erro'); return; }
-        if (!socketAberto()) { log('ajuste fino: socket do jogo não está à mão — dê F5 com o helper instalado', 'erro'); return; }
-        _aplicando = true; renderizar();
-        try {
-            for (const sg of lista) {
-                try {
-                    const r = await aplicarPlanoSocket({ plano: sg.plano }, sg.voc);
-                    log(`ajuste fino: ${VOC_ROTULO[sg.voc] || sg.voc} — ${sg.desc}${r.eco ? ' (servidor confirmou)' : r.cacando ? '' : ' (vale na próxima caçada)'}`, 'ok');
-                } catch (e) { log(`ajuste fino: ${VOC_ROTULO[sg.voc] || sg.voc} não aplicado — ${e.message}`, 'erro'); }
-            }
-        } finally { _aplicando = false; AJ.chave = null; renderizar(); }
-    }
     function ligarMagia() {
         const corpo = $('#tb-corpo');
         $$('[data-modelo]', corpo).forEach(b => { b.onclick = () => { if (ler('modelo', 'equilibrado') === b.dataset.modelo) return; guardar('modelo', b.dataset.modelo); renderizar(); }; });
@@ -11304,32 +11379,16 @@
         if (selDc) selDc.onchange = () => { const h = alvoDoModelo(); if (h) guardar('dc_setup_' + h.id, selDc.value || null); renderizar(); };
         const dcv = $('#tb-dc-voltar');
         if (dcv && !dcv.disabled) ligarDoisToques(dcv, 'dc-voltar', 'CONFIRMAR: devolver o perfil dos 4', () => dcVoltar());
-        /* v2.19.0 — ajuste fino: 2 toques por sugestão, ou todas */
-        if (AJ.res && AJ.res.sugestoes) {
-            AJ.res.sugestoes.forEach((sg, i) => { const b = $('#tb-aj-' + i); if (b && !b.disabled) ligarDoisToques(b, 'aj-' + sg.voc, `CONFIRMAR: aplicar no ${VOC_ROTULO[sg.voc] || sg.voc}`, () => ajAplicar([sg])); });
-            const bt = $('#tb-aj-todos');
-            if (bt && !bt.disabled && AJ.res.combinado) ligarDoisToques(bt, 'aj-todos', 'CONFIRMAR: aplicar todos', () => ajAplicar(AJ.res.sugestoes.filter(sg => AJ.res.combinado.vocs.includes(sg.voc))));
-        }
-        /* v2.12.0 — Inteligente: a busca roda aqui, no clique (síncrona, ~0,1–0,3 s) */
-        const calc = $('#tb-int-calc');
-        if (calc) {
-            calc.onclick = () => {
-                const h = alvoDoModelo(); if (!h) return;
-                try { const r = partyInt(h, true); if (r) log(`Inteligente: ${h.title} — ${r.cont.sim} triagens + ${r.cont.party} parties em ${r.ms} ms (${r.decisao.acao})`, 'info'); } catch (e) { falhou('Inteligente (calcular)', e); }
-                renderizar();
-            };
-        }
-        const zer = $('#tb-int-zerar');
-        if (zer) zer.onclick = () => { const h = alvoDoModelo(); if (!h) return; zerarInt(h); try { partyInt(h, true); } catch (e) { falhou('Inteligente (do zero)', e); } renderizar(); };
-        const ixp = $('#tb-int-xp');
-        if (ixp) ixp.onchange = () => { guardar('int_modo', ixp.checked ? 'xp' : 'lucro'); invalidarPlanos(); renderizar(); };
-        const ienx = $('#tb-int-enx');
-        if (ienx) ienx.onchange = () => { guardar('int_enxuto', ienx.checked); invalidarPlanos(); renderizar(); };
+        /* v2.37.0 — padrão de boss, aplicar sozinho, e o VOLTAR do modo Mana */
+        const bp = $('#tb-boss-padrao'); if (bp) bp.onchange = () => { guardar('boss_padrao', bp.checked); renderizar(); };
+        const ba = $('#tb-boss-auto'); if (ba) ba.onchange = () => { guardar('boss_auto', ba.checked); log('boss: aplicar sozinho ao entrar ' + (ba.checked ? 'LIGADO' : 'desligado'), 'info'); renderizar(); };
+        const mv = $('#tb-mana-voltar');
+        if (mv && !mv.disabled) ligarDoisToques(mv, 'mana-voltar', 'CONFIRMAR: devolver a barra dos 4', async () => { if (_aplicando) return; _aplicando = true; renderizar(); try { await manaVoltar(false); } catch (e) { falhou('Mana (voltar)', e); } finally { _aplicando = false; renderizar(); } });
         const ap4 = $('#tb-aplicar-todos');
         if (ap4) { ap4.onclick = () => {
             if (_aplicando || _aprendendo) return;
             const m = ler('modelo', 'equilibrado'), h = alvoDoModelo();
-            if (!h) { avisar('magia', m === 'boss' ? 'escolha o boss primeiro' : 'escolha a caçada primeiro', 'erro'); return; }
+            if (!h && m !== 'mana') { avisar('magia', m === 'boss' ? 'escolha o boss primeiro' : 'escolha a caçada primeiro', 'erro'); return; }
             aplicarEmTodos(m, h); // marca _aplicando antes do 1º await
             renderizar();
         }; }
@@ -13110,7 +13169,7 @@
         return `<div class="pg-cx"><div class="pg-lin"><b>Completar marcos</b><span class="pg-mut">desligado</span></div>` +
             (valem.length ? valem.map(linhaHtml).join('') : '<div class="pg-mut">nenhum marco compensa agora.</div>') +
             (outras.length ? `<details class="pg-aj" data-k="pg-best-outras"><summary>não compensam (${outras.length})</summary><div>${outras.map(linhaHtml).join('')}</div></details>` : '') +
-            `<div class="pg-form"><label for="pg-best-modelo">kit</label><select id="pg-best-modelo">${Object.keys(MODELOS).filter(m => m !== 'boss' && m !== 'discord').map(m => `<option value="${m}"${c.modelo === m ? ' selected' : ''}>${escHtml(nomeModelo(m))}</option>`).join('')}</select></div>` +
+            `<div class="pg-form"><label for="pg-best-modelo">kit</label><select id="pg-best-modelo">${Object.keys(MODELOS).filter(m => m !== 'boss' && m !== 'discord' && m !== 'mana').map(m => `<option value="${m}"${c.modelo === m ? ' selected' : ''}>${escHtml(nomeModelo(m))}</option>`).join('')}</select></div>` +
             `<div class="pg-form"><label for="pg-best-fim">no fim, upar em</label><select id="pg-best-fim" style="flex:1;min-width:0"><option value="">onde estava antes</option>${huntsNivel.map(x => `<option value="${x.id}"${c.fim === 'hunt' && c.fimHunt === x.id ? ' selected' : ''}>[${x.levelMin || 1}] ${escHtml(x.title)}</option>`).join('')}</select></div>` +
             `<button type="button" class="tb-bt pri" id="pg-best-ir" ${fila.length ? '' : 'disabled'} style="width:100%;margin-top:4px">COMPLETAR (${fila.length}) · ~${pgHoras(tot)}</button>` +
             `<div class="pg-mut pg-peq">${autoHunt().on ? 'Mochila cheia: o Auto Hunt vende e volta para a caçada do bestiário.' : 'Mochila cheia (no limite do Auto Hunt): o próprio modo vende e volta.'} Morte para o modo. Com o jogo fechado o helper não troca de caçada.</div></div>`;
@@ -17722,7 +17781,7 @@
          * lobby e a troca de hunt de uma vez. */
         renderizar();
         // repinta Estado e Analisador sozinhos; as outras só quando o usuário mexe
-        setInterval(() => { try { pintarTrilho(); } catch (e) { } if ((ABA === 'estado' || ABA === 'analise' || ABA === 'autohunt' || (ABA === 'scan' && SCAN.ativo) || (ABA === 'radar' && ler('radar_sub', 'mapas') === 'loot')) && ui().aberta && $('#tb-gaveta') && !$('#tb-ah-pct:focus') && !$('#tb-ah-oz:focus') && !$('#tb-scan-min:focus') && !$('#tb-scan-filtro:focus')) renderizar(); }, 4000);
+        setInterval(() => { try { pintarTrilho(); } catch (e) { } if ((ABA === 'estado' || ABA === 'analise' || ABA === 'autohunt' || (ABA === 'scan' && SCAN.ativo) || (ABA === 'magia' && ler('modelo', 'equilibrado') === 'mana') || (ABA === 'radar' && ler('radar_sub', 'mapas') === 'loot')) && ui().aberta && $('#tb-gaveta') && !$('#tb-ah-pct:focus') && !$('#tb-ah-oz:focus') && !$('#tb-scan-min:focus') && !$('#tb-scan-filtro:focus')) renderizar(); }, 4000);
 
         /* o analisador roda SEMPRE, mesmo com a aba fechada — é o que garante
          * que nenhuma caçada passe sem virar dado. Fecha a sessão ao sair da

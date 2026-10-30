@@ -4,7 +4,7 @@
 const fs = require('fs'), path = require('path'), assert = require('assert');
 const src = fs.readFileSync(path.join(__dirname, '..', 'tibidle-helper.user.js'), 'utf8');
 const trecho = (a, b) => { const i = src.indexOf(a), f = src.indexOf(b); assert(i > 0 && f > i, 'marcador ausente: ' + a); return src.slice(i, f); };
-const M = new Function(trecho('/* @@DISCORD-INICIO', '/* @@DISCORD-FIM */') + '\nreturn { SETUPS_DISCORD, dcSetupsDaHunt, dcConfigDe, dcResumo, dcNomesUsados };')();
+const M = new Function(trecho('/* @@DISCORD-INICIO', '/* @@DISCORD-FIM */') + '\nreturn { SETUPS_DISCORD, dcSetupsDaHunt, dcConfigDe, dcResumo, dcNomesUsados, dcCompleto };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 
@@ -39,6 +39,8 @@ const SETUP = {
         DRUID: { mana: ['Mana Potion', 30], ataque: [['Strong Ice Wave', 2], ['thunderstorm rune', 2]], defesa: [['Heal Friend', 60]] }
     }
 };
+/* 2.36.9 — post de jogador aplica a barra inteira; o "Northon - <mapa>" gerado pelo helper mantém as poções do dono (2.29.4) */
+const SETUP_N = Object.assign({}, SETUP, { id: 'teste-bog-n', autor: 'Northon (teste)' });
 const ATUAL = { heals: [{ name: 'Great Health Potion', percent: 45 }, { name: 'Wound Cleansing', percent: 50 }], manaPotion: { name: 'Strong Mana Potion', percent: 25 }, skills: ['Groundshaker', 'Berserk', null, null], minCreatures: { Groundshaker: 3, Berserk: 1 }, supports: ['Train Party', null] };
 
 t('dcSetupsDaHunt: acha pelo id da hunt ou pelo nome (sem caixa); sem nada → lista vazia', () => {
@@ -53,8 +55,8 @@ t('dcSetupsDaHunt (2.32.1): com id dos dois lados vale só o id — a caçada do
     /* 2.32.3 — a 261 tem o seu (faixa baixa) e nunca o da 263 */
     assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 261, title: 'Caçada da Estação (Halloween)' }).map(s => s.id), ['estacao-halloween-baixa']);
 });
-t('dcConfigDe: o que o setup não diz fica como está na config atual (cura e suporte do Knight); ataque entra como o post; a poção de mana é a sua (2.29.4)', () => {
-    const r = M.dcConfigDe(SETUP, 'KNIGHT', ATUAL, CTX);
+t('dcConfigDe: o que o setup não diz fica como está na config atual (cura e suporte do Knight); ataque entra como o post; a poção de mana é a sua (2.29.4, setup Northon)', () => {
+    const r = M.dcConfigDe(SETUP_N, 'KNIGHT', ATUAL, CTX);
     assert.deepStrictEqual(r.cfg.skills, ['Berserk', 'Lesser Front Sweep', null, null]);
     assert.deepStrictEqual(r.cfg.minCreatures, { Berserk: 2, 'Lesser Front Sweep': 1 });
     assert.deepStrictEqual(r.cfg.manaPotion, { name: 'Strong Mana Potion', percent: 25 }, 'trocou a poção de mana do dono pela do post');
@@ -64,16 +66,29 @@ t('dcConfigDe: o que o setup não diz fica como está na config atual (cura e su
     assert.deepStrictEqual(r.avisos, []);
 });
 t('dcConfigDe: defesa dada substitui as curas e a poção de vida do dono fica na frente (2.29.4); sem poção, entra a do post; suporte e munição entram', () => {
-    const r = M.dcConfigDe(SETUP, 'PALADIN', { heals: [{ name: 'Health Potion', percent: 30 }, { name: 'Intense Healing', percent: 70 }], manaPotion: null, skills: [], minCreatures: {}, supports: [] }, CTX);
+    const r = M.dcConfigDe(SETUP_N, 'PALADIN', { heals: [{ name: 'Health Potion', percent: 30 }, { name: 'Intense Healing', percent: 70 }], manaPotion: null, skills: [], minCreatures: {}, supports: [] }, CTX);
     assert.deepStrictEqual(r.cfg.heals, [{ name: 'Health Potion', percent: 30 }, { name: 'Salvation', percent: 30 }, { name: 'Divine Healing', percent: 60 }]);
     assert.deepStrictEqual(r.cfg.manaPotion, { name: 'Mana Potion', percent: 30 }, 'slot de mana vazio: entra a do post');
-    const semPocao = M.dcConfigDe(SETUP, 'PALADIN', { heals: [{ name: 'Intense Healing', percent: 70 }], manaPotion: null, skills: [], minCreatures: {}, supports: [] }, CTX);
+    const semPocao = M.dcConfigDe(SETUP_N, 'PALADIN', { heals: [{ name: 'Intense Healing', percent: 70 }], manaPotion: null, skills: [], minCreatures: {}, supports: [] }, CTX);
     assert.deepStrictEqual(semPocao.cfg.heals, [{ name: 'Great Spirit Potion', percent: 40 }, { name: 'Salvation', percent: 30 }, { name: 'Divine Healing', percent: 60 }]);
     assert.deepStrictEqual(semPocao.suas, []);
     assert.deepStrictEqual(r.cfg.skills, ['Divine Caldera', 'thunderstorm rune', null, null]);
     assert.deepStrictEqual(r.cfg.supports, ['Sharpshooter', null]);
     assert.strictEqual(r.cfg.ammo, 'burst arrow');
     assert.deepStrictEqual(r.avisos, []);
+});
+t('dcConfigDe (2.36.9): post de jogador aplica as poções do post; poção que o post não mostra fica a sua (ou a guardada)', () => {
+    assert.strictEqual(M.dcCompleto(SETUP), true);
+    assert.strictEqual(M.dcCompleto(SETUP_N), false);
+    const k = M.dcConfigDe(SETUP, 'KNIGHT', ATUAL, CTX);
+    assert.deepStrictEqual(k.cfg.manaPotion, { name: 'Mana Potion', percent: 30 }, 'a mana do post entra');
+    assert.deepStrictEqual(k.cfg.heals, [{ name: 'Great Health Potion', percent: 45 }, { name: 'Wound Cleansing', percent: 50 }], 'o post não tem vida: fica a sua');
+    const g = M.dcConfigDe(SETUP, 'KNIGHT', ATUAL, Object.assign({}, CTX, { pocaoDono: { KNIGHT: { vida: { name: 'Ultimate Health Potion', percent: 40 }, mana: null } } }));
+    assert.deepStrictEqual(g.cfg.heals[0], { name: 'Ultimate Health Potion', percent: 40 }, 'sem vida no post: a guardada volta');
+    assert.deepStrictEqual(g.cfg.manaPotion, { name: 'Mana Potion', percent: 30 });
+    const p = M.dcConfigDe(SETUP, 'PALADIN', { heals: [{ name: 'Health Potion', percent: 30 }, { name: 'Intense Healing', percent: 70 }], manaPotion: { name: 'Strong Mana Potion', percent: 20 }, skills: [], minCreatures: {}, supports: [] }, CTX);
+    assert.deepStrictEqual(p.cfg.heals, [{ name: 'Great Spirit Potion', percent: 40 }, { name: 'Salvation', percent: 30 }, { name: 'Divine Healing', percent: 60 }], 'a vida do post substitui a sua');
+    assert.deepStrictEqual(p.cfg.manaPotion, { name: 'Mana Potion', percent: 30 });
 });
 t('dcConfigDe: magia de outra vocação, acima do nível ou "?" sai com aviso e não ocupa slot; sem config atual parte do vazio', () => {
     const r = M.dcConfigDe(SETUP, 'SORCERER', null, Object.assign({}, CTX, { nivel: 40 }));
@@ -272,7 +287,7 @@ t('2.29.1 SETUPS_DISCORD: toda poção de vida/mana é da vocação em que está
         if (q && q.vocations && !q.vocations.some(v => v.includes(voc))) erros.push(`${s.id} ${voc} ${k}: ${ch[k][0]} → ${q.vocations.join(',')}`);
     }
     assert.deepStrictEqual(erros, []);
-    const fire = M.SETUPS_DISCORD.find(s => s.id === 'fire-lucasdela');
+    const fire = Object.assign({}, M.SETUPS_DISCORD.find(s => s.id === 'fire-lucasdela'), { autor: 'Northon (teste)' }); // 2.36.9: num post real a poção do post entra de qualquer jeito
     assert(fire && fire.chars.PALADIN.vida[0] === 'Great Spirit Potion' && fire.chars.PALADIN.vida[1] === 38, JSON.stringify(fire && fire.chars.PALADIN));
     assert.strictEqual(fire.chars.DRUID.ataque[1][0], 'avalanche rune', 'a runa do Druida no Fire Portal é a avalanche em todas as contas');
 });
@@ -374,7 +389,7 @@ t('2.29.7 poção do mapa (Draken Walls, 26/10): a poção do post substitui a s
     assert.strictEqual(w.cfg.manaPotion.name, 'Strong Mana Potion');
 });
 t('2.29.8 a SUA poção também passa pela vocação: Paladino com a Great Health Potion no perfil (bug da 2.29.0) não fica com ela — entra a do post, conferida', () => {
-    const fire = M.SETUPS_DISCORD.find(s => s.id === 'fire-lucasdela');
+    const fire = Object.assign({}, M.SETUPS_DISCORD.find(s => s.id === 'fire-lucasdela'), { autor: 'Northon (teste)' }); // 2.36.9: num post real a poção do post entra de qualquer jeito
     const atual = { heals: [{ name: 'Great Health Potion', percent: 38 }, { name: 'Divine Healing', percent: 60 }], manaPotion: { name: 'Ultimate Mana Potion', percent: 30 }, skills: [], supports: [], ammo: null };
     const r = M.dcConfigDe(fire, 'PALADIN', atual, CTX_POT);
     assert.strictEqual(r.cfg.heals[0].name, 'Great Spirit Potion', JSON.stringify(r.cfg.heals));

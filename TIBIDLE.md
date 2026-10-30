@@ -6828,3 +6828,21 @@ o Paladino não muda. Testes novos em sobreviver e razao.
   (fica ao lado, como no Shadow Nexus). Os dois setups do amigo têm `pocaoDoMapa: true`: o APLICAR põe a barra **inteira** das
   fotos — poção de vida, poção de mana, ataque, defesa e suporte; só a munição fica a do dono. As poções dele voltam no próximo
   setup de outro mapa (regra da 2.29.7).
+
+## 2.36.9 / 2.37.0 — post do Discord inteiro, modo Mana e padrão forte de boss (30/10)
+
+- **2.36.9 (Discord)**: todo post de jogador aplica a barra **inteira**, poções incluídas (`dcCompleto`: autor que não começa
+  com "Northon", ou `pocaoDoMapa`). Dono: "se eu clicar para aplicar, aplica tudo como está no post; eu altero à mão se quiser".
+  A poção que o post não mostra (os de texto do Argonaut) fica a sua (a guardada em `dc_pocao_dono`, ou a do perfil). Os
+  "Northon - <mapa>" seguem com as suas poções (regra 2.29.4), salvo `pocaoDoMapa`.
+- **2.37.0 (Magia › Mana)**: o Inteligente saiu do menu ("não vou mais usar"; `migrarModelos` converte o guardado em Em área). O
+  motor continua só no ranking do Radar. No lugar, **Mana**: num mapa fraco, ENCHER põe a poção de vida e a de mana dos 4 a
+  ≤100 % (a sua, se a vocação bebe; senão `melhorPocao`), foto em `mana_foto`; a tela mostra vida/mana dos 4 ao vivo e "✓ cheio";
+  VOLTAR AO QUE EU TINHA (2 toques) devolve os perfis. Qualquer outro APLICAR da Magia devolve antes (`desfazerTemporarios`).
+- **2.37.0 (Magia › Boss)**: o modelo Boss trocava só os 4 ataques; vida, mana, defesa e suporte ficavam os da caçada. Agora
+  `padraoBoss` (@@BOSS-PADRAO, testes/boss-padrao.test.js): a poção mais forte que a vocação bebe no nível, curas da forte para a
+  leve (até 3; magia que o nível não tem sai — vale para as 3 contas) e os suportes de luta (Cav Protector + Train Party; Pal
+  Sharpshooter + Protect Party; Fei Enchant Party + Magic Shield; Dru Heal Party + Magic Shield). Gatilho de mana moderado (a
+  poção divide a recarga de 1 s com a runa). Chave "aplicar sozinho ao entrar no boss" (ligada a pedido do dono): no
+  `hunt_started` de um boss, `update_battle_config` com ataque + padrão **só nessa luta** (sem `profiles_set`); foto em
+  `boss_foto`, devolvida no `hunt_started` seguinte. Não testado ao vivo ainda.
