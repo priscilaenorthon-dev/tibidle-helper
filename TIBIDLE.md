@@ -6781,3 +6781,12 @@ Os relatórios das 3 contas (2.36.2) marcavam "vai vestir" em trocas de +0,2 pt 
 troca só a partir de 1 pt (`trocaVale`, `EQUIP_GANHO_TROCA`). Agora o relatório usa `trocaVale`: abaixo de 1 pt a peça sai como
 "empate técnico com a vestida (+x pt…)" e a vestida como "vestida (é a melhor)"; `personagens[VOC][slot]` ganhou `troca` e `ganho`.
 Teste novo em testes/relatorio.test.js.
+
+## 2.36.4 — Discord: Bottom of the Ocean do Psyger-0 (30/10)
+
+Varredura do fórum `guias-da-comunidade` desde 29/10: um tópico novo com barra, "Bottom of the Ocean - Gray Island" do Psyger-0
+(thread 1565702237106340003, 30/10). Entrou `bottom-psyger` (huntId 197, ao lado do `bottom-specter`). Ícones casados com os
+oficiais (`casar.py`); runa verde = stone shower nos três. O autor diz que Paladino e magos tomam dano de gelo e que as curas altas
+são para não morrer; na conversa outro jogador (EduardoLacerda) diz que é cura demais. Medido no print: 159,6k xp/h, +185,2k/h,
+nível 138. O resto (Specter, Logbook, "Acessos pra Inqui") só tem perguntas e prints de estatística, sem barra nova.
+

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.36.3
+// @version      2.36.4
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.36.3';
+    const VERSAO = '2.36.4';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -9413,6 +9413,17 @@
          *   lucasdela postou no tópico do Specter o Shadow Nexus (fotos da tela pelo celular, barras lidas ampliadas) — 1º post real do mapa,
          *   então o "Northon - Shadow Nexus" saiu. Ícones casados com os oficiais (fino.py); os em recarga pelo selo/forma (Lesser Front Sweep
          *   tem o selo redondo; Enchant Party escuro, Heal Party claro). Munição fora: diamond arrow custa 200 por flecha. */
+        /* — 30/10 (2.36.4): tópico novo do Psyger-0 "Bottom of the Ocean - Gray Island" (preset.png do Histórico, ícones casados com os
+         *   oficiais: runa verde = stone shower). Mesmo mapa do bottom-specter, outro autor: o dono escolhe no select. */
+        { id: 'bottom-psyger', hunt: 'Bottom of the Ocean', huntId: 197, autor: 'Psyger-0', data: '30/10', titulo: 'Bottom of the Ocean (Psyger-0, 30/10)',
+          lure: '', skills: '', nota: '', nivel: '118+',
+          obs: 'Psyger-0 (tópico "Bottom of the Ocean - Gray Island", 30/10): "dá mais XP e mais gold que as anteriores de Gray Island; o mini boss dá a Shiny Blade e um dos 2 itens para liberar o Jaul. Os magos morrem com facilidade: Paladino e magos tomam dano de GELO (o Cavaleiro, quase só físico) — ou equipamento de proteção a gelo (caro) ou curas com porcentagem alta, como aqui: lucro menor, mas vivo. Entrei perto do 118–120; hoje 137." Uma armadura de 5 % de gelo no Feiticeiro tirou 37 mil de dano dele em relação ao Druida. Na conversa, EduardoLacerda acha cura demais (1 cura entre 30 e 60 % + 1 acima de 60 %, a cura concentrada no Druida com Mass Healing e Heal Friend, menos poção de mana) e diz fazer mais xp e lucro com set pior; o Psyger vai testar com menos cura. Mana do Cavaleiro desligada (slot vazio no post). Poções lidas pelo ícone (a do Cavaleiro: Great Health Potion; pode ser a Ultimate); munição genérica (flecha), fora.',
+          estatisticas: { xpH: '159,6k', lucroH: '+185,2k', nivel: 138 },
+          chars: {
+            KNIGHT: { vida: ['Great Health Potion', 50], mana: ['Mana Potion', 0], ataque: [['Fierce Berserk', 4], ['Berserk', 3], ['Lesser Front Sweep', 1], ['Brutal Strike', 1]], defesa: [['Intense Wound Cleansing', 30]], suporte: ['Train Party'] },
+            PALADIN: { vida: ['Great Spirit Potion', 50], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 4], ['stone shower rune', 3], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Salvation', 47], ['Divine Healing', 70], ['Intense Healing', 85], ['Light Healing', 94]], suporte: ['Protect Party'] },
+            SORCERER: { vida: ['Health Potion', 70], mana: ['Mana Potion', 30], ataque: [['Energy Wave', 4], ['stone shower rune', 3], ['Ultimate Energy Strike', 1], ['Strong Energy Strike', 1]], defesa: [['Ultimate Healing', 50], ['Intense Healing', 70], ['Light Healing', 88], ['Magic Patch', 95]], suporte: ['Enchant Party'] },
+            DRUID: { vida: ['Health Potion', 70], mana: ['Mana Potion', 70], ataque: [['Terra Wave', 4], ['stone shower rune', 3], ['Ultimate Terra Strike', 1], ['Strong Terra Strike', 1]], defesa: [['Mass Healing', 60], ['Ultimate Healing', 60], ['Intense Healing', 90], ['Heal Friend', 70]], suporte: ['Heal Party'] } } },
         { id: 'hivetower-psyger', hunt: 'Hive Tower', huntId: 198, autor: 'Psyger-0', data: '27/10', titulo: 'Hive Tower (Psyger-0, 27/10)',
           lure: '', skills: '', nota: '', nivel: '105+',
           obs: 'Psyger-0 (tópico "Hive Tower - Gray Island"): "melhor que a The Hive Entrance, dá mais XP e gold, mas não tem drop chamativo. Cuidado em nível mais baixo: o EK sofre e pode morrer — o dano é 66 % físico e 33 % terra, então foque defesa em físico e terra. Não uso Utamo Tempo no EK (defesa aceitável, mais lucro). Os outros recebem um pouco de dano de terra: nunca deixe o druid sem mana." Depois: "a cura do EK está em 70 %; em 60 % ela fica quase toda no druida e sobra mana para o EK atacar — mas em nível baixo deixe como está". Lucro subiu para 123k/h alguns níveis depois. Mana do Cavaleiro desligada (slot vazio no post).',
