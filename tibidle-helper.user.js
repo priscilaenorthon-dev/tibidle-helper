@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.36.2
+// @version      2.36.3
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.36.2';
+    const VERSAO = '2.36.3';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -7996,8 +7996,14 @@
         for (const [v, slots] of Object.entries(res.porVoc || {})) {
             for (const [sl, x] of Object.entries(slots || {})) {
                 if (!x) continue;
-                if (x.melhor && x.melhor.iid) vestir[x.melhor.iid] = { voc: v, slot: sl, papel: x.atual && x.atual.iid === x.melhor.iid ? 'vestida (é a melhor)' : 'vai vestir' };
-                if (x.atual && x.atual.iid && !vestir[x.atual.iid]) vestir[x.atual.iid] = { voc: v, slot: sl, papel: x.melhor ? 'vestida (vai sair)' : 'vestida' };
+                /* v2.36.3 — a mesma regra da tela Equip (trocaVale): abaixo de 1 pt é empate técnico, não "vai vestir" (30/10: o
+                 * relatório mandava trocar por +0,1 pt e a tela, certa, não sugeria nada) */
+                const troca = trocaVale(x), mesma = !!(x.atual && x.melhor && x.atual.iid === x.melhor.iid);
+                if (x.melhor && x.melhor.iid && !mesma) vestir[x.melhor.iid] = { voc: v, slot: sl, papel: troca ? 'vai vestir' : `empate técnico com a vestida (+${String(Math.round(x.ganho * 10) / 10).replace('.', ',')} pt; troca só a partir de ${EQUIP_GANHO_TROCA} pt)` };
+                if (x.atual && x.atual.iid && !vestir[x.atual.iid]) {
+                    vestir[x.atual.iid] = { voc: v, slot: sl, papel: troca ? 'vestida (vai sair)' : x.melhor ? 'vestida (é a melhor)'
+                        : x.ganho < 0 ? 'vestida (sai: a arma de 2 mãos ocupa o escudo)' : x.ganho >= EQUIP_GANHO_TROCA ? 'vestida (vale menos que o espaço vazio)' : 'vestida' };
+                }
             }
         }
         const item = (p, extra) => {
@@ -8025,7 +8031,7 @@
         const personagens = {};
         for (const [v, slots] of Object.entries(res.porVoc || {})) {
             personagens[v] = {};
-            for (const [sl, x] of Object.entries(slots || {})) { personagens[v][sl] = { veste: x && x.atual ? { iid: x.atual.iid, nome: x.atual.nome, pontos: x.atualPt } : null, melhor: x && x.melhor ? { iid: x.melhor.iid, nome: x.melhor.nome, pontos: x.melhorPt } : null }; }
+            for (const [sl, x] of Object.entries(slots || {})) { personagens[v][sl] = { veste: x && x.atual ? { iid: x.atual.iid, nome: x.atual.nome, pontos: x.atualPt } : null, melhor: x && x.melhor ? { iid: x.melhor.iid, nome: x.melhor.nome, pontos: x.melhorPt } : null, troca: trocaVale(x), ganho: x ? x.ganho : null }; }
         }
         const porOrigem = {}; for (const it of itens) porOrigem[it.origem] = (porOrigem[it.origem] || 0) + 1;
         return { relatorio: 'tibidle-helper equipamento', formato: REL_VERSAO, versao: ent.versao || null, geradoEm: new Date(ent.agora || Date.now()).toISOString(),

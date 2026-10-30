@@ -6773,3 +6773,11 @@ sem vocação, sem armadura/defesa de base, notas só pela forja. Na ShamanBr o 
 - No Chrome do dono o download do RELATÓRIO saía com o nome do link blob (um UUID, sem `.json`): o `download` foi ignorado. Agora o
   botão "baixar .json" abre o "Salvar como" do navegador (`showSaveFilePicker`) com o nome certo, e o download automático usa um link
   `data:` (o Chrome respeita o `download` nele), que fica na página até o download sair. O conteúdo não mudou.
+
+## 2.36.3 — Relatório do Equip usa a mesma régua da tela (30/10)
+
+Os relatórios das 3 contas (2.36.2) marcavam "vai vestir" em trocas de +0,2 pt (ShamanBr, spellbook of mind control no Druida),
++0,11 pt (u2tag, icicle bow no Paladino) e +0,43 pt (XundaBr, leather boots no Cavaleiro). A tela Equip, certa, não sugeria nada:
+troca só a partir de 1 pt (`trocaVale`, `EQUIP_GANHO_TROCA`). Agora o relatório usa `trocaVale`: abaixo de 1 pt a peça sai como
+"empate técnico com a vestida (+x pt…)" e a vestida como "vestida (é a melhor)"; `personagens[VOC][slot]` ganhou `troca` e `ganho`.
+Teste novo em testes/relatorio.test.js.

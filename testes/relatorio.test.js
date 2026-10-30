@@ -57,6 +57,19 @@ t('Mercado: só as suas ordens de VENDA abertas; cópia anunciada vem com a peç
     assert(vazio.itens.length === 0 && vazio.mercado.length === 0 && vazio.conta === null && vazio.fase === null, 'sem nada: relatório vazio, sem erro');
 });
 
+t('2.36.3: troca abaixo de 1 pt é empate técnico, como na tela Equip (não "vai vestir"); acima de 1 pt, vai vestir', () => {
+    const peq = { porVoc: { DRUID: { shield: { atual: { iid: 'a', nome: 'wooden spellbook' }, atualPt: 28.88, melhor: { iid: 'b', nome: 'spellbook of mind control' }, melhorPt: 29.08, ganho: 0.2 } } } };
+    const p = (iid, nome) => ({ iid, nome, slot: 'shield', attrs: {}, forja: F(0), origem: iid === 'a' ? 'corpo' : 'depósito', dono: iid === 'a' ? 'DRUID' : null });
+    let r = M.relatorioEquip({ pecas: [p('a', 'wooden spellbook'), p('b', 'spellbook of mind control')], res: peq, base: {} });
+    let por = Object.fromEntries(r.itens.map(i => [i.iid, i.veredito]));
+    assert(/^vestida \(é a melhor\)/.test(por.a), por.a); assert(/^empate técnico.*\+0,2 pt/.test(por.b), por.b);
+    assert(r.personagens.DRUID.shield.troca === false && r.personagens.DRUID.shield.ganho === 0.2);
+    peq.porVoc.DRUID.shield.melhorPt = 31; peq.porVoc.DRUID.shield.ganho = 2.12;
+    r = M.relatorioEquip({ pecas: [p('a', 'wooden spellbook'), p('b', 'spellbook of mind control')], res: peq, base: {} });
+    por = Object.fromEntries(r.itens.map(i => [i.iid, i.veredito]));
+    assert(/vai sair/.test(por.a) && /^vai vestir/.test(por.b) && r.personagens.DRUID.shield.troca === true, JSON.stringify(por));
+});
+
 /* 2.36.1 — os 3 relatórios de 30/10 vieram com Zaoan halberd/legs/shoes de ficha vazia ("vai vestir: SORCERER weapon"): o
  * items-by-name.json tem as chaves em minúsculas e o depósito manda "Zaoan halberd". Extrai basePorNome com dublês do impuro. */
 const fn = (ini) => { const i = src.indexOf(ini), m = /\r?\n    \}\r?\n/.exec(src.slice(i)); assert(i > 0 && m, 'função ausente: ' + ini); return src.slice(i, i + m.index + m[0].length); };
