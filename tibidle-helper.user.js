@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.35.7
+// @version      2.35.8
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.35.7';
+    const VERSAO = '2.35.8';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -5152,6 +5152,14 @@
      * Com a proteção de equipamento ligada, item que não se consegue
      * classificar fica GUARDADO — vender arma por engano custa mais que
      * levar um item a mais para o depot. */
+    /* v2.35.8 — ITENS DE OUTFIT E MONTARIA (dono, 30/10: "não vender itens de outfit"). Wiki /outfits-e-montarias (lida em 30/10):
+     * o Hugo troca 100 de cada um por uma outfit e o Palomino por uma montaria; nenhum NPC comum paga isso. Fica sempre, em qualquer
+     * modo da venda — não depende de "nunca vender equipamento/imbuement". */
+    const NUNCA_VENDER_OUTFIT = ['bunch of troll hair', 'wolf paw', 'bola', 'bonelord eye', 'brown piece of cloth', 'blue piece of cloth', 'yalahari relic',
+                                 'draken crest', "wayfarer's map", 'deepling scale', 'insectoid carapace', 'stuffed dragon',
+                                 'draptor scale', 'yalahari cogwheel', 'enchanted carrot', 'gorongra offering', 'lacewing silk', 'leather whip', 'nail case',
+                                 'banana sash', 'vibrant egg', 'ice chest'].map(normNomeItem);
+    const NUNCA_VENDER_OUTFIT_SET = new Set(NUNCA_VENDER_OUTFIT);
     function escolherDesmarcar(linhas, o) {
         o = o || {};
         const lista = new Set((o.lista || []).map(normNomeItem).filter(Boolean));
@@ -5164,6 +5172,7 @@
             const nome = real || l.nome;
             let motivo = null;
             if (lista.has(n) || (real && lista.has(normNomeItem(real)))) motivo = 'sua lista';
+            else if (NUNCA_VENDER_OUTFIT_SET.has(n) || (real && NUNCA_VENDER_OUTFIT_SET.has(normNomeItem(real)))) motivo = 'item de outfit/montaria (Hugo/Palomino)'; // v2.35.8
             else if (o.imbu && (mats.has(n) || (real && mats.has(normNomeItem(real))))) motivo = 'material de imbuement';
             else if (o.equip) {
                 /* v2.11.7 — o nome do catálogo ("wild honey") e o do /item/info
@@ -5584,7 +5593,10 @@
             if (b && b.sell === 0) { guardados.push(Object.assign({}, l, { motivo: 'o NPC paga 0' })); continue; }
             if (estaProtegida({ nome: l.nome })) { guardados.push(Object.assign({}, l, { motivo: 'cadeado (Proteger)' })); continue; }
             const inst = m.inst.filter(x => x && x.iid && mkMin(x.name) === mkMin(l.nome));
-            if (inst.length) { for (const x of inst) { if (estaProtegida({ iid: x.iid, nome: x.name }) || usadas.has(x.iid)) { guardados.push({ nome: l.nome, motivo: usadas.has(x.iid) ? 'o Equip usa' : 'cadeado (Proteger)' }); continue; } itens.push({ name: l.nome, count: 1, iid: x.iid }); } }
+            /* v2.35.8 — dono, 30/10: "não vender itens com potência boa". Com "nunca vender equipamento" desligado, uma cópia com potência de base de
+             * forja (≥ 400) ou Épico+ fica mesmo assim; nas sobras do Equip (`apenas`) a decisão já foi do Equip (bases nunca viram sobra). */
+            const boa = (x) => !opts.apenas && x.forja && (potenciaDe({ forja: x.forja }) >= POTENCIA_BASE_ALTA || (Number(x.forja.raridade) || 0) >= RARIDADE_BASE_FORJA);
+            if (inst.length) { for (const x of inst) { const mot = estaProtegida({ iid: x.iid, nome: x.name }) ? 'cadeado (Proteger)' : usadas.has(x.iid) ? 'o Equip usa' : boa(x) ? 'potência/raridade de base de forja' : null; if (mot) { guardados.push({ nome: l.nome, motivo: mot }); continue; } itens.push({ name: l.nome, count: 1, iid: x.iid }); } }
             else itens.push({ name: l.nome, count: l.count });
         }
         if (guardados.length) log(`${opts.apenas ? 'fora das sobras' : 'nunca vender'}: ${guardados.map(g => g.nome + ' (' + g.motivo + ')').join(', ')}`, 'info');

@@ -21,7 +21,7 @@ const BASE = {}; for (const [n, it] of Object.entries(Object.assign({}, ITENS, V
 const IDS = {}; for (const [n, b] of Object.entries(BASE)) IDS[n] = b.id;
 
 const PURO = trecho('/* @@AUTOHUNT-PURO-INICIO */', '/* @@AUTOHUNT-PURO-FIM */');
-const P = new Function(PURO + '\nreturn { normNomeItem, ehEquipamento, materiaisDoCatalogo, escolherDesmarcar, estadoMarcado, motivoNaoDisparaPuro, deveRetomarCiclo, CICLO_PENDENTE_MS, ciclosNaUltimaHora, encerramentoNoScan, mesclarResultadoScan, segundosDaJanela, ouroBase, xpBase, vereditosScan, fimDoScan };')();
+const P = new Function(PURO + '\nreturn { normNomeItem, ehEquipamento, materiaisDoCatalogo, escolherDesmarcar, NUNCA_VENDER_OUTFIT, estadoMarcado, motivoNaoDisparaPuro, deveRetomarCiclo, CICLO_PENDENTE_MS, ciclosNaUltimaHora, encerramentoNoScan, mesclarResultadoScan, segundosDaJanela, ouroBase, xpBase, vereditosScan, fimDoScan };')();
 
 let n = 0;
 const falhas = [];
@@ -41,6 +41,15 @@ await t('materiais de imbuement saem do imbuements.json real', () => {
     assert(MATS.length >= 20, 'poucos materiais: ' + MATS.length);
     for (const m of ['vampire teeth', 'bloody pincers', 'rope belt', 'piece of dead brain']) assert(MATS.includes(m), m + ' devia ser material');
     assert(!MATS.includes('gold coin') && !MATS.includes('goblin ear'), 'gold coin/goblin ear não são material');
+});
+await t('2.35.8 itens de outfit/montaria (Hugo/Palomino) ficam sempre, com ou sem "nunca vender" equipamento/imbuement; maiúscula não importa', () => {
+    for (const o of [prot(), prot({ equip: false, imbu: false })]) {
+        const r = P.escolherDesmarcar(['wolf paw', 'Draken Crest', "Wayfarer's Map", 'goblin ear'].map(nome => ({ nome })), o);
+        const g = Object.fromEntries(r.guardar.map(x => [x.nome, x.motivo]));
+        assert(/outfit\/montaria/.test(g['wolf paw']) && /outfit\/montaria/.test(g['Draken Crest']) && /outfit\/montaria/.test(g["Wayfarer's Map"]), JSON.stringify(g));
+        assert.deepStrictEqual(r.vender, ['goblin ear']);
+    }
+    assert(P.NUNCA_VENDER_OUTFIT.length === 22 && P.NUNCA_VENDER_OUTFIT.includes('vibrant egg') && P.NUNCA_VENDER_OUTFIT.includes('bunch of troll hair'), 'os 12 do Hugo + 10 do Palomino');
 });
 await t('venda do ciclo de 21:3x: elvish bow e leather boots ficam; lixo vende', () => {
     const linhas = ['elvish bow', 'leather boots', 'goblin ear', 'orc tooth', 'vampire teeth', 'white mushroom', 'chain armor', 'arrow', 'small_axe', 'cenoura mágica'].map(nome => ({ nome }));

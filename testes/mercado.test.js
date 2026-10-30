@@ -998,6 +998,15 @@ t('vm (2.35.7) celular: Auto Hunt dispara em caçada — stop → ended → summ
     const lg = logTxt(M.W);
     assert(/caçada encerrada \(pelo socket/.test(lg) && /de volta à caçada \(id 34, pelo socket, lure 3\)/.test(lg) && /ciclo de venda terminado/.test(lg), lg);
 });
+t('vm (2.35.8) celular: com "nunca vender equipamento" desligado, a cópia com potência ≥ 400 ou Épico+ fica; a comum vai com o iid', async () => {
+    const vendas = [];
+    const M = await mundoMercado({ bag: { 'leather boots': 3 }, inst: [{ iid: 'e1', name: 'leather boots', forja: { raridade: 0, atributos: [], potenciaBase: 120 } }, { iid: 'e2', name: 'leather boots', forja: { raridade: 0, atributos: [], potenciaBase: 450 } }, { iid: 'e3', name: 'leather boots', forja: { raridade: 3, atributos: [], potenciaBase: 90 } }],
+        rotas: ROTAS_CIDADE, interceptar: cidadeSocket(vendas),
+        ls: Object.assign({ tb_helper_auto_hunt: JSON.stringify({ nvImbu: false, nvEquip: false }) }, LS_ESTADO) });
+    await M.clicar('tb-venda-rapida'); await M.W.avancar(90000);
+    igual(vendas, [[{ name: 'leather boots', count: 1, iid: 'e1' }]], 'só a cópia comum de potência baixa');
+    assert(/leather boots \(potência\/raridade de base de forja\)/.test(logTxt(M.W)), logTxt(M.W));
+});
 t('vm (2.35.7) celular: erro do servidor no sell_loot para o ciclo com o motivo e desliga o Auto Hunt; nada mais é mandado', async () => {
     const M = await mundoMercado({ bag: { 'small ruby': 3 }, rotas: ROTAS_CIDADE,
         interceptar: (o) => o.type === 'purify_all' ? { type: 'purify_all_result', data: { requestId: o.data.requestId } } : o.type === 'sell_loot' ? { type: 'error', data: { code: 'item_protected', key: 'x', requestId: o.data.requestId } } : undefined,
