@@ -6709,3 +6709,21 @@ celular e ajusta; mas tem que funcionar no navegador também".
 - Testes: 469 (+3 em mercado.test.js: Venda rápida na cidade pelo botão, tudo pelo socket; Auto Hunt disparando em caçada:
   stop → ended → summary_closed → purify_all → sell_loot → depot_store_all → start_hunt com o lure salvo; erro `item_protected` no
   sell_loot para o ciclo e desliga). O gancho de teste continua só leitura (`celularJogo`). Não testado ao vivo no iPhone — o dono testa.
+
+## 2.35.8 — Venda rápida: itens de outfit/montaria nunca vendem; potência boa fica mesmo com "equipamento" desligado (30/10)
+
+Dono (depois de testar a 2.35.7 no iPhone: "funcionou"): "a Venda rápida tem alguma regra? purificar antes, não vender itens de
+imbuement nem de outfit, não vender itens com potência boa".
+- **O que ela já fazia**: purifica tudo que está selado antes de vender (passo 2 do ciclo; pelo socket manda `purify_all` sempre, o
+  jogo ignora se não há selado); materiais de imbuement ficam (`imbuements.json` do jogo + os 42 da wiki, chave "nunca vender
+  imbuement", ligada por padrão); equipamento fica inteiro (chave "nunca vender equipamento", ligada por padrão); o NPC que paga 0
+  não compra; cadeado fica; a lista do dono fica.
+- **Novo — outfit e montaria**: `NUNCA_VENDER_OUTFIT` (wiki /outfits-e-montarias, 30/10): os 12 itens do Hugo (bunch of troll hair, wolf
+  paw, bola, bonelord eye, brown/blue piece of cloth, Yalahari Relic, Draken Crest, Wayfarer's Map, Deepling Scale, Insectoid Carapace,
+  stuffed dragon) e os 10 do Palomino (Draptor Scale, Yalahari Cogwheel, Enchanted Carrot, Gorongra Offering, Lacewing Silk, leather
+  whip, nail case, banana sash, vibrant egg, ice chest). Ficam SEMPRE, em qualquer modo, motivo "item de outfit/montaria".
+- **Novo — potência boa**: com "nunca vender equipamento" DESLIGADO, a cópia com potência ≥ 400 (`POTENCIA_BASE_ALTA`) ou Épico+
+  (`RARIDADE_BASE_FORJA`) fica mesmo assim (caminho do socket, que vê a forja de cada cópia; o painel do computador vende por nome e
+  não enxerga a potência — ali a proteção continua sendo a chave "equipamento"). Nas sobras do Equip a decisão já é do Equip: base de
+  forja nunca vira sobra.
+- Testes: 471 (+1 autohunt: outfit com e sem as chaves; +1 mercado: e1 120 vende, e2 450 e e3 Épico ficam).
