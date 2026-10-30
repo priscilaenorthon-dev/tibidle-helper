@@ -954,4 +954,58 @@ t('vm (2.18.0): COMPRAR — anúncio que sumiu na releitura: nada é comprado', 
     assert.strictEqual(M.S.tipos('market_execute').length, 0, 'comprou anúncio que sumiu');
     assert(/não está mais à venda/.test(logTxt(M.W)), logTxt(M.W));
 });
+/* ===== 2.35.7 — CELULAR: sem os botões da tela do computador, cada passo do ciclo de venda vai pelo socket ===== */
+const ROTAS_CIDADE = { '/assets/v185/items-by-name.json': { 'small ruby': 1, 'orc tooth': 2, 'leather boots': 3, 'wild honey': 4 },
+    '/item/info': [{ id: 1, name: 'small ruby', attrs: {}, sell: 100 }, { id: 2, name: 'orc tooth', attrs: {}, sell: 0 }, { id: 3, name: 'leather boots', attrs: { slot: 'feet', armor: 1 }, sell: 2 }, { id: 4, name: 'wild honey', attrs: {}, sell: 40 }] };
+const FRAME34 = (lure) => ({ type: 'frame', data: { state: { cap: { used: 990, total: 1000 }, balance: 5000, lureTier: lure || 3, character: { level: 62 }, party: [] }, analyzer: { elapsedMs: 1000, xp: 1, xpRaw: 1, killsTotal: 0, lootGold: 0, suppliesGold: 0 } } });
+const cidadeSocket = (vendas) => (o) => {
+    if (o.type === 'purify_all') return { type: 'purify_all_result', data: { requestId: o.data.requestId, ok: true } };
+    if (o.type === 'sell_loot') { vendas.push(o.data.items); return { type: 'sell_result', data: { requestId: o.data.requestId, goldCredited: 300, bag: { 'orc tooth': 2, 'leather boots': 1, 'wild honey': 4 }, bagInstances: [{ iid: 'b1', name: 'leather boots', forja: { raridade: 0, atributos: [] } }] } }; }
+    if (o.type === 'depot_store_all') return { type: 'depot_result', data: { requestId: o.data.requestId, entries: [], used: 7, total: 100, bag: {}, bagInstances: [] } };
+    if (o.type === 'stop') return { type: 'ended', data: { summary: { reason: 'stop', huntId: 34 } } };
+    if (o.type === 'start_hunt') return [{ type: 'hunt_started', data: { huntId: o.data.huntId } }, FRAME34(o.data.lure)];
+    return undefined;
+};
+const LS_ESTADO = { tb_helper_ui: JSON.stringify({ aba: 'estado', aberta: true, oculto: false }), tb_helper_comum_assets_ver: '"v185"' };
+t('vm (2.35.7) celular: Venda rápida na cidade sem a tela do computador — purify_all → sell_loot (só o que o NPC compra; equipamento, NPC 0 e cadeado ficam) → depot_store_all, pelo socket', async () => {
+    const vendas = [];
+    const M = await mundoMercado({ bag: { 'small ruby': 3, 'orc tooth': 2, 'leather boots': 1, 'wild honey': 4 }, inst: [{ iid: 'b1', name: 'leather boots', forja: { raridade: 0, atributos: [] } }],
+        protegidos: ['wild honey'], rotas: ROTAS_CIDADE, interceptar: cidadeSocket(vendas),
+        ls: Object.assign({ tb_helper_auto_hunt: JSON.stringify({ nvImbu: false }) }, LS_ESTADO) });
+    assert.strictEqual(M.W.H.celularJogo(), false, 'o mundo de teste não tem tela nenhuma: não é "celular", mas também não tem os botões — vale o socket');
+    await M.clicar('tb-venda-rapida'); // fora da caçada o 1.º toque já vale (não há o que confirmar)
+    await M.W.avancar(90000);
+    igual(M.S.recebidos.map(x => x.o.type).filter(t => !/^market_|^depot_get$/.test(t)), ['purify_all', 'sell_loot', 'depot_store_all'], 'passos pelo socket, sem stop (já na cidade) e sem start_hunt (Venda rápida fica na cidade)');
+    igual(vendas, [[{ name: 'small ruby', count: 3 }]], 'vende só o small ruby: orc tooth (NPC 0), leather boots (equipamento), wild honey (cadeado) ficam');
+    const lg = logTxt(M.W);
+    assert(/purificados \(pelo socket\)/.test(lg) && /vendido ao NPC \(pelo socket\): 1 item\(ns\) por 300/.test(lg) && /guardei tudo pelo socket.*depot 7 de 100/.test(lg) && /ciclo de venda terminado/.test(lg), lg);
+    assert(/orc tooth \(o NPC paga 0/.test(lg) && /leather boots \(equipamento/.test(lg) && /wild honey \(cadeado/.test(lg), 'motivos: ' + lg);
+});
+t('vm (2.35.7) celular: Auto Hunt dispara em caçada — stop → ended → summary_closed → purify_all → sell_loot → depot_store_all → start_hunt com o lure salvo, pelo socket', async () => {
+    const vendas = [];
+    const M = await mundoMercado({ bag: { 'small ruby': 3 }, rotas: ROTAS_CIDADE, interceptar: cidadeSocket(vendas),
+        ls: Object.assign({ tb_helper_auto_hunt: JSON.stringify({ on: true, huntId: 34, voltar: true, modo: 'pct', pct: 20, nvImbu: false }) }, LS_ESTADO) });
+    M.ws.emitir({ type: 'meta_state', data: { lureTierByHunt: { 34: 3 } } });
+    M.ws.emitir({ type: 'hunt_started', data: { huntId: 34 } }); M.ws.emitir(FRAME34(3));
+    await M.W.avancar(0);
+    assert.strictEqual(M.W.H.estadoWS().huntId, 34, 'em caçada');
+    assert.strictEqual(M.W.H.motivoNaoDispara(), '', 'mochila no limite, Auto Hunt ligado: pode disparar');
+    for (let i = 0; i < 4; i++) { await M.W.avancar(1500); if (!M.S.tipos('stop').length) M.ws.emitir(FRAME34(3)); }
+    await M.W.avancar(120000);
+    igual(M.S.recebidos.map(x => x.o.type).filter(t => !/^market_|^depot_get$/.test(t)), ['stop', 'summary_closed', 'purify_all', 'sell_loot', 'depot_store_all', 'start_hunt'], logTxt(M.W));
+    igual(M.S.tipos('start_hunt')[0].o.data, { huntId: 34, lure: 3 }, 'volta com o lure salvo da caçada');
+    assert.strictEqual(M.W.H.estadoWS().huntId, 34, 'de volta à caçada 34');
+    const lg = logTxt(M.W);
+    assert(/caçada encerrada \(pelo socket/.test(lg) && /de volta à caçada \(id 34, pelo socket, lure 3\)/.test(lg) && /ciclo de venda terminado/.test(lg), lg);
+});
+t('vm (2.35.7) celular: erro do servidor no sell_loot para o ciclo com o motivo e desliga o Auto Hunt; nada mais é mandado', async () => {
+    const M = await mundoMercado({ bag: { 'small ruby': 3 }, rotas: ROTAS_CIDADE,
+        interceptar: (o) => o.type === 'purify_all' ? { type: 'purify_all_result', data: { requestId: o.data.requestId } } : o.type === 'sell_loot' ? { type: 'error', data: { code: 'item_protected', key: 'x', requestId: o.data.requestId } } : undefined,
+        ls: Object.assign({ tb_helper_auto_hunt: JSON.stringify({ on: true, huntId: 34, voltar: true, nvImbu: false }) }, LS_ESTADO) });
+    await M.clicar('tb-venda-rapida'); await M.W.avancar(90000);
+    assert.strictEqual(M.S.tipos('depot_store_all').length, 0, 'não guardou no depot depois do erro');
+    assert(/parou no passo "vender": sell_loot pelo socket: item protegido/.test(logTxt(M.W)) && /automação DESLIGADA/.test(logTxt(M.W)), logTxt(M.W));
+    assert.strictEqual(M.W.H.autoHunt().on, false);
+});
+
 rodar();

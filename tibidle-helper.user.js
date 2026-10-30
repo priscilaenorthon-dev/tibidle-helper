@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.35.6
+// @version      2.35.7
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.35.6';
+    const VERSAO = '2.35.7';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -738,7 +738,7 @@
     }
 
     function nivelAtual() {
-        const el = tid('rail-level-n');
+        const el = tid('rail-level-n') || tid('mobile-hud-level'); // v2.35.7 — celular
         const n = el && parseInt((el.textContent || '').replace(/\D/g, ''));
         if (n) return n;
         /* v2.2.2 — no lobby/boot a tela ainda não tem o nível, mas o frame do
@@ -750,7 +750,7 @@
 
     function ouroAtual() {
         if (frameFresco() && ESTADO_WS.frame.balance != null) return ESTADO_WS.frame.balance;
-        const el = tid('hud-gold');
+        const el = tid('hud-gold') || tid('mobile-hud-gold'); // v2.35.7 — celular
         return el ? parseInt((el.textContent || '').replace(/\D/g, '')) || 0 : 0;
     }
 
@@ -4901,6 +4901,9 @@
         try { invObservar(o); } catch (e) { falhou('invasão (observar)', e); } // v2.17.0 — invasão do dia e respostas esperadas
         try { diagObservar(o); } catch { } // v2.11 — Diagnóstico: guarda só a FORMA das mensagens
         try { observarMercado(o); } catch (e) { falhou('observarMercado', e); } // v2.11 — aba Mercado: premium, mochila, protegidos, respostas do mercado
+        /* v2.35.7 — meta_state/meta_result também trazem lureTierByHunt (o lure salvo muda quando o dono troca o lure); welcome/resume já leem abaixo */
+        try { const mq = o.data && typeof o.data === 'object' ? (o.data.meta && typeof o.data.meta === 'object' ? o.data.meta : (o.type === 'meta_state' ? o.data : null)) : null;
+              if (mq && mq.lureTierByHunt && typeof mq.lureTierByHunt === 'object' && o.type !== 'welcome' && o.type !== 'resume') ESTADO_WS.lureTierByHunt = clonar(mq.lureTierByHunt); } catch (e) { /* só o lure salvo */ }
         try { radarObservar(o); } catch (e) { falhou('radar (observar)', e); } // v2.13.0 — aba Radar: loot ao vivo e o dia (só leitura)
         try { evObservar(o); } catch (e) { falhou('evento (observar)', e); } // @@EVENTO — aba Evento (Halloween 2026, temporária)
         if (!o || !o.type) return;
@@ -5318,9 +5321,28 @@
 
     /* Passo 1 — ENCERRAR. `stop` encerra; o resumo pós-caçada abre com um
      * scrim que bloqueia todo clique seguinte (8b) — fechar com summary-close. */
+    /* v2.35.7 — CELULAR (dono, 30/10: "alguns botões não funcionam no iPhone; a Venda rápida é um"; "tem que funcionar no navegador
+     * também"). No celular o jogo monta outra tela (mobile-shell, mobile-nav-tab-*, mobile-hud-*), sem os botões da tela do computador
+     * (stop, actionbar-selling, sell-panel, depot-guardar-tudo, hunt-item-*). Cada passo do ciclo tenta a tela do computador e, sem
+     * ela, fala direto com o socket — igual nas duas telas. Mensagens lidas no cliente do jogo (30/10): stop {} → ended;
+     * summary_closed {}; purify_all {requestId} → purify_all_result; sell_loot {items:[{name,count,iid?}], requestId} → sell_result
+     * {goldCredited, bag, bagInstances}; depot_store_all {requestId} → depot_result {entries, used, total, bag}; start_hunt {huntId, lure}. */
+    const celularJogo = () => !!(tid('mobile-shell') || tid('mobile-nav')) && !tid('shell');
+    async function finalizarHuntSocket() {
+        if (!socketAberto()) return { erro: 'botão de encerrar (stop) não está na tela e o socket do jogo não está à mão' };
+        if (!frameFresco() && ESTADO_WS.huntId == null) return { erro: 'botão de encerrar (stop) não está na tela — já fora da caçada?' };
+        const t0 = Date.now();
+        try { enviarWS({ type: 'stop', data: {} }); } catch (e) { return { erro: 'stop pelo socket falhou: ' + e.message }; }
+        const saiu = await esperarQue(() => (ESTADO_WS.ultimoEnded && ESTADO_WS.ultimoEnded.t >= t0) || (!frameFresco() && ESTADO_WS.huntId == null), 25000, 250);
+        if (!saiu) return { erro: 'mandei stop pelo socket e a caçada não encerrou em 25 s' };
+        try { enviarWS({ type: 'summary_closed', data: {} }); } catch (e) { /* o resumo fecha no próximo F5 */ }
+        await dorme(600);
+        log('caçada encerrada (pelo socket; resumo fechado)', 'ok');
+        return { ok: true };
+    }
     async function finalizarHunt() {
         const b = tid('stop');
-        if (!b) return { erro: 'botão de encerrar (stop) não está na tela — já fora da caçada?' };
+        if (!b) return finalizarHuntSocket(); // v2.35.7 — celular
         b.click();
         const fechar = await esperarQue(() => tid('summary-close') || $$('.s-modal-scrim [data-testid="panel-close"]')[0], 15000, 200);
         if (fechar) { fechar.click(); await dorme(500); }
@@ -5351,8 +5373,16 @@
         el.dispatchEvent(new MouseEvent('mouseup', o));
         el.dispatchEvent(new MouseEvent('contextmenu', o));
     }
+    async function purificarTodosSocket() {
+        if (!socketAberto()) return { pulou: 'sem a mochila na tela e sem o socket — não purifiquei' };
+        const r = await mkPedir('purify_all', { requestId: 'tb-pur-' + Date.now() });
+        if (r.erro) return { pulou: 'purify_all pelo socket: ' + (r.erro === 'sem_resposta' ? 'sem resposta (nada selado?)' : mkErroTexto(r.erro)) };
+        log('purificar: todos purificados (pelo socket)', 'ok');
+        return { ok: true };
+    }
     async function purificarTodos() {
         const toggle = tid('rail-backpack-toggle');
+        if (!toggle && !$$('[data-testid^="backpack-slot-"]').length) return purificarTodosSocket(); // v2.35.7 — celular
         if (toggle && !$$('[data-testid^="backpack-slot-"]').length) { toggle.click(); await dorme(500); }
         /* 27/09: no ciclo automático, logo depois de o resumo da caçada
          * fechar, a mochila ainda estava repintando e uma crossbow SELADA não
@@ -5518,10 +5548,61 @@
      * é defensivo. Qualquer dúvida sobre o que ia ser vendido = não vende. */
     /* v2.15.0 — opts.apenas (Set de nomes normalizados, normNomeItem): venda das SOBRAS do Equip — só o que está na
      * lista fica marcado, todo o resto é desmarcado; a lista "nunca vender" nem é montada (a lista do Equip é a regra). */
+    /* a mochila de agora: a fibra do React (shell.bag, também no mobile-shell) ou a última que o socket trouxe (welcome/resume/*_result) */
+    function mochilaAgora() {
+        const sh = lerShellFibra();
+        if (sh && sh.bag && typeof sh.bag === 'object') return { bag: sh.bag, inst: Array.isArray(sh.bagInstances) ? sh.bagInstances : [] };
+        if (MK.bag) return { bag: MK.bag, inst: Array.isArray(MK.bagInst) ? MK.bagInst : [] };
+        return null;
+    }
+    const SELL_LOTE = 20;
+    async function venderNoNpcSocket(opts) {
+        opts = opts || {};
+        if (!socketAberto()) return { erro: 'botão VENDER não está na tela e o socket do jogo não está à mão' };
+        if (frameFresco()) return { erro: 'ainda em caçada — o NPC só compra na cidade' };
+        let prot;
+        try { prot = opts.apenas ? { equip: false, nomes: nomesNormalizados(await idsPorNome()) } : await protecaoVenda(); }
+        catch (e) { return { erro: 'não consegui montar a lista "nunca vender" (' + e.message + ') — nada vendido' }; }
+        const m = mochilaAgora();
+        if (!m) return { erro: 'não li a mochila (nem pela tela do jogo nem pelo socket) — nada vendido' };
+        const linhas = Object.entries(m.bag).filter(([, c]) => Number(c) > 0).map(([nome, c]) => ({ nome, count: Number(c) }));
+        if (!linhas.length) { log('nada para vender (mochila vazia)', 'info'); return { ok: true, vazio: true, guardados: [] }; }
+        let guardados = [], vender = [];
+        if (opts.apenas) { for (const l of linhas) { if (opts.apenas.has(normNomeItem(l.nome))) vender.push(l.nome); else guardados.push(Object.assign({}, l, { motivo: 'não é sobra do Equip' })); } }
+        else {
+            if (prot.equip) { const reais = linhas.map(l => prot.nomes[normNomeItem(l.nome)]).filter(Boolean); try { prot.base = await basePorNome(reais); } catch (e) { prot.base = {}; } }
+            const e = escolherDesmarcar(linhas, prot); guardados = e.guardar; vender = e.vender;
+        }
+        /* só o que o NPC compra (sell > 0) e sem cadeado; o nome que vai é o da mochila (o jogo conhece esse) */
+        const porNorm = {}; for (const l of linhas) porNorm[normNomeItem(l.nome)] = l;
+        let base = {}; try { base = await basePorNome(vender.map(n => (prot.nomes && prot.nomes[normNomeItem(n)]) || n)); } catch (e) { base = {}; }
+        const usadas = new Set([...((EQUIP.res && EQUIP.res.usadas) || []), ...((EQUIP.res && EQUIP.res.reservas) || [])]);
+        const itens = [];
+        for (const n of vender) {
+            const l = porNorm[normNomeItem(n)]; if (!l) continue;
+            const real = (prot.nomes && prot.nomes[normNomeItem(n)]) || n, b = base[real] || base[n] || null;
+            if (b && b.sell === 0) { guardados.push(Object.assign({}, l, { motivo: 'o NPC paga 0' })); continue; }
+            if (estaProtegida({ nome: l.nome })) { guardados.push(Object.assign({}, l, { motivo: 'cadeado (Proteger)' })); continue; }
+            const inst = m.inst.filter(x => x && x.iid && mkMin(x.name) === mkMin(l.nome));
+            if (inst.length) { for (const x of inst) { if (estaProtegida({ iid: x.iid, nome: x.name }) || usadas.has(x.iid)) { guardados.push({ nome: l.nome, motivo: usadas.has(x.iid) ? 'o Equip usa' : 'cadeado (Proteger)' }); continue; } itens.push({ name: l.nome, count: 1, iid: x.iid }); } }
+            else itens.push({ name: l.nome, count: l.count });
+        }
+        if (guardados.length) log(`${opts.apenas ? 'fora das sobras' : 'nunca vender'}: ${guardados.map(g => g.nome + ' (' + g.motivo + ')').join(', ')}`, 'info');
+        if (!itens.length) { log('nada para vender' + (guardados.length ? ' — tudo que havia está na lista "nunca vender"' : ''), 'info'); return { ok: true, vazio: true, guardados }; }
+        let ouro = 0, n = 0;
+        for (let i = 0; i < itens.length; i += SELL_LOTE) {
+            const lote = itens.slice(i, i + SELL_LOTE);
+            const r = await mkPedir('sell_loot', { items: lote, requestId: 'tb-sell-' + Date.now() + '-' + i });
+            if (r.erro) return { erro: `sell_loot pelo socket: ${mkErroTexto(r.erro)} — ${n ? n + ' item(ns) já vendido(s) por ' + mkFmt(ouro) : 'nada vendido'}` };
+            ouro += Number((r.data || {}).goldCredited) || 0; n += lote.length;
+        }
+        log(`vendido ao NPC (pelo socket): ${n} item(ns) por ${mkFmt(ouro)} de ouro`, 'ok');
+        return { ok: true, total: ouro, guardados };
+    }
     async function venderNoNpc(opts) {
         opts = opts || {};
         const abrir = tid('actionbar-selling');
-        if (!abrir) return { erro: 'botão VENDER (actionbar-selling) não está na tela — precisa estar na cidade' };
+        if (!abrir) return venderNoNpcSocket(opts); // v2.35.7 — celular
         let prot;
         try { prot = opts.apenas ? { equip: false } : await protecaoVenda(); }
         catch (e) { return { erro: 'não consegui montar a lista "nunca vender" (' + e.message + ') — nada vendido' }; }
@@ -5603,9 +5684,19 @@
     /* Passo 4 — DEPOT: guardar tudo. Âncoras (27/09): depot-panel (modal com
      * scrim), depot-guardar-tudo, depot-guardar-tudo-nota, depot-lugares
      * ("113 de 300"), panel-close dentro do depot-panel. */
+    async function guardarNoDepotSocket() {
+        if (!socketAberto()) return { erro: 'botão DEPOT não está na tela e o socket do jogo não está à mão' };
+        const antes = lerMochilaOz();
+        const r = await mkPedir('depot_store_all', { requestId: 'tb-dep-' + Date.now() });
+        if (r.erro) return { erro: 'guardar tudo no depot (pelo socket): ' + mkErroTexto(r.erro) };
+        const d = r.data || {}, used = Number(d.used), total = Number(d.total);
+        const lugares = Number.isFinite(used) && total > 0 ? `${used} de ${total}` : '';
+        log(`depot: guardei tudo pelo socket${antes ? ' · mochila antes ' + antes.usado.toLocaleString('pt-BR') + ' oz' : ''}${lugares ? ' · depot ' + lugares : ''}`, 'ok');
+        return { ok: true, lugares, depUsado: Number.isFinite(used) ? used : null, depTotal: total > 0 ? total : null };
+    }
     async function guardarNoDepot() {
         const abrir = tid('actionbar-depot');
-        if (!abrir) return { erro: 'botão DEPOT (actionbar-depot) não está na tela' };
+        if (!abrir) return guardarNoDepotSocket(); // v2.35.7 — celular
         abrir.click();
         const tudo = await esperarQue(() => tid('depot-guardar-tudo'), 6000, 150);
         if (!tudo) return { erro: 'janela do depot não abriu (depot-guardar-tudo ausente)' };
@@ -5632,11 +5723,22 @@
 
     /* Passo 5 — VOLTAR para a hunt memorizada. hunt-item-<id> + hunt-confirm
      * (na cidade o card diz "Jogar aqui"; o confirm é o mesmo, 19/09). */
+    async function voltarParaHuntSocket(id) {
+        if (!socketAberto()) return { erro: 'botão JOGAR não está na tela e o socket do jogo não está à mão' };
+        const lure = Number((ESTADO_WS.lureTierByHunt || {})[id]) || 1; // o lure salvo da caçada (o jogo guarda um por caçada)
+        const t = Date.now(); ESTADO_WS.ultimoErro = null;
+        try { enviarWS({ type: 'start_hunt', data: { huntId: id, lure } }); } catch (e) { return { erro: 'start_hunt pelo socket falhou: ' + e.message }; }
+        const ok = await esperarQue(() => ESTADO_WS.huntId === id && ESTADO_WS.hunt_t >= t, 20000, 250);
+        if (!ok) return { erro: 'start_hunt pelo socket e o servidor não confirmou a entrada em 20 s' + (ESTADO_WS.ultimoErro ? ' (erro do servidor: ' + ESTADO_WS.ultimoErro + ')' : '') };
+        guardar('hunt_id', id); guardar('hunt_manual', id);
+        log('de volta à caçada (id ' + id + ', pelo socket, lure ' + lure + ')', 'ok');
+        return { ok: true };
+    }
     async function voltarParaHunt(id) {
         /* 27/09: na cidade a barra tem actionbar-hunt (JOGAR), -train, -selling
          * e -depot; actionbar-explore (CAÇADAS) só existe dentro da caçada. */
         const abrir = tid('actionbar-hunt') || tid('actionbar-explore');
-        if (!abrir) return { erro: 'botão JOGAR/CAÇADAS não está na tela' };
+        if (!abrir) return voltarParaHuntSocket(id); // v2.35.7 — celular
         abrir.click();
         let card = await esperarQue(() => tid('hunt-item-' + id), 4000, 200);
         /* v2.1.2 — A TELA DE CAÇADAS É POR ILHA. Testado em 27/09 22:30: na
@@ -6057,8 +6159,8 @@
         SCAN.stopEnviado = Date.now();
         enviarWS({ type: 'stop', data: {} });
         const saiu = await esperarQue(() => !frameFresco() || tid('summary-close'), 25000, 250);
-        const fecharR = await esperarQue(() => tid('summary-close'), 3000, 150);
-        if (fecharR) fecharR.click();
+        const fecharR = await esperarQue(() => tid('summary-close'), celularJogo() ? 300 : 3000, 150);
+        if (fecharR) fecharR.click(); else { try { enviarWS({ type: 'summary_closed', data: {} }); } catch (e) { /* v2.35.7 — celular: sem o botão, pelo socket */ } }
         if (!saiu) return { erro: 'mandei stop e a caçada não encerrou em 25 s' };
         await dorme(600);
         return { ok: true };
@@ -10308,7 +10410,7 @@
     function ouroNaTela() {
         const f = ESTADO_WS.frame;
         if (frameFresco() && f.balance != null && isFinite(f.balance)) return Number(f.balance);
-        const el = tid('hud-gold'), t = el ? (el.textContent || '').replace(/\D/g, '') : '';
+        const el = tid('hud-gold') || tid('mobile-hud-gold'), t = el ? (el.textContent || '').replace(/\D/g, '') : ''; // v2.35.7 — celular
         return t ? parseInt(t, 10) : null;
     }
     function telaEstado() {
@@ -13806,6 +13908,7 @@
                           market_create: 'market_create_result', market_cancel: 'market_cancel_result', market_claim: 'market_claim_result',
                           market_history: 'market_history_result', market_execute: 'market_execute_result',
                           depot_withdraw: 'depot_result', forge_salvage_batch: 'forge_salvage_batch_result',
+                          purify_all: 'purify_all_result', sell_loot: 'sell_result', depot_store_all: 'depot_result', // v2.35.7 — ciclo de venda pelo socket (celular)
                           party_get_snapshot: 'party_snapshot', forge_lastro: 'forge_lastro_result', // v2.22.0
                           loja_abrir: 'loja_estado', loja_comprar: 'loja_compra', acesso_comprar: 'acesso_estado', // @@EVENTO
                           forge_refine: 'forge_refine_result', forge_rarity: 'forge_rarity_result', forge_attr: 'forge_attr_result', forge_craft: 'forge_craft_result',
@@ -17411,7 +17514,7 @@
      * WS sai como cópia, sem o socket. */
     if (lerChave('tb_helper_debug', false)) { window.__tbHelper = {
         // v1.9.0 — Auto Hunt (leituras)
-        autoHunt, capLivre, lerTaxaXp, itemSelado, modalAberto, mochilaNoLimite, estadoWS, motivoNaoDispara,
+        celularJogo, /* v2.35.7 (só leitura: o ciclo dispara pelos botões) */ autoHunt, capLivre, lerTaxaXp, itemSelado, modalAberto, mochilaNoLimite, estadoWS, motivoNaoDispara,
         versao: VERSAO, montarPlano, viabilidadeParty, huntAtual, magiasDaVocacao, danosConhecidos, ouroPorAbate, planoExtras, melhorMunicao, melhorPocao, bestiarioHunt, armaduraMedia, reducaoFisicaMedia, nomeModelo,
         get BESTIARIO() { return BESTIARIO; },
         get CAT() { return CAT; },

@@ -6684,3 +6684,28 @@ Dono, no Shadow Nexus: "vê se a tela Aguentar indicou tudo certo — os itens p
   mapa (falta mana), o que bate com o lucasdela ("o único imbuement que ajudou foi mana leech 5 % — o ED não falhou a cura").
   Testado tirar o piso do ML no modo aguentar: ficou pior (punha uma halberd no Druida). Ficou como está.
   Imbuements de maior ganho: Dragon Hide no escudo/armadura do Cavaleiro (41 pt no T2, ~268 mil), Blockade no Zaoan helmet.
+
+## 2.35.7 — celular: Venda rápida, Finalizar, Auto Hunt e Scan pelo socket quando a tela do computador não existe (30/10)
+
+Dono, no iPhone com a 2.35.6: "alguns botões não funcionam; a Venda rápida é um". E: "verifica quais outras opções não funcionam no
+celular e ajusta; mas tem que funcionar no navegador também".
+- **Causa**: no celular o jogo monta outra tela (`mobile-shell`, `mobile-nav-tab-*`, `mobile-hud-level/gold/xp`, `mobile-jogo-cap`,
+  folhas `mobile-sheet-*`), sem os botões que o ciclo de venda clicava (`stop`, `summary-close`, `actionbar-selling`, `sell-panel`,
+  `sell-confirm`, `rail-backpack-toggle`, `ctx-purificar-todos`, `actionbar-depot`, `depot-guardar-tudo`, `actionbar-hunt`,
+  `hunt-item-*`). O ciclo parava no 1.º passo e o erro ia só para o Log. A decisão de 27/10 (2.33.3) era adaptar só Magia/Boss.
+- **Agora cada passo tenta a tela do computador e, sem ela, fala com o socket** (igual nas duas telas; lido no cliente em 30/10):
+  `finalizarHunt` → `stop {}` + espera o `ended` + `summary_closed {}`; `purificarTodos` → `purify_all {requestId}`;
+  `venderNoNpc` → mochila da fibra (`shell.bag`, também no `mobile-shell`) ou a última do socket, a MESMA regra do painel
+  (`escolherDesmarcar`: lista "nunca vender", materiais de imbuement, equipamento, NPC paga 0) mais cadeado (`estaProtegida`) e peças
+  que o Equip usa, e `sell_loot {items:[{name,count,iid?}], requestId}` em lotes de 20 → `sell_result.goldCredited`;
+  `guardarNoDepot` → `depot_store_all {requestId}` → `depot_result {used,total}`; `voltarParaHunt` → `start_hunt {huntId, lure}` com o
+  lure salvo da caçada (`meta.lureTierByHunt`, agora lido também de `meta_state`/`meta_result`). `MK_RESPOSTA` ganhou `purify_all`,
+  `sell_loot`, `depot_store_all`. O Scan fecha o resumo por `summary_closed` quando o botão não existe. `nivelAtual`/`ouroAtual` leem
+  `mobile-hud-level`/`mobile-hud-gold`.
+- **No computador nada muda**: os botões existem e o caminho de cliques continua o mesmo (testes do Auto Hunt intactos).
+- **Ainda só no computador**: Forja "abrir no jogo"/Uzgod (janela do jogo pelo menu NAVEGAÇÃO) e a leitura de dano pela janela de
+  atalhos (no celular o dano vem de `/spell-numbers`). O resto (Magia, Boss, Equip, Mercado, Melhorias, Aguentar, Progresso, Radar) já ia
+  pelo socket.
+- Testes: 469 (+3 em mercado.test.js: Venda rápida na cidade pelo botão, tudo pelo socket; Auto Hunt disparando em caçada:
+  stop → ended → summary_closed → purify_all → sell_loot → depot_store_all → start_hunt com o lure salvo; erro `item_protected` no
+  sell_loot para o ciclo e desliga). O gancho de teste continua só leitura (`celularJogo`). Não testado ao vivo no iPhone — o dono testa.
