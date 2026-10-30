@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.35.8
+// @version      2.36.0
 // @description  Magia (Econômica / Equilibrado / Área / Inteligente / Boss, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.35.8';
+    const VERSAO = '2.36.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -7914,6 +7914,67 @@
         return { porVoc, reservas, dispensaveis, usadas, temporarios, bases, nobres };
     }
     /* @@EQUIP-PURO-FIM */
+    /* @@RELATORIO-PURO-INICIO — v2.36.0: RELATÓRIO DE EQUIPAMENTO (dono, 30/10: "um botão no Equip que gera um arquivo com todas as
+     * informações dos itens equipáveis da conta — vestidos, depósito, mochila e o que anunciei no Mercado — com todos os status de cada
+     * item, para eu mandar os 3 arquivos e você comparar as contas e decidir qual item vale em qual conta"). Função pura; o impuro só
+     * junta EQUIP.pecas/res/ctx/base, as suas ordens do Mercado e a conta. testes/relatorio.test.js roda EQUIP-PURO + este trecho. */
+    const REL_VERSAO = 1;
+    function relSlotDaFicha(a) {
+        a = a || {};
+        if (a.slot) return normalizarSlot(a.slot);
+        const w = a.weaponType || a.weapontype; if (w === 'shield' || w === 'spellbook') return 'shield'; if (w) return 'weapon';
+        return null;
+    }
+    function relatorioEquip(ent) {
+        ent = ent || {};
+        const pecas = Array.isArray(ent.pecas) ? ent.pecas : [], res = ent.res || {}, ctx = ent.ctx || null, base = ent.base || {};
+        const conj = (x) => (x instanceof Set ? x : new Set(Array.isArray(x) ? x : []));
+        const usadas = conj(res.usadas), reservas = conj(res.reservas), bases = new Set((res.bases || []).map(p => p && p.iid)), nobres = new Set((res.nobres || []).map(p => p && p.iid));
+        const sobra = new Map((res.dispensaveis || []).filter(Boolean).map(p => [p.iid, p]));
+        const vestir = {};
+        for (const [v, slots] of Object.entries(res.porVoc || {})) {
+            for (const [sl, x] of Object.entries(slots || {})) {
+                if (!x) continue;
+                if (x.melhor && x.melhor.iid) vestir[x.melhor.iid] = { voc: v, slot: sl, papel: x.atual && x.atual.iid === x.melhor.iid ? 'vestida (é a melhor)' : 'vai vestir' };
+                if (x.atual && x.atual.iid && !vestir[x.atual.iid]) vestir[x.atual.iid] = { voc: v, slot: sl, papel: x.melhor ? 'vestida (vai sair)' : 'vestida' };
+            }
+        }
+        const item = (p, extra) => {
+            const f = normForja(p.forja), pot = potenciaTotal(p), porVoc = {};
+            for (const v of VOCS_EQUIP) {
+                if (!vocacaoPode(p.attrs, v)) continue;
+                let r; try { r = pontuarPeca(p, v, ctx); } catch (e) { r = { pontos: null, detalhe: [], motivos: [String(e && e.message || e)] }; }
+                porVoc[v] = { pontos: r.pontos, linhas: (r.detalhe || []).filter(d => d.pt).map(d => ({ id: d.id, valor: d.valor, pt: Math.round(d.pt * 100) / 100 })), motivos: r.motivos || [], encaixeNobre: encaixeNobre(p, v) };
+            }
+            const ve = vestir[p.iid];
+            const veredito = ve ? `${ve.papel}: ${ve.voc} ${ve.slot}` : usadas.has(p.iid) ? 'usada' : reservas.has(p.iid) ? 'reserva' : bases.has(p.iid) ? 'base de forja (guardar)' : nobres.has(p.iid) ? 'encaixe nobre (vale no Mercado)'
+                : sobra.has(p.iid) ? 'sobra' + (sobra.get(p.iid).motivo ? ': ' + sobra.get(p.iid).motivo : '') : ehTemporaria(p) ? 'temporária (cargas/tempo)' : null;
+            return Object.assign({ iid: p.iid, nome: p.nome, slot: p.slot, origem: p.origem, dono: p.dono || null, protegida: !!p.protegida, duasMaos: !!p.duasMaos, npc: p.sell != null ? p.sell : null,
+                                   ficha: p.attrs || {}, raridade: f.raridade, refino: f.refino || 0, potenciaBase: potenciaDe(p), potencia: pot, faixa: FAIXA_NOME[faixaPotencia(pot) - 1] || null,
+                                   atributos: f.atributos, imbuements: (Array.isArray(p.imbuements) ? p.imbuements : []).filter(Boolean).map(im => ({ nome: im.name || null, categoria: im.category, tier: im.base, valor: imbValor(im), restaMs: im.remainingMs != null ? im.remainingMs : null })),
+                                   veredito, porVoc }, extra || {});
+        };
+        const itens = pecas.map(p => item(p));
+        const mercado = (Array.isArray(ent.ordens) ? ent.ordens : []).filter(o => o && (o.side == null || o.side === 'SELL') && (o.status == null || /open/i.test(String(o.status)))).map(o => {
+            const inst = o.instance || null, k = base[o.itemName] || (inst && base[inst.name]) || null;
+            const peca = inst && (k || inst.forja) ? item({ iid: inst.iid || o.iid || null, nome: inst.name || o.itemName, slot: relSlotDaFicha(k && k.attrs), attrs: (k && k.attrs) || {}, forja: inst.forja, origem: 'mercado', sell: k ? k.sell : null }) : null;
+            return { ordem: o.id, nome: o.itemName, preco: o.unitPrice, qtd: o.quantityRemaining != null ? o.quantityRemaining : o.quantityTotal, qtdTotal: o.quantityTotal, expira: o.expiresAt || null, iid: (inst && inst.iid) || o.iid || null,
+                     equipavel: !!(k && relSlotDaFicha(k.attrs)), peca };
+        });
+        const personagens = {};
+        for (const [v, slots] of Object.entries(res.porVoc || {})) {
+            personagens[v] = {};
+            for (const [sl, x] of Object.entries(slots || {})) { personagens[v][sl] = { veste: x && x.atual ? { iid: x.atual.iid, nome: x.atual.nome, pontos: x.atualPt } : null, melhor: x && x.melhor ? { iid: x.melhor.iid, nome: x.melhor.nome, pontos: x.melhorPt } : null }; }
+        }
+        const porOrigem = {}; for (const it of itens) porOrigem[it.origem] = (porOrigem[it.origem] || 0) + 1;
+        return { relatorio: 'tibidle-helper equipamento', formato: REL_VERSAO, versao: ent.versao || null, geradoEm: new Date(ent.agora || Date.now()).toISOString(),
+                 conta: ent.conta ? { nome: ent.conta.nome || null, mundo: ent.conta.mundo || null } : null, nivel: ent.nivel || null, fase: ctx ? faseEquip(ctx) : null,
+                 mapa: (ctx && ctx.mapa) || null, skills: (ctx && ctx.sk) || null, legado: ent.legado || null, loyalty: ent.loyalty || null,
+                 regua: '1 pt ≈ +1 % do dano da party (régua do Equip, contexto da conta no momento do relatório); porVoc = a nota da peça para cada vocação que pode vesti-la',
+                 resumo: { itens: itens.length, porOrigem, mercado: mercado.length, mercadoEquipavel: mercado.filter(m => m.equipavel).length },
+                 personagens, itens, mercado };
+    }
+    /* @@RELATORIO-PURO-FIM */
     /* @@SOBREVIVER-PURO-INICIO — aba SOBREVIVER (2.34.0): contas puras; testes/sobreviver.test.js roda EQUIP-PURO + este trecho.
      * Dono, 28/10: "uma tela só para aguentar um mapa de nível 150+ ou um boss forte: que itens pegar do depósito e vestir, o que
      * comprar no Mercado, que prey usar — no Shadow Nexus o set magma não bastou; o amigo disse prey de defesa no Knight ou utamo tempo". */
@@ -11716,10 +11777,16 @@
         let h = `<div class="tb-eq-bts">
             <button type="button" class="tb-bt pri" id="tb-eq-atualizar" ${EQUIP.lendo || EQUIP.equipando ? 'disabled' : ''} title="lê o corpo dos 4, a mochila e o depósito">${EQUIP.lendo ? 'lendo…' : 'ATUALIZAR'}</button>
             <button type="button" class="tb-bt" id="tb-eq-equipar4" ${podeEquipar && n4 ? '' : 'disabled'} title="${escHtml(porQue)}">${EQUIP.equipando ? 'EQUIPANDO…' : `EQUIPAR (${n4})`}</button>
-            <button type="button" class="tb-bt" id="tb-eq-equipar1" ${podeEquipar && nv ? '' : 'disabled'} title="só as trocas do ${VOC_ROTULO[v]} — ${escHtml(porQue)}" aria-label="equipar só o ${VOC_ROTULO[v]} (${nv})">só ${VOC_CURTO[v]} (${nv})</button></div>
+            <button type="button" class="tb-bt" id="tb-eq-equipar1" ${podeEquipar && nv ? '' : 'disabled'} title="só as trocas do ${VOC_ROTULO[v]} — ${escHtml(porQue)}" aria-label="equipar só o ${VOC_ROTULO[v]} (${nv})">só ${VOC_CURTO[v]} (${nv})</button>
+            <button type="button" class="tb-bt" id="tb-eq-relatorio" ${EQUIP.res && !EQUIP.lendo && !EQUIP.relatorioLendo ? '' : 'disabled'} title="gera um arquivo .json com todo o equipamento desta conta (vestido, mochila, depósito e o que está anunciado no Mercado), com os status de cada item e a nota por vocação — para comparar as contas">${EQUIP.relatorioLendo ? 'gerando…' : 'RELATÓRIO'}</button></div>
           <div class="tb-mut tb-eq-info">${dep ? `depósito ${numBR(dep.used)}/${numBR(dep.total)}${dep.lembrado ? ` <span class="tb-av" title="foto guardada na última leitura na cidade">(foto de ${escHtml(new Date(dep.t).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }))})</span>` : ''}` : 'depósito —'}${EQUIP.t ? ` · lido ${new Date(EQUIP.t).toLocaleTimeString('pt-BR')}` : ''}${EQUIP.ctx && EQUIP.ctx.mapa ? ` · wand/rod pelo elemento de ${escHtml(EQUIP.ctx.mapa)}` : ''}${dentro ? ' · <span class="tb-av">equipar só na cidade (o ranking já vê o baú)</span>' : ''}</div>`;
         if (EQUIP.erro) h += `<div class="tb-cx tb-ruim">${escHtml(EQUIP.erro)}</div>`;
         if (EQUIP.aviso) h += `<div class="tb-cx tb-av">${escHtml(EQUIP.aviso)}</div>`;
+        /* v2.36.0 — o relatório fica numa caixa (copiar/baixar funcionam onde o navegador deixa; a caixa vale em qualquer lugar) */
+        if (EQUIP.relatorio) { h += `<div class="tb-cx" id="tb-eq-rel"><div class="tb-linha"><b>Relatório de equipamento</b> <span class="tb-mut tb-eq-nota">${escHtml(EQUIP.relatorio.nome)} · ${numBR(EQUIP.relatorio.itens)} itens · ${numBR(EQUIP.relatorio.mercado)} no Mercado · ${escHtml(EQUIP.relatorio.estado || '')}</span>` +
+            `<button type="button" class="tb-bt mini" id="tb-eq-rel-baixar">baixar .json</button><button type="button" class="tb-bt mini" id="tb-eq-rel-copiar">copiar</button><button type="button" class="tb-bt mini" id="tb-eq-rel-fechar" style="margin-left:auto">fechar</button></div>` +
+            `<textarea id="tb-eq-rel-caixa" readonly spellcheck="false" aria-label="relatório de equipamento em JSON" style="width:100%;height:120px;font:10px/1.3 monospace;background:#0f131a;color:#c3cad6;border:1px solid #262d3b;border-radius:6px;margin-top:4px">${escHtml(EQUIP.relatorio.texto)}</textarea>` +
+            `<div class="tb-mut tb-eq-nota">Mande este arquivo (um por conta) para o Claude comparar as contas.</div></div>`; }
         /* v2.24.3 — tudo isto (régua, Legado, ficha do Cavaleiro, vida mínima, dano tomado) fica atrás de um "?" fechado
          * (dono, 19/10: "na parte de equipar você também está colocando um texto gigante") */
         let info = '';
@@ -11900,6 +11967,36 @@
         h += aj('eq-opc', `<label class="tb-l"><input type="checkbox" id="tb-eq-guardar" ${ler('equip_guardar', true) ? 'checked' : ''}> depois de equipar, guardar a mochila inteira no depósito</label><div class="tb-eq-nota">pelo socket: tira do depósito e equipa; a peça que sai cai na mochila. O jogo só tem "guardar tudo": o loot da mochila vai junto. Peça de outro personagem só depois que ele trocar. Arco ↔ besta troca a munição do Paladino junto.</div>`, 'opções');
         return h;
     }
+    /* v2.36.0 — RELATÓRIO DE EQUIPAMENTO: só leitura (as suas ordens do Mercado são lidas pelo socket se ele estiver livre) */
+    function relBaixar(nome, texto) {
+        try { const u = URL.createObjectURL(new Blob([texto], { type: 'application/json;charset=utf-8' })); const a = document.createElement('a'); a.href = u; a.download = nome; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 60000); return true; }
+        catch (e) { avisar('equip', 'o navegador não deixou baixar — use "copiar" ou a caixa abaixo', 'erro'); return false; }
+    }
+    function relCopiar(texto) {
+        let p; try { p = navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(texto) : Promise.reject(new Error('sem clipboard')); } catch (e) { p = Promise.reject(e); }
+        p.then(() => avisar('equip', 'relatório copiado para a área de transferência', 'ok')).catch(() => avisar('equip', 'área de transferência bloqueada — selecione o texto da caixa e copie', 'erro'));
+    }
+    async function equipRelatorio() {
+        if (!EQUIP.res || !EQUIP.pecas) { avisar('equip', 'clique ATUALIZAR primeiro (lê corpo, mochila e depósito) e depois RELATÓRIO', 'erro'); return; }
+        EQUIP.relatorioLendo = true; renderizar();
+        let estado = 'Mercado: suas ordens lidas agora';
+        try {
+            if (socketAberto() && !MK.ocupado && !ML.lendo) {
+                MK.ocupado = 'relatório';
+                try { const r = await mkLerMinhas(); if (r && r.erro) estado = 'Mercado: não li suas ordens (' + mkErroTexto(r.erro) + ')' + (Array.isArray(MK.minhas) ? ' — usei a última leitura' : ''); }
+                catch (e) { estado = 'Mercado: não li suas ordens (' + e.message + ')'; }
+                finally { if (MK.ocupado === 'relatório') MK.ocupado = null; }
+            } else estado = Array.isArray(MK.minhas) ? 'Mercado: última leitura das suas ordens' : 'Mercado: sem leitura (socket ocupado ou fechado)';
+            const rel = relatorioEquip({ pecas: EQUIP.pecas, res: EQUIP.res, ctx: EQUIP.ctx, base: EQUIP.base || {}, ordens: Array.isArray(MK.minhas) ? MK.minhas : [], conta: CONTA, nivel: nivelAtual(), legado: ESTADO_WS.legado, loyalty: ESTADO_WS.loyalty, versao: VERSAO });
+            rel.mercadoNota = estado;
+            const texto = JSON.stringify(rel, null, 1);
+            const conta = String((CONTA && CONTA.nome) || 'conta').normalize('NFD').replace(/[^A-Za-z0-9]/g, '').slice(0, 24) || 'conta';
+            const nome = `tibidle-equip-${conta}-${new Date().toISOString().slice(0, 10)}.json`;
+            EQUIP.relatorio = { nome, texto, itens: rel.itens.length, mercado: rel.mercado.length, estado };
+            log(`relatório de equipamento: ${rel.itens.length} itens (${Object.entries(rel.resumo.porOrigem).map(([k, n]) => n + ' ' + k).join(', ')}) · ${rel.mercado.length} ordem(ns) no Mercado · ${estado}`, 'ok');
+            relBaixar(nome, texto);
+        } finally { EQUIP.relatorioLendo = false; renderizar(); }
+    }
     function ligarEquip() {
         const corpo = $('#tb-corpo');
         const b = $('#tb-eq-atualizar'); if (b) b.onclick = () => { if (!EQUIP.lendo && !EQUIP.equipando) equipAtualizar(); };
@@ -11909,6 +12006,10 @@
         const tudo = $('#tb-eq-tudo'); if (tudo) tudo.onclick = () => { EQUIP.verTudo = !EQUIP.verTudo; renderizar(); };
         const e4 = $('#tb-eq-equipar4'); if (e4) e4.onclick = () => { if (!EQUIP.equipando) equiparTrocas(VOCS); };
         const e1 = $('#tb-eq-equipar1'); if (e1) e1.onclick = () => { if (!EQUIP.equipando) equiparTrocas([EQUIP.voc]); };
+        const rl = $('#tb-eq-relatorio'); if (rl) rl.onclick = () => { if (!EQUIP.relatorioLendo) equipRelatorio().catch(e => falhou('relatório de equipamento', e)); }; // v2.36.0
+        const rb = $('#tb-eq-rel-baixar'); if (rb) rb.onclick = () => { if (EQUIP.relatorio) relBaixar(EQUIP.relatorio.nome, EQUIP.relatorio.texto); };
+        const rc = $('#tb-eq-rel-copiar'); if (rc) rc.onclick = () => { if (EQUIP.relatorio) relCopiar(EQUIP.relatorio.texto); };
+        const rf = $('#tb-eq-rel-fechar'); if (rf) rf.onclick = () => { EQUIP.relatorio = null; renderizar(); };
         const dfr = $('#tb-eq-desm-frag'); if (dfr) dfr.onchange = () => { guardar('desm_fragmentos', dfr.checked); EQUIP.desmConf = null; renderizar(); }; // v2.34.1
         const dmk = $('#tb-eq-desm-mk'); if (dmk) dmk.onchange = () => { guardar('desm_incluir_mercado', dmk.checked); EQUIP.desmConf = null; renderizar(); };
         const ds = $('#tb-eq-desmanchar'); if (ds) ds.onclick = () => { const agora = Date.now(); if (EQUIP.desmConf && agora < EQUIP.desmConf) { EQUIP.desmConf = null; desmancharSobras(); } else { EQUIP.desmConf = agora + 8000; renderizar(); } };

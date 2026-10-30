@@ -6727,3 +6727,21 @@ imbuement nem de outfit, não vender itens com potência boa".
   não enxerga a potência — ali a proteção continua sendo a chave "equipamento"). Nas sobras do Equip a decisão já é do Equip: base de
   forja nunca vira sobra.
 - Testes: 471 (+1 autohunt: outfit com e sem as chaves; +1 mercado: e1 120 vende, e2 450 e e3 Épico ficam).
+
+## 2.36.0 — Equip: botão RELATÓRIO (JSON de todo o equipamento da conta, para comparar as 3 contas) (30/10)
+
+Dono: "um botão na aba Equip que gera um relatório (json ou md) com todas as informações dos itens equipáveis de cada conta —
+depósito, Mercado que coloquei para vender, e o que os personagens estão usando — com todos os status de cada item, para eu mandar
+os 3 arquivos e você analisar qual vale a pena usar em qual mapa, ou deixar uma conta super forte tirando item de cada conta".
+- **Formato: JSON** (`tibidle-equip-<conta>-<data>.json`). É o que o Claude lê melhor e sem perda; .md seria resumo.
+- **`@@RELATORIO-PURO`** (`relatorioEquip`, `testes/relatorio.test.js`, 2): cabeçalho (versão, conta nome/mundo, nível, fase, mapa,
+  skills, legado, loyalty, a régua), `personagens` (por vocação e espaço: o que veste e a melhor, com pontos), `itens` (cada peça de
+  corpo/mochila/depósito: iid, nome, espaço, origem, dono, cadeado, 2 mãos, preço no NPC, **ficha inteira do catálogo**, raridade,
+  refino, potência base e total, faixa, **todas as linhas da forja**, **imbuements** com tier/valor/tempo, **veredito do Equip**
+  (vestida/vai vestir/reserva/base de forja/encaixe nobre/sobra com motivo/temporária) e **porVoc**: a nota da régua, as linhas que
+  contam com os pontos de cada uma e os motivos, para cada vocação que pode vesti-la), e `mercado` (só as SUAS ordens de venda
+  abertas: preço, qtd, validade; cópia anunciada vem com a peça inteira e a nota; empilhável vem sem peça). Sem segredos.
+- **Botão RELATÓRIO** (Equip, depois do ATUALIZAR): lê as suas ordens do Mercado pelo socket se ele estiver livre (só leitura; senão
+  usa a última leitura e avisa no JSON em `mercadoNota`), monta o JSON, baixa o arquivo, e deixa uma caixa na aba com "baixar .json",
+  "copiar" e o texto (no iPhone a caixa + copiar é o caminho). Tudo é leitura: nada muda no jogo.
+- Testes: 473 (+2 relatorio, telas: botão, caixa, JSON, sem segredo, fechar).
