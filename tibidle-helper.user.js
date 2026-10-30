@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.37.0
+// @version      2.37.1
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.37.0';
+    const VERSAO = '2.37.1';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -4470,14 +4470,17 @@
         const f = ler('boss_foto', null);
         if (!f || !f.cfgs || ESTADO_WS.boss) return false;
         const cacando = emHunt() && socketAberto();
+        /* v2.37.1 — preset gravado durante a luta (APLICAR NOS 4 ou a janela do jogo, visto ao vivo em 30/10): devolve o preset também */
+        const preset = !!f.presetMexido && socketAberto();
         for (const voc of VOCS) {
             const c = f.cfgs[voc]; if (!c) continue;
+            if (preset) { try { await aplicarConfigSocket(voc, c); await dorme(150); continue; } catch (e) { falhou('boss (devolver o preset)', e); } }
             const who = cacando ? indiceDaVoc(voc) : null;
             if (who != null) { enviarWS({ type: 'update_battle_config', data: payloadBattleConfig(c, who) }); await dorme(150); }
             else aplicarConfigLocal(voc, c);
         }
         guardar('boss_foto', null);
-        log(`boss ${f.boss || ''}: a barra de antes do boss voltou${cacando ? '' : ' (na cidade: só a cópia local; o preset do servidor nunca foi tocado)'}`, 'ok');
+        log(`boss ${f.boss || ''}: a barra de antes do boss voltou${preset ? ' (o preset gravado durante a luta também)' : cacando ? '' : ' (na cidade: só a cópia local; o preset do servidor nunca foi tocado)'}`, 'ok');
         return true;
     }
     async function desfazerTemporarios() { await bossRestaurar(); await manaVoltar(true); }
@@ -5006,6 +5009,8 @@
             ESTADO_WS.profiles[d.vocation] = clonar(d.profiles);
             const lp = d.profiles.list, at = lp && lp[d.profiles.active >= 0 ? d.profiles.active : 0];
             trocarVitaisDeKit(d.vocation, kitHashConfig(at && at.config));
+            /* v2.37.1 — preset gravado no meio de uma luta de boss com a barra de antes guardada: a volta devolve o preset também */
+            try { if (ESTADO_WS.boss) { const bf = ler('boss_foto', null); if (bf && !bf.presetMexido) { bf.presetMexido = true; guardar('boss_foto', bf); } } } catch (e) { falhou('boss (marcar preset)', e); }
             return;
         }
         if (o.type === 'update_battle_config' && d.who != null) { aplicarConfigLocal(vocDoIndice(d.who), d); const v = vocDoIndice(d.who); if (v) trocarVitaisDeKit(v, kitHashConfig(d)); return; }

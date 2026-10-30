@@ -6846,3 +6846,11 @@ o Paladino não muda. Testes novos em sobreviver e razao.
   poção divide a recarga de 1 s com a runa). Chave "aplicar sozinho ao entrar no boss" (ligada a pedido do dono): no
   `hunt_started` de um boss, `update_battle_config` com ataque + padrão **só nessa luta** (sem `profiles_set`); foto em
   `boss_foto`, devolvida no `hunt_started` seguinte. Não testado ao vivo ainda.
+
+### 2.37.1 — teste ao vivo do Mana e do boss; o preset gravado na luta também volta (30/10)
+Ao vivo (ShamanBr, nível 175): ENCHER na cidade pôs as poções dos 4 a ≤100 % sem mexer em curas, ataques e suportes; VOLTAR
+devolveu a barra igual. Aplicar sozinho funcionou em 4 bosses seguidos (Metal Weregargoylemon, Draculla, Janna Pouldmore,
+Magma Wolf): ~2 s depois do `hunt_started`, `update_battle_config` com ataque + padrão nos 4. Achado: o dono tocou em
+APLICAR NOS 4 no meio da luta, o que grava `profiles_set` — a volta só mandava `update_battle_config` e o preset ficava com a
+barra de boss. Agora todo `profiles_set` enviado durante uma luta com `boss_foto` marca `presetMexido`, e a volta usa
+`aplicarConfigSocket` (devolve o preset também, na caçada ou na cidade).
