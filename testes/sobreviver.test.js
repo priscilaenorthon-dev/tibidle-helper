@@ -27,7 +27,10 @@ t('modo aguentar: a defesa pesa 3× (resistência ao fogo do Cavaleiro) e o ataq
     const party = M.sbPartyDoDano(DM, {}).party, nivel = 160;
     const normal = M.pesosDaVoc('KNIGHT', { nivel, party }), ag = M.pesosDaVoc('KNIGHT', { nivel, party, sobreviver: true });
     assert(normal.resist_fogo > 0, 'fogo medido tem peso');
-    assert(Math.abs(ag.resist_fogo / normal.resist_fogo - M.SB_FATOR) < 0.02, `fogo ×${ag.resist_fogo / normal.resist_fogo}`);
+    /* 2.38.0 (dono, 31/10): no Knight da fase 2 a resistência já pesa 3× fora do modo aguentar — o aguentar não soma outro 3× */
+    assert(Math.abs(ag.resist_fogo / normal.resist_fogo - 1) < 0.02, `fase 2: fogo ×${ag.resist_fogo / normal.resist_fogo}`);
+    const n1 = M.pesosDaVoc('KNIGHT', { nivel: 100, party }), ag1 = M.pesosDaVoc('KNIGHT', { nivel: 100, party, sobreviver: true });
+    assert(Math.abs(ag1.resist_fogo / n1.resist_fogo - M.SB_FATOR) < 0.02, `fase 1: fogo ×${ag1.resist_fogo / n1.resist_fogo}`);
     assert(Math.abs(ag.armor / normal.armor - M.SB_FATOR) < 0.02, 'armadura ×3');
     assert.strictEqual(ag.attack, normal.attack, 'ataque igual');
     assert.strictEqual(ag.sobreviver, true); assert.strictEqual(normal.sobreviver, undefined);

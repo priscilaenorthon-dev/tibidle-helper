@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.37.2
+// @version      2.38.0
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.37.2';
+    const VERSAO = '2.38.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -6945,6 +6945,17 @@
      * qualquer regen. com folga de 50 %, e +2 ML vale 3 linhas. Medido ao vivo em 17/10: quem mata é Feiticeiro + Druida
      * (69 % do dano) e a mana se compra com poção a 10 %. */
     const ML_REGEN_EQUIV = 3.0;
+    /* v2.38.0 — decisões do dono em 31/10, depois dos vídeos lidos pelo Antigravity (data/videos/conferencia-2026-10-31.md):
+     *   1. Knight na fase 2: resistência e proteção mágica NA FRENTE da regen. de mana. A regen. de mana dele passa a valer o mesmo
+     *      que a regen. de vida (sem o ×2,5 do Wound Cleansing) e resistência física/elemental e proteção mágica pesam KN_DEF_FASE2×
+     *      (o fator do modo Aguentar: a média não conta o pico que mata). Linha típica na faixa IV, nível 170: resist. física 19 >
+     *      proteção mágica 13 > regen. de mana 12 = regen. de vida > resist. fogo 8 (antes: regen. de mana 31 > … > resist. física 6).
+     *   2. Paladino: distância e dano sagrado NA FRENTE da regen. de mana (dono, 28/10 e 31/10; vídeos: "distância é o que escala o
+     *      dano"). Como o ML dos magos: +1 de distância vale no mínimo PAL_DIST_REGEN_EQUIV de regen. de mana/s, e 1 % de dano
+     *      sagrado PAL_SAGRADO_REGEN_EQUIV (a linha típica de 6 % passa a linha típica de regen. de 3,45).
+     *   3. Knight: ataque da arma, corpo a corpo e dano físico valem KN_ATAQUE_FATOR× a fatia dele no dano (vídeos: "sem dano físico
+     *      na arma o dano fica baixo"): o dano dele é o que limpa os monstros que batem NELE, e a conta só via os 10 % da party. */
+    const KN_DEF_FASE2 = 3, PAL_DIST_REGEN_EQUIV = 2.0, PAL_SAGRADO_REGEN_EQUIV = 0.6, KN_ATAQUE_FATOR = 3;
     /* v2.16.3 — crítico: o jogo não tem crítico de base (wiki), então QUALQUER chance já acerta crítico (TV de Souza: "qualquer
      * 1 % já te dá a possibilidade"). Dano extra do crítico sem linha de "crítico (dano)": 50 % (padrão do Tibia; a wiki não
      * dá o número — premissa marcada). A linha de dano soma a esses 50 %. */
@@ -7213,6 +7224,9 @@
             P.attack = _r(s * (_pct(0.0425 * sk.melee, golpe) * (1 - fs) + _pct(1.1, berserk) * fs));
             P.corpo_a_corpo = P.skillsword = P.skillaxe = P.skillclub = _r(s * (_pct(0.0425 * sk.atkArma, golpe) * (1 - fs) + _pct(1.1, berserk) * fs));
             P.nivel_magico = P.magiclevelpoints = 0.05; // só a cura dele (Wound Cleansing)
+            /* v2.38.0 — decisão 3 do dono (31/10): ataque, corpo a corpo e dano físico do Knight valem KN_ATAQUE_FATOR× */
+            P.attack = _r(P.attack * KN_ATAQUE_FATOR); P.dano_fisico = _r(P.dano_fisico * KN_ATAQUE_FATOR);
+            P.corpo_a_corpo = P.skillsword = P.skillaxe = P.skillclub = _r(P.corpo_a_corpo * KN_ATAQUE_FATOR);
         } else if (voc === 'PALADIN') {
             /* v2.16.0 — update 1.0.13 (30/09) + wiki /como-o-dano-e-calculado (12/10): o mínimo do tiro passou a ser 60 %
              * do máximo (era nível/5). Média = 0,8 × máx; a parte de cada ponto de distância sobe um pouco. */
@@ -7245,7 +7259,13 @@
          * 1 de mana/s vale ~2,5 HP/s de defesa, não 1,25. Com 1,25 a magic plate armor (arm. 17, sem linha) tirava a dark
          * armor (arm. 10 + regen. mana 2,4) por +4,6 pt; agora a linha de regen. vale ~22 pt contra 16 dos 7 de armadura. Um
          * escudo MUITO melhor (Vampire 34 × 18 + regen.) ainda ganha quando ele anda apertado (teste 2.18.2). */
-        if (voc === 'KNIGHT') P.regen_mana = _r(Math.max(P.regen_mana, VIDA_PT_KNIGHT * WC_HP_POR_MANA));
+        /* v2.38.0 — decisão 1 do dono (31/10): na fase 2 a regen. de mana dele vale o mesmo que a regen. de vida (sem o ×2,5) */
+        if (voc === 'KNIGHT') P.regen_mana = _r(Math.max(P.regen_mana, VIDA_PT_KNIGHT * (fase2 ? 1 : WC_HP_POR_MANA)));
+        /* v2.38.0 — decisão 2 do dono (31/10): no Paladino distância e dano sagrado ficam na frente da regen. de mana */
+        if (voc === 'PALADIN') {
+            P.distancia = P.skilldist = _r(Math.max(P.distancia, P.regen_mana * PAL_DIST_REGEN_EQUIV));
+            P.dano_elem_sagrado = _r(Math.max(P.dano_elem_sagrado, P.regen_mana * PAL_SAGRADO_REGEN_EQUIV));
+        }
         /* (17/10: o dono também disse que regen. de mana é excelente nas outras classes. Pôr Paladino e magos na mesma régua
          * do Cavaleiro quebrava a conta da wand — toda wand de dano passava a perder para a Vortex pela mana por tiro, até em
          * regime de regeneração. Ficou como está: nos magos a regen. de mana já é o 2.º atributo, logo atrás do ML = 3×.) */
@@ -7295,6 +7315,12 @@
             /* v2.24.0 — sem medida, na fase 2 o padrão é FOGO (vídeos: "a maior parte dos danos é de fogo"): metade do peso da magia
              * das criaturas vai para fogo, 10 % para cada um dos outros */
             for (const e of ELEM) P['resist_' + e] = P['absorbpercent' + ELEM_EN[e]] = _r((ek ? R.tomadoS / 100 * VIDA_PT_KNIGHT * (ek[e] || 0) : k1 * (1 - R.fisico) * (fase2 ? (e === 'fogo' ? 0.5 : 0.1) : 0.25)) * folga);
+            /* v2.38.0 — decisão 1 do dono (31/10): na fase 2 resistência e proteção mágica pesam KN_DEF_FASE2× (no modo Aguentar o
+             * ×SB_FATOR do fim já faz isso — não soma os dois) */
+            if (fase2 && !(ctx && ctx.sobreviver)) {
+                P.resist_fisica = P.absorbpercentphysical = _r(P.resist_fisica * KN_DEF_FASE2); P.protecao_magica = _r(P.protecao_magica * KN_DEF_FASE2);
+                for (const e of ELEM) P['resist_' + e] = P['absorbpercent' + ELEM_EN[e]] = _r(P['resist_' + e] * KN_DEF_FASE2);
+            }
             P.absorbpercentpoison = P.resist_terra;
             P.elemMedido = !!ek;
             P.cura_propria = _r(k1 * 0.5); // metade da vida dele volta por poção/cura própria
@@ -7818,12 +7844,13 @@
         KNIGHT: ['arma: a de MAIOR ATAQUE que ele pode usar (Heroic Axe → Onyx Flail → Magic Sword → Stonecutter 50 / Shiny Blade); +1 de corpo a corpo numa arma fraca não compensa (TV de Souza: "não segura arma fraca porque brilha")',
                  'tudo que dá armadura vai nele — é o único que apanha corpo a corpo; escudo sempre (sem escudo não há bloqueio)',
                  'resistência em % escala melhor que +1/+2 de armadura a longo prazo; resistência a FOGO virou BiS nas hunts altas (Zao, Inquisition) e GELO no portal de gelo',
-                 'encaixes: regen. de mana (as magias dele são caras e ele vive sem mana) e regen. de vida; dano elemental é lixo nele (tudo é físico); crítico vale pouco sem imbuement',
+                 'encaixes: regen. de mana (as magias dele são caras e ele vive sem mana) e regen. de vida; dano elemental é lixo nele (tudo é físico); crítico vale pouco sem imbuement. 2.38.0 (dono, 31/10): do 110 em diante resistência física/ao elemento e proteção mágica vêm ANTES da regen. de mana',
+                 'arma e colar: ataque, corpo a corpo e dano físico valem 3× o que a fatia dele no dano daria (2.38.0, dono 31/10: "sem dano físico na arma o dano fica baixo")',
                  'refino: só até o +4/+5 (depois a chance cai e a gema cai no erro); Magic Sword 48 +2 = Stonecutter 50 — não gaste gema em peça que vai ser trocada'],
         PALADIN: ['BESTA com virote (bolt grátis 30 > arrow 25; a comunidade migrou para crossbow); o dano vem da munição e de DISTÂNCIA — distância em tudo (Wood Cape +1, Paladin Armor +2, Yalahari Legs +2)',
                   'arma: arco/besta com encaixe de distância, crítico ou dano físico; +1 de distância com potência ≥ 300 vira +3 na forja',
                   'depois da arma: skill (distância) e chance de crítico; roubo de vida ainda rende pouco; nível mágico só para as runas/cura (Caldera)',
-                  'regen. de mana em elmo/armadura/calça/bota/anel enquanto não houver peça de distância (ele não apanha: armadura não conta)'],
+                  'regen. de mana em elmo/armadura/calça/bota/anel enquanto não houver peça de distância (ele não apanha: armadura não conta). 2.38.0 (dono, 31/10): +1 de distância vale no mínimo 2 de regen. de mana e 1 % de dano sagrado 0,6 — os dois ficam na frente'],
         SORCERER: ['NÍVEL MÁGICO acima de tudo: Hat of the Mad, Fox Cape, spellbook (Warding +1, Mind Control +2), Yalahari Mask +2, colar de Gargoyles; "capacete de 2 de regen. de mana sai na hora por um Hat of the Mad"',
                    'wand: a que der ML ou crítico (Wand of Everblazing +1 ML, Elite dos magos); Vortex ML+1 com potência ≥ 300 vira ML+3 na forja; dano de ENERGIA/FOGO no colar e na wand (NunohS: 3,5 % de energia na wand "muda muito")',
                    'crítico conta: a base é 0 %, qualquer 1 % já acerta crítico; dano mágico vale em magia, runa e wand',

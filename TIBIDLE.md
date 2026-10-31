@@ -6866,3 +6866,19 @@ de besta (infernal bolt). Duas leituras só pelo ícone: Intense Wound Cleansing
 Equip: os vídeos (falas ainda não conferidas, a legenda deu 429) contradizem a conta em 3 pontos — Knight 110+ resistência antes
 de regen. de mana, dano físico/corpo a corpo na arma do Knight, distância antes de regen. de mana no Paladino. Nada mudou no
 Equip: decisão do dono.
+
+## 2.38.0 — Equip: as 3 decisões do dono depois dos vídeos (31/10)
+Dono, 31/10 ("1 sim, 2 sim, 3 sim"), sobre o que os vídeos diziam contra a conta (falas do Antigravity ainda não conferidas na
+legenda; as três já estavam no texto das regras do helper — vídeos de 13–17/10 e o dono em 28/10):
+1. **Knight 110+**: resistência e proteção mágica na frente da regen. de mana. Na fase 2 a regen. de mana dele vale o mesmo que a
+   regen. de vida (sem o ×2,5 do Wound Cleansing) e resistência física/elemental e proteção mágica pesam `KN_DEF_FASE2` = 3× (o
+   modo Aguentar não soma outro 3×). Linha típica (faixa IV, nível 170): resist. física 19 > proteção mágica 13 > regen. de mana 12
+   = regen. de vida > resist. fogo 8 (antes: regen. de mana 31 > … > resist. física 6). Até o 109 nada muda (regra de 17/10).
+2. **Paladino**: distância e dano sagrado na frente da regen. de mana — como o ML dos magos, +1 de distância vale no mínimo
+   `PAL_DIST_REGEN_EQUIV` = 2 de regen. de mana/s e 1 % de sagrado `PAL_SAGRADO_REGEN_EQUIV` = 0,6 (linha típica: distância +2 =
+   5,5 > sagrado 6 % = 4,9 > regen. de mana 3,45 = 4,7; antes 0,3 e 0,8). Com a mana sobrando a fórmula volta a mandar.
+3. **Knight**: ataque, corpo a corpo e dano físico valem `KN_ATAQUE_FATOR` = 3× a fatia dele no dano (6 % de dano físico na arma:
+   0,6 → 1,8 pt).
+No depósito do dono (31/10, nível 175): o Knight passa a preferir a demon armor (armadura pura) à golden armor com regen.; metal
+spats 11,5 → 23,6; plate legs com regen. 58,5 → 46,1; crystal ring regen. 1,6 14,4 → 5,8. Paladino: nada muda no depósito (não há
+peça de distância/sagrado). Testes: 3 novos em equip.test.js; melhorias/sobreviver/equip ajustados à regra nova.

@@ -90,7 +90,10 @@ t('Paladino: Dano Mágico conta (runa + Caldera + Missile), e divide com Dano F�
     /* 2.11.6 — medido 29/09: 95 % do dano do Paladino é runa + Caldera + Missile */
     assert(P.dano_magico > 10 * P.dano_fisico && P.dano_fisico > 0, JSON.stringify({ m: P.dano_magico, f: P.dano_fisico }));
     const meio = M.pesosDaVoc('PALADIN', { party: { fracMagica: { PALADIN: 0.5 } } });
-    assert(Math.abs(meio.dano_magico - meio.dano_fisico) < 0.001 && meio.distancia > P.distancia, 'fração medida deveria mandar');
+    assert(Math.abs(meio.dano_magico - meio.dano_fisico) < 0.001 && meio.distancia >= P.distancia, 'fração medida deveria mandar'); // 2.38.0: o piso da distância pode empatar
+    /* com a mana quase de graça (piso da 2.38.0 baixo), a fórmula da distância aparece: mais tiro = mais distância */
+    const barato = { dpm: { PALADIN: 0.1 } }, P2 = M.pesosDaVoc('PALADIN', { party: barato }), meio2 = M.pesosDaVoc('PALADIN', { party: Object.assign({ fracMagica: { PALADIN: 0.5 } }, barato) });
+    assert(meio2.distancia > P2.distancia, 'fórmula: ' + JSON.stringify([P2.distancia, meio2.distancia]));
 });
 t('Knight: +1 de ataque vale quase o mesmo que +1 de skill (golpe e Berserk são simétricos)', () => {
     const P = M.pesosDaVoc('KNIGHT');
@@ -563,25 +566,29 @@ t('2.16.0: Épico sem linha útil vai para as sobras (não é base de forja); É
 });
 t('2.16.0: Paladino — mínimo do tiro é 60 % do máximo (update 1.0.13): +1 de distância vale um pouco mais que antes; 2.34.3: + as Ethereal Spears', () => {
     /* nível 67, distância 36 (REF_SK): antes 0,045·25/(13,4 + 0,045·25·36) = 2,08 % do tiro; agora 0,09·25/(13,4 + 0,09·25·36) = 2,40 % */
-    const P = M.pesosDaVoc('PALADIN', null);
+    /* 2.38.0: com a mana quase de graça o piso (2 × regen. de mana) sai da frente e a fórmula aparece; na referência vale o piso */
+    const P = M.pesosDaVoc('PALADIN', { party: { dpm: { PALADIN: 0.1 } } });
     const tiro = 100 * (0.09 * 25) / (67 / 5 + 0.09 * 25 * 36);
     /* 2.34.3: as Spears (fórmulas do catálogo) também sobem com a Distância — referência: 30 % do dano dele */
     const spear = (100 * (2 / 3) / (67 / 5 + (36 + 25) * 2 / 3) + 100 * 5.6 / (67 / 5 + 10 + 5.6 * 36)) / 2;
     const esperado = 0.26 * (0.05 * tiro + 0.3 * spear);
     assert(Math.abs(P.distancia - esperado) < 0.01, `distância ${P.distancia} ≠ ${esperado}`);
+    const ref = M.pesosDaVoc('PALADIN', null);
+    assert(Math.abs(ref.distancia - Math.max(esperado, 2 * ref.regen_mana)) < 0.01, `referência: o maior entre a fórmula e 2 × regen. (${ref.distancia})`);
     assert(P.distancia > 5 * 0.26 * 0.05 * tiro, 'com as Spears a Distância vale mais de 5× o que valia só pelo tiro');
     assert(P.distancia > 0.26 * 0.05 * 100 * (0.045 * 25) / (67 / 5 + 0.045 * 25 * 36), 'deveria valer mais que pela fórmula antiga');
     assert(M.REGRAS_VOCACAO.PALADIN.some(x => /BESTA/.test(x)) && M.REGRAS_VOCACAO.SORCERER.some(x => /NÍVEL MÁGICO/.test(x)), 'regras por vocação em palavras');
 });
 t('2.34.3 Paladino: Distância medida nas Spears manda (fracDist), ML dele cai o que as Spears não usam, dano sagrado é nobre na arma e no colar', () => {
-    const ref = M.pesosDaVoc('PALADIN', null);
-    const comSpear = M.pesosDaVoc('PALADIN', { party: { fracDist: 0.6, fracMagica: { PALADIN: 0.95 } } });
-    const semSpear = M.pesosDaVoc('PALADIN', { party: { fracDist: 0, fracMagica: { PALADIN: 0.95 } } });
+    const barato = { PALADIN: 0.1 }; // 2.38.0: mana quase de graça → o piso da distância/sagrado sai da frente e a fórmula aparece
+    const ref = M.pesosDaVoc('PALADIN', { party: { dpm: barato } });
+    const comSpear = M.pesosDaVoc('PALADIN', { party: { fracDist: 0.6, fracMagica: { PALADIN: 0.95 }, dpm: barato } });
+    const semSpear = M.pesosDaVoc('PALADIN', { party: { fracDist: 0, fracMagica: { PALADIN: 0.95 }, dpm: barato } });
     assert(comSpear.distancia > ref.distancia && ref.distancia > semSpear.distancia && semSpear.distancia > 0, JSON.stringify([semSpear.distancia, ref.distancia, comSpear.distancia]));
     assert(comSpear.nivel_magico < ref.nivel_magico && ref.nivel_magico < semSpear.nivel_magico, 'as Spears não usam ML: ' + JSON.stringify([semSpear.nivel_magico, ref.nivel_magico, comSpear.nivel_magico]));
     assert(Math.abs(comSpear.dano_elem_sagrado - ref.dano_elem_sagrado) < 1e-9 && ref.dano_elem_sagrado > ref.dano_elem_fogo * 5, 'sagrado = fracSagrado × fatia; os outros elementos só o resto');
     /* tudo medido (Spears + sagrado = toda a magia): nada sobra para os outros elementos, e nunca negativo */
-    const cheio = M.pesosDaVoc('PALADIN', { party: { fracDist: 0.5, fracSagrado: 0.5, fracMagica: { PALADIN: 0.95 } } });
+    const cheio = M.pesosDaVoc('PALADIN', { party: { fracDist: 0.5, fracSagrado: 0.5, fracMagica: { PALADIN: 0.95 }, dpm: barato } });
     assert(cheio.dano_elem_fogo === 0 && cheio.distancia > 0, JSON.stringify([cheio.dano_elem_fogo, cheio.distancia]));
     const colar = (id) => ({ nome: 'x', slot: 'necklace', attrs: {}, forja: F(1, [id, 5]) });
     assert(M.encaixeNobre(colar('dano_elem_sagrado'), 'PALADIN') && !M.encaixeNobre(colar('dano_elem_sagrado'), 'KNIGHT') && !M.encaixeNobre(colar('dano_elem_sagrado'), 'SORCERER'), 'dano sagrado: nobre só para o Paladino');
@@ -826,4 +833,33 @@ t('2.32.2 wand/rod acima do nível não atira (medido: everblazing nível 65 no 
     assert(tiro(baixo) === 0, 'no nível 8 o tiro e a mana do tiro não entram');
     assert(tiro(alto) === 2, 'no nível 70 entram');
     assert(baixo.detalhe.some(d => d.id === 'magiclevelpoints' && d.pt > 0), 'o +1 de nível mágico continua valendo');
+});
+/* 2.38.0 — as 3 decisões do dono de 31/10 (vídeos lidos pelo Antigravity, conferidos em data/videos/conferencia-2026-10-31.md) */
+t('2.38.0 decisão 1: Knight 110+ — resistência física e proteção mágica na frente da regen. de mana; no 90 nada muda', () => {
+    const lin = (P, id, v) => P[id] * v; // linha típica da faixa IV
+    const k170 = M.pesosDaVoc('KNIGHT', { nivel: 170 }), k90 = M.pesosDaVoc('KNIGHT', { nivel: 90 });
+    assert(lin(k170, 'resist_fisica', 1.05) > lin(k170, 'regen_mana', 3.45) && lin(k170, 'protecao_magica', 2.5) > lin(k170, 'regen_mana', 3.45), JSON.stringify([lin(k170, 'resist_fisica', 1.05), lin(k170, 'protecao_magica', 2.5), lin(k170, 'regen_mana', 3.45)]));
+    assert.strictEqual(k170.regen_mana, k170.regen_vida, 'na fase 2 regen. de mana = regen. de vida (sem o ×2,5)');
+    assert(lin(k90, 'regen_mana', 3.45) > 5 * lin(k90, 'resist_fisica', 1.05), 'fase 1: a regra de 17/10 continua (regen. de mana na frente)');
+    assert(k90.regen_mana > k90.regen_vida * 2, 'fase 1: ×2,5 do Wound Cleansing');
+    const ag = M.pesosDaVoc('KNIGHT', { nivel: 170, sobreviver: true });
+    assert(Math.abs(ag.resist_fisica - k170.resist_fisica) < 1e-9, 'o modo aguentar não soma outro 3× à resistência');
+});
+t('2.38.0 decisão 2: Paladino — distância e dano sagrado (linha típica) na frente da regen. de mana', () => {
+    for (const nivel of [90, 170]) {
+        const p = M.pesosDaVoc('PALADIN', { nivel });
+        assert(p.distancia * 2 > p.regen_mana * 3.45 && p.dano_elem_sagrado * 6 > p.regen_mana * 3.45, nivel + ': ' + JSON.stringify([p.distancia * 2, p.dano_elem_sagrado * 6, p.regen_mana * 3.45]));
+        assert.strictEqual(p.skilldist, p.distancia, 'distância de fábrica (skilldist) com o mesmo peso');
+    }
+    const s = M.pesosDaVoc('SORCERER', { nivel: 170 }), k = M.pesosDaVoc('KNIGHT', { nivel: 170 });
+    assert(s.distancia === 0 && k.distancia === 0, 'o piso é só do Paladino');
+});
+t('2.38.0 decisão 3: Knight — ataque, corpo a corpo e dano físico 3×; +1 de ataque ainda ≈ +1 de skill', () => {
+    const k = M.pesosDaVoc('KNIGHT', { nivel: 170 }), s = M.pesosDaVoc('KNIGHT', { nivel: 170, party: { share: { KNIGHT: 0.1 } } });
+    assert(Math.abs(k.dano_fisico - 3 * 0.1) < 0.01, 'dano físico = 3 × a fatia (10 %): ' + k.dano_fisico);
+    assert(k.attack / k.corpo_a_corpo > 0.7 && k.attack / k.corpo_a_corpo < 1.3 && k.skillaxe === k.corpo_a_corpo);
+    assert.strictEqual(s.dano_fisico, k.dano_fisico);
+    const arma = (linha) => ({ nome: 'stonecutter axe', slot: 'weapon', attrs: base['stonecutter axe'] ? base['stonecutter axe'].attrs : { attack: 50, slot: 'weapon' }, forja: F(1, linha) });
+    const comFis = M.pontuarPeca(arma(['dano_fisico', 6]), 'KNIGHT', { nivel: 170 }).pontos, sem = M.pontuarPeca({ nome: 'stonecutter axe', slot: 'weapon', attrs: arma([]).attrs, forja: F(0) }, 'KNIGHT', { nivel: 170 }).pontos;
+    assert(comFis - sem > 1.5, 'linha de 6 % de dano físico na arma do Knight vale > 1,5 pt: ' + (comFis - sem));
 });

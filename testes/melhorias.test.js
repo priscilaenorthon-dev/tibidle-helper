@@ -72,10 +72,15 @@ t('SEGURANÇA (2.34.2): regen. de mana que sai só passa como TROCA quando a ré
     const of = r2.porVoc.KNIGHT.legs.ofertas;
     assert(of.length === 1 && of[0].seguro && of[0].recomendada && of[0].trocas.length === 1 && of[0].trocas[0].id === 'regen_mana', 'Zaoan +2 resist. física: ' + JSON.stringify(of.map(o => [o.nome, o.ganho, o.perdas, o.trocas, o.potenciaBaixa])));
     assert.strictEqual(r2.porVoc.KNIGHT.legs.escondidas.mesmoNivel, 0, 'mesma armadura (8 = 8) não esconde mais quando a régua ganha');
-    /* sem o refino a Zaoan de resist. 2 % perde para a regen. 1,5 pela régua (55 × 57 pt) → não aparece: a regra não dá presente */
+    /* sem o refino: até a 2.37 a Zaoan de resist. 2 % perdia para a regen. 1,5 (55 × 57 pt). 2.38.0 (dono, 31/10: no Knight 110+
+     * a resistência vem antes da regen. de mana) — agora ela ganha e aparece como troca */
     const c3 = M.mlCandidatosMercado({ pernas: [copia(41, 'zaoan legs', 5000, Object.assign(F(1, ['resist_fisica', 2]), { potenciaBase: 400 }))] }, BASE);
     const r3 = M.mlAvaliar(porVoc2, c3, { nivel: 160 }, {});
-    assert.strictEqual(r3.porVoc.KNIGHT.legs.ofertas.length, 0, JSON.stringify(r3.porVoc.KNIGHT.legs.ofertas.map(o => [o.nome, o.ganho])));
+    const of3 = r3.porVoc.KNIGHT.legs.ofertas;
+    assert(of3.length === 1 && of3[0].seguro && of3[0].trocas[0].id === 'regen_mana', JSON.stringify(of3.map(o => [o.nome, o.ganho])));
+    /* no nível 90 (fase 1) a regra antiga continua: a regen. de mana do Knight vale 2,5× e a Zaoan sem refino não aparece */
+    const r4 = M.mlAvaliar(porVoc2, c3, { nivel: 90 }, {});
+    assert.strictEqual(r4.porVoc.KNIGHT.legs.ofertas.length, 0, JSON.stringify(r4.porVoc.KNIGHT.legs.ofertas.map(o => [o.nome, o.ganho])));
 });
 t('2.23.2 magos: regen. de mana que sai para entrar nível mágico NÃO é perda (spellbook +2 ML no lugar do escudo com regen.); sem ML a mais, continua perda', () => {
     BASE['spellbook of mind control'] = { attrs: { weaponType: 'spellbook', defense: 18, magiclevelpoints: 2, vocation: 'sorcerer, druid' } };
