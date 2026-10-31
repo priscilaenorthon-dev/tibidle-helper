@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.38.1
+// @version      2.38.2
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.38.1';
+    const VERSAO = '2.38.2';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -3933,7 +3933,7 @@
                 try {
                     const x = await aplicarPlanoSocket(r, voc);
                     total += x.n; if (x.cacando && !x.eco) semEco++;
-                    log(`  ${voc}: ` + r.plano.map(p => `${p.av.m.name} ≥${p.minimo}`).join(' · ') + (x.cacando ? (x.eco ? ' ✓ servidor confirmou' : ' (sem eco do servidor)') : ' (na cidade: vale na próxima caçada)'), 'ok');
+                    log(`  ${voc}: ` + r.plano.map(p => `${p.av.m.name} ≥${p.minimo}`).join(' · ') + (r.extras ? ' + padrão forte (vida, mana, defesa, suporte)' : '') + (x.cacando ? (x.eco ? ' ✓ servidor confirmou' : ' (sem eco do servidor)') : ' (na cidade: vale na próxima caçada)'), 'ok');
                 } catch (e) { log(`  ${voc}: falhou pelo socket — ${e.message}`, 'erro'); }
                 await dorme(150);
             }
@@ -10311,6 +10311,7 @@
     .tb-cel .tb-ico .tb-rot{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:9px/1 system-ui,-apple-system,sans-serif;letter-spacing:.2px}
     .tb-cel .tb-ico .tb-dot{right:6px}
     .tb-cel #tb-alca,.tb-cel #tb-esconder{width:40px;height:52px;margin:0}
+    .tb-cel #tb-alca{position:sticky;left:0;z-index:2;background:var(--tb-bg);border-radius:8px 0 0 8px}
     .tb-cel #tb-alca::before{width:9px;height:24px;background:repeating-linear-gradient(90deg,#56607a 0 2px,transparent 2px 4px)}
     .tb-cel #tb-gaveta{left:0!important;right:0!important;top:auto!important;bottom:0!important;width:auto;height:50vh;height:50dvh;max-height:none!important;border-radius:14px 14px 0 0;font-size:13px}
     .tb-cel #tb-cab{cursor:default;touch-action:auto;min-height:46px}
@@ -10488,7 +10489,10 @@
              * e desce; a gaveta é folha inferior (CSS). Com a folha aberta, o
              * trilho fica logo acima dela em vez de sumir embaixo. */
             const th = t.offsetHeight || 58;
-            let y = alturaDoTrilhoCel(H, th, u, _arrasto);
+            /* v2.38.2 — no lobby/login (sem a tela do jogo) o trilho no meio da tela cobria a caixa "Confirme que você não é um robô"
+             * do Cloudflare (teste de iPhone, 31/10): sobe para o topo até o jogo abrir; a altura guardada volta sozinha depois */
+            const semJogo = !tid('mobile-shell') && !tid('mobile-nav') && !tid('shell');
+            let y = semJogo && !_arrasto ? 0 : alturaDoTrilhoCel(H, th, u, _arrasto);
             _pos = { x: 0, y };
             if (g.classList.contains('on')) { const topo = g.getBoundingClientRect().top; if (y + th > topo) y = Math.max(0, topo - th); }
             cx.style.left = ''; cx.style.top = y + 'px';

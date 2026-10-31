@@ -6894,3 +6894,18 @@ seguem a 2.38.0 (o teste da Zaoan legs com resist. física 2 % em Melhorias pass
   regen. de mana, e que em qualquer nível o Paladino põe distância/sagrado na frente e o Cavaleiro vale ataque/dano físico 3×.
 - Fica como estava, de propósito: "Paladino por último nas compras" da fase 2 (vídeos de 17/10) — é a ordem da fila de compra,
   não o peso das linhas; e o Mercado, que precifica pelo valor da linha (`MK_ATR_NOBRES`), não pela régua.
+
+### 2.38.2 — teste de iPhone (31/10)
+Dono: "confere se a automação está rodando direito no meu iPhone; faça os testes". No Playwright com a tela do iPhone 13 (390×844,
+toque de verdade pelo CDP `Input.dispatchTouchEvent`), helper injetado por `addInitScript`. Com o user-agent de Safari o Cloudflare
+recusou a verificação (Chrome fingindo ser Safari) — ficou sem trocar o user-agent; o layout de celular depende só da largura.
+- **Ok**: as 14 abas abrem pelo toque, nada passa dos 390 px; Status lê nível e ouro do HUD de celular; Magia › Discord abre na
+  caçada atual (Shadow Nexus, "Amigo do Whatsapp") e APLICAR mandou os 4 pelo socket ("✓ servidor confirmou", a mesma barra que o
+  dono tinha); Magia › Boss lista 122 bosses com "padrão forte" e "aplicar sozinho" ligados, APLICAR NOS 4 confirmou nos 4 e o
+  Discord devolveu a barra da caçada; arrastar o trilho com o dedo sobe/desce e fica depois do repinte. Os erros de CSP do console
+  eram só da janelinha do Cloudflare, onde o `addInitScript` também injeta (o app do iPhone não roda nela); a página não tem CSP.
+- **Corrigido**: (1) no lobby o trilho ficava no meio da tela, por cima da caixa "Confirme que você não é um robô" — agora sobe
+  para o topo até o jogo abrir e volta à altura guardada; (2) com o trilho rolado para o lado (Forja, Radar, Log) a alça de
+  arrastar saía da tela — agora fica presa na ponta esquerda (`position: sticky`); (3) o Log do APLICAR do Boss diz "+ padrão forte
+  (vida, mana, defesa, suporte)" quando ele vai junto (ia, mas o Log só mostrava o ataque).
+- Não testado: o app Userscripts do Safari de verdade (`@inject-into page`) e entrar num boss pelo celular (gasta chave).
