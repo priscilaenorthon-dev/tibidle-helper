@@ -6882,3 +6882,15 @@ legenda; as três já estavam no texto das regras do helper — vídeos de 13–
 No depósito do dono (31/10, nível 175): o Knight passa a preferir a demon armor (armadura pura) à golden armor com regen.; metal
 spats 11,5 → 23,6; plate legs com regen. 58,5 → 46,1; crystal ring regen. 1,6 14,4 → 5,8. Paladino: nada muda no depósito (não há
 peça de distância/sagrado). Testes: 3 novos em equip.test.js; melhorias/sobreviver/equip ajustados à regra nova.
+
+### 2.38.1 — o resto do helper com a régua nova (31/10)
+Dono: "verifica se tem que ajustar mais alguma parte com essa nova fórmula, tipo a aba Melhorias e as demais". Conferido:
+Melhorias (`mlAvaliar`/`mlPerdas`), Forja (`planoForja`, `linhasUteis`), Aguentar, Venda e Desmanche usam `pesosDaVoc` e já
+seguem a 2.38.0 (o teste da Zaoan legs com resist. física 2 % em Melhorias passou a mostrar a troca no nível 160). Ajustado:
+- **resistência física vira encaixe nobre do Knight** (`NOBRE_DEFESA`): cai 1 em 132 no sorteio e agora vem antes da regen. de
+  mana, então peça com ela não vai ao desmanche (vai ao Mercado) e sair dela conta como perda em Melhorias. Proteção mágica e
+  resistência a elemento ficaram de fora (10 em 132: travariam o desmanche de muita sobra).
+- **texto da régua no Equip** (o "?" da fase): diz que no Cavaleiro 110+ resistência e proteção mágica pesam 3× e vêm antes da
+  regen. de mana, e que em qualquer nível o Paladino põe distância/sagrado na frente e o Cavaleiro vale ataque/dano físico 3×.
+- Fica como estava, de propósito: "Paladino por último nas compras" da fase 2 (vídeos de 17/10) — é a ordem da fila de compra,
+  não o peso das linhas; e o Mercado, que precifica pelo valor da linha (`MK_ATR_NOBRES`), não pela régua.

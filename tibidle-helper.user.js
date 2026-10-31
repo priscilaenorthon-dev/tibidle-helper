@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.38.0
+// @version      2.38.1
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.38.0';
+    const VERSAO = '2.38.1';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -7978,7 +7978,9 @@
      * A peça com um desses encaixes pode não ser a melhor nem reserva de ninguém hoje, mas é o
      * que a comunidade guarda — não vai para a lista de sobras (nem para o Mercado). */
     /* v2.11.19 — por vocação: regen. de vida só é nobre no Knight; na arma/colar, o que aquela vocação usa. */
-    const NOBRE_DEFESA = { KNIGHT: ['regen_mana', 'regen_vida'], PALADIN: ['regen_mana'], SORCERER: ['regen_mana'], DRUID: ['regen_mana'] };
+    /* v2.38.1 — resistência física é nobre no Knight (decisão do dono de 31/10: no 110+ ela vem antes da regen. de mana; cai 1 em 132
+     * no sorteio da forja). Proteção mágica e resistência a elemento não: caem 10 em 132 e travariam o desmanche de muita sobra. */
+    const NOBRE_DEFESA = { KNIGHT: ['regen_mana', 'regen_vida', 'resist_fisica'], PALADIN: ['regen_mana'], SORCERER: ['regen_mana'], DRUID: ['regen_mana'] };
     /* v2.16.3 — chance de crítico é nobre para Paladino e magos (vídeos: "arma: ML ou crítico"; base 0 % no jogo) */
     /* v2.34.3 — dono, 28/10: "Paladino: regen. de mana, crítico, Distância e Dano Sagrado" — dano sagrado é nobre na arma e no colar dele */
     const NOBRE_ATAQUE = { KNIGHT: ['corpo_a_corpo', 'dano_fisico'], PALADIN: ['distancia', 'dano_elem_sagrado', 'nivel_magico', 'dano_magico', 'dano_fisico', 'critico_chance'],
@@ -12008,8 +12010,8 @@
         /* v2.24.0 — a fase da régua (vídeos de 13–17/10): até o 110 regen. de mana; depois defesa, proteção mágica e resistência */
         { const fase = faseEquip(EQUIP.ctx), nv = EQUIP.ctx && Number(EQUIP.ctx.nivel) > 0 ? Number(EQUIP.ctx.nivel) : null;
           info += `<div class="tb-mut" style="font-size:10.5px">Régua: <b>fase ${fase}</b>${nv != null ? ` (nível ${nv}${fase === 2 ? ' ≥' : ' <'} ${FASE2_NIVEL})` : ' (nível não lido)'} — ${fase === 2
-              ? 'defesa, proteção mágica e resistência (fogo por padrão, ou o elemento medido no mapa) valem cheias no Cavaleiro; vida conta nos magos e no Paladino; base de forja e peça trabalhada só com potência ≥ 350; Paladino por último nas compras. Vídeos de 13–17/10: "depois do 110–120 não se brinca mais de regen. de mana".'
-              : 'regen. de mana em 1º (Storming: "até o 80 é o melhor do mundo"); a defesa do Cavaleiro vale pelo aperto medido. A partir do nível ' + FASE2_NIVEL + ' a régua passa para a fase 2 (defesa e resistência).'}</div>`; }
+              ? 'no Cavaleiro, resistência física, resistência ao elemento (fogo por padrão, ou o medido no mapa) e proteção mágica pesam 3× e vêm antes da regen. de mana, que vale o mesmo que a regen. de vida (dono, 31/10); vida conta nos magos e no Paladino; base de forja e peça trabalhada só com potência ≥ 350; Paladino por último nas compras. Vídeos de 13–17/10: "depois do 110–120 não se brinca mais de regen. de mana".'
+              : 'regen. de mana em 1º (Storming: "até o 80 é o melhor do mundo"); a defesa do Cavaleiro vale pelo aperto medido. A partir do nível ' + FASE2_NIVEL + ' a régua passa para a fase 2 (defesa e resistência).'} Em qualquer nível: no Paladino distância e dano sagrado vêm antes da regen. de mana; no Cavaleiro ataque, corpo a corpo e dano físico valem 3× (dono, 31/10).</div>`; }
         /* v2.18.2 — por que armadura/defesa do Knight valem menos agora (ou cheias) */
         { const pm = EQUIP.ctx && EQUIP.ctx.party, hp = pm && Number.isFinite(pm.hpMinK) ? pm.hpMinK : null;
           /* v2.20.0 — a ficha oficial da defesa do Knight (regras do jogo, com o que ele veste) */

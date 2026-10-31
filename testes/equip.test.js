@@ -863,3 +863,8 @@ t('2.38.0 decisão 3: Knight — ataque, corpo a corpo e dano físico 3×; +1 de
     const comFis = M.pontuarPeca(arma(['dano_fisico', 6]), 'KNIGHT', { nivel: 170 }).pontos, sem = M.pontuarPeca({ nome: 'stonecutter axe', slot: 'weapon', attrs: arma([]).attrs, forja: F(0) }, 'KNIGHT', { nivel: 170 }).pontos;
     assert(comFis - sem > 1.5, 'linha de 6 % de dano físico na arma do Knight vale > 1,5 pt: ' + (comFis - sem));
 });
+t('2.38.1: resistência física é encaixe nobre do Knight (não vai ao desmanche); proteção mágica e resistência a elemento não', () => {
+    const anel = (id) => ({ nome: 'crystal ring', slot: 'ring', attrs: {}, forja: F(1, [id, 0.6]) });
+    assert(M.encaixeNobre(anel('resist_fisica'), 'KNIGHT') && !M.encaixeNobre(anel('resist_fisica'), 'SORCERER'), 'resist. física: nobre só no Knight');
+    assert(!M.encaixeNobre(anel('protecao_magica'), 'KNIGHT') && !M.encaixeNobre(anel('resist_fogo'), 'KNIGHT'), 'comuns no sorteio: não travam o desmanche');
+});
