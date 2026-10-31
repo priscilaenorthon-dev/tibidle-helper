@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.38.2
+// @version      2.38.3
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.38.2';
+    const VERSAO = '2.38.3';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -4342,21 +4342,10 @@
          * parou com as magias que eu já tinha deixado"). Só a primeira aplicação de uma sequência tira a foto. */
         /* no Scan, quem guarda e devolve a foto é o próprio Scan (v2.28.3) */
         if (!SCAN.ativo && !SCAN.ocupado && !ler('dc_foto', null) && ESTADO_WS.profiles) guardar('dc_foto', { t: Date.now(), hunt: hunt.title, setup: s.titulo, profiles: fotoPerfis() });
-        /* v2.29.7 — setup com poção do mapa: guarda as SUAS poções antes (uma vez); o próximo setup sem a marca as devolve */
-        let guardada = ler('dc_pocao_dono', null);
+        /* v2.38.3 — sem poção guardada (era da 2.29.7): o "Northon - <mapa>" fica com as poções que estão. Apaga a que sobrou das
+         * versões antigas, que podia estar a ≤100 % e voltaria no próximo Northon. */
+        if (ler('dc_pocao_dono', null)) guardar('dc_pocao_dono', null);
         const ctx = dcCtx(), completo = dcCompleto(s);
-        if (completo && !guardada) {
-            const g = {};
-            for (const voc of VOCS) {
-                const c = configAtiva(voc); if (!c) continue;
-                const n = normalizarConfig(c), vida = (n.heals || []).find(h => h && /potion/i.test(h.name || ''));
-                g[voc] = { vida: vida ? { name: vida.name, percent: vida.percent } : null, mana: n.manaPotion && n.manaPotion.name ? { name: n.manaPotion.name, percent: n.manaPotion.percent } : null };
-            }
-            guardada = { t: Date.now(), setup: s.titulo, vocs: g };
-            guardar('dc_pocao_dono', guardada);
-        }
-        /* v2.36.9 — também no post completo: a poção que o post não mostra volta a ser a sua (a guardada) */
-        if (guardada && guardada.vocs) ctx.pocaoDono = guardada.vocs;
         let total = 0;
         for (const voc of VOCS) {
             const atual = configAtiva(voc);
@@ -4370,8 +4359,7 @@
             await dorme(150);
         }
         log(`Discord: ${total}/4 personagens configurados com "${s.titulo}"` + (s.lure ? ` · lure do post: ${s.lure} (o lure fica como está)` : ''), total ? 'ok' : 'erro');
-        if (completo) log(`Discord: "${s.titulo}" aplicado como está no post (poções incluídas); as suas voltam no próximo "Northon - <mapa>"`, 'info');
-        else if (ctx.pocaoDono && total) { guardar('dc_pocao_dono', null); log(`Discord: as suas poções (de antes de "${guardada.setup}") voltaram`, 'ok'); }
+        if (completo) log(`Discord: "${s.titulo}" aplicado como está no post (poções incluídas); um "Northon - <mapa>" depois mantém estas poções`, 'info');
         renderizar();
     }
     /* @@PERFIS-FIM */
@@ -10077,15 +10065,16 @@
          * setup com poção do mapa entrou), devolve a sua antes da regra da 2.29.4. */
         /* v2.36.9 — POST DO DISCORD = BARRA INTEIRA (dono, 30/10: "se eu clicar para aplicar, aplica tudo como está no post; eu altero
          * manual se quiser"): todo post de jogador conta como `pocaoDoMapa` (dcCompleto). A poção que o post NÃO mostra (os de texto do
-         * Argonaut) fica a sua: a guardada em ctx.pocaoDono, ou a do perfil se ainda não houver guardada. */
+         * Argonaut) fica a sua, a do perfil. */
+        /* v2.38.3 — "NORTHON - <MAPA>" MANTÉM AS POÇÕES (dono, 31/10: "fui no Fire Portal, tem a mana e a vida lá; se eu for para outro
+         * mapa, fica — ele está substituindo tudo para 100"). Até a 2.38.2 o setup sem a marca devolvia a poção GUARDADA antes do último
+         * post completo (ctx.pocaoDono, da 2.29.7); guardada com a barra cheia (modo Mana ou 100 posto à mão), todo Northon voltava a ≤100 %.
+         * Agora a guardada não existe: o Northon fica com a vida e a mana que estão no perfil, nome e %. */
         const doMapa = dcCompleto(setup);
-        const dono = ctx.pocaoDono && ctx.pocaoDono[voc];
         const postVida = !!((Array.isArray(ch.vida) && ch.vida[0]) || (Array.isArray(ch.defesa) && ch.defesa.some(d => d && ehPocao(d[0]))));
         const postMana = !!(Array.isArray(ch.mana) && ch.mana[0]);
-        if ((doMapa && postVida) || dono) cfg.heals = cfg.heals.filter(h => !ehPocao(h.name));
-        if (dono && !(doMapa && postVida) && dono.vida && dono.vida.name) cfg.heals = [{ name: dono.vida.name, percent: dono.vida.percent != null ? dono.vida.percent : 0 }].concat(cfg.heals);
+        if (doMapa && postVida) cfg.heals = cfg.heals.filter(h => !ehPocao(h.name));
         if (doMapa && postMana) cfg.manaPotion = null;
-        else if (dono) cfg.manaPotion = dono.mana && dono.mana.name ? { name: dono.mana.name, percent: dono.mana.percent != null ? dono.mana.percent : 0 } : null;
         const pocaoNaFila = doMapa && Array.isArray(ch.defesa) && ch.defesa.some(d => d && ehPocao(d[0]));
         /* v2.29.8 — a SUA poção também passa pela vocação e pelo nível: um perfil que ficou com a Great Health Potion no Paladino (bug
          * da 2.29.0, ou um deslize na tela de atalhos) não pode "ficar" — sai com aviso e a do post entra (conferida) no lugar */

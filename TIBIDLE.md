@@ -6909,3 +6909,15 @@ recusou a verificação (Chrome fingindo ser Safari) — ficou sem trocar o user
   arrastar saía da tela — agora fica presa na ponta esquerda (`position: sticky`); (3) o Log do APLICAR do Boss diz "+ padrão forte
   (vida, mana, defesa, suporte)" quando ele vai junto (ia, mas o Log só mostrava o ataque).
 - Não testado: o app Userscripts do Safari de verdade (`@inject-into page`) e entrar num boss pelo celular (gasta chave).
+
+## 2.38.3 — "Northon - <mapa>" mantém as poções de vida e mana (31/10)
+Dono, 31/10: "fui no Fire Portal, tem a mana e a vida lá; se eu for para outro mapa, fica — ele está substituindo tudo para 100".
+- **Causa**: desde a 2.29.7 (Draken Walls), aplicar um post completo (de jogador, ou com `pocaoDoMapa`) guardava as poções de antes
+  em `dc_pocao_dono`, e o próximo "Northon - <mapa>" devolvia essa guardada em vez de manter a barra. Guardada numa hora de barra
+  cheia (modo Mana da 2.37, ou 100 posto à mão), todo Northon voltava com vida e mana a ≤100 %.
+- **Agora**: a guardada não existe mais (`dcConfigDe` não lê `ctx.pocaoDono`; `aplicarDiscord` não grava e apaga a que sobrou).
+  "Northon - <mapa>" fica com a poção de vida e a de mana que estão no perfil, nome e %; só entra a do setup em slot vazio ou quando a
+  sua não é da vocação/nível (regra da 2.29.4/2.29.8). Post de jogador continua aplicando as poções do post (2.36.9).
+- O modo Mana segue igual: qualquer APLICAR da Magia devolve a barra de antes do Mana primeiro, e só depois aplica o setup.
+- Testes: `discord.test.js` — a guardada a 100 % é ignorada; Northon depois do Draken Walls mantém a Ultimate Health 45 % e a
+  Strong Mana 35 % que estavam.

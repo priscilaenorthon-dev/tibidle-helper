@@ -77,14 +77,15 @@ t('dcConfigDe: defesa dada substitui as curas e a poção de vida do dono fica n
     assert.strictEqual(r.cfg.ammo, 'burst arrow');
     assert.deepStrictEqual(r.avisos, []);
 });
-t('dcConfigDe (2.36.9): post de jogador aplica as poções do post; poção que o post não mostra fica a sua (ou a guardada)', () => {
+t('dcConfigDe (2.36.9): post de jogador aplica as poções do post; poção que o post não mostra fica a sua', () => {
     assert.strictEqual(M.dcCompleto(SETUP), true);
     assert.strictEqual(M.dcCompleto(SETUP_N), false);
     const k = M.dcConfigDe(SETUP, 'KNIGHT', ATUAL, CTX);
     assert.deepStrictEqual(k.cfg.manaPotion, { name: 'Mana Potion', percent: 30 }, 'a mana do post entra');
     assert.deepStrictEqual(k.cfg.heals, [{ name: 'Great Health Potion', percent: 45 }, { name: 'Wound Cleansing', percent: 50 }], 'o post não tem vida: fica a sua');
-    const g = M.dcConfigDe(SETUP, 'KNIGHT', ATUAL, Object.assign({}, CTX, { pocaoDono: { KNIGHT: { vida: { name: 'Ultimate Health Potion', percent: 40 }, mana: null } } }));
-    assert.deepStrictEqual(g.cfg.heals[0], { name: 'Ultimate Health Potion', percent: 40 }, 'sem vida no post: a guardada volta');
+    /* 2.38.3 — uma guardada velha (a ≤100 % do modo Mana) não volta mais */
+    const g = M.dcConfigDe(SETUP, 'KNIGHT', ATUAL, Object.assign({}, CTX, { pocaoDono: { KNIGHT: { vida: { name: 'Ultimate Health Potion', percent: 100 }, mana: null } } }));
+    assert.deepStrictEqual(g.cfg.heals, k.cfg.heals, 'a guardada é ignorada');
     assert.deepStrictEqual(g.cfg.manaPotion, { name: 'Mana Potion', percent: 30 });
     const p = M.dcConfigDe(SETUP, 'PALADIN', { heals: [{ name: 'Health Potion', percent: 30 }, { name: 'Intense Healing', percent: 70 }], manaPotion: { name: 'Strong Mana Potion', percent: 20 }, skills: [], minCreatures: {}, supports: [] }, CTX);
     assert.deepStrictEqual(p.cfg.heals, [{ name: 'Great Spirit Potion', percent: 40 }, { name: 'Salvation', percent: 30 }, { name: 'Divine Healing', percent: 60 }], 'a vida do post substitui a sua');
@@ -375,7 +376,7 @@ t('2.29.5 Worker Golem do Matheustlm (23/10): 1º post real do mapa substitui o 
     assert.deepStrictEqual(M.dcConfigDe(s, 'KNIGHT', null, ctx(94)).avisos, ['ataque 4: Annihilation pede nível 110 (você tem 94) — slot pulado']);
     for (const voc of ['PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx(94)).avisos, [], voc + ' 94');
 });
-t('2.29.7 poção do mapa (Draken Walls, 26/10): a poção do post substitui a sua e entra na posição da fila; outro mapa devolve a sua', () => {
+t('2.29.7 poção do mapa (Draken Walls, 26/10): a poção do post substitui a sua e entra na posição da fila; 2.38.3: o Northon seguinte MANTÉM a que está', () => {
     const s = M.SETUPS_DISCORD.find(x => x.id === 'northon-192');
     assert(s && s.pocaoDoMapa === true, 'northon-192 com pocaoDoMapa');
     const ctx = Object.assign({}, CTX_POT, { nivel: 159, magias: SPELLS });
@@ -388,14 +389,14 @@ t('2.29.7 poção do mapa (Draken Walls, 26/10): a poção do post substitui a s
     const d = M.dcConfigDe(s, 'DRUID', null, ctx);
     assert.deepStrictEqual(d.cfg.heals.map(h => h.name), ['Ultimate Healing', 'Mass Healing', 'Heal Friend', 'Health Potion']);
     assert.strictEqual(d.cfg.manaPotion.name, 'Great Mana Potion');
-    /* outro mapa (sem a marca) com as suas guardadas: volta a sua, nome e % */
+    /* 2.38.3 (dono, 31/10): outro mapa "Northon" fica com as poções que estão, nome e % — nem a guardada a ≤100 % volta */
     const outro = M.SETUPS_DISCORD.find(x => x.id === 'northon-221');
-    const dono = { KNIGHT: { vida: { name: 'Ultimate Health Potion', percent: 36 }, mana: { name: 'Mana Potion', percent: 20 } } };
+    const dono = { KNIGHT: { vida: { name: 'Ultimate Health Potion', percent: 100 }, mana: { name: 'Mana Potion', percent: 100 } } };
     const v = M.dcConfigDe(outro, 'KNIGHT', k.cfg, Object.assign({}, ctx, { pocaoDono: dono }));
-    assert.deepStrictEqual(v.cfg.heals[0], { name: 'Ultimate Health Potion', percent: 36 });
-    assert.deepStrictEqual(v.cfg.manaPotion, { name: 'Mana Potion', percent: 20 });
+    assert.deepStrictEqual(v.cfg.heals.find(h => /Potion/.test(h.name)), { name: 'Ultimate Health Potion', percent: 45 });
+    assert.deepStrictEqual(v.cfg.manaPotion, { name: 'Strong Mana Potion', percent: 35 });
     assert.strictEqual(v.cfg.heals.filter(h => /Potion/.test(h.name)).length, 1);
-    /* sem nada guardado, a regra da 2.29.4 segue: a poção que está no perfil fica */
+    /* sem nada guardado, a mesma coisa: a poção que está no perfil fica */
     const w = M.dcConfigDe(outro, 'KNIGHT', k.cfg, ctx);
     assert.strictEqual(w.cfg.manaPotion.name, 'Strong Mana Potion');
 });
