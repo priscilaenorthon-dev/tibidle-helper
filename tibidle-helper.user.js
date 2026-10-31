@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.37.1
+// @version      2.37.2
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.37.1';
+    const VERSAO = '2.37.2';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -9497,6 +9497,16 @@
             PALADIN: { vida: ['Strong Health Potion', 30], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 4], ['avalanche rune', 2], ['Ethereal Spear', 1]], defesa: [['Salvation', 30], ['Divine Healing', 75], ['Intense Recovery', 70]], suporte: ['Protect Party'] },
             SORCERER: { mana: ['Mana Potion', 50], ataque: [['Energy Wave', 3], ['avalanche rune', 2], ['Lightning', 1], ['Ice Strike', 1]], defesa: [['Intense Healing', 80]], suporte: ['Magic Shield', 'Enchant Party'] },
             DRUID: { mana: ['Mana Potion', 50], ataque: [['Strong Ice Wave', 3], ['avalanche rune', 2], ['Strong Ice Strike', 1], ['Ice Strike', 1]], defesa: [['Intense Healing', 60], ['Heal Friend', 80]], suporte: ['Magic Shield', 'Heal Party'] } } },
+        /* — 31/10 (2.37.2): 1º setup tirado de VÍDEO. O Antigravity achou o momento; a leitura é do quadro em 1080p (canvas do <video>),
+         *   com os ícones casados com os oficiais (/assets/v242/icons/spells e /items). As barras que o Antigravity escreveu não
+         *   batiam com a tela (data/videos/conferencia-2026-10-31.md) e ficaram de fora. */
+        { id: 'lizard-tvdesouza', hunt: 'Lizard City', huntId: 62, autor: 'TV de Souza', data: '25/10', titulo: 'Lizard City (TV de Souza, 25/10)',
+          lure: 'Extremo', skills: '', nota: '', nivel: '137', obs: 'Vídeo do TV de Souza "Guia de Interface + Rota de UP (Lvl 8 ao 170)", 25/10 (youtu.be/CbY7C9M9SOI?t=2840): as 4 barras abertas na tela ao mesmo tempo. A barra do Feiticeiro é a mesma do vídeo de 12/10 (youtu.be/pCqD61OQDsQ?t=648), mesma party de nível 137 no lure Extremo. Knight e Paladino sem poção de mana (espaço vazio). Duas leituras pelo ícone, sem o texto: a cura do Knight a ≤25 % é Intense Wound Cleansing pelo brilho azul (pode ser Wound Cleansing), e a 4ª magia do Paladino é Lesser Ethereal Spear pelo círculo no canto. A munição do Paladino é virote (ícone na diagonal, haste vermelha = infernal bolt): ele joga de besta.', estatisticas: { xpH: '268,1k', lucroH: '+67,6k', nivel: 137 }, posicoes: '',
+          chars: {
+            KNIGHT: { vida: ['Ultimate Health Potion', 50], mana: ['Mana Potion', 0], ataque: [['Fierce Berserk', 4], ['Berserk', 3], ['Lesser Front Sweep', 1]], defesa: [['Intense Wound Cleansing', 25]], suporte: ['Protector', 'Train Party'] },
+            PALADIN: { vida: ['Great Spirit Potion', 50], mana: ['Mana Potion', 0], ataque: [['Divine Caldera', 4], ['avalanche rune', 3], ['Strong Ethereal Spear', 1], ['Lesser Ethereal Spear', 1]], defesa: [['Salvation', 47], ['Divine Healing', 70], ['Intense Healing', 84], ['Light Healing', 95]], suporte: ['Protect Party'], municao: 'infernal bolt' },
+            SORCERER: { vida: ['Health Potion', 70], mana: ['Mana Potion', 40], ataque: [['Energy Wave', 2], ['avalanche rune', 1]], defesa: [['Ultimate Healing', 39], ['Intense Healing', 70], ['Light Healing', 90]], suporte: ['Enchant Party', 'Magic Shield'] },
+            DRUID: { vida: ['Health Potion', 70], mana: ['Mana Potion', 40], ataque: [['Strong Ice Wave', 2], ['avalanche rune', 1]], defesa: [['Mass Healing', 50], ['Ultimate Healing', 42], ['Intense Healing', 80], ['Heal Friend', 70]], suporte: ['Heal Party', 'Magic Shield'] } } },
         { id: 'vampire-nikelao', hunt: 'Vampire hell', huntId: 50, autor: 'Nikelao', data: '15/10', titulo: 'Vampire hell (Nikelao, 15/10)',
           lure: '', skills: '', nota: '', nivel: '50–70', obs: 'Nikelao (tópico "Rota do UP", em resposta a "quem envia a build para vampire"): "esta me iba bien". Só as barras, sem estatística; a faixa de nível é a da rota do Atlas no mesmo tópico (Vamp 50–70). O suporte do Druida (Heal Party) estava coberto pelo número da recarga.', posicoes: '',
           chars: {

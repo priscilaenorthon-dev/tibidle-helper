@@ -228,6 +228,17 @@ t('Lizard City (Specter): a barra de gelo que ele descreve, não a cópia da Bot
     assert.deepStrictEqual(s.chars.DRUID.ataque.map(a => a[0]), ['Strong Ice Wave', 'avalanche rune', 'Strong Ice Strike', 'Ice Strike']);
     for (const v of ['PALADIN', 'SORCERER']) assert(s.chars[v].ataque.some(a => a[0] === 'avalanche rune'), v);
 });
+t('Lizard City (TV de Souza, vídeo de 25/10): as 4 barras do quadro, no catálogo real, sem avisos no nível 137', () => {
+    const s = M.SETUPS_DISCORD.find(x => x.id === 'lizard-tvdesouza');
+    const ctx = { nivel: 137, magias: SPELLS, pocoes: NOMES_POCOES };
+    for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) {
+        const r = M.dcConfigDe(s, voc, null, ctx);
+        assert.deepStrictEqual(r.avisos, [], voc + ': ' + r.avisos.join('; '));
+    }
+    assert.deepStrictEqual(s.chars.PALADIN.defesa.map(d => d[1]), [47, 70, 84, 95], 'curas do Paladino da forte para a leve');
+    assert.strictEqual(s.chars.PALADIN.municao, 'infernal bolt', 'virote: ele joga de besta');
+    assert.deepStrictEqual([s.chars.SORCERER.vida[1], s.chars.SORCERER.mana[1]], [70, 40], 'a mesma barra do vídeo de 12/10');
+});
 t('dcConfigDe com um setup real (Hive Queen Chamber do Specter) no catálogo real: 4 barras, sem avisos para um nível 150', () => {
     const s = M.SETUPS_DISCORD.find(x => x.id === 'hivequeen-specter');
     const ctx = { nivel: 150, magias: SPELLS, pocoes: NOMES_POCOES };

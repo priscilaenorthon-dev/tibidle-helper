@@ -6854,3 +6854,15 @@ Magma Wolf): ~2 s depois do `hunt_started`, `update_battle_config` com ataque + 
 APLICAR NOS 4 no meio da luta, o que grava `profiles_set` — a volta só mandava `update_battle_config` e o preset ficava com a
 barra de boss. Agora todo `profiles_set` enviado durante uma luta com `boss_foto` marca `presetMexido`, e a volta usa
 `aplicarConfigSocket` (devolve o preset também, na caçada ou na cidade).
+
+### 2.37.2 — Discord: Lizard City do TV de Souza, 1º setup lido de vídeo (31/10)
+O dono pediu ao Antigravity (agente do Google) para ler vídeos do YouTube (`docs/antigravity-videos.md`, `docs/antigravity-itens.md`,
+nomes válidos em `docs/antigravity-nomes.md`). Conferido quadro a quadro: os links e o Analisador batem, mas as barras e as peças
+"lidas na tela" vinham completadas com palpite (mapa errado, % trocados, curas e runas que não estavam na tela, tooltips que não
+existem no segundo citado). Relatório em `data/videos/conferencia-2026-10-31.md` (fora do git). Do que ele achou, entrou só o que
+eu li no quadro: `lizard-tvdesouza` (youtu.be/CbY7C9M9SOI?t=2840, as 4 barras abertas ao mesmo tempo, nível 137, lure Extremo,
+268,1k xp/h, +67,6k/h), ícones casados com `/assets/v242/icons/spells` e `/items`. Knight e Paladino sem poção de mana; Paladino
+de besta (infernal bolt). Duas leituras só pelo ícone: Intense Wound Cleansing ≤25 % no Knight e Lesser Ethereal Spear no Paladino.
+Equip: os vídeos (falas ainda não conferidas, a legenda deu 429) contradizem a conta em 3 pontos — Knight 110+ resistência antes
+de regen. de mana, dano físico/corpo a corpo na arma do Knight, distância antes de regen. de mana no Paladino. Nada mudou no
+Equip: decisão do dono.
