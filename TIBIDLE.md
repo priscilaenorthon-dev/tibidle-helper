@@ -6921,3 +6921,24 @@ Dono, 31/10: "fui no Fire Portal, tem a mana e a vida lá; se eu for para outro 
 - O modo Mana segue igual: qualquer APLICAR da Magia devolve a barra de antes do Mana primeiro, e só depois aplica o setup.
 - Testes: `discord.test.js` — a guardada a 100 % é ignorada; Northon depois do Draken Walls mantém a Ultimate Health 45 % e a
   Strong Mana 35 % que estavam.
+
+## 2.38.4 — "Northon - <mapa>" revistos com os posts de outubro; Discord no kit do Bestiário (31/10)
+Dono, 31/10: "melhorar os padrões dos mapas que têm meu nome; na aba Progresso o kit não tem Discord".
+- **47 "Northon - <mapa>" revistos** (todos os `northon-N` de recomendado ≥ 60; o Shadow Nexus, `northon-222`, é o do dono à mão e
+  ficou). O padrão da 2.28.2 era o do Specter no nível 136; os posts de 20–31/10 (lucasdela, Psyger-0 ×5, TV de Souza, Theus ×2,
+  Pouca Telha, Gus, KairusZ) e os ajustes do dono no Shadow Nexus mudaram quatro coisas, aplicadas por script (scratchpad
+  `revisar-northon.js`, contagens conferidas):
+  - Cavaleiro: Ultimate Health Potion ≤35 (cai para Great na conta de nível menor) e **Train Party**; acima de rec. 160 (os 16 mapas com
+    Intense Recovery), **Protector + Train Party**, como o dono deixou no Shadow Nexus;
+  - Paladino: Ultimate Spirit Potion ≤35, **Salvation 50 antes da Divine Healing** (75; acima de 160: 70 + Intense Healing 85) e
+    **Protect Party** — 10 dos 11 autores de outubro usam;
+  - magos: o golpe forte é o **Ultimate** (Energy/Flame/Ice/Terra Strike — lucasdela, Zumpano, Psyger-0 e o próprio dono); abaixo do
+    nível o `dcConfigDe` põe o Strong no lugar com aviso; Mana Potion 60 → 50 (o Specter usa 50 nos posts mais novos);
+  - Druida: **cura própria primeiro** — Ultimate Healing 60 → Mass Healing 60 → Heal Friend 70 (lição do Draken Walls, 26/10).
+  O ataque, a runa e os limiares de Magic Shield (rec. 126–160) / Intense Recovery (>160) não mudaram. Rótulo "nível 136" → "nível 170".
+- **Progresso › Completar marcos**: o kit agora lista o Discord. Mapa sem setup (nem "Northon - <mapa>") cai no Em área, com aviso no
+  Log — a regra vale para qualquer APLICAR vindo do Scan ou do Bestiário (`_aplicarEmTodos`); na aba Magia o seletor já só lista mapas
+  com setup, então lá nada muda.
+- Outros lugares conferidos: o Scan já tinha o Discord (2.28.3); o Radar não pode ter (o modelo Discord não calcula plano — o ranking
+  precisa do simulador); a calibração do Inteligente segue ignorando Scans de Discord (de propósito: é a conta dele que se calibra).
+- Testes: `discord.test.js` — padrão novo nos 46 + Draken Walls, sem aviso no nível 170; no nível 85 o Ultimate vira Strong (com aviso) sem slot vazio; Draken Walls (192) e Shadow Nexus (222) são do dono à mão e ficam fora do padrão.

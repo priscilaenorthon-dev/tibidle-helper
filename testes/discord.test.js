@@ -216,6 +216,36 @@ t('SETUPS_DISCORD: nenhum ataque num elemento ao qual o mapa inteiro é imune (f
     assert.deepStrictEqual(erros, []);
     for (const id of ['poi-argonaut', 'quara-argonaut']) assert.match(M.SETUPS_DISCORD.find(s => s.id === id).obs, /imunes? a fogo/, id + ': a observação tem que avisar');
 });
+t('Northon (2.38.4): padrão de outubro — Train Party (+Protector acima de 160) no Cavaleiro, Salvation e Protect Party no Paladino, Ultimate no golpe forte, cura própria do Druida primeiro; sem aviso no nível 170', () => {
+    /* 192 (Draken Walls, 26/10) e 222 (Shadow Nexus) são do dono à mão e ficam fora do padrão */
+    const aMao = ['northon-192', 'northon-222'];
+    const nn = M.SETUPS_DISCORD.filter(s => /^northon-\d+$/.test(s.id) && !aMao.includes(s.id));
+    const ctx = { nivel: 170, magias: SPELLS, pocoes: NOMES_POCOES };
+    assert(nn.length >= 46, 'faltam Northon');
+    for (const s of nn) {
+        const k = s.chars.KNIGHT, p = s.chars.PALADIN, d = s.chars.DRUID;
+        {
+            assert((k.suporte || []).includes('Train Party'), s.id + ': Cavaleiro sem Train Party');
+            const acima = (k.defesa || []).some(x => x[0] === 'Intense Recovery');
+            assert.strictEqual((k.suporte || []).includes('Protector'), acima, s.id + ': Protector só acima de 160');
+            assert((p.suporte || []).includes('Protect Party'), s.id + ': Paladino sem Protect Party');
+            assert.deepStrictEqual(k.vida, ['Ultimate Health Potion', 35], s.id + ' vida do Cavaleiro');
+            assert.deepStrictEqual(p.vida, ['Ultimate Spirit Potion', 35], s.id + ' vida do Paladino');
+            assert.deepStrictEqual(p.defesa.slice(0, 2).map(x => x[0]), ['Salvation', 'Divine Healing'], s.id + ' curas do Paladino');
+            assert.deepStrictEqual(d.defesa.map(x => x[0]), ['Ultimate Healing', 'Mass Healing', 'Heal Friend'], s.id + ' cura própria do Druida primeiro');
+        }
+        for (const voc of ['SORCERER', 'DRUID']) {
+            const at = s.chars[voc].ataque.map(a => a[0]);
+            assert(!at.some(n => /^Strong .* Strike$/.test(n)), s.id + ' ' + voc + ': golpe forte ainda é o Strong');
+            assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx).avisos, [], s.id + ' ' + voc);
+        }
+        for (const voc of ['KNIGHT', 'PALADIN']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx).avisos, [], s.id + ' ' + voc);
+    }
+    /* conta de nível menor: o Ultimate cai para o Strong, nunca fica slot vazio */
+    const r = M.dcConfigDe(nn[0], 'SORCERER', null, { nivel: 85, magias: SPELLS, pocoes: NOMES_POCOES });
+    assert(r.cfg.skills.filter(Boolean).length === nn[0].chars.SORCERER.ataque.length, 'nível 85: slot vazio');
+    assert(r.avisos.some(a => /Ultimate \w+ Strike pede nível \d+ .* Strong \w+ Strike no lugar/.test(a)), 'nível 85: a irmã Strong entra com aviso: ' + r.avisos.join(' | '));
+});
 t('Northon (2.28.2): o golpe básico dos magos é do elemento da runa (Ice Strike com avalanche, Energy Strike com thunderstorm…)', () => {
     const BASICO = /^(Energy|Flame|Ice|Terra|Death|Physical) Strike$/;
     for (const s of M.SETUPS_DISCORD.filter(x => /^northon-\d+$/.test(x.id))) for (const voc of ['SORCERER', 'DRUID']) {
