@@ -6971,13 +6971,13 @@ claude.ai (link privado https://claude.ai/artifact/SzoMZaYgyk7M73Jc3GzP6q); ague
 - **Figura do item**: o jogo serve `/assets/v<ver>/items/<id/1000>/<id>.webp` (32×32); nome→id vem do `items-by-name.json` embutido
   (9.279 nomes); a versão dos assets é descoberta por uma sonda de imagem (magic sword 3288) e guardada. 93 figuras nas 3 contas, 0 quebradas.
 - **Seções**: Personagens (12 cartões com as 8 peças, encaixes, imbuements, nota), Baú (filtros por conta/vocação/espaço/veredito/origem,
-  busca), Vale a pena passar (contas próximas pela nota do Equip; contas com > 40 níveis pela ficha — ataque/defesa/armadura — só onde a
-  ficha diz o que o Equip quer; arma de 2 mãos compara com arma + escudo; peça que exige nível acima fica fora; 3 por espaço; iguais
+  busca), Vale a pena passar (desde 02/11 à noite: a peça é pontuada com a RÉGUA DO DESTINO e vale a regra do Equip — ver "2.39.2";
+  arma de 2 mãos compara com arma + escudo; peça que exige nível acima e peça de carga/tempo ficam fora; 3 por espaço; iguais
   agrupadas), Aguentar mapa (elemento = imunidade ≥ 100 % dos monstros, físico sempre; proteção = ficha + encaixes + proteção mágica +
   imbuements; sugestões ≥ 3 % de qualquer conta; avisos da comunidade por mapa), Limpeza (sobras, épicos sem linha, encaixes nobres, bases).
-- **Lição**: a nota do Equip (pt) é da régua de cada conta — a mesma wand of everblazing vale 1,1 pt na u2tag e 7,4 na ShamanBr. Entre
-  contas a comparação é sempre aproximada; a página diz isso.
-- **Pendente (helper 2.39.1, formato 2 do relatório)**: `itemId`, `assetsVer`, lotação do depósito (n/300), ouro, mapa atual.
+- **Lição**: a nota do Equip (pt) é da régua de cada conta — a mesma wand of everblazing vale 1,1 pt na u2tag e 7,4 na ShamanBr. Por isso
+  a página reconstrói a régua do destino (abaixo, "2.39.2") em vez de comparar notas de contas diferentes.
+- Formato 2 do relatório: helper 2.39.1 (abaixo). Conferido em 02/11 nos 3 relatórios novos (itemId em 100 % das peças, assetsVer v242).
 
 ## 2.39.1 — relatório de equipamento no formato 2 (02/11)
 Para o Painel das 3 contas. `relatorioEquip` passa a gravar `formato: 2` com `itemId` por peça (do cache `equip_base` / `/item/info`; null se
@@ -6985,3 +6985,25 @@ a base não tem o id), `assetsVer` (a versão vista pelo helper), `deposito {usa
 (`ouroAtual()`) e `mapa` mesmo fora da caçada (`huntAtual()`; caçando, o do contexto vence). Quem lê o formato 1 continua lendo: a página aceita
 os dois e usa `assetsVer` como primeira tentativa da figura. Teste em `testes/relatorio.test.js`. Para ver os campos novos: Equip → ATUALIZAR →
 RELATÓRIO de novo em cada conta.
+
+## 2.39.2 — "vale a pena passar" segue o Equip; relatório: forja das ordens do Mercado e veredito das peças sem balde (02/11)
+Dono, 02/11: "tem que ver se as indicações de pegar item e passar para outra conta estão seguindo a nossa automação; quando eu
+transferir de uma conta para outra, na aba Equip tem que funcionar". A página comparava a nota da origem com a do destino (réguas
+diferentes) e, com > 40 níveis, só a ficha — saíam ganhos negativos e um skull helmet de 0 pt no lugar de um brass helmet de 11,5.
+- **Régua do destino** (`docs/painel/painel-core.js`, `reguaDe` / `notaNoDestino`): o relatório traz, por peça e vocação, as `linhas`
+  {id, valor, pt}; pt ÷ valor é constante por (conta, vocação, id) — conferido nas 3 contas: ShamanBr Cavaleiro armor 2,44/pt, u2tag
+  Cavaleiro regen_mana 4,8, XundaBr regen_mana 9,0 e armor 0,40, magos magiclevelpoints 14,4 na XundaBr e 5,56 na ShamanBr. A página
+  tira a mediana por id do próprio relatório do destino e pontua a peça da origem com esses pesos (encaixe que valia 0 na origem mas
+  pesa no destino entra; id que o destino nunca viu fica com o pt da origem e marca ≈).
+- **Regra do Equip** (`trocaVale`, `EQUIP_GANHO_TROCA` = 1): compara com a MELHOR peça que o destino já tem no espaço (vestida ou
+  guardada) e só lista ganho ≥ 1 pt; ≥ 3 pt destacada (cobre os 2 pt de `EQUIP_ESCOLHA_PT` que a tela dá à peça já escolhida). Mesmas
+  exclusões: nível exigido acima do da conta, peça de carga/tempo, 2 mãos contra arma + escudo, mesma peça já lá.
+- Resultado nos 3 relatórios de 02/11: 15 sugestões, todas ≥ 1 pt. As maiores: 3 spellbook of mind control da ShamanBr para o Feiticeiro
+  da XundaBr (+17,5 a +17,8 pt sobre o black shield: a XundaBr paga 14,4 pt por ML), scarf da u2tag para o Paladino da ShamanBr (+6,6) e
+  da XundaBr (+4,4), batwing hat da u2tag para o Feiticeiro da XundaBr (+3,4). O que o dono transferir deve aparecer como "vai vestir"
+  no Equip de lá — conferir na primeira transferência.
+- **Helper 2.39.2**: (1) as ordens do Mercado no relatório saíam sem `peca` (42 equipáveis nas 3 contas) porque `relatorioEquip` lia
+  `o.instance`; `market_my_orders` traz a forja no topo (`o.forja`, como `mkRevisao` lê). Agora a cópia anunciada vem com ficha, forja e
+  nota; sem iid de instância, a peça leva `m:<ordem>`. (2) Peça fora de todos os baldes de `distribuirEquip` (sobra neste mapa mas não
+  no cenário de magia — v2.11.6) saía com `veredito: null` (u2tag: Zaoan shoes, steel shield); agora diz "guardar: sobra neste mapa,
+  mas vale num mapa de magia — o Equip não vende". Testes em `testes/relatorio.test.js` e `testes/painel.test.js` (11).

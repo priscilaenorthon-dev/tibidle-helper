@@ -144,49 +144,89 @@
      * linha com a contagem; no máximo `porEspaco` candidatas por personagem e espaço. */
     const baseDe = (peca) => { const f = (peca && peca.ficha) || {}; return peca && peca.slot === 'weapon' ? (num(f.attack) || num(f.toDamage)) : peca && peca.slot === 'shield' ? num(f.defense) : num(f.armor); };
     const assinatura = (p) => normNome(p.nome) + '|' + num(p.refino) + '|' + (p.atributos || []).map(a => a.id + ':' + a.valor).sort().join(',');
+    /* ---- a RÉGUA DO DESTINO (02/11, dono: "quando eu transferir, na aba Equip tem que funcionar") ----
+     * A nota do Equip é da régua de cada conta (nível, fase, party medida): a mesma peça vale 1,1 pt numa conta e 7,4 noutra. Para saber
+     * se o Equip da conta de DESTINO vai propor a peça, a página pontua a peça com os pesos do destino — reconstruídos do próprio relatório
+     * dele: cada item traz `linhas` {id, valor, pt}, e pt ÷ valor é constante por (conta, vocação, id) (conferido nas 3 contas em 02/11:
+     * variação só de arredondamento). Linha cujo id o destino nunca viu fica com o pt da origem e é marcada (`semRegua`). */
+    const _reguas = new WeakMap();
+    function reguaDe(conta, voc) {
+        let m = _reguas.get(conta); if (!m) { m = {}; _reguas.set(conta, m); }
+        if (m[voc]) return m[voc];
+        const acc = {};
+        for (const it of (conta.itens || [])) {
+            const pv = it.porVoc && it.porVoc[voc]; if (!pv || !Array.isArray(pv.linhas)) continue;
+            for (const l of pv.linhas) { const v = Number(l.valor), pt = Number(l.pt); if (!l.id || !Number.isFinite(v) || !v || !Number.isFinite(pt)) continue; (acc[l.id] = acc[l.id] || []).push(pt / v); }
+        }
+        const pesos = {}, n = {};
+        for (const [id, rs] of Object.entries(acc)) { rs.sort((a, b) => a - b); pesos[id] = rs[rs.length >> 1]; n[id] = rs.length; }
+        return (m[voc] = { pesos, n });
+    }
+    /* a peça (do relatório da origem) pontuada com a régua do destino: Σ valor × peso; id sem peso no destino → o pt da origem (marcado);
+     * linha da forja que valia 0 na origem (fora das `linhas`) mas vale no destino entra também. */
+    function notaNoDestino(peca, voc, destino) {
+        const pv = (peca.porVoc && peca.porVoc[voc]) || {}, R = reguaDe(destino, voc), linhas = [], semRegua = [], vistos = new Set();
+        let nota = 0;
+        for (const l of (Array.isArray(pv.linhas) ? pv.linhas : [])) {
+            const v = Number(l.valor), ptO = num(l.pt); vistos.add(l.id);
+            let pt, fonte;
+            if (Number.isFinite(v) && v && R.pesos[l.id] != null) { pt = v * R.pesos[l.id]; fonte = 'destino'; }
+            else { pt = ptO; fonte = 'origem'; if (ptO) semRegua.push(l.id); }
+            nota += pt; linhas.push({ id: l.id, valor: l.valor, ptOrigem: ptO, pt: Math.round(pt * 100) / 100, fonte });
+        }
+        for (const a of (peca.atributos || [])) {
+            const id = String(a.id || '').toLowerCase().replace(/[\s-]+/g, '_'), v = Number(String(a.valor).replace(',', '.'));
+            if (!id || vistos.has(id) || !Number.isFinite(v) || !v || R.pesos[id] == null) continue;
+            const pt = v * R.pesos[id]; nota += pt; vistos.add(id); linhas.push({ id, valor: v, ptOrigem: 0, pt: Math.round(pt * 100) / 100, fonte: 'destino' });
+        }
+        return { nota: Math.round(nota * 100) / 100, notaOrigem: num(pv.pontos), linhas, semRegua, preciso: !semRegua.length };
+    }
+    /* a regra do Equip (trocaVale, EQUIP_GANHO_TROCA = 1): com peça vestida que vale algo, troca a partir de 1 pt; espaço vazio, qualquer ganho */
+    const EQUIP_GANHO_TROCA = 1;
+    const trocaValeEquip = (nova, atual) => (atual > 0 ? nova - atual >= EQUIP_GANHO_TROCA : nova > 0);
+    const temporaria = (peca) => { const f = (peca && peca.ficha) || {}; return num(f.charges) > 0 || !!f.showduration || !!f.stopduration; };
+    /* ---- vale a pena passar: peça parada numa conta que o Equip da OUTRA conta vestiria ----
+     * Cada peça fora do corpo é pontuada com a régua do destino (notaNoDestino) e comparada com a melhor peça que o destino já tem no espaço
+     * (vestida ou guardada — é contra ela que o Equip de lá decide). Entra só o que passa na regra do Equip (≥ 1 pt; opc.minGanho). Mesmas
+     * exclusões do Equip: nível exigido acima do da conta, peça de carga/tempo, arma de 2 mãos contra arma + escudo. */
     function valePassar(contas, opc) {
-        opc = opc || {}; const minGanho = opc.minGanho != null ? opc.minGanho : 3, porEspaco = opc.porEspaco != null ? opc.porEspaco : 3, faixa = opc.faixa != null ? opc.faixa : 40;
+        opc = opc || {}; const minGanho = opc.minGanho != null ? opc.minGanho : EQUIP_GANHO_TROCA, porEspaco = opc.porEspaco != null ? opc.porEspaco : 3;
         const out = [], vistos = new Map();
         for (const de of contas) for (const peca of de.itens) {
-            if (peca.origem === 'corpo' || !SLOTS.includes(peca.slot)) continue;
+            if (peca.origem === 'corpo' || !SLOTS.includes(peca.slot) || temporaria(peca)) continue;
             for (const para of contas) {
                 if (para === de || para.nome === de.nome) continue;
                 const exige = num(peca.ficha && peca.ficha.level);
                 if (exige > para.nivel) continue; // ainda não pode vestir
                 for (const voc of VOCS) {
                     if (!podeVestir(peca, voc)) continue;
-                    const nova = num(peca.porVoc[voc].pontos);
                     const v = para.personagens && para.personagens[voc] && para.personagens[voc][peca.slot];
-                    let atualNome = v && v.veste ? v.veste.nome : null, atualPeca = v && v.veste ? (para.itens.find(i => i.iid === v.veste.iid) || null) : null;
-                    let atual = v && v.veste ? num(v.veste.pontos) : 0;
-                    const aproximado = Math.abs(de.nivel - para.nivel) > faixa;
-                    /* arma de 2 mãos tira o escudo: compara com arma + escudo (a regra do Equip); pela ficha não dá para comparar */
+                    const veste = v && v.veste ? v.veste : null, melhor = v && v.melhor ? v.melhor : null;
+                    const ref = melhor && num(melhor.pontos) > num(veste && veste.pontos) ? melhor : veste; // o Equip compara com a melhor que a conta já tem
+                    let atualNome = ref ? ref.nome : null, atual = ref ? num(ref.pontos) : 0;
+                    const atualPeca = ref ? (para.itens.find(i => i.iid === ref.iid) || null) : null;
+                    const guardada = !!(ref && veste && ref.iid !== veste.iid);
+                    /* arma de 2 mãos tira o escudo: compara com arma + escudo (a regra do Equip) */
                     if (peca.duasMaos) {
-                        if (aproximado) continue;
                         const e = para.personagens && para.personagens[voc] && para.personagens[voc].shield;
-                        if (e && e.veste) { atual += num(e.veste.pontos); atualNome = (atualNome ? atualNome + ' + ' : '') + e.veste.nome; }
+                        const re = e && e.melhor && num(e.melhor.pontos) > num(e.veste && e.veste.pontos) ? e.melhor : (e && e.veste);
+                        if (re) { atual += num(re.pontos); atualNome = (atualNome ? atualNome + ' + ' : '') + re.nome; }
                     }
-                    /* a mesma peça (nome, refino, encaixes) já vestida: a diferença é só a régua de cada conta */
+                    /* a mesma peça (nome, refino, encaixes) já lá: a diferença seria só a régua */
                     if (atualPeca && assinatura(atualPeca) === assinatura(peca)) continue;
+                    const nd = notaNoDestino(peca, voc, para), nova = nd.nota;
                     const ganho = Math.round((nova - atual) * 10) / 10;
-                    const baseNova = baseDe(peca), baseAtual = atualPeca ? baseDe(atualPeca) : 0, ganhoBase = baseNova - baseAtual;
-                    /* perto: pela nota; longe: só pela ficha, e só onde a ficha diz o que o Equip quer — arma e escudo do Cavaleiro e do
-                     * Paladino (ataque, defesa) e as peças de armadura de todos. Varinhas, spellbooks, anéis e colares ficam de fora
-                     * (lá o que vale é ML, dano mágico e encaixes, que a régua de outra conta não compara). */
-                    if (aproximado) {
-                        const mago = voc === 'SORCERER' || voc === 'DRUID';
-                        if (peca.slot === 'ring' || peca.slot === 'necklace') continue;
-                        if (mago && (peca.slot === 'weapon' || peca.slot === 'shield')) continue;
-                        if (ganhoBase < (opc.minBase != null ? opc.minBase : 3)) continue;
-                    } else if (ganho < minGanho) continue;
+                    if (!trocaValeEquip(nova, atual) || ganho < minGanho) continue;
                     const chave = para.nome + '|' + voc + '|' + peca.slot + '|' + assinatura(peca) + '|' + de.nome;
                     if (vistos.has(chave)) { vistos.get(chave).iguais++; continue; }
-                    const ent = { peca, de: de.nome, para: para.nome, voc, slot: peca.slot, nova, atual, atualNome, ganho, nivelDe: de.nivel, nivelPara: para.nivel, aproximado, baseNova, baseAtual, ganhoBase, exige, iguais: 1, medida: peca.slot === 'weapon' ? 'ataque' : peca.slot === 'shield' ? 'defesa' : 'armadura' };
+                    const ent = { peca, de: de.nome, para: para.nome, voc, slot: peca.slot, nova, notaOrigem: nd.notaOrigem, atual, atualNome, guardada, ganho, firme: ganho >= 3,
+                                  preciso: nd.preciso, semRegua: nd.semRegua, linhas: nd.linhas, nivelDe: de.nivel, nivelPara: para.nivel, exige, iguais: 1,
+                                  baseNova: baseDe(peca), baseAtual: atualPeca ? baseDe(atualPeca) : 0, medida: peca.slot === 'weapon' ? 'ataque' : peca.slot === 'shield' ? 'defesa' : 'armadura' };
                     vistos.set(chave, ent); out.push(ent);
                 }
             }
         }
-        out.sort((a, b) => (a.aproximado ? b.ganhoBase - a.ganhoBase || b.ganho - a.ganho : b.ganho - a.ganho));
+        out.sort((a, b) => b.ganho - a.ganho);
         /* no máximo N por personagem e espaço do destino */
         const cont = new Map(), fim = [];
         for (const e of out) { const k = e.para + '|' + e.voc + '|' + e.slot; const n = cont.get(k) || 0; if (n >= porEspaco) continue; cont.set(k, n + 1); fim.push(e); }
@@ -208,7 +248,7 @@
     }
     const tipoVeredito = (v) => { v = String(v || ''); return /^vestida/.test(v) ? 'vestida' : /^vai vestir/.test(v) ? 'vai vestir' : /sem linha útil/.test(v) ? 'épico sem linha' : /^sobra/.test(v) ? 'sobra' : /^encaixe nobre/.test(v) ? 'encaixe nobre' : /^base de forja/.test(v) ? 'base de forja' : /^reserva/.test(v) ? 'reserva' : 'outro'; };
 
-    const api = { VOCS, VOC_PT, SLOTS, SLOT_PT, RAR_PT, ELEM, ELEM_PT, ROTULO, rotulo, normNome, normConta, diasDesde, idDoItem, urlFigura, elementosDoMapa, protecaoDe, armaduraDe, vestidas, podeVestir, aguentar, valePassar, limpeza, tipoVeredito };
+    const api = { VOCS, VOC_PT, SLOTS, SLOT_PT, RAR_PT, ELEM, ELEM_PT, ROTULO, rotulo, normNome, normConta, diasDesde, idDoItem, urlFigura, elementosDoMapa, protecaoDe, armaduraDe, vestidas, podeVestir, aguentar, reguaDe, notaNoDestino, trocaValeEquip, EQUIP_GANHO_TROCA, valePassar, limpeza, tipoVeredito };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     raiz.PainelCore = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

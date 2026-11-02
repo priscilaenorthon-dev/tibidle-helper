@@ -345,21 +345,19 @@ details summary{cursor:pointer;color:var(--accent)}
     const el = $('#passar');
     if (S.contas.length < 2) { el.innerHTML = '<div class="card vazio">Precisa de pelo menos duas contas carregadas.</div>'; return; }
     const r = P.valePassar(S.contas);
-    if (!r.length) { el.innerHTML = '<div class="card">Nenhuma peça parada ganharia 3 pt ou mais em outra conta. As três já estão com o melhor que têm.</div>'; return; }
+    const regra = `<div class="aviso small">Cada peça parada é pontuada com a <b>régua da conta de destino</b> (os pesos do Equip de lá, reconstruídos do relatório dela) e comparada com a melhor peça que o destino já tem no espaço — vestida ou guardada. Só aparece o que o Equip de lá proporia depois da transferência: ganho de 1 pt ou mais. Linha destacada = ganho de 3 pt ou mais (certo mesmo com os 2 pt de bônus que o Equip dá à peça já escolhida). <span class="chip warn">≈</span> = alguma linha da peça não tem peso conhecido no destino (ficou com o pt da origem).</div>`;
+    if (!r.length) { el.innerHTML = regra + '<div class="card">Nenhuma peça parada passaria na regra do Equip de outra conta. As contas já estão com o melhor que têm.</div>'; return; }
     const porPara = {};
     for (const x of r) (porPara[x.para] = porPara[x.para] || []).push(x);
-    el.innerHTML = Object.entries(porPara).map(([para, lista]) => {
-      const aprox = lista[0].aproximado;
+    el.innerHTML = regra + Object.entries(porPara).map(([para, lista]) => {
       return `<h3 style="margin-top:12px">Para a conta ${esc(para)} <span class="muted small">(nível ${lista[0].nivelPara})</span></h3>` +
-        (aprox ? `<div class="aviso small">As contas têm mais de 40 níveis de diferença: a nota do Equip não compara (régua de fase diferente). Aqui a comparação é pela ficha: ataque na arma, defesa no escudo, armadura no resto. Peças que exigem nível acima do dela ficam de fora.</div>` : '') +
-        `<div class="tabela"><table><thead><tr><th></th><th>peça</th><th>vem de</th><th>para quem</th><th class="num">veste hoje</th><th class="num">com a peça</th><th class="num">ganho</th><th class="num">NPC</th></tr></thead><tbody>` +
+        `<div class="tabela"><table><thead><tr><th></th><th>peça</th><th>vem de</th><th>para quem</th><th class="num">melhor que já tem</th><th class="num">com a peça</th><th class="num">ganho</th><th class="num">NPC</th></tr></thead><tbody>` +
         lista.map(x => {
-          const forte = x.aproximado ? x.ganhoBase >= 10 : x.ganho >= 15;
-          const hoje = x.atualNome ? esc(x.atualNome) + ' ' : '<span class="muted">nada</span> ';
-          const colHoje = x.aproximado ? hoje + fmt(x.baseAtual, 0) + ' <span class="muted small">' + esc(x.medida) + '</span>' : hoje + fmt(x.atual) + ' <span class="muted small">pt</span>';
-          const colNova = x.aproximado ? fmt(x.baseNova, 0) + ' <span class="muted small">' + esc(x.medida) + '</span>' : fmt(x.nova) + ' <span class="muted small">pt</span>';
-          const colGanho = x.aproximado ? `<b>+${fmt(x.ganhoBase, 0)}</b> ${esc(x.medida)} <span class="chip warn" title="pela ficha, não pela nota">≈</span>` : `<b>+${fmt(x.ganho)}</b> pt`;
-          return `<tr${forte ? ' class="destaque"' : ''}><td>${figura(x.peca)}</td><td><span class="rar${Number(x.peca.raridade) || 0}">${esc(x.peca.nome)}</span>${x.peca.refino ? ` <span class="num">+${x.peca.refino}</span>` : ''}${x.iguais > 1 ? ` <span class="chip">×${x.iguais} iguais</span>` : ''}${x.exige ? ` <span class="muted small">nível ${x.exige}</span>` : ''}<div class="muted small">${esc(linhasPeca(x.peca).encaixes.join(' · '))}</div></td>` +
+          const hoje = x.atualNome ? esc(x.atualNome) + (x.guardada ? ' <span class="muted small">(guardada)</span>' : '') + ' ' : '<span class="muted">nada</span> ';
+          const colHoje = hoje + fmt(x.atual) + ' <span class="muted small">pt</span>';
+          const colNova = fmt(x.nova) + ' <span class="muted small">pt</span>' + (x.notaOrigem != null ? `<div class="muted small">${fmt(x.notaOrigem)} pt na régua de ${esc(x.de)}</div>` : '');
+          const colGanho = `<b>+${fmt(x.ganho)}</b> pt` + (x.preciso ? '' : ` <span class="chip warn" title="sem peso no destino: ${esc(x.semRegua.join(', '))}">≈</span>`);
+          return `<tr${x.firme ? ' class="destaque"' : ''}><td>${figura(x.peca)}</td><td><span class="rar${Number(x.peca.raridade) || 0}">${esc(x.peca.nome)}</span>${x.peca.refino ? ` <span class="num">+${x.peca.refino}</span>` : ''}${x.iguais > 1 ? ` <span class="chip">×${x.iguais} iguais</span>` : ''}${x.exige ? ` <span class="muted small">nível ${x.exige}</span>` : ''}<div class="muted small">${esc(linhasPeca(x.peca).encaixes.join(' · '))}</div></td>` +
             `<td>${esc(x.de)} <span class="muted small">(${esc(x.peca.origem)})</span></td><td>${esc(P.VOC_PT[x.voc])} · ${esc(P.SLOT_PT[x.slot])}</td>` +
             `<td class="num">${colHoje}</td><td class="num">${colNova}</td><td class="num">${colGanho}</td><td class="num">${ouro(x.peca.npc)}</td></tr>`;
         }).join('') + '</tbody></table></div>';

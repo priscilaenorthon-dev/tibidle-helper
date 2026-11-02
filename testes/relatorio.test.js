@@ -18,7 +18,8 @@ const pecas = [
     peca('m1', 'crystal ring', 'ring', 'mochila', null, F(1, ['chance_de_loot', 3]), { protegida: true }),
     peca('w1', 'wand of vortex', 'weapon', 'depósito', null, F(0))
 ];
-const ordens = [{ id: 'o1', side: 'SELL', status: 'OPEN', itemName: 'steel boots', unitPrice: 9000, quantityTotal: 1, quantityRemaining: 1, expiresAt: 1790000000000, instance: { iid: 'mk1', name: 'steel boots', forja: F(1, ['regen_vida', 1.5]) } },
+/* 2.39.2 — a ordem real de `market_my_orders` traz a forja no topo (`forja`), sem `instance` nem iid */
+const ordens = [{ id: 'o1', side: 'SELL', status: 'OPEN', itemName: 'steel boots', unitPrice: 9000, quantityTotal: 1, quantityRemaining: 1, expiresAt: 1790000000000, creationFeePaid: 450, forja: F(1, ['regen_vida', 1.5]) },
                 { id: 'o2', side: 'SELL', status: 'OPEN', itemName: 'orc tooth', unitPrice: 12, quantityTotal: 40, quantityRemaining: 25 },
                 { id: 'o3', side: 'BUY', status: 'OPEN', itemName: 'steel boots', unitPrice: 1 }, { id: 'o4', side: 'SELL', status: 'FILLED', itemName: 'crystal ring', unitPrice: 1 }];
 
@@ -46,7 +47,7 @@ t('Mercado: só as suas ordens de VENDA abertas; cópia anunciada vem com a peç
     const r = M.relatorioEquip({ pecas, res, ctx: null, base: BASE, ordens, conta: { nome: 'C', ticket: 'x' } });
     assert.deepStrictEqual(r.mercado.map(m => m.ordem), ['o1', 'o2'], 'BUY e FILLED ficam de fora');
     const o1 = r.mercado[0];
-    assert(o1.preco === 9000 && o1.qtd === 1 && o1.iid === 'mk1' && o1.equipavel === true && o1.peca && o1.peca.origem === 'mercado' && o1.peca.slot === 'boots' && o1.peca.ficha.armor === 3 && o1.peca.atributos[0].id === 'regen_vida' && o1.peca.porVoc.KNIGHT.pontos > 0, JSON.stringify(o1).slice(0, 300));
+    assert(o1.preco === 9000 && o1.qtd === 1 && o1.iid === 'm:o1' && o1.peca.iid === 'm:o1' && o1.equipavel === true && o1.peca && o1.peca.origem === 'mercado' && o1.peca.slot === 'boots' && o1.peca.ficha.armor === 3 && o1.peca.atributos[0].id === 'regen_vida' && o1.peca.porVoc.KNIGHT.pontos > 0, JSON.stringify(o1).slice(0, 300));
     const o2 = r.mercado[1];
     assert(o2.qtd === 25 && o2.equipavel === false && o2.peca === null, JSON.stringify(o2));
     assert.strictEqual(r.resumo.mercadoEquipavel, 1);
@@ -67,6 +68,14 @@ t('2.39.1 formato 2: itemId pela base (null sem id), assetsVer, lotação do dep
     assert.strictEqual(r.assetsVer, 'v242'); assert.deepStrictEqual(r.deposito, { usado: 287, total: 300 }); assert.strictEqual(r.ouro, 1234567); assert.strictEqual(r.mapa, 'Bog Raiders Yalahar');
     const r2 = M.relatorioEquip({ pecas, res, ctx: { nivel: 160, mapa: 'Shadow Nexus', sk: {} }, base: BASE, mapa: 'outro' });
     assert.strictEqual(r2.mapa, 'Shadow Nexus', 'o mapa do contexto (caçando) vence'); assert.strictEqual(r2.assetsVer, null); assert.strictEqual(r2.deposito, null); assert.strictEqual(r2.ouro, null);
+});
+t('2.39.2: ordem antiga com `instance` continua lendo; peça fora de todos os baldes do Equip ganha veredito (não fica null)', () => {
+    const res = M.distribuirEquip(pecas, undefined, null);
+    const r = M.relatorioEquip({ pecas, res, base: BASE, ordens: [{ id: 'o9', side: 'SELL', status: 'OPEN', itemName: 'steel boots', unitPrice: 1, quantityTotal: 1, quantityRemaining: 1, instance: { iid: 'mk9', name: 'steel boots', forja: F(0) } }] });
+    assert(r.mercado[0].iid === 'mk9' && r.mercado[0].peca && r.mercado[0].peca.slot === 'boots', JSON.stringify(r.mercado[0]).slice(0, 200));
+    const solta = { iid: 'z1', nome: 'Zaoan shoes', slot: 'boots', attrs: { armor: 2 }, forja: F(2, ['resist_fogo', 3]), origem: 'depósito', dono: null };
+    const r2 = M.relatorioEquip({ pecas: [solta], res: { porVoc: {}, usadas: [], reservas: [], bases: [], nobres: [], dispensaveis: [] }, base: {} });
+    assert(/^guardar: sobra neste mapa/.test(r2.itens[0].veredito), String(r2.itens[0].veredito));
 });
 t('2.36.3: troca abaixo de 1 pt é empate técnico, como na tela Equip (não "vai vestir"); acima de 1 pt, vai vestir', () => {
     const peq = { porVoc: { DRUID: { shield: { atual: { iid: 'a', nome: 'wooden spellbook' }, atualPt: 28.88, melhor: { iid: 'b', nome: 'spellbook of mind control' }, melhorPt: 29.08, ganho: 0.2 } } } };

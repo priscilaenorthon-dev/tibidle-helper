@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.39.1
+// @version      2.39.2
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.39.1';
+    const VERSAO = '2.39.2';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -8175,7 +8175,10 @@
             }
             const ve = vestir[p.iid];
             const veredito = ve ? `${ve.papel}: ${ve.voc} ${ve.slot}` : usadas.has(p.iid) ? 'usada' : reservas.has(p.iid) ? 'reserva' : bases.has(p.iid) ? 'base de forja (guardar)' : nobres.has(p.iid) ? 'encaixe nobre (vale no Mercado)'
-                : sobra.has(p.iid) ? 'sobra' + (sobra.get(p.iid).motivo ? ': ' + sobra.get(p.iid).motivo : '') : ehTemporaria(p) ? 'temporária (cargas/tempo)' : null;
+                : sobra.has(p.iid) ? 'sobra' + (sobra.get(p.iid).motivo ? ': ' + sobra.get(p.iid).motivo : '') : ehTemporaria(p) ? 'temporária (cargas/tempo)'
+                /* v2.39.2 — peça fora de todos os baldes: sobra neste mapa mas NÃO sobra no cenário de magia (v2.11.6: só é dispensável o que
+                 * sobra também lá) — o Equip não a vende; o relatório dizia null (u2tag 02/11: Zaoan shoes, steel shield) */
+                : 'guardar: sobra neste mapa, mas vale num mapa de magia (resistência/outro elemento) — o Equip não vende';
             const kb = base[p.nome] || base[String(p.nome || '').toLowerCase()] || null; // v2.39.1: id do item (cache equip_base / item/info)
             return Object.assign({ iid: p.iid, nome: p.nome, itemId: kb && kb.id != null ? kb.id : null, slot: p.slot, origem: p.origem, dono: p.dono || null, protegida: !!p.protegida, duasMaos: !!p.duasMaos, npc: p.sell != null ? p.sell : null,
                                    ficha: p.attrs || {}, raridade: f.raridade, refino: f.refino || 0, potenciaBase: potenciaDe(p), potencia: pot, faixa: FAIXA_NOME[faixaPotencia(pot) - 1] || null,
@@ -8184,9 +8187,12 @@
         };
         const itens = pecas.map(p => item(p));
         const mercado = (Array.isArray(ent.ordens) ? ent.ordens : []).filter(o => o && (o.side == null || o.side === 'SELL') && (o.status == null || /open/i.test(String(o.status)))).map(o => {
-            const inst = o.instance || null, k = base[o.itemName] || (inst && base[inst.name]) || null;
-            const peca = inst && (k || inst.forja) ? item({ iid: inst.iid || o.iid || null, nome: inst.name || o.itemName, slot: relSlotDaFicha(k && k.attrs), attrs: (k && k.attrs) || {}, forja: inst.forja, origem: 'mercado', sell: k ? k.sell : null }) : null;
-            return { ordem: o.id, nome: o.itemName, preco: o.unitPrice, qtd: o.quantityRemaining != null ? o.quantityRemaining : o.quantityTotal, qtdTotal: o.quantityTotal, expira: o.expiresAt || null, iid: (inst && inst.iid) || o.iid || null,
+            /* v2.39.2 — `market_my_orders` traz a forja da cópia no topo da ordem (`o.forja`, como a revisão do Mercado lê), não em
+             * `o.instance`: nos 3 relatórios de 02/11 as 42 ordens equipáveis saíam sem `peca`. Sem iid de instância, a peça leva 'm:<ordem>'. */
+            const inst = o.instance || (o.forja ? { iid: o.iid || null, name: o.itemName, forja: o.forja } : null), k = base[o.itemName] || (inst && base[inst.name]) || null;
+            const iidOrdem = (inst && inst.iid) || o.iid || (o.id != null ? 'm:' + o.id : null);
+            const peca = inst && (k || inst.forja) ? item({ iid: iidOrdem, nome: inst.name || o.itemName, slot: relSlotDaFicha(k && k.attrs), attrs: (k && k.attrs) || {}, forja: inst.forja, origem: 'mercado', sell: k ? k.sell : null }) : null;
+            return { ordem: o.id, nome: o.itemName, preco: o.unitPrice, qtd: o.quantityRemaining != null ? o.quantityRemaining : o.quantityTotal, qtdTotal: o.quantityTotal, expira: o.expiresAt || null, iid: iidOrdem,
                      equipavel: !!(k && relSlotDaFicha(k.attrs)), peca };
         });
         const personagens = {};
