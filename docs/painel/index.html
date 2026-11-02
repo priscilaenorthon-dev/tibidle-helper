@@ -1,0 +1,426 @@
+<title>Painel das 3 contas</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya+SC:wght@500;700&family=Alegreya+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: cabeçalho com as contas carregadas, abas por seção, cartões por personagem; tabela densa no baú. Tons de pergaminho e ferro do jogo. */
+:root{
+  --bg:#efeae0; --card:#fbf8f1; --ink:#22201b; --muted:#6b655a; --line:#d9d2c3; --chip:#ece6d8;
+  --accent:#8a5a1e; --accent-bg:#f3e6cf; --ok:#2f7a3d; --ok-bg:#e2f1e2; --warn:#9a6a00; --warn-bg:#fbf1d8; --bad:#a63a2e; --bad-bg:#f8e3df;
+  --r0:#6b655a; --r1:#2f7a3d; --r2:#2457a8; --r3:#7a3fb0; --r4:#c2730a; --r5:#b3261e;
+  --f-display:"Alegreya SC",Georgia,serif; --f-body:"Alegreya Sans","Segoe UI",system-ui,sans-serif; --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#15171b; --card:#1d2026; --ink:#e6e3da; --muted:#9a968b; --line:#2f333b; --chip:#272b33;
+  --accent:#e0b060; --accent-bg:#2c2718; --ok:#7bd08a; --ok-bg:#1b2d1f; --warn:#e6c04a; --warn-bg:#2c2716; --bad:#f08b7d; --bad-bg:#33201d;
+  --r0:#9a968b; --r1:#7bd08a; --r2:#7fa8f0; --r3:#c08cf0; --r4:#f0a94a; --r5:#f07070; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#15171b; --card:#1d2026; --ink:#e6e3da; --muted:#9a968b; --line:#2f333b; --chip:#272b33;
+  --accent:#e0b060; --accent-bg:#2c2718; --ok:#7bd08a; --ok-bg:#1b2d1f; --warn:#e6c04a; --warn-bg:#2c2716; --bad:#f08b7d; --bad-bg:#33201d;
+  --r0:#9a968b; --r1:#7bd08a; --r2:#7fa8f0; --r3:#c08cf0; --r4:#f0a94a; --r5:#f07070; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.4;margin:0}
+.wrap{max-width:1240px;margin:0 auto;padding-block:20px 56px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1{font-family:var(--f-display);font-weight:700;font-size:1.9rem;margin:0;letter-spacing:.01em;text-wrap:balance}
+h2{font-family:var(--f-display);font-weight:500;font-size:1.35rem;margin:0 0 8px;text-wrap:balance}
+h3{font-family:var(--f-display);font-weight:500;font-size:1.05rem;margin:0 0 6px}
+.sub{color:var(--muted);margin:2px 0 14px}
+.mono,.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.num{font-size:.92em}
+.muted{color:var(--muted)}
+.small{font-size:.86em}
+header{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:flex-end;justify-content:space-between;margin-bottom:12px}
+.contas{display:flex;flex-wrap:wrap;gap:8px}
+.conta-chip{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+.conta-chip b{font-family:var(--f-display);font-weight:700}
+.conta-chip .x{border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:1.1em;padding:0 2px}
+.conta-chip .x:hover{color:var(--bad)}
+nav.abas{display:flex;flex-wrap:wrap;gap:4px;border-bottom:2px solid var(--line);margin:8px 0 18px}
+nav.abas a{padding:8px 12px;text-decoration:none;color:var(--muted);font-weight:500;border-bottom:2px solid transparent;margin-bottom:-2px}
+nav.abas a.ativa{color:var(--accent);border-bottom-color:var(--accent)}
+nav.abas a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+section.pagina[hidden]{display:none}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0}
+.grid{display:grid;gap:12px}
+.grid.p4{grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
+.chip{display:inline-block;background:var(--chip);border-radius:999px;padding:1px 9px;font-size:.84em;white-space:nowrap}
+.chip.ok{background:var(--ok-bg);color:var(--ok)} .chip.warn{background:var(--warn-bg);color:var(--warn)} .chip.bad{background:var(--bad-bg);color:var(--bad)} .chip.acc{background:var(--accent-bg);color:var(--accent)}
+.rar0{color:var(--r0)} .rar1{color:var(--r1)} .rar2{color:var(--r2)} .rar3{color:var(--r3)} .rar4{color:var(--r4)} .rar5{color:var(--r5)}
+.fig{width:40px;height:40px;flex:0 0 40px;display:grid;place-items:center;background:var(--chip);border-radius:6px;overflow:hidden}
+.fig img{width:32px;height:32px;image-rendering:pixelated;max-width:100%}
+.fig.sem{font-family:var(--f-mono);font-size:.72em;color:var(--muted)}
+.peca{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-top:1px solid var(--line);min-width:0}
+.peca:first-child{border-top:0}
+.peca .corpo{min-width:0;flex:1}
+.peca .nome{font-weight:500}
+.peca .linhas{color:var(--muted);font-size:.86em}
+.peca .pts{font-family:var(--f-mono);font-size:.86em;white-space:nowrap}
+.vazio{color:var(--muted);font-style:italic}
+.skills{display:flex;flex-wrap:wrap;gap:6px 12px;font-family:var(--f-mono);font-size:.82em;color:var(--muted);margin:4px 0 8px}
+.carga{border:2px dashed var(--line);border-radius:12px;padding:22px;text-align:center;background:var(--card)}
+.carga.sobre{border-color:var(--accent);background:var(--accent-bg)}
+.carga input[type=file]{display:block;margin:10px auto 0}
+textarea{width:100%;min-height:90px;font-family:var(--f-mono);font-size:.82em;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px}
+button.bt{font:inherit;font-weight:500;background:var(--accent);color:#fff;border:0;border-radius:8px;padding:8px 14px;cursor:pointer}
+button.bt.sec{background:var(--chip);color:var(--ink)}
+.erro{color:var(--bad);background:var(--bad-bg);border-radius:8px;padding:8px 12px;margin-top:8px}
+.filtros{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin-bottom:10px}
+.filtros label{display:flex;gap:6px;align-items:center;font-size:.92em;color:var(--muted)}
+select,input[type=search]{font:inherit;font-size:.92em;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:5px 8px;max-width:100%}
+.tabela{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--card)}
+table{border-collapse:collapse;width:100%;font-size:.92em}
+th,td{text-align:left;padding:7px 10px;border-top:1px solid var(--line);vertical-align:top}
+th{border-top:0;color:var(--muted);font-weight:500;font-size:.82em;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;background:var(--chip)}
+td.num,th.num{text-align:right}
+tr.destaque td{background:var(--accent-bg)}
+.totais{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:.92em}
+.prot{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px;margin:6px 0}
+.prot .e{background:var(--chip);border-radius:8px;padding:6px 8px}
+.prot .e b{display:block;font-family:var(--f-mono);font-size:1.05em}
+.prot .e.bad{background:var(--bad-bg)} .prot .e.warn{background:var(--warn-bg)} .prot .e.ok{background:var(--ok-bg)}
+.aviso{border-left:3px solid var(--warn);background:var(--warn-bg);padding:8px 12px;border-radius:0 8px 8px 0;margin:6px 0}
+.nota{border-left:3px solid var(--line);padding:6px 12px;color:var(--muted);font-size:.9em;margin:8px 0}
+ul.lista{margin:6px 0 0;padding-left:18px}
+details summary{cursor:pointer;color:var(--accent)}
+@media (max-width:640px){body{font-size:15px} .grid.p4{grid-template-columns:1fr}}
+@media (prefers-reduced-motion: no-preference){.carga{transition:background .15s,border-color .15s}}
+</style>
+
+<div class="wrap">
+<header>
+  <div>
+    <h1>Painel das 3 contas</h1>
+    <p class="sub">Relatórios do helper (Equip → RELATÓRIO) cruzados: peças, quem aguenta cada mapa, o que vale passar de conta.</p>
+  </div>
+  <div class="contas" id="contas"></div>
+</header>
+
+<nav class="abas" id="abas">
+  <a href="#carga">Carga</a><a href="#personagens">Personagens</a><a href="#bau">Baú</a><a href="#passar">Vale a pena passar?</a><a href="#aguentar">Aguentar mapa</a><a href="#limpeza">Limpeza</a>
+</nav>
+
+<section class="pagina" id="pg-carga">
+  <h2>Carregar os relatórios</h2>
+  <div class="carga" id="zona">
+    <div>Arraste aqui os arquivos <span class="mono">tibidle-equip-&lt;conta&gt;-&lt;data&gt;.json</span> das 3 contas, ou escolha abaixo. Cada conta substitui a anterior de mesmo nome.</div>
+    <input type="file" id="arquivos" accept=".json,application/json" multiple aria-label="relatórios de equipamento">
+  </div>
+  <details style="margin-top:10px"><summary>Ou cole o texto do relatório</summary>
+    <textarea id="colar" placeholder='{"relatorio":"tibidle-helper equipamento", …}'></textarea>
+    <div style="margin-top:6px"><button class="bt" id="bt-colar" type="button">Carregar o texto</button></div>
+  </details>
+  <div id="erro-carga" class="erro" hidden></div>
+  <p class="nota">Os relatórios ficam só neste navegador. Para gerar um novo: no jogo, aba Equip do helper → ATUALIZAR → RELATÓRIO → baixar .json. O relatório traz o equipamento do corpo, da mochila e do depósito com a nota do Equip por vocação; a figura de cada peça vem do próprio jogo.</p>
+  <div id="resumo-carga"></div>
+</section>
+
+<section class="pagina" id="pg-personagens" hidden>
+  <h2>Personagens</h2>
+  <p class="sub">O que cada um veste, com a nota do Equip (1 pt ≈ +1 % do dano da party na régua da própria conta).</p>
+  <div id="personagens" class="grid p4"></div>
+</section>
+
+<section class="pagina" id="pg-bau" hidden>
+  <h2>Baú das 3 contas</h2>
+  <div class="totais" id="bau-totais"></div>
+  <div class="filtros">
+    <label>conta <select id="f-conta"><option value="">todas</option></select></label>
+    <label>veste <select id="f-voc"><option value="">qualquer vocação</option><option value="KNIGHT">Cavaleiro</option><option value="PALADIN">Paladino</option><option value="SORCERER">Feiticeiro</option><option value="DRUID">Druida</option></select></label>
+    <label>espaço <select id="f-slot"><option value="">todos</option></select></label>
+    <label>veredito <select id="f-ver"><option value="">todos</option></select></label>
+    <label>origem <select id="f-origem"><option value="">todas</option><option>corpo</option><option>mochila</option><option>depósito</option></select></label>
+    <input type="search" id="f-busca" placeholder="nome da peça" aria-label="buscar peça">
+  </div>
+  <div class="tabela"><table id="bau"><thead><tr><th></th><th>peça</th><th>conta</th><th>onde</th><th>espaço</th><th>raridade</th><th>encaixes e imbuements</th><th class="num">melhor nota</th><th>veredito do Equip</th><th class="num">NPC</th></tr></thead><tbody></tbody></table></div>
+</section>
+
+<section class="pagina" id="pg-passar" hidden>
+  <h2>Vale a pena passar?</h2>
+  <p class="sub">Peças paradas (depósito ou mochila) de uma conta que fariam um personagem de outra conta ficar mais forte. Ganho mínimo: 3 pt sobre o que ele veste hoje.</p>
+  <div id="passar"></div>
+  <p class="nota">A nota é a da régua da conta de origem; entre contas de nível muito diferente (mais de 40) ela é só aproximada. Passar pelo Mercado custa a taxa de 5 % sobre o preço anunciado, e a conta que compra precisa do ouro.</p>
+</section>
+
+<section class="pagina" id="pg-aguentar" hidden>
+  <h2>Aguentar mapa</h2>
+  <div class="filtros">
+    <label>conta <select id="ag-conta"></select></label>
+    <label>mapa <select id="ag-mapa"></select></label>
+  </div>
+  <div id="aguentar"></div>
+  <p class="nota">O jogo não publica com que elemento cada monstro bate. A página estima pelo elemento a que o monstro é imune (100 %): quem é imune a fogo bate com fogo. Físico conta sempre. Proteção = resistência da ficha + encaixes de resistência + proteção mágica + imbuements de proteção, somados nas 8 peças do corpo. Descoberto: abaixo de 10 % (físico: 5 %); fraco: abaixo de 20 % (físico: 12 %). Só entram sugestões que ganham 3 % ou mais, do nível do personagem.</p>
+</section>
+
+<section class="pagina" id="pg-limpeza" hidden>
+  <h2>Limpeza</h2>
+  <p class="sub">O que o Equip já marcou como sobra ou épico sem linha útil, por conta, com o valor de NPC somado. Encaixes nobres e bases de forja ficam à parte: valem no Mercado ou na forja.</p>
+  <div id="limpeza" class="grid p4"></div>
+</section>
+</div>
+
+<script src="dados.js"></script>
+<script src="painel-core.js"></script>
+<script>
+(function () {
+  'use strict';
+  const P = window.PainelCore, D = window.PAINEL_DADOS || { nomeId: {}, hunts: [], bosses: [], avisos: {}, assetsVerConhecida: 242 };
+  const $ = (s, r) => (r || document).querySelector(s), $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmt = (n, d) => (n == null || isNaN(n) ? '–' : Number(n).toLocaleString('pt-BR', { maximumFractionDigits: d == null ? 1 : d }));
+  const ouro = (n) => (n == null ? '–' : n >= 1e6 ? fmt(n / 1e6, 2) + ' M' : n >= 1e3 ? fmt(n / 1e3, 1) + ' k' : fmt(n, 0));
+  const ler = (k, v) => { try { const x = localStorage.getItem(k); return x == null ? v : JSON.parse(x); } catch (e) { return v; } };
+  const guardar = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* sem espaço ou bloqueado: a página segue sem lembrar */ } };
+
+  /* ---- estado ---- */
+  const S = { brutos: ler('painel_contas', {}), contas: [], ver: ler('painel_assets_ver', null), verOk: false };
+  function recalc() {
+    S.contas = Object.values(S.brutos).map(j => { try { return P.normConta(j); } catch (e) { return null; } }).filter(Boolean).sort((a, b) => b.nivel - a.nivel);
+  }
+  recalc();
+
+  /* ---- figura: descobre a versão dos assets com uma sonda e guarda ---- */
+  const SONDA_ID = 3288; // magic sword
+  function candidatosVer() {
+    const base = D.assetsVerConhecida || 242, out = [];
+    if (S.ver) out.push(S.ver);
+    out.push(base); for (let v = base + 1; v <= base + 40; v++) out.push(v); for (let v = base - 1; v >= base - 12; v--) out.push(v);
+    return out.filter((v, i, a) => a.indexOf(v) === i);
+  }
+  function sondarVersao(cb) {
+    const cands = candidatosVer(); let i = 0;
+    const tenta = () => {
+      if (i >= cands.length) { S.verOk = false; cb(null); return; }
+      const v = cands[i++], im = new Image();
+      im.onload = () => { S.ver = v; S.verOk = true; guardar('painel_assets_ver', v); cb(v); };
+      im.onerror = tenta;
+      im.src = P.urlFigura(SONDA_ID, v);
+    };
+    tenta();
+  }
+  function figura(peca, tam) {
+    const id = P.idDoItem(peca, D.nomeId);
+    const ini = esc(String(peca.nome || '?').split(' ').map(w => w[0]).join('').slice(0, 3).toUpperCase());
+    if (id == null || !S.ver) return `<div class="fig sem" title="${esc(peca.nome)}">${ini}</div>`;
+    return `<div class="fig"><img src="${P.urlFigura(id, S.ver)}" alt="" loading="lazy" width="32" height="32" onerror="this.parentNode.className='fig sem';this.parentNode.textContent='${ini}'"></div>`;
+  }
+
+  /* ---- carga ---- */
+  function carregarTexto(txt, nomeArq) {
+    let j; try { j = JSON.parse(txt); } catch (e) { throw new Error((nomeArq ? nomeArq + ': ' : '') + 'não é JSON válido'); }
+    const c = P.normConta(j); // valida
+    S.brutos[c.nome] = j; guardar('painel_contas', S.brutos); recalc(); return c;
+  }
+  function erroCarga(msg) { const e = $('#erro-carga'); e.textContent = msg; e.hidden = !msg; }
+  function lerArquivos(lista) {
+    const arqs = Array.from(lista || []); if (!arqs.length) return;
+    erroCarga(''); const erros = [];
+    let pend = arqs.length;
+    arqs.forEach(f => {
+      const r = new FileReader();
+      r.onload = () => { try { carregarTexto(String(r.result), f.name); } catch (e) { erros.push(e.message); } if (--pend === 0) fim(); };
+      r.onerror = () => { erros.push(f.name + ': não deu para ler'); if (--pend === 0) fim(); };
+      r.readAsText(f);
+    });
+    function fim() { if (erros.length) erroCarga(erros.join(' · ')); renderTudo(); if (!erros.length && S.contas.length) location.hash = '#personagens'; }
+  }
+  $('#arquivos').addEventListener('change', (ev) => { lerArquivos(ev.target.files); ev.target.value = ''; });
+  const zona = $('#zona');
+  zona.addEventListener('dragover', (ev) => { ev.preventDefault(); zona.classList.add('sobre'); });
+  zona.addEventListener('dragleave', () => zona.classList.remove('sobre'));
+  zona.addEventListener('drop', (ev) => { ev.preventDefault(); zona.classList.remove('sobre'); lerArquivos(ev.dataTransfer && ev.dataTransfer.files); });
+  $('#bt-colar').addEventListener('click', () => { erroCarga(''); try { carregarTexto($('#colar').value); $('#colar').value = ''; renderTudo(); location.hash = '#personagens'; } catch (e) { erroCarga(e.message); } });
+
+  /* ---- navegação por hash ---- */
+  const PAGINAS = ['carga', 'personagens', 'bau', 'passar', 'aguentar', 'limpeza'];
+  function mostrar() {
+    let h = (location.hash || '').replace('#', ''); if (!PAGINAS.includes(h)) h = S.contas.length ? 'personagens' : 'carga';
+    PAGINAS.forEach(p => { $('#pg-' + p).hidden = p !== h; });
+    $$('#abas a').forEach(a => a.classList.toggle('ativa', a.getAttribute('href') === '#' + h));
+    window.scrollTo({ top: 0 });
+  }
+  window.addEventListener('hashchange', mostrar);
+
+  /* ---- cabeçalho das contas ---- */
+  function renderContas() {
+    const el = $('#contas');
+    if (!S.contas.length) { el.innerHTML = '<span class="muted">nenhum relatório carregado</span>'; return; }
+    el.innerHTML = S.contas.map(c => {
+      const dias = P.diasDesde(c.geradoEm), velho = dias != null && dias > 7;
+      return `<div class="conta-chip"><b>${esc(c.nome)}</b><span class="num">nível ${c.nivel}</span><span class="chip">fase ${c.fase}</span>` +
+        `<span class="chip ${velho ? 'warn' : ''}" title="${esc(c.geradoEm || '')}">${dias == null ? 'sem data' : dias === 0 ? 'hoje' : dias + ' d'}</span>` +
+        (c.deposito ? `<span class="chip ${c.deposito.usado >= (c.deposito.total || 300) ? 'bad' : ''}">baú ${c.deposito.usado}/${c.deposito.total || 300}</span>` : '') +
+        `<button class="x" type="button" data-rm="${esc(c.nome)}" title="tirar esta conta da página">×</button></div>`;
+    }).join('');
+    $$('[data-rm]', el).forEach(b => b.addEventListener('click', () => { delete S.brutos[b.dataset.rm]; guardar('painel_contas', S.brutos); recalc(); renderTudo(); }));
+  }
+  function renderResumoCarga() {
+    const el = $('#resumo-carga');
+    if (!S.contas.length) { el.innerHTML = ''; return; }
+    el.innerHTML = '<h3 style="margin-top:14px">Carregados</h3><div class="grid p4">' + S.contas.map(c => {
+      const dep = c.itens.filter(i => i.origem === 'depósito').length, moch = c.itens.filter(i => i.origem === 'mochila').length;
+      return `<div class="card"><h3>${esc(c.nome)} <span class="muted small">${esc(c.mundo)}</span></h3><div class="kv">` +
+        `<span class="muted">nível</span><span class="num">${c.nivel} · fase ${c.fase}</span>` +
+        `<span class="muted">gerado</span><span class="num">${c.geradoEm ? new Date(c.geradoEm).toLocaleString('pt-BR') : '–'} (helper ${esc(c.versao)})</span>` +
+        `<span class="muted">peças</span><span class="num">${c.itens.length}: ${c.itens.filter(i => i.origem === 'corpo').length} no corpo · ${moch} na mochila · ${dep} no depósito</span>` +
+        `<span class="muted">baú</span><span>${c.deposito ? `<span class="num">${c.deposito.usado}/${c.deposito.total || 300}</span>` : '<span class="muted">o relatório só conta equipamento; a lotação dos 300 vem no formato 2 do helper</span>'}</span>` +
+        `<span class="muted">Mercado</span><span class="num">${c.mercado.length} ordem(ns)</span></div></div>`;
+    }).join('') + '</div>';
+  }
+
+  /* ---- peças ---- */
+  const nomeRar = (p) => P.RAR_PT[Number(p.raridade) || 0] || 'Comum';
+  function linhasPeca(p) {
+    const l = [];
+    for (const a of (p.atributos || [])) l.push(`${P.rotulo(a.id)} +${fmt(a.valor)}`);
+    for (const im of (p.imbuements || [])) if (im && im.nome) l.push(`imbu ${esc(im.nome)} T${im.tier || '?'}${im.valor != null ? ' +' + fmt(im.valor) : ''}`);
+    const f = p.ficha || {};
+    const base = [];
+    if (f.armor) base.push('arm ' + f.armor); if (f.attack) base.push('atk ' + f.attack); if (f.defense) base.push('def ' + f.defense);
+    for (const [k, v] of Object.entries(f)) if (/^absorbpercent|^elemental protection/.test(k) && Number(v)) base.push(P.rotulo(k).replace(' (base)', '') + ' ' + v + '%');
+    if (f.magiclevelpoints) base.push('ML +' + f.magiclevelpoints);
+    return { encaixes: l, base };
+  }
+  function pecaHtml(p, voc) {
+    const { encaixes, base } = linhasPeca(p);
+    const pv = voc && p.porVoc && p.porVoc[voc];
+    return `<div class="peca">${figura(p)}<div class="corpo"><div class="nome"><span class="rar${Number(p.raridade) || 0}">${esc(p.nome)}</span>${p.refino ? ` <span class="num">+${p.refino}</span>` : ''} <span class="muted small">${esc(nomeRar(p))}${p.faixa ? ' · ' + esc(p.faixa) : ''}${p.potencia ? ' · pot. ' + p.potencia : ''}</span></div>` +
+      `<div class="linhas">${esc(base.join(' · '))}${encaixes.length ? (base.length ? '<br>' : '') + esc(encaixes.join(' · ')) : ''}</div></div>` +
+      (pv ? `<div class="pts" title="nota do Equip para esta vocação">${fmt(pv.pontos)} pt</div>` : '') + `</div>`;
+  }
+  const acharPeca = (conta, iid) => conta.itens.find(i => i.iid === iid) || null;
+
+  function renderPersonagens() {
+    const el = $('#personagens');
+    if (!S.contas.length) { el.innerHTML = '<div class="card vazio">Carregue um relatório na aba Carga.</div>'; return; }
+    let h = '';
+    for (const c of S.contas) for (const voc of P.VOCS) {
+      const sk = (c.skills || {})[voc] || {};
+      const skl = [['melee', 'corpo'], ['dist', 'dist.'], ['ml', 'ML'], ['escudo', 'escudo'], ['atkArma', 'atk arma']].filter(([k]) => sk[k] != null).map(([k, r]) => `${r} ${sk[k]}${sk[k + 'T'] != null && sk[k + 'T'] !== sk[k] ? '<span class="muted">(' + sk[k + 'T'] + ')</span>' : ''}`).join(' · ');
+      const per = (c.personagens || {})[voc] || {};
+      let total = 0, corpo = '';
+      for (const slot of P.SLOTS) {
+        const v = per[slot] && per[slot].veste; const p = v ? acharPeca(c, v.iid) : null;
+        if (p) { total += Number(v.pontos) || 0; corpo += pecaHtml(p, voc); }
+        else corpo += `<div class="peca"><div class="fig sem">${esc(P.SLOT_PT[slot].slice(0, 3))}</div><div class="corpo vazio">${esc(P.SLOT_PT[slot])}: nada</div></div>`;
+      }
+      h += `<div class="card"><h3>${esc(P.VOC_PT[voc])} <span class="muted small">${esc(c.nome)} · nível ${c.nivel}</span></h3><div class="skills">${skl || '<span>sem skills no relatório</span>'}</div>${corpo}<div class="small muted" style="margin-top:6px">soma das notas: <span class="num">${fmt(total)} pt</span></div></div>`;
+    }
+    el.innerHTML = h;
+  }
+
+  /* ---- baú ---- */
+  function todasPecas() { const out = []; for (const c of S.contas) for (const p of c.itens) out.push({ c, p }); return out; }
+  function renderBauFiltros() {
+    const fc = $('#f-conta'); const atual = fc.value; fc.innerHTML = '<option value="">todas</option>' + S.contas.map(c => `<option>${esc(c.nome)}</option>`).join(''); fc.value = atual;
+    const fs = $('#f-slot'); if (fs.options.length <= 1) fs.innerHTML = '<option value="">todos</option>' + P.SLOTS.map(s => `<option value="${s}">${P.SLOT_PT[s]}</option>`).join('');
+    const fv = $('#f-ver'); if (fv.options.length <= 1) fv.innerHTML = '<option value="">todos</option>' + ['vestida', 'vai vestir', 'reserva', 'encaixe nobre', 'base de forja', 'sobra', 'épico sem linha'].map(v => `<option>${v}</option>`).join('');
+  }
+  function renderBau() {
+    renderBauFiltros();
+    const tot = $('#bau-totais');
+    tot.innerHTML = S.contas.map(c => { const dep = c.itens.filter(i => i.origem === 'depósito').length; return `<span class="chip">${esc(c.nome)}: ${c.itens.length} peças · ${dep} no depósito${c.deposito ? ` · baú ${c.deposito.usado}/${c.deposito.total || 300}` : ''}</span>`; }).join('') || '<span class="muted">nada carregado</span>';
+    const fconta = $('#f-conta').value, fvoc = $('#f-voc').value, fslot = $('#f-slot').value, fver = $('#f-ver').value, forig = $('#f-origem').value, busca = P.normNome($('#f-busca').value);
+    const linhas = todasPecas().filter(({ c, p }) => (!fconta || c.nome === fconta) && (!fvoc || P.podeVestir(p, fvoc)) && (!fslot || p.slot === fslot) && (!fver || P.tipoVeredito(p.veredito) === fver) && (!forig || p.origem === forig) && (!busca || P.normNome(p.nome).includes(busca)));
+    const melhor = (p) => { let m = null; for (const v of P.VOCS) { const x = p.porVoc && p.porVoc[v]; if (x && (!m || x.pontos > m.pt)) m = { v, pt: x.pontos }; } return m; };
+    linhas.sort((a, b) => { const ma = melhor(a.p), mb = melhor(b.p); return (mb ? mb.pt : -1) - (ma ? ma.pt : -1); });
+    const tb = $('#bau tbody');
+    tb.innerHTML = linhas.map(({ c, p }) => {
+      const { encaixes, base } = linhasPeca(p); const m = melhor(p); const tipo = P.tipoVeredito(p.veredito);
+      const cls = tipo === 'vestida' || tipo === 'vai vestir' ? 'ok' : tipo === 'sobra' || tipo === 'épico sem linha' ? 'bad' : tipo === 'reserva' ? '' : 'acc';
+      return `<tr><td>${figura(p)}</td><td><span class="rar${Number(p.raridade) || 0}">${esc(p.nome)}</span>${p.refino ? ` <span class="num">+${p.refino}</span>` : ''}${p.protegida ? ' <span class="chip">cadeado</span>' : ''}<div class="muted small">${esc(base.join(' · '))}</div></td>` +
+        `<td>${esc(c.nome)}</td><td>${esc(p.origem)}${p.dono ? `<div class="muted small">${esc(P.VOC_PT[p.dono] || p.dono)}</div>` : ''}</td><td>${esc(P.SLOT_PT[p.slot] || p.slot)}</td>` +
+        `<td><span class="rar${Number(p.raridade) || 0}">${esc(nomeRar(p))}</span><div class="muted small">${esc(p.faixa || '')}${p.potencia ? ' · ' + p.potencia : ''}</div></td>` +
+        `<td class="small">${esc(encaixes.join(' · ')) || '<span class="muted">—</span>'}</td>` +
+        `<td class="num">${m ? fmt(m.pt) + ' <span class="muted">' + esc(P.VOC_PT[m.v].slice(0, 3)) + '</span>' : '–'}</td>` +
+        `<td class="small"><span class="chip ${cls}">${esc(tipo)}</span> <span class="muted">${esc(String(p.veredito || '').replace(/^[^:]*:\s*/, ''))}</span></td><td class="num">${ouro(p.npc)}</td></tr>`;
+    }).join('') || '<tr><td colspan="10" class="vazio">nada com esses filtros</td></tr>';
+  }
+  ['#f-conta', '#f-voc', '#f-slot', '#f-ver', '#f-origem'].forEach(s => $(s).addEventListener('change', renderBau));
+  $('#f-busca').addEventListener('input', renderBau);
+
+  /* ---- vale a pena passar ---- */
+  function renderPassar() {
+    const el = $('#passar');
+    if (S.contas.length < 2) { el.innerHTML = '<div class="card vazio">Precisa de pelo menos duas contas carregadas.</div>'; return; }
+    const r = P.valePassar(S.contas);
+    if (!r.length) { el.innerHTML = '<div class="card">Nenhuma peça parada ganharia 3 pt ou mais em outra conta. As três já estão com o melhor que têm.</div>'; return; }
+    const porPara = {};
+    for (const x of r) (porPara[x.para] = porPara[x.para] || []).push(x);
+    el.innerHTML = Object.entries(porPara).map(([para, lista]) => {
+      const aprox = lista[0].aproximado;
+      return `<h3 style="margin-top:12px">Para a conta ${esc(para)} <span class="muted small">(nível ${lista[0].nivelPara})</span></h3>` +
+        (aprox ? `<div class="aviso small">As contas têm mais de 40 níveis de diferença: a nota do Equip não compara (régua de fase diferente). Aqui a comparação é pela ficha: ataque na arma, defesa no escudo, armadura no resto. Peças que exigem nível acima do dela ficam de fora.</div>` : '') +
+        `<div class="tabela"><table><thead><tr><th></th><th>peça</th><th>vem de</th><th>para quem</th><th class="num">veste hoje</th><th class="num">com a peça</th><th class="num">ganho</th><th class="num">NPC</th></tr></thead><tbody>` +
+        lista.map(x => {
+          const forte = x.aproximado ? x.ganhoBase >= 10 : x.ganho >= 15;
+          const hoje = x.atualNome ? esc(x.atualNome) + ' ' : '<span class="muted">nada</span> ';
+          const colHoje = x.aproximado ? hoje + fmt(x.baseAtual, 0) + ' <span class="muted small">' + esc(x.medida) + '</span>' : hoje + fmt(x.atual) + ' <span class="muted small">pt</span>';
+          const colNova = x.aproximado ? fmt(x.baseNova, 0) + ' <span class="muted small">' + esc(x.medida) + '</span>' : fmt(x.nova) + ' <span class="muted small">pt</span>';
+          const colGanho = x.aproximado ? `<b>+${fmt(x.ganhoBase, 0)}</b> ${esc(x.medida)} <span class="chip warn" title="pela ficha, não pela nota">≈</span>` : `<b>+${fmt(x.ganho)}</b> pt`;
+          return `<tr${forte ? ' class="destaque"' : ''}><td>${figura(x.peca)}</td><td><span class="rar${Number(x.peca.raridade) || 0}">${esc(x.peca.nome)}</span>${x.peca.refino ? ` <span class="num">+${x.peca.refino}</span>` : ''}${x.iguais > 1 ? ` <span class="chip">×${x.iguais} iguais</span>` : ''}${x.exige ? ` <span class="muted small">nível ${x.exige}</span>` : ''}<div class="muted small">${esc(linhasPeca(x.peca).encaixes.join(' · '))}</div></td>` +
+            `<td>${esc(x.de)} <span class="muted small">(${esc(x.peca.origem)})</span></td><td>${esc(P.VOC_PT[x.voc])} · ${esc(P.SLOT_PT[x.slot])}</td>` +
+            `<td class="num">${colHoje}</td><td class="num">${colNova}</td><td class="num">${colGanho}</td><td class="num">${ouro(x.peca.npc)}</td></tr>`;
+        }).join('') + '</tbody></table></div>';
+    }).join('');
+  }
+
+  /* ---- aguentar ---- */
+  function huntsOrdenados() { return (D.hunts || []).filter(h => (h.rec || 0) >= 60).slice().sort((a, b) => (a.rec || 0) - (b.rec || 0) || String(a.t).localeCompare(String(b.t))); }
+  function renderAguentarSelects() {
+    const sc = $('#ag-conta'); const atual = sc.value; sc.innerHTML = S.contas.map(c => `<option>${esc(c.nome)}</option>`).join(''); if (atual && S.contas.some(c => c.nome === atual)) sc.value = atual;
+    const sm = $('#ag-mapa');
+    if (sm.options.length === 0) {
+      sm.innerHTML = '<optgroup label="mapas (recomendado ≥ 60)">' + huntsOrdenados().map(h => `<option value="h${h.id}">${esc(h.t)} · rec. ${h.rec}</option>`).join('') + '</optgroup>' +
+        '<optgroup label="bosses">' + (D.bosses || []).map((b, i) => `<option value="b${i}">${esc(b.name)}${b.levelMin ? ' · nível ' + b.levelMin : ''}</option>`).join('') + '</optgroup>';
+      const g = ler('painel_ag_mapa', null); if (g) sm.value = g;
+    }
+  }
+  function alvoEscolhido() {
+    const v = $('#ag-mapa').value; if (!v) return null;
+    if (v[0] === 'h') { const h = D.hunts.find(x => 'h' + x.id === v); return h ? { id: h.id, title: h.t, recommendedLevel: h.rec, levelMin: h.min, monsters: h.m } : null; }
+    const b = D.bosses[Number(v.slice(1))]; return b ? { id: 'boss', title: b.name, levelMin: b.levelMin, monsters: [{ name: b.name, health: b.health, weight: 1, elements: b.elements }] } : null;
+  }
+  function renderAguentar() {
+    renderAguentarSelects();
+    const el = $('#aguentar');
+    if (!S.contas.length) { el.innerHTML = '<div class="card vazio">Carregue um relatório na aba Carga.</div>'; return; }
+    const alvo = alvoEscolhido(); if (!alvo) { el.innerHTML = '<div class="card vazio">Escolha um mapa.</div>'; return; }
+    guardar('painel_ag_mapa', $('#ag-mapa').value);
+    const r = P.aguentar(S.contas, $('#ag-conta').value, alvo);
+    const avisos = (D.avisos || {})[String(alvo.id)] || [];
+    let h = `<div class="card" style="margin-bottom:12px"><h3>${esc(alvo.title)} <span class="muted small">${alvo.recommendedLevel ? 'recomendado ' + alvo.recommendedLevel + ' · ' : ''}${alvo.levelMin ? 'mínimo ' + alvo.levelMin + ' · ' : ''}conta ${esc(r.conta)} nível ${r.nivel}${alvo.recommendedLevel && r.nivel < alvo.recommendedLevel ? ' <span class="chip warn">abaixo do recomendado</span>' : ''}</span></h3>` +
+      `<div>Bate com: <b>físico</b>${r.mapa.elementos.length ? ' e ' + r.mapa.elementos.map(e => `<b>${esc(P.ELEM_PT[e.elem] || e.elem)}</b> <span class="muted small">(${Math.round(e.peso * 100)} % dos monstros: ${esc(e.monstros.join(', '))})</span>`).join(', ') : ' <span class="muted">(nenhuma imunidade elemental: só físico, estimativa)</span>'}.</div>` +
+      (avisos.length ? avisos.map(a => `<div class="aviso">${esc(a)}</div>`).join('') : '') + '</div><div class="grid p4">';
+    for (const voc of P.VOCS) {
+      const x = r.vocs[voc];
+      const cls = (e) => (x.descobertos.includes(e) ? 'bad' : x.fracos.includes(e) ? 'warn' : 'ok');
+      h += `<div class="card"><h3>${esc(P.VOC_PT[voc])} <span class="muted small">armadura ${x.armor}</span></h3><div class="prot">` +
+        r.elems.map(e => `<div class="e ${cls(e)}"><span class="small">${esc(P.ELEM_PT[e])}</span><b>${fmt(x.porElem[e])} %</b></div>`).join('') + '</div>';
+      if (!x.pecas.length) h += '<div class="vazio">sem peças no corpo no relatório</div>';
+      if (x.descobertos.length) h += `<div class="small"><span class="chip bad">descoberto</span> ${esc(x.descobertos.map(e => P.ELEM_PT[e]).join(', '))}</div>`;
+      if (x.sugestoes.length) {
+        h += '<h3 style="margin-top:10px">Peça parada que cobriria</h3>' + x.sugestoes.map(s => `<div class="peca">${figura(s.peca)}<div class="corpo"><div class="nome"><span class="rar${Number(s.peca.raridade) || 0}">${esc(s.peca.nome)}</span>${s.peca.refino ? ` <span class="num">+${s.peca.refino}</span>` : ''} <span class="muted small">${esc(s.conta)} · ${esc(s.peca.origem)} · ${esc(P.SLOT_PT[s.slot])}</span></div>` +
+          `<div class="linhas">${esc(P.ELEM_PT[s.elem])}: +${fmt(s.ganho)} % (de ${fmt(s.atual ? P.protecaoDe(s.atual, s.elem) : 0)} para ${fmt(s.protecaoNova)} %)${s.atual ? ' no lugar de ' + esc(s.atual.nome) : ''} · nota ${fmt(s.ptAtual)} → ${fmt(s.ptNova)} pt${s.custoPt > 0 ? ` <span class="chip warn">perde ${fmt(s.custoPt)} pt de dano</span>` : ' <span class="chip ok">sem perder dano</span>'}${s.conta !== r.conta ? ' <span class="chip acc">outra conta</span>' : ''}</div></div></div>`).join('');
+      } else if (x.pecas.length) h += '<div class="small muted" style="margin-top:8px">Nenhuma peça parada nas 3 contas cobre melhor o que falta.</div>';
+      h += '</div>';
+    }
+    el.innerHTML = h + '</div>';
+  }
+  $('#ag-conta').addEventListener('change', renderAguentar); $('#ag-mapa').addEventListener('change', renderAguentar);
+
+  /* ---- limpeza ---- */
+  function renderLimpeza() {
+    const el = $('#limpeza');
+    if (!S.contas.length) { el.innerHTML = '<div class="card vazio">Carregue um relatório na aba Carga.</div>'; return; }
+    el.innerHTML = S.contas.map(c => {
+      const l = P.limpeza(c);
+      const bloco = (titulo, lista, npc, chip) => lista.length ? `<h3 style="margin-top:10px">${titulo} <span class="chip ${chip}">${lista.length}</span> <span class="muted small num">NPC ${ouro(npc)}</span></h3>` + lista.map(p => `<div class="peca">${figura(p)}<div class="corpo"><div class="nome"><span class="rar${Number(p.raridade) || 0}">${esc(p.nome)}</span>${p.refino ? ` <span class="num">+${p.refino}</span>` : ''} <span class="muted small">${esc(p.origem)}</span></div><div class="linhas">${esc(String(p.veredito || '').replace(/^[^:]*:\s*/, ''))}</div></div><div class="pts">${ouro(p.npc)}</div></div>`).join('') : '';
+      return `<div class="card"><h3>${esc(c.nome)}</h3>` + (bloco('Sobras', l.grupos.sobra, l.npc.sobra, 'bad') + bloco('Épicos sem linha útil', l.grupos.epico, l.npc.epico, 'bad') + bloco('Encaixes nobres (Mercado)', l.grupos.nobre, l.npc.nobre, 'acc') + bloco('Bases de forja (guardar)', l.grupos.forja, l.npc.forja, 'acc') || '<div class="vazio">nada a limpar</div>') + '</div>';
+    }).join('');
+  }
+
+  function renderTudo() { renderContas(); renderResumoCarga(); renderPersonagens(); renderBau(); renderPassar(); renderAguentar(); renderLimpeza(); mostrar(); }
+  sondarVersao(() => renderTudo());
+  renderTudo();
+})();
+</script>

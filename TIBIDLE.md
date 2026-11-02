@@ -6960,3 +6960,21 @@ Dono, 02/11: "verifica se tem novos setups no Discord". Fórum `guias-da-comunid
   sem Utamo Vita com set de magma) — sem mínimos, mesma regra do Bog do Matheustlm. Mindyh: Warzone Fungus 141k xp/h e +331k/h (nível 156,
   só print de estatística). Specter avisa: "nunca vá na Lizard City ou Draken Walls sem magma set; evento de bestiário, façam o de max HP".
 - Pendente: Specter vai postar os presets da Inquisition inteira no tópico "Aoba meu povo" quando abrir o acesso (boss semanal da Inq).
+
+## Painel das 3 contas — página no claude.ai (02/11)
+Dono, 02/11: "tenho o JSON das 3 contas; monta um html com imagem dos itens e status, aguentar mapa, onde posso trocar itens entre as
+contas; eu gero o JSON de cada conta e faço o upload". Decisões: ainda não troca itens (só quer saber se vale a pena); página no
+claude.ai (link privado https://claude.ai/artifact/SzoMZaYgyk7M73Jc3GzP6q); aguentar pelo elemento do mapa. Desenho em
+`docs/plans/2026-11-02-painel-3-contas-design.md`; fonte em `docs/painel/` (index.html + painel-core.js + dados.js); 10 testes em
+`testes/painel.test.js` (node puro).
+- **Entrada**: os relatórios `tibidle-equip-<conta>-<data>.json` (Equip → RELATÓRIO, formato 1). Ficam no localStorage da página.
+- **Figura do item**: o jogo serve `/assets/v<ver>/items/<id/1000>/<id>.webp` (32×32); nome→id vem do `items-by-name.json` embutido
+  (9.279 nomes); a versão dos assets é descoberta por uma sonda de imagem (magic sword 3288) e guardada. 93 figuras nas 3 contas, 0 quebradas.
+- **Seções**: Personagens (12 cartões com as 8 peças, encaixes, imbuements, nota), Baú (filtros por conta/vocação/espaço/veredito/origem,
+  busca), Vale a pena passar (contas próximas pela nota do Equip; contas com > 40 níveis pela ficha — ataque/defesa/armadura — só onde a
+  ficha diz o que o Equip quer; arma de 2 mãos compara com arma + escudo; peça que exige nível acima fica fora; 3 por espaço; iguais
+  agrupadas), Aguentar mapa (elemento = imunidade ≥ 100 % dos monstros, físico sempre; proteção = ficha + encaixes + proteção mágica +
+  imbuements; sugestões ≥ 3 % de qualquer conta; avisos da comunidade por mapa), Limpeza (sobras, épicos sem linha, encaixes nobres, bases).
+- **Lição**: a nota do Equip (pt) é da régua de cada conta — a mesma wand of everblazing vale 1,1 pt na u2tag e 7,4 na ShamanBr. Entre
+  contas a comparação é sempre aproximada; a página diz isso.
+- **Pendente (helper 2.39.1, formato 2 do relatório)**: `itemId`, `assetsVer`, lotação do depósito (n/300), ouro, mapa atual.
