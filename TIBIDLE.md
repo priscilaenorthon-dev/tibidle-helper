@@ -7043,3 +7043,9 @@ Na ShamanBr o Paladino paga só 1,37 pt por regen_mana, logo distância +1 vale 
   selecionar também para ir") — mesma lista `best_cfg.marcados`, mesma ordem de marcação. Só quando o modo está desligado.
 - Testes: `testes/relatorio.test.js` (formato 3) e `testes/painel.test.js` (11, régua do destino com tabela, piso e id ignorado).
   Pendente: teste ao vivo do ciclo do Bestiário (fechar → cidade → próximo) e a primeira transferência real conferida no Equip.
+- **Figuras (02/11, noite)**: as figuras dos itens sumiram na página do claude.ai. A URL do jogo (`/assets/v242/items/<id÷1000>/<id>.webp`)
+  continua respondendo 200 até com Referer do claude.ai — é o navegador do artifact que não carrega imagem de fora. As 117 figuras
+  dos 3 relatórios foram copiadas para `docs/painel/img/<id>.webp` (82 KB) e publicadas junto com a página (`files` + `root`
+  docs/painel); `figura()` carrega `img/<id>.webp`, cai na URL do jogo se faltar e, por último, nas iniciais. Item novo num
+  relatório futuro: rodar de novo `baixar-figuras.py` (scratchpad) ou copiar o webp do jogo para a pasta e republicar.
+
