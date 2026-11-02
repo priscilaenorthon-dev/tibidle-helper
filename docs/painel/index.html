@@ -198,11 +198,15 @@ details summary{cursor:pointer;color:var(--accent)}
     };
     tenta();
   }
+  /* 02/11 (noite): as figuras sumiram no claude.ai — a página do artifact não deixa carregar imagem de fora (a URL do jogo continua
+   * servindo). Agora cada figura vem junto com a página (img/<id>.webp, copiadas do jogo); se faltar alguma (item novo num relatório
+   * futuro), tenta a URL do jogo e, por último, as iniciais do nome. */
   function figura(peca, tam) {
     const id = P.idDoItem(peca, D.nomeId);
     const ini = esc(String(peca.nome || '?').split(' ').map(w => w[0]).join('').slice(0, 3).toUpperCase());
-    if (id == null || !S.ver) return `<div class="fig sem" title="${esc(peca.nome)}">${ini}</div>`;
-    return `<div class="fig"><img src="${P.urlFigura(id, S.ver)}" alt="" loading="lazy" width="32" height="32" onerror="this.parentNode.className='fig sem';this.parentNode.textContent='${ini}'"></div>`;
+    if (id == null) return `<div class="fig sem" title="${esc(peca.nome)}">${ini}</div>`;
+    const reserva = S.ver ? P.urlFigura(id, S.ver) : '';
+    return `<div class="fig"><img src="img/${id}.webp" data-reserva="${esc(reserva)}" alt="" loading="lazy" width="32" height="32" onerror="if(this.dataset.reserva){this.src=this.dataset.reserva;this.dataset.reserva='';}else{this.parentNode.className='fig sem';this.parentNode.textContent='${ini}';}"></div>`;
   }
 
   /* ---- carga ---- */
