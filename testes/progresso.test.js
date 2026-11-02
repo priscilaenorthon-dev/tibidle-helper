@@ -77,10 +77,12 @@ t('bestiário/completar: marco +0 não é passo; completo, nível, levelMax e pr
     const ids = M.pgPlanoBestiario(fora, { 1: 1000 }, {}, 67, PESOS_BEST, { premium: false }).map(x => x.id);
     assert.deepStrictEqual(ids, [], 'completa, acima do nível, acima do levelMax e premium sem Premium: ' + ids);
 });
-t('bestiário/completar: fila respeita a ordem e leva a caçada marcada que "não compensa" até o fim', () => {
+t('2.40.0 bestiário/completar: a fila é a ORDEM em que o dono marcou e cada mapa vai até o último marco; id fora das linhas é ignorado; Set ainda vale (ordem das linhas)', () => {
     const hs = [hb(125, 'Goblins', 15, 'manaRegen', [[1000, 1], [2000, 2], [4000, 3]], 4), hb(140, 'Scarabs', 30, 'maxMana', [[2000, 3], [5000, 6], [10000, 9]], 4)];
-    const l = M.pgPlanoBestiario(hs, {}, {}, 67, PESOS_BEST);
-    assert.deepStrictEqual(M.pgFilaBestiario(l, new Set([140, 125])).map(f => [f.id, f.kills, f.value]), [[125, 4000, 3], [140, 10000, 9]]);
+    const l = M.pgPlanoBestiario(hs, { 125: 2500 }, {}, 67, PESOS_BEST);
+    assert.deepStrictEqual(M.pgFilaBestiario(l, [140, 999, 125]).map(f => [f.id, f.kills, f.value]), [[140, 10000, 9], [125, 4000, 3]]);
+    assert.deepStrictEqual(M.pgFilaBestiario(l, new Set([140, 125])).map(f => f.id), l.map(x => x.id).filter(id => id === 140 || id === 125));
+    assert.deepStrictEqual(M.pgFilaBestiario(l, []), []);
 });
 
 t('2.11.11 bestiário: marco rápido com ganho < 1 pt não compensa (Dwarf Bridge +9 vida máx ≈ 0,6 pt)', () => {

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.39.2
+// @version      2.40.0
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.39.2';
+    const VERSAO = '2.40.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -6009,7 +6009,7 @@
      * 'finalizar' (botão Finalizar hunt: só o passo 1). Decisão do dono em
      * 27/09: "Venda rápida completa: um clique dentro da hunt encerra,
      * purifica, vende, guarda e fica na cidade". */
-    const NOME_ORIGEM = { auto: 'AUTO HUNT', venda: 'Venda rápida', finalizar: 'Finalizar hunt', bestiario: 'Bestiário' };
+    const NOME_ORIGEM = { auto: 'AUTO HUNT', venda: 'Venda rápida', finalizar: 'Finalizar hunt', bestiario: 'Bestiário', bestiario_troca: 'Bestiário (troca de mapa)' };
     async function cicloDeVenda(origem) {
         if (_cicloEmCurso) { log('ciclo já em andamento', 'erro'); return false; }
         if (_aprendendo) { log('medindo dano — ciclo adiado', 'erro'); return false; }
@@ -6030,7 +6030,7 @@
             /* v2.11.10 — a venda do modo "completar bestiário" falhou: o modo para (senão voltaria a tentar a cada 5 min) */
             /* v2.11.15 — e devolve os kits de antes (antes a foto era jogada fora e o kit do bestiário ficava);
              * o bestEncerrar espera o ciclo terminar antes de mexer nos perfis */
-            if (origem === 'bestiario' && BEST.ativo) bestEncerrar('modo "completar" DESLIGADO (a venda falhou) — kits devolvidos', 'erro', 'perfis').catch(e => falhou('bestiário (encerrar)', e));
+            if ((origem === 'bestiario' || origem === 'bestiario_troca') && BEST.ativo) bestEncerrar('modo "completar" DESLIGADO (a venda falhou) — kits devolvidos', 'erro', 'perfis').catch(e => falhou('bestiário (encerrar)', e));
         };
         try {
             log(`ciclo de venda (${origem}) iniciado — mochila ${c0 ? c0.pct + '% livre' : '?'}`, 'info');
@@ -6067,6 +6067,8 @@
              * caçada do bestiário, não para a memorizada (dono, 29/09: "e se a
              * mochila encher fazendo bestiário?") */
             const destino = bestAlvoId() != null ? bestAlvoId() : a.huntId;
+            /* v2.40.0 — 'bestiario_troca' (bestiário completo): vende e FICA na cidade; o bestPasso entra no próximo mapa da lista
+             * do dono com lure e kit (dono, 02/11: "o jogo dá erro se pular de um bestiário para outro" — a troca passa pela cidade) */
             if (origem === 'bestiario' || (origem === 'auto' && a.voltar)) {
                 if (destino == null) { desligar('voltar', 'nenhuma hunt memorizada'); return false; }
                 const r5 = await voltarParaHunt(destino);
@@ -12811,8 +12813,13 @@
         }
         return out.sort((a, b) => (b.vale - a.vale) || (b.ptH - a.ptH));
     }
-    /* marcados (ids) → fila [{id, kills, value}] na ordem das linhas; quem não "vale" e foi marcado vai até o fim */
-    const pgFilaBestiario = (linhas, marcados) => (linhas || []).filter(l => marcados.has(l.id)).map(l => { const a = l.alvo || l.ultimo; return { id: l.id, kills: a.kills, value: a.value, bonus: l.bonus }; });
+    /* v2.40.0 — ordem (array de ids, na ordem em que o dono marcou) → fila [{id, kills, value, bonus}] nessa ordem, cada um até o ÚLTIMO
+     * marco (bestiário completo). Um Set ainda é aceito (ordem das linhas). */
+    function pgFilaBestiario(linhas, ordem) {
+        const porId = new Map((linhas || []).map(l => [l.id, l]));
+        const ids = Array.isArray(ordem) ? ordem : (linhas || []).map(l => l.id).filter(id => ordem && ordem.has(id));
+        return ids.map(id => porId.get(id)).filter(Boolean).map(l => { const a = l.ultimo || l.alvo; return { id: l.id, kills: a.kills, value: a.value, bonus: l.bonus }; });
+    }
     /* @@PROGRESSO-FIM */
     /* @@INVASAO-INICIO — Invasão (2.17.0): funções puras; testes/invasao.test.js roda este trecho no node. */
     /* =========================================================================
@@ -13130,16 +13137,19 @@
      *  ⚠ Com o jogo fechado o helper não roda: a party fica no mapa em que
      *  estiver (os abates seguem contando, só não troca de caçada).
      * ====================================================================== */
+    /* v2.40.0 — a lista de mapas é do dono (02/11: "quero selecionar os mapas; pode retirar as suas solicitações"): `marcados` é a
+     * ORDEM em que ele marcou (array de ids); cada mapa vai até o ÚLTIMO marco (bestiário completo); sem "vale/não compensa". */
     const BEST_PADRAO = { marcados: null, modelo: 'economica', fim: 'voltar', fimHunt: null };
+    const bestOrdem = (c, linhas) => { const ids = new Set((linhas || []).map(l => l.id)); return (Array.isArray(c.marcados) ? c.marcados : []).map(Number).filter(id => ids.has(id)); };
     const bestCfg = () => Object.assign({}, BEST_PADRAO, ler('best_cfg', {}));
     const guardarBestCfg = (p) => guardar('best_cfg', Object.assign(bestCfg(), p));
-    const BEST = { ativo: false, fila: [], idx: 0, foto: null, passo: false, ocupado: false, restaurando: false, entrouEm: 0, falhas: 0 }; // passo = trocando de caçada; ocupado = encerrando
-    const bestSalvar = () => guardar('best_estado', BEST.ativo ? { ativo: true, fila: BEST.fila, idx: BEST.idx, foto: BEST.foto, t: Date.now() } : null);
+    const BEST = { ativo: false, fila: [], idx: 0, foto: null, passo: false, ocupado: false, restaurando: false, entrouEm: 0, falhas: 0, vender: false }; // passo = trocando de caçada; ocupado = encerrando; vender = bestiário fechado, falta vender na cidade
+    const bestSalvar = () => guardar('best_estado', BEST.ativo ? { ativo: true, fila: BEST.fila, idx: BEST.idx, foto: BEST.foto, vender: !!BEST.vender, t: Date.now() } : null);
     const bestAlvoId = () => (BEST.ativo && BEST.fila[BEST.idx] ? BEST.fila[BEST.idx].id : null);
     function bestRecarregar() {
         const e = ler('best_estado', null);
-        if (!e || !e.ativo || !Array.isArray(e.fila) || !(e.idx < e.fila.length)) return;
-        Object.assign(BEST, { ativo: true, fila: e.fila, idx: e.idx || 0, foto: e.foto || null, entrouEm: Date.now() });
+        if (!e || !e.ativo || !Array.isArray(e.fila) || !(e.idx <= e.fila.length)) return; // idx == fila.length: fechou o último, falta vender e ir ao destino
+        Object.assign(BEST, { ativo: true, fila: e.fila, idx: e.idx || 0, foto: e.foto || null, vender: !!e.vender, entrouEm: Date.now() });
         log(`bestiário: modo "completar" continua ligado — ${BEST.fila.length - BEST.idx} caçada(s) na fila`, 'info');
     }
     /* pt por unidade de cada bônus, somado nos 4 (a capacidade é uma só, da conta) */
@@ -13158,7 +13168,7 @@
     }
     function bestIniciar() {
         const c = bestCfg(), linhas = bestLinhas();
-        const fila = pgFilaBestiario(linhas, new Set(c.marcados || linhas.filter(l => l.vale).map(l => l.id)));
+        const fila = pgFilaBestiario(linhas, bestOrdem(c, linhas));
         if (!fila.length) { avisar('progresso', 'bestiário: marque ao menos uma caçada', 'erro'); return; }
         if (!socketAberto() || !ESTADO_WS.perfisDoServidor) { avisar('progresso', 'bestiário: socket sem perfis — dê F5 com o helper instalado', 'erro'); return; }
         const ocup = travaJogo();
@@ -13167,7 +13177,7 @@
         const cacando = frameFresco() && ESTADO_WS.huntId != null;
         BEST.foto = { t: Date.now(), huntId: cacando ? ESTADO_WS.huntId : null, lureTier: cacando ? ESTADO_WS.frame.lureTier : null,
                       profiles: fotoPerfis() };
-        Object.assign(BEST, { ativo: true, fila, idx: 0, entrouEm: Date.now(), falhas: 0 });
+        Object.assign(BEST, { ativo: true, fila, idx: 0, entrouEm: Date.now(), falhas: 0, vender: false });
         bestSalvar();
         const dest = bestDestino();
         avisar('progresso', `bestiário: modo "completar" LIGADO — ${fila.map(f => ((pgHuntCat(f.id) || {}).title || f.id) + ' até ' + pgInt(f.kills)).join(' → ')} · no fim: ${dest ? 'upar em ' + dest.title : 'voltar para onde estava'}`, 'ok');
@@ -13208,13 +13218,25 @@
             return;
         }
         const alvo = BEST.fila[BEST.idx];
-        if (!alvo) { await bestEncerrar('todos os marcos da lista fechados ✓', 'ok', 'fim'); return; }
+        /* v2.40.0 — bestiário fechado: primeiro a CIDADE (finalizar → purificar → vender → depot) e só depois o próximo mapa da lista
+         * (dono, 02/11: "quando acabar um bestiário tem que ir na cidade e escolher o próximo; o jogo dá erro se pular de um para outro").
+         * Vale também no último: vende e aí vai para o destino escolhido. Respeita a trava de 5 min entre ciclos. */
+        if (BEST.vender) {
+            if (_cicloEmCurso || Date.now() - _ultimoCiclo < CICLO_INTERVALO_MIN_MS || modalAberto()) return; // espera a vez
+            const prox = alvo ? pgHuntCat(alvo.id) : null;
+            log('bestiário: indo à cidade vender' + (prox ? ' — depois, ' + prox.title : ' — depois, o destino do fim'), 'info');
+            BEST.passo = true;
+            try { if (await cicloDeVenda('bestiario_troca')) { BEST.vender = false; bestSalvar(); } }
+            finally { BEST.passo = false; renderizar(); }
+            return;
+        }
+        if (!alvo) { await bestEncerrar('todos os bestiários da lista fechados ✓', 'ok', 'fim'); return; }
         const h = pgHuntCat(alvo.id);
         if (!h) { log(`bestiário: caçada ${alvo.id} não está no catálogo — pulei`, 'erro'); BEST.idx++; bestSalvar(); return; }
         const k = pgNum(PROG.best[String(alvo.id)]);
         if (k != null && k >= alvo.kills) {
             log(`bestiário: ${h.title} chegou a ${pgInt(k)} abates → ${pgBonusTxt(alvo.bonus, alvo.value)} ✓`, 'ok');
-            BEST.idx++; bestSalvar(); renderizar();
+            BEST.idx++; BEST.vender = emHunt() || (frameFresco() && ESTADO_WS.huntId != null); bestSalvar(); renderizar();
             return;
         }
         const aqui = frameFresco() && ESTADO_WS.huntId === h.id;
@@ -13235,6 +13257,8 @@
         renderizar();
         try {
             log(`bestiário: indo para ${h.title} — ${pgInt(k || 0)}/${pgInt(alvo.kills)} abates até ${pgBonusTxt(alvo.bonus, alvo.value)}`, 'info');
+            /* v2.40.0 — de dentro de outra caçada não pula direto: passa pela cidade (vende) e entra no tick seguinte */
+            if (frameFresco() && ESTADO_WS.huntId != null && ESTADO_WS.huntId !== h.id) { BEST.vender = true; bestSalvar(); return; }
             const r = await scanEntrar(h, { lure: h.lureTiers && h.lureTiers.length ? h.lureTiers.length : 1 });
             if (!BEST.ativo) return;
             if (r.erro) {
@@ -13262,33 +13286,36 @@
             const l = alvo ? linhas.find(x => x.id === alvo.id) : null;
             const horas = l && k != null ? Math.max(0, alvo.kills - k) / l.abatesH : null;
             const dest = bestDestino();
-            return `<div class="pg-cx"><div class="pg-lin"><b>Completar marcos</b><span class="tb-ok">${BEST.restaurando ? 'terminando…' : 'ligado · ' + (BEST.idx + 1) + '/' + BEST.fila.length}</span></div>` +
-                (h ? `<div>${BEST.passo ? 'indo para' : 'caçando'} <b>${escHtml(h.title)}</b>: ${pgInt(k)}/${pgInt(alvo.kills)} → ${pgBonusTxt(alvo.bonus, alvo.value)}${horas != null ? ' · ~' + pgHoras(horas) : ''}</div>` : '') +
+            return `<div class="pg-cx"><div class="pg-lin"><b>Completar bestiários</b><span class="tb-ok">${BEST.restaurando ? 'terminando…' : 'ligado · ' + Math.min(BEST.idx + 1, BEST.fila.length) + '/' + BEST.fila.length}</span></div>` +
+                (BEST.vender ? `<div>bestiário fechado — <b>${BEST.passo ? 'vendendo na cidade' : 'esperando a vez de vender na cidade'}</b>${h ? ', depois ' + escHtml(h.title) : ''}</div>` :
+                h ? `<div>${BEST.passo ? 'indo para' : 'caçando'} <b>${escHtml(h.title)}</b>: ${pgInt(k)}/${pgInt(alvo.kills)} → ${pgBonusTxt(alvo.bonus, alvo.value)}${horas != null ? ' · ~' + pgHoras(horas) : ''}</div>` : '') +
                 `<div class="pg-mut pg-peq">depois: ${BEST.fila.slice(BEST.idx + 1).map(f => escHtml((pgHuntCat(f.id) || {}).title || f.id)).join(', ') || '—'} · no fim: ${dest ? 'upar em ' + escHtml(dest.title) : 'voltar para onde estava'}</div>` +
                 `<button type="button" class="tb-bt" id="pg-best-parar" ${BEST.restaurando ? 'disabled' : ''} style="width:100%;margin-top:4px">PARAR e voltar para onde estava</button></div>`;
         }
-        const c = bestCfg(), marc = new Set(c.marcados || linhas.filter(l => l.vale).map(l => l.id));
+        const c = bestCfg(), ordem = bestOrdem(c, linhas), pos = new Map(ordem.map((id, i) => [id, i + 1]));
         const linhaHtml = l => {
-            const a = l.alvo || l.ultimo;
-            return `<label class="pg-lin" style="cursor:pointer;align-items:center"><span><input type="checkbox" data-pg-best="${l.id}" ${marc.has(l.id) ? 'checked' : ''} style="margin:0 4px 0 0;vertical-align:middle">${escHtml(l.hunt.title)} <span class="pg-mut">[${pgInt(pgNum(l.hunt.levelMin) || 1)}]</span>` +
+            const a = l.ultimo, n = pos.get(l.id);
+            return `<label class="pg-lin" style="cursor:pointer;align-items:center"><span><input type="checkbox" data-pg-best="${l.id}" ${n ? 'checked' : ''} style="margin:0 4px 0 0;vertical-align:middle">${n ? `<b>${n}.</b> ` : ''}${escHtml(l.hunt.title)} <span class="pg-mut">[${pgInt(pgNum(l.hunt.levelMin) || 1)}]</span>` +
                 `<div class="pg-mut pg-peq">${pgInt(l.k)}${l.conhecido ? '' : ' (não lido)'} → ${pgInt(a.kills)} abates · ~${pgHoras(a.horas)}${l.estimado ? ' (est.)' : ''}</div></span>` +
-                `<span>${pgBonusTxt(l.bonus, a.value)}<div class="pg-mut pg-peq">≈ ${pgDec(a.ganhoPt, 1)} pt</div></span></label>`;
+                `<span>${pgBonusTxt(l.bonus, a.value)}</span></label>`;
         };
-        const valem = linhas.filter(l => l.vale), outras = linhas.filter(l => !l.vale);
-        const fila = pgFilaBestiario(linhas, marc);
-        const tot = fila.reduce((s, f) => { const l = linhas.find(x => x.id === f.id); return s + (l.alvo || l.ultimo).horas; }, 0);
+        const lista = linhas.slice().sort((x, y) => (pgNum(y.hunt.levelMin) || 1) - (pgNum(x.hunt.levelMin) || 1) || String(x.hunt.title).localeCompare(String(y.hunt.title)));
+        const fila = pgFilaBestiario(linhas, ordem);
+        const tot = fila.reduce((s, f) => { const l = linhas.find(x => x.id === f.id); return s + l.ultimo.horas; }, 0);
         const nv = nivelAtual();
         const huntsNivel = (CAT.hunts || []).filter(x => x && (x.levelMin || 1) <= nv).sort((a, b) => (b.levelMin || 0) - (a.levelMin || 0) || String(a.title).localeCompare(String(b.title)));
-        return `<div class="pg-cx"><div class="pg-lin"><b>Completar marcos</b><span class="pg-mut">desligado</span></div>` +
-            (valem.length ? valem.map(linhaHtml).join('') : '<div class="pg-mut">nenhum marco compensa agora.</div>') +
-            (outras.length ? `<details class="pg-aj" data-k="pg-best-outras"><summary>não compensam (${outras.length})</summary><div>${outras.map(linhaHtml).join('')}</div></details>` : '') +
+        return `<div class="pg-cx"><div class="pg-lin"><b>Completar bestiários</b><span class="pg-mut">desligado</span></div>` +
+            `<div class="pg-mut pg-peq">Marque os mapas na ordem em que quer fazer (o número é a ordem). Cada um vai até o bestiário completo; entre um e outro a party vai à cidade vender e guardar.</div>` +
+            (lista.length ? lista.map(linhaHtml).join('') : '<div class="pg-mut">nenhuma caçada do seu nível com bestiário por fechar.</div>') +
             `<div class="pg-form"><label for="pg-best-modelo">kit</label><select id="pg-best-modelo">${Object.keys(MODELOS).filter(m => m !== 'boss' && m !== 'mana').map(m => `<option value="${m}"${c.modelo === m ? ' selected' : ''}>${escHtml(nomeModelo(m))}</option>`).join('')}</select>${c.modelo === 'discord' ? '<span class="pg-mut pg-peq">setup da comunidade do mapa (os "Northon - &lt;mapa&gt;" contam); mapa sem setup cai no Em área</span>' : ''}</div>` +
             `<div class="pg-form"><label for="pg-best-fim">no fim, upar em</label><select id="pg-best-fim" style="flex:1;min-width:0"><option value="">onde estava antes</option>${huntsNivel.map(x => `<option value="${x.id}"${c.fim === 'hunt' && c.fimHunt === x.id ? ' selected' : ''}>[${x.levelMin || 1}] ${escHtml(x.title)}</option>`).join('')}</select></div>` +
             `<button type="button" class="tb-bt pri" id="pg-best-ir" ${fila.length ? '' : 'disabled'} style="width:100%;margin-top:4px">COMPLETAR (${fila.length}) · ~${pgHoras(tot)}</button>` +
-            `<div class="pg-mut pg-peq">${autoHunt().on ? 'Mochila cheia: o Auto Hunt vende e volta para a caçada do bestiário.' : 'Mochila cheia (no limite do Auto Hunt): o próprio modo vende e volta.'} Morte para o modo. Com o jogo fechado o helper não troca de caçada.</div></div>`;
+            `<div class="pg-mut pg-peq">${autoHunt().on ? 'Mochila cheia: o Auto Hunt vende e volta para a caçada do bestiário.' : 'Mochila cheia (no limite do Auto Hunt): o próprio modo vende e volta.'} Bestiário fechado: cidade (vender e guardar) e só então o próximo mapa. Morte para o modo. Com o jogo fechado o helper não troca de caçada.</div></div>`;
     }
     function ligarBestiario() {
-        $$('[data-pg-best]').forEach(cb => { cb.onchange = () => { guardarBestCfg({ marcados: $$('[data-pg-best]').filter(x => x.checked).map(x => parseInt(x.dataset.pgBest)) }); renderizar(); }; });
+        $$('[data-pg-best]').forEach(cb => { cb.onchange = () => { // v2.40.0 — a ordem de marcação é a ordem da fila
+            const id = parseInt(cb.dataset.pgBest), atual = bestOrdem(bestCfg(), bestLinhas()).filter(x => x !== id);
+            guardarBestCfg({ marcados: cb.checked ? atual.concat([id]) : atual }); renderizar(); }; });
         const mo = $('#pg-best-modelo'); if (mo) mo.onchange = () => guardarBestCfg({ modelo: mo.value });
         const fi = $('#pg-best-fim'); if (fi) fi.onchange = () => guardarBestCfg(fi.value ? { fim: 'hunt', fimHunt: parseInt(fi.value) } : { fim: 'voltar', fimHunt: null });
         const ir = $('#pg-best-ir'); if (ir) ligarDoisToques(ir, 'best-ir', 'confirmar: trocar de caçada?', bestIniciar);

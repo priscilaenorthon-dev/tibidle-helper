@@ -7007,3 +7007,17 @@ diferentes) e, com > 40 níveis, só a ficha — saíam ganhos negativos e um sk
   nota; sem iid de instância, a peça leva `m:<ordem>`. (2) Peça fora de todos os baldes de `distribuirEquip` (sobra neste mapa mas não
   no cenário de magia — v2.11.6) saía com `veredito: null` (u2tag: Zaoan shoes, steel shield); agora diz "guardar: sobra neste mapa,
   mas vale num mapa de magia — o Equip não vende". Testes em `testes/relatorio.test.js` e `testes/painel.test.js` (11).
+
+
+## 2.40.0 — Progresso › Bestiário: a lista de mapas é do dono e a troca passa pela cidade (02/11)
+Dono, 02/11: "quero ter a opção de selecionar os mapas; pode retirar as suas solicitações; ele vai fazer o bestiário, completando, vai na
+cidade vende os itens e vai para o próximo mapa que defini" e "o jogo dá erro se pular de um bestiário para outro".
+- **Lista**: todas as caçadas do nível com bestiário por fechar, por nível; o dono marca na ordem em que quer fazer (o número ao lado é a
+  ordem; `best_cfg.marcados` guarda os ids nessa ordem — `bestOrdem`). Saíram "vale/não compensa", "≈ pt" e a pré-marcação automática;
+  `pgPlanoBestiario` continua só para abates/h e horas. Cada mapa vai até o ÚLTIMO marco (`pgFilaBestiario(linhas, ordem)` usa `ultimo`).
+- **Troca pela cidade**: ao fechar o bestiário, `BEST.vender` liga (persistido em `best_estado`); o `bestPasso` roda
+  `cicloDeVenda('bestiario_troca')` — finalizar → purificar → vender → depot — e FICA na cidade; no tick seguinte entra no próximo mapa
+  com lure máxima e o kit (`scanEntrar` da cidade, sem stop/start em sequência). Respeita a trava de 5 min entre ciclos e janela aberta.
+  Também no último: vende e só então vai ao destino do fim. Se a venda falha, o modo desliga e devolve os kits (como já era).
+  Se por algum motivo o alvo mudou com a party dentro de outra caçada, o `bestPasso` manda à cidade em vez de pular direto.
+- Teste em `testes/progresso.test.js`. Pendente: rodar ao vivo um ciclo inteiro (fechar → cidade → próximo) numa conta.
