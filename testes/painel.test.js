@@ -74,9 +74,20 @@ t('reguaDe: pt ÷ valor por (conta, vocação, id), mediana entre os itens; nota
     /* plate armor da B (armor 20 = 8 pt na régua da B) vale 50 na régua da A */
     const pl = B.itens.find(i => i.iid === 'b2'), nd = P.notaNoDestino(pl, 'KNIGHT', A);
     assert.strictEqual(nd.nota, 50); assert.strictEqual(nd.notaOrigem, 8); assert.strictEqual(nd.preciso, true); assert.deepStrictEqual(nd.semRegua, []);
-    /* linha que o destino nunca viu (resist_fogo) fica com o pt da origem e marca */
+    /* linha que o destino nunca viu (resist_fogo) NÃO conta (02/11: o scarf +1 distância ficou com 9,6 da origem e o Equip do destino deu 2,7) */
     const mc = B.itens.find(i => i.iid === 'b4'), nd2 = P.notaNoDestino(mc, 'SORCERER', A);
-    assert.strictEqual(nd2.nota, 38); assert.strictEqual(nd2.preciso, false); assert.deepStrictEqual(nd2.semRegua, ['resist_fogo']);
+    assert.strictEqual(nd2.nota, 36); assert.strictEqual(nd2.preciso, false); assert.deepStrictEqual(nd2.semRegua, ['resist_fogo']); assert(nd2.linhas.find(l => l.id === 'resist_fogo').fonte === 'ignorada');
+    /* formato 3: a tabela `pesos` do relatório manda (e a linha ignorada passa a contar) */
+    const A3 = P.normConta(Object.assign(rel('A3', 175, A.itens, A.personagens), { formato: 3, pesos: { SORCERER: { armor: 3, resist_fogo: 1.5, fichaDefesa: { x: 1 } }, PALADIN: { regen_mana: 1.37, distancia: 2.74 } } }));
+    const R3 = P.reguaDe(A3, 'SORCERER'); assert.strictEqual(R3.tabela, true); assert.strictEqual(R3.pesos.resist_fogo, 1.5); assert.strictEqual(R3.pesos.fichaDefesa, undefined);
+    const nd4 = P.notaNoDestino(mc, 'SORCERER', A3); assert.strictEqual(nd4.nota, 42); assert.strictEqual(nd4.preciso, true);
+    /* reconstruindo, o piso da regra do Equip: Paladino distância = 2 × regen. de mana (o caso do scarf) */
+    const C = P.normConta(rel('C', 182, [peca({ iid: 'c1', nome: 'ring', slot: 'ring', atributos: [{ id: 'regen_mana', valor: 2 }], porVoc: { PALADIN: { pontos: 2.74, linhas: [{ id: 'regen_mana', valor: 2, pt: 2.74 }] } } })]));
+    const RC = P.reguaDe(C, 'PALADIN'); assert.strictEqual(RC.pesos.distancia, 2.74); assert.deepStrictEqual(RC.pisos, ['distancia', 'skilldist', 'dano_elem_sagrado']);
+    const scarf = peca({ iid: 's1', nome: 'scarf', slot: 'necklace', ficha: { armor: 1 }, atributos: [{ id: 'distancia', valor: 1 }], porVoc: { PALADIN: { pontos: 9.6, linhas: [{ id: 'distancia', valor: 1, pt: 9.6 }] } } });
+    const nd5 = P.notaNoDestino(scarf, 'PALADIN', C); assert.strictEqual(nd5.nota, 2.74); assert.deepStrictEqual(nd5.pisos, ['distancia']); assert.strictEqual(nd5.preciso, false);
+    /* linha especial (id com espaço) fica com o pt da origem, aproximada */
+    const eh = A.itens.find(i => i.iid === 'a5'), nd6 = P.notaNoDestino(eh, 'SORCERER', B); assert.strictEqual(nd6.nota, 0.4 - 1); assert.deepStrictEqual(nd6.aproximados, ['mana por tiro']);
     /* encaixe da forja que valia 0 na origem (fora das linhas) mas pesa no destino entra */
     const rg = B.itens.find(i => i.iid === 'b5'), nd3 = P.notaNoDestino(rg, 'KNIGHT', A);
     assert.strictEqual(nd3.nota, 10 * 2.5 + 2 * 4, JSON.stringify(nd3)); assert(nd3.linhas.some(l => l.id === 'regen_mana' && l.ptOrigem === 0 && l.pt === 8));
@@ -87,12 +98,12 @@ t('valePassar segue a regra do Equip: nota na régua do destino, troca a partir 
     assert(pl && pl.para === 'A' && pl.voc === 'KNIGHT' && pl.nova === 50 && pl.atual === 40 && pl.ganho === 10 && pl.atualNome === 'dragon scale mail' && pl.firme === true && pl.preciso === true && pl.guardada === false, JSON.stringify(pl));
     assert(!r.some(x => x.peca.iid === 'b3'), 'chain armor: 16 × 2,5 = 40 = o que a A já veste → ganho 0 < 1, o Equip não trocaria');
     const mc = r.find(x => x.peca.iid === 'b4');
-    assert(mc && mc.voc === 'SORCERER' && mc.nova === 38 && mc.atual === 33 && mc.ganho === 5 && mc.preciso === false && mc.notaOrigem === 6, JSON.stringify(mc));
+    assert(mc && mc.voc === 'SORCERER' && mc.nova === 36 && mc.atual === 33 && mc.ganho === 3 && mc.preciso === false && mc.notaOrigem === 6, JSON.stringify(mc));
     assert(!r.some(x => x.peca.iid === 'b6'), 'exige nível 180: A tem 175');
     assert(!r.some(x => x.peca.iid === 'b7'), 'peça de carga (charges) fica fora, como no Equip');
     assert(!r.some(x => x.de === x.para));
     const mcS = r.find(x => x.peca.iid === 'a1' && x.voc === 'SORCERER'); assert(mcS && mcS.nova === 6 && mcS.atual === 1.6 && mcS.ganho === 4.4 && mcS.preciso === true, 'magma coat da A no Feiticeiro da B: armor 10 × 0,4 + resist 4 × 0,5 = 6 contra leather 1,6: ' + JSON.stringify(mcS));
-    const mcB = r.find(x => x.peca.iid === 'a1' && x.voc === 'DRUID'); assert(mcB && mcB.atual === 0 && mcB.nova === 30 && mcB.preciso === false && mcB.semRegua.join() === 'armor', 'magma coat no Druida da B: espaço vazio, qualquer ganho vale; a B não tem régua de Druida → fica o pt da origem, marcado: ' + JSON.stringify(mcB));
+    assert(!r.some(x => x.peca.iid === 'a1' && x.voc === 'DRUID'), 'magma coat no Druida da B: a B não tem régua de Druida → a linha não conta (0) e nada é sugerido (o scarf de 02/11)');
     const rg = r.find(x => x.peca.iid === 'b5'); assert(!rg, 'regen ring: 33 < 40');
     /* a A guarda uma peça melhor que a vestida: o Equip compara com ela */
     const A2 = P.normConta(rel('A2', 175, A.itens.filter(i => i.origem === 'corpo').concat([peca({ iid: 'g1', nome: 'guard armor', slot: 'armor', origem: 'depósito', ficha: { armor: 19 }, porVoc: { KNIGHT: { pontos: 47.5, linhas: [{ id: 'armor', valor: 19, pt: 47.5 }] } } })]),

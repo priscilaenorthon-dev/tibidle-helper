@@ -59,15 +59,26 @@ t('Mercado: só as suas ordens de VENDA abertas; cópia anunciada vem com a peç
 });
 
 t('2.39.1 formato 2: itemId pela base (null sem id), assetsVer, lotação do depósito, ouro e mapa fora da caçada; sem eles, null', () => {
-    assert.strictEqual(M.REL_VERSAO, 2);
+    assert(M.REL_VERSAO >= 2);
     const res = M.distribuirEquip(pecas, undefined, { nivel: 160 });
     const r = M.relatorioEquip({ pecas, res, ctx: { nivel: 160, mapa: null, sk: {} }, base: BASE, ordens: [], conta: { nome: 'C' }, nivel: 160, assetsVer: 'v242', deposito: { usado: 287, total: 300 }, ouro: 1234567, mapa: 'Bog Raiders Yalahar' });
-    assert.strictEqual(r.formato, 2);
+    assert(r.formato >= 2);
     assert.strictEqual(r.itens.find(i => i.iid === 'd1').itemId, 3554, 'steel boots tem id na base');
     assert.strictEqual(r.itens.find(i => i.iid === 'Kb').itemId, null, 'leather boots sem id na base');
     assert.strictEqual(r.assetsVer, 'v242'); assert.deepStrictEqual(r.deposito, { usado: 287, total: 300 }); assert.strictEqual(r.ouro, 1234567); assert.strictEqual(r.mapa, 'Bog Raiders Yalahar');
     const r2 = M.relatorioEquip({ pecas, res, ctx: { nivel: 160, mapa: 'Shadow Nexus', sk: {} }, base: BASE, mapa: 'outro' });
     assert.strictEqual(r2.mapa, 'Shadow Nexus', 'o mapa do contexto (caçando) vence'); assert.strictEqual(r2.assetsVer, null); assert.strictEqual(r2.deposito, null); assert.strictEqual(r2.ouro, null);
+});
+t('2.41.0 formato 3: `pesos` por vocação = pesosDaVoc da conta (só números; a página pontua a peça de outra conta com eles)', () => {
+    const res = M.distribuirEquip(pecas, undefined, { nivel: 160 });
+    const r = M.relatorioEquip({ pecas, res, ctx: { nivel: 160, mapa: null, sk: {} }, base: BASE });
+    assert.strictEqual(r.formato, 3);
+    for (const v of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert(r.pesos[v] && Object.values(r.pesos[v]).every(x => typeof x === 'number'), v + ': só números');
+    assert(r.pesos.KNIGHT.regen_mana > 0 && r.pesos.KNIGHT.armor > 0 && r.pesos.KNIGHT.fichaDefesa === undefined, 'Cavaleiro: regen e armadura; a ficha de defesa (objeto) fica fora');
+    assert(r.pesos.PALADIN.distancia >= 2 * r.pesos.PALADIN.regen_mana - 1e-6, 'Paladino: distância ≥ 2 × regen. de mana (PAL_DIST_REGEN_EQUIV)');
+    assert(r.pesos.SORCERER.nivel_magico >= 3 * r.pesos.SORCERER.regen_mana - 1e-6, 'Feiticeiro: ML ≥ 3 × regen. de mana');
+    assert.strictEqual(r.pesos.SORCERER.armor, 0, 'armadura não vale nos magos');
+    const v0 = M.relatorioEquip({}); assert(v0.pesos && v0.pesos.KNIGHT && v0.pesos.KNIGHT.regen_mana > 0, 'sem contexto: a referência (PARTY_REF)');
 });
 t('2.39.2: ordem antiga com `instance` continua lendo; peça fora de todos os baldes do Equip ganha veredito (não fica null)', () => {
     const res = M.distribuirEquip(pecas, undefined, null);

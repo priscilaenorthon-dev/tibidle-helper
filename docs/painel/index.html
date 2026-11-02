@@ -345,7 +345,7 @@ details summary{cursor:pointer;color:var(--accent)}
     const el = $('#passar');
     if (S.contas.length < 2) { el.innerHTML = '<div class="card vazio">Precisa de pelo menos duas contas carregadas.</div>'; return; }
     const r = P.valePassar(S.contas);
-    const regra = `<div class="aviso small">Cada peça parada é pontuada com a <b>régua da conta de destino</b> (os pesos do Equip de lá, reconstruídos do relatório dela) e comparada com a melhor peça que o destino já tem no espaço — vestida ou guardada. Só aparece o que o Equip de lá proporia depois da transferência: ganho de 1 pt ou mais. Linha destacada = ganho de 3 pt ou mais (certo mesmo com os 2 pt de bônus que o Equip dá à peça já escolhida). <span class="chip warn">≈</span> = alguma linha da peça não tem peso conhecido no destino (ficou com o pt da origem).</div>`;
+    const regra = `<div class="aviso small">Cada peça parada é pontuada com a <b>régua da conta de destino</b> (os pesos do Equip de lá, reconstruídos do relatório dela) e comparada com a melhor peça que o destino já tem no espaço — vestida ou guardada. Só aparece o que o Equip de lá proporia depois da transferência: ganho de 1 pt ou mais. Linha destacada = ganho de 3 pt ou mais (certo mesmo com os 2 pt de bônus que o Equip dá à peça já escolhida). <span class="chip warn">≈</span> = estimativa: alguma linha da peça não tem peso exato no destino (relatório antigo: gere de novo com o helper 2.41+, que traz a tabela de pesos; a linha sem peso nenhum NÃO contou).</div>`;
     if (!r.length) { el.innerHTML = regra + '<div class="card">Nenhuma peça parada passaria na regra do Equip de outra conta. As contas já estão com o melhor que têm.</div>'; return; }
     const porPara = {};
     for (const x of r) (porPara[x.para] = porPara[x.para] || []).push(x);
@@ -356,7 +356,8 @@ details summary{cursor:pointer;color:var(--accent)}
           const hoje = x.atualNome ? esc(x.atualNome) + (x.guardada ? ' <span class="muted small">(guardada)</span>' : '') + ' ' : '<span class="muted">nada</span> ';
           const colHoje = hoje + fmt(x.atual) + ' <span class="muted small">pt</span>';
           const colNova = fmt(x.nova) + ' <span class="muted small">pt</span>' + (x.notaOrigem != null ? `<div class="muted small">${fmt(x.notaOrigem)} pt na régua de ${esc(x.de)}</div>` : '');
-          const colGanho = `<b>+${fmt(x.ganho)}</b> pt` + (x.preciso ? '' : ` <span class="chip warn" title="sem peso no destino: ${esc(x.semRegua.join(', '))}">≈</span>`);
+          const motivo = [x.semRegua.length ? 'sem peso no destino (não contou): ' + x.semRegua.join(', ') : '', (x.pisos || []).length ? 'estimado pelo piso da regra do Equip: ' + x.pisos.join(', ') : '', (x.aproximados || []).length ? 'com o pt da origem: ' + x.aproximados.join(', ') : ''].filter(Boolean).join(' · ');
+          const colGanho = `<b>+${fmt(x.ganho)}</b> pt` + (x.preciso ? '' : ` <span class="chip warn" title="${esc(motivo)}">≈</span>`) + (x.tabela === false ? '' : '');
           return `<tr${x.firme ? ' class="destaque"' : ''}><td>${figura(x.peca)}</td><td><span class="rar${Number(x.peca.raridade) || 0}">${esc(x.peca.nome)}</span>${x.peca.refino ? ` <span class="num">+${x.peca.refino}</span>` : ''}${x.iguais > 1 ? ` <span class="chip">×${x.iguais} iguais</span>` : ''}${x.exige ? ` <span class="muted small">nível ${x.exige}</span>` : ''}<div class="muted small">${esc(linhasPeca(x.peca).encaixes.join(' · '))}</div></td>` +
             `<td>${esc(x.de)} <span class="muted small">(${esc(x.peca.origem)})</span></td><td>${esc(P.VOC_PT[x.voc])} · ${esc(P.SLOT_PT[x.slot])}</td>` +
             `<td class="num">${colHoje}</td><td class="num">${colNova}</td><td class="num">${colGanho}</td><td class="num">${ouro(x.peca.npc)}</td></tr>`;

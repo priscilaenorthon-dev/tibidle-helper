@@ -39,7 +39,8 @@
             nome: String(c.nome || 'conta'), mundo: c.mundo || '', nivel: num(j.nivel), fase: num(j.fase), geradoEm: j.geradoEm || null, versao: j.versao || '', formato: num(j.formato) || 1,
             skills: j.skills || {}, personagens: j.personagens || {}, itens: j.itens.map(i => Object.assign({}, i, { ficha: i.ficha || {}, atributos: i.atributos || [], imbuements: i.imbuements || [], porVoc: i.porVoc || {} })),
             mercado: Array.isArray(j.mercado) ? j.mercado : [], legado: j.legado || null, loyalty: j.loyalty || null,
-            deposito: j.deposito || null, ouro: j.ouro != null ? num(j.ouro) : null, mapa: j.mapa || null, assetsVer: j.assetsVer || null
+            deposito: j.deposito || null, ouro: j.ouro != null ? num(j.ouro) : null, mapa: j.mapa || null, assetsVer: j.assetsVer || null,
+            pesos: j.pesos && typeof j.pesos === 'object' ? j.pesos : null // formato 3 (helper 2.41.0): a tabela de pesos do Equip por vocação
         };
     }
     const diasDesde = (iso, agora) => (iso ? Math.floor(((agora || Date.now()) - new Date(iso).getTime()) / 86400000) : null);
@@ -148,38 +149,54 @@
      * A nota do Equip é da régua de cada conta (nível, fase, party medida): a mesma peça vale 1,1 pt numa conta e 7,4 noutra. Para saber
      * se o Equip da conta de DESTINO vai propor a peça, a página pontua a peça com os pesos do destino — reconstruídos do próprio relatório
      * dele: cada item traz `linhas` {id, valor, pt}, e pt ÷ valor é constante por (conta, vocação, id) (conferido nas 3 contas em 02/11:
-     * variação só de arredondamento). Linha cujo id o destino nunca viu fica com o pt da origem e é marcada (`semRegua`). */
+     * variação só de arredondamento). Desde o formato 3 (helper 2.41.0) o relatório traz a tabela inteira (`pesos`) e nada é reconstruído.
+     * 02/11, scarf +1 distância da u2tag para a ShamanBr: a ShamanBr não tinha item com distância, a página usou o pt da origem (9,6) e o
+     * Equip de lá não propôs (lá vale 2 × regen. de mana = 2,7). Agora: com a tabela, o peso exato; reconstruindo, os PISOS da regra do
+     * Equip (Paladino: distância = 2 × regen. de mana e dano sagrado = 0,6 ×; magos: nível mágico = 3 ×) valem como estimativa (`pisos`);
+     * id sem peso nenhum NÃO conta (0) e fica em `semRegua` — nunca mais o pt da origem. */
+    const PISOS = { PALADIN: [['distancia', 'regen_mana', 2], ['skilldist', 'regen_mana', 2], ['dano_elem_sagrado', 'regen_mana', 0.6]],
+                    SORCERER: [['nivel_magico', 'regen_mana', 3], ['magiclevelpoints', 'regen_mana', 3]], DRUID: [['nivel_magico', 'regen_mana', 3], ['magiclevelpoints', 'regen_mana', 3]] };
     const _reguas = new WeakMap();
     function reguaDe(conta, voc) {
         let m = _reguas.get(conta); if (!m) { m = {}; _reguas.set(conta, m); }
         if (m[voc]) return m[voc];
+        const tab = conta.pesos && conta.pesos[voc];
+        if (tab && typeof tab === 'object') {
+            const pesos = {}; for (const [id, x] of Object.entries(tab)) if (typeof x === 'number' && Number.isFinite(x)) pesos[id] = x;
+            return (m[voc] = { pesos, n: {}, pisos: [], tabela: true });
+        }
         const acc = {};
         for (const it of (conta.itens || [])) {
             const pv = it.porVoc && it.porVoc[voc]; if (!pv || !Array.isArray(pv.linhas)) continue;
             for (const l of pv.linhas) { const v = Number(l.valor), pt = Number(l.pt); if (!l.id || !Number.isFinite(v) || !v || !Number.isFinite(pt)) continue; (acc[l.id] = acc[l.id] || []).push(pt / v); }
         }
-        const pesos = {}, n = {};
+        const pesos = {}, n = {}, pisos = [];
         for (const [id, rs] of Object.entries(acc)) { rs.sort((a, b) => a - b); pesos[id] = rs[rs.length >> 1]; n[id] = rs.length; }
-        return (m[voc] = { pesos, n });
+        for (const [id, base, k] of (PISOS[voc] || [])) if (pesos[id] == null && pesos[base] != null) { pesos[id] = pesos[base] * k; pisos.push(id); }
+        return (m[voc] = { pesos, n, pisos, tabela: false });
     }
-    /* a peça (do relatório da origem) pontuada com a régua do destino: Σ valor × peso; id sem peso no destino → o pt da origem (marcado);
-     * linha da forja que valia 0 na origem (fora das `linhas`) mas vale no destino entra também. */
+    /* a peça (do relatório da origem) pontuada com a régua do destino: Σ valor × peso. Linha especial (dano da wand, imbuement, munição,
+     * mana por tiro — id com espaço) fica com o pt da origem e marca `aproximados`; id de atributo sem peso no destino conta 0 e marca
+     * `semRegua`; peso que veio de um piso da regra do Equip marca `pisos`. Linha da forja que valia 0 na origem mas vale no destino entra. */
+    const especial = (id) => /\s/.test(String(id || ''));
     function notaNoDestino(peca, voc, destino) {
-        const pv = (peca.porVoc && peca.porVoc[voc]) || {}, R = reguaDe(destino, voc), linhas = [], semRegua = [], vistos = new Set();
+        const pv = (peca.porVoc && peca.porVoc[voc]) || {}, R = reguaDe(destino, voc), linhas = [], semRegua = [], aproximados = [], pisos = [], vistos = new Set();
         let nota = 0;
         for (const l of (Array.isArray(pv.linhas) ? pv.linhas : [])) {
             const v = Number(l.valor), ptO = num(l.pt); vistos.add(l.id);
             let pt, fonte;
-            if (Number.isFinite(v) && v && R.pesos[l.id] != null) { pt = v * R.pesos[l.id]; fonte = 'destino'; }
-            else { pt = ptO; fonte = 'origem'; if (ptO) semRegua.push(l.id); }
+            if (Number.isFinite(v) && v && R.pesos[l.id] != null && !especial(l.id)) { pt = v * R.pesos[l.id]; fonte = R.pisos.includes(l.id) ? 'piso' : 'destino'; if (fonte === 'piso') pisos.push(l.id); }
+            else if (especial(l.id)) { pt = ptO; fonte = 'origem'; if (ptO) aproximados.push(l.id); }
+            else { pt = 0; fonte = 'ignorada'; if (ptO) semRegua.push(l.id); }
             nota += pt; linhas.push({ id: l.id, valor: l.valor, ptOrigem: ptO, pt: Math.round(pt * 100) / 100, fonte });
         }
         for (const a of (peca.atributos || [])) {
             const id = String(a.id || '').toLowerCase().replace(/[\s-]+/g, '_'), v = Number(String(a.valor).replace(',', '.'));
             if (!id || vistos.has(id) || !Number.isFinite(v) || !v || R.pesos[id] == null) continue;
-            const pt = v * R.pesos[id]; nota += pt; vistos.add(id); linhas.push({ id, valor: v, ptOrigem: 0, pt: Math.round(pt * 100) / 100, fonte: 'destino' });
+            const pt = v * R.pesos[id], piso = R.pisos.includes(id); if (piso) pisos.push(id);
+            nota += pt; vistos.add(id); linhas.push({ id, valor: v, ptOrigem: 0, pt: Math.round(pt * 100) / 100, fonte: piso ? 'piso' : 'destino' });
         }
-        return { nota: Math.round(nota * 100) / 100, notaOrigem: num(pv.pontos), linhas, semRegua, preciso: !semRegua.length };
+        return { nota: Math.round(nota * 100) / 100, notaOrigem: num(pv.pontos), linhas, semRegua, aproximados, pisos, tabela: R.tabela, preciso: !semRegua.length && !aproximados.length && !pisos.length };
     }
     /* a regra do Equip (trocaVale, EQUIP_GANHO_TROCA = 1): com peça vestida que vale algo, troca a partir de 1 pt; espaço vazio, qualquer ganho */
     const EQUIP_GANHO_TROCA = 1;
@@ -220,7 +237,7 @@
                     const chave = para.nome + '|' + voc + '|' + peca.slot + '|' + assinatura(peca) + '|' + de.nome;
                     if (vistos.has(chave)) { vistos.get(chave).iguais++; continue; }
                     const ent = { peca, de: de.nome, para: para.nome, voc, slot: peca.slot, nova, notaOrigem: nd.notaOrigem, atual, atualNome, guardada, ganho, firme: ganho >= 3,
-                                  preciso: nd.preciso, semRegua: nd.semRegua, linhas: nd.linhas, nivelDe: de.nivel, nivelPara: para.nivel, exige, iguais: 1,
+                                  preciso: nd.preciso, semRegua: nd.semRegua, aproximados: nd.aproximados, pisos: nd.pisos, tabela: nd.tabela, linhas: nd.linhas, nivelDe: de.nivel, nivelPara: para.nivel, exige, iguais: 1,
                                   baseNova: baseDe(peca), baseAtual: atualPeca ? baseDe(atualPeca) : 0, medida: peca.slot === 'weapon' ? 'ataque' : peca.slot === 'shield' ? 'defesa' : 'armadura' };
                     vistos.set(chave, ent); out.push(ent);
                 }

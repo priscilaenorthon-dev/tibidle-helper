@@ -7021,3 +7021,25 @@ cidade vende os itens e vai para o próximo mapa que defini" e "o jogo dá erro 
   Também no último: vende e só então vai ao destino do fim. Se a venda falha, o modo desliga e devolve os kits (como já era).
   Se por algum motivo o alvo mudou com a party dentro de outra caçada, o `bestPasso` manda à cidade em vez de pular direto.
 - Teste em `testes/progresso.test.js`. Pendente: rodar ao vivo um ciclo inteiro (fechar → cidade → próximo) numa conta.
+
+## 2.41.0 — a página só sugere o que a conta precisa de verdade; Bestiário com campo de busca e marcação na tabela (02/11, noite)
+Dono, 02/11: o Painel das 3 contas sugeriu passar um scarf (Incomum, pot. 98, Distância +1) do baú da u2tag para o colar do Paladino
+da ShamanBr ("crystal necklace 3 pt → 9,6 pt, ganho +6,6"); ele passou, clicou EQUIPAR na ShamanBr e o Equip "nem reconheceu".
+Diagnóstico pelos 3 relatórios em `data/Personagem/` (sem logar): **o Equip da ShamanBr está certo; a página errou a régua.** A ShamanBr
+não tinha nenhuma peça com linha `distancia`, então a página caiu na régua da ORIGEM (u2tag: distância = 9,6 pt = 2 × regen_mana 4,8).
+Na ShamanBr o Paladino paga só 1,37 pt por regen_mana, logo distância +1 vale 2 × 1,37 ≈ 2,7 pt — abaixo dos 3,04 pt do crystal necklace
+(dano sagrado 3,7). Nada a vestir. Regra do dono: "só pode fornecer itens que verdadeiramente a conta precisa para ficar mais forte".
+- **Helper (relatório formato 3)**: `relatorioEquip` exporta `pesos: {VOC: {id: peso}}` — a tabela exata de `pesosDaVoc(voc, ctx)` por
+  vocação (arredondada a 4 casas). Com ela a página não precisa reconstruir nada: nota no destino = Σ valor × peso do destino.
+- **Página (`docs/painel/painel-core.js`)**: `reguaDe` usa a tabela do relatório quando existe (`tabela: true`); em relatório antigo
+  (formato 2) reconstrói a mediana pt ÷ valor e completa com os PISOS do Equip (Paladino distância = 2 × regen_mana, sagrado = 0,6 ×;
+  magos ML = 3 × regen_mana) — marcados como estimativa (`pisos`). Id simples que o destino não conhece vale 0 e sai como "ignorada"
+  (`semRegua`); só os ids especiais com espaço ("dano da wand", "mana por tiro") ficam com o pt da origem (`aproximados`, chip ≈). A régua
+  da origem NUNCA mais entra na nota do destino. Resultado nos 3 relatórios de 02/11: 14 sugestões; o scarf some para a ShamanBr e segue
+  para a XundaBr (piso 9,6 contra 5,22, marcado ≈). Dica da página: regenerar os 3 relatórios com o helper 2.41.0 para ter pesos exatos.
+- **Progresso › Bestiário**: a lista inteira de mapas era grande demais ("tem que pôr um campo que eu escreva o nome do mapa"). Agora o
+  cartão mostra só os mapas escolhidos (na ordem, com ✕ para tirar) e um campo de busca pelo nome (até 12 resultados, `_bestFiltro`,
+  classe `pg-oculto`). A tabela "Mais perto do próximo marco" ganhou uma caixa de marcação em cada linha ("deixa de forma que posso
+  selecionar também para ir") — mesma lista `best_cfg.marcados`, mesma ordem de marcação. Só quando o modo está desligado.
+- Testes: `testes/relatorio.test.js` (formato 3) e `testes/painel.test.js` (11, régua do destino com tabela, piso e id ignorado).
+  Pendente: teste ao vivo do ciclo do Bestiário (fechar → cidade → próximo) e a primeira transferência real conferida no Equip.

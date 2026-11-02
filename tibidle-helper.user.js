@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.40.0
+// @version      2.41.0
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.40.0';
+    const VERSAO = '2.41.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -8141,7 +8141,7 @@
      * junta EQUIP.pecas/res/ctx/base, as suas ordens do Mercado e a conta. testes/relatorio.test.js roda EQUIP-PURO + este trecho. */
     /* v2.39.1 — formato 2 (02/11, para o Painel das 3 contas): itemId por peça (figura do jogo em /assets/v<ver>/items/<id/1000>/<id>.webp),
      * assetsVer, lotação do depósito (usado/total), ouro da conta e mapa atual mesmo fora da caçada. Quem lê o formato 1 continua lendo. */
-    const REL_VERSAO = 2;
+    const REL_VERSAO = 3; // v2.41.0 — formato 3: `pesos` (a tabela de pesos do Equip desta conta, por vocação)
     function relSlotDaFicha(a) {
         a = a || {};
         if (a.slot) return normalizarSlot(a.slot);
@@ -8167,6 +8167,15 @@
                         : x.ganho < 0 ? 'vestida (sai: a arma de 2 mãos ocupa o escudo)' : x.ganho >= EQUIP_GANHO_TROCA ? 'vestida (vale menos que o espaço vazio)' : 'vestida' };
                 }
             }
+        }
+        /* v2.41.0 — formato 3: A TABELA DE PESOS DESTA CONTA, por vocação (dono, 02/11: transferiu um scarf +1 distância da u2tag para a
+         * ShamanBr pela página das 3 contas e o Equip de lá não propôs — na u2tag a distância do Paladino vale 9,6 pt (2 × regen. de mana 4,8),
+         * na ShamanBr 2,7 (2 × 1,37), e o relatório da ShamanBr não tinha nenhum item com distância para a página reconstruir o peso). Só os
+         * números de pesosDaVoc; a página pontua a peça de outra conta direto com estes pesos. */
+        const pesos = {};
+        for (const v of VOCS_EQUIP) {
+            try { const P = pesosDaVoc(v, ctx), o = {}; for (const [k, x] of Object.entries(P)) if (typeof x === 'number' && Number.isFinite(x)) o[k] = Math.round(x * 10000) / 10000; pesos[v] = o; }
+            catch (e) { pesos[v] = null; }
         }
         const item = (p, extra) => {
             const f = normForja(p.forja), pot = potenciaTotal(p), porVoc = {};
@@ -8210,7 +8219,7 @@
                  deposito: ent.deposito && ent.deposito.usado != null ? { usado: Number(ent.deposito.usado) || 0, total: Number(ent.deposito.total) || null } : null,
                  regua: '1 pt ≈ +1 % do dano da party (régua do Equip, contexto da conta no momento do relatório); porVoc = a nota da peça para cada vocação que pode vesti-la',
                  resumo: { itens: itens.length, porOrigem, mercado: mercado.length, mercadoEquipavel: mercado.filter(m => m.equipavel).length },
-                 personagens, itens, mercado };
+                 pesos, personagens, itens, mercado };
     }
     /* @@RELATORIO-PURO-FIM */
     /* @@SOBREVIVER-PURO-INICIO — aba SOBREVIVER (2.34.0): contas puras; testes/sobreviver.test.js roda EQUIP-PURO + este trecho.
@@ -13080,6 +13089,7 @@
     #tb-prog .pg-barra{height:6px;border-radius:3px;background:#2b3242;overflow:hidden;margin-top:2px}
     #tb-prog .pg-barra i{display:block;height:100%;background:#4a9a63}
     #tb-prog .pg-rodape{margin-top:8px;color:#9ba5b7;font-size:10.5px}
+    #tb-prog .pg-best-op.pg-oculto{display:none}
     `;
     function pgGarantirCss() {
         if (document.getElementById('tb-prog-css')) return;
@@ -13144,6 +13154,7 @@
     const bestCfg = () => Object.assign({}, BEST_PADRAO, ler('best_cfg', {}));
     const guardarBestCfg = (p) => guardar('best_cfg', Object.assign(bestCfg(), p));
     const BEST = { ativo: false, fila: [], idx: 0, foto: null, passo: false, ocupado: false, restaurando: false, entrouEm: 0, falhas: 0, vender: false }; // passo = trocando de caçada; ocupado = encerrando; vender = bestiário fechado, falta vender na cidade
+    let _bestFiltro = ''; // v2.41.0 — o que o dono digitou no campo "nome do mapa" (sobrevive ao repinte)
     const bestSalvar = () => guardar('best_estado', BEST.ativo ? { ativo: true, fila: BEST.fila, idx: BEST.idx, foto: BEST.foto, vender: !!BEST.vender, t: Date.now() } : null);
     const bestAlvoId = () => (BEST.ativo && BEST.fila[BEST.idx] ? BEST.fila[BEST.idx].id : null);
     function bestRecarregar() {
@@ -13292,21 +13303,23 @@
                 `<div class="pg-mut pg-peq">depois: ${BEST.fila.slice(BEST.idx + 1).map(f => escHtml((pgHuntCat(f.id) || {}).title || f.id)).join(', ') || '—'} · no fim: ${dest ? 'upar em ' + escHtml(dest.title) : 'voltar para onde estava'}</div>` +
                 `<button type="button" class="tb-bt" id="pg-best-parar" ${BEST.restaurando ? 'disabled' : ''} style="width:100%;margin-top:4px">PARAR e voltar para onde estava</button></div>`;
         }
-        const c = bestCfg(), ordem = bestOrdem(c, linhas), pos = new Map(ordem.map((id, i) => [id, i + 1]));
-        const linhaHtml = l => {
-            const a = l.ultimo, n = pos.get(l.id);
-            return `<label class="pg-lin" style="cursor:pointer;align-items:center"><span><input type="checkbox" data-pg-best="${l.id}" ${n ? 'checked' : ''} style="margin:0 4px 0 0;vertical-align:middle">${n ? `<b>${n}.</b> ` : ''}${escHtml(l.hunt.title)} <span class="pg-mut">[${pgInt(pgNum(l.hunt.levelMin) || 1)}]</span>` +
-                `<div class="pg-mut pg-peq">${pgInt(l.k)}${l.conhecido ? '' : ' (não lido)'} → ${pgInt(a.kills)} abates · ~${pgHoras(a.horas)}${l.estimado ? ' (est.)' : ''}</div></span>` +
-                `<span>${pgBonusTxt(l.bonus, a.value)}</span></label>`;
-        };
-        const lista = linhas.slice().sort((x, y) => (pgNum(y.hunt.levelMin) || 1) - (pgNum(x.hunt.levelMin) || 1) || String(x.hunt.title).localeCompare(String(y.hunt.title)));
+        const c = bestCfg(), ordem = bestOrdem(c, linhas), porId = new Map(linhas.map(l => [l.id, l]));
+        const resumo = (l, a) => `<div class="pg-mut pg-peq">${pgInt(l.k)}${l.conhecido ? '' : ' (não lido)'} → ${pgInt(a.kills)} abates · ~${pgHoras(a.horas)}${l.estimado ? ' (est.)' : ''}</div>`;
+        /* v2.41.0 — dono, 02/11: "um campo em que eu escreva o nome do mapa; a lista de todos os mapas ficou muito grande". Em cima, os
+         * escolhidos na ordem (✕ tira); embaixo, o campo: só aparecem os mapas cujo nome casa com o que foi digitado. A tabela "Mais perto
+         * do próximo marco" também tem caixinha (dono: "deixa de forma que eu possa selecionar também para ir"). */
+        const escolhido = (id, i) => { const l = porId.get(id), a = l.ultimo; return `<div class="pg-lin" style="align-items:center"><span><b>${i + 1}.</b> ${escHtml(l.hunt.title)} <span class="pg-mut">[${pgInt(pgNum(l.hunt.levelMin) || 1)}]</span>${resumo(l, a)}</span><span>${pgBonusTxt(l.bonus, a.value)} <button type="button" class="tb-bt mini" data-pg-best-tirar="${id}" aria-label="tirar ${escHtml(l.hunt.title)} da fila">✕</button></span></div>`; };
+        const opcao = l => { const a = l.ultimo; return `<label class="pg-lin pg-best-op pg-oculto" data-nome="${escHtml(String(l.hunt.title).toLowerCase())}" style="cursor:pointer;align-items:center"><span><input type="checkbox" data-pg-best="${l.id}" style="margin:0 4px 0 0;vertical-align:middle">${escHtml(l.hunt.title)} <span class="pg-mut">[${pgInt(pgNum(l.hunt.levelMin) || 1)}]</span>${resumo(l, a)}</span><span>${pgBonusTxt(l.bonus, a.value)}</span></label>`; };
+        const lista = linhas.filter(l => !ordem.includes(l.id)).sort((x, y) => String(x.hunt.title).localeCompare(String(y.hunt.title)));
         const fila = pgFilaBestiario(linhas, ordem);
         const tot = fila.reduce((s, f) => { const l = linhas.find(x => x.id === f.id); return s + l.ultimo.horas; }, 0);
         const nv = nivelAtual();
         const huntsNivel = (CAT.hunts || []).filter(x => x && (x.levelMin || 1) <= nv).sort((a, b) => (b.levelMin || 0) - (a.levelMin || 0) || String(a.title).localeCompare(String(b.title)));
         return `<div class="pg-cx"><div class="pg-lin"><b>Completar bestiários</b><span class="pg-mut">desligado</span></div>` +
-            `<div class="pg-mut pg-peq">Marque os mapas na ordem em que quer fazer (o número é a ordem). Cada um vai até o bestiário completo; entre um e outro a party vai à cidade vender e guardar.</div>` +
-            (lista.length ? lista.map(linhaHtml).join('') : '<div class="pg-mut">nenhuma caçada do seu nível com bestiário por fechar.</div>') +
+            `<div class="pg-mut pg-peq">Escolha os mapas pelo nome (campo abaixo) ou marque na lista "Mais perto do próximo marco". A ordem em que escolher é a ordem da fila. Cada um vai até o bestiário completo; entre um e outro a party vai à cidade vender e guardar.</div>` +
+            (ordem.length ? ordem.map(escolhido).join('') : '<div class="pg-mut pg-peq">nenhum mapa escolhido ainda.</div>') +
+            `<div class="pg-form" style="margin-top:4px"><input id="pg-best-filtro" class="tb-in" placeholder="escreva o nome do mapa…" aria-label="procurar mapa pelo nome" autocomplete="off" style="flex:1;min-width:0"></div>` +
+            `<div id="pg-best-lista">${lista.map(opcao).join('')}</div><div id="pg-best-nada" class="pg-mut pg-peq" hidden>nenhum mapa do seu nível com bestiário por fechar tem esse nome.</div>` +
             `<div class="pg-form"><label for="pg-best-modelo">kit</label><select id="pg-best-modelo">${Object.keys(MODELOS).filter(m => m !== 'boss' && m !== 'mana').map(m => `<option value="${m}"${c.modelo === m ? ' selected' : ''}>${escHtml(nomeModelo(m))}</option>`).join('')}</select>${c.modelo === 'discord' ? '<span class="pg-mut pg-peq">setup da comunidade do mapa (os "Northon - &lt;mapa&gt;" contam); mapa sem setup cai no Em área</span>' : ''}</div>` +
             `<div class="pg-form"><label for="pg-best-fim">no fim, upar em</label><select id="pg-best-fim" style="flex:1;min-width:0"><option value="">onde estava antes</option>${huntsNivel.map(x => `<option value="${x.id}"${c.fim === 'hunt' && c.fimHunt === x.id ? ' selected' : ''}>[${x.levelMin || 1}] ${escHtml(x.title)}</option>`).join('')}</select></div>` +
             `<button type="button" class="tb-bt pri" id="pg-best-ir" ${fila.length ? '' : 'disabled'} style="width:100%;margin-top:4px">COMPLETAR (${fila.length}) · ~${pgHoras(tot)}</button>` +
@@ -13316,6 +13329,17 @@
         $$('[data-pg-best]').forEach(cb => { cb.onchange = () => { // v2.40.0 — a ordem de marcação é a ordem da fila
             const id = parseInt(cb.dataset.pgBest), atual = bestOrdem(bestCfg(), bestLinhas()).filter(x => x !== id);
             guardarBestCfg({ marcados: cb.checked ? atual.concat([id]) : atual }); renderizar(); }; });
+        $$('[data-pg-best-tirar]').forEach(b => { b.onclick = () => { const id = parseInt(b.dataset.pgBestTirar); guardarBestCfg({ marcados: bestOrdem(bestCfg(), bestLinhas()).filter(x => x !== id) }); renderizar(); }; });
+        const fl = $('#pg-best-filtro'); // v2.41.0 — filtra na própria tela, sem repintar (o repinte derrubaria o foco)
+        if (fl) {
+            const aplicar = () => {
+                const v = String(_bestFiltro || '').toLowerCase().trim(); let n = 0;
+                $$('#pg-best-lista .pg-best-op').forEach(l => { const ok = !!v && (l.dataset.nome || '').includes(v) && n < 12; if (ok) n++; l.classList.toggle('pg-oculto', !ok); });
+                const nada = $('#pg-best-nada'); if (nada) nada.hidden = !v || n > 0;
+            };
+            fl.value = _bestFiltro; aplicar();
+            fl.oninput = () => { _bestFiltro = fl.value; aplicar(); };
+        }
         const mo = $('#pg-best-modelo'); if (mo) mo.onchange = () => guardarBestCfg({ modelo: mo.value });
         const fi = $('#pg-best-fim'); if (fi) fi.onchange = () => guardarBestCfg(fi.value ? { fim: 'hunt', fimHunt: parseInt(fi.value) } : { fim: 'voltar', fimHunt: null });
         const ir = $('#pg-best-ir'); if (ir) ligarDoisToques(ir, 'best-ir', 'confirmar: trocar de caçada?', bestIniciar);
@@ -13339,7 +13363,10 @@
         h += `<div class="pg-cx"><div class="pg-mut pg-peq">Bônus da conta (marcos fechados)</div>${bl.length ? bl.join(' · ') : 'nenhum ainda'}</div>`;
         h += bestCartao();
         const rows = pgLinhasBestiario(hs, cont, med, nv);
-        const linha = r => `<tr><td>${escHtml(r.hunt.title)} <span class="pg-mut">[${pgInt(pgNum(r.hunt.levelMin) || 1)}]</span><div class="pg-barra"><i style="width:${Math.round(r.e.pct * 100)}%"></i></div>` +
+        /* v2.41.0 — caixinha para pôr o mapa na fila do Completar direto daqui (só com o modo desligado) */
+        let escolhidos = null; try { if (!BEST.ativo && !BEST.restaurando) escolhidos = new Set(bestOrdem(bestCfg(), bestLinhas())); } catch (e) { escolhidos = null; }
+        const marcar = id => (escolhidos ? `<input type="checkbox" data-pg-best="${id}" ${escolhidos.has(id) ? 'checked' : ''} style="margin:0 4px 0 0;vertical-align:middle" aria-label="pôr na fila do Completar bestiários"> ` : '');
+        const linha = r => `<tr><td>${marcar(r.hunt.id)}${escHtml(r.hunt.title)} <span class="pg-mut">[${pgInt(pgNum(r.hunt.levelMin) || 1)}]</span><div class="pg-barra"><i style="width:${Math.round(r.e.pct * 100)}%"></i></div>` +
             `<div class="pg-mut">${pgInt(r.e.kills)}/${pgInt(r.e.prox.kills)} · faltam ${pgInt(r.e.falta)}</div></td>` +
             `<td>${pgBonusTxt(r.e.bonus, r.e.prox.value)}<div class="pg-mut">${r.horas != null ? '~' + pgHoras(r.horas) : 'sem abates/h'}</div></td></tr>`;
         const cab = `<table><tr><th>caçada · abates</th><th style="width:96px">próximo marco</th></tr>`;
