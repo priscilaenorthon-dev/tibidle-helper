@@ -6978,3 +6978,10 @@ claude.ai (link privado https://claude.ai/artifact/SzoMZaYgyk7M73Jc3GzP6q); ague
 - **Lição**: a nota do Equip (pt) é da régua de cada conta — a mesma wand of everblazing vale 1,1 pt na u2tag e 7,4 na ShamanBr. Entre
   contas a comparação é sempre aproximada; a página diz isso.
 - **Pendente (helper 2.39.1, formato 2 do relatório)**: `itemId`, `assetsVer`, lotação do depósito (n/300), ouro, mapa atual.
+
+## 2.39.1 — relatório de equipamento no formato 2 (02/11)
+Para o Painel das 3 contas. `relatorioEquip` passa a gravar `formato: 2` com `itemId` por peça (do cache `equip_base` / `/item/info`; null se
+a base não tem o id), `assetsVer` (a versão vista pelo helper), `deposito {usado, total}` (do `ESTADO_WS.depot` lido pela tela), `ouro`
+(`ouroAtual()`) e `mapa` mesmo fora da caçada (`huntAtual()`; caçando, o do contexto vence). Quem lê o formato 1 continua lendo: a página aceita
+os dois e usa `assetsVer` como primeira tentativa da figura. Teste em `testes/relatorio.test.js`. Para ver os campos novos: Equip → ATUALIZAR →
+RELATÓRIO de novo em cada conta.

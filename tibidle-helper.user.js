@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.39.0
+// @version      2.39.1
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.39.0';
+    const VERSAO = '2.39.1';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -8137,7 +8137,9 @@
      * informações dos itens equipáveis da conta — vestidos, depósito, mochila e o que anunciei no Mercado — com todos os status de cada
      * item, para eu mandar os 3 arquivos e você comparar as contas e decidir qual item vale em qual conta"). Função pura; o impuro só
      * junta EQUIP.pecas/res/ctx/base, as suas ordens do Mercado e a conta. testes/relatorio.test.js roda EQUIP-PURO + este trecho. */
-    const REL_VERSAO = 1;
+    /* v2.39.1 — formato 2 (02/11, para o Painel das 3 contas): itemId por peça (figura do jogo em /assets/v<ver>/items/<id/1000>/<id>.webp),
+     * assetsVer, lotação do depósito (usado/total), ouro da conta e mapa atual mesmo fora da caçada. Quem lê o formato 1 continua lendo. */
+    const REL_VERSAO = 2;
     function relSlotDaFicha(a) {
         a = a || {};
         if (a.slot) return normalizarSlot(a.slot);
@@ -8174,7 +8176,8 @@
             const ve = vestir[p.iid];
             const veredito = ve ? `${ve.papel}: ${ve.voc} ${ve.slot}` : usadas.has(p.iid) ? 'usada' : reservas.has(p.iid) ? 'reserva' : bases.has(p.iid) ? 'base de forja (guardar)' : nobres.has(p.iid) ? 'encaixe nobre (vale no Mercado)'
                 : sobra.has(p.iid) ? 'sobra' + (sobra.get(p.iid).motivo ? ': ' + sobra.get(p.iid).motivo : '') : ehTemporaria(p) ? 'temporária (cargas/tempo)' : null;
-            return Object.assign({ iid: p.iid, nome: p.nome, slot: p.slot, origem: p.origem, dono: p.dono || null, protegida: !!p.protegida, duasMaos: !!p.duasMaos, npc: p.sell != null ? p.sell : null,
+            const kb = base[p.nome] || base[String(p.nome || '').toLowerCase()] || null; // v2.39.1: id do item (cache equip_base / item/info)
+            return Object.assign({ iid: p.iid, nome: p.nome, itemId: kb && kb.id != null ? kb.id : null, slot: p.slot, origem: p.origem, dono: p.dono || null, protegida: !!p.protegida, duasMaos: !!p.duasMaos, npc: p.sell != null ? p.sell : null,
                                    ficha: p.attrs || {}, raridade: f.raridade, refino: f.refino || 0, potenciaBase: potenciaDe(p), potencia: pot, faixa: FAIXA_NOME[faixaPotencia(pot) - 1] || null,
                                    atributos: f.atributos, imbuements: (Array.isArray(p.imbuements) ? p.imbuements : []).filter(Boolean).map(im => ({ nome: im.name || null, categoria: im.category, tier: im.base, valor: imbValor(im), restaMs: im.remainingMs != null ? im.remainingMs : null })),
                                    veredito, porVoc }, extra || {});
@@ -8194,7 +8197,9 @@
         const porOrigem = {}; for (const it of itens) porOrigem[it.origem] = (porOrigem[it.origem] || 0) + 1;
         return { relatorio: 'tibidle-helper equipamento', formato: REL_VERSAO, versao: ent.versao || null, geradoEm: new Date(ent.agora || Date.now()).toISOString(),
                  conta: ent.conta ? { nome: ent.conta.nome || null, mundo: ent.conta.mundo || null } : null, nivel: ent.nivel || null, fase: ctx ? faseEquip(ctx) : null,
-                 mapa: (ctx && ctx.mapa) || null, skills: (ctx && ctx.sk) || null, legado: ent.legado || null, loyalty: ent.loyalty || null,
+                 mapa: (ctx && ctx.mapa) || ent.mapa || null, skills: (ctx && ctx.sk) || null, legado: ent.legado || null, loyalty: ent.loyalty || null,
+                 assetsVer: ent.assetsVer || null, ouro: Number.isFinite(Number(ent.ouro)) && ent.ouro != null ? Number(ent.ouro) : null, // v2.39.1
+                 deposito: ent.deposito && ent.deposito.usado != null ? { usado: Number(ent.deposito.usado) || 0, total: Number(ent.deposito.total) || null } : null,
                  regua: '1 pt ≈ +1 % do dano da party (régua do Equip, contexto da conta no momento do relatório); porVoc = a nota da peça para cada vocação que pode vesti-la',
                  resumo: { itens: itens.length, porOrigem, mercado: mercado.length, mercadoEquipavel: mercado.filter(m => m.equipavel).length },
                  personagens, itens, mercado };
@@ -12273,7 +12278,10 @@
                 catch (e) { estado = 'Mercado: não li suas ordens (' + e.message + ')'; }
                 finally { if (MK.ocupado === 'relatório') MK.ocupado = null; }
             } else estado = Array.isArray(MK.minhas) ? 'Mercado: última leitura das suas ordens' : 'Mercado: sem leitura (socket ocupado ou fechado)';
-            const rel = relatorioEquip({ pecas: EQUIP.pecas, res: EQUIP.res, ctx: EQUIP.ctx, base: EQUIP.base || {}, ordens: Array.isArray(MK.minhas) ? MK.minhas : [], conta: CONTA, nivel: nivelAtual(), legado: ESTADO_WS.legado, loyalty: ESTADO_WS.loyalty, versao: VERSAO });
+            const dp = ESTADO_WS.depot && ESTADO_WS.depot.used != null ? { usado: ESTADO_WS.depot.used, total: ESTADO_WS.depot.total } : null; // v2.39.1
+            let mapaAgora = null; try { const h = huntAtual(); mapaAgora = h ? (h.title || h.name || null) : null; } catch (e) { mapaAgora = null; }
+            const rel = relatorioEquip({ pecas: EQUIP.pecas, res: EQUIP.res, ctx: EQUIP.ctx, base: EQUIP.base || {}, ordens: Array.isArray(MK.minhas) ? MK.minhas : [], conta: CONTA, nivel: nivelAtual(), legado: ESTADO_WS.legado, loyalty: ESTADO_WS.loyalty, versao: VERSAO,
+                                         assetsVer: lerComum('assets_ver', null), deposito: dp, ouro: ouroAtual(), mapa: mapaAgora });
             rel.mercadoNota = estado;
             const texto = JSON.stringify(rel, null, 1);
             const conta = String((CONTA && CONTA.nome) || 'conta').normalize('NFD').replace(/[^A-Za-z0-9]/g, '').slice(0, 24) || 'conta';

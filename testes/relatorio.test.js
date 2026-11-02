@@ -8,7 +8,7 @@ const M = new Function(trecho('/* @@EQUIP-PURO-INICIO */', '/* @@EQUIP-PURO-FIM 
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 const F = (r, ...at) => ({ raridade: r, atributos: at.map(([id, valor]) => ({ id, valor })) });
-const BASE = { 'leather boots': { attrs: { slot: 'feet', armor: 1 }, sell: 2 }, 'steel boots': { attrs: { slot: 'feet', armor: 3 }, sell: 30 }, 'crystal ring': { attrs: { slot: 'ring' }, sell: 50 },
+const BASE = { 'leather boots': { attrs: { slot: 'feet', armor: 1 }, sell: 2 }, 'steel boots': { attrs: { slot: 'feet', armor: 3 }, sell: 30, id: 3554 }, 'crystal ring': { attrs: { slot: 'ring' }, sell: 50 },
                'wand of vortex': { attrs: { weaponType: 'wand', wandType: 'energy', level: 6, fromDamage: 8, toDamage: 18, mana: 1, vocation: 'sorcerer' }, sell: 100 }, 'orc tooth': { attrs: {}, sell: 0 } };
 const peca = (iid, nome, slot, origem, dono, forja, extra) => Object.assign({ iid, nome, slot, attrs: BASE[nome].attrs, forja: forja || F(0), origem, dono: dono || null, sell: BASE[nome].sell }, extra || {});
 const pecas = [
@@ -57,6 +57,17 @@ t('Mercado: só as suas ordens de VENDA abertas; cópia anunciada vem com a peç
     assert(vazio.itens.length === 0 && vazio.mercado.length === 0 && vazio.conta === null && vazio.fase === null, 'sem nada: relatório vazio, sem erro');
 });
 
+t('2.39.1 formato 2: itemId pela base (null sem id), assetsVer, lotação do depósito, ouro e mapa fora da caçada; sem eles, null', () => {
+    assert.strictEqual(M.REL_VERSAO, 2);
+    const res = M.distribuirEquip(pecas, undefined, { nivel: 160 });
+    const r = M.relatorioEquip({ pecas, res, ctx: { nivel: 160, mapa: null, sk: {} }, base: BASE, ordens: [], conta: { nome: 'C' }, nivel: 160, assetsVer: 'v242', deposito: { usado: 287, total: 300 }, ouro: 1234567, mapa: 'Bog Raiders Yalahar' });
+    assert.strictEqual(r.formato, 2);
+    assert.strictEqual(r.itens.find(i => i.iid === 'd1').itemId, 3554, 'steel boots tem id na base');
+    assert.strictEqual(r.itens.find(i => i.iid === 'Kb').itemId, null, 'leather boots sem id na base');
+    assert.strictEqual(r.assetsVer, 'v242'); assert.deepStrictEqual(r.deposito, { usado: 287, total: 300 }); assert.strictEqual(r.ouro, 1234567); assert.strictEqual(r.mapa, 'Bog Raiders Yalahar');
+    const r2 = M.relatorioEquip({ pecas, res, ctx: { nivel: 160, mapa: 'Shadow Nexus', sk: {} }, base: BASE, mapa: 'outro' });
+    assert.strictEqual(r2.mapa, 'Shadow Nexus', 'o mapa do contexto (caçando) vence'); assert.strictEqual(r2.assetsVer, null); assert.strictEqual(r2.deposito, null); assert.strictEqual(r2.ouro, null);
+});
 t('2.36.3: troca abaixo de 1 pt é empate técnico, como na tela Equip (não "vai vestir"); acima de 1 pt, vai vestir', () => {
     const peq = { porVoc: { DRUID: { shield: { atual: { iid: 'a', nome: 'wooden spellbook' }, atualPt: 28.88, melhor: { iid: 'b', nome: 'spellbook of mind control' }, melhorPt: 29.08, ganho: 0.2 } } } };
     const p = (iid, nome) => ({ iid, nome, slot: 'shield', attrs: {}, forja: F(0), origem: iid === 'a' ? 'corpo' : 'depósito', dono: iid === 'a' ? 'DRUID' : null });

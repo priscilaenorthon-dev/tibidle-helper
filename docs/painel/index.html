@@ -183,6 +183,7 @@ details summary{cursor:pointer;color:var(--accent)}
   function candidatosVer() {
     const base = D.assetsVerConhecida || 242, out = [];
     if (S.ver) out.push(S.ver);
+    for (const c of S.contas) { const v = parseInt(String(c.assetsVer || '').replace(/\D/g, ''), 10); if (v) out.push(v); } // formato 2: a versão que o helper viu
     out.push(base); for (let v = base + 1; v <= base + 40; v++) out.push(v); for (let v = base - 1; v >= base - 12; v--) out.push(v);
     return out.filter((v, i, a) => a.indexOf(v) === i);
   }
@@ -262,7 +263,8 @@ details summary{cursor:pointer;color:var(--accent)}
         `<span class="muted">nível</span><span class="num">${c.nivel} · fase ${c.fase}</span>` +
         `<span class="muted">gerado</span><span class="num">${c.geradoEm ? new Date(c.geradoEm).toLocaleString('pt-BR') : '–'} (helper ${esc(c.versao)})</span>` +
         `<span class="muted">peças</span><span class="num">${c.itens.length}: ${c.itens.filter(i => i.origem === 'corpo').length} no corpo · ${moch} na mochila · ${dep} no depósito</span>` +
-        `<span class="muted">baú</span><span>${c.deposito ? `<span class="num">${c.deposito.usado}/${c.deposito.total || 300}</span>` : '<span class="muted">o relatório só conta equipamento; a lotação dos 300 vem no formato 2 do helper</span>'}</span>` +
+        `<span class="muted">baú</span><span>${c.deposito ? `<span class="num">${c.deposito.usado}/${c.deposito.total || 300}</span>` : '<span class="muted">o relatório só conta equipamento; a lotação dos 300 vem no formato 2 do helper (2.39.1)</span>'}</span>` +
+        (c.ouro != null ? `<span class="muted">ouro</span><span class="num">${ouro(c.ouro)}</span>` : '') + (c.mapa ? `<span class="muted">mapa</span><span>${esc(c.mapa)}</span>` : '') +
         `<span class="muted">Mercado</span><span class="num">${c.mercado.length} ordem(ns)</span></div></div>`;
     }).join('') + '</div>';
   }
