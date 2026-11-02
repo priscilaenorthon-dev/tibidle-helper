@@ -6942,3 +6942,21 @@ Dono, 31/10: "melhorar os padrões dos mapas que têm meu nome; na aba Progresso
 - Outros lugares conferidos: o Scan já tinha o Discord (2.28.3); o Radar não pode ter (o modelo Discord não calcula plano — o ranking
   precisa do simulador); a calibração do Inteligente segue ignorando Scans de Discord (de propósito: é a conta dele que se calibra).
 - Testes: `discord.test.js` — padrão novo nos 46 + Draken Walls, sem aviso no nível 170; no nível 85 o Ultimate vira Strong (com aviso) sem slot vazio; Draken Walls (192) e Shadow Nexus (222) são do dono à mão e ficam fora do padrão.
+
+## 2.39.0 — varredura do Discord de 30/10 a 02/11: 9 setups novos da tela "Histórico › Por personagem" (02/11)
+Dono, 02/11: "verifica se tem novos setups no Discord". Fórum `guias-da-comunidade` com 22 tópicos (2 novos: "PRESETS DE CAÇADAS" do Xibara,
+31/10 — ideia de um site de presets, ainda não existe; "PRESET DA FALACIA - THE BEHEMONT QUEST" do Arquemerz, 01/11).
+- **O jogo ganhou a tela Histórico › Por personagem** (equipamento + barra de habilidades com os mínimos escritos, "manda a foto naquele modelo
+  novo, vai lá em histórico" — Theus). Os posts novos são prints dela: leitura exata, sem adivinhar número.
+- **Entraram** (`@@DISCORD`): `infernatil-specter` e `infernatil-felipes` (201), `ashfalor-specter` (205), `tafariel-specter` (202),
+  `pumin-theus` (204), `death-theus` (223), `bottom-theus` e `bottom-eduardo` (197, ao lado do Specter e do Psyger-0), `behemoth-arquemerz`
+  (188, 4.º autor). **Saíram** `northon-201/202/204/205/223` (regra "Northon só em mapa sem post"). 146 setups.
+- Leitura: `scratchpad/dc/hist2.py` detecta as colunas VIDA/ATAQUE/DEFESA/SUPORTE pela borda das caixas (cor 35,43,54; escala pela largura),
+  casa cada ícone com a folha oficial recortada (`tpl/`, 118 ícones com nome) + os webp de magia; magias saem com 0,9+ de correlação; runas e
+  poções pela cor (azul = avalanche, roxa = thunderstorm, verde = stone shower, caveira cinza = sudden death; poção do Paladino lida como
+  Great Spirit, pode ser Ultimate). O print do FelipeS (Mac, cores diferentes) e as barras do Arquemerz (barra do jogo) foram lidos à mão.
+- Fora: **Parasite Nest do netao** (texto, nível 195, 362k xp/h e +411k/h: EK todos os exori, RP Holy Missile + avalanche, MS Energy Wave +
+  Great Fire Wave, ED Strong Ice Wave + avalanche; Specter testou 1 h — tirou a Energy Wave, anões imunes a energia — 280–300k raw e +200k
+  sem Utamo Vita com set de magma) — sem mínimos, mesma regra do Bog do Matheustlm. Mindyh: Warzone Fungus 141k xp/h e +331k/h (nível 156,
+  só print de estatística). Specter avisa: "nunca vá na Lizard City ou Draken Walls sem magma set; evento de bestiário, façam o de max HP".
+- Pendente: Specter vai postar os presets da Inquisition inteira no tópico "Aoba meu povo" quando abrir o acesso (boss semanal da Inq).

@@ -221,7 +221,7 @@ t('Northon (2.38.4): padrão de outubro — Train Party (+Protector acima de 160
     const aMao = ['northon-192', 'northon-222'];
     const nn = M.SETUPS_DISCORD.filter(s => /^northon-\d+$/.test(s.id) && !aMao.includes(s.id));
     const ctx = { nivel: 170, magias: SPELLS, pocoes: NOMES_POCOES };
-    assert(nn.length >= 46, 'faltam Northon');
+    assert(nn.length >= 41, 'faltam Northon'); // 2.39.0: 5 tronos/portais ganharam post
     for (const s of nn) {
         const k = s.chars.KNIGHT, p = s.chars.PALADIN, d = s.chars.DRUID;
         {
@@ -366,6 +366,25 @@ t('2.35.5 varredura de 29/10: Theus (Throne of Bazir e Verminor) tira os "Northo
     assert.strictEqual(sn.data, '29/10');
     assert.deepStrictEqual(sn.chars.KNIGHT.suporte, ['Protector']);
     assert.deepStrictEqual(sn.chars.DRUID.defesa.map(d => d[0]), ['Ultimate Healing', 'Mass Healing', 'Heal Friend']);
+});
+t('2.39.0 varredura de 02/11 (tela Histórico): Specter, FelipeS, Theus, EduardoLacerda e Arquemerz — 9 setups, os 5 "Northon -" dos tronos/portais saem; sem aviso no nível do print', () => {
+    const lista = [['infernatil-specter', 201, 'Specter', 199], ['infernatil-felipes', 201, 'FelipeS', 190], ['ashfalor-specter', 205, 'Specter', 199], ['tafariel-specter', 202, 'Specter', 199],
+        ['pumin-theus', 204, 'Theus', 180], ['death-theus', 223, 'Theus', 180], ['bottom-theus', 197, 'Theus', 180], ['bottom-eduardo', 197, 'EduardoLacerda', 150], ['behemoth-arquemerz', 188, 'Arquemerz', 177]];
+    for (const [id, huntId, autor, nivel] of lista) {
+        const s = M.SETUPS_DISCORD.find(x => x.id === id);
+        assert(s && s.huntId === huntId && s.autor === autor, id);
+        const ctx = Object.assign({}, CTX_POT, { nivel, magias: SPELLS });
+        for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx).avisos, [], id + ' ' + voc);
+        assert(!M.dcSetupsDaHunt({ id: huntId, title: s.hunt }).some(x => /^northon-\d+$/.test(x.id)), id + ': o "Northon -" do mapa saiu');
+    }
+    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 197, title: 'Bottom of the Ocean' }).map(x => x.id), ['bottom-specter', 'bottom-psyger', 'bottom-theus', 'bottom-eduardo']);
+    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 201, title: 'Throne of Infernatil' }).map(x => x.id), ['infernatil-specter', 'infernatil-felipes']);
+    const fe = M.SETUPS_DISCORD.find(x => x.id === 'infernatil-felipes');
+    assert.deepStrictEqual(fe.chars.SORCERER.ataque[0], ['Rage of the Skies', 6]);
+    assert.deepStrictEqual(fe.chars.KNIGHT.suporte, ['Protector', 'Train Party']);
+    const ed = M.SETUPS_DISCORD.find(x => x.id === 'bottom-eduardo');
+    assert.strictEqual(ed.chars.KNIGHT.mana[1], 0, 'mana do Cavaleiro desligada no print');
+    assert.deepStrictEqual(M.SETUPS_DISCORD.find(x => x.id === 'pumin-theus').chars.DRUID.ataque[2], ['Physical Strike', 1]);
 });
 t('2.33.6 "Northon - Shadow Nexus" ao lado do post (pedido do dono): poções do mapa fixas, Druida na Great Mana Potion, sem Magic Shield, Protector no Cavaleiro; sem aviso no nível 167', () => {
     const s = M.SETUPS_DISCORD.find(x => x.id === 'northon-222');
