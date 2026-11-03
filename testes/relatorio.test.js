@@ -72,13 +72,20 @@ t('2.39.1 formato 2: itemId pela base (null sem id), assetsVer, lotação do dep
 t('2.41.0 formato 3: `pesos` por vocação = pesosDaVoc da conta (só números; a página pontua a peça de outra conta com eles)', () => {
     const res = M.distribuirEquip(pecas, undefined, { nivel: 160 });
     const r = M.relatorioEquip({ pecas, res, ctx: { nivel: 160, mapa: null, sk: {} }, base: BASE });
-    assert.strictEqual(r.formato, 3);
+    assert(r.formato >= 3, "formato " + r.formato);
     for (const v of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert(r.pesos[v] && Object.values(r.pesos[v]).every(x => typeof x === 'number'), v + ': só números');
     assert(r.pesos.KNIGHT.regen_mana > 0 && r.pesos.KNIGHT.armor > 0 && r.pesos.KNIGHT.fichaDefesa === undefined, 'Cavaleiro: regen e armadura; a ficha de defesa (objeto) fica fora');
     assert(r.pesos.PALADIN.distancia >= 2 * r.pesos.PALADIN.regen_mana - 1e-6, 'Paladino: distância ≥ 2 × regen. de mana (PAL_DIST_REGEN_EQUIV)');
     assert(r.pesos.SORCERER.nivel_magico >= 3 * r.pesos.SORCERER.regen_mana - 1e-6, 'Feiticeiro: ML ≥ 3 × regen. de mana');
     assert.strictEqual(r.pesos.SORCERER.armor, 0, 'armadura não vale nos magos');
     const v0 = M.relatorioEquip({}); assert(v0.pesos && v0.pesos.KNIGHT && v0.pesos.KNIGHT.regen_mana > 0, 'sem contexto: a referência (PARTY_REF)');
+});
+t('2.42.0 formato 4: `figuras` {itemId: base64} repassadas como vieram (o impuro baixa do jogo); sem elas, null', () => {
+    const res = M.distribuirEquip(pecas, undefined, { nivel: 160 });
+    const r = M.relatorioEquip({ pecas, res, ctx: { nivel: 160 }, base: BASE, figuras: { 3554: 'UklGRg==' } });
+    assert.strictEqual(r.formato, 4); assert.deepStrictEqual(r.figuras, { 3554: 'UklGRg==' });
+    assert.strictEqual(M.relatorioEquip({ pecas, res, ctx: { nivel: 160 }, base: BASE }).figuras, null);
+    assert.strictEqual(M.relatorioEquip({ pecas, res, ctx: { nivel: 160 }, base: BASE, figuras: 'x' }).figuras, null, 'só objeto');
 });
 t('2.39.2: ordem antiga com `instance` continua lendo; peça fora de todos os baldes do Equip ganha veredito (não fica null)', () => {
     const res = M.distribuirEquip(pecas, undefined, null);

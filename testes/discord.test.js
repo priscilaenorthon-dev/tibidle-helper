@@ -50,11 +50,6 @@ t('dcSetupsDaHunt: acha pelo id da hunt ou pelo nome (sem caixa); sem nada → l
     assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 999, title: 'Outra' }, lista), []);
     assert.deepStrictEqual(M.dcSetupsDaHunt(null, lista), []);
 });
-t('dcSetupsDaHunt (2.32.1): com id dos dois lados vale só o id — a caçada do Halloween de nível 8 (261) não pega o setup da 263', () => {
-    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 263, title: 'Caçada da Estação (Halloween)' }).map(s => s.id), ['estacao-halloween', 'estacao-souza', 'estacao-kairusz']);
-    /* 2.32.3 — a 261 tem o seu (faixa baixa) e nunca o da 263 */
-    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 261, title: 'Caçada da Estação (Halloween)' }).map(s => s.id), ['estacao-halloween-baixa']);
-});
 t('dcConfigDe: o que o setup não diz fica como está na config atual (cura e suporte do Knight); ataque entra como o post; a poção de mana é a sua (2.29.4, setup Northon)', () => {
     const r = M.dcConfigDe(SETUP_N, 'KNIGHT', ATUAL, CTX);
     assert.deepStrictEqual(r.cfg.skills, ['Berserk', 'Lesser Front Sweep', null, null]);
@@ -343,9 +338,9 @@ t('2.29.2 setups de 22/10 (Psyger-0 Behemoth e Hive Entrance, Pouca Telha WZ1): 
         for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx(nivel)).avisos, [], id + ' ' + voc);
     }
 });
-t('2.33.5 varredura de 27/10 (Psyger-0 Hive Tower e Bog, lucasdela Shadow Nexus, TV de Souza e KairusZ no evento): sem aviso no nível do print; o post real tira o "Northon - Shadow Nexus"', () => {
+t('2.33.5 varredura de 27/10 (Psyger-0 Hive Tower e Bog, lucasdela Shadow Nexus; os do evento de Halloween saíram na 2.42.0): sem aviso no nível do print; o post real tira o "Northon - Shadow Nexus"', () => {
     const ctx = (nivel) => Object.assign({}, CTX_POT, { nivel, magias: SPELLS });
-    for (const [id, huntId, nivel] of [['hivetower-psyger', 198, 123], ['bog-psyger', 151, 112], ['shadownexus-lucasdela', 222, 185], ['estacao-souza', 263, 165], ['estacao-kairusz', 263, 172]]) {
+    for (const [id, huntId, nivel] of [['hivetower-psyger', 198, 123], ['bog-psyger', 151, 112], ['shadownexus-lucasdela', 222, 185]]) {
         const s = M.SETUPS_DISCORD.find(x => x.id === id);
         assert(s && s.huntId === huntId && s.estatisticas && s.estatisticas.nivel === nivel, id);
         for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx(nivel)).avisos, [], id + ' ' + voc);

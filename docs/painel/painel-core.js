@@ -1,5 +1,6 @@
 /* Painel das 3 contas — funções puras (sem DOM). Roda no navegador (globalThis.PainelCore) e no node (module.exports).
- * Entrada: relatórios "tibidle-helper equipamento" (Equip → RELATÓRIO, formato 1; formato 2 traz itemId, assetsVer, deposito, ouro, mapa). */
+ * Entrada: relatórios "tibidle-helper equipamento" (Equip → RELATÓRIO, formato 1; formato 2 traz itemId, assetsVer, deposito, ouro, mapa;
+ * formato 3 a tabela de pesos do Equip; formato 4 as figuras dos itens em base64). */
 (function (raiz) {
     'use strict';
     const VOCS = ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'];
@@ -29,7 +30,7 @@
     for (const e of ELEM) { ROTULO['dano_elem_' + e] = 'dano ' + ELEM_PT[e]; ROTULO['resist_' + e] = 'resist. ' + ELEM_PT[e]; }
     const rotulo = (id) => ROTULO[id] || String(id || '').replace(/_/g, ' ');
     const num = (x) => (x == null || x === '' || isNaN(Number(x)) ? 0 : Number(x));
-    const normNome = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+    const normNome = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
 
     /* ---- relatório ---- */
     function normConta(j) {
@@ -40,10 +41,26 @@
             skills: j.skills || {}, personagens: j.personagens || {}, itens: j.itens.map(i => Object.assign({}, i, { ficha: i.ficha || {}, atributos: i.atributos || [], imbuements: i.imbuements || [], porVoc: i.porVoc || {} })),
             mercado: Array.isArray(j.mercado) ? j.mercado : [], legado: j.legado || null, loyalty: j.loyalty || null,
             deposito: j.deposito || null, ouro: j.ouro != null ? num(j.ouro) : null, mapa: j.mapa || null, assetsVer: j.assetsVer || null,
-            pesos: j.pesos && typeof j.pesos === 'object' ? j.pesos : null // formato 3 (helper 2.41.0): a tabela de pesos do Equip por vocação
+            pesos: j.pesos && typeof j.pesos === 'object' ? j.pesos : null, // formato 3 (helper 2.41.0): a tabela de pesos do Equip por vocação
+            figuras: j.figuras && typeof j.figuras === 'object' ? j.figuras : null // formato 4 (helper 2.42.0): {itemId: webp em base64}
         };
     }
     const diasDesde = (iso, agora) => (iso ? Math.floor(((agora || Date.now()) - new Date(iso).getTime()) / 86400000) : null);
+    /* ---- selo do relatório (02/11, noite): idade, versão do helper, pesos exatos ou reconstruídos, figuras ----
+     * Uma decisão de transferência com relatório velho ou com pesos reconstruídos (≈) é o erro mais barato de evitar: o selo fica no
+     * cartão de cada conta e na aba "Vale a pena passar". */
+    const HELPER_PESOS = '2.41.0', HELPER_FIGURAS = '2.42.0', DIAS_VELHO = 7;
+    const cmpVer = (a, b) => { const x = String(a || '').split('.').map(Number), y = String(b || '').split('.').map(Number); for (let i = 0; i < 3; i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d; } return 0; };
+    function selo(conta, agora) {
+        const dias = diasDesde(conta.geradoEm, agora), velho = dias == null || dias > DIAS_VELHO;
+        const pesosExatos = !!(conta.pesos && VOCS.some(v => conta.pesos[v] && typeof conta.pesos[v] === 'object'));
+        const figuras = !!(conta.figuras && Object.keys(conta.figuras).length);
+        const avisos = [];
+        if (velho) avisos.push(dias == null ? 'relatório sem data: gere um novo' : `relatório de ${dias} dias: o baú e as notas podem ter mudado — gere um novo`);
+        if (!pesosExatos) avisos.push(`pesos do Equip reconstruídos (≈): gere o relatório com o helper ${HELPER_PESOS} ou mais novo` + (conta.versao && cmpVer(conta.versao, HELPER_PESOS) < 0 ? ` (este veio do ${conta.versao})` : ''));
+        if (!figuras) avisos.push(`sem figuras no relatório (helper ${HELPER_FIGURAS}+): a página usa as figuras embutidas nela`);
+        return { dias, velho, pesosExatos, figuras, formato: conta.formato, versao: conta.versao, avisos, ok: !velho && pesosExatos };
+    }
 
     /* ---- figura ---- */
     function idDoItem(peca, mapa) {
@@ -95,6 +112,24 @@
         return Math.round(t * 100) / 100;
     }
     const armaduraDe = (peca) => num(peca && peca.ficha && peca.ficha.armor);
+    /* ---- imbuement de proteção que cobriria o elemento (02/11, noite) ----
+     * Peça do corpo com encaixe de imbuement livre (ficha.imbuementslot − imbuements que já tem) e que aceita a categoria do elemento
+     * (a ficha traz a chave 'elemental protection <elem>' quando aceita). Tiers Basic/Intricate/Powerful = 3/8/15 % (tabela do helper,
+     * IMB_VALORES); dura 20 h de caçada. Peça que já tem imbuement desse elemento fica fora. */
+    const IMBU_PROT = { fogo: ['Dragon Hide', 'elemental protection fire'], gelo: ['Quara Scale', 'elemental protection ice'], energia: ['Cloud Fabric', 'elemental protection energy'],
+                        terra: ['Snake Skin', 'elemental protection earth'], morte: ['Lich Shroud', 'elemental protection death'], sagrado: ['Demon Presence', 'elemental protection holy'] };
+    const IMBU_TIERS = [3, 8, 15];
+    function imbuementsPara(pecas, elem) {
+        const def = IMBU_PROT[elem]; if (!def) return [];
+        const out = [];
+        for (const p of (pecas || [])) {
+            const f = (p && p.ficha) || {}, n = num(f.imbuementslot); if (!n || !(def[1] in f)) continue;
+            const tem = (p.imbuements || []).filter(Boolean);
+            if (tem.length >= n || tem.some(im => IMBU_ELEM[normNome(im.nome)] === elem)) continue;
+            out.push({ peca: p, slot: p.slot, nome: def[0], livres: n - tem.length, tiers: IMBU_TIERS.slice() });
+        }
+        return out;
+    }
     const vestidas = (conta, voc) => (conta.itens || []).filter(i => i.origem === 'corpo' && i.dono === voc);
     const podeVestir = (peca, voc) => !!(peca && peca.porVoc && peca.porVoc[voc]);
 
@@ -133,7 +168,9 @@
             /* uma por espaço e elemento (a melhor) */
             const vistos = new Set(), top = [];
             for (const s of sugestoes) { const k = s.elem + '|' + s.slot; if (vistos.has(k)) continue; vistos.add(k); top.push(s); }
-            vocs[voc] = { armor, porElem, descobertos, fracos, sugestoes: top.slice(0, opc.max || 6), pecas };
+            /* imbuement de proteção nas peças do corpo com encaixe livre, para cada elemento descoberto ou fraco */
+            const imbu = {}; for (const e of elems.filter(x => porElem[x] < fracoDe(x))) { const l = imbuementsPara(pecas, e); if (l.length) imbu[e] = l; }
+            vocs[voc] = { armor, porElem, descobertos, fracos, sugestoes: top.slice(0, opc.max || 6), imbu, pecas };
         }
         return { conta: conta.nome, nivel: conta.nivel, hunt: { id: hunt.id, title: hunt.title || hunt.t, rec: hunt.recommendedLevel || hunt.rec, min: hunt.levelMin || hunt.min }, mapa, elems, vocs };
     }
@@ -236,7 +273,8 @@
                     if (!trocaValeEquip(nova, atual) || ganho < minGanho) continue;
                     const chave = para.nome + '|' + voc + '|' + peca.slot + '|' + assinatura(peca) + '|' + de.nome;
                     if (vistos.has(chave)) { vistos.get(chave).iguais++; continue; }
-                    const ent = { peca, de: de.nome, para: para.nome, voc, slot: peca.slot, nova, notaOrigem: nd.notaOrigem, atual, atualNome, guardada, ganho, firme: ganho >= 3,
+                    /* id estável da transferência (a caixa "já passei" da página): conta de origem > destino, personagem e a peça (iid) */
+                    const ent = { chave: de.nome + '>' + para.nome + '|' + voc + '|' + String(peca.iid), peca, de: de.nome, para: para.nome, voc, slot: peca.slot, nova, notaOrigem: nd.notaOrigem, atual, atualNome, guardada, ganho, firme: ganho >= 3,
                                   preciso: nd.preciso, semRegua: nd.semRegua, aproximados: nd.aproximados, pisos: nd.pisos, tabela: nd.tabela, linhas: nd.linhas, nivelDe: de.nivel, nivelPara: para.nivel, exige, iguais: 1,
                                   baseNova: baseDe(peca), baseAtual: atualPeca ? baseDe(atualPeca) : 0, medida: peca.slot === 'weapon' ? 'ataque' : peca.slot === 'shield' ? 'defesa' : 'armadura' };
                     vistos.set(chave, ent); out.push(ent);
@@ -248,6 +286,18 @@
         const cont = new Map(), fim = [];
         for (const e of out) { const k = e.para + '|' + e.voc + '|' + e.slot; const n = cont.get(k) || 0; if (n >= porEspaco) continue; cont.set(k, n + 1); fim.push(e); }
         return fim;
+    }
+
+    /* ---- roteiro de transferência (02/11, noite): as sugestões de valePassar agrupadas por rota (de → para), na ordem do ganho;
+     * `feitas` = {chave: quando} marcadas na página; cada rota diz quantas faltam ---- */
+    function rotas(lista, feitas) {
+        feitas = feitas || {};
+        const m = new Map();
+        for (const x of (lista || [])) {
+            const k = x.de + '>' + x.para; if (!m.has(k)) m.set(k, { de: x.de, para: x.para, itens: [], faltam: 0, feitas: 0 });
+            const r = m.get(k), feita = !!feitas[x.chave]; r.itens.push(Object.assign({ feita, quando: feita ? feitas[x.chave] : null }, x)); if (feita) r.feitas++; else r.faltam++;
+        }
+        return [...m.values()].sort((a, b) => b.faltam - a.faltam || b.itens.length - a.itens.length);
     }
 
     /* ---- limpeza: o que o Equip já marcou como sobra / épico sem linha útil / encaixe nobre ---- */
@@ -265,7 +315,7 @@
     }
     const tipoVeredito = (v) => { v = String(v || ''); return /^vestida/.test(v) ? 'vestida' : /^vai vestir/.test(v) ? 'vai vestir' : /sem linha útil/.test(v) ? 'épico sem linha' : /^sobra/.test(v) ? 'sobra' : /^encaixe nobre/.test(v) ? 'encaixe nobre' : /^base de forja/.test(v) ? 'base de forja' : /^reserva/.test(v) ? 'reserva' : 'outro'; };
 
-    const api = { VOCS, VOC_PT, SLOTS, SLOT_PT, RAR_PT, ELEM, ELEM_PT, ROTULO, rotulo, normNome, normConta, diasDesde, idDoItem, urlFigura, elementosDoMapa, protecaoDe, armaduraDe, vestidas, podeVestir, aguentar, reguaDe, notaNoDestino, trocaValeEquip, EQUIP_GANHO_TROCA, valePassar, limpeza, tipoVeredito };
+    const api = { VOCS, VOC_PT, SLOTS, SLOT_PT, RAR_PT, ELEM, ELEM_PT, ROTULO, rotulo, normNome, normConta, diasDesde, selo, HELPER_PESOS, HELPER_FIGURAS, cmpVer, idDoItem, urlFigura, elementosDoMapa, protecaoDe, armaduraDe, imbuementsPara, IMBU_TIERS, vestidas, podeVestir, aguentar, rotas, reguaDe, notaNoDestino, trocaValeEquip, EQUIP_GANHO_TROCA, valePassar, limpeza, tipoVeredito };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     raiz.PainelCore = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

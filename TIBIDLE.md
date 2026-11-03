@@ -7049,3 +7049,37 @@ Na ShamanBr o Paladino paga só 1,37 pt por regen_mana, logo distância +1 vale 
   docs/painel); `figura()` carrega `img/<id>.webp`, cai na URL do jogo se faltar e, por último, nas iniciais. Item novo num
   relatório futuro: rodar de novo `baixar-figuras.py` (scratchpad) ou copiar o webp do jogo para a pasta e republicar.
 
+## 2.42.0 — aba Evento retirada; relatório formato 4 (figuras); página das 3 contas com selo, roteiro "já passei" e imbuements (02/11, noite)
+
+Dono: "pode remover essa aba [Evento], tá me servindo para nada"; o ciclo do Bestiário ao vivo "funcionou já"; a régua da defesa
+não precisa; "o restante pode fazer" (selo de relatório velho, figuras automáticas, lista de transferência por conta, Aguentar com
+imbuements).
+- **Aba Evento (Halloween 2026) retirada**, como a nota da 2.30.0 mandava: o bloco `@@EVENTO` inteiro (puro + tela + socket), os
+  pontos externos (ICONES, renderizar, ligar, observarRecebido, MK_RESPOSTA, MK_TIPOS_ACAO, mkCasador, huntNoCatalogo), `huntDaEstacao`
+  e as 3 chamadas, os 4 setups `estacao-*` do Discord (hunts 261/263), `testes/evento.test.js`, a 261/263 da fixture `hunts-discord.json`
+  e os trechos dos testes de casca (13 ícones), telas e discord. −376 linhas. A regra 2.33.1 de `huntNoCatalogo` (origem de um Elite em
+  /bosses é caçada) fica: é genérica. Aba guardada em `ui.aba = 'evento'` cai em Magia (a casca valida contra ICONES).
+- **Régua da defesa: conferida, sem mudança.** A pendência de 15/10 ("defesa 34 do escudo = 68,9 pt, régua generosa") foi fechada pelas
+  2.20.0 (fórmulas oficiais do bloqueio/armadura/mitigação), 2.21.0 (dano por elemento medido e GUARDADO por mapa — `dano_mapa`, a cada
+  2 min e no fim da caçada; não se perde no reload), 2.24.0 (fase 2) e 2.38.0 (decisões do dono). `partyConsolidada` soma todas as
+  medidas pelo tempo. O que resta são decisões do dono (VIDA_PT_KNIGHT 3,6 e VIDA_PT_LADO 0,5 são a régua dele), não calibração.
+- **Relatório formato 4** (`REL_VERSAO = 4`): `figuras {itemId: webp em base64}` e `figurasVer`. O impuro (`relFiguras`) baixa da
+  origem do jogo (`/assets/v<ver>/items/<id/1000>/<id>.webp`, 6 pedidos por vez, 15 s no total, cache da sessão) os ids dos itens e das
+  cópias anunciadas; ≈ 60–70 ids por conta, ~700 bytes cada. O Log diz "N figura(s) (M não vieram)". A função pura só repassa
+  (`figuras: ent.figuras || null`). Motivo: a página do artifact no claude.ai não carrega imagem de fora, e item novo exigia copiar o
+  webp para `docs/painel/img/` e republicar; agora a figura viaja no relatório.
+- **Página das 3 contas (versão 9, mesmo link, `capabilities: {db: {}}`):**
+  - `selo(conta)` (painel-core): dias desde o relatório (> 7 = velho), pesos exatos (formato ≥ 3) ou reconstruídos (≈, com a versão do
+    helper que gerou), figuras (formato 4). Chip "pesos ≈" no cabeçalho; selo com os avisos no cartão da Carga.
+  - `figura()`: 1.º a figura de dentro do relatório (`S.figuras`, juntando as 3 contas), 2.º `img/<id>.webp` embutida, 3.º URL do jogo,
+    4.º iniciais.
+  - **Roteiro de transferência** (`rotas(lista, feitas)`): as sugestões de `valePassar` por caminho (de → para), cada uma com `chave`
+    estável `de>para|VOC|iid` e caixa "já passei". Guardado no banco do artifact (documento `transferencias/feitas` =
+    `{feitas: {chave: ISO}}`, `onSnapshot` uma vez, uma gravação por clique em fila) com espelho em `localStorage` (`painel_feitas`);
+    sem o banco (fora do claude.ai, ou erro), fica só no navegador e a página avisa. Conferido com ArtifactData: coleção vazia, acesso ok.
+  - **Aguentar com imbuements** (`imbuementsPara(pecas, elem)`): para cada elemento descoberto/fraco, a peça do corpo com encaixe livre
+    (`ficha.imbuementslot` − imbuements que já tem) que aceita a categoria (a ficha traz `elemental protection <elem>`): Dragon Hide /
+    Quara Scale / Cloud Fabric / Snake Skin / Lich Shroud / Demon Presence, 3/8/15 % (IMB_VALORES), 20 h. Os 3 relatórios de 02/11 têm 0
+    imbuements e 31–101 peças com encaixe: é a melhoria mais barata que a página tinha para oferecer.
+  - Texto da aba "Vale a pena passar" corrigido (dizia "régua da origem").
+- Testes: 14 no painel (+3), relatório +1 (formato 4), evento −7 (arquivo apagado). `testes/relatorio.test.js` confere `figuras` repassadas.

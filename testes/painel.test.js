@@ -144,6 +144,39 @@ t('limpeza: sobra, épico sem linha útil e NPC somado; tipoVeredito', () => {
     assert.strictEqual(P.tipoVeredito('sobra: Épico sem linha útil: x'), 'épico sem linha');
     assert.strictEqual(P.tipoVeredito('encaixe nobre (vale no Mercado)'), 'encaixe nobre');
 });
+t('selo: idade, pesos exatos (formato 3) ou reconstruídos, figuras (formato 4); cmpVer', () => {
+    const hoje = Date.parse('2026-11-02T22:00:00Z');
+    const sA = P.selo(A, hoje); assert.strictEqual(sA.dias, 3); assert.strictEqual(sA.velho, false); assert.strictEqual(sA.pesosExatos, false); assert.strictEqual(sA.ok, false);
+    assert(sA.avisos.some(a => /reconstruídos/.test(a)) && sA.avisos.some(a => /sem figuras/.test(a)) && !sA.avisos.some(a => /dias/.test(a)), sA.avisos.join(' | '));
+    const A4 = P.normConta(Object.assign(rel('A4', 175, A.itens), { formato: 4, versao: '2.42.0', geradoEm: '2026-11-02T20:00:00Z', pesos: { KNIGHT: { armor: 2.5 } }, figuras: { 3288: 'UklGRg==' } }));
+    const s4 = P.selo(A4, hoje); assert.strictEqual(s4.ok, true); assert.deepStrictEqual(s4.avisos, []); assert.strictEqual(s4.figuras, true); assert.strictEqual(A4.figuras[3288], 'UklGRg==');
+    const velho = P.selo(P.normConta(Object.assign(rel('V', 10, []), { geradoEm: '2026-10-20T00:00:00Z', versao: '2.40.0' })), hoje);
+    assert(velho.velho && velho.avisos[0].includes('13 dias') && velho.avisos[1].includes('este veio do 2.40.0'), velho.avisos.join(' | '));
+    assert(P.cmpVer('2.42.0', '2.41.0') > 0 && P.cmpVer('2.9.1', '2.41.0') < 0 && P.cmpVer('2.41.0', '2.41') === 0);
+});
+t('imbuementsPara: peça do corpo com encaixe livre que aceita a categoria do elemento; já imbuída ou sem encaixe fica fora', () => {
+    const elmo = peca({ iid: 'i1', nome: 'Zaoan helmet', slot: 'head', origem: 'corpo', dono: 'KNIGHT', ficha: { imbuementslot: 1, 'elemental protection fire': 3, 'mana leech': 3 } });
+    const cheio = peca({ iid: 'i2', nome: 'magma coat', slot: 'armor', origem: 'corpo', dono: 'KNIGHT', ficha: { imbuementslot: 1, 'elemental protection fire': 3 }, imbuements: [{ nome: 'Dragon Hide', tier: 1, valor: 3 }] });
+    const semFogo = peca({ iid: 'i3', nome: 'steel boots', slot: 'boots', origem: 'corpo', dono: 'KNIGHT', ficha: { imbuementslot: 1, 'skillboost shielding': 3 } });
+    const dois = peca({ iid: 'i4', nome: 'legs', slot: 'legs', origem: 'corpo', dono: 'KNIGHT', ficha: { imbuementslot: 2, 'elemental protection fire': 3 }, imbuements: [{ nome: 'Vampirism', tier: 2, valor: 10 }] });
+    const r = P.imbuementsPara([elmo, cheio, semFogo, dois], 'fogo');
+    assert.deepStrictEqual(r.map(x => [x.peca.iid, x.nome, x.livres]), [['i1', 'Dragon Hide', 1], ['i4', 'Dragon Hide', 1]]);
+    assert.deepStrictEqual(r[0].tiers, [3, 8, 15]); assert.deepStrictEqual(P.imbuementsPara([elmo], 'fisico'), []);
+    /* dentro do aguentar: o Cavaleiro da A (dragon scale mail, sem encaixe na ficha) não tem onde imbuir; com a ficha do encaixe, aparece */
+    const A5 = P.normConta(rel('A5', 175, A.itens.map(i => i.iid === 'a2' ? Object.assign({}, i, { ficha: { armor: 16, imbuementslot: 1, 'elemental protection fire': 3 } }) : i), A.personagens));
+    const ag = P.aguentar([A5, B], 'A5', DRAKEN);
+    assert.deepStrictEqual(P.aguentar([A, B], 'A', DRAKEN).vocs.KNIGHT.imbu, {});
+    assert(ag.vocs.KNIGHT.imbu.fogo && ag.vocs.KNIGHT.imbu.fogo[0].peca.nome === 'dragon scale mail', JSON.stringify(ag.vocs.KNIGHT.imbu));
+});
+t('rotas: sugestões agrupadas por de → para com a chave estável e as já feitas', () => {
+    const r = P.valePassar([A, B]);
+    const pl = r.find(x => x.peca.iid === 'b2'); assert.strictEqual(pl.chave, 'B>A|KNIGHT|b2');
+    const rt = P.rotas(r, { 'B>A|KNIGHT|b2': '2026-11-02T21:00:00Z' });
+    const ba = rt.find(x => x.de === 'B' && x.para === 'A'); assert(ba && ba.feitas === 1 && ba.faltam === ba.itens.length - 1, JSON.stringify(rt.map(x => [x.de, x.para, x.faltam, x.feitas])));
+    const it = ba.itens.find(x => x.chave === 'B>A|KNIGHT|b2'); assert(it.feita === true && it.quando === '2026-11-02T21:00:00Z');
+    assert(rt.every(x => x.itens.every(y => y.chave.startsWith(x.de + '>' + x.para + '|'))));
+    assert.deepStrictEqual(P.rotas([], {}), []);
+});
 t('diasDesde', () => { assert.strictEqual(P.diasDesde('2026-10-30T00:00:00Z', Date.parse('2026-11-02T12:00:00Z')), 3); assert.strictEqual(P.diasDesde(null), null); });
 
 console.log(`${ok} testes ok${falhas ? ' (com falhas)' : ''}`);

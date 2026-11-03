@@ -82,6 +82,8 @@ tr.destaque td{background:var(--accent-bg)}
 .nota{border-left:3px solid var(--line);padding:6px 12px;color:var(--muted);font-size:.9em;margin:8px 0}
 ul.lista{margin:6px 0 0;padding-left:18px}
 details summary{cursor:pointer;color:var(--accent)}
+.peca.rot{cursor:pointer;align-items:center} .peca.rot input{margin:0 2px 0 0;width:18px;height:18px;flex:none}
+.peca.feita{opacity:.6} .peca.feita .nome{text-decoration:line-through}
 @media (max-width:640px){body{font-size:15px} .grid.p4{grid-template-columns:1fr}}
 @media (prefers-reduced-motion: no-preference){.carga{transition:background .15s,border-color .15s}}
 </style>
@@ -110,7 +112,7 @@ details summary{cursor:pointer;color:var(--accent)}
     <div style="margin-top:6px"><button class="bt" id="bt-colar" type="button">Carregar o texto</button></div>
   </details>
   <div id="erro-carga" class="erro" hidden></div>
-  <p class="nota">Os relatórios ficam só neste navegador. Para gerar um novo: no jogo, aba Equip do helper → ATUALIZAR → RELATÓRIO → baixar .json. O relatório traz o equipamento do corpo, da mochila e do depósito com a nota do Equip por vocação; a figura de cada peça vem do próprio jogo.</p>
+  <p class="nota">Os relatórios ficam só neste navegador. Para gerar um novo: no jogo, aba Equip do helper → ATUALIZAR → RELATÓRIO → baixar .json. O relatório traz o equipamento do corpo, da mochila e do depósito com a nota do Equip por vocação, a tabela de pesos da conta (helper 2.41+) e as figuras dos itens (helper 2.42+). Relatório de mais de 7 dias ou de helper antigo ganha um aviso no selo da conta.</p>
   <div id="resumo-carga"></div>
 </section>
 
@@ -136,9 +138,12 @@ details summary{cursor:pointer;color:var(--accent)}
 
 <section class="pagina" id="pg-passar" hidden>
   <h2>Vale a pena passar?</h2>
-  <p class="sub">Peças paradas (depósito ou mochila) de uma conta que fariam um personagem de outra conta ficar mais forte. Ganho mínimo: 3 pt sobre o que ele veste hoje.</p>
+  <p class="sub">Peças paradas (depósito ou mochila) de uma conta que o Equip de outra conta vestiria: só o que verdadeiramente deixa o personagem mais forte na régua da conta de destino.</p>
   <div id="passar"></div>
-  <p class="nota">A nota é a da régua da conta de origem; entre contas de nível muito diferente (mais de 40) ela é só aproximada. Passar pelo Mercado custa a taxa de 5 % sobre o preço anunciado, e a conta que compra precisa do ouro.</p>
+  <h2 style="margin-top:18px">Roteiro de transferência</h2>
+  <p class="sub">As mesmas sugestões agrupadas por caminho (de qual conta para qual), para marcar <b>já passei</b> conforme for transferindo. A marcação fica guardada na página (os seus navegadores veem a mesma lista).</p>
+  <div id="roteiro"></div>
+  <p class="nota">A nota de cada peça é a da régua da conta de DESTINO (os pesos do Equip de lá, vindos do relatório dela). Passar pelo Mercado custa a taxa de 5 % sobre o preço anunciado, e a conta que compra precisa do ouro. Depois de transferir, gere os relatórios das duas contas de novo: a peça marcada some da lista sozinha.</p>
 </section>
 
 <section class="pagina" id="pg-aguentar" hidden>
@@ -148,7 +153,7 @@ details summary{cursor:pointer;color:var(--accent)}
     <label>mapa <select id="ag-mapa"></select></label>
   </div>
   <div id="aguentar"></div>
-  <p class="nota">O jogo não publica com que elemento cada monstro bate. A página estima pelo elemento a que o monstro é imune (100 %): quem é imune a fogo bate com fogo. Físico conta sempre. Proteção = resistência da ficha + encaixes de resistência + proteção mágica + imbuements de proteção, somados nas 8 peças do corpo. Descoberto: abaixo de 10 % (físico: 5 %); fraco: abaixo de 20 % (físico: 12 %). Só entram sugestões que ganham 3 % ou mais, do nível do personagem.</p>
+  <p class="nota">O jogo não publica com que elemento cada monstro bate. A página estima pelo elemento a que o monstro é imune (100 %): quem é imune a fogo bate com fogo. Físico conta sempre. Proteção = resistência da ficha + encaixes de resistência + proteção mágica + imbuements de proteção, somados nas 8 peças do corpo. Descoberto: abaixo de 10 % (físico: 5 %); fraco: abaixo de 20 % (físico: 12 %). Só entram sugestões que ganham 3 % ou mais, do nível do personagem. Imbuement: a peça do corpo precisa ter encaixe livre e aceitar a categoria (a ficha diz); Basic/Intricate/Powerful dão 3/8/15 % e duram 20 h de caçada; o Aguentar do helper (aba 🛡) diz o custo com os preços do Mercado.</p>
 </section>
 
 <section class="pagina" id="pg-limpeza" hidden>
@@ -175,6 +180,8 @@ details summary{cursor:pointer;color:var(--accent)}
   const S = { brutos: ler('painel_contas', {}), contas: [], ver: ler('painel_assets_ver', null), verOk: false };
   function recalc() {
     S.contas = Object.values(S.brutos).map(j => { try { return P.normConta(j); } catch (e) { return null; } }).filter(Boolean).sort((a, b) => b.nivel - a.nivel);
+    /* formato 4 (helper 2.42.0): as figuras viajam no relatório; juntas, valem para qualquer conta */
+    S.figuras = {}; for (const c of S.contas) for (const [id, b64] of Object.entries(c.figuras || {})) if (b64) S.figuras[id] = b64;
   }
   recalc();
 
@@ -199,14 +206,16 @@ details summary{cursor:pointer;color:var(--accent)}
     tenta();
   }
   /* 02/11 (noite): as figuras sumiram no claude.ai — a página do artifact não deixa carregar imagem de fora (a URL do jogo continua
-   * servindo). Agora cada figura vem junto com a página (img/<id>.webp, copiadas do jogo); se faltar alguma (item novo num relatório
-   * futuro), tenta a URL do jogo e, por último, as iniciais do nome. */
+   * servindo). Ordem: a figura que veio DENTRO do relatório (formato 4, helper 2.42.0: base64 por itemId — item novo não precisa de
+   * republish), senão a embutida na página (img/<id>.webp, copiadas do jogo), senão a URL do jogo e, por último, as iniciais do nome. */
   function figura(peca, tam) {
     const id = P.idDoItem(peca, D.nomeId);
     const ini = esc(String(peca.nome || '?').split(' ').map(w => w[0]).join('').slice(0, 3).toUpperCase());
     if (id == null) return `<div class="fig sem" title="${esc(peca.nome)}">${ini}</div>`;
-    const reserva = S.ver ? P.urlFigura(id, S.ver) : '';
-    return `<div class="fig"><img src="img/${id}.webp" data-reserva="${esc(reserva)}" alt="" loading="lazy" width="32" height="32" onerror="if(this.dataset.reserva){this.src=this.dataset.reserva;this.dataset.reserva='';}else{this.parentNode.className='fig sem';this.parentNode.textContent='${ini}';}"></div>`;
+    const b64 = S.figuras && S.figuras[id];
+    const src = b64 ? `data:image/webp;base64,${b64}` : `img/${id}.webp`;
+    const reserva = b64 ? `img/${id}.webp` : (S.ver ? P.urlFigura(id, S.ver) : '');
+    return `<div class="fig"><img src="${src}" data-reserva="${esc(reserva)}" alt="" loading="lazy" width="32" height="32" onerror="if(this.dataset.reserva){this.src=this.dataset.reserva;this.dataset.reserva='';}else{this.parentNode.className='fig sem';this.parentNode.textContent='${ini}';}"></div>`;
   }
 
   /* ---- carga ---- */
@@ -235,6 +244,31 @@ details summary{cursor:pointer;color:var(--accent)}
   zona.addEventListener('drop', (ev) => { ev.preventDefault(); zona.classList.remove('sobre'); lerArquivos(ev.dataTransfer && ev.dataTransfer.files); });
   $('#bt-colar').addEventListener('click', () => { erroCarga(''); try { carregarTexto($('#colar').value); $('#colar').value = ''; renderTudo(); location.hash = '#personagens'; } catch (e) { erroCarga(e.message); } });
 
+  /* ---- "já passei" (02/11, noite): guardado no banco do artifact (documento transferencias/feitas, {feitas: {chave: quando}}) — os 3
+   * navegadores do dono veem a mesma lista; sem o banco (fora do claude.ai, ou enquanto ele não responde), fica só neste navegador. */
+  const FE = { feitas: ler('painel_feitas', {}), doc: null, fila: Promise.resolve(), aviso: '' };
+  function ligarBanco() {
+    const use = window.claude && typeof window.claude.use === 'function' ? window.claude.use.bind(window.claude) : null;
+    if (!use) return;
+    use('db').then(db => {
+      if (!db) return;
+      FE.doc = db.doc('transferencias/feitas');
+      const timer = setTimeout(() => { FE.aviso = 'o banco da página ainda não respondeu: as marcações podem estar desatualizadas'; renderRoteiro(); }, 10000);
+      FE.doc.onSnapshot(snap => {
+        if (!snap.metadata.fromCache) { clearTimeout(timer); FE.aviso = ''; }
+        const d = snap.exists ? (snap.data() || {}) : {};
+        FE.feitas = Object.assign({}, d.feitas || {}); guardar('painel_feitas', FE.feitas); renderRoteiro();
+      }, (e) => { clearTimeout(timer); FE.doc = null; FE.aviso = 'banco da página indisponível (' + (e && e.code) + '): as marcações ficam só neste navegador'; renderRoteiro(); });
+    }).catch(() => {});
+  }
+  function marcarFeita(chave, feita) {
+    if (feita) FE.feitas[chave] = new Date().toISOString(); else delete FE.feitas[chave];
+    guardar('painel_feitas', FE.feitas); renderRoteiro();
+    if (!FE.doc) return;
+    const corpo = { feitas: Object.assign({}, FE.feitas) }; // uma gravação de cada vez, só quando algo mudou
+    FE.fila = FE.fila.then(() => FE.doc.set(corpo)).catch(() => { FE.aviso = 'não deu para gravar no banco da página; a marcação ficou só neste navegador'; renderRoteiro(); });
+  }
+
   /* ---- navegação por hash ---- */
   const PAGINAS = ['carga', 'personagens', 'bau', 'passar', 'aguentar', 'limpeza'];
   function mostrar() {
@@ -250,9 +284,10 @@ details summary{cursor:pointer;color:var(--accent)}
     const el = $('#contas');
     if (!S.contas.length) { el.innerHTML = '<span class="muted">nenhum relatório carregado</span>'; return; }
     el.innerHTML = S.contas.map(c => {
-      const dias = P.diasDesde(c.geradoEm), velho = dias != null && dias > 7;
+      const s = P.selo(c), dias = s.dias;
       return `<div class="conta-chip"><b>${esc(c.nome)}</b><span class="num">nível ${c.nivel}</span><span class="chip">fase ${c.fase}</span>` +
-        `<span class="chip ${velho ? 'warn' : ''}" title="${esc(c.geradoEm || '')}">${dias == null ? 'sem data' : dias === 0 ? 'hoje' : dias + ' d'}</span>` +
+        `<span class="chip ${s.velho ? 'warn' : ''}" title="${esc(c.geradoEm || '')}">${dias == null ? 'sem data' : dias === 0 ? 'hoje' : dias + ' d'}</span>` +
+        (s.pesosExatos ? '' : `<span class="chip warn" title="${esc(s.avisos.join(' · '))}">pesos ≈</span>`) +
         (c.deposito ? `<span class="chip ${c.deposito.usado >= (c.deposito.total || 300) ? 'bad' : ''}">baú ${c.deposito.usado}/${c.deposito.total || 300}</span>` : '') +
         `<button class="x" type="button" data-rm="${esc(c.nome)}" title="tirar esta conta da página">×</button></div>`;
     }).join('');
@@ -265,7 +300,8 @@ details summary{cursor:pointer;color:var(--accent)}
       const dep = c.itens.filter(i => i.origem === 'depósito').length, moch = c.itens.filter(i => i.origem === 'mochila').length;
       return `<div class="card"><h3>${esc(c.nome)} <span class="muted small">${esc(c.mundo)}</span></h3><div class="kv">` +
         `<span class="muted">nível</span><span class="num">${c.nivel} · fase ${c.fase}</span>` +
-        `<span class="muted">gerado</span><span class="num">${c.geradoEm ? new Date(c.geradoEm).toLocaleString('pt-BR') : '–'} (helper ${esc(c.versao)})</span>` +
+        `<span class="muted">gerado</span><span class="num">${c.geradoEm ? new Date(c.geradoEm).toLocaleString('pt-BR') : '–'} (helper ${esc(c.versao)}, formato ${c.formato})</span>` +
+        `<span class="muted">selo</span><span>${(() => { const s = P.selo(c); return s.ok ? '<span class="chip ok">em dia · pesos exatos</span>' : s.avisos.map(a => `<div class="small"><span class="chip warn">!</span> ${esc(a)}</div>`).join(''); })()}</span>` +
         `<span class="muted">peças</span><span class="num">${c.itens.length}: ${c.itens.filter(i => i.origem === 'corpo').length} no corpo · ${moch} na mochila · ${dep} no depósito</span>` +
         `<span class="muted">baú</span><span>${c.deposito ? `<span class="num">${c.deposito.usado}/${c.deposito.total || 300}</span>` : '<span class="muted">o relatório só conta equipamento; a lotação dos 300 vem no formato 2 do helper (2.39.1)</span>'}</span>` +
         (c.ouro != null ? `<span class="muted">ouro</span><span class="num">${ouro(c.ouro)}</span>` : '') + (c.mapa ? `<span class="muted">mapa</span><span>${esc(c.mapa)}</span>` : '') +
@@ -349,7 +385,7 @@ details summary{cursor:pointer;color:var(--accent)}
     const el = $('#passar');
     if (S.contas.length < 2) { el.innerHTML = '<div class="card vazio">Precisa de pelo menos duas contas carregadas.</div>'; return; }
     const r = P.valePassar(S.contas);
-    const regra = `<div class="aviso small">Cada peça parada é pontuada com a <b>régua da conta de destino</b> (os pesos do Equip de lá, reconstruídos do relatório dela) e comparada com a melhor peça que o destino já tem no espaço — vestida ou guardada. Só aparece o que o Equip de lá proporia depois da transferência: ganho de 1 pt ou mais. Linha destacada = ganho de 3 pt ou mais (certo mesmo com os 2 pt de bônus que o Equip dá à peça já escolhida). <span class="chip warn">≈</span> = estimativa: alguma linha da peça não tem peso exato no destino (relatório antigo: gere de novo com o helper 2.41+, que traz a tabela de pesos; a linha sem peso nenhum NÃO contou).</div>`;
+    const regra = `<div class="aviso small">Cada peça parada é pontuada com a <b>régua da conta de destino</b> (os pesos do Equip de lá, vindos do relatório dela) e comparada com a melhor peça que o destino já tem no espaço — vestida ou guardada. Só aparece o que o Equip de lá proporia depois da transferência: ganho de 1 pt ou mais. Linha destacada = ganho de 3 pt ou mais (certo mesmo com os 2 pt de bônus que o Equip dá à peça já escolhida). <span class="chip warn">≈</span> = estimativa: alguma linha da peça não tem peso exato no destino (relatório antigo: gere de novo com o helper 2.41+, que traz a tabela de pesos; a linha sem peso nenhum NÃO contou).</div>`;
     if (!r.length) { el.innerHTML = regra + '<div class="card">Nenhuma peça parada passaria na regra do Equip de outra conta. As contas já estão com o melhor que têm.</div>'; return; }
     const porPara = {};
     for (const x of r) (porPara[x.para] = porPara[x.para] || []).push(x);
@@ -367,6 +403,18 @@ details summary{cursor:pointer;color:var(--accent)}
             `<td class="num">${colHoje}</td><td class="num">${colNova}</td><td class="num">${colGanho}</td><td class="num">${ouro(x.peca.npc)}</td></tr>`;
         }).join('') + '</tbody></table></div>';
     }).join('');
+  }
+  /* roteiro: as mesmas sugestões por caminho (de → para), com a caixa "já passei" */
+  function renderRoteiro() {
+    const el = $('#roteiro'); if (!el) return;
+    if (S.contas.length < 2) { el.innerHTML = ''; return; }
+    const rt = P.rotas(P.valePassar(S.contas), FE.feitas);
+    const aviso = FE.aviso ? `<div class="aviso small">${esc(FE.aviso)}</div>` : '';
+    if (!rt.length) { el.innerHTML = aviso + '<div class="card vazio">Nada para transferir.</div>'; return; }
+    el.innerHTML = aviso + '<div class="grid p4">' + rt.map(r => `<div class="card"><h3>${esc(r.de)} → ${esc(r.para)} <span class="chip ${r.faltam ? 'warn' : 'ok'}">${r.faltam ? r.faltam + ' por passar' : 'tudo passado'}</span>${r.feitas ? ` <span class="muted small">${r.feitas} já passada(s)</span>` : ''}</h3>` +
+      r.itens.map(it => `<label class="peca rot${it.feita ? ' feita' : ''}"><input type="checkbox" data-feita="${esc(it.chave)}"${it.feita ? ' checked' : ''} aria-label="já passei ${esc(it.peca.nome)}">${figura(it.peca)}<div class="corpo"><div class="nome"><span class="rar${Number(it.peca.raridade) || 0}">${esc(it.peca.nome)}</span>${it.peca.refino ? ` <span class="num">+${it.peca.refino}</span>` : ''}${it.iguais > 1 ? ` <span class="chip">×${it.iguais} iguais</span>` : ''} <span class="muted small">${esc(it.peca.origem)} da ${esc(it.de)}</span></div>` +
+        `<div class="linhas">para o ${esc(P.VOC_PT[it.voc])} (${esc(P.SLOT_PT[it.slot])}) · <b>+${fmt(it.ganho)} pt</b>${it.preciso ? '' : ' <span class="chip warn">≈</span>'}${it.atualNome ? ' · no lugar de ' + esc(it.atualNome) : ' · espaço vazio'}${it.feita && it.quando ? ` · passada em ${new Date(it.quando).toLocaleDateString('pt-BR')}` : ''}</div></div></label>`).join('') + '</div>').join('') + '</div>';
+    $$('[data-feita]', el).forEach(cb => cb.addEventListener('change', () => marcarFeita(cb.dataset.feita, cb.checked)));
   }
 
   /* ---- aguentar ---- */
@@ -407,6 +455,11 @@ details summary{cursor:pointer;color:var(--accent)}
         h += '<h3 style="margin-top:10px">Peça parada que cobriria</h3>' + x.sugestoes.map(s => `<div class="peca">${figura(s.peca)}<div class="corpo"><div class="nome"><span class="rar${Number(s.peca.raridade) || 0}">${esc(s.peca.nome)}</span>${s.peca.refino ? ` <span class="num">+${s.peca.refino}</span>` : ''} <span class="muted small">${esc(s.conta)} · ${esc(s.peca.origem)} · ${esc(P.SLOT_PT[s.slot])}</span></div>` +
           `<div class="linhas">${esc(P.ELEM_PT[s.elem])}: +${fmt(s.ganho)} % (de ${fmt(s.atual ? P.protecaoDe(s.atual, s.elem) : 0)} para ${fmt(s.protecaoNova)} %)${s.atual ? ' no lugar de ' + esc(s.atual.nome) : ''} · nota ${fmt(s.ptAtual)} → ${fmt(s.ptNova)} pt${s.custoPt > 0 ? ` <span class="chip warn">perde ${fmt(s.custoPt)} pt de dano</span>` : ' <span class="chip ok">sem perder dano</span>'}${s.conta !== r.conta ? ' <span class="chip acc">outra conta</span>' : ''}</div></div></div>`).join('');
       } else if (x.pecas.length) h += '<div class="small muted" style="margin-top:8px">Nenhuma peça parada nas 3 contas cobre melhor o que falta.</div>';
+      /* imbuement de proteção na peça que ele já veste (encaixe livre): 3/8/15 % por 20 h de caçada */
+      const imbus = Object.entries(x.imbu || {});
+      if (imbus.length) h += '<h3 style="margin-top:10px">Imbuement que cobriria</h3>' + imbus.map(([e, lista]) => lista.map(s => `<div class="peca">${figura(s.peca)}<div class="corpo"><div class="nome">${esc(s.nome)} <span class="muted small">(${esc(P.ELEM_PT[e])}) em ${esc(s.peca.nome)} · ${esc(P.SLOT_PT[s.slot])}</span></div>` +
+        `<div class="linhas">${s.livres} encaixe(s) livre(s) · +${s.tiers.join(' / +')} % (Basic / Intricate / Powerful) · de ${fmt(x.porElem[e])} % para ${fmt(x.porElem[e] + s.tiers[1])} % com o Intricate · no jogo: Forja → Imbuir, com a peça no corpo</div></div></div>`).join('')).join('');
+      else if (x.pecas.length && (x.descobertos.length || x.fracos.length)) h += '<div class="small muted" style="margin-top:6px">Nenhuma peça do corpo tem encaixe de imbuement livre para o que falta.</div>';
       h += '</div>';
     }
     el.innerHTML = h + '</div>';
@@ -424,8 +477,9 @@ details summary{cursor:pointer;color:var(--accent)}
     }).join('');
   }
 
-  function renderTudo() { renderContas(); renderResumoCarga(); renderPersonagens(); renderBau(); renderPassar(); renderAguentar(); renderLimpeza(); mostrar(); }
+  function renderTudo() { renderContas(); renderResumoCarga(); renderPersonagens(); renderBau(); renderPassar(); renderRoteiro(); renderAguentar(); renderLimpeza(); mostrar(); }
   sondarVersao(() => renderTudo());
   renderTudo();
+  ligarBanco();
 })();
 </script>

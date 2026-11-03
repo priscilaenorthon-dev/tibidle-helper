@@ -5,15 +5,14 @@ Userscript de arquivo único (`tibidle-helper.user.js`, Tampermonkey, `@run-at d
 
 ## Arquivos
 - `tibidle-helper.user.js` — o script inteiro. Seções testáveis entre marcadores `/* @@NOME-INICIO */ … /* @@NOME-FIM */`
-  (EQUIP-PURO, MAGIA, MODELOS, PROGRESSO, MERCADO, DIAGNOSTICO, ARMAZEM, PERFIS…). A aba **Evento** (`@@EVENTO`, Halloween
-  2026) é temporária: retirar depois do evento (nota 2.30.0 no TIBIDLE.md diz onde).
+  (EQUIP-PURO, MAGIA, MODELOS, PROGRESSO, MERCADO, DIAGNOSTICO, ARMAZEM, PERFIS…). A aba Evento (Halloween 2026) saiu na 2.42.0.
 - `TIBIDLE.md` — base de conhecimento do jogo e histórico de versões (§13 protocolo WebSocket, §15 regras atuais da wiki,
   seções "2.11.0"/"2.11.1" no fim). As §1–9 são de antes do wipe de 18–19/09.
 - `docs/teste-ao-vivo-2.11.md` — **roteiro de teste com a conta logada**, em ordem segura. Siga-o.
 - `docs/teste-ao-vivo-2.35.md` — **roteiro do Log na nuvem** (2.35): quando o dono chegar em casa e atualizar os 3 navegadores,
   o Claude confere no Supabase (projeto `ysuiabhylwafhdsjqdjd`, schema `tibidle`, só leitura) as 3 contas, a carga, a batalha
   por minuto e começa a análise pelas mortes do Druida. Pendente desde 29/10.
-- `testes/*.test.js` — 473 testes em node puro (sem dependências), fixtures públicas em `testes/fixtures/` (os 5 de `int-calibracao` usam `data/scans-30-09.json`, dado da conta fora do git — sem ele, pulam).
+- `testes/*.test.js` — 511 testes em node puro (sem dependências), fixtures públicas em `testes/fixtures/` (os 5 de `int-calibracao` usam `data/scans-30-09.json`, dado da conta fora do git — sem ele, pulam).
 
 ## Comandos
 ```sh
