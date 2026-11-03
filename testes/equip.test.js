@@ -7,7 +7,7 @@ const raiz = path.join(__dirname, '..');
 const src = fs.readFileSync(path.join(raiz, 'tibidle-helper.user.js'), 'utf8');
 const ini = src.indexOf('/* @@EQUIP-PURO-INICIO */'), fim = src.indexOf('/* @@EQUIP-PURO-FIM */');
 assert(ini > 0 && fim > ini, 'marcadores @@EQUIP-PURO não encontrados');
-const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, pesosDaVoc, mitigacaoPct, bloqueioEscudo, reducaoArmadura, golpeBasico, efeitoOficial, legadoDe, loyaltyBonus, forjaSimular, forjaValorSorteado, forjaLinhaSorteada, FORJA_GEMA_OURO, protecaoComposta, danoRecebidoCorpo, danoRecebidoMagia, COMBATE_VOC, SUPORTE_OFICIAL, candidatosEquip, distribuirEquip, pecasDesmanche, planoForja, faixaPotencia, wikiSlug, wikiUrlPeca, EQUIP_RESERVAS, destinosSobras, chanceLinha, fragmentosDesmanche, escolherDestino, faixaRange, valorTipico, linhasUteis, REGRAS_VOCACAO, FAIXA_NOME, faseEquip, potenciaBaseForja, trocaVale, encaixeNobre };')();
+const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, pesosDaVoc, mitigacaoPct, bloqueioEscudo, reducaoArmadura, golpeBasico, efeitoOficial, legadoDe, loyaltyBonus, forjaSimular, forjaValorSorteado, forjaLinhaSorteada, FORJA_GEMA_OURO, protecaoComposta, danoRecebidoCorpo, danoRecebidoMagia, COMBATE_VOC, SUPORTE_OFICIAL, candidatosEquip, distribuirEquip, pecasDesmanche, planoForja, faixaPotencia, wikiSlug, wikiUrlPeca, EQUIP_RESERVAS, destinosSobras, chanceLinha, fragmentosDesmanche, escolherDestino, faixaRange, valorTipico, linhasUteis, REGRAS_VOCACAO, FAIXA_NOME, faseEquip, potenciaBaseForja, trocaVale, encaixeNobre, tierDe, potenciaTotal };')();
 const le = (p) => { try { return JSON.parse(fs.readFileSync(path.join(raiz, p), 'utf8')); } catch (e) { return null; } };
 const base = {};
 for (const [nome, it] of Object.entries(le('testes/fixtures/itens.json').itens)) base[nome] = { id: it.id, attrs: it.attrs || {}, sell: it.sell || 0, equipPreview: it.equipPreview || null };
@@ -507,6 +507,22 @@ t('2.16.0: chance de cada linha por Atributo T1 (wiki /forja: ML cai 1 em 89 na 
     assert.deepStrictEqual(M.faixaRange('resist_fogo', 3), [1.2, 3.1]); assert.deepStrictEqual(M.faixaRange('resist_fisica', 3), [0.4, 1.0]);
     assert.strictEqual(M.valorTipico('regen_mana', 1), 1.4);
     assert.strictEqual(M.FAIXA_NOME[2], 'III Superior');
+});
+t('2.43.0: tier do Thorgal soma 5 de potência por tier (395 + T1 = 400, faixa III), mas não conta no desmanche (Épico 395 fica na faixa II: 11 fragmentos)', () => {
+    const p = { nome: 'x', slot: 'ring', attrs: {}, forja: { raridade: 3, refino: 0, potenciaBase: 395, tier: 1, atributos: [] } };
+    assert.strictEqual(M.tierDe(p), 1); assert.strictEqual(M.potenciaTotal(p), 400); assert.strictEqual(M.faixaPotencia(M.potenciaTotal(p)), 3);
+    const d = M.fragmentosDesmanche(p); assert.strictEqual(d.faixa, 2); assert.strictEqual(d.n, 11);
+    assert.strictEqual(M.potenciaTotal({ forja: { potenciaBase: 300, refino: 2 } }), 400, 'sem tier nada muda');
+    assert.strictEqual(M.tierDe({ forja: { potenciaBase: 300, tier: 9 } }), 5, 'teto 5');
+});
+t('2.43.0: o refino do escudo é ARMADURA, não defesa (wiki /forja): o bloqueio usa a defesa de fábrica e a armadura total sobe com o refino', () => {
+    const ctx = { sk: { KNIGHT: { escudo: 60, melee: 70 } }, nivel: 126, kn: { defEscudo: 14, armadura: 40 } };
+    const e14 = { slot: 'shield', attrs: { weaponType: 'shield', defense: 14 }, forja: F(0) }, e14r = { slot: 'shield', attrs: { weaponType: 'shield', defense: 14 }, forja: { raridade: 0, refino: 3, atributos: [] } };
+    const t = M.efeitoOficial(e14r, e14, 'KNIGHT', ctx);
+    const b = M.bloqueioEscudo(60, 14);
+    assert(t.includes(`bloqueio ${b.min}–${b.max} → ${b.min}–${b.max} por golpe`), 'defesa 14 → 14 (o refino não entra): ' + t);
+    const r1 = M.reducaoArmadura(40), r2 = M.reducaoArmadura(43);
+    assert(t.includes(`armadura 40 → 43: tira ${r1.min}–${r1.max} → ${r2.min}–${r2.max} por golpe`), 'refino +3 = +3 de armadura: ' + t);
 });
 t('2.16.0: fragmentos do desmanche pela faixa da potência TOTAL × raridade; destino Mercado × desmanche', () => {
     const p = (r, pot, refino) => ({ nome: 'x', slot: 'ring', attrs: {}, forja: { raridade: r, refino: refino || 0, potenciaBase: pot, atributos: [] } });

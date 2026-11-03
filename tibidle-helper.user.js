@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.42.0
+// @version      2.43.0
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.42.0';
+    const VERSAO = '2.43.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -7070,13 +7070,19 @@
         const comLegado = (g) => (lg ? { min: Math.round(g.min * (1 + lg.bonusPct / 100)), max: Math.round(g.max * (1 + lg.bonusPct / 100)), medio: g.medio * (1 + lg.bonusPct / 100) } : g);
         const partes = [];
         const ehWand = (x) => x.weaponType === 'wand' || !!x.wandType;
-        if (voc === 'KNIGHT' && slot === 'shield') {
-            const skE = sk.escudo > 0 ? sk.escudo : sk.melee, d1 = (Number(b.defense) || 0) + _refino(atual), d2 = (Number(a.defense) || 0) + _refino(nova);
-            partes.push(`bloqueio ${_fx(bloqueioEscudo(skE, d1), bloqueioEscudo(skE, d2))} por golpe (Escudo ${Math.round(skE)}) · mitigação ${mitigacaoPct('KNIGHT', skE, d1).toFixed(2).replace('.', ',')} → ${mitigacaoPct('KNIGHT', skE, d2).toFixed(2).replace('.', ',')} %`);
-        } else if (voc === 'KNIGHT' && slot !== 'weapon' && (a.armor != null || b.armor != null)) {
+        /* v2.43.0 — o refino de qualquer peça que não é arma (escudo incluído) é +1 de ARMADURA (wiki /forja; a mesma regra de attrsComRefino,
+         * que pontua): até a 2.42.0 o escudo somava o refino na DEFESA do bloqueio. O bloqueio usa a defesa de fábrica; o refino vai na armadura. */
+        const parteArmadura = () => {
             const total = kn.armadura != null ? Number(kn.armadura) : 40, a1 = (Number(b.armor) || 0) + _refino(atual), a2 = (Number(a.armor) || 0) + _refino(nova);
             const t1 = total, t2 = Math.max(0, total - a1 + a2);
             if (t1 !== t2) partes.push(`armadura ${t1} → ${t2}: tira ${_fx(reducaoArmadura(t1), reducaoArmadura(t2))} por golpe${lido ? '' : ' (referência)'}`);
+        };
+        if (voc === 'KNIGHT' && slot === 'shield') {
+            const skE = sk.escudo > 0 ? sk.escudo : sk.melee, d1 = Number(b.defense) || 0, d2 = Number(a.defense) || 0;
+            partes.push(`bloqueio ${_fx(bloqueioEscudo(skE, d1), bloqueioEscudo(skE, d2))} por golpe (Escudo ${Math.round(skE)}) · mitigação ${mitigacaoPct('KNIGHT', skE, d1).toFixed(2).replace('.', ',')} → ${mitigacaoPct('KNIGHT', skE, d2).toFixed(2).replace('.', ',')} %`);
+            if (a.armor != null || b.armor != null || _refino(atual) || _refino(nova)) parteArmadura();
+        } else if (voc === 'KNIGHT' && slot !== 'weapon' && (a.armor != null || b.armor != null)) {
+            parteArmadura();
         } else if (voc === 'KNIGHT' && slot === 'weapon' && !ehWand(a)) {
             const g1 = comLegado(golpeBasico('KNIGHT', nivel, sk.melee, (Number(b.attack) || 0) + _refino(atual))), g2 = comLegado(golpeBasico('KNIGHT', nivel, sk.melee, (Number(a.attack) || 0) + _refino(nova)));
             if (g1.max !== g2.max) partes.push(`golpe ${_fx(g1, g2)} (Corpo a Corpo ${Math.round(sk.melee)}${lg ? ', Legado +' + lg.bonusPct + ' %' : ''})`);
@@ -7792,10 +7798,14 @@
      * 50 % VI. Refino, raridade e linhas se perdem. Até 100 peças por vez. */
     const FRAG_DESMANCHE = [[0, 1, 2, 4, 6, 10], [0, 3, 6, 11, 18, 30], [0, 6, 12, 21, 36, 60], [0, 12, 24, 42, 72, 120], [0, 20, 40, 70, 120, 200], [0, 30, 60, 105, 180, 300]];
     const FRAG_T2 = [0, 0, 0, 0.10, 0.25, 0.50];
-    const potenciaTotal = p => potenciaDe(p) + 50 * (Number(p && p.forja && p.forja.refino) || 0);
+    /* v2.43.0 — TIER do Thorgal (wiki /tiers, 02/11): cópia igual + ouro (250 k → 4 M por tier) = +1 tier; cada tier soma +5 de potência
+     * (e +1 ataque/armadura, +4 % das linhas em %), mas NÃO conta no desmanche. O campo `tier` na forja da instância ainda não foi
+     * visto ao vivo (a confirmar): sem ele, 0. TV de Souza: "falta 10 de potência para a faixa? Thorgal, sem arriscar o +6/+7". */
+    const tierDe = p => Math.max(0, Math.min(5, Number(p && p.forja && p.forja.tier) || 0));
+    const potenciaTotal = p => potenciaDe(p) + 50 * (Number(p && p.forja && p.forja.refino) || 0) + 5 * tierDe(p);
     function fragmentosDesmanche(peca) {
         const r = Math.max(0, Math.min(5, Number(peca && peca.forja && peca.forja.raridade) || 0));
-        const pot = potenciaTotal(peca), faixa = faixaPotencia(pot);
+        const pot = potenciaTotal(peca) - 5 * tierDe(peca), faixa = faixaPotencia(pot); // o tier não conta no desmanche
         return { n: r > 0 ? FRAG_DESMANCHE[faixa - 1][r] : 0, faixa, pot, t2: FRAG_T2[faixa - 1], raridade: r };
     }
     /* Para onde vai uma sobra que o NPC não compra: Mercado líquido (menor anúncio de outro vendedor − 5 % de taxa de
@@ -8717,12 +8727,18 @@
         const guardaveis = f.atributos.filter(vale);
         const refazerTudo = (idAlvo) => f.atributos.every(a => a.id === idAlvo || !vale(a)) && precos.refazer <= precos.refazer_maior;
         const out = [];
+        /* v2.43.0 — A POTÊNCIA MANDA (TV de Souza "forja 2", New Be e Discord "Equipes e Refinos", lidos em 02/11: "a base do item é potência
+         * alta; não dá para trabalhar item de potência baixa"; a faixa da potência sorteia o valor de toda linha). Cada plano diz a potência
+         * que a peça terá no fim (`potFinal`); plano de LINHA que termina abaixo do mínimo da fase (350 na fase 2) fica marcado `baixa` e
+         * não entra como "melhor" no ranking — o refino nunca é baixa (é barato até o +4 e é ele que sobe a potência). */
+        const potMin = potenciaBaseForja(ctx), FJ_PLANOS_LINHA = ['faixa', 'encaixe', 'encaixes', 'valor', 'completo'];
         const add = (id, nome, alvo, ganhoPt, passos, extra) => {
             if (!(ganhoPt >= FJ_GANHO_MIN)) return;
             const s = sim(alvo);
             if (!(s.sucesso > 0)) return;
+            const potFinal = pot0 + 50 * Math.max(0, (Number(alvo.refino) || 0) - refino0), baixa = FJ_PLANOS_LINHA.includes(id) && potFinal < potMin;
             const e = Object.assign({ id, nome, alvo, ganhoPt: Math.round(ganhoPt * 100) / 100, custoMedio: s.ouro, custo90: s.ouro90, gemasMedio: s.gemas, gemas90: s.gemas90, chance: s.sucesso,
-                                      porGema: s.porGema, porGema90: s.porGema90, passos, ptPorMilhao: s.ouro > 0 ? Math.round(ganhoPt / s.ouro * 1e6 * 100) / 100 : null }, extra || {});
+                                      porGema: s.porGema, porGema90: s.porGema90, passos, ptPorMilhao: s.ouro > 0 ? Math.round(ganhoPt / s.ouro * 1e6 * 100) / 100 : null, potFinal, baixa }, extra || {});
             if (opc.estoque) {
                 const falta = [];
                 for (const [g, q] of Object.entries(s.porGema90 || {})) { const precisa = Math.ceil(q), tem = custos && custos[g] ? custos[g].disponiveis : 0; if (precisa > 0 && tem < precisa) falta.push(`${FJ_GEMA_PT[g]} (tem ${tem}, precisa ${precisa})`); }
@@ -8747,18 +8763,28 @@
                 if (N > 6) continue;
                 const teto = faixaRange(a.id, fx)[1];
                 if (!(teto > Number(a.valor))) continue;
-                const ganho = (teto - Number(a.valor)) * P[a.id];
+                const ganhoL = (teto - Number(a.valor)) * P[a.id], ganhoR = refinos ? ptRef(N) - base : 0, ganho = ganhoL + ganhoR; // v2.43.0: o refino que cruza a faixa também rende (ataque/armadura)
                 const ult = f.atributos.indexOf(a) === f.atributos.length - 1;
                 const rt = refazerTudo(a.id);
+                const passosL = [`${ult && !rt ? 'Refazer T2 (só o último encaixe)' : 'Refazer T1 (re-sorteia o valor de TODAS as linhas' + (rt ? '; as outras não valem nada aqui' : '') + ')'} até ${rotulo(a.id)} chegar a +${teto}`];
                 add('faixa', `${rotulo(a.id)} +${a.valor} → +${teto}`, { refino: N, garantia: N >= 5, linhas: [a.id], valorMin: teto, refazerTudo: rt }, ganho,
                     (refinos ? [`Refinar de +${refino0} até +${N}${N >= 5 ? ' (com Garantia T1)' : ''}: potência ${pot0} → ${pot0 + 50 * refinos}, faixa ${faixa0} → ${fx} (${rotulo(a.id)} passa a poder ter até +${teto})`] : [])
-                        .concat([`${ult && !rt ? 'Refazer T2 (só o último encaixe)' : 'Refazer T1 (re-sorteia o valor de TODAS as linhas' + (rt ? '; as outras não valem nada aqui' : '') + ')'} até ${rotulo(a.id)} chegar a +${teto}`]), { linha: a.id });
+                        .concat(passosL), { linha: a.id, ganhoLinha: Math.round(ganhoL * 100) / 100, ganhoRef: Math.round(ganhoR * 100) / 100, passosLinha: passosL });
             }
         }
+        /* v2.43.0 — SUBIR A POTÊNCIA ANTES DA LINHA (a ordem da comunidade: refino barato até o +4 → faixa → só então as linhas): todo plano de
+         * linha começa pelo menor refino (≤ padrão) que leva a peça ao mínimo da fase, e a linha é sorteada na faixa que a peça terá DEPOIS
+         * dele. Vale também para wand/rod e para os magos (o refino não rende pt por si, mas sobe a faixa — "uma varinha de potência boa e
+         * ML+3 bate a de ML+1 com potência ruim", TV de Souza). ganhoRef = o que o refino rende sozinho (armadura/ataque; 0 em wand/rod). */
+        const refinoSubir = Math.min(refinoMax, refino0 + Math.ceil(Math.max(0, potMin - pot0) / 50));
+        const potL = pot0 + 50 * (refinoSubir - refino0), faixaL = faixaPotencia(potL), ganhoRef = refinoSubir > refino0 ? ptRef(refinoSubir) - base : 0;
+        const passoSubir = refinoSubir > refino0 ? [`Refinar de +${refino0} até +${refinoSubir} primeiro (até o +4 a falha não derruba): potência ${pot0} → ${potL}, faixa ${faixaPotencia(pot0)} → ${faixaL} — a faixa sorteia o valor da linha`] : [];
+        const addLinha = (id, nome, alvo, ganhoLinha, passos, extra) => add(id, nome, refinoSubir > refino0 ? Object.assign({ refino: refinoSubir }, alvo) : alvo, ganhoLinha + ganhoRef, passoSubir.concat(passos),
+            Object.assign({ ganhoLinha: Math.round(ganhoLinha * 100) / 100, ganhoRef: Math.round(ganhoRef * 100) / 100, passosLinha: passos }, extra || {}));
         /* 3. ENCAIXE NOVO: só linhas de peso 10 que valem ≥ 0,3 pt (nunca skill: 1 em 89); sem encaixe vazio, Raridade T1 abre um */
         const rar = Number(f.raridade) || 0, enc = ENCAIXES_POR_RARIDADE[rar] || 0, livres = enc - f.atributos.length;
         if (rar < 5) {
-            const grupo = PESO_LINHA[slot === 'weapon' || slot === 'necklace' ? 'ataque' : 'defesa'], faixa = faixaPotencia(pot0);
+            const grupo = PESO_LINHA[slot === 'weapon' || slot === 'necklace' ? 'ataque' : 'defesa'], faixa = faixaL;
             const linhas = [];
             for (const [id, w] of Object.entries(grupo)) {
                 if (w < 10 || SKILL_FORJA.includes(id) || f.atributos.some(x => x.id === id)) continue;
@@ -8771,7 +8797,7 @@
                 const alvo = { linhas: linhas.map(x => x.id) };
                 if (livres <= 0) alvo.raridade = rar + 1;
                 if (!guardaveis.length && precos.limpeza <= precos.limpeza_maior) alvo.limparTudo = true;
-                add('encaixe', 'Linha nova', alvo, ganhoMedio,
+                addLinha('encaixe', 'Linha nova', alvo, ganhoMedio,
                     (livres <= 0 ? [`Raridade T1 até ${RAR_PT[rar + 1]} (${FORJA_RARIDADE_PCT[rar]} % por gema; falhar não rebaixa) para abrir um encaixe`] : [])
                         .concat([`Atributo T1 no encaixe vazio até cair uma linha que vale (${linhas.sort((x, y) => y.ganho - x.ganho).slice(0, 3).map(x => rotulo(x.id)).join(', ')}…: ${Math.round(p * 100)} % por gema); linha ruim → ${alvo.limparTudo ? 'Limpeza T1 (apaga tudo: nada aqui vale guardar)' : 'Limpeza T2 (só a última)'} e tenta de novo`]),
                     { linhas });
@@ -8791,7 +8817,7 @@
                     const ganhoNovas = Math.min(novas * ganhoMedioC, porGanho.slice(0, novas).reduce((t, x) => t + x.ganho, 0));
                     const ganhoN = ganhoNovas - (limparMulti ? ptGuard : 0);
                     const alvoN = { linhas: linhas.map(x => x.id).concat(guardaveis.map(a => a.id)), minLinhas: nL, limparTudo: limparMulti };
-                    add('encaixes', `${nL} linhas boas`, alvoN, ganhoN,
+                    addLinha('encaixes', `${nL} linhas boas`, alvoN, ganhoN,
                         [(limparMulti && f.atributos.length ? 'Limpeza T1 (apaga as linhas: ' + (guardaveis.length ? 'a T2 custa mais que re-rolar o que se perde' : 'nada aqui vale guardar') + ') → ' : '') +
                          `Atributo T1 encaixe a encaixe até ter ${nL} linhas que valem (${porGanho.slice(0, 3).map(x => rotulo(x.id)).join(', ')}…: ${Math.round(pAceita * 100)} % por gema); linha ruim → ${limparMulti ? 'Limpeza T1 e recomeça' : 'Limpeza T2 (só a última)'}`],
                         { linhas: porGanho, mantidas });
@@ -8801,11 +8827,11 @@
         /* 4. SUBIR VALOR: linha nobre já na peça abaixo da mediana da faixa → Refazer (T2 se é a última, T1 senão) */
         for (const a of f.atributos) {
             if (SKILL_FORJA.includes(a.id) || !((P[a.id] || 0) > 0) || !nobresDe(slot, voc).includes(a.id)) continue;
-            const alvoV = valorTipico(a.id, faixaPotencia(pot0));
+            const alvoV = valorTipico(a.id, faixaL);
             if (!(alvoV > Number(a.valor) + 1e-9)) continue;
             const ult = f.atributos.indexOf(a) === f.atributos.length - 1, rt = refazerTudo(a.id);
-            add('valor', `${rotulo(a.id)} ${a.valor} → ${alvoV}`, { linhas: [a.id], valorMin: alvoV, refazerTudo: rt }, (alvoV - Number(a.valor)) * P[a.id],
-                [`${ult && !rt ? 'Refazer T2 (só o último encaixe)' : 'Refazer T1 (re-sorteia o valor de TODAS as linhas)'} até ${rotulo(a.id)} chegar a ${alvoV} (mediana da faixa ${faixaPotencia(pot0)})`], { linha: a.id });
+            addLinha('valor', `${rotulo(a.id)} ${a.valor} → ${alvoV}`, { linhas: [a.id], valorMin: alvoV, refazerTudo: rt }, (alvoV - Number(a.valor)) * P[a.id],
+                [`${ult && !rt ? 'Refazer T2 (só o último encaixe)' : 'Refazer T1 (re-sorteia o valor de TODAS as linhas)'} até ${rotulo(a.id)} chegar a ${alvoV} (mediana da faixa ${faixaL})`], { linha: a.id });
         }
         /* 5. COMPLETO (v2.25.4, dono: "fazer as linhas o melhor possível"): o melhor refino padrão (≤ +4) junto com o melhor plano de linha
          * (encaixe ou valor; "faixa" já inclui o refino). Um alvo só: a máquina de decisão refina, sobe raridade e depois cuida das linhas. */
@@ -8814,7 +8840,12 @@
             /* o plano de linha do Completo: o de maior ganho entre os que rendem pelo menos 3/4 do melhor pt por milhão (a mesma regra do "melhor") */
             const topL = Math.max(...linhaPl.map(e => e.ptPorMilhao || 0));
             const r = refinos.reduce((a, b) => (b.ganhoPt > a.ganhoPt ? b : a)), ln = linhaPl.filter(e => (e.ptPorMilhao || 0) >= 0.75 * topL).reduce((a, b) => (b.ganhoPt > a.ganhoPt ? b : a));
-            add('completo', `Completo: ${r.nome} + ${ln.nome}`, Object.assign({}, ln.alvo, { refino: r.alvo.refino, garantia: r.alvo.garantia }), r.ganhoPt + ln.ganhoPt, r.passos.concat(ln.passos), { partes: [r.id, ln.id] });
+            /* v2.43.0: o plano de linha já pode trazer o refino que sobe a potência (refinoSubir); o Completo só existe se o refino padrão passa dele */
+            const rf = Number(r.alvo.refino) || 0;
+            if (rf > (Number(ln.alvo.refino) || 0)) {
+                add('completo', `Completo: ${r.nome} + ${ln.nome}`, Object.assign({}, ln.alvo, { refino: rf, garantia: r.alvo.garantia }), r.ganhoPt + (ln.ganhoLinha != null ? ln.ganhoLinha : ln.ganhoPt), r.passos.concat(ln.passosLinha || ln.passos),
+                    { partes: [r.id, ln.id], ganhoLinha: ln.ganhoLinha != null ? ln.ganhoLinha : ln.ganhoPt, ganhoRef: r.ganhoPt, passosLinha: ln.passosLinha || ln.passos });
+            }
         }
         return out.sort((x, y) => (y.ptPorMilhao || 0) - (x.ptPorMilhao || 0) || y.ganhoPt - x.ganhoPt);
     }
@@ -8827,7 +8858,11 @@
             for (const x of (lista || [])) {
                 if (!x || !x.peca) continue;
                 const f = normForja(x.peca.forja), P = pesosDaVoc(voc, ctx);
-                const bis = x.origem === 'bis' || (Number(f.raridade) || 0) >= RARIDADE_BASE_FORJA || f.atributos.some(a => SKILL_FORJA.includes(a.id) && (P[a.id] || 0) > 0);
+                /* v2.43.0 — BASE POR POTÊNCIA (Discord "Equipes e Refinos", 28/10: "o que você pegar com 400+ de potência primeiro você refina";
+                 * só Elite e boss chegam a 400): peça com potência total ≥ 400 é base de forja mesmo Comum e sem linha — a mesma régua do
+                 * Equip 2.34.0, que já mandava guardá-la. Até a 2.42.0 saía como "item de entrada". */
+                const potT = potenciaTotal(x.peca), potMin = potenciaBaseForja(ctx);
+                const bis = x.origem === 'bis' || (Number(f.raridade) || 0) >= RARIDADE_BASE_FORJA || potT >= POTENCIA_BASE_ALTA || f.atributos.some(a => SKILL_FORJA.includes(a.id) && (P[a.id] || 0) > 0);
                 let es = fjEstrategias(x.peca, voc, ctx, custos, Object.assign({}, opc, { estoque: estoque || null }));
                 /* v2.25.3: peça do baú (ou da mochila) que NÃO é a vestida só rende o que passar da vestida no mesmo slot — a forja
                  * dela precisa primeiro fechar a lacuna (dono, 19/10: "rank tanto equipado quanto no baú", sem enganar) */
@@ -8836,18 +8871,22 @@
                     try { lacuna = Math.max(0, pontuarPeca(mlComRefino(x.atual), voc, ctx).pontos - pontuarPeca(mlComRefino(x.peca), voc, ctx).pontos); } catch (err) { lacuna = 0; } // mlComRefino: o refino conta (a mesma régua das estratégias)
                     if (lacuna > 0) es = es.map(e => { const g = Math.round((e.ganhoPt - lacuna) * 100) / 100; return Object.assign({}, e, { ganhoPt: g, lacuna, ptPorMilhao: e.custoMedio > 0 ? Math.round(g / e.custoMedio * 1e6 * 100) / 100 : null }); }).filter(e => e.ganhoPt >= FJ_GANHO_MIN);
                 }
-                const cabem = es.filter(e => e.cabe !== false), pool = cabem.length ? cabem : es;
+                /* v2.43.0: plano de linha "baixa" (potência final abaixo do mínimo da fase) fica na lista, mas nunca é o "melhor" */
+                const uteis = es.filter(e => !e.baixa), cabem = uteis.filter(e => e.cabe !== false), pool = cabem.length ? cabem : uteis;
                 /* o melhor aproveitamento (dono, 19/10): o plano de MAIOR ganho entre os que rendem pelo menos 3/4 do melhor pt por milhão —
                  * o +1 rende um pouco mais por ouro, mas o +4 é o que deixa a peça forte */
                 const topM = pool.length ? Math.max(...pool.map(e => e.ptPorMilhao || 0)) : 0;
                 const melhor = pool.filter(e => (e.ptPorMilhao || 0) >= 0.75 * topM).sort((x, y) => y.ganhoPt - x.ganhoPt || (y.ptPorMilhao || 0) - (x.ptPorMilhao || 0))[0] || null;
                 let selo = 'nao', motivo = '';
-                if (!bis) motivo = 'item de entrada: não é a melhor peça de ninguém nem tem linha de skill — gema aqui é ouro jogado fora (vídeos)';
-                else if (!melhor || melhor.ganhoPt < FJ_VALE_MIN) motivo = lacuna > 0 ? `a peça vestida neste slot está ${Math.round(lacuna * 10) / 10} pt na frente: forjar esta não a alcança com folga` : melhor ? 'o melhor plano rende menos de 1 pt' : 'nenhum plano rende 0,5 pt';
-                else if (melhor.cabe === false) { selo = 'estoque'; motivo = 'falta ' + melhor.falta; }
+                if (!bis) motivo = `item de entrada: não é a melhor peça de ninguém, não tem linha de skill nem potência ≥ ${POTENCIA_BASE_ALTA} — gema aqui é ouro jogado fora (vídeos e Discord)`;
+                else if (!melhor || melhor.ganhoPt < FJ_VALE_MIN) {
+                    motivo = lacuna > 0 ? `a peça vestida neste slot está ${Math.round(lacuna * 10) / 10} pt na frente: forjar esta não a alcança com folga`
+                        : !melhor && potT < potMin ? `potência ${potT} abaixo de ${potMin}: as linhas valem pouco nesta faixa — refine primeiro ou forje numa base ≥ ${potMin} (vídeos e Discord, 02/11)`
+                        : melhor ? 'o melhor plano rende menos de 1 pt' : 'nenhum plano rende 0,5 pt';
+                } else if (melhor.cabe === false) { selo = 'estoque'; motivo = 'falta ' + melhor.falta; }
                 else if (ouro != null && melhor.custoMedio > ouro) { selo = 'ouro'; motivo = `custo médio ${Math.round(melhor.custoMedio / 1000)} k acima do ouro`; }
                 else selo = 'vale';
-                linhas.push({ peca: x.peca, voc, slot: x.slot || normalizarSlot(x.peca.slot), origem: x.origem || null, bis, melhor, estrategias: es, selo, motivo, lacuna,
+                linhas.push({ peca: x.peca, voc, slot: x.slot || normalizarSlot(x.peca.slot), origem: x.origem || null, bis, melhor, estrategias: es, selo, motivo, lacuna, pot: potT, potMin, potBaixa: potT < potMin,
                               vestida: x.atual && x.atual.iid !== x.peca.iid ? { iid: x.atual.iid, nome: x.atual.nome, forja: x.atual.forja } : null, vocs: [voc] });
             }
         }
@@ -17209,7 +17248,7 @@
         if (FJ.erro) h += `<div class="tb-cx tb-ruim">${escHtml(FJ.erro)}</div>`;
         if (FJ.aviso) h += `<div class="tb-cx tb-av">${escHtml(FJ.aviso)}</div>`;
         if (!FJ.rank) {
-            return h + `<div class="tb-mut" style="margin-top:6px">LER E RANQUEAR avalia a melhor peça de cada espaço dos 4 e as bases de forja do Equip, simula cada plano com as regras do jogo (refino, faixa + Refazer na linha de skill, linha nova, subir valor) e ordena por pontos ganhos por milhão de ouro. Regras dos vídeos: só peça BiS, refino até +4, nunca rolar skill. Só LER, a Bancada (grátis) e FORJAR (2 toques, só com as gemas que você tem) mandam algo ao jogo.</div>` +
+            return h + `<div class="tb-mut" style="margin-top:6px">LER E RANQUEAR avalia a melhor peça de cada espaço dos 4 e as bases de forja do Equip (peça de potência ≥ ${POTENCIA_BASE_ALTA}, Épico+ ou com linha de skill), simula cada plano com as regras do jogo (refino, faixa + Refazer na linha de skill, linha nova, subir valor) e ordena por pontos ganhos por milhão de ouro. Regras da comunidade (vídeos e Discord, 02/11): a POTÊNCIA manda — base de ${POTENCIA_BASE_ALTA}+, mínimo ${potenciaBaseForja(EQUIP.ctx)}, meta 600; refino até +4 primeiro (barato), linhas só depois; nunca rolar skill. Só LER, a Bancada (grátis) e FORJAR (2 toques, só com as gemas que você tem) mandam algo ao jogo.</div>` +
                 aj('fj-calc', pgTelaForja(), '? calculadoras (refino esperado · imbuement)') + `</div>`;
         }
         /* A. estoque e custo das gemas */
@@ -17226,7 +17265,7 @@
             const m = l.melhor, k = 'fj-' + l.peca.iid, aberto = FJ.abertos.has(k), ehSel = FJ.sel === l.peca.iid;
             const enc = ((l.peca.forja && l.peca.forja.atributos) || []).map(a => rotulo(a.id) + ' ' + a.valor).join(', ');
             h += `<div class="tb-cx" style="margin:3px 0;padding:4px 6px${ehSel ? ';border-color:#c39a34' : ''}">` +
-                `<div class="tb-lin"><span><span class="fj-selo ${l.selo}">${fjSeloTxt[l.selo]}</span> <b>${escHtml(l.peca.nome)}</b> ${rarTag(l.peca)} <span class="tb-mut">${escHtml(VOC_CURTO[l.voc] || l.voc)} · ${escHtml(slotPt(l.slot))} · +${(l.peca.forja && l.peca.forja.refino) || 0} · pot ${numBR(potenciaTotal(l.peca))} · ${l.peca.origem === 'corpo' ? 'vestida' : escHtml(l.peca.origem)} <span title="id da cópia">#${escHtml(String(l.peca.iid).slice(-6))}</span></span></span>` +
+                `<div class="tb-lin"><span><span class="fj-selo ${l.selo}">${fjSeloTxt[l.selo]}</span> <b>${escHtml(l.peca.nome)}</b> ${rarTag(l.peca)} <span class="tb-mut">${escHtml(VOC_CURTO[l.voc] || l.voc)} · ${escHtml(slotPt(l.slot))} · +${(l.peca.forja && l.peca.forja.refino) || 0} · pot ${numBR(potenciaTotal(l.peca))}${l.potBaixa ? ` <span class="tb-av" title="potência abaixo de ${l.potMin}: refine primeiro (até o +4 é barato); linha só quando a potência chegar — vídeos e Discord, 02/11">pot. baixa</span>` : l.pot >= POTENCIA_BASE_ALTA ? ` <span class="tb-ok" title="potência ≥ ${POTENCIA_BASE_ALTA}: base de forja pela régua da comunidade (Discord, 28/10)">base</span>` : ''} · ${l.peca.origem === 'corpo' ? 'vestida' : escHtml(l.peca.origem)} <span title="id da cópia">#${escHtml(String(l.peca.iid).slice(-6))}</span></span></span>` +
                 `<span>${m ? `<b class="tb-ok">+${fjPt(m.ganhoPt)}</b> <span class="tb-mut">· ~${fjK(m.custoMedio)}</span>` : '<span class="tb-mut">—</span>'}</span></div>` +
                 (enc ? `<div class="tb-mut tb-eq-nota">${escHtml(enc)}</div>` : '') +
                 (l.vestida ? `<div class="tb-mut tb-eq-nota">no lugar de ${escHtml(l.vestida.nome)} +${(l.vestida.forja && l.vestida.forja.refino) || 0} que ${escHtml(VOC_CURTO[l.voc] || l.voc)} veste${m ? ` — forjada, passa ${fjPt(m.ganhoPt)} dela` : ''}${l.vocs && l.vocs.length > 1 ? ` · avaliada também para ${l.vocs.filter(v => v !== l.voc).map(v => VOC_CURTO[v] || v).join(', ')}` : ''}</div>` : '') +
@@ -17234,7 +17273,7 @@
                 `<div class="tb-linha"><button type="button" class="tb-bt mini" data-fj-sel="${escHtml(String(l.peca.iid))}" ${ocup ? 'disabled' : ''}>${ehSel ? '✓ escolhida' : 'escolher'}</button>` +
                 `<button type="button" class="tb-bt mini" data-fj-det="${escHtml(k)}">${aberto ? '− planos' : '+ planos'}</button>` +
                 (l.peca.origem === 'depósito' ? `<button type="button" class="tb-bt mini" data-fj-puxar="${escHtml(String(l.peca.iid))}" ${ocup || emHunt() ? 'disabled' : ''} title="tira do depósito e põe na mochila (depot_withdraw)">puxar p/ mochila</button>` : '') + `</div>` +
-                (aberto ? `<div class="tb-det">` + (l.estrategias.length ? l.estrategias.map((e, j) => `<div style="margin:3px 0"><b>${escHtml(e.nome)}</b>${e.cabe === false ? ' <span class="tb-av">(falta ' + escHtml(e.falta) + ')</span>' : ''}: +${fjPt(e.ganhoPt)} · média ${fjK(e.custoMedio)} (90 %: ${fjK(e.custo90)}) · ${numBR(e.gemasMedio, 1)} gema(s) · ${Math.round(e.chance * 100)} %` +
+                (aberto ? `<div class="tb-det">` + (l.estrategias.length ? l.estrategias.map((e, j) => `<div style="margin:3px 0"><b>${escHtml(e.nome)}</b>${e.cabe === false ? ' <span class="tb-av">(falta ' + escHtml(e.falta) + ')</span>' : ''}${e.baixa ? ` <span class="tb-av" title="a faixa da potência sorteia o valor da linha: abaixo de ${l.potMin} sai pouco">(potência final ${e.potFinal} < ${l.potMin}: linha espera uma base melhor)</span>` : ''}: +${fjPt(e.ganhoPt)} · média ${fjK(e.custoMedio)} (90 %: ${fjK(e.custo90)}) · ${numBR(e.gemasMedio, 1)} gema(s) · ${Math.round(e.chance * 100)} %` +
                     `<div class="tb-mut">${e.passos.map(escHtml).join(' → ')}</div><div class="tb-mut">gemas: ${Object.entries(e.porGema).map(([g, q]) => FJ_GEMA_PT[g] + ' ' + numBR(q, 1)).join(' · ')}</div>` +
                     `<button type="button" class="tb-bt mini" data-fj-estr="${escHtml(String(l.peca.iid))}|${j}" ${ocup ? 'disabled' : ''}>${ehSel && FJ.estr === j ? '✓ este plano' : 'usar este plano'}</button></div>`).join('') : '<span class="tb-mut">nenhum plano rende 0,5 pt</span>') + `</div>` : '') + `</div>`;
             if (i === 11 && FJ.rank.length > 12 && !FJ.abertos.has('fj-mais')) { h += `<button type="button" class="tb-bt mini" data-fj-det="fj-mais">… e mais ${FJ.rank.length - 12}</button>`; }
@@ -17266,7 +17305,7 @@
         if (FJ.relatorio) { const r = FJ.relatorio; h += `<div class="tb-cx" style="margin-top:6px"><b>Relatório — ${escHtml(r.peca)}</b> (${escHtml(r.estrategia)}) · ${r.seg} s · gasto <b>${fjK(r.gasto)}</b> · ${r.fim.acao === 'fim' ? '<span class="tb-ok">alvo atingido</span>' : '<span class="tb-ruim">parou: ' + escHtml(r.fim.motivo) + '</span>'}` +
             `<div class="tb-mut tb-eq-nota">antes: +${r.antes.refino || 0} ${RAR_PT[r.antes.raridade || 0]} ${escHtml((r.antes.atributos || []).map(a => rotulo(a.id) + ' ' + a.valor).join(', '))} → depois: +${r.depois.refino || 0} ${RAR_PT[r.depois.raridade || 0]} ${escHtml((r.depois.atributos || []).map(a => rotulo(a.id) + ' ' + a.valor).join(', '))}</div>` +
             r.passos.map((p, i) => `<div class="fj-passo ${p.erro ? 'falha' : p.ok === false ? 'falha' : 'ok'}">${i + 1}. ${escHtml(p.motivo)} → ${escHtml(p.resultado || p.erro || '')}</div>`).join('') + `</div>`; }
-        h += aj('fj-regras', `<ul style="margin:2px 0 0 14px;padding:0">` + ['Só peça BiS (a melhor que o personagem já veste) ou base com linha de skill e potência ≥ 300: gema em item de entrada é ouro jogado fora.', 'Refino até +4 (falha não derruba); +5 e +6 só se cruzam de faixa, sempre com Garantia T1 (a falha derruba 1 nível sem ela). Cada refino = +1 ataque (arma) ou +1 armadura (o resto) e +50 de potência.', 'A jogada da comunidade: peça que JÁ caiu com ML / distância / corpo a corpo e potência ≥ 300 → refinar até cruzar 400 (até +2) ou 600 (até +3) e usar Refazer para o valor subir.', 'Nunca rolar Atributo atrás de skill: cai 1 em 89. Linha nova mira as de peso 10 (regen., resistência, dano, proteção mágica); linha ruim → Limpeza T2 e tenta de novo.', 'Crítico: base 0 %, qualquer 1 % já acerta. Cavaleiro = dano físico; dano mágico vale em tudo.', 'Bancada de testes do jogo não gasta nada; a nossa conta é Monte Carlo com as regras exatas do jogo (média e 90 %). Forjar é sorteio: o azar custa o dobro; o orçamento é o freio.'].map(x => '<li>' + escHtml(x) + '</li>').join('') + `</ul><div class="tb-eq-nota">Fontes: wiki /forja (19/10), TV de Souza "Guia definitivo da forja" e "Guia completo de itens e forja", Osfurg "Tier rápido"; protocolo lido do cliente do jogo.</div>`, '? regras da Forja (vídeos e wiki)');
+        h += aj('fj-regras', `<ul style="margin:2px 0 0 14px;padding:0">` + [`A POTÊNCIA manda (TV de Souza: "a base do item é potência alta; não dá para trabalhar item de potência baixa"). A faixa da potência (I 0–199 … IV 600–799) sorteia o valor de TODA linha: regen. de mana 1,1–2,5 na faixa II, 1,7–3,4 na III, até 4,4 na IV. Base de forja = potência ≥ ${POTENCIA_BASE_ALTA} (Discord: "o que você pegar com 400+ primeiro você refina"; só Elite e boss chegam lá), mínimo ${potenciaBaseForja(EQUIP.ctx)} na sua fase, meta 600. Abaixo disso o ranking marca "pot. baixa" e só o refino entra como melhor plano.`, 'Ordem do trabalho: refino +1..+4 primeiro (barato, a falha não derruba) → cruzar a faixa (+5/+6 só com Garantia T1; cada tentativa do +5 em diante custa ≈ 400 k: Refino T2 + Garantia) → só então Atributo / Refazer / Limpeza nas linhas. Cada refino = +1 ataque (arma) ou +1 armadura (o resto, escudo incluído) e +50 de potência.', 'Só peça BiS (a melhor que o personagem já veste), base de potência alta, Épico+ ou peça que JÁ caiu com ML / distância / corpo a corpo: gema em item de entrada é ouro jogado fora. Skill nunca se rola (cai 1 em 89): refina-se até cruzar 400 (até +2) ou 600 (até +3) e usa-se Refazer para o valor subir.', 'Linha nova mira as de peso 10 (regen., resistência, dano, proteção mágica); linha ruim → Limpeza T2 (só a última) e tenta de novo; Refazer T2 só mexe na última linha; Ordem T2 embaralha para trazer outra para o fim. Alvos da comunidade: Cavaleiro = proteção mágica + resistência a fogo no corpo, corpo a corpo + dano físico + crítico na arma; magos = dano mágico + dano do elemento + ML; Paladino = distância + dano físico/sagrado + crítico.', 'Thorgal (tiers): cópia IGUAL + ouro (250 k no T1, até 4 M no T5; 2 cópias = 100 %) sobe 1 tier = +1 ataque/armadura, +4 % das linhas em % e +5 de potência — "faltam 5–10 para a faixa? Thorgal, sem arriscar o +6/+7". Não conta no desmanche. Em 02/11 o helper ainda não lê o tier da peça.', 'Crítico: base 0 %, qualquer 1 % já acerta. Cavaleiro = dano físico; dano mágico vale em tudo. Bancada de testes do jogo não gasta nada; a nossa conta é Monte Carlo com as regras exatas do jogo (média e 90 %). Forjar é sorteio: o azar custa o dobro; o orçamento é o freio.'].map(x => '<li>' + escHtml(x) + '</li>').join('') + `</ul><div class="tb-eq-nota">Fontes: wiki /forja e /tiers (02/11), Discord oficial › guias-da-comunidade › "Equipes e Refinos" (28–31/10), TV de Souza "Guia definitivo da forja", "Guia completo de itens e forja", "Como aumentar o seu dano – forja 2" e "Todas as mecânicas", New Be "10kk na forja", Osfurg "Tier rápido"; protocolo lido do cliente do jogo.</div>`, '? regras da Forja (vídeos, Discord e wiki)');
         h += aj('fj-calc', pgTelaForja(), '? calculadoras (refino esperado · imbuement)');
         return h + `<div class="tb-mut" style="margin-top:6px">Só LER, a Bancada (consulta grátis), COMPRAR O QUE FALTA (2 toques) e FORJAR (2 toques) enviam algo ao jogo.</div></div>`;
     }

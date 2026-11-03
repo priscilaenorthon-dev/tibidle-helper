@@ -269,9 +269,10 @@ t('fjEstrategias: "Completo" junta o melhor refino com o melhor plano de linha (
     assert.strictEqual(c.alvo.refino, 4);
     assert.strictEqual(c.alvo.raridade, 1, 'Comum não tem encaixe: sobe para Incomum');
     assert(Array.isArray(c.alvo.linhas) && c.alvo.linhas.length, 'linhas-alvo');
-    assert(Math.abs(c.ganhoPt - (r4.ganhoPt + en.ganhoPt)) < 0.05, `${c.ganhoPt} ≈ ${r4.ganhoPt} + ${en.ganhoPt}`);
+    assert(Math.abs(c.ganhoPt - (r4.ganhoPt + en.ganhoLinha)) < 0.05, `${c.ganhoPt} ≈ ${r4.ganhoPt} + ${en.ganhoLinha} (2.43.0: a Linha nova já inclui o refino +2 que leva a 371; o Completo soma o +4 com a linha só)`);
     assert(c.custoMedio > r4.custoMedio && c.custoMedio > en.custoMedio, 'custa mais que cada parte');
-    assert(c.passos.length >= r4.passos.length + en.passos.length);
+    assert(c.passos.length >= r4.passos.length + en.passosLinha.length);
+    assert.strictEqual(en.alvo.refino, 2, '2.43.0: a Linha nova da MPA 271 refina até +2 primeiro (371 ≥ 350)');
     // a máquina de decisão segue a ordem: refino primeiro, depois raridade, depois linhas
     assert.strictEqual(M.fjProximoPasso({ alvo: c.alvo }, F(0, 0, 271), E({ refino: 9, raridade: 9, atributo: 9, limpeza: 9 })).acao, 'refino');
     assert.strictEqual(M.fjProximoPasso({ alvo: c.alvo }, F(0, 4, 271), E({ refino: 9, raridade: 9, atributo: 9, limpeza: 9 })).acao, 'raridade');
@@ -343,6 +344,59 @@ t('fjProximoPasso com minLinhas = 2 (Raro, 2 encaixes): [boa] + vazio → Atribu
     assert.strictEqual(M.fjProximoPasso({ alvo: Object.assign({}, plano.alvo, { limparTudo: true }) }, F(2, 0, 300, ['regen_mana', 2], ['capacidade', 40]), E(g)).acao, 'limpeza');
     assert.strictEqual(M.fjProximoPasso(plano, F(2, 0, 300, ['capacidade', 40], ['regen_mana', 2]), E(g)).acao, 'limpeza');
     assert.strictEqual(M.fjProximoPasso(plano, F(2, 0, 300, ['regen_mana', 2], ['regen_vida', 1.5]), E(g)).acao, 'fim');
+});
+
+/* ===== 2.43.0: a potência manda (TV de Souza "forja 2", New Be, Discord "Equipes e Refinos" — lidos em 02/11) ===== */
+t('fjRanking 2.43.0: peça Comum sem linha com potência ≥ 400 (guardian halberd 403 do baú) é base de forja e "vale"; a mesma a 320 continua "item de entrada" (motivo cita 400)', () => {
+    const halb = { iid: 'gh', nome: 'guardian halberd', slot: 'weapon', attrs: { slot: 'weapon', weaponType: 'axe', attack: 55, vocation: 'Knight;true' }, forja: F(0, 0, 403) };
+    const fraca = Object.assign({}, halb, { iid: 'gh2', forja: F(0, 0, 320) });
+    const est = M.fjEstoque({ 'refine gem t1': 30 }, []);
+    const r = M.fjRanking({ KNIGHT: [{ peca: halb, origem: 'base', slot: 'weapon' }, { peca: fraca, origem: 'base', slot: 'weapon' }] }, CTX, M.fjCustoGemas(LASTRO, CAT, est), 1e7, est, { seed: 3, n: 150 });
+    const h = r.find(x => x.peca.iid === 'gh'), w = r.find(x => x.peca.iid === 'gh2');
+    assert.strictEqual(h.bis, true, 'potência 403: base pela régua da comunidade');
+    assert.strictEqual(h.selo, 'vale', h.motivo);
+    assert.deepStrictEqual([h.pot, h.potMin, h.potBaixa], [403, 350, false]);
+    assert.strictEqual(w.bis, false); assert.strictEqual(w.selo, 'nao'); assert.match(w.motivo, /400/);
+    assert.strictEqual(r[0].peca.iid, 'gh');
+});
+t('fjEstrategias 2.43.0: todo plano de linha refina antes até o mínimo da fase (350): bota 186 Incomum → Linha nova com refino 4 (386, não baixa); bota 100 → +4 só chega a 300 → baixa (fica na lista, não é o melhor); Snakebite 271 → faixa 421 não', () => {
+    const bota = { iid: 'b', nome: 'fur boots', slot: 'boots', attrs: { slot: 'feet', armor: 2, vocation: 'Knight;true' }, forja: F(1, 0, 186) };
+    const es = M.fjEstrategias(bota, 'KNIGHT', CTX, custos(), { seed: 3, n: 200 });
+    const en = es.find(e => e.id === 'encaixe'), r4 = es.find(e => e.id === 'refino' && e.alvo.refino === 4);
+    assert(en && en.alvo.refino === 4 && en.baixa === false && en.potFinal === 386, JSON.stringify(en && [en.alvo, en.baixa, en.potFinal]));
+    assert(en.ganhoRef > 0 && Math.abs(en.ganhoPt - (en.ganhoLinha + en.ganhoRef)) < 0.05, 'ganho = linha + refino: ' + JSON.stringify([en.ganhoPt, en.ganhoLinha, en.ganhoRef]));
+    assert(/^Refinar de \+0 até \+4 primeiro/.test(en.passos[0]), en.passos[0]);
+    assert(r4 && r4.baixa === false && r4.potFinal === 386, 'refino nunca é baixa: ' + JSON.stringify(r4 && [r4.baixa, r4.potFinal]));
+    assert(!es.some(e => e.id === 'completo'), 'a Linha nova já refina até +4: o Completo seria igual, não existe');
+    const bota100 = Object.assign({}, bota, { iid: 'b100', forja: F(1, 0, 100) });
+    const es2 = M.fjEstrategias(bota100, 'KNIGHT', CTX, custos(), { seed: 3, n: 200 });
+    const en2 = es2.find(e => e.id === 'encaixe'), r42 = es2.find(e => e.id === 'refino' && e.alvo.refino === 4);
+    assert(en2 && en2.baixa === true && en2.potFinal === 300 && en2.alvo.refino === 4, JSON.stringify(en2 && [en2.baixa, en2.potFinal, en2.alvo]));
+    assert(r42 && r42.baixa === false);
+    const fx = M.fjEstrategias(SNAKE, 'DRUID', CTX, custos(), { seed: 3, n: 200 }).find(e => e.id === 'faixa');
+    assert(fx && fx.baixa === false && fx.potFinal === 421, JSON.stringify(fx && [fx.baixa, fx.potFinal]));
+    // no ranking, a bota 100 vestida: a Linha nova (baixa) nunca é o "melhor"; sobra o refino
+    const est = M.fjEstoque({ 'refine gem t1': 30, 'attribute gem t1': 10, 'cleansing gem t1': 5 }, []);
+    const r = M.fjRanking({ KNIGHT: [{ peca: bota100, origem: 'bis', slot: 'boots' }] }, CTX, M.fjCustoGemas(LASTRO, CAT, est), 1e7, est, { seed: 3, n: 150 });
+    assert(r[0].melhor && r[0].melhor.id === 'refino', JSON.stringify(r[0].melhor && [r[0].melhor.id, r[0].melhor.baixa]));
+    assert.strictEqual(r[0].potBaixa, true);
+});
+t('fjRanking 2.43.0: elmo do Feiticeiro a 100 (o refino quase não rende pt para mago; +4 só chega a 300 → todo plano de linha é baixa) → "nao" com o motivo da potência; o mesmo a 186 → Linha nova com refino 4 (386) avaliada normalmente', () => {
+    // com a régua de referência (sem party medida) a wand não tem linha que renda 0,5 pt; o elmo com regen. de mana tem
+    const elmo = { iid: 'mm', nome: 'magma monocle', slot: 'head', attrs: { slot: 'head', armor: 1, vocation: 'Sorcerer;true, Druid;true' }, forja: F(1, 0, 100) };
+    const est = M.fjEstoque({ 'refine gem t1': 30, 'attribute gem t1': 10, 'cleansing gem t1': 5, 'cleansing gem t2': 5, 'reroll gem t1': 5 }, []);
+    const custosE = M.fjCustoGemas(LASTRO, CAT, est);
+    const r = M.fjRanking({ SORCERER: [{ peca: elmo, origem: 'bis', slot: 'head' }] }, CTX, custosE, 1e7, est, { seed: 3, n: 150 });
+    assert(r[0].estrategias.length && r[0].estrategias.filter(e => e.id !== 'refino').every(e => e.baixa && e.potFinal === 300), r[0].estrategias.map(e => e.id + ':' + e.baixa + ':' + e.potFinal).join(','));
+    if (!r[0].estrategias.some(e => e.id === 'refino')) { assert.strictEqual(r[0].selo, 'nao', r[0].motivo); assert.match(r[0].motivo, /potência 100 abaixo de 350/); }
+    else assert(r[0].melhor && r[0].melhor.id === 'refino', 'se o refino rende, é o único "melhor": ' + JSON.stringify(r[0].melhor && r[0].melhor.id));
+    const r2 = M.fjRanking({ SORCERER: [{ peca: Object.assign({}, elmo, { iid: 'mm2', forja: F(1, 0, 186) }), origem: 'bis', slot: 'head' }] }, CTX, custosE, 1e7, est, { seed: 3, n: 150 });
+    const en = r2[0].estrategias.find(e => e.id === 'encaixe');
+    assert(en && en.alvo.refino === 4 && en.potFinal === 386 && !en.baixa, 'linha com o refino que sobe a potência: ' + JSON.stringify(en && [en.alvo, en.potFinal, en.baixa]));
+    assert(en.ganhoRef < en.ganhoLinha, 'no mago o refino rende menos que a linha: ' + JSON.stringify([en.ganhoRef, en.ganhoLinha]));
+    assert(/^Refinar de \+0 até \+4 primeiro/.test(en.passos[0]) && en.passosLinha.length === en.passos.length - 1, en.passos.join(' | '));
+    assert.strictEqual(r2[0].potBaixa, true, '186 < 350: a peça leva o selo "pot. baixa" mesmo com plano');
+    assert(r2[0].melhor && !r2[0].melhor.baixa, JSON.stringify(r2[0].melhor && [r2[0].melhor.id, r2[0].melhor.baixa]));
 });
 
 console.log(n + ' testes ok' + (process.exitCode ? ' (com falhas)' : ''));

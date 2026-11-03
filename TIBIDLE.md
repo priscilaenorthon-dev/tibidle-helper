@@ -7083,3 +7083,50 @@ imbuements).
     imbuements e 31–101 peças com encaixe: é a melhoria mais barata que a página tinha para oferecer.
   - Texto da aba "Vale a pena passar" corrigido (dizia "régua da origem").
 - Testes: 14 no painel (+3), relatório +1 (formato 4), evento −7 (arquivo apagado). `testes/relatorio.test.js` confere `figuras` repassadas.
+
+## 2.43.0 — Forja: a potência manda (Discord e YouTube lidos em 02/11, noite)
+
+Dono: "A aba Forja da nossa automação, tá correto?" e "O certo da forja não é pegar equipamentos fortes com potência maior e
+melhorar eles? Verifica no Discord e no YouTube. Faça um plano e, se tiver que implementar melhorias, implemente." Plano em
+`docs/plans/2026-11-02-forja-potencia.md`.
+
+**O que a comunidade diz (fontes novas):**
+- Discord oficial › guias-da-comunidade › "Equipes e Refinos" (Aranha, 28–31/10, 26 msgs): "o que você pegar com 400+ de potência
+  primeiro você refina"; "400 base" (só Elite/boss chegam lá). MPA do Psyger-0: +6, Rara, 601 (faixa IV), regen. mana +4 / vida +4,1;
+  +5 → +6 levou 8 Garantias. Refazer T2 só mexe na última linha; "cada tier é 5 de potência".
+- TV de Souza "Como aumentar o seu dano – forja 2" (EZmUHmDpTFE): "a base do item é potência alta; não dá para trabalhar item de
+  potência baixa"; chega na mão com 300–350 no mínimo (250/200 dá, "mas gasta mais"); meta 600. Demonstração: arma de 186 precisou de
+  13 tentativas de T2 + Garantia (≈ 440 k cada) até o +9/600; "uma de 300–350 chega com +5/+6". Ordem: refino → cruzar a faixa → só
+  então as linhas (o valor da linha é sorteado pela faixa). Alvos: Cav = prot. mágica + resist. fogo no corpo, corpo a corpo + dano
+  físico + crítico na arma; magos = dano mágico + dano do elemento + ML; Pal = distância + dano físico/sagrado + crítico.
+- TV de Souza "Todas as mecânicas" (lS1PcddJuEA): a potência define o valor dos encaixes (regen. mana 1,1–2,5 na faixa II, 1,7–3,4 na
+  III, 4,4 na IV); "wand de potência boa e ML+3 bate a de ML+1 com potência ruim"; filtro do depósito por potência 400. **Thorgal
+  (tiers)**: cópia igual + ouro (250 k no T1; 2 cópias = 100 %) = +1 tier = +1 ataque/armadura, +% das linhas e +5 de potência —
+  "faltam 10 para a faixa? Thorgal, sem arriscar o +6/+7".
+- New Be "10kk na forja" (FYUCWoV4vW0): +4 ≈ 1 kk barato e seguro; 290 → 440 no +3 cruza a faixa; o dinheiro vai nas linhas (só dano
+  elemental/mágico; dano físico ≈ 10 %); Ordem T2 + Limpeza T2 tira linha ruim do meio.
+- Wiki /forja e /tiers (confirmadas): refino = +1 ataque (arma) ou +1 ARMADURA em qualquer outra peça (escudo incluído); potência
+  total = base + 50 × refino + 5 × tier (teto 1000); tier não conta no desmanche.
+
+**Resposta ao "tá correto?":** as regras do jogo no helper batem com a wiki (FORJAR testado ao vivo em 19/10). O que divergia da
+comunidade e foi corrigido:
+1. `fjRanking` marcava peça de potência ≥ 400 sem linha/raridade como "item de entrada" (guardian halberd 403, giant sword 401, twin
+   hooks 400 da ShamanBr, que o Equip 2.34.0 manda GUARDAR como base). Agora `bis` também com potência total ≥ `POTENCIA_BASE_ALTA`
+   (400); o motivo do "não vale" cita o 400.
+2. Plano de linha em peça de potência baixa competia com o refino. Agora todo plano de linha (encaixe, n linhas, subir valor) começa
+   pelo menor refino ≤ +4 que leva a peça ao mínimo da fase (`potenciaBaseForja`: 350 na fase 2) — vale para wand/rod e magos, em que
+   o refino não rende pt mas sobe a faixa — e a linha é sorteada na faixa que a peça terá depois (`faixaL`). Cada plano traz
+   `potFinal`, `ganhoLinha`, `ganhoRef`, `passosLinha`; `baixa` = plano de linha cujo `potFinal` fica abaixo do mínimo (ex.: base 100:
+   +4 → 300): fica na lista com o aviso, mas nunca é o "melhor" (`fjRanking` tira os `baixa` do pool). Sem nada que não seja baixa e
+   potência abaixo do mínimo, o motivo é "potência X abaixo de 350: as linhas valem pouco nesta faixa — refine primeiro ou forje numa
+   base ≥ 350". O Completo só existe se o refino padrão passa do que a linha já pede. Linha do ranking: `pot`, `potMin`, `potBaixa`;
+   tela com selo "pot. baixa" / "base".
+3. Tier do Thorgal: `tierDe(p)` (campo `forja.tier`, 0–5, **ainda não visto ao vivo**); `potenciaTotal` soma 5 × tier e
+   `fragmentosDesmanche` desconta. Ajuda da Forja explica o Thorgal.
+4. `efeitoOficial`: o refino do escudo entrava na DEFESA do bloqueio; agora é armadura (wiki; a mesma regra de `attrsComRefino`).
+5. Ajuda "? regras da Forja" reescrita (potência manda, ordem do trabalho, alvos por vocação, Thorgal, fontes de 02/11).
+- Testes: forja +3 (base 403 Comum vale / 320 não; linha refina antes: bota 186 → +4 e 386, bota 100 → baixa; elmo do mago 100/186),
+  Completo ajustado (`ganhoLinha`, `passosLinha`); equip +2 (tier na potência e não no desmanche; refino do escudo é armadura).
+  Com a régua de referência dos testes (sem party medida) a wand não tem linha que renda 0,5 pt — por isso o teste usa um elmo.
+- Pendente ao vivo: ver se o jogo manda `tier` na forja da instância (abrir o Thorgal na u2tag/ShamanBr) e conferir o ranking novo
+  com a ShamanBr (as 3 armas de 400+ devem aparecer como "base" com plano de refino +4).
