@@ -153,7 +153,7 @@ t("Quara's Domain (2.27.5, adaptados): 2 setups (forte e enxuto), nenhuma magia 
 });
 t('Northon (2.28.0): título "Northon - <mapa>", a barra dos 4, nenhum mapa repetido com post da comunidade, e todos passam no dcConfigDe do nível 136 sem aviso', () => {
     const nn = M.SETUPS_DISCORD.filter(s => /^northon-\d+$/.test(s.id));
-    assert(nn.length >= 40, 'Northon: ' + nn.length);
+    assert(nn.length >= 36, 'Northon: ' + nn.length); // 2.44.0: Draken (comPost), Apocalypse, Lower/Upper Spikes e Rocky ganharam post
     const daComunidade = new Set(M.SETUPS_DISCORD.filter(s => !/^Northon/.test(s.autor)).map(s => s.huntId));
     const ctx = { nivel: 136, magias: SPELLS, pocoes: NOMES_POCOES };
     for (const s of nn) {
@@ -216,7 +216,7 @@ t('Northon (2.38.4): padrão de outubro — Train Party (+Protector acima de 160
     const aMao = ['northon-192', 'northon-222'];
     const nn = M.SETUPS_DISCORD.filter(s => /^northon-\d+$/.test(s.id) && !aMao.includes(s.id));
     const ctx = { nivel: 170, magias: SPELLS, pocoes: NOMES_POCOES };
-    assert(nn.length >= 41, 'faltam Northon'); // 2.39.0: 5 tronos/portais ganharam post
+    assert(nn.length >= 36, 'faltam Northon'); // 2.39.0: 5 tronos/portais ganharam post; 2.44.0: mais 4 (Apocalypse, Lower/Upper Spikes, Rocky)
     for (const s of nn) {
         const k = s.chars.KNIGHT, p = s.chars.PALADIN, d = s.chars.DRUID;
         {

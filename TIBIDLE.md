@@ -7130,3 +7130,34 @@ comunidade e foi corrigido:
   Com a régua de referência dos testes (sem party medida) a wand não tem linha que renda 0,5 pt — por isso o teste usa um elmo.
 - Pendente ao vivo: ver se o jogo manda `tier` na forja da instância (abrir o Thorgal na u2tag/ShamanBr) e conferir o ranking novo
   com a ShamanBr (as 3 armas de 400+ devem aparecer como "base" com plano de refino +4).
+
+## 2.44.0 — varredura do Discord de 04/11: 11 setups novos (grampeador_, Ale;, Gabs, Specter, Xibara) e o site da comunidade
+
+Dono: "verifica se tem setup novo no discord." Lidos todos os tópicos do fórum `guias-da-comunidade` e as mensagens de 02–04/11 do
+"Aoba meu povo", "Acessos pra Inqui - Setups", Logbook e "PRESETS DE CAÇADAS".
+
+**Entraram (todos com a barra inteira):**
+- `hivequeen-grampeador` (199, nível 121, 5 h 56: 138,9k xp/h, **+225,5k/h**) e `lizard-grampeador` (62, 243,6k xp/h, +47,6k/h) —
+  prints do iPhone (Histórico › Por personagem); o de Hive Queen veio sem a barra do Paladino. Texto do equip (mana regen
+  18/18/20/21, SCA +4 7,5 % físico, wand of inferno 3,9 % gelo…) ficou na observação.
+- `lower-ale` (234, Ale;, nível 143: 130,2k xp/h, +55,2k/h) — "set tosco", Cavaleiro e Paladino sem poção de mana.
+- `draken-gabs` (192), `fungus-gabs` (214) e `rocky-gabs` (238, nível 183: 172,5k xp/h, **+341k/h**, "pra bater o bestiário") —
+  Gabs no "Aoba". No Rocky o Cavaleiro está sem poção de mana e com as três curas em 0 % (aguenta só no equip; a observação avisa).
+- `apocalypse-specter` (203, ~230k raw, +90–100k/h) — o "setupzin pra abrir a Inq" era Throne of Apocalypse, não Bazir.
+- `bog-xibara` (151), `gs-xibara` (105), `behemoth-xibara` (188) e `upper-xibara` (235) — do site **tibidle-community.com**
+  (Xibara, nível 96–100): presets em texto com o analisador do autor; o de Behemoth explica a escolha de gelo (avalanche rende
+  ~57 % a mais que great fireball nos Behemoths).
+
+**Saíram** os "Northon -" de Apocalypse, Lower Spikes, Upper Spikes e Rocky Mountain (agora têm post). O de Draken Walls ficou
+ao lado do Gabs com `comPost: true` (é o da poção do mapa, 2.29.7, pedido do dono). 147 entradas, 36+ Northon (limites do teste
+ajustados). Ficaram de fora: "Hive Queen level 115" do grampeador (mensagem apagada), Zumpano1 "Chamber" (só estatística:
+142k xp/h, +334k/h no nível 163), Aranha "tirei UE do sorc" (sem print), preset "VISCOUS" do Xibara (elite, não é hunt).
+
+**Como foi lido:** PC = `hist2.py` (sessão 6c10c8b3) casa os ícones 0,9+; iPhone (1170 px) = mesma `best()` com tamanhos
+80–104 e R=8 nas células de 130 px (`hist3.py`), poções e números à mão. Regra que confundiu: figura vermelha à DIREITA =
+Intense Healing, à ESQUERDA = Light Healing (compara3.png); Rage of the Skies é o raio roxo do Feiticeiro (não Energy Wave);
+"Strong Ice Strike" é só do Druida (o Feiticeiro usa Ice Strike); crystal sword/amber staff/crude umbral chopper são de 2 mãos.
+
+**Aviso do servidor (03/11):** o MOD Tibidle disse que o jogo vai ganhar compartilhamento de preset por link ("com 1 clique
+aplica tudo"), ainda em desenvolvimento; o Xibara prevê aposentar o site quando sair. O Skogstokig lançou outro site de presets
+(com importação por print da tela Histórico). Vale olhar o site do Xibara nas próximas varreduras: é texto, sem transcrever imagem.
