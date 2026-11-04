@@ -7161,3 +7161,37 @@ Intense Healing, à ESQUERDA = Light Healing (compara3.png); Rage of the Skies �
 **Aviso do servidor (03/11):** o MOD Tibidle disse que o jogo vai ganhar compartilhamento de preset por link ("com 1 clique
 aplica tudo"), ainda em desenvolvimento; o Xibara prevê aposentar o site quando sair. O Skogstokig lançou outro site de presets
 (com importação por print da tela Histórico). Vale olhar o site do Xibara nas próximas varreduras: é texto, sem transcrever imagem.
+
+## 2.45.0 — fita de batalha: autópsia de morte, disparos presos pelo mínimo e curas que não compensam (04/11, noite)
+
+Dono: "será que nossa automação poderia analisar o log de batalha que tem no jogo e melhorar alguma coisa?" → desenho em
+`docs/plans/2026-11-04-fita-batalha-design.md`, aprovado ("pode abrir o jogo aí e fazer sua análise"). O "log de batalha" da tela
+é o mesmo fluxo de `frame.events` que o livro-razão já lê; o que faltava era a LINHA DO TEMPO.
+
+**Conferido ao vivo (ShamanBr, Shadow Nexus, 3 min gravados em `data/frames-shadow-04-11.json`, fora do git):** `party[].cds`
+traz as recargas de cada cura (`heals[{name, cdLeft, cooldownMs}]`), dos grupos (`groups{attack, healing, support}`) e da poção
+(`potionMs`); `party[].kit[{name, mana, cooldownMs, cdLeft}]`; `heal {who, amount, hp, spell}` (sem `spell` = poção),
+`heal_tick` (Intense Recovery), `manapotion {who, amount, mana}`, `mcast.hits[{who, amount, hp}]`, `mhit.hp` = vida do
+Cavaleiro depois. O `state` do frame já vem DEPOIS dos eventos dele. Na gravação o Druida foi de 1.078 a 266 em 2,1 s (259
+físico + 281 dreno + 316 físico de Demon/Undead Dragon) com Ultimate Healing e Mass Healing prontas — só o gatilho segurou.
+
+**O que entrou (`@@RAZAO`, só leitura):**
+- `RAZAO.fita`: os últimos 40 s (vitais + recargas dos 4, monstros vivos, eventos compactados). `razaoVitais(L, party, eventos,
+  ativos, configs)` ganhou os dois parâmetros (`st.active` e `razaoConfigs()` = `configAtiva` dos 4).
+- **Autópsia** (`razaoAutopsia`): na morte, e na queda a ≤ 25 % (uma por minuto por personagem; fecha 1 s depois para ver a cura
+  que saiu em seguida). Laudo: quem bateu por criatura e elemento, a rajada de 2 s mais pesada, a curva da vida e, para cada cura
+  configurada (Heal Friend fora: o % é do amigo), se saiu ou por que não — "só dispara em ≤30 % (vida em 33 %)", "em recarga
+  (1,4 s)", "grupo de cura em recarga", "poção em recarga", "sem mana", "pronta: o dano chegou antes". Texto no Log (erro/aviso),
+  em `radar_mortes[hunt].laudos` (5), na aba Radar › Mapas ("autópsias") e na Magia (fita de batalha).
+- **Disparos** (`razaoDisparos`): por magia de ataque, lançamentos que acertaram menos que o mínimo e os segundos em que ela
+  estava pronta (`cdLeft` 0), com mana e com monstro vivo, e só o mínimo a segurou; por mínimo alternativo, o % do tempo e os
+  lançamentos a mais por minuto. A recarga do grupo (2 s) não entra: o que segura é o mínimo.
+- **Curas** (`razaoCuras`): por cura, desperdício (o que a cura tinha além do que a vida subiu), curas que saíram com a vida
+  abaixo de 30 % e o gatilho "sem desperdício até ≤X %" (100 − cura em % da vida − queda média entre o gatilho e a vida na hora
+  + 10). Na gravação: Ultimate Healing do Druida ≤30 %, 21 curas de ~573, 0 % de desperdício, sem desperdício até ≤60 %.
+- Tela: Magia › detalhes ganha "fita de batalha" (≥ 3 min: disparos com ≥ 10 % parados ou ≥ 3 curtos, curas com sugestão/atraso/
+  desperdício ≥ 25 %, as 2 últimas autópsias). Nada muda slot: o mínimo e o % continuam do dono.
+- Testes: razao +6 (fita, autópsia de morte, quase-morte com fechamento em 1 s e 1/min, disparos, curas, gravação real — pula
+  sem `data/frames-shadow-04-11.json`). 493 no total.
+- Pendente ao vivo: ver o laudo aparecer na aba Radar/Magia com a 2.45.0 carregada (Tampermonkey relê no F5); conferir se o
+  "quase" não dispara demais em mapa de rajada (1/min por personagem).

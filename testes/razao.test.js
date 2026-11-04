@@ -4,9 +4,9 @@ const fs = require('fs'), path = require('path'), assert = require('assert');
 const src = fs.readFileSync(path.join(__dirname, '..', 'tibidle-helper.user.js'), 'utf8');
 const trecho = (a, b) => { const i = src.indexOf(a), f = src.indexOf(b); assert(i > 0 && f > i, 'marcador ausente: ' + a); return src.slice(i, f); };
 const ORDEM = ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'];
-const stubs = `const vocDoIndice = (i) => ${JSON.stringify(ORDEM)}[i] || null; const CAT = { magias: [] }; const precoRuna = () => 0; const FRAME_FRESCO_MS = 5000;
+const stubs = `const vocDoIndice = (i) => ${JSON.stringify(ORDEM)}[i] || null; const CAT = { magias: [{ name: 'Ultimate Healing', group: 'healing', mana: 160 }, { name: 'Mass Healing', group: 'healing', mana: 150 }, { name: 'Strong Ice Wave', group: 'attack', mana: 170, cooldownMs: 8000 }, { name: 'Ice Strike', group: 'attack', mana: 20, cooldownMs: 2000 }] }; const precoRuna = () => 0; const FRAME_FRESCO_MS = 5000;
 const guardar = () => {}; const _hash = (s) => s; const amostraRegen = () => null; const medianaRegen = () => 0;`;
-const M = new Function(stubs + trecho('/* @@RAZAO-INICIO', '/* @@RAZAO-FIM */') + '\nreturn { razaoNovo, razaoEvento, razaoResumo, danoMapaJuntar, elemDoJogo, razaoPosicoes };')();
+const M = new Function(stubs + trecho('/* @@RAZAO-INICIO', '/* @@RAZAO-FIM */') + '\nreturn { razaoNovo, razaoEvento, razaoResumo, danoMapaJuntar, elemDoJogo, razaoPosicoes, razaoVitais, razaoAutopsia, razaoDisparos, razaoCuras, razaoFecharPendente, razaoLaudoTexto };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 
@@ -97,5 +97,107 @@ t('2.36.6 dano de condição: veneno → terra, sangramento → físico (na leit
     const j = M.danoMapaJuntar([{ t0: 1, t: 2, seg: 100, tomadoH: 1000, elemPorVoc: { PALADIN: { tomadoH: 1000, golpesH: 0, frac: { condition_poison: 0.5, gelo: 0.3, terra: 0.2 } } }, crias: [] }]);
     assert.strictEqual(j.elemPorVoc.PALADIN.frac.terra, 0.7);
     assert(!('condition_poison' in j.elemPorVoc.PALADIN.frac));
+});
+/* 2.45.0 — FITA DE BATALHA: autópsia, disparos desperdiçados e curas que não compensam (docs/plans/2026-11-04-fita-batalha-design.md) */
+const comRelogio = (t, fn) => { const o = Date.now; Date.now = () => t; try { return fn(); } finally { Date.now = o; } };
+const cds = (heals, grupoCura, atk) => ({ groups: { attack: atk || 0, healing: grupoCura || 0, support: 0 }, potionMs: 0, heals: [null].concat(heals.map(([name, cdLeft]) => ({ name, cdLeft, cooldownMs: 1000 }))), supports: [] });
+const membro = (voc, hp, maxHp, mana, extra) => Object.assign({ vocation: voc, hp, maxHp, mana, maxMana: 5000, cds: cds([]), kit: [] }, extra || {});
+const CFG = { DRUID: { heals: [{ name: 'Ultimate Healing', percent: 30 }, { name: 'Mass Healing', percent: 70 }], minCreatures: { 'Strong Ice Wave': 3, 'Ice Strike': 1 }, skills: ['Strong Ice Wave', 'Ice Strike'] } };
+function partyDru(hpDru, cdsDru, kitDru) {
+    return [membro('KNIGHT', 3000, 3000, 500), membro('PALADIN', 2000, 2000, 400), membro('SORCERER', 1200, 1200, 600), membro('DRUID', hpDru, 1200, 1364, { cds: cdsDru || cds([['Ultimate Healing', 0], ['Mass Healing', 0]]), kit: kitDru || [] })];
+}
+t('fita: guarda vitais, monstros vivos e os eventos compactados do frame; teto de 40 s', () => {
+    const L = M.razaoNovo(); let t0 = 1000000;
+    for (let i = 0; i < 60; i++) comRelogio(t0 + i * 1000, () => { M.razaoVitais(L, partyDru(1200), [], [{ id: 1 }, { id: 2 }], CFG); M.razaoEvento(L, { kind: 'mcast', id: 1, type: 'COMBAT_FIREDAMAGE', words: 'x', cells: [[0, 0]], hits: [{ who: 3, amount: 10, hp: 1190, mana: 0, fx: {} }] }, t0 + i * 1000); });
+    assert(L.fita.length <= 41 && L.fita.length >= 40, 'fita ' + L.fita.length);
+    const r = L.fita[L.fita.length - 1];
+    assert.strictEqual(r.ativos, 2); assert.strictEqual(r.vit[3].hp, 1200);
+    assert.deepStrictEqual(r.ev, [{ kind: 'mcast', id: 1, type: 'COMBAT_FIREDAMAGE', hits: [{ who: 3, amount: 10, hp: 1190 }] }], JSON.stringify(r.ev));
+});
+t('autópsia de morte: rajada de golpes em 2 s, quem bateu, e por que cada cura não saiu (gatilho, recarga)', () => {
+    const L = M.razaoNovo(); const t0 = 2000000;
+    M.razaoEvento(L, { kind: 'spawn', id: 7, name: 'Angry Demon', maxHp: 8200 }, t0);
+    const quadro = (dt, hp, cdMass, evs) => comRelogio(t0 + dt, () => { M.razaoVitais(L, partyDru(hp, cds([['Ultimate Healing', 0], ['Mass Healing', cdMass]])), [], [{ id: 7 }], CFG); for (const e of evs) M.razaoEvento(L, e, t0 + dt); });
+    quadro(0, 1200, 0, []);
+    quadro(500, 900, 1900, [{ kind: 'mcast', id: 7, type: 'COMBAT_PHYSICALDAMAGE', hits: [{ who: 3, amount: 300, hp: 900 }] }]);
+    quadro(1000, 600, 1400, [{ kind: 'mcast', id: 7, type: 'COMBAT_LIFEDRAIN', hits: [{ who: 3, amount: 300, hp: 600 }] }]);
+    quadro(1500, 400, 900, [{ kind: 'mcast', id: 7, type: 'COMBAT_PHYSICALDAMAGE', hits: [{ who: 3, amount: 200, hp: 400 }] }]);
+    quadro(2000, 0, 400, [{ kind: 'mcast', id: 7, type: 'COMBAT_PHYSICALDAMAGE', hits: [{ who: 3, amount: 500, hp: 0 }] }, { kind: 'death', who: 3 }]);
+    assert.strictEqual(L.laudos.length, 1);
+    const la = L.laudos[0];
+    assert.strictEqual(la.tipo, 'morte'); assert.strictEqual(la.voc, 'DRUID');
+    assert(la.rajada && la.rajada.golpes === 4 && la.rajada.dano === 1300, JSON.stringify(la.rajada));
+    assert.deepStrictEqual(la.tomado.map(q => [q.nome, q.el, q.dano]), [['Angry Demon', 'fisico', 1000], ['Angry Demon', 'drenovida', 300]]);
+    const m = Object.fromEntries(la.curas.map(c => [c.nome, c.motivo]));
+    assert.strictEqual(m['Mass Healing'], 'em recarga (0.4 s)', m['Mass Healing']);
+    assert.strictEqual(m['Ultimate Healing'], 'pronta: o dano chegou antes', m['Ultimate Healing']);
+    assert.match(la.texto, /Druida morreu: rajada de 4 golpes em 1\.5 s \(1300: 108 % da vida\) — Angry Demon fisico 1000, Angry Demon drenovida 300\. Não saiu — Ultimate Healing: pronta/);
+});
+t('autópsia "quase morreu": fecha 1 s depois e vê a cura que saiu em seguida; uma por minuto por personagem', () => {
+    const L = M.razaoNovo(); const t0 = 3000000;
+    M.razaoEvento(L, { kind: 'spawn', id: 7, name: 'Angry Demon', maxHp: 8200 }, t0);
+    const quadro = (dt, hp, evs) => comRelogio(t0 + dt, () => { M.razaoVitais(L, partyDru(hp), [], [{ id: 7 }], CFG); for (const e of evs) M.razaoEvento(L, e, t0 + dt); });
+    quadro(0, 1200, []);
+    quadro(500, 266, [{ kind: 'mcast', id: 7, type: 'COMBAT_PHYSICALDAMAGE', hits: [{ who: 3, amount: 934, hp: 266 }] }]);
+    assert(L.pendente && L.pendente.who === 3 && L.laudos.length === 0, 'pendente');
+    quadro(800, 1200, [{ kind: 'heal', who: 3, amount: 934, hp: 1200, spell: 'Ultimate Healing' }]);
+    assert.strictEqual(L.laudos.length, 0, 'ainda não fechou');
+    quadro(1600, 1200, []);
+    assert.strictEqual(L.laudos.length, 1); assert(!L.pendente);
+    const la = L.laudos[0];
+    assert.strictEqual(la.tipo, 'quase'); assert.strictEqual(la.hpFinal, 266);
+    const m = Object.fromEntries(la.curas.map(c => [c.nome, c.motivo]));
+    assert.strictEqual(m['Ultimate Healing'], 'saiu');
+    assert.strictEqual(m['Mass Healing'], 'pronta: o dano chegou antes', m['Mass Healing']);
+    assert.match(la.texto, /^Druida chegou a 22 %: golpe de 934 \(fisico\) do Angry Demon/);
+    quadro(2000, 200, []); quadro(3100, 1200, []);
+    assert.strictEqual(L.laudos.length, 1, 'segunda queda no mesmo minuto não gera laudo');
+});
+t('disparos desperdiçados: segundos parado por causa do mínimo (pronta, com mana, monstro vivo) e lançamento curto', () => {
+    const L = M.razaoNovo(); const t0 = 4000000;
+    const kit = [{ name: 'Strong Ice Wave', mana: 170, cooldownMs: 8000, cdLeft: 0 }, { name: 'Ice Strike', mana: 20, cooldownMs: 2000, cdLeft: 0 }];
+    const quadro = (dt, ativos, kitDru, evs) => comRelogio(t0 + dt, () => { M.razaoVitais(L, partyDru(1200, null, kitDru), [], ativos, CFG); for (const e of (evs || [])) M.razaoEvento(L, e, t0 + dt); });
+    quadro(0, 2, kit);
+    for (let i = 1; i <= 10; i++) quadro(i * 1000, 2, kit);
+    for (let i = 11; i <= 15; i++) quadro(i * 1000, 1, kit);
+    for (let i = 16; i <= 20; i++) quadro(i * 1000, 2, [{ name: 'Strong Ice Wave', mana: 170, cooldownMs: 8000, cdLeft: 3000 }, kit[1]]);
+    for (let i = 21; i <= 25; i++) quadro(i * 1000, 0, kit);
+    quadro(26000, 4, kit, [{ kind: 'cast', who: 3, name: 'Strong Ice Wave', hits: [{ id: 1, amount: 100, hp: 10 }, { id: 2, amount: 100, hp: 10 }] }, { kind: 'cast', who: 3, name: 'Ultimate Healing', hits: [] }]);
+    const d = M.razaoDisparos(L).find(x => x.nome === 'Strong Ice Wave');
+    assert(d, 'sem disparos'); assert.strictEqual(d.min, 3); assert.strictEqual(d.casts, 1); assert.strictEqual(d.curtos, 1);
+    /* vivo: 10 s (2) + 5 s (1) + 5 s (2, recarga) + 1 s (4 vivos) = 21 s; parada por causa do mínimo: 15 s */
+    assert.strictEqual(d.paradoPct, Math.round(15000 / 21000 * 100), JSON.stringify(d));
+    assert.deepStrictEqual(d.alternativas.map(a => [a.min, a.pct]), [[1, 71], [2, 48]]);
+    assert(!M.razaoDisparos(L).some(x => x.nome === 'Ultimate Healing'), 'cura não é disparo');
+    assert(!M.razaoDisparos(L).some(x => x.nome === 'Ice Strike'), 'mínimo 1 sem lançamento curto não aparece');
+});
+t('curas: desperdício acima da vida máxima, cura atrasada (< 30 %) e sugestão de gatilho', () => {
+    const L = M.razaoNovo(); const t0 = 5000000;
+    const quadro = (dt, hp, evs) => comRelogio(t0 + dt, () => { M.razaoVitais(L, partyDru(hp), [], [{ id: 1 }], CFG); for (const e of (evs || [])) M.razaoEvento(L, e, t0 + dt); });
+    quadro(0, 1200);
+    for (let i = 1; i <= 6; i++) { quadro(i * 2000, 700); quadro(i * 2000 + 1000, 1200, [{ kind: 'heal', who: 3, amount: 900, hp: 1200, spell: 'Mass Healing' }]); }
+    quadro(20000, 250); quadro(21000, 1150, [{ kind: 'heal', who: 3, amount: 900, hp: 1150, spell: 'Ultimate Healing' }]);
+    const cs = M.razaoCuras(L), mass = cs.find(c => c.nome === 'Mass Healing'), uh = cs.find(c => c.nome === 'Ultimate Healing');
+    assert(mass && mass.n === 6 && mass.desperdicioPct === Math.round(400 / 900 * 100) && mass.atrasadas === 0, JSON.stringify(mass));
+    assert.strictEqual(mass.gatilho, 70);
+    /* cura de 75 % da vida, a vida estava 12 pontos abaixo do gatilho (70 → 58): 100 − 75 − 12 + 10 = 23 → 25 */
+    assert.strictEqual(mass.sugestao, 25, JSON.stringify(mass));
+    assert(uh && uh.n === 1 && uh.atrasadas === 1 && uh.desperdicioPct === 0 && uh.sugestao === null, JSON.stringify(uh));
+});
+t('gravação real (data/frames-shadow-04-11.json, fora do git — pula sem o arquivo): sem morte, Druida a 22 %, laudo cita o demônio', () => {
+    const f = path.join(__dirname, '..', 'data', 'frames-shadow-04-11.json');
+    if (!fs.existsSync(f)) { console.log('     (sem data/frames-shadow-04-11.json: pulado)'); return; }
+    const fx = JSON.parse(fs.readFileSync(f, 'utf8')), L = M.razaoNovo(), t0 = 6000000;
+    const cfg = { DRUID: { heals: [{ name: 'Ultimate Healing', percent: 30 }, { name: 'Mass Healing', percent: 70 }, { name: 'Heal Friend', percent: 70 }], minCreatures: { 'Strong Ice Wave': 3 }, skills: ['Strong Ice Wave', 'avalanche rune', 'Strong Ice Strike', 'Ice Strike'] } };
+    for (const fr of fx.frames) comRelogio(t0 + fr.t, () => { M.razaoVitais(L, fr.party.map(p => Object.assign({ vocation: p.voc }, p)), fr.events, fr.ativos, cfg); for (const e of fr.events) M.razaoEvento(L, e, t0 + fr.t); });
+    assert(!L.laudos.some(l => l.tipo === 'morte'));
+    const q = L.laudos.filter(l => l.tipo === 'quase' && l.voc === 'DRUID');
+    assert(q.length >= 1, 'quase do Druida: ' + L.laudos.map(l => l.texto).join(' | '));
+    assert(q.some(l => /Angry Demon|Undead Dragon|Demon/.test(l.texto)), q.map(l => l.texto).join(' | '));
+    const uh = M.razaoCuras(L).find(c => c.voc === 'DRUID' && c.nome === 'Ultimate Healing');
+    assert(uh && uh.n >= 15, JSON.stringify(uh));
+    const d = M.razaoDisparos(L).find(x => x.voc === 'DRUID' && x.nome === 'Strong Ice Wave');
+    assert(d && d.casts >= 5, JSON.stringify(d));
+    console.log('     ' + q[0].texto); console.log('     UH: ' + JSON.stringify(uh)); console.log('     SIW: ' + JSON.stringify(d));
 });
 console.log(`\n${n} testes ok`);

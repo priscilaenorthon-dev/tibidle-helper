@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.44.0
+// @version      2.45.0
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.44.0';
+    const VERSAO = '2.45.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -4561,7 +4561,8 @@
      * amount, hits[{who, amount, mana}]} = magia de criatura, por personagem e elemento; death {who}). Guardado em
      * `crias` (por nome: golpes e magias, com média e máximo), `tomadoVoc` (por personagem e elemento) e `mortes`. */
     const razaoNovo = () => ({ t0: Date.now(), tFim: 0, tUlt: 0, magias: {}, auto: {}, tomado: { total: 0, golpes: 0, corpo: 0, golpesCorpo: 0 }, kills: 0, ondas: { n: 0, tam: 0, timer: 0, matar: 0, tOnda: 0 }, vitais: {}, hpAntes: {},
-                               vitaisPorKit: {}, kitVital: {}, nomes: {}, crias: {}, tomadoVoc: {}, mortes: [], posParty: {}, posMob: {}, alcance: {} }); // 2.31.0: posições e alcance
+                               vitaisPorKit: {}, kitVital: {}, nomes: {}, crias: {}, tomadoVoc: {}, mortes: [], posParty: {}, posMob: {}, alcance: {},
+                               fita: [], disparos: {}, curas: {}, laudos: [], minimos: {}, hpEv: {}, quaseT: {}, pendente: null }); // 2.31.0: posições e alcance; 2.45.0: fita
     /* o elemento do jogo (COMBAT_FIREDAMAGE, "fire", "physical"…) no nome do helper (fogo, fisico…) */
     const ELEM_JOGO = { physical: 'fisico', fire: 'fogo', ice: 'gelo', energy: 'energia', earth: 'terra', poison: 'terra', death: 'morte', holy: 'sagrado', lifedrain: 'drenovida', manadrain: 'drenomana', drown: 'afogamento' };
     /* v2.36.6 — dano de condição (o frame manda CONDITION_POISON, CONDITION_BLEEDING…, visto no dano guardado de 22 mapas em 30/10):
@@ -4578,9 +4579,67 @@
      * Δmana/Δt. Mediana das últimas 200 janelas; com ≥ 30 vira regen_<VOC>
      * (regenMedida), que o Inteligente e o simulador usam no lugar do chute. */
     const _regenJan = {}, _regenLista = {};
-    function razaoVitais(L, party, eventos) {
+    /* 2.45.0 — FITA DE BATALHA (dono, 04/11: "analisar o log de batalha do jogo e melhorar a automação"). O jogo manda em cada frame
+     * os vitais e as RECARGAS de cada um (party[].cds: heals[{name, cdLeft}], groups{attack, healing}, potionMs; kit[{name, mana,
+     * cdLeft}]) e os eventos (heal {who, amount, hp, spell}; mcast com hits[{who, amount, hp}]…). A fita guarda os últimos 40 s disso
+     * para a AUTÓPSIA (morte ou vida ≤ 25 %: quem bateu, rajada, e por que cada cura configurada não saiu — gatilho, recarga, mana),
+     * e dois contadores da caçada inteira: DISPAROS (lançamento que acertou menos que o mínimo; segundos em que a magia estava
+     * pronta, com mana e monstro vivo, e só o MÍNIMO a segurou) e CURAS (desperdício acima da vida máxima e curas atrasadas).
+     * Desenho: docs/plans/2026-11-04-fita-batalha-design.md. Só leitura. */
+    const FITA_MAX_MS = 40000, FITA_MAX_N = 400, QUASE_HP = 0.25, QUASE_INTERVALO_MS = 60000, AUTOPSIA_JANELA_MS = 10000, LAUDOS_MAX = 5;
+    const ROTULO_VOC_RZ = { KNIGHT: 'Cavaleiro', PALADIN: 'Paladino', SORCERER: 'Feiticeiro', DRUID: 'Druida' };
+    const fitaEv = (e) => {
+        const o = { kind: e.kind };
+        for (const k of ['who', 'id', 'name', 'spell', 'amount', 'hp', 'type', 'atk', 'rune']) if (e[k] !== undefined && e[k] !== null) o[k] = e[k];
+        if (Array.isArray(e.hits)) o.hits = e.hits.map(h => { const x = {}; for (const k of ['id', 'who', 'amount', 'hp']) if (h && h[k] !== undefined) x[k] = h[k]; return x; });
+        return o;
+    };
+    function razaoFitaFrame(L, party, ativos, agora) {
+        const vit = party.map(p => p ? { voc: p.vocation, hp: p.hp, maxHp: p.maxHp, mana: p.mana, maxMana: p.maxMana, cds: p.cds || null,
+                                         kit: Array.isArray(p.kit) ? p.kit.map(k => k && ({ name: k.name, mana: k.mana, cdLeft: k.cdLeft, cooldownMs: k.cooldownMs })).filter(Boolean) : null } : null);
+        const reg = { t: agora, vit, ativos: Array.isArray(ativos) ? ativos.length : (Number(ativos) || 0), ev: [] };
+        L.fita.push(reg);
+        while (L.fita.length > FITA_MAX_N || (L.fita.length > 1 && agora - L.fita[0].t > FITA_MAX_MS)) L.fita.shift();
+        return reg;
+    }
+    /* o laudo pendente ("quase morreu") fecha 1 s depois, para a fita já ter a cura que saiu em seguida */
+    function razaoFecharPendente(L, agora, forcar) {
+        const pd = L.pendente; if (!pd) return;
+        if (!forcar && agora - pd.t < 1000) return;
+        L.pendente = null;
+        L.laudos.push(razaoAutopsia(L, pd.who, pd.t, pd.tipo, agora));
+        if (L.laudos.length > LAUDOS_MAX) L.laudos.shift();
+    }
+    function razaoVitais(L, party, eventos, ativos, configs) {
         const agora = Date.now();
         L.tUlt = agora;
+        if (!L.fita) Object.assign(L, { fita: [], disparos: {}, curas: {}, laudos: [], minimos: {}, hpEv: {}, quaseT: {}, pendente: null });
+        if (configs && typeof configs === 'object') L.minimos = configs;
+        razaoFecharPendente(L, agora, false);
+        const ant = L.fita[L.fita.length - 1];
+        const reg = razaoFitaFrame(L, party, ativos, agora);
+        const dt = ant ? Math.min(2000, Math.max(0, agora - ant.t)) : 0;
+        /* a vida de cada um ANTES dos eventos deste frame (o state já vem depois deles): a do frame anterior */
+        L.hpEv = {}; party.forEach((p, i) => { if (ant && ant.vit[i] && ant.vit[i].hp != null) L.hpEv[i] = ant.vit[i].hp; });
+        if (dt > 0 && reg.ativos >= 1) { party.forEach((p) => {
+            if (!p || !p.vocation) return;
+            const voc = p.vocation, mins = (L.minimos[voc] && L.minimos[voc].minCreatures) || {};
+            const dv = L.disparos[voc] || (L.disparos[voc] = { vivoMs: 0, magias: {} }); dv.vivoMs += dt;
+            for (const k of (Array.isArray(p.kit) ? p.kit : [])) {
+                if (!k || !k.name) continue;
+                const min = Number(mins[k.name]) || 1;
+                const m = dv.magias[k.name] || (dv.magias[k.name] = { casts: 0, curtos: 0, paradoMs: {}, min, cdMs: Number(k.cooldownMs) || 0 });
+                m.min = min; if (k.cooldownMs) m.cdMs = Number(k.cooldownMs);
+                if (reg.ativos >= min) continue; // tem monstro para o mínimo: se não saiu, não foi o mínimo que segurou
+                if (Number(k.cdLeft) !== 0 || (k.mana != null && p.mana < k.mana)) continue;
+                m.paradoMs[reg.ativos] = (m.paradoMs[reg.ativos] || 0) + dt;
+            }
+        }); }
+        party.forEach((p, i) => {
+            if (!p || !p.maxHp || !p.vocation) return;
+            const f = p.hp / p.maxHp, fa = ant && ant.vit[i] && ant.vit[i].maxHp ? ant.vit[i].hp / ant.vit[i].maxHp : 1;
+            if (f <= QUASE_HP && fa > QUASE_HP && p.hp > 0 && agora - (L.quaseT[p.vocation] || 0) >= QUASE_INTERVALO_MS && !L.pendente) { L.quaseT[p.vocation] = agora; L.pendente = { who: i, t: agora, tipo: 'quase' }; }
+        });
         const lancou = new Set(); let cura = false;
         for (const e of (Array.isArray(eventos) ? eventos : [])) {
             if (!e || e.kind !== 'cast') continue;
@@ -4630,8 +4689,19 @@
     }
     function razaoEvento(L, e, agora) {
         const k = e.kind;
+        if (L.fita) {
+            const reg = L.fita[L.fita.length - 1]; if (reg && agora - reg.t <= FITA_MAX_MS) reg.ev.push(fitaEv(e));
+            if (k === 'mhit' && e.hp != null) L.hpEv[0] = Number(e.hp);
+            else if (k === 'mcast') { if (Array.isArray(e.hits) && e.hits.length) { for (const h of e.hits) if (h && h.who != null && h.hp != null) L.hpEv[h.who] = Number(h.hp); } else if (e.hp != null) L.hpEv[0] = Number(e.hp); }
+            else if (k === 'heal' || k === 'heal_tick') { razaoCura(L, e); return; }
+            else if (k === 'cast' && Array.isArray(e.hits)) razaoDisparo(L, e);
+        }
         if (k === 'spawn') { L.hpAntes[e.id] = e.maxHp; if (e.name) L.nomes[e.id] = e.name; return; }
-        if (k === 'death') { L.mortes.push({ voc: vocDoIndice(e.who) || ('#' + e.who), t: agora }); return; }
+        if (k === 'death') {
+            L.mortes.push({ voc: vocDoIndice(e.who) || ('#' + e.who), t: agora });
+            if (L.fita) { if (L.pendente && L.pendente.who === e.who) L.pendente = null; L.laudos.push(razaoAutopsia(L, e.who, agora, 'morte', agora)); if (L.laudos.length > LAUDOS_MAX) L.laudos.shift(); }
+            return;
+        }
         if (k === 'cast') {
             const voc = vocDoIndice(e.who) || ('#' + e.who), ch = voc + '|' + e.name;
             const m = L.magias[ch] || (L.magias[ch] = { voc, nome: e.name, runa: !!e.rune, casts: 0, hits: 0, dano: 0, overkill: 0, mortos: 0 });
@@ -4780,6 +4850,118 @@
         for (const x of ss) { for (const [v, m] of Object.entries(x.alcance || {})) { for (const [k, a] of Object.entries(m || {})) { const z = (alcance[v] || (alcance[v] = {}))[k] || (alcance[v][k] = { casts: 0, hits: 0 }); z.casts += a.casts || 0; z.hits += a.hits || 0; } } }
         return { seg, sessoes: ss.length, t: Math.max(...ss.map(x => x.t || 0)), tomadoH: Math.round(ss.reduce((t, x) => t + (x.tomadoH || 0) * w(x), 0)), mortes: ss.reduce((t, x) => t + (x.mortes || 0), 0), elemPorVoc, crias: lista, posMob, alcance };
     }
+    /* 2.45.0 — a CURA que entrou: `hp` é a vida depois (capada no máximo), a de antes vem de hpEv (frame anterior + golpes deste);
+     * desperdício = o que a cura tinha além do que a vida subiu. heal_tick (Intense Recovery) só atualiza a vida corrente. */
+    function razaoCura(L, e) {
+        const who = Number(e.who), voc = vocDoIndice(who) || ('#' + who), nome = e.spell || 'poção';
+        const depois = Number(e.hp), amount = Number(e.amount) || 0;
+        const antes = L.hpEv[who] != null ? L.hpEv[who] : (Number.isFinite(depois) ? depois - amount : null);
+        if (Number.isFinite(depois)) L.hpEv[who] = depois;
+        if (e.kind === 'heal_tick') return;
+        const reg = L.fita[L.fita.length - 1], vit = reg && reg.vit[who], maxHp = vit && Number(vit.maxHp) || 0;
+        const c = L.curas[voc + '|' + nome] || (L.curas[voc + '|' + nome] = { voc, nome, n: 0, amount: 0, desperdicio: 0, atrasadas: 0, antes: [], maxHp: 0, gap: 0, nGap: 0 });
+        c.n++; c.amount += amount; if (maxHp) c.maxHp = maxHp;
+        if (antes != null && Number.isFinite(depois)) c.desperdicio += Math.max(0, amount - Math.max(0, depois - antes));
+        if (antes != null && maxHp) {
+            const f = antes / maxHp * 100; if (f < 30) c.atrasadas++;
+            c.antes.push(Math.round(f)); if (c.antes.length > 300) c.antes.shift();
+            const cfg = L.minimos[voc], h = cfg && Array.isArray(cfg.heals) ? cfg.heals.find(x => x && x.name === nome) : null;
+            if (h && h.percent != null) { c.gap += Math.max(0, h.percent - f); c.nGap++; }
+        }
+    }
+    function razaoDisparo(L, e) {
+        const voc = vocDoIndice(e.who) || ('#' + e.who), cfg = L.minimos[voc] || {}, mins = cfg.minCreatures || {};
+        const cat = (CAT.magias || []).find(x => x.name === e.name);
+        if (cat && cat.group && cat.group !== 'attack') return;
+        if (!e.hits.length && !(e.name in mins) && !(Array.isArray(cfg.skills) && cfg.skills.includes(e.name))) return; // cura/suporte sem lista de acertos
+        const dv = L.disparos[voc] || (L.disparos[voc] = { vivoMs: 0, magias: {} });
+        const min = Number(mins[e.name]) || 1;
+        const m = dv.magias[e.name] || (dv.magias[e.name] = { casts: 0, curtos: 0, paradoMs: {}, min, cdMs: cat && cat.cooldownMs || 0 });
+        m.casts++; m.min = min; if (e.hits.length < min) m.curtos++;
+    }
+    /* → [{voc, nome, min, casts, curtos, paradoPct, extrasMin, alternativas[{min, pct, extrasMin}]}] — só magias com mínimo ≥ 2 ou lançamento curto */
+    function razaoDisparos(L) {
+        const out = [];
+        for (const [voc, dv] of Object.entries(L.disparos || {})) { for (const [nome, m] of Object.entries(dv.magias || {})) {
+            const soma = (k) => Object.entries(m.paradoMs).filter(([n]) => Number(n) >= k).reduce((t, [, v]) => t + v, 0);
+            const parado = soma(1), vivo = dv.vivoMs || 0;
+            const extras = (ms) => m.cdMs ? Math.round(ms / Math.max(2000, m.cdMs) / Math.max(1, vivo / 60000) * 10) / 10 : null;
+            if (m.min <= 1 && !m.curtos) continue;
+            const alternativas = []; for (let k = 1; k < m.min; k++) alternativas.push({ min: k, pct: vivo ? Math.round(soma(k) / vivo * 100) : 0, extrasMin: extras(soma(k)) });
+            out.push({ voc, nome, min: m.min, casts: m.casts, curtos: m.curtos, paradoPct: vivo ? Math.round(parado / vivo * 100) : 0, extrasMin: extras(parado), alternativas, vivoMin: Math.round(vivo / 6000) / 10 });
+        } }
+        return out.sort((a, b) => b.paradoPct - a.paradoPct);
+    }
+    /* → [{voc, nome, n, mediaCura, desperdicioPct, atrasadas, gatilho, sugestao}] — sugestão = gatilho em que o desperdício esperado
+     *   fica em ~10 %: 100 − cura (% da vida) − queda média entre o gatilho e a vida na hora (medida) + 10 */
+    function razaoCuras(L) {
+        return Object.values(L.curas || {}).map(c => {
+            const media = c.n ? c.amount / c.n : 0, despPct = c.amount ? Math.round(c.desperdicio / c.amount * 100) : 0;
+            const cfg = L.minimos[c.voc], h = cfg && Array.isArray(cfg.heals) ? cfg.heals.find(x => x && x.name === c.nome) : null;
+            const gatilho = h && h.percent != null ? Number(h.percent) : null;
+            let sugestao = null;
+            if (c.maxHp && c.n >= 5 && gatilho != null) {
+                const curaPct = media / c.maxHp * 100, queda = c.nGap ? c.gap / c.nGap : 0;
+                sugestao = Math.max(10, Math.min(95, Math.round((100 - curaPct - queda + 10) / 5) * 5));
+                if (Math.abs(sugestao - gatilho) < 5) sugestao = null;
+            }
+            return { voc: c.voc, nome: c.nome, n: c.n, mediaCura: Math.round(media), desperdicioPct: despPct, atrasadas: c.atrasadas, gatilho, sugestao };
+        }).sort((a, b) => b.n - a.n);
+    }
+    /* AUTÓPSIA: os 10 s antes de `fim` para o personagem `who` — quem bateu (por criatura e elemento), a rajada de 2 s mais pesada,
+     * a curva da vida e, para cada cura configurada (ou das recargas do frame), se saiu e por que não. */
+    function razaoAutopsia(L, who, fim, tipo, agora) {
+        const voc = vocDoIndice(who) || ('#' + who), regs = (L.fita || []).filter(r => r.t <= fim && fim - r.t <= AUTOPSIA_JANELA_MS);
+        const tomado = {}, golpes = [], curva = []; let maior = null;
+        for (const r of regs) {
+            const v = r.vit[who]; if (v && v.maxHp) curva.push({ s: Math.round((r.t - fim) / 100) / 10, pct: Math.round(v.hp / v.maxHp * 100) });
+            for (const e of r.ev) {
+                let dano = 0, el = 'fisico';
+                if (e.kind === 'mhit' && who === 0) dano = Number(e.amount) || 0;
+                else if (e.kind === 'mcast') { el = elemDoJogo(e.type); const h = Array.isArray(e.hits) && e.hits.length ? e.hits.find(x => x.who === who) : (who === 0 ? e : null); dano = h ? Number(h.amount) || 0 : 0; }
+                if (!(dano > 0)) continue;
+                const nome = L.nomes[e.id] || '?', q = tomado[nome + '|' + el] || (tomado[nome + '|' + el] = { nome, el, dano: 0, golpes: 0 });
+                q.dano += dano; q.golpes++; golpes.push({ t: r.t, dano, nome, el });
+                if (!maior || dano > maior.dano) maior = { nome, el, dano };
+            }
+        }
+        let rajada = null;
+        for (let i = 0; i < golpes.length; i++) {
+            let d = 0, n = 0, j = i; for (; j < golpes.length && golpes[j].t - golpes[i].t <= 2000; j++) { d += golpes[j].dano; n++; }
+            if (n >= 2 && (!rajada || d > rajada.dano)) rajada = { golpes: n, ms: golpes[j - 1].t - golpes[i].t, dano: d };
+        }
+        const ult = regs[regs.length - 1], vit = ult && ult.vit[who], maxHp = vit && Number(vit.maxHp) || 0;
+        const cfg = L.minimos[voc] || {}, heals = Array.isArray(cfg.heals) ? cfg.heals.filter(h => h && h.name && h.name !== 'Heal Friend') : [];
+        const cds = vit && vit.cds && Array.isArray(vit.cds.heals) ? vit.cds.heals.filter(Boolean) : [];
+        const lista = heals.length ? heals : cds.filter(h => h.name !== 'Heal Friend').map(h => ({ name: h.name, percent: null }));
+        const depois = (L.fita || []).filter(r => r.t > fim && r.t <= (agora || fim)); // o que saiu logo depois (laudo "quase")
+        const saiu = new Set(); for (const r of regs.concat(depois)) for (const e of r.ev) if ((e.kind === 'heal' || e.kind === 'cast') && e.who === who) saiu.add(e.spell || e.name);
+        const hpPct = vit && maxHp ? vit.hp / maxHp * 100 : null;
+        const curas = lista.map(h => {
+            const cd = cds.find(x => x.name === h.name), pot = /potion/i.test(h.name), cat = (CAT.magias || []).find(x => x.name === h.name);
+            let motivo;
+            if (saiu.has(h.name)) motivo = 'saiu';
+            else if (h.percent != null && hpPct != null && hpPct > h.percent) motivo = `só dispara em ≤${h.percent} % (vida em ${Math.round(hpPct)} %)`;
+            else if (pot && vit && vit.cds && Number(vit.cds.potionMs) > 0) motivo = `poção em recarga (${(vit.cds.potionMs / 1000).toFixed(1)} s)`;
+            else if (cd && Number(cd.cdLeft) > 0) motivo = `em recarga (${(cd.cdLeft / 1000).toFixed(1)} s)`;
+            else if (!pot && vit && vit.cds && vit.cds.groups && Number(vit.cds.groups.healing) > 0) motivo = `grupo de cura em recarga (${(vit.cds.groups.healing / 1000).toFixed(1)} s)`;
+            else if (cat && cat.mana && vit && Number(vit.mana) < cat.mana) motivo = `sem mana (${vit.mana} < ${cat.mana})`;
+            else motivo = 'pronta: o dano chegou antes';
+            return { nome: h.name, percent: h.percent != null ? h.percent : null, motivo };
+        });
+        const laudo = { tipo, voc, t: fim, janelaS: AUTOPSIA_JANELA_MS / 1000, tomado: Object.values(tomado).sort((a, b) => b.dano - a.dano), maior, rajada, curva, curas, maxHp, hpFinal: vit ? vit.hp : null };
+        laudo.texto = razaoLaudoTexto(laudo);
+        return laudo;
+    }
+    function razaoLaudoTexto(la) {
+        const r = ROTULO_VOC_RZ[la.voc] || la.voc, pct = (v) => la.maxHp ? Math.round(v / la.maxHp * 100) + ' % da vida' : v + ' de dano';
+        const cabeca = la.tipo === 'morte' ? `${r} morreu` : `${r} chegou a ${la.hpFinal != null && la.maxHp ? Math.round(la.hpFinal / la.maxHp * 100) : '?'} %`;
+        const causa = la.rajada ? `rajada de ${la.rajada.golpes} golpes em ${(la.rajada.ms / 1000).toFixed(1)} s (${la.rajada.dano}: ${pct(la.rajada.dano)})` : la.maior ? `golpe de ${la.maior.dano} (${la.maior.el}) do ${la.maior.nome}` : 'sem dano registrado nos últimos 10 s';
+        const quem = la.tomado.slice(0, 3).map(q => `${q.nome} ${q.el} ${q.dano}`).join(', ');
+        const faltou = la.curas.filter(c => c.motivo !== 'saiu').map(c => `${c.nome}: ${c.motivo}`);
+        const saiu = la.curas.filter(c => c.motivo === 'saiu').map(c => c.nome);
+        return `${cabeca}: ${causa}${quem ? ` — ${quem}` : ''}. ${saiu.length ? `Saiu: ${saiu.join(', ')}. ` : ''}${faltou.length ? `Não saiu — ${faltou.join('; ')}.` : 'Todas as curas saíram: faltou vida máxima ou resistência.'}`;
+    }
     /* @@RAZAO-FIM */
     /* @@FORMACAO-PURO-INICIO — FORMAÇÃO POR BOSS (2.31.0). Dono, 27/10: "tem boss com dano em linha e em área: se afastar é melhor,
      * mas longe demais a magia do Feiticeiro, do Paladino e do Druida não pega; monte uma estratégia precisa para atacar sem ficar na
@@ -4907,6 +5089,19 @@
     }
     const DANO_MAPA = { cache: null };
     /* v2.36.6 — boss sem nome ('?', torre, treino) não grava: 'boss:?' misturava bosses diferentes e a aba Aguentar nunca o achava */
+    /* 2.45.0 — a config viva dos 4 (mínimos e curas com %) para a fita; e os laudos novos vão para o Log e para radar_mortes[hunt].laudos */
+    function razaoConfigs() { const o = {}; for (const v of VOCS) { try { const c = configAtiva(v); if (c) o[v] = c; } catch (e) { /* sem perfil */ } } return o; }
+    function razaoLaudosNovos(antes) {
+        const ls = RAZAO.laudos || []; if (!ls.length) return;
+        for (const la of ls) {
+            if (la._visto) continue; la._visto = true;
+            log('autópsia: ' + la.texto, la.tipo === 'morte' ? 'erro' : 'aviso');
+            const id = ESTADO_WS.huntId; if (id == null) continue;
+            const m = ler('radar_mortes', {}) || {}, x = m[id] || { n: 0, t: 0 };
+            x.laudos = (x.laudos || []).filter(l => l && l.t !== la.t).concat([{ tipo: la.tipo, voc: la.voc, t: la.t, texto: la.texto }]).slice(-LAUDOS_MAX);
+            m[id] = x; guardar('radar_mortes', m);
+        }
+    }
     const danoMapaChave = () => (ESTADO_WS.boss ? (/^(\?|torre|treino)$/.test(ESTADO_WS.boss) ? null : 'boss:' + ESTADO_WS.boss) : ESTADO_WS.huntId != null ? 'hunt:' + ESTADO_WS.huntId : null);
     function danoMapaGuardar() {
         const chave = danoMapaChave(); if (!chave || !RAZAO || !RAZAO.t0) return;
@@ -5055,10 +5250,11 @@
             };
             if (Array.isArray(st.party) && st.party.length) {
                 ESTADO_WS.party = vocsPorPosicao(st.party);
-                try { razaoVitais(RAZAO, st.party, d.events); } catch (e) { falhou('livro-razão (vitais)', e); }
+                try { razaoVitais(RAZAO, st.party, d.events, st.active, razaoConfigs()); } catch (e) { falhou('livro-razão (vitais)', e); }
                 try { razaoPosicoes(RAZAO, st); } catch (e) { falhou('livro-razão (posições)', e); } // 2.31.0
                 try { anotarSkills(st.party); } catch (e) { falhou('anotarSkills', e); }
             }
+            const nLaudos = (RAZAO.laudos || []).length;
             if (Array.isArray(d.events)) { const agora = Date.now(); for (const ev of d.events) {
                 if (!ev || typeof ev !== 'object') continue;
                 try { razaoEvento(RAZAO, ev, agora); } catch (e) { falhou('livro-razão (eventos)', e); }
@@ -5067,6 +5263,7 @@
                     aplicarConfigLocal(vocDoIndice(ev.who), ev.config);
                 }
             } }
+            try { razaoLaudosNovos(nLaudos); } catch (e) { falhou('livro-razão (laudos)', e); }
             /* v2.11.2 — a Magia não repinta por frame; o selo medido aparece
              * quando a caçada passa de 10 min (repinte só nessa virada) */
             if (ABA === 'magia') { const k = ESTADO_WS.huntId + '|' + !!(an && Number(an.elapsedMs) >= 10 * 60000); if (k !== _medidoK) { _medidoK = k; renderizar(); } }
@@ -11503,11 +11700,32 @@
                 (mortos.length ? `<div class="tb-mx tb-morto" title="slot que nunca dispararia: fica vazio (não gasta mana)">cortado: ${escHtml(mortos.join(' · '))}</div>` : '') + `</div></div>`;
         }).join('') + `</div>`;
         const linhas = [];
+        try { const fh = razaoFitaHtml(h); if (fh) linhas.push(fh); } catch (e) { falhou('magia (fita)', e); }
         if (emHunt() && RAZAO.kills) { const rz = razaoResumo(RAZAO); if (rz.danoTotal) linhas.push(`<div><b>grupo ao vivo</b> — ${numBR(Math.round(rz.seg / 60))} min · ${numBR(rz.kills)} abates · tomou ${milBR(rz.tomadoH)}/h</div>${razaoHtml(rz, false)}${rz.tomado > 0 ? danoMapaHtml(Object.assign({ sessoes: 0 }, rz), null) : ''}`); }
         if (h.bestiary && h.bestiary.stages && h.bestiary.stages.length) linhas.push(`<div><b>bestiário</b>: ${escHtml(h.bestiary.bonus)} <span class="tb-tag">${h.bestiary.stages.map(e => `${numBR(e.kills / 1000, 1)}k → +${escHtml(e.value)}`).join(' · ')}</span></div>`);
         linhas.push(`<div>${MODELOS[modelo] ? escHtml(maisAlvos(MODELOS[modelo].dica)) : ''} ${modelo === 'boss' && bossAutoLigado() ? 'Com "aplicar sozinho" ligado, ao entrar num boss o helper aplica ataque e padrão só naquela luta e devolve a barra de antes na volta à caçada.' : 'Nada é aplicado sozinho.'}${socketAberto() && ESTADO_WS.perfisDoServidor ? 'Aplica pelo socket, sem abrir janela.' : 'Aplica pelos diálogos do jogo (só os 4 ataques).'}</div>`);
         corpo += aj('magia-mais', linhas.join(''), 'detalhes');
         return corpo;
+    }
+    /* 2.45.0 — o que a fita mediu nesta caçada (≥ 3 min): disparos presos pelo mínimo, lançamentos curtos e curas (desperdício,
+     * atraso, gatilho sem desperdício). Só mostra: o mínimo e o % de cada slot continuam sendo do dono. */
+    function razaoFitaHtml(h) {
+        if (!emHunt() || !RAZAO.fita || !h || ESTADO_WS.huntId !== h.id) return '';
+        const rz = razaoResumo(RAZAO); if (!(rz.seg >= 180)) return '';
+        const ds = razaoDisparos(RAZAO).filter(d => d.paradoPct >= 10 || d.curtos >= 3).slice(0, 6);
+        const cs = razaoCuras(RAZAO).filter(c => c.n >= 5 && !/^poção$/.test(c.nome) && (c.sugestao != null || c.atrasadas > 0 || c.desperdicioPct >= 25)).slice(0, 8);
+        const la = (RAZAO.laudos || []).slice(-2);
+        if (!ds.length && !cs.length && !la.length) return '';
+        const L = [];
+        for (const d of ds) {
+            const alt = d.alternativas.filter(a => a.min >= 1).map(a => `≥${a.min}: pararia ${a.pct} %${a.extrasMin ? ` (~+${numBR(a.extrasMin, 1)}/min)` : ''}`).join(' · ');
+            L.push(`<div>${VOC_ROTULO[d.voc] || d.voc} <b>${escHtml(d.nome)} ≥${d.min}</b>: parada ${d.paradoPct} % do tempo com monstro vivo só pelo mínimo${d.curtos ? ` · ${d.curtos} de ${d.casts} lançamentos acertaram menos que o mínimo` : ''}${alt ? ` <span class="tb-mut">(${alt})</span>` : ''}</div>`);
+        }
+        for (const c of cs) {
+            L.push(`<div>${VOC_ROTULO[c.voc] || c.voc} <b>${escHtml(c.nome)}${c.gatilho != null ? ' ≤' + c.gatilho + ' %' : ''}</b>: ${c.n} curas de ~${numBR(c.mediaCura)} · desperdício ${c.desperdicioPct} %${c.atrasadas ? ` · <span class="tb-av">${c.atrasadas} saíram com a vida abaixo de 30 %</span>` : ''}${c.sugestao != null ? ` · <span class="tb-mut">sem desperdício até ≤${c.sugestao} %</span>` : ''}</div>`);
+        }
+        for (const x of la) L.push(`<div class="${x.tipo === 'morte' ? 'tb-ruim' : 'tb-av'}">autópsia: ${escHtml(x.texto)}</div>`);
+        return `<div><b>fita de batalha</b> — ${numBR(Math.round(rz.seg / 60))} min, só leitura (nada daqui muda a barra)</div>` + L.join('');
     }
     /* v2.37.0 — a tela do modo Mana: vida e mana dos 4 ao vivo (frame), a poção que cada um vai usar, ENCHER e VOLTAR */
     function telaMana() {
@@ -16489,6 +16707,16 @@
     const rdSinal = (n) => n == null || !isFinite(n) ? '—' : (n > 0 ? '+' : '') + rdK(n);
     const rdHa = (t) => { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'agora' : m < 60 ? 'há ' + m + ' min' : m < 2880 ? 'há ' + Math.round(m / 60) + ' h' : 'há ' + Math.round(m / 1440) + ' dias'; };
     const rdSw = (id, on, rot) => `<button type="button" class="tb-eq-sw" id="${id}" role="switch" aria-checked="${on ? 'true' : 'false'}">${on ? '☑' : '☐'} ${rot}</button>`;
+    /* 2.45.0 — autópsias (fita de batalha): as da caçada de agora e as guardadas deste mapa (radar_mortes[hunt].laudos) */
+    function rdLaudosHtml() {
+        const id = ESTADO_WS.huntId, vivos = (RAZAO && RAZAO.laudos) || [];
+        const m = ler('radar_mortes', {}) || {}, guardados = id != null && m[id] && Array.isArray(m[id].laudos) ? m[id].laudos : [];
+        const vistos = new Set(vivos.map(l => l.t));
+        const lista = vivos.map(l => ({ tipo: l.tipo, t: l.t, texto: l.texto })).concat(guardados.filter(l => !vistos.has(l.t))).sort((a, b) => b.t - a.t).slice(0, 5);
+        if (!lista.length) return '';
+        return `<div class="rd-cx"><b>autópsias</b> <span class="tb-mut">(os 10 s antes de cada morte ou queda a ≤ 25 %: quem bateu e por que a cura não saiu)</span>` +
+            lista.map(l => `<div class="${l.tipo === 'morte' ? 'tb-ruim' : 'tb-av'}"><span class="tb-mut">${new Date(l.t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span> ${escHtml(l.texto)}</div>`).join('') + `</div>`;
+    }
     function rdTelaMapas() {
         const cfg = radarCfg(), nivel = nivelAtual();
         if (RADAR.rank === undefined) RADAR.rank = ler('radar_rank', null);
@@ -16500,6 +16728,7 @@
         if (RADAR.prog) h += `<div class="tb-mut" role="status">${escHtml(RADAR.prog.fase)} ${numBR(RADAR.prog.i + 1)}/${numBR(RADAR.prog.n)}${RADAR.prog.nome ? ' — ' + escHtml(RADAR.prog.nome) : ''}</div>`;
         h += `<div class="tb-seg" role="group" aria-label="ordem">` + [['xp', 'XP'], ['ouro', 'Ouro'], ['dois', 'Os dois'], ['combo', '⚡ 1 combo']].map(([k, n]) => `<button type="button" data-rd-ordem="${k}" aria-pressed="${cfg.ordem === k}">${n}</button>`).join('') + `</div>`;
         h += `<div class="tb-linha">${rdSw('rd-merc', cfg.mercado, 'preço do mercado')}${rdSw('rd-esconder', cfg.esconder, 'esconder risco alto e bloqueados')}</div>`;
+        try { h += rdLaudosHtml(); } catch (e) { falhou('radar (laudos)', e); }
         if (!rank || !Array.isArray(rank.linhas)) {
             return h + `<div class="rd-cx tb-mut">Nenhum ranking ainda. CALCULAR baixa a tabela de loot de cada mapa até o nível ${numBR(nivel + 5)} (uma leitura pública a cada 0,3 s, guardada) e roda o planejador de magias com o dano medido dos 4 em cada um. Não entra em mapa nenhum.</div>`;
         }
