@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.45.0
+// @version      2.45.1
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.45.0';
+    const VERSAO = '2.45.1';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -4852,8 +4852,9 @@
     }
     /* 2.45.0 — a CURA que entrou: `hp` é a vida depois (capada no máximo), a de antes vem de hpEv (frame anterior + golpes deste);
      * desperdício = o que a cura tinha além do que a vida subiu. heal_tick (Intense Recovery) só atualiza a vida corrente. */
+    const CURAS_DE_GRUPO = new Set(['Mass Healing', 'Heal Party', 'Heal Friend']); // 2.45.1: visto ao vivo — Mass Healing "1.234" num Druida de 1.200 de vida
     function razaoCura(L, e) {
-        const who = Number(e.who), voc = vocDoIndice(who) || ('#' + who), nome = e.spell || 'poção';
+        const who = Number(e.who), voc = vocDoIndice(who) || ('#' + who), nome = e.spell || 'poção', grupo = CURAS_DE_GRUPO.has(nome);
         const depois = Number(e.hp), amount = Number(e.amount) || 0;
         const antes = L.hpEv[who] != null ? L.hpEv[who] : (Number.isFinite(depois) ? depois - amount : null);
         if (Number.isFinite(depois)) L.hpEv[who] = depois;
@@ -4861,7 +4862,7 @@
         const reg = L.fita[L.fita.length - 1], vit = reg && reg.vit[who], maxHp = vit && Number(vit.maxHp) || 0;
         const c = L.curas[voc + '|' + nome] || (L.curas[voc + '|' + nome] = { voc, nome, n: 0, amount: 0, desperdicio: 0, atrasadas: 0, antes: [], maxHp: 0, gap: 0, nGap: 0 });
         c.n++; c.amount += amount; if (maxHp) c.maxHp = maxHp;
-        if (antes != null && Number.isFinite(depois)) c.desperdicio += Math.max(0, amount - Math.max(0, depois - antes));
+        if (!grupo && antes != null && Number.isFinite(depois)) c.desperdicio += Math.max(0, amount - Math.max(0, depois - antes));
         if (antes != null && maxHp) {
             const f = antes / maxHp * 100; if (f < 30) c.atrasadas++;
             c.antes.push(Math.round(f)); if (c.antes.length > 300) c.antes.shift();
@@ -4896,16 +4897,16 @@
      *   fica em ~10 %: 100 − cura (% da vida) − queda média entre o gatilho e a vida na hora (medida) + 10 */
     function razaoCuras(L) {
         return Object.values(L.curas || {}).map(c => {
-            const media = c.n ? c.amount / c.n : 0, despPct = c.amount ? Math.round(c.desperdicio / c.amount * 100) : 0;
+            const grupo = CURAS_DE_GRUPO.has(c.nome), media = c.n ? c.amount / c.n : 0, despPct = grupo ? null : c.amount ? Math.round(c.desperdicio / c.amount * 100) : 0;
             const cfg = L.minimos[c.voc], h = cfg && Array.isArray(cfg.heals) ? cfg.heals.find(x => x && x.name === c.nome) : null;
             const gatilho = h && h.percent != null ? Number(h.percent) : null;
             let sugestao = null;
-            if (c.maxHp && c.n >= 5 && gatilho != null) {
+            if (!grupo && c.maxHp && c.n >= 5 && gatilho != null) {
                 const curaPct = media / c.maxHp * 100, queda = c.nGap ? c.gap / c.nGap : 0;
                 sugestao = Math.max(10, Math.min(95, Math.round((100 - curaPct - queda + 10) / 5) * 5));
-                if (Math.abs(sugestao - gatilho) < 5) sugestao = null;
+                if (sugestao >= gatilho) sugestao = null; // subir o gatilho só gasta mais: a sugestão é para quem está desperdiçando
             }
-            return { voc: c.voc, nome: c.nome, n: c.n, mediaCura: Math.round(media), desperdicioPct: despPct, atrasadas: c.atrasadas, gatilho, sugestao };
+            return { voc: c.voc, nome: c.nome, n: c.n, mediaCura: Math.round(media), desperdicioPct: despPct, atrasadas: c.atrasadas, gatilho, sugestao, grupo };
         }).sort((a, b) => b.n - a.n);
     }
     /* AUTÓPSIA: os 10 s antes de `fim` para o personagem `who` — quem bateu (por criatura e elemento), a rajada de 2 s mais pesada,
@@ -11713,7 +11714,7 @@
         if (!emHunt() || !RAZAO.fita || !h || ESTADO_WS.huntId !== h.id) return '';
         const rz = razaoResumo(RAZAO); if (!(rz.seg >= 180)) return '';
         const ds = razaoDisparos(RAZAO).filter(d => d.paradoPct >= 10 || d.curtos >= 3).slice(0, 6);
-        const cs = razaoCuras(RAZAO).filter(c => c.n >= 5 && !/^poção$/.test(c.nome) && (c.sugestao != null || c.atrasadas > 0 || c.desperdicioPct >= 25)).slice(0, 8);
+        const cs = razaoCuras(RAZAO).filter(c => c.n >= 5 && !/^poção$/.test(c.nome) && (c.sugestao != null || c.atrasadas > 0 || (c.desperdicioPct != null && c.desperdicioPct >= 25))).slice(0, 8);
         const la = (RAZAO.laudos || []).slice(-2);
         if (!ds.length && !cs.length && !la.length) return '';
         const L = [];
@@ -11722,7 +11723,7 @@
             L.push(`<div>${VOC_ROTULO[d.voc] || d.voc} <b>${escHtml(d.nome)} ≥${d.min}</b>: parada ${d.paradoPct} % do tempo com monstro vivo só pelo mínimo${d.curtos ? ` · ${d.curtos} de ${d.casts} lançamentos acertaram menos que o mínimo` : ''}${alt ? ` <span class="tb-mut">(${alt})</span>` : ''}</div>`);
         }
         for (const c of cs) {
-            L.push(`<div>${VOC_ROTULO[c.voc] || c.voc} <b>${escHtml(c.nome)}${c.gatilho != null ? ' ≤' + c.gatilho + ' %' : ''}</b>: ${c.n} curas de ~${numBR(c.mediaCura)} · desperdício ${c.desperdicioPct} %${c.atrasadas ? ` · <span class="tb-av">${c.atrasadas} saíram com a vida abaixo de 30 %</span>` : ''}${c.sugestao != null ? ` · <span class="tb-mut">sem desperdício até ≤${c.sugestao} %</span>` : ''}</div>`);
+            L.push(`<div>${VOC_ROTULO[c.voc] || c.voc} <b>${escHtml(c.nome)}${c.gatilho != null ? ' ≤' + c.gatilho + ' %' : ''}</b>: ${c.n} curas de ~${numBR(c.mediaCura)}${c.grupo ? ' (cura de grupo: o total da party)' : ` · desperdício ${c.desperdicioPct} %`}${c.atrasadas ? ` · <span class="tb-av">${c.atrasadas} saíram com a vida abaixo de 30 %</span>` : ''}${c.sugestao != null ? ` · <span class="tb-mut">desperdiça: sem desperdício só até ≤${c.sugestao} %</span>` : ''}</div>`);
         }
         for (const x of la) L.push(`<div class="${x.tipo === 'morte' ? 'tb-ruim' : 'tb-av'}">autópsia: ${escHtml(x.texto)}</div>`);
         return `<div><b>fita de batalha</b> — ${numBR(Math.round(rz.seg / 60))} min, só leitura (nada daqui muda a barra)</div>` + L.join('');

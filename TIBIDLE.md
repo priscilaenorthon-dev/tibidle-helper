@@ -7195,3 +7195,14 @@ físico + 281 dreno + 316 físico de Demon/Undead Dragon) com Ultimate Healing e
   sem `data/frames-shadow-04-11.json`). 493 no total.
 - Pendente ao vivo: ver o laudo aparecer na aba Radar/Magia com a 2.45.0 carregada (Tampermonkey relê no F5); conferir se o
   "quase" não dispara demais em mapa de rajada (1/min por personagem).
+
+## 2.45.1 — fita ao vivo: cura de grupo não mede desperdício; sugestão só para baixo (04/11, 21 h)
+
+Conferido com a 2.45.1 injetada na aba do Playwright (ShamanBr nível 191, Shadow Nexus, 5 min): o bloco "fita de batalha" aparece
+na Magia › detalhes (só nas vistas Eco/Equil/Área/Boss — a vista Discord não tem o bloco de detalhes). Dois ajustes do que a tela
+mostrou: (1) **Mass Healing "1.234" num Druida de 1.200 de vida** — o `amount` da cura de grupo é o total curado na party, e o
+helper dava 82 % de "desperdício"; Mass Healing, Heal Party e Heal Friend (`CURAS_DE_GRUPO`) agora só contam n e média, sem
+desperdício nem sugestão (a tela diz "cura de grupo: o total da party"); (2) a sugestão de gatilho só aparece quando é MENOR que o
+configurado (quem não desperdiça não precisa subir o gatilho — subir só gasta mais mana). Com isso, dos 5 min em Shadow Nexus
+sobrou: Druida Ultimate Healing ≤60 %, 35 curas de ~568, 0 % de desperdício, "sem desperdício só até ≤55 %"; o resto some.
+Nenhuma morte nem queda a ≤ 25 % nesses 5 min (os laudos ficam para a próxima sessão com morte).

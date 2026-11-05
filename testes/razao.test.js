@@ -102,7 +102,7 @@ t('2.36.6 dano de condição: veneno → terra, sangramento → físico (na leit
 const comRelogio = (t, fn) => { const o = Date.now; Date.now = () => t; try { return fn(); } finally { Date.now = o; } };
 const cds = (heals, grupoCura, atk) => ({ groups: { attack: atk || 0, healing: grupoCura || 0, support: 0 }, potionMs: 0, heals: [null].concat(heals.map(([name, cdLeft]) => ({ name, cdLeft, cooldownMs: 1000 }))), supports: [] });
 const membro = (voc, hp, maxHp, mana, extra) => Object.assign({ vocation: voc, hp, maxHp, mana, maxMana: 5000, cds: cds([]), kit: [] }, extra || {});
-const CFG = { DRUID: { heals: [{ name: 'Ultimate Healing', percent: 30 }, { name: 'Mass Healing', percent: 70 }], minCreatures: { 'Strong Ice Wave': 3, 'Ice Strike': 1 }, skills: ['Strong Ice Wave', 'Ice Strike'] } };
+const CFG = { DRUID: { heals: [{ name: 'Ultimate Healing', percent: 30 }, { name: 'Mass Healing', percent: 70 }, { name: 'Intense Healing', percent: 70 }], minCreatures: { 'Strong Ice Wave': 3, 'Ice Strike': 1 }, skills: ['Strong Ice Wave', 'Ice Strike'] } };
 function partyDru(hpDru, cdsDru, kitDru) {
     return [membro('KNIGHT', 3000, 3000, 500), membro('PALADIN', 2000, 2000, 400), membro('SORCERER', 1200, 1200, 600), membro('DRUID', hpDru, 1200, 1364, { cds: cdsDru || cds([['Ultimate Healing', 0], ['Mass Healing', 0]]), kit: kitDru || [] })];
 }
@@ -175,14 +175,16 @@ t('curas: desperdício acima da vida máxima, cura atrasada (< 30 %) e sugestão
     const L = M.razaoNovo(); const t0 = 5000000;
     const quadro = (dt, hp, evs) => comRelogio(t0 + dt, () => { M.razaoVitais(L, partyDru(hp), [], [{ id: 1 }], CFG); for (const e of (evs || [])) M.razaoEvento(L, e, t0 + dt); });
     quadro(0, 1200);
-    for (let i = 1; i <= 6; i++) { quadro(i * 2000, 700); quadro(i * 2000 + 1000, 1200, [{ kind: 'heal', who: 3, amount: 900, hp: 1200, spell: 'Mass Healing' }]); }
+    for (let i = 1; i <= 6; i++) { quadro(i * 2000, 700); quadro(i * 2000 + 1000, 1200, [{ kind: 'heal', who: 3, amount: 900, hp: 1200, spell: 'Intense Healing' }, { kind: 'heal', who: 3, amount: 1234, hp: 1200, spell: 'Mass Healing' }]); }
     quadro(20000, 250); quadro(21000, 1150, [{ kind: 'heal', who: 3, amount: 900, hp: 1150, spell: 'Ultimate Healing' }]);
-    const cs = M.razaoCuras(L), mass = cs.find(c => c.nome === 'Mass Healing'), uh = cs.find(c => c.nome === 'Ultimate Healing');
+    const cs = M.razaoCuras(L), mass = cs.find(c => c.nome === 'Intense Healing'), uh = cs.find(c => c.nome === 'Ultimate Healing'), grupo = cs.find(c => c.nome === 'Mass Healing');
+    assert(grupo && grupo.grupo === true && grupo.desperdicioPct === null && grupo.sugestao === null, 'cura de grupo não mede desperdício: ' + JSON.stringify(grupo));
     assert(mass && mass.n === 6 && mass.desperdicioPct === Math.round(400 / 900 * 100) && mass.atrasadas === 0, JSON.stringify(mass));
     assert.strictEqual(mass.gatilho, 70);
     /* cura de 75 % da vida, a vida estava 12 pontos abaixo do gatilho (70 → 58): 100 − 75 − 12 + 10 = 23 → 25 */
     assert.strictEqual(mass.sugestao, 25, JSON.stringify(mass));
     assert(uh && uh.n === 1 && uh.atrasadas === 1 && uh.desperdicioPct === 0 && uh.sugestao === null, JSON.stringify(uh));
+    /* 2.45.1 — sugestão só para baixo: cura que cabe na vida (gatilho 30, cura 75 %) não sugere subir */
 });
 t('gravação real (data/frames-shadow-04-11.json, fora do git — pula sem o arquivo): sem morte, Druida a 22 %, laudo cita o demônio', () => {
     const f = path.join(__dirname, '..', 'data', 'frames-shadow-04-11.json');
@@ -195,7 +197,7 @@ t('gravação real (data/frames-shadow-04-11.json, fora do git — pula sem o ar
     assert(q.length >= 1, 'quase do Druida: ' + L.laudos.map(l => l.texto).join(' | '));
     assert(q.some(l => /Angry Demon|Undead Dragon|Demon/.test(l.texto)), q.map(l => l.texto).join(' | '));
     const uh = M.razaoCuras(L).find(c => c.voc === 'DRUID' && c.nome === 'Ultimate Healing');
-    assert(uh && uh.n >= 15, JSON.stringify(uh));
+    assert(uh && uh.n >= 15 && uh.sugestao === null, 'UH ≤30 % não desperdiça: sem sugestão — ' + JSON.stringify(uh));
     const d = M.razaoDisparos(L).find(x => x.voc === 'DRUID' && x.nome === 'Strong Ice Wave');
     assert(d && d.casts >= 5, JSON.stringify(d));
     console.log('     ' + q[0].texto); console.log('     UH: ' + JSON.stringify(uh)); console.log('     SIW: ' + JSON.stringify(d));
