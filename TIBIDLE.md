@@ -7232,3 +7232,14 @@ ShamanBr (nível 191, Shadow Nexus, lure 4, setup "Amigo do Whatsapp"), janelas 
   de 2 mãos continua pelo caminho próprio). As sugestões de Mercado conferidas: crystal ring a 2.500 e 14.999 com "cura própria"
   (+22/+23 pt: metade da vida do Cavaleiro volta por cura própria, `P.cura_propria = k1 × 0,5`, que a fita confirmou ≈ 50 %) são
   compras baratas coerentes; exotic legs (2,5 M, resist. física base) e onyx pendant +5 (4 M) são as grandes.
+
+## 2.45.3 — Magia acha a caçada de agora pelo socket (celular) (05/11)
+
+Dono, no iPhone: "por que as magias não acham o mapa em que estou?".
+- **Causa**: `detectarHunt` só lia a tela do computador — o React da cena (`_huntPorFiber`), o texto "Abate: +X EXP" e o título na
+  tela. No celular nada disso existe. O id da caçada que o socket entrega em `hunt_started`/`resume` (`ESTADO_WS.huntId`) não era usado.
+- **Agora** `_huntPorSocket` vem primeiro: huntId do socket + catálogo, enquanto a caçada está viva (frame fresco) ou começou há menos
+  de 10 min; boss/Elite fora. O palpite guardado por 2 s é zerado quando a caçada muda, para a Magia mostrar o mapa novo no próximo
+  desenho. Vale nas duas telas: no computador também fica mais certo (o socket é exato; os outros três eram palpite).
+- Escolha manual continua mandando (regra de 30/08); sem escolha, `huntAtual()` devolve a do socket.
+- Teste (telas): hunt_started + frame → a Magia mostra a caçada 34 sem escolha manual; `ended` zera. Testes: 513.
