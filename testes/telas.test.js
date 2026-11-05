@@ -589,6 +589,22 @@ t('Sobreviver compacta: plano em 1 linha por item, trocas/consumíveis/Mercado e
     assert(/tb-sb-nome" style="max-width:130px" title="Calça Mítica[^"]*\+3 · 1\.000 de ouro · \+9,9 pt · resist física 2,2 pt · Fulano"><b>Calça Mítica/.test(sb), 'compra: nome curto, detalhe no title');
     assert(sb.length < 14000, 'tela compacta: ' + sb.length + ' chars');
 });
+/* 2.45.3 — celular: a Magia acha o mapa pelo socket (hunt_started/resume), sem a tela do computador */
+t('Magia acha a caçada de agora pelo socket (hunt_started + frame), sem escolha manual e sem a tela do computador; na cidade sem hunt, não inventa', async () => {
+    const W = criarMundo({ ls: comAba('magia', {}) });
+    await W.avancar(0);
+    const ws = new W.window.WebSocket('wss://jogo');
+    ws.emitir({ type: 'hunt_started', data: { huntId: 34 } });
+    ws.emitir(frame());
+    await W.avancar(0); await W.avancar(2500);
+    assert(W.H.huntAtual() && W.H.huntAtual().id === 34, 'huntAtual = 34 pelo socket');
+    const h = W.html(), alvo = HUNT_MAL.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    assert(h.includes(alvo) || h.includes(HUNT_MAL.replace(/</g, '&lt;').replace(/>/g, '&gt;')), 'a Magia mostra a caçada 34 vinda do socket; tela: ' + h.replace(/<style[\s\S]*?<\/style>/g, '').slice(0, 700));
+    /* fora da caçada (ended) o socket zera o huntId: a fonte "caçada de agora" some (o que a tela ainda mostra é palpite por título, como antes) */
+    ws.emitir({ type: 'ended', data: { summary: { reason: 'stop', huntId: 34 } } });
+    await W.avancar(3000);
+    assert.strictEqual(W.H.estadoWS().huntId, null, 'ended zera a caçada do socket');
+});
 t('sobe sem exceção e sem erro de timer em nenhuma aba', async () => {
     for (const aba of ['estado', 'magia', 'equip', 'analise', 'sobreviver', 'log']) { // 2.34.2: Sobreviver também (o Evento saiu na 2.42.0)
         const W = criarMundo({ ls: comAba(aba, { tb_helper_hunt_id: '34', tb_helper_sb_alvo: '"hunt:34"' }) });

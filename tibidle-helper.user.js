@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.45.2
+// @version      2.45.3
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.45.2';
+    const VERSAO = '2.45.3';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -938,12 +938,26 @@
         } catch (e) { return null; }
     }
 
+    /* v2.45.3 — A CAÇADA PELO SOCKET (dono, 05/11: "por que as magias não acham o mapa em que estou no iPhone?"). O jogo manda o
+     * huntId em hunt_started/resume (ESTADO_WS.huntId) nas duas telas; os três detectores abaixo leem a tela do computador (React da
+     * cena, "Abate: +X EXP", título), que no celular não existe. O socket é a fonte exata, por isso vem primeiro — vale enquanto a
+     * caçada estiver viva (frame fresco) ou começou há pouco; boss/Elite não é mapa de magia por hunt. */
+    const HUNT_SOCKET_VALE_MS = 10 * 60000;
+    function _huntPorSocket() {
+        try {
+            const id = ESTADO_WS.huntId;
+            if (id == null || !CAT.hunts || ESTADO_WS.boss) return null;
+            if (!frameFresco() && !(ESTADO_WS.hunt_t && Date.now() - ESTADO_WS.hunt_t < HUNT_SOCKET_VALE_MS)) return null;
+            const h = CAT.hunts.find(x => x && x.id === id);
+            return h ? { hunt: h, casados: 1, fonte: 'caçada de agora (socket)' } : null;
+        } catch (e) { return null; }
+    }
     function detectarHunt() {
         if (Date.now() - _huntCache.t < 2000) return _huntCache.val;
         /* Isto é SÓ PALPITE agora — quem decide é a lista da tela de Magia.
          * Deixei ligado porque um palpite certo poupa um clique, e porque o
          * Analisador precisa saber a hunt mesmo quando você não escolheu nada. */
-        const achado = _huntPorFiber() || _huntPorLogDeAbates() || _huntPorTitulo();
+        const achado = _huntPorSocket() || _huntPorFiber() || _huntPorLogDeAbates() || _huntPorTitulo();
         _huntCache = { t: Date.now(), val: achado };
         return achado;
     }
@@ -5324,6 +5338,7 @@
             const ehBoss = !!bossId || torre || d.huntId === HUNT_ID_BOSS || noCat === false || d.training === true;
             ESTADO_WS.huntId = d.huntId != null ? d.huntId : null;
             ESTADO_WS.hunt_t = Date.now();
+            _huntCache = { t: 0, val: null }; // v2.45.3 — a caçada nova aparece na Magia já no próximo desenho (o palpite era guardado por 2 s)
             RAZAO = razaoNovo();
             if (Array.isArray(d.state && d.state.party) && d.state.party.length) ESTADO_WS.party = vocsPorPosicao(d.state.party);
             ESTADO_WS.frame = ESTADO_WS.frame || { t: Date.now(), cap: null, balance: null, lureTier: null, active: [], party: [] };
