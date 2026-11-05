@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.45.1
+// @version      2.45.2
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.45.1';
+    const VERSAO = '2.45.2';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -8208,7 +8208,9 @@
             const l = topo.map(c => ({ iid: c.peca.iid, peca: c.peca, pt: c.r.pontos + (ehAtual(c.peca) ? EQUIP_FICAR_PT : 0) + bonus(c.peca) }));
             if (x.atual && !l.some(c => c.iid === x.atual.iid) && !usadas.has(x.atual.iid)) l.push({ iid: x.atual.iid, peca: x.atual, pt: x.atualPt + EQUIP_FICAR_PT + bonus(x.atual) });
             if (extra && extra[v]) l.push(extra[v]);
-            l.push({ iid: null, peca: null, pt: 0 }); // "nada" — evita forçar peça ruim quando falta candidato
+            /* 2.45.2 — "nada" só quando o espaço já está vazio: com peça vestida, tirar sem repor nunca é proposta (a aba Aguentar
+             * mandava tirar a wand do Feiticeiro, −3,4 pt, por causa da mana por tiro). A arma de 2 mãos esvazia o escudo por outro caminho. */
+            l.push({ iid: null, peca: null, pt: x.atual ? -1e9 : 0 });
             return l;
         });
         let melhor = { soma: -Infinity, esc: null };

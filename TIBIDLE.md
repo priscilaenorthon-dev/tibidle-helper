@@ -7206,3 +7206,29 @@ desperdício nem sugestão (a tela diz "cura de grupo: o total da party"); (2) a
 configurado (quem não desperdiça não precisa subir o gatilho — subir só gasta mais mana). Com isso, dos 5 min em Shadow Nexus
 sobrou: Druida Ultimate Healing ≤60 %, 35 curas de ~568, 0 % de desperdício, "sem desperdício só até ≤55 %"; o resto some.
 Nenhuma morte nem queda a ≤ 25 % nesses 5 min (os laudos ficam para a próxima sessão com morte).
+
+## 2.45.2 — Equip/Aguentar nunca propõe tirar peça sem repor; o que a fita mediu em Shadow Nexus (04/11, 21–22 h)
+
+Dono: "Não existe nenhum jeito de ter lucro nesse mapa?" e "Faz aí e monitora 5 minutos". Medido com o gravador de frames na
+ShamanBr (nível 191, Shadow Nexus, lure 4, setup "Amigo do Whatsapp"), janelas de 5–11 min, ouro por hora:
+
+- **Onde o ouro ia:** diamond arrow do Paladino 258k (200 o cada, 1.300 tiros/h, acerta ~6 alvos por tiro), Great Mana Potion do
+  Druida 195k (20 por minuto), Mana Potion Fei/Pal/Cav 62k/46k/41k, runas 20k. Loot 300–440k. Sessão: −151k/h.
+- **Heal Friend ≤78 % → ≤50 % (testado 5 min e DESFEITO):** o Druida economizou 43k/h, mas o Cavaleiro passou a se curar sozinho
+  (Wound Cleansing 1.777 → 2.787/h, Ultimate Health Potion 13k → 64k/h, Mana Potion 41k → 63k/h) e a Mass Healing dobrou (dispara
+  quando qualquer um da party cai). Gasto total 638k → 646k e Cavaleiro abaixo de 50 % em 9 % do tempo (era 2 %). Lição: o Heal
+  Friend (140 de mana do Druida ≈ 110 o) é a cura mais barata que o Cavaleiro tem; a poção dele custa 379. Não mexer.
+- **Diamond arrow → arrow (aplicado, ficou):** gasto 646k → 363k/h, loot 334k/h, janela de 5 min a −29k/h (sessão vinha de
+  −151k/h). Dano de flecha do Paladino 1,10 M → 0,12 M/h (−12 % de abates/h); nenhuma morte. É o único ajuste que vira o mapa.
+- **Void (mana leech):** wands dos magos não têm encaixe; o arco do Paladino tem 2 livres (Intricate 5 % = ~100k de mana/h, mais
+  que a Caldera gasta; 30k + 30k de proteção + 25 rope belt + 25 silencer claws por 20 h) e a magic sword 1 livre (rende pouco).
+- **Anel/colar de regen. de mana:** 1 mana/s = 18 Great Mana/h ≈ 2,8k o/h — não é alavanca. **Refino para defesa:** +1 armadura por
+  nível; +16 de armadura tira ~5 % de uma rajada física de 1.087 em 2 s — não muda o resultado; o que muda é potência ≥ 350 com
+  linha de vida/resist. física (Forja) ou Magic Shield.
+- Ajustes feitos pelo socket igual ao helper (`update_battle_config` + `profiles_set`, eco confirmado); a munição é campo `ammo` da
+  config de batalha (não é item da mochila).
+- **2.45.2:** `_resolverSlot` só aceita "nada" quando o espaço já está vazio — a aba Aguentar propunha "wand of everblazing → —
+  (+3,4)" porque a mana por tiro deixa a wand negativa no modo aguentar. Tirar sem repor nunca é proposta (o escudo vazio da arma
+  de 2 mãos continua pelo caminho próprio). As sugestões de Mercado conferidas: crystal ring a 2.500 e 14.999 com "cura própria"
+  (+22/+23 pt: metade da vida do Cavaleiro volta por cura própria, `P.cura_propria = k1 × 0,5`, que a fita confirmou ≈ 50 %) são
+  compras baratas coerentes; exotic legs (2,5 M, resist. física base) e onyx pendant +5 (4 M) são as grandes.
