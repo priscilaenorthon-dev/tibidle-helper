@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.46.0
+// @version      2.46.1
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.46.0';
+    const VERSAO = '2.46.1';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -6160,6 +6160,16 @@
         const conf = await esperarQue(() => { const b = tid('hunt-confirm'); return b && !b.disabled ? b : null; }, 6000, 150);
         if (!conf) { const v = tid('screen-hunts-back'); if (v) v.click(); return { erro: 'botão de confirmar a caçada não habilitou' }; }
         conf.click();
+        /* 2.46.1 — jogo 1.1.12 (05/11): mapa acima do nível abre "Hunt acima do seu nível" (aviso-nivel, Voltar/Iniciar) antes de
+         * entrar. O Auto Hunt volta para a caçada que o DONO escolheu, então aperta Iniciar (confirm-ok do mesmo diálogo). */
+        const aviso = await esperarQue(() => tid('aviso-nivel'), 2000, 150);
+        if (aviso) {
+            const cx = aviso.closest ? aviso.closest('[data-testid="confirm-dialog"]') : null;
+            const ok = (cx && cx.querySelector('[data-testid="confirm-ok"]')) || tid('confirm-ok');
+            if (!ok) return { erro: 'o jogo abriu o aviso "Hunt acima do seu nível" e o botão Iniciar não apareceu' };
+            log('aviso "Hunt acima do seu nível" — Iniciar (é a caçada de onde o ciclo saiu)', 'info');
+            ok.click();
+        }
         const dentro = await esperarQue(() => emHunt(), 20000, 400);
         if (!dentro) return { erro: 'confirmei a caçada mas o botão de encerrar não apareceu' };
         guardar('hunt_id', id); guardar('hunt_manual', id);

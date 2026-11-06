@@ -7265,3 +7265,16 @@ Dono, no iPhone: "por que as magias não acham o mapa em que estou?".
   lucro, ex. Jandrey em Draken Walls 289k xp/h +450k/h no nível 169). tibidle-community.com: entrou `djinns-xibara` (preset 7, Djinns
   Marid Territory, nível 84, 54k xp/h +34,9k/h, avalanche nos três e Death Strike no Feiticeiro). O preset 6 é o Elite Viscous (fora do
   modelo Discord, que é só de caçada): tudo em ≥1, Wand of Starstorm no lugar da de fogo, Onyx Arrow, entrar com o Druida de mana cheia.
+
+## 2.46.1 (05/11) — tela JOGAR nova (1.1.12), conferida ao vivo
+
+- **Tela JOGAR** (`screen-hunts`): abas `explore-tab-hunts|minibosses|bosses|tower` (Caçadas · Elite · Bosses · Torre), ilhas à esquerda
+  (`explore-ilha-<id>`, 10 incluindo `padrao`), busca `hunts-search`, filtros de nível `explore-lv-min|max`, `hunts-filter-all|favorites`,
+  "buscar em todas as ilhas" (`explore-todas-ilhas`). Cada mapa é uma linha `.s-hrow` `hunt-item-<id>` (favorito, recomendado, criaturas,
+  loot, Elite com "Chave 60 min"); o toque expande para `.s-hdet` com o loot inteiro e o botão **Ir para a caçada** = `hunt-confirm`.
+- **Aviso novo "Hunt acima do seu nível"** (mapa bem acima do recomendado; Shadow Nexus rec. 250 com a party no 193 → "+57"): diálogo
+  `confirm-dialog` com `aviso-nivel`, **Voltar** `confirm-cancel`, **Iniciar mesmo assim** `confirm-ok` e "Não mostrar novamente hoje"
+  (`aviso-nivel-ocultar`, localStorage `aviso-nivel-oculto` com a data). É só do cliente: nada vai ao servidor antes do Iniciar.
+- **Auto Hunt (PC):** `voltarParaHunt` clica `hunt-item-<id>` → `hunt-confirm` e agora, se o aviso abrir, aperta Iniciar (é a caçada de
+  onde o ciclo saiu); antes travava esperando o botão de encerrar. Bestiário, Scan e o caminho do celular entram por `start_hunt` no socket
+  e não veem o aviso.
