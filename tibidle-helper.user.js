@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.45.3
+// @version      2.46.0
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.45.3';
+    const VERSAO = '2.46.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -6857,7 +6857,10 @@
             _confirmandoHunt = true;
             confirmarHuntPeloExplore()
                 .then(async r => {
-                    if (r && r.erro) { _proximaTentativaHunt = Date.now() + 30000; log('hunt não confirmada: ' + r.erro, 'erro'); return; }
+                    /* 2.46.0 — o jogo 1.1.12 (05/11) redesenhou a lista de caçadas: a linha não traz mais a classe --aqui (o "você está
+                     * caçando aqui" só aparece com o mapa expandido). Sem a marca, tentar a cada 30 s só abriria a tela CAÇADAS de novo e
+                     * de novo; espera 15 min (o socket, que é o caminho normal, segue valendo). */
+                    if (r && r.erro) { _proximaTentativaHunt = Date.now() + (/nenhum card/.test(r.erro) ? 15 * 60000 : 30000); log('hunt não confirmada: ' + r.erro, 'erro'); return; }
                     /* v1.8.0 — NADA AUTOMÁTICO NA TROCA. A v1.7.1 subia o lure e
                      * reaplicava os 4 sozinha; o dono achou insuportável (abre
                      * modais no meio do jogo). Agora só avisa; APLICAR NOS 4 e o
@@ -10349,6 +10352,15 @@
             PALADIN: { vida: ['Health Potion', 60], ataque: [['Strong Ethereal Spear', 1], ['Divine Caldera', 4], ['avalanche rune', 2], ['Lesser Ethereal Spear', 1]], defesa: [['Recovery', 40], ['Divine Healing', 50], ['Intense Healing', 70], ['Light Healing', 85]], suporte: ['Protect Party'], municao: 'burst arrow' },
             SORCERER: { vida: ['Health Potion', 60], mana: ['Mana Potion', 30], ataque: [['Energy Wave', 3], ['avalanche rune', 2], ['Strong Energy Strike', 1], ['Ice Strike', 1]], defesa: [['Ultimate Healing', 60], ['Intense Healing', 60]], suporte: ['Enchant Party'] },
             DRUID: { vida: ['Health Potion', 60], mana: ['Mana Potion', 30], ataque: [['Strong Ice Wave', 2], ['avalanche rune', 2], ['Ice Strike', 1]], defesa: [['Heal Friend', 65], ['Mass Healing', 40], ['Ultimate Healing', 40], ['Intense Healing', 70]], suporte: ['Heal Party'] } } },
+        { id: 'djinns-xibara', hunt: 'Djinns Marid Territory', huntId: 146, autor: 'Xibara', data: '06/11', titulo: 'Djinns Marid Territory (Xibara, 06/11)',
+          lure: 'Difícil — 7 criaturas', skills: 'melee 51 · shield 44 · distance 56 · ML 40', nota: '', nivel: '84',
+          obs: 'Xibara, tibidle-community.com/presets/7 (06/11): 54k xp/h (49,3k raw), +34,9k/h, gasto 2,1k/h, medido em 29 min (1.148 abates) em 3 parties, nível 84. Por quê: Blue Djinn resiste 80 % a fogo e 50 % a energia e toma +10 % de gelo / +13 % de morte — avalanche nos três, Death Strike no Feiticeiro; a Strong Ice Wave do Druida faz mais da metade do dano; o mapa já fica no limite de abates (~10,6 s por pack de 7). Sem runas a xp caiu 8 %; runa em ≥5 = igual a ≥2. "Se o Cavaleiro cair muito de vida, suba a Wound Cleansing para ≤75 %."',
+          estatisticas: { xpH: '54k', lucroH: '+34,9k', nivel: 84 },
+          chars: {
+            KNIGHT: { vida: ['Strong Health Potion', 50], ataque: [['Lesser Front Sweep', 1], ['Berserk', 2]], defesa: [['Wound Cleansing', 60]], suporte: ['Train Party'] },
+            PALADIN: { vida: ['Health Potion', 60], ataque: [['Divine Caldera', 3], ['avalanche rune', 2], ['Ethereal Spear', 1], ['Lesser Ethereal Spear', 1]], defesa: [['Recovery', 40], ['Divine Healing', 50], ['Intense Healing', 70], ['Light Healing', 85]], suporte: ['Protect Party'] },
+            SORCERER: { vida: ['Health Potion', 60], ataque: [['Energy Wave', 3], ['avalanche rune', 2], ['Death Strike', 1]], defesa: [['Ultimate Healing', 50], ['Intense Healing', 70], ['Light Healing', 85], ['Magic Patch', 60]], suporte: ['Enchant Party'] },
+            DRUID: { vida: ['Health Potion', 60], ataque: [['Strong Ice Wave', 3], ['avalanche rune', 2], ['Ice Strike', 1]], defesa: [['Heal Friend', 65], ['Mass Healing', 40], ['Ultimate Healing', 40], ['Intense Healing', 70]], suporte: ['Heal Party'] } } },
     ];
     /* v2.36.9 — post de jogador (todo setup que não é "Northon - <mapa>") aplica a barra inteira, poções incluídas; os gerados
      * pelo helper só com `pocaoDoMapa` (Draken Walls, Shadow Nexus) */
@@ -10983,13 +10995,20 @@
         corpo.addEventListener('keydown', e => {
             if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('[role=switch]:not(button),[role=button]:not(button)')) { e.preventDefault(); e.target.click(); }
         });
-        corpo.addEventListener('focusin', e => { foco = chaveDoFoco(e.target); });
+        corpo.addEventListener('focusin', e => { foco = chaveDoFoco(e.target); _focoNaAbaT = Date.now(); });
         document.addEventListener('focusin', e => { if (!corpo.contains(e.target)) foco = null; }, true);
-        document.addEventListener('pointerdown', e => { if (!cx.contains(e.target)) foco = null; }, true);
+        /* 2.46.0 — iPhone: o Safari NÃO tira o foco do select quando se toca fora (no jogo, que é canvas). O select da caçada ou do
+         * autor do setup ficava "em uso" para sempre e a aba Magia não repintava ao entrar num mapa novo. Tocar fora da gaveta solta. */
+        document.addEventListener('pointerdown', e => {
+            if (cx.contains(e.target)) return;
+            foco = null;
+            const at = document.activeElement;
+            if (at && at !== document.body && corpo.contains(at) && /^(SELECT|TEXTAREA)$/.test(at.tagName || '')) { try { at.blur(); } catch { } }
+        }, true);
         if (typeof MutationObserver === 'function') { new MutationObserver(() => {
             acessibilizar();
             const at = document.activeElement;
-            if (foco && (!at || at === document.body)) { const el = acharFoco(foco); if (el) { try { el.focus({ preventScroll: true }); } catch { } } }
+            if (foco && (!at || at === document.body)) { const el = acharFoco(foco); if (el) { const t = _focoNaAbaT; try { el.focus({ preventScroll: true }); } catch { } _focoNaAbaT = t; } } // devolver o foco não conta como mexer
         }).observe(corpo, { childList: true }); }
         // faixa de retorno: um clique num controle da aba marca "ação desta aba"
         corpo.addEventListener('click', e => { if (e.target.closest && e.target.closest('button,[role=switch],[role=button],.tb-sw,[data-scan-ir],input[type=checkbox],input[type=radio]')) _acaoNaAba = { aba: ABA, t: Date.now() }; }, true);
@@ -11020,7 +11039,7 @@
         if (i.getAttribute('aria-label') !== rot) { i.setAttribute('aria-label', rot); i.title = rot; }
     }
     /* faixa de retorno: último aviso DA ABA ABERTA por 10 s (escolherAviso) */
-    let _acaoNaAba = null, _faixaTimer = null;
+    let _acaoNaAba = null, _faixaTimer = null, _focoNaAbaT = 0; // 2.46.0 — quando um controle da gaveta ganhou o foco (campoEmUso)
     function pintarFaixa() {
         const f = $('#tb-faixa'); if (!f) return;
         const u = ui(), a = u.aberta && !u.oculto && ABA !== 'log' ? escolherAviso(AVISOS[ABA], _acaoNaAba, LOG[LOG.length - 1], ABA, Date.now()) : null;
@@ -17852,11 +17871,13 @@
      *   3. senão, troca o innerHTML, devolve "?" abertos e rolagem e liga os
      *      handlers da aba (uma linha por tela). */
     let _htmlPintado = null, _repinteAdiado = null;
-    const REPINTE_DO_DONO_MS = 1500;
+    const REPINTE_DO_DONO_MS = 1500, SELECT_PARADO_MS = 20000;
     function campoEmUso(c) {
         const f = document.activeElement;
         if (!f || f === c || typeof c.contains !== 'function' || !c.contains(f) || !/^(SELECT|TEXTAREA)$/.test(f.tagName || '')) return null;
         if (_acaoNaAba && Date.now() - _acaoNaAba.t < REPINTE_DO_DONO_MS) return null;
+        /* 2.46.0 — select focado há mais de 20 s sem mexer = foco esquecido (iPhone), não alguém escolhendo: repinta */
+        if (f.tagName === 'SELECT' && Date.now() - Math.max(_focoNaAbaT, _acaoNaAba ? _acaoNaAba.t : 0) > SELECT_PARADO_MS) return null;
         return f;
     }
     function adiarRepinte(f) {

@@ -7243,3 +7243,25 @@ Dono, no iPhone: "por que as magias não acham o mapa em que estou?".
   desenho. Vale nas duas telas: no computador também fica mais certo (o socket é exato; os outros três eram palpite).
 - Escolha manual continua mandando (regra de 30/08); sem escolha, `huntAtual()` devolve a do socket.
 - Teste (telas): hunt_started + frame → a Magia mostra a caçada 34 sem escolha manual; `ended` zera. Testes: 513.
+## 2.46.0 (05/11) — iPhone: Magia mostra o mapa ao entrar; jogo 1.1.12; Djinns do Xibara
+
+- **iPhone, Magia não mostrava o mapa ao entrar (dono: "antigamente funcionava e parou").** O hunt_started acertava o `hunt_id`, mas o
+  repinte da gaveta esperava o blur do select em uso (2.11 D2). No Safari do iPhone tocar no jogo (canvas) NÃO tira o foco do select;
+  depois de tocar no select da caçada ou no do autor do setup (desde a 2.39/2.44 quase todo mapa tem 2+ autores), a Magia ficava
+  congelada. Agora: toque fora da gaveta solta o foco do select/textarea, e select parado há mais de 20 s (`SELECT_PARADO_MS`) não
+  segura o repinte; devolver o foco depois do repinte não conta como mexer. Teste novo em `testes/telas.test.js` (falha sem a correção);
+  o DOM falso do teste passou a disparar `focusin` no `focus()`.
+- **Jogo 1.1.12 (patch-notes 06/11 01:33 UTC, manutenção 22h30–23h):** Arsenal de Treino na loja; **auto-uso de anéis e amuletos**
+  por % de vida; empilhamento de itens do mesmo tipo; interface das caçadas e dos Elites refeita; Forja: escudo, cura própria, roubo de
+  vida e chance de loot somam por inteiro entre as peças, **sem teto no combate** (os tetos da wiki — 40 % / 35 % / 10 % / +15 — nunca
+  entraram no cálculo do helper); Skillboost (Melee) com a receita do Chop; máscaras/Nethersteed/Doom Skull negociáveis; venda no
+  Mobile não restaura mais a seleção errada. Evento de Treino +50 % de xp de skill de 06/11 10:00 a 09/11 10:00.
+  Lido no bundle novo: o auto-uso é mensagem própria (`auto_use_set {vocation, item, on, pct, prio}`; estado em `auto_use`), fora da
+  config de batalha — `normalizarConfig`/`payloadBattleConfig` (= e3/ee do cliente) continuam com os mesmos campos, então APLICAR/Discord
+  não apaga o auto-uso. A lista de caçadas do PC virou linhas `.s-hrow` com `hunt-item-<id>` e o "Você está caçando aqui" só aparece no
+  detalhe expandido (`.s-hdet`): sem a classe `s-explore-card--aqui`, `confirmarHuntPeloExplore` (reserva quando o socket não falou)
+  falha — agora espera 15 min em vez de reabrir a tela CAÇADAS a cada 30 s. No celular a lista é `mexplore-hunt-<id>`/`mexplore-go-<id>`.
+- **Discord/site, varredura 04/11 noite → 05/11 23h:** nenhuma barra nova no Discord (Aoba, Logbook, Bottom, Bog, Acessos: só prints de
+  lucro, ex. Jandrey em Draken Walls 289k xp/h +450k/h no nível 169). tibidle-community.com: entrou `djinns-xibara` (preset 7, Djinns
+  Marid Territory, nível 84, 54k xp/h +34,9k/h, avalanche nos três e Death Strike no Feiticeiro). O preset 6 é o Elite Viscous (fora do
+  modelo Discord, que é só de caçada): tudo em ≥1, Wand of Starstorm no lugar da de fogo, Onyx Arrow, entrar com o Druida de mana cheia.

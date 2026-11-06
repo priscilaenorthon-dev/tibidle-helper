@@ -73,7 +73,7 @@ function criarMundo(opts) {
         append(...k) { k.forEach(x => { if (x && typeof x === 'object') x.pai = this; }); } appendChild(c) { if (c && typeof c === 'object') c.pai = this; return c; }
         replaceChildren(...k) { this._filhos = k; this.textContent = k.map(x => x.textContent || '').join(''); }
         insertAdjacentElement() { } remove() { this.isConnected = false; }
-        focus() { doc.activeElement = this; }
+        focus() { doc.activeElement = this; for (let e = this; e; e = e.pai) e.disparar('focusin', { target: this }); } // focusin sobe, como no navegador
         blur() { if (doc.activeElement === this) doc.activeElement = doc.body; this.disparar('blur', {}); }
         select() { this.selecionou++; }
         contains(x) { for (let e = x; e; e = e.pai) if (e === this) return true; return false; }
@@ -413,6 +413,22 @@ t('Magia: o select da hunt mantém o foco — repinte de fundo espera o blur; a 
     assert(c.sets >= s0 + 2, 'a troca de hunt do dono não repintou');
     assert.strictEqual(W.lsGet('tb_helper_hunt_id'), 32);
     assert(/<option value="32" selected>/.test(W.html()), 'a hunt escolhida não ficou selecionada');
+});
+
+t('Magia 2.46.0: select esquecido com foco (iPhone) — passou de 20 s sem mexer, a hunt nova repinta', async () => {
+    const W = criarMundo({ ls: comAba('magia', { tb_helper_hunt_id: '34', tb_helper_modelo: '"equilibrado"' }) });
+    await W.avancar(0); await W.avancar(200);
+    const c = W.corpo();
+    const ws = new W.window.WebSocket('wss://jogo');
+    ws.emitir({ type: 'welcome', data: {} });
+    await W.avancar(0);
+    const sel = W.el('tb-hunt'); sel.focus();               // o Safari deixa o foco aqui depois de escolher
+    await W.avancar(25000);                                  // o dono foi para o jogo (toque no canvas não tira o foco no iOS)
+    const s0 = c.sets;
+    ws.emitir({ type: 'hunt_started', data: { huntId: 32 } }); // entrou num mapa novo
+    await W.avancar(0);
+    assert(c.sets > s0, 'a Magia não repintou com o select parado há 25 s');
+    assert(/<option value="32" selected>/.test(W.html()), 'o mapa novo não apareceu selecionado');
 });
 
 t('Equip: escape de itens, slots e vocações em português, "8 slots" como interruptor, slot vazio', async () => {
