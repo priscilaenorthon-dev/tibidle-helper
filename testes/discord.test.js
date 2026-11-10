@@ -153,7 +153,7 @@ t("Quara's Domain (2.27.5, adaptados): 2 setups (forte e enxuto), nenhuma magia 
 });
 t('Northon (2.28.0): título "Northon - <mapa>", a barra dos 4, nenhum mapa repetido com post da comunidade, e todos passam no dcConfigDe do nível 136 sem aviso', () => {
     const nn = M.SETUPS_DISCORD.filter(s => /^northon-\d+$/.test(s.id));
-    assert(nn.length >= 36, 'Northon: ' + nn.length); // 2.44.0: Draken (comPost), Apocalypse, Lower/Upper Spikes e Rocky ganharam post
+    assert(nn.length >= 34, 'Northon: ' + nn.length); // 2.44.0: Draken (comPost), Apocalypse, Lower/Upper Spikes e Rocky ganharam post; 2.47.0: Foreign, Hero Fortress, Feyrist, Banshee e Fiehonja (Xibara)
     const daComunidade = new Set(M.SETUPS_DISCORD.filter(s => !/^Northon/.test(s.autor)).map(s => s.huntId));
     const ctx = { nivel: 136, magias: SPELLS, pocoes: NOMES_POCOES };
     for (const s of nn) {
@@ -216,7 +216,7 @@ t('Northon (2.38.4): padrão de outubro — Train Party (+Protector acima de 160
     const aMao = ['northon-192', 'northon-222'];
     const nn = M.SETUPS_DISCORD.filter(s => /^northon-\d+$/.test(s.id) && !aMao.includes(s.id));
     const ctx = { nivel: 170, magias: SPELLS, pocoes: NOMES_POCOES };
-    assert(nn.length >= 36, 'faltam Northon'); // 2.39.0: 5 tronos/portais ganharam post; 2.44.0: mais 4 (Apocalypse, Lower/Upper Spikes, Rocky)
+    assert(nn.length >= 32, 'faltam Northon'); // sem os 2 feitos à mão. 2.39.0: 5 tronos/portais ganharam post; 2.44.0: mais 4 (Apocalypse, Lower/Upper Spikes, Rocky); 2.47.0: mais 5 (site do Xibara)
     for (const s of nn) {
         const k = s.chars.KNIGHT, p = s.chars.PALADIN, d = s.chars.DRUID;
         {
@@ -362,6 +362,25 @@ t('2.35.5 varredura de 29/10: Theus (Throne of Bazir e Verminor) tira os "Northo
     assert.deepStrictEqual(sn.chars.KNIGHT.suporte, ['Protector']);
     assert.deepStrictEqual(sn.chars.DRUID.defesa.map(d => d[0]), ['Ultimate Healing', 'Mass Healing', 'Heal Friend']);
 });
+t('2.47.0 varredura de 05/11 a 10/11: 12 do Xibara e 1 do NaneRz (site), Fire Portal do Arquemerz e Draken Walls do Jandrey (Discord) — sem aviso no nível do post; os "Northon -" desses mapas saem', () => {
+    const lista = [['vampire-xibara', 50, 85], ['foreign-xibara', 45, 85], ['herofortress-xibara', 106, 105], ['cults-xibara', 43, 85], ['infernatil-nanerz', 201, 150],
+        ['fiehonja-xibara', 193, 108], ['banshee-xibara', 187, 88], ['golem-xibara', 161, 88], ['quaraentrance-xibara', 190, 87], ['feyrist-xibara', 163, 88],
+        ['dragonlair-xibara', 46, 88], ['hellspawns-xibara', 111, 88], ['hiveentr-xibara', 123, 109], ['fire-arquemerz', 226, 198], ['draken-jandrey', 192, 169]];
+    for (const [id, huntId, nivel] of lista) {
+        const s = M.SETUPS_DISCORD.find(x => x.id === id);
+        assert(s && s.huntId === huntId && M.dcCompleto(s), id);
+        const ctx = Object.assign({}, CTX_POT, { nivel, magias: SPELLS });
+        for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx).avisos, [], id + ' ' + voc);
+        assert(!M.dcSetupsDaHunt({ id: huntId, title: s.hunt }).some(x => /^northon-(baixo-)?\d+$/.test(x.id) && !x.comPost), id + ': o "Northon -" do mapa saiu');
+    }
+    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 226, title: 'Fire Portal' }).map(x => x.id), ['fire-lucasdela', 'fire-arquemerz']);
+    const fp = M.SETUPS_DISCORD.find(x => x.id === 'fire-arquemerz');
+    assert.deepStrictEqual(fp.chars.SORCERER.ataque[0], ['Great Fire Wave', 2], 'Gran Flam Hur em primeiro');
+    assert.deepStrictEqual(fp.chars.DRUID.ataque.map(a => a[0]), ['Strong Ice Wave', 'avalanche rune', 'Flame Strike']);
+    const nz = M.SETUPS_DISCORD.find(x => x.id === 'infernatil-nanerz');
+    assert(!nz.chars.DRUID.suporte, 'o Druida do NaneRz veio sem suporte');
+});
+
 t('2.39.0 varredura de 02/11 (tela Histórico): Specter, FelipeS, Theus, EduardoLacerda e Arquemerz — 9 setups, os 5 "Northon -" dos tronos/portais saem; sem aviso no nível do print', () => {
     const lista = [['infernatil-specter', 201, 'Specter', 199], ['infernatil-felipes', 201, 'FelipeS', 190], ['ashfalor-specter', 205, 'Specter', 199], ['tafariel-specter', 202, 'Specter', 199],
         ['pumin-theus', 204, 'Theus', 180], ['death-theus', 223, 'Theus', 180], ['bottom-theus', 197, 'Theus', 180], ['bottom-eduardo', 197, 'EduardoLacerda', 150], ['behemoth-arquemerz', 188, 'Arquemerz', 177]];
@@ -373,7 +392,7 @@ t('2.39.0 varredura de 02/11 (tela Histórico): Specter, FelipeS, Theus, Eduardo
         assert(!M.dcSetupsDaHunt({ id: huntId, title: s.hunt }).some(x => /^northon-\d+$/.test(x.id)), id + ': o "Northon -" do mapa saiu');
     }
     assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 197, title: 'Bottom of the Ocean' }).map(x => x.id), ['bottom-specter', 'bottom-psyger', 'bottom-theus', 'bottom-eduardo']);
-    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 201, title: 'Throne of Infernatil' }).map(x => x.id), ['infernatil-specter', 'infernatil-felipes']);
+    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 201, title: 'Throne of Infernatil' }).map(x => x.id), ['infernatil-specter', 'infernatil-felipes', 'infernatil-nanerz']); // 2.47.0: NaneRz no site
     const fe = M.SETUPS_DISCORD.find(x => x.id === 'infernatil-felipes');
     assert.deepStrictEqual(fe.chars.SORCERER.ataque[0], ['Rage of the Skies', 6]);
     assert.deepStrictEqual(fe.chars.KNIGHT.suporte, ['Protector', 'Train Party']);
@@ -414,7 +433,7 @@ t('2.33.7 "Northon - Shadow Nexus" troca a barra INTEIRA (vida, mana, ataque, de
 t('2.29.5 Worker Golem do Matheustlm (23/10): 1º post real do mapa substitui o "Northon -"; sem aviso no nível dele, e no 94 só o Annihilation fica de fora', () => {
     const s = M.SETUPS_DISCORD.find(x => x.id === 'golem-matheus');
     assert(s && s.huntId === 161, 'golem-matheus');
-    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 161, title: 'Yalahar Worker Golem' }).map(x => x.id), ['golem-matheus']);
+    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 161, title: 'Yalahar Worker Golem' }).map(x => x.id), ['golem-matheus', 'golem-xibara']); // 2.47.0: Xibara no site
     const ctx = (nivel) => Object.assign({}, CTX_POT, { nivel, magias: SPELLS });
     for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx(117)).avisos, [], voc);
     assert.deepStrictEqual(M.dcConfigDe(s, 'KNIGHT', null, ctx(94)).avisos, ['ataque 4: Annihilation pede nível 110 (você tem 94) — slot pulado']);
@@ -459,9 +478,9 @@ t('2.29.8 a SUA poção também passa pela vocação: Paladino com a Great Healt
     assert.strictEqual(velho.cfg.heals[0].name, 'Great Health Potion');
 });
 
-t("Northon nível baixo (2.33.0): os 38 mapas de recomendado ≤ 50 sem post — barra dos 4 sem aviso no nível de projeto, a mesma runa, golpe do elemento da runa, nenhum slot morto", () => {
+t("Northon nível baixo (2.33.0): os 37 mapas (38 − Cults Goroma, que ganhou post na 2.47.0) de recomendado ≤ 50 sem post — barra dos 4 sem aviso no nível de projeto, a mesma runa, golpe do elemento da runa, nenhum slot morto", () => {
     const nb = M.SETUPS_DISCORD.filter(s => /^northon-baixo-\d+$/.test(s.id));
-    assert.strictEqual(nb.length, 38, "northon-baixo: " + nb.length);
+    assert.strictEqual(nb.length, 37, "northon-baixo: " + nb.length);
     const daComunidade = new Set(M.SETUPS_DISCORD.filter(s => !/^Northon/.test(s.autor)).map(s => s.huntId));
     const sp = (n) => SPELLS.find(x => x.name === n && x.combatType && (x.vocations || []).length) || SPELLS.find(x => x.name === n);
     const BASICO = /^(Energy|Flame|Ice|Terra) Strike$/;

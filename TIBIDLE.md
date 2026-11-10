@@ -7278,3 +7278,27 @@ Dono, no iPhone: "por que as magias não acham o mapa em que estou?".
 - **Auto Hunt (PC):** `voltarParaHunt` clica `hunt-item-<id>` → `hunt-confirm` e agora, se o aviso abrir, aperta Iniciar (é a caçada de
   onde o ciclo saiu); antes travava esperando o botão de encerrar. Bestiário, Scan e o caminho do celular entram por `start_hunt` no socket
   e não veem o aviso.
+
+## 2.47.0 (10/11) — Discord e site: varredura de 05/11 23h a 10/11, 15 setups novos
+
+- **Site tibidle-community.com** (texto estruturado, lido do DOM): 13 presets de caçada novos. Xibara (nível 85–109, medidos de
+  25 min a 3h17 com skills): Vampire hell (8), Foreign Quarter (9, só exp), Hero Fortress Entrance (10), Cults Goroma (11),
+  Fiehonja Stairway (24, +102,5k/h), The Banshee Quest (25), Yalahar Worker Golem (26, exp), Quara's entrance Yalahar (27),
+  Feyrist Surface (28, exp), Dragon Lair (29), Hellspawns yalahar (30), The Hive Entrance (31, 132,6k xp/h). NaneRz: Throne of
+  Infernatil (12, faixa 150+, "para bestiário"; Druida sem suporte e com uma Strong Ice Wave repetida que ficou de fora).
+  Os presets 13, 21, 22, 23 e 32 são de **invasão** (Vozerion, Minotaur Warlord, Thraw, Edward Teach, Enraged Necropharus) — fora do
+  modelo Discord, que é só de caçada. Os 14–20 são os nossos (penetrakill). A lista do site termina no 32.
+- **Discord:** tópico novo "Forgotten Knowledge - Fire Portal" do Arquemerz (07/11, 1568730844460224572): 4 barras + 343,5k xp/h,
+  +140,1k/h no nível 198 (Great Fire Wave em 1º no Feiticeiro, Flame Strike simples nos dois magos, Druida com o 1º slot vazio).
+  "Aoba meu povo": barra do Jandrey em Draken Walls (06/11, nível ~169, "druida com set contra fogo senão morre").
+  Ficaram de fora: "Setup pra Hive" do fb no Logbook (09/11 — ninguém disse qual Hive; itallophn perguntou e ficou sem resposta),
+  o Paladino sozinho do grampeador (08/11, um personagem só), o print de lucro do Pahfoot em Draken (391k xp/h, +326k/h no 175, sem
+  barra) e o "Chamber" do Zumpano (04/11, sem mapa dito). Conversa nova no Aoba: boss do Earth Portal pede SD rune e mana cheia
+  (toma +100 % de morte, mana drain de ~650).
+- **Ícones:** a versão corrente dos assets é v264. Magias em `/assets/v264/icons/spells/<nome>.webp`; poções em
+  `/assets/v264/items/<pasta>/<id>.webp` (Health 0/266, Strong 0/236, Great 0/239, Ultimate 7/7643, Supreme 23/23375; Mana 0/268,
+  Strong 0/237, Great 0/238, Ultimate 23/23373; Great Spirit 7/7642, Ultimate Spirit 23/23374) — o mapa nome→id sai dos
+  `aria-label` do site. Runas também em icons/spells (`avalanche_rune`, `great_fireball_rune`…).
+- Saem os "Northon -" de Foreign Quarter (45), Hero Fortress (106), Feyrist (163), Banshee (187), Fiehonja (193) e o de nível baixo
+  de Cults Goroma (`northon-baixo-43`). Testes: os limites de Northon foram para ≥34/≥32 e os de nível baixo para 37; teste novo da
+  varredura (sem aviso no nível do post, o Northon do mapa saiu, Fire Portal com 2 autores).
