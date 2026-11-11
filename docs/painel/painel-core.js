@@ -243,6 +243,20 @@
      * Cada peça fora do corpo é pontuada com a régua do destino (notaNoDestino) e comparada com a melhor peça que o destino já tem no espaço
      * (vestida ou guardada — é contra ela que o Equip de lá decide). Entra só o que passa na regra do Equip (≥ 1 pt; opc.minGanho). Mesmas
      * exclusões do Equip: nível exigido acima do da conta, peça de carga/tempo, arma de 2 mãos contra arma + escudo. */
+    /* helper 2.48.0 (dono, 10/11): DEFESA BASE NÃO CAI — na fase 2 o Equip do Cavaleiro só aceita no lugar da peça vestida uma de defesa
+     * base igual ou maior (escudo: defesa + defesa extra; elmo/armadura/calça/bota: armadura + refino) e arma de 2 mãos só tira o escudo se
+     * a defesa dela cobrir a do escudo. A página segue a mesma trava: senão sugeriria passar peça que o Equip de lá nunca veste. */
+    const SLOTS_DEF_BASE = ['shield', 'head', 'armor', 'legs', 'boots'];
+    const defesaBase = (p) => { const f = (p && p.ficha) || {}; return p && p.slot === 'shield' ? num(f.defense) + num(f.extradef) : num(f.armor) + num(p && p.refino); };
+    function travaDefesa(peca, voc, para) {
+        if (voc !== 'KNIGHT' || num(para.fase) !== 2) return false;
+        const per = (para.personagens && para.personagens.KNIGHT) || {};
+        const vestida = (slot) => { const v = per[slot] && per[slot].veste; return v ? (para.itens.find(i => i.iid === v.iid) || null) : null; };
+        if (peca.duasMaos) { const esc = vestida('shield'); return !!esc && num(peca.ficha && peca.ficha.defense) < defesaBase(esc); }
+        if (!SLOTS_DEF_BASE.includes(peca.slot)) return false;
+        const atual = vestida(peca.slot);
+        return !!atual && defesaBase(peca) < defesaBase(atual);
+    }
     function valePassar(contas, opc) {
         opc = opc || {}; const minGanho = opc.minGanho != null ? opc.minGanho : EQUIP_GANHO_TROCA, porEspaco = opc.porEspaco != null ? opc.porEspaco : 3;
         const out = [], vistos = new Map();
@@ -254,6 +268,7 @@
                 if (exige > para.nivel) continue; // ainda não pode vestir
                 for (const voc of VOCS) {
                     if (!podeVestir(peca, voc)) continue;
+                    if (travaDefesa(peca, voc, para)) continue; // helper 2.48.0: defesa base não cai (Cavaleiro, fase 2)
                     const v = para.personagens && para.personagens[voc] && para.personagens[voc][peca.slot];
                     const veste = v && v.veste ? v.veste : null, melhor = v && v.melhor ? v.melhor : null;
                     const ref = melhor && num(melhor.pontos) > num(veste && veste.pontos) ? melhor : veste; // o Equip compara com a melhor que a conta já tem

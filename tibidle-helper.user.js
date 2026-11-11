@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.47.1
+// @version      2.48.0
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.47.1';
+    const VERSAO = '2.48.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -8043,16 +8043,47 @@
      * líquido fica abaixo de FRAG_MODO_FATOR × o valor dos fragmentos, e a sobra SEM preço lido vai também se for de faixa II ou mais
      * (≥ 3 fragmentos). Faixa I sem preço continua "você decide". Comum, linha nobre e base de forja não passam por aqui. */
     const FRAG_MODO_FATOR = 3;
+    /* v2.48.0 — O HISTÓRICO DO MERCADO DECIDE (dono, 10/11, na XundaBr: "elas tão indo e voltando do mercado, não tão sendo
+     * vendidas, pois têm status muito ruim"). A referência de preço vem dos ANÚNCIOS abertos (o que os outros PEDEM), não de
+     * venda: no histórico da conta (market_history, 30 dias) o strange helmet voltou 6× e vendeu 0, hailstorm rod 6×/0, magma
+     * monocle 4×/0, beetle necklace 4×/0 — e o helper seguia mandando anunciar. giroMercado junta os anúncios vencidos ('expired')
+     * e as vendas ('sell') por nome; giroDe dá a chance de venda do nome, (vendeu + 1) / (vendeu + voltou + 2), e naoVende =
+     * a chance ficou abaixo de 25 %. O histórico não traz os encaixes (só o nome): a chance é do item, não da cópia. Sem
+     * histórico do nome, tudo fica como antes. */
+    /* naoVende = chance abaixo de 25 % = voltou mais de 3× o que vendeu + 2 (0 vendas e 3 voltas; 1 venda e 6 voltas). "Voltou mais do
+     * que vendeu" sozinho pegava a trousers of the ancients (12 vendas, 14 voltas) com regen. de mana 1,7 — essa vende: vai pelo
+     * preço × chance. */
+    const GIRO_NAO_VENDE = 0.25;
+    const nomeGiro = (n) => String(n == null ? '' : n).toLowerCase().trim();
+    function giroMercado(entries) {
+        const g = {};
+        for (const e of entries || []) {
+            if (!e || (e.type !== 'expired' && e.type !== 'sell')) continue;
+            const n = nomeGiro(e.itemName); if (!n) continue;
+            const x = g[n] || (g[n] = { voltou: 0, vendeu: 0 });
+            if (e.type === 'expired') x.voltou++; else x.vendeu++; // por anúncio, não por quantidade (pilha vendida aos poucos)
+        }
+        return g;
+    }
+    function giroDe(giro, nome) {
+        const x = giro && giro[nomeGiro(nome)];
+        if (!x || !(x.voltou + x.vendeu > 0)) return null;
+        const chance = (x.vendeu + 1) / (x.vendeu + x.voltou + 2);
+        return { voltou: x.voltou, vendeu: x.vendeu, chance, naoVende: chance < GIRO_NAO_VENDE };
+    }
+    /* v2.48.0 — com opc.giro (giroDe do nome): o Mercado vale preço × chance de venda − taxa (a taxa de 5 % se paga inteira, venda
+     * ou não), e o item que voltou mais do que vendeu vai para o desmanche. */
     function escolherDestino(peca, precoMercado, precoFrag, opc) {
-        const fr = fragmentosDesmanche(peca), modoFrag = !!(opc && opc.fragmentos);
+        const fr = fragmentosDesmanche(peca), modoFrag = !!(opc && opc.fragmentos), giro = (opc && opc.giro) || null;
         const pf = Number.isFinite(precoFrag) && precoFrag > 0 ? precoFrag : PRECO_FRAG_ESTIMADO;
         const desmanche = fr.n * pf;
-        const liquido = Number.isFinite(precoMercado) && precoMercado > 0 ? Math.floor(precoMercado) - Math.max(1, Math.floor(precoMercado * TAXA_MERCADO)) : null;
+        const liquido = Number.isFinite(precoMercado) && precoMercado > 0 ? Math.floor(precoMercado * (giro ? giro.chance : 1)) - Math.max(1, Math.floor(precoMercado * TAXA_MERCADO)) : null;
         let destino = 'mercado?';
         if (fr.n === 0) destino = liquido != null ? 'mercado' : 'mercado?';
+        else if (giro && giro.naoVende) destino = 'desmanche';
         else if (liquido == null) destino = modoFrag && fr.faixa >= 2 ? 'desmanche' : 'mercado?';
         else destino = liquido > desmanche * (modoFrag ? FRAG_MODO_FATOR : 1) ? 'mercado' : 'desmanche';
-        return { destino, liquido, desmanche, fragmentos: fr.n, faixa: fr.faixa, t2: fr.t2, precoFrag: pf, estimado: !(Number.isFinite(precoFrag) && precoFrag > 0), modoFrag };
+        return { destino, liquido, desmanche, fragmentos: fr.n, faixa: fr.faixa, t2: fr.t2, precoFrag: pf, estimado: !(Number.isFinite(precoFrag) && precoFrag > 0), modoFrag, giro };
     }
     /* v2.16.0 — O QUE É BOM PARA CADA PERSONAGEM, em palavras (wiki /guia-do-*, /forja; TV de Souza 02/10 e 12/10;
      * NunohS 11/10; criador do jogo 04/10). A pontuação do helper é a medida da SUA party; estas são as regras que a
@@ -8164,7 +8195,9 @@
      * para ficar fora: a peça entra no desmanche quando os fragmentos valem MAIS que o Mercado líquido dela (escolherDestino =
      * 'desmanche'); sem referência de preço, vale a regra antiga (fica fora se o nome teve negócio). `destinoDe(p)` vem de
      * filtroDesmanche(); sem ele, a 2.23.4 continua igual. */
-    function pecasDesmanche(res, temNegocio, incluir, destinoDe) {
+    /* v2.48.0 — nobreSai(p): a linha nobre deixa de segurar a peça quando o histórico do Mercado diz que o item quase nunca vende
+     * (giroDe(...).naoVende) — "linha nobre fraca" (dono, 10/11) */
+    function pecasDesmanche(res, temNegocio, incluir, destinoDe, nobreSai) {
         const ORIG = { 'mochila': 'bag', 'depósito': 'depot' };
         /* v2.23.4 — SEM O MERCADO LIDO, NADA É DESMANCHADO (dono, 18/10: "tem certeza que não está desmanchando itens bons, que
          * têm valor de Mercado?"). Antes, sem o catálogo (temNegocio ausente) a lista ia inteira. Agora só com o catálogo lido
@@ -8174,7 +8207,8 @@
          * Mercado, pois são muito raros"). Uma sobra pode ter regen. de mana/vida, ML, skill, dano ou crítico e ainda assim sobrar
          * (todos já vestem igual ou melhor): essa vai para ANUNCIAR NO MERCADO, nunca para fragmento — nem com "incluir" marcado. */
         const vai = (p) => incluir || !temNegocio(p.nome) || (typeof destinoDe === 'function' && destinoDe(p) === 'desmanche');
-        return ((res && res.dispensaveis) || []).filter(p => p && p.iid && ORIG[p.origem] && !p.protegida && !vendivelNpc(p) && !encaixeNobre(p) && vai(p)) // v2.35.4: cadeado fica
+        const nobreFica = (p) => encaixeNobre(p) && !(typeof nobreSai === 'function' && nobreSai(p)); // v2.48.0
+        return ((res && res.dispensaveis) || []).filter(p => p && p.iid && ORIG[p.origem] && !p.protegida && !vendivelNpc(p) && !nobreFica(p) && vai(p)) // v2.35.4: cadeado fica
             .map(p => ({ iid: p.iid, origem: ORIG[p.origem], nome: p.nome, fragmentos: fragmentosDesmanche(p).n })); // v2.34.1: fragmentos por peça
     }
     /* v2.11.2 — TROCA TEM CUSTO. Com 0,05 de bônus para ficar, o otimizador
@@ -8255,6 +8289,13 @@
         rec(0, 0, new Set());
         return vocsSlot.map((v, i) => ({ v, c: melhor.esc ? melhor.esc[i] : null }));
     }
+    /* v2.48.0 — defesa base de uma peça do corpo: escudo = defesa (+ defesa extra); elmo/armadura/calça/bota = armadura com refino */
+    const SLOTS_DEF_BASE = new Set(['shield', 'head', 'armor', 'legs', 'boots']);
+    function defesaBase(p) {
+        if (!p) return 0;
+        if (p.slot === 'shield') { const a = p.attrs || {}; return (Number(a.defense) || 0) + (Number(a.extradef) || 0); }
+        return Number(attrsComRefino(p).armor) || 0;
+    }
     function distribuirEquip(pecas, vocs, ctx) {
         vocs = vocs || Object.keys(PESOS_EQUIP);
         const pont = new Map(); // iid|voc → resultado
@@ -8268,7 +8309,14 @@
                 const atual = pecas.find(p => p.origem === 'corpo' && p.dono === v && p.slot === s) || null;
                 /* v2.11.11 — dono, 30/09: "você está tirando item de um personagem e colocando no outro, não é isso
                  * que preciso". Peça que alguém VESTE só é candidata para ele mesmo; as trocas vêm do depósito e da mochila. */
-                const cands = pecas.filter(p => p.slot === s && vocacaoPode(p.attrs, v) && !ehTemporaria(p) && !(p.origem === 'corpo' && p.dono !== v)).map(p => ({ peca: p, r: P(p, v) })).sort((x, y) => y.r.pontos - x.r.pontos);
+                /* v2.48.0 — DEFESA BASE NÃO CAI (dono, 10/11, XundaBr nível 121): na fase 2 o Cavaleiro trocava o necromancer shield pelo
+                 * black shield (bloqueio 21–42 → 10–20), o Zaoan helmet pelo steel helmet e a plate legs pela trousers por regen. de mana —
+                 * a medida de dano guardada era de Orc Fortress no nível 40 e a armadura saía quase de graça. Regra da fase 2: "defesa BASE
+                 * alta… regen. no final do final". Com peça vestida, só concorre a que tem defesa base (escudo: defesa; resto: armadura com
+                 * refino) igual ou maior. */
+                const travaDef = v === 'KNIGHT' && atual && faseEquip(ctx) === 2 && SLOTS_DEF_BASE.has(s);
+                const cands = pecas.filter(p => p.slot === s && vocacaoPode(p.attrs, v) && !ehTemporaria(p) && !(p.origem === 'corpo' && p.dono !== v)
+                    && (!travaDef || p.iid === atual.iid || defesaBase(p) >= defesaBase(atual))).map(p => ({ peca: p, r: P(p, v) })).sort((x, y) => y.r.pontos - x.r.pontos);
                 porVoc[v][s] = { atual, atualPt: atual ? P(atual, v).pontos : 0, melhor: null, melhorPt: 0, ganho: 0, candidatos: cands };
             }
         }
@@ -8288,8 +8336,11 @@
         const extra = {};
         for (const v of vocs) {
             if (!porVoc[v].shield) continue;
-            const m2 = porVoc[v].weapon.candidatos.find(c => c.duasMaos2 && !usadas.has(c.peca.iid));
-            if (m2) extra[v] = { iid: '__2m__' + v, peca: null, duasMaos: m2.peca, pt: m2.r.pontos - porVoc[v].weapon.melhorPt };
+            /* v2.48.0 — defesa base não cai: na fase 2, com escudo vestido, a arma de 2 mãos só concorre se a defesa dela cobrir a do
+             * escudo (XundaBr: jungle flail, defesa 31, tirava o necromancer shield, defesa 37) */
+            const escAtual = porVoc[v].shield.atual, trava2m = v === 'KNIGHT' && escAtual && faseEquip(ctx) === 2;
+            const m2 = porVoc[v].weapon.candidatos.find(c => c.duasMaos2 && !usadas.has(c.peca.iid) && (!trava2m || (Number(c.peca.attrs && c.peca.attrs.defense) || 0) >= defesaBase(escAtual)));
+            if (m2) extra[v] ={ iid: '__2m__' + v, peca: null, duasMaos: m2.peca, pt: m2.r.pontos - porVoc[v].weapon.melhorPt };
         }
         for (const r of _resolverSlot(porVoc, vocs.filter(v => porVoc[v].shield), 'shield', usadas, extra, escolhas)) {
             if (r.c && r.c.duasMaos) { // 2 mãos venceu: arma vira a de 2 mãos, escudo fica vazio
@@ -12200,10 +12251,14 @@
         const falta = [];
         if (!MK.catalogo || velho(MK.catalogo_t)) falta.push('catálogo');
         for (const cat of ML_CATS) { const x = MK.copias['cat:' + cat]; if (!x || x.erro || velho(x.t)) falta.push(cat); }
-        if (!falta.length) return;
+        { const hg = ler('mk_giro', null); if (!hg || velho(hg.t)) falta.push('histórico'); } // v2.48.0
+        if (!falta.length && MK.tradeable) return;
         MK.ocupado = 'equip';
         try {
             EQUIP.aviso = 'lendo o Mercado para o desmanche (' + falta.length + ' leitura(s))…'; renderizar();
+            /* v2.48.0 — a categoria de cada item (/tradeable) é o que casa a peça com os anúncios lidos por categoria: sem ela (aba recém-
+             * aberta, Mercado nunca aberto) toda sobra ficava "ref. Mercado: não lida" */
+            if (!MK.tradeable) await mkCarregarRest();
             if (falta.includes('catálogo')) { if (MK.taxa == null) { MK.taxa = MK_TAXA_WIKI; MK.taxaWiki = true; } const r = await mkPedir('market_catalog', {}); if (r.erro) throw new Error('catálogo: ' + mkErroTexto(r.erro)); }
             if (velho(MK.minhas_t)) { MK.ocupado = null; const rm = await mkLerMinhas(); MK.ocupado = 'equip'; if (rm && rm.erro) log('equip: suas ordens não vieram (' + mkErroTexto(rm.erro) + ')', 'erro'); }
             for (const cat of ML_CATS) {
@@ -12211,6 +12266,7 @@
                 const r = await mkPedir('market_copies', { category: cat });
                 if (r.erro) { MK.copias['cat:' + cat] = { erro: r.erro, t: Date.now() }; log(`equip: anúncios de ${MK_CATS[cat] || cat} não vieram — ${mkErroTexto(r.erro)}`, 'erro'); if (MK_PARA_TUDO.has(r.erro)) break; }
             }
+            if (falta.includes('histórico')) { EQUIP.aviso = 'lendo o seu histórico do Mercado (voltou × vendeu, 30 dias)…'; renderizar(); await mkLerGiro(); } // v2.48.0
             EQUIP.aviso = null;
         } finally { if (MK.ocupado === 'equip') MK.ocupado = null; }
     }
@@ -12221,7 +12277,7 @@
     async function desmancharSobras() {
         const FD = filtroDesmanche(); // v2.26.2 — mesmo critério da tela (veredito por peça)
         marcarProtegidas(EQUIP.res); // v2.35.4
-        const alvos = pecasDesmanche(EQUIP.res, FD.temNegocio, !!ler('desm_incluir_mercado', false), FD.destinoDe)
+        const alvos = pecasDesmanche(EQUIP.res, FD.temNegocio, !!ler('desm_incluir_mercado', false), FD.destinoDe, FD.nobreSai)
             .sort((a, b) => (b.fragmentos || 0) - (a.fragmentos || 0)); // v2.34.1 — quem rende mais primeiro (lotes de 10: o que importa sai antes)
         if (!alvos.length || EQUIP.equipando || EQUIP.lendo) return;
         if (emHunt()) { EQUIP.aviso = 'desmanche só na cidade'; renderizar(); return; }
@@ -12355,6 +12411,13 @@
             log(`equip: ${pecas.length} peças lidas · ${trocas} trocas sugeridas · ${EQUIP.res.dispensaveis.length} dispensáveis`, 'ok');
         } catch (e) { EQUIP.erro = e.message; log('equip: ' + e.message, 'erro'); }
         EQUIP.lendo = false; renderizar();
+        /* v2.48.0 — dono, 10/11 (XundaBr): "na opção desmanchar não está aparecendo nada" — sem o modo "preciso de fragmentos" o
+         * ATUALIZAR não lia o Mercado, e sem o Mercado lido nada é desmanchado. Agora, na cidade e com Premium, lê o que estiver com
+         * mais de 6 h (catálogo, anúncios por categoria, suas ordens e o histórico voltou × vendeu) DEPOIS do ranking, sem travar a
+         * tela; ao terminar redesenha. Só leituras, pela fila do Mercado. */
+        if (EQUIP.res && !emHunt() && socketAberto() && !MK.ocupado && mkPremiumAgora() !== false) {
+            equipLerMercadoParaDesmanche().then(() => renderizar(), (e) => { falhou('equip (mercado para o desmanche)', e); EQUIP.aviso = null; renderizar(); });
+        }
     }
     /* =========================================================================
      *  ⭐ v2.5.0 — EQUIPAR PELO SOCKET (pedido do dono, 28/09 — "um botão para
@@ -12494,8 +12557,13 @@
             return r.preco != null ? r.preco : null;
         };
         const fragmentos = !!ler('desm_fragmentos', false); // v2.34.1 — modo "preciso de fragmentos"
-        const destinoDe = MK.catalogo ? (p) => escolherDestino(p, refPreco(p), pf.estimado ? null : pf.preco, { fragmentos }).destino : null;
-        return { temNegocio, pf, meusIds, refPreco, destinoDe, fragmentos };
+        /* v2.48.0 — o histórico do Mercado da conta (voltou × vendeu por nome), lido pelo ATUALIZAR do Equip */
+        const hist = ler('mk_giro', null), giroP = (p) => (hist && hist.por ? giroDe(hist.por, p && p.nome) : null);
+        const destinoDe = MK.catalogo ? (p) => escolherDestino(p, refPreco(p), pf.estimado ? null : pf.preco, { fragmentos, giro: giroP(p) }).destino : null;
+        /* a linha nobre só sai quando o item QUASE NUNCA VENDE: pelo preço × chance a trousers of the ancients com regen. de mana 1,7
+         * (vendeu 12×) ia para o desmanche por uma referência de 4.996 "parecida a 30.000" — essa fica com o dono */
+        const nobreSai = destinoDe ? (p) => { const g = giroP(p); return !!(g && g.naoVende); } : null;
+        return { temNegocio, pf, meusIds, refPreco, destinoDe, fragmentos, giroP, nobreSai, hist };
     }
     /* v2.11 (D2) — botões numa linha (ATUALIZAR · EQUIPAR (n) · só Cav (n)),
      * vocação como botões com aria-pressed e nome inteiro no rótulo, "8 slots"
@@ -12597,24 +12665,29 @@
             `? o que é bom para o ${VOC_ROTULO[v]}`);
         const FD = filtroDesmanche(), temNegocio = FD.temNegocio, pf = FD.pf, meusIds = FD.meusIds, refPreco = FD.refPreco; // v2.26.2
         const incluirMk = !!ler('desm_incluir_mercado', false), modoFrag = !!FD.fragmentos;
-        const alvosDesm = pecasDesmanche(R, temNegocio, incluirMk, FD.destinoDe);
+        const alvosDesm = pecasDesmanche(R, temNegocio, incluirMk, FD.destinoDe, FD.nobreSai);
         /* v2.34.1 — por que cada sobra ficou fora do desmanche (contagem por motivo) */
         const fora = { npc: 0, nobre: 0, semRef: 0, mercado: 0 };
         for (const p of ((R && R.dispensaveis) || [])) {
             if (!p || !p.iid || alvosDesm.some(a => a.iid === p.iid)) continue;
             if (vendivelNpc(p)) fora.npc++; else if (encaixeNobre(p)) fora.nobre++;
             else if (!MK.catalogo) fora.semRef++;
-            else { const d = escolherDestino(p, FD.refPreco(p), pf.estimado ? null : pf.preco, { fragmentos: modoFrag }); if (d.destino === 'mercado') fora.mercado++; else fora.semRef++; }
+            else { const d = escolherDestino(p, FD.refPreco(p), pf.estimado ? null : pf.preco, { fragmentos: modoFrag, giro: FD.giroP(p) }); if (d.destino === 'mercado') fora.mercado++; else fora.semRef++; }
         }
+        /* v2.48.0 — quantas vão pelo histórico (voltaram do Mercado mais do que venderam) */
+        const dispIid = new Map(((R && R.dispensaveis) || []).map(p => [p.iid, p]));
+        const peloHist = alvosDesm.filter(a => { const g = FD.giroP(dispIid.get(a.iid)); return !!(g && g.naoVende); }).length;
         const foraTxt = [fora.npc ? `${fora.npc} Comum (NPC)` : '', fora.nobre ? `${fora.nobre} com linha nobre (Mercado)` : '', fora.mercado ? `${fora.mercado} vale${fora.mercado === 1 ? '' : 'm'} mais no Mercado` : '', fora.semRef ? `${fora.semRef} sem preço lido${modoFrag ? ' (faixa I)' : ''}` : ''].filter(Boolean).join(' · ');
-        const nd = alvosDesm.length, nMk = MK.catalogo ? pecasDesmanche(R, null, true).length - pecasDesmanche(R, temNegocio, false, FD.destinoDe).length : 0;
+        const nd = alvosDesm.length, nMk = MK.catalogo ? Math.max(0, pecasDesmanche(R, null, true, null, FD.nobreSai).length - pecasDesmanche(R, temNegocio, false, FD.destinoDe, FD.nobreSai).length) : 0;
         const semMercado = !MK.catalogo && !incluirMk;
         const dispPorIid = new Map(((R && R.dispensaveis) || []).map(p => [p.iid, p]));
         const fragTotal = alvosDesm.reduce((s, a) => { const p = dispPorIid.get(a.iid) || candidatoPorIid(a.iid); return s + (p ? fragmentosDesmanche(p).n : 0); }, 0);
-        const podeDesm = nd && !dentro && sock && !EQUIP.equipando && !EQUIP.lendo;
+        const podeDesm = nd && !dentro && sock && !EQUIP.equipando && !EQUIP.lendo && MK.ocupado !== 'equip'; // v2.48.0: não durante a leitura do Mercado
         const desmArmado = EQUIP.desmConf && Date.now() < EQUIP.desmConf;
         h += `<div class="tb-linha" style="margin-top:4px"><label class="tb-l" title="ligado: a sobra vai para fragmento quando vale no Mercado (líquido) menos de 3× os fragmentos, e a sobra sem preço lido vai se for de faixa II ou mais; o ATUALIZAR lê o catálogo e as cópias do Mercado quando têm mais de 6 h (só leituras, na cidade)"><input type="checkbox" id="tb-eq-desm-frag" ${modoFrag ? 'checked' : ''}> <b>preciso de fragmentos</b> <span class="tb-mut tb-eq-nota">(desmancha o que vale menos de 3× em ouro; sobra sem preço de faixa II+ também)</span></label></div>` +
-             (foraTxt ? `<div class="tb-mut tb-eq-nota">fora do desmanche: ${foraTxt}</div>` : '');
+             (foraTxt ? `<div class="tb-mut tb-eq-nota">fora do desmanche: ${foraTxt}</div>` : '') +
+             /* v2.48.0 — o histórico do Mercado da conta entra no veredito */
+             `<div class="tb-mut tb-eq-nota">${FD.hist && FD.hist.por ? `histórico do Mercado (30 dias, lido ${escHtml(new Date(FD.hist.t).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }))}): ${numBR(FD.hist.voltou || 0)} anúncio(s) voltaram sem vender, ${numBR(FD.hist.vendeu || 0)} venderam — o Mercado vale preço × chance de venda do item${peloHist ? ` · <b>${peloHist}</b> no desmanche porque o item quase nunca vende (voltou 3× ou mais para cada venda)` : ''}` : 'histórico do Mercado ainda não lido (o ATUALIZAR lê na cidade)'}</div>`;
         h += `<div class="tb-linha"><button type="button" class="tb-bt ${desmArmado ? 'pri' : ''}" id="tb-eq-desmanchar" ${podeDesm ? '' : 'disabled'} title="${escHtml(semMercado ? 'leia o Mercado antes (aba Mercado → ATUALIZAR): sem o catálogo não sei quais sobras têm comprador, e nada é desmanchado' : !nd ? 'nada para desmanchar: as sobras Incomum+ ou refinadas (o NPC não compra) é que vão' : dentro ? 'só na cidade' : !sock ? 'o socket do jogo não foi capturado — F5 com o helper instalado' : 'manda as sobras que o NPC não compra e que não têm linha nobre (regen., ML, skill, dano, crítico) para o Desmanche da Forja (forge_salvage_batch) — vira fragmento, não volta')}">${EQUIP.desm ? 'DESMANCHANDO…' : desmArmado ? `confirmar: desmanchar ${nd}` : `DESMANCHAR (${nd})`}</button>` +
              `<span class="tb-mut tb-eq-nota">${desmArmado ? 'toque de novo para confirmar (não volta)' : `sobras sem linha nobre que o NPC não compra → ${numBR(fragTotal)} fragmento${fragTotal === 1 ? '' : 's'} ≈ ${milBR(fragTotal * pf.preco)} de ouro${pf.estimado ? ' (fragmento a 2 mil, estimado)' : ' (fragmento a ' + milBR(pf.preco) + ' no Mercado)'} · 2 toques`}</span></div>` +
              `<div class="tb-mut tb-eq-nota">${MK.catalogo ? `${nMk} fica${nMk === 1 ? '' : 'm'} fora: vale${nMk === 1 ? '' : 'm'} mais no Mercado (líquido) que em fragmentos, ou tem negócio em 30 dias sem referência lida ` : '<b class="tb-av">Mercado não lido (aba Mercado → ATUALIZAR): sem saber quais têm comprador, nada é desmanchado</b> '}<label class="tb-l"><input type="checkbox" id="tb-eq-desm-mk" ${incluirMk ? 'checked' : ''}> incluir essas também (e desmanchar mesmo sem o Mercado lido)</label></div>`;
@@ -12641,12 +12714,15 @@
         /* v2.16.0 — veredito da sobra: Mercado líquido (ref − 5 %) contra o desmanche (fragmentos da faixa × raridade × preço
          * do fragmento). Sem referência lida, mostra só o desmanche e deixa a escolha com o dono. */
         const vereditoTxt = (p) => { // refPreco vem de filtroDesmanche (2.26.2)
-            const d = escolherDestino(p, refPreco(p), pf.estimado ? null : pf.preco, { fragmentos: !!FD.fragmentos });
+            const d = escolherDestino(p, refPreco(p), pf.estimado ? null : pf.preco, { fragmentos: !!FD.fragmentos, giro: FD.giroP(p) });
             if (!d.fragmentos) return '';
             const desm = `desmanche ${d.fragmentos} frag. ≈ ${milBR(d.desmanche)}${d.t2 ? ` (${Math.round(d.t2 * 100)} % T2)` : ''}`;
-            if (d.destino === 'mercado') return ` · <span class="tb-mut">${desm}</span> → <b>Mercado</b> (líq. ${milBR(d.liquido)})`;
-            if (d.destino === 'desmanche') return ` · ${desm} → <b class="tb-av">DESMANCHAR</b> (Mercado líq. ${milBR(d.liquido)})`;
-            return ` · <span class="tb-mut">${desm} — sem ref. do Mercado: você decide</span>`;
+            /* v2.48.0 — o histórico do nome na linha: voltou × vendeu e a chance usada */
+            const hg = d.giro ? ` <span class="tb-mut">(no seu histórico: voltou ${d.giro.voltou}×, vendeu ${d.giro.vendeu}× — chance ${Math.round(d.giro.chance * 100)} %)</span>` : '';
+            if (d.destino === 'desmanche' && d.giro && d.giro.naoVende) return ` · ${desm} → <b class="tb-av">DESMANCHAR</b>${hg}`;
+            if (d.destino === 'mercado') return ` · <span class="tb-mut">${desm}</span> → <b>Mercado</b> (líq. ${milBR(d.liquido)})${hg}`;
+            if (d.destino === 'desmanche') return ` · ${desm} → <b class="tb-av">DESMANCHAR</b> (Mercado líq. ${milBR(d.liquido)})${hg}`;
+            return ` · <span class="tb-mut">${desm} — sem ref. do Mercado: você decide</span>${hg}`;
         };
         const linhaMk = (p) => `<div class="tb-lin"><span>${nomeLink(p)}${rarTag(p)}<span class="tb-tag">${escHtml(p.origem)}</span> <span class="tb-mut tb-eq-nota">${encaixeTxt(p)}${p.motivo ? ' · ' + escHtml(p.motivo) : ''}</span></span><span class="tb-eq-nota">${refTxt(p)}${vereditoTxt(p)}</span></div>`;
         const btAnunciar = (id, n, oQue) => `<button type="button" class="tb-bt" id="${id}" ${n && !ocupado ? '' : 'disabled'} title="${escHtml(n ? `abre a aba Mercado com ${oQue} já marcadas — nada é anunciado sem os 2 toques de lá` : 'nada nesta lista')}">ANUNCIAR NO MERCADO (${n})</button>`;
@@ -15193,6 +15269,25 @@
             if (!e.length || e.length < tam || (Number(d.total) > 0 && entries.length >= Number(d.total))) break;
         }
         MK.vendas = entries; MK.vendas_t = Date.now(); MK.vendasErro = null;
+        return true;
+    }
+    /* v2.48.0 — GIRO DO MERCADO: anúncios vencidos ('expired') e vendas ('sell') dos últimos 30 dias, por nome (giroMercado),
+     * guardados por conta em mk_giro. Só leitura (market_history), no ritmo da fila; até 10 páginas de cada. A XundaBr tinha
+     * 185 vencidos × 133 vendas em 10/11. */
+    async function mkLerGiro() {
+        const entries = [];
+        for (const type of ['expired', 'sell']) {
+            for (let pg = 0; pg < MK_HIST_PAGINAS; pg++) {
+                const r = await mkPedir('market_history', { page: pg, type, period: '30d' });
+                if (r.erro) { log('mercado: histórico (' + (type === 'sell' ? 'vendas' : 'vencidos') + ') não lido — ' + mkErroTexto(r.erro), 'erro'); return false; }
+                const d = r.data || {}, e = Array.isArray(d.entries) ? d.entries : [];
+                entries.push(...e.map(x => ({ type: x.type || type, itemName: x.itemName })));
+                const tam = Number(d.pageSize) || e.length || 0;
+                if (!e.length || e.length < tam || (Number(d.total) > 0 && entries.filter(x => x.type === type).length >= Number(d.total))) break;
+            }
+        }
+        const por = giroMercado(entries);
+        guardar('mk_giro', { por, t: Date.now(), voltou: entries.filter(x => x.type === 'expired').length, vendeu: entries.filter(x => x.type === 'sell').length });
         return true;
     }
     async function mkRevisar() {

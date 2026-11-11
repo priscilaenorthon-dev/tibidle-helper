@@ -7314,3 +7314,29 @@ Dono, no iPhone: "por que as magias não acham o mapa em que estou?".
   Healing ≤60 + Mass Healing ≤70 + Heal Friend ≤60, Heal Party.
 - Na foto o 0 e o 8 da fonte do jogo saem iguais: os limiares foram lidos como números redondos; a mana do Cavaleiro (um dígito) pode
   ser 0 em vez de 8. Supreme Health pede nível 200 → o setup diz "200+".
+
+## 2.48.0 (10/11) — Desmanche pelo histórico do Mercado; defesa base do Cavaleiro não cai na fase 2
+
+Pedidos do dono na XundaBr (nível 121): "na opção Desmanchar não está aparecendo nada, tem muitos itens ruins no depósito"; "elas tão
+indo e voltando do mercado, não tão sendo vendidas, pois têm status muito ruim"; e "entro no mapa e saio, ele sugere equips fracos".
+
+- **Por que o DESMANCHAR mostrava 0:** sem o Mercado lido nada é desmanchado (regra de 18/10), e o ATUALIZAR do Equip só lia o Mercado
+  no modo "preciso de fragmentos". Agora, na cidade e com Premium, o ATUALIZAR lê em segundo plano, DEPOIS do ranking, o que tiver mais
+  de 6 h: /tradeable (a categoria de cada item — sem ela toda sobra ficava "ref. Mercado: não lida"), catálogo, anúncios por categoria,
+  suas ordens e o histórico. O botão DESMANCHAR fica desligado durante a leitura.
+- **O histórico decide (escolha do dono):** a referência de preço vem do que os outros PEDEM, não de venda. `market_history` (página 0 em
+  diante; type `expired` e `sell`, 30 dias) da XundaBr: 185 anúncios vencidos × 133 vendas — strange helmet voltou 6× e vendeu 0,
+  hailstorm rod 6×/0, magma monocle 4×/0, beetle necklace 4×/0. A entrada só traz nome e preço (sem a forja). `giroMercado`/`giroDe`
+  (por nome, guardado por conta em `mk_giro`): chance de venda = (vendeu+1)/(vendeu+voltou+2); **quase nunca vende** = chance < 25 %
+  (3 voltas sem venda; 6 com uma) → desmanche, mesmo com linha nobre. Quem vende às vezes vai por preço × chance − taxa (a taxa se
+  paga inteira). A linha nobre só sai quando o item quase nunca vende (a trousers of the ancients com regen. de mana 1,7 — vendeu 12×
+  — saía por uma referência de 4.996 "parecida a 30.000"; ficou com o dono). Cada linha da lista mostra "no seu histórico: voltou X×,
+  vendeu Y× — chance Z %". Ao vivo: DESMANCHAR (0) → (31), 68 fragmentos ≈ 306 mil.
+- **Defesa base não cai (escolha do dono):** a medida de dano guardada neste navegador era de Orc Fortress no nível 40 (7,2k/h): a
+  armadura valia 0,07 pt e a regen. de mana 4,8 pt por ponto, e o Equip trocava necromancer shield → black shield (bloqueio 21–42 →
+  10–20), Zaoan helmet → steel helmet, plate legs → trousers. Na fase 2, com peça vestida, o Cavaleiro só aceita peça de defesa base
+  igual ou maior (escudo: defesa + extra; elmo/armadura/calça/bota: armadura + refino), e a arma de 2 mãos só tira o escudo se a
+  defesa dela cobrir a dele (jungle flail 31 < necromancer 37). Ao vivo sobraram Zaoan → demon helmet (armadura 34 → 35, regen. de
+  vida 1,9) e metal spats → leather boots. A Melhorias já seguia essa regra ("só entra armadura base maior").
+- **Painel das 3 contas** (artifact, versão 11): "Vale a pena passar?" ganhou a mesma trava (`travaDefesa`) para Cavaleiro de fase 2.
+- Testes: 2 novos no equip.test.js, 1 no painel.test.js.

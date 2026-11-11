@@ -7,7 +7,7 @@ const raiz = path.join(__dirname, '..');
 const src = fs.readFileSync(path.join(raiz, 'tibidle-helper.user.js'), 'utf8');
 const ini = src.indexOf('/* @@EQUIP-PURO-INICIO */'), fim = src.indexOf('/* @@EQUIP-PURO-FIM */');
 assert(ini > 0 && fim > ini, 'marcadores @@EQUIP-PURO não encontrados');
-const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, pesosDaVoc, mitigacaoPct, bloqueioEscudo, reducaoArmadura, golpeBasico, efeitoOficial, legadoDe, loyaltyBonus, forjaSimular, forjaValorSorteado, forjaLinhaSorteada, FORJA_GEMA_OURO, protecaoComposta, danoRecebidoCorpo, danoRecebidoMagia, COMBATE_VOC, SUPORTE_OFICIAL, candidatosEquip, distribuirEquip, pecasDesmanche, planoForja, faixaPotencia, wikiSlug, wikiUrlPeca, EQUIP_RESERVAS, destinosSobras, chanceLinha, fragmentosDesmanche, escolherDestino, faixaRange, valorTipico, linhasUteis, REGRAS_VOCACAO, FAIXA_NOME, faseEquip, potenciaBaseForja, trocaVale, encaixeNobre, tierDe, potenciaTotal };')();
+const M = new Function(src.slice(ini, fim) + '\nreturn { PESOS_EQUIP, SLOTS_EQUIP, normalizarSlot, vocacaoPode, pontuarPeca, pesosDaVoc, mitigacaoPct, bloqueioEscudo, reducaoArmadura, golpeBasico, efeitoOficial, legadoDe, loyaltyBonus, forjaSimular, forjaValorSorteado, forjaLinhaSorteada, FORJA_GEMA_OURO, protecaoComposta, danoRecebidoCorpo, danoRecebidoMagia, COMBATE_VOC, SUPORTE_OFICIAL, candidatosEquip, distribuirEquip, pecasDesmanche, planoForja, faixaPotencia, wikiSlug, wikiUrlPeca, EQUIP_RESERVAS, destinosSobras, chanceLinha, fragmentosDesmanche, escolherDestino, faixaRange, valorTipico, linhasUteis, REGRAS_VOCACAO, FAIXA_NOME, faseEquip, potenciaBaseForja, trocaVale, encaixeNobre, tierDe, potenciaTotal, giroMercado, giroDe };')();
 const le = (p) => { try { return JSON.parse(fs.readFileSync(path.join(raiz, p), 'utf8')); } catch (e) { return null; } };
 const base = {};
 for (const [nome, it] of Object.entries(le('testes/fixtures/itens.json').itens)) base[nome] = { id: it.id, attrs: it.attrs || {}, sell: it.sell || 0, equipPreview: it.equipPreview || null };
@@ -769,6 +769,55 @@ t('2.34.1 modo "preciso de fragmentos": Mercado líquido abaixo de 3× os fragme
     assert.deepStrictEqual(d.map(x => x.iid + ':' + x.fragmentos), ['a:1', 'b:21', 'c:6'], 'fragmentos por peça (a ordem do lote é feita no botão)');
 });
 
+t('2.48.0 histórico do Mercado decide: quase nunca vende (chance < 25 %) → desmanche (até com linha nobre); preço × chance de venda; sem histórico, nada muda', () => {
+    const H = [{ type: 'expired', itemName: 'strange helmet' }, { type: 'expired', itemName: 'Strange Helmet' }, { type: 'expired', itemName: 'strange helmet' },
+               ...Array.from({ length: 14 }, () => ({ type: 'expired', itemName: 'trousers of the ancients' })), ...Array.from({ length: 12 }, () => ({ type: 'sell', itemName: 'trousers of the ancients' })),
+               { type: 'sell', itemName: 'steel helmet' }, { type: 'sell', itemName: 'steel helmet' }, { type: 'sell', itemName: 'steel helmet' }, { type: 'expired', itemName: 'steel helmet' },
+               { type: 'created', itemName: 'steel helmet' }, null];
+    const g = M.giroMercado(H);
+    assert.deepStrictEqual(g['strange helmet'], { voltou: 3, vendeu: 0 });
+    assert.deepStrictEqual(g['steel helmet'], { voltou: 1, vendeu: 3 }, 'created não conta');
+    const gs = M.giroDe(g, 'Strange Helmet'), gh = M.giroDe(g, 'steel helmet');
+    assert(gs.naoVende && Math.abs(gs.chance - 1 / 5) < 1e-9);
+    assert(!gh.naoVende && Math.abs(gh.chance - 4 / 6) < 1e-9);
+    assert.strictEqual(M.giroDe(g, 'demon helmet'), null);
+    assert(!M.giroDe(g, 'trousers of the ancients').naoVende, 'vendeu 12 e voltou 14: vende — vai pelo preço × chance');
+    const inc = (nome, atr) => ({ iid: nome + (atr ? atr[0].id : ''), nome, slot: 'head', origem: 'depósito', attrs: { armor: 5 }, forja: { raridade: 1, refino: 0, atributos: atr || [] } });
+    // strange helmet a 150 mil pelos anúncios, mas voltou 3× sem vender: desmanche
+    const a = M.escolherDestino(inc('strange helmet'), 150000, 4800, { giro: gs });
+    assert.strictEqual(a.destino, 'desmanche'); assert.strictEqual(M.escolherDestino(inc('strange helmet'), 150000, 4800).destino, 'mercado', 'sem histórico: como antes');
+    // steel helmet a 8 mil: 8000 × 4/6 − 400 = 4.933 > 4.800 de 1 fragmento → ainda Mercado; a 7 mil → desmanche
+    assert.strictEqual(M.escolherDestino(inc('steel helmet'), 8000, 4800, { giro: gh }).liquido, Math.floor(8000 * 4 / 6) - 400);
+    assert.strictEqual(M.escolherDestino(inc('steel helmet'), 7000, 4800, { giro: gh }).destino, 'desmanche');
+    // linha nobre: sem nobreSai fica; com o histórico dizendo desmanche, sai
+    const nob = inc('strange helmet', [{ id: 'regen_vida', valor: 1.1 }]), lixo = inc('strange helmet');
+    const res = { dispensaveis: [nob, lixo] };
+    const destinoDe = (p) => M.escolherDestino(p, 150000, 4800, { giro: M.giroDe(g, p.nome) }).destino;
+    assert.deepStrictEqual(M.pecasDesmanche(res, () => true, false, destinoDe).map(x => x.iid), [lixo.iid], 'regra antiga: nobre fica');
+    const nobreSai = (p) => { const x = M.giroDe(g, p.nome); return !!(x && x.naoVende); };
+    assert.deepStrictEqual(M.pecasDesmanche(res, () => true, false, destinoDe, nobreSai).map(x => x.iid).sort(), [nob.iid, lixo.iid].sort(), 'nobre fraca que não vende sai');
+    const semHist = (p) => { const x = M.giroDe({}, p.nome); return !!(x && x.naoVende); };
+    const nobSteel = inc('steel helmet', [{ id: 'regen_vida', valor: 1.1 }]);
+    assert.deepStrictEqual(M.pecasDesmanche({ dispensaveis: [nobSteel] }, () => true, false, () => 'desmanche', (p) => { const x = M.giroDe(g, p.nome); return !!(x && x.naoVende); }), [], 'nobre de item que vende (steel helmet 3 vendas) fica, mesmo com o preço dizendo desmanche');
+    assert.deepStrictEqual(M.pecasDesmanche(res, () => true, false, destinoDe, semHist).map(x => x.iid), [lixo.iid], 'sem histórico do nome a nobre continua protegida');
+});
+t('2.48.0 fase 2: a defesa base do Cavaleiro não cai por regen. (Zaoan helmet fica; o steel helmet de regen. de mana só ganha na fase 1)', () => {
+    const pc = (iid, nome, slot, origem, attrs, atr, dono) => ({ iid, nome, slot, origem, dono: dono || null, attrs, forja: { raridade: atr.length ? 1 : 0, refino: 0, atributos: atr } });
+    const P = [pc('zh', 'Zaoan helmet', 'head', 'corpo', { armor: 8 }, [], 'KNIGHT'), pc('sh', 'steel helmet', 'head', 'depósito', { armor: 6 }, [{ id: 'regen_mana', valor: 2.5 }]),
+               pc('ns', 'necromancer shield', 'shield', 'corpo', { defense: 37 }, [], 'KNIGHT'), pc('bs', 'black shield', 'shield', 'depósito', { defense: 18 }, [{ id: 'regen_mana', valor: 2.1 }, { id: 'regen_vida', valor: 2.5 }]),
+               pc('ds', 'dragon shield', 'shield', 'depósito', { defense: 37 }, [{ id: 'regen_mana', valor: 1.5 }])];
+    const ctx = (nivel) => ({ sk: { KNIGHT: { escudo: 49, melee: 70 } }, nivel, kn: { defEscudo: 37, armadura: 34 } });
+    const f2 = M.distribuirEquip(P, ['KNIGHT'], ctx(121)).porVoc.KNIGHT, f1 = M.distribuirEquip(P, ['KNIGHT'], ctx(90)).porVoc.KNIGHT;
+    assert(!f2.head.melhor || f2.head.melhor.iid === 'zh', 'fase 2: elmo de armadura menor não entra: ' + (f2.head.melhor && f2.head.melhor.nome));
+    assert(!f2.shield.candidatos.some(c => c.peca.iid === 'bs'), 'fase 2: black shield (defesa 18 < 37) nem concorre');
+    assert(f2.shield.candidatos.some(c => c.peca.iid === 'ds'), 'fase 2: escudo de defesa igual com regen. concorre');
+    assert.strictEqual(f1.head.melhor && f1.head.melhor.iid, 'sh', 'fase 1: a regen. de mana ganha como antes');
+    // arma de 2 mãos com defesa menor que o escudo não tira o escudo na fase 2
+    const P2 = P.concat([pc('cm', 'crude umbral mace', 'weapon', 'corpo', { attack: 30, defense: 10 }, [], 'KNIGHT'), Object.assign(pc('jf', 'jungle flail', 'weapon', 'depósito', { attack: 90, defense: 31 }, []), { duasMaos: true })]);
+    const g2 = M.distribuirEquip(P2, ['KNIGHT'], ctx(121)).porVoc.KNIGHT;
+    assert(!(g2.weapon.melhor && g2.weapon.melhor.iid === 'jf'), 'fase 2: a 2 mãos de defesa 31 não tira o escudo de 37');
+    assert(g2.shield.melhor && ['ns', 'ds'].includes(g2.shield.melhor.iid), 'o escudo continua (de defesa 37)');
+});
 console.log(`\n${n} testes ok` + (pulados ? ` · ${pulados} pulados (sem o estado da conta em data/)` : ''));
 
 /* ===== 2.24.0 — FASE 2 (vídeos de 13–17/10: TV de Souza "depois do 110–120 não se brinca mais de regen. de mana") ===== */

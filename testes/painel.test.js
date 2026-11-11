@@ -179,5 +179,22 @@ t('rotas: sugestões agrupadas por de → para com a chave estável e as já fei
 });
 t('diasDesde', () => { assert.strictEqual(P.diasDesde('2026-10-30T00:00:00Z', Date.parse('2026-11-02T12:00:00Z')), 3); assert.strictEqual(P.diasDesde(null), null); });
 
+t('helper 2.48.0: Cavaleiro de fase 2 no destino não recebe peça de defesa base menor (nem arma de 2 mãos de defesa menor que o escudo)', () => {
+    const relF = (nome, nivel, fase, itens, personagens) => Object.assign(rel(nome, nivel, itens, personagens), { fase, formato: 3, pesos: { KNIGHT: { regen_mana: 4.8, armor: 0.07, defense: 0.08, attack: 0.3 } } });
+    const O = P.normConta(relF('O', 150, 2, [
+        peca({ iid: 'o1', nome: 'steel helmet', slot: 'head', origem: 'depósito', ficha: { armor: 6 }, atributos: [{ id: 'regen_mana', valor: 2.5 }], porVoc: { KNIGHT: { pontos: 12.4, linhas: [{ id: 'regen_mana', valor: 2.5, pt: 12 }, { id: 'armor', valor: 6, pt: 0.4 }] } } }),
+        peca({ iid: 'o2', nome: 'royal helmet', slot: 'head', origem: 'depósito', ficha: { armor: 9 }, atributos: [{ id: 'regen_mana', valor: 1 }], porVoc: { KNIGHT: { pontos: 5.4, linhas: [{ id: 'regen_mana', valor: 1, pt: 4.8 }, { id: 'armor', valor: 9, pt: 0.6 }] } } }),
+        peca({ iid: 'o3', nome: 'jungle flail', slot: 'weapon', origem: 'depósito', duasMaos: true, ficha: { attack: 90, defense: 31 }, porVoc: { KNIGHT: { pontos: 40, linhas: [{ id: 'attack', valor: 90, pt: 27 }, { id: 'defense', valor: 31, pt: 2.5 }] } } })
+    ]));
+    const vest = { KNIGHT: { head: { veste: { iid: 'd1', nome: 'Zaoan helmet', pontos: 0.6 } }, shield: { veste: { iid: 'd2', nome: 'necromancer shield', pontos: 3 } }, weapon: { veste: { iid: 'd3', nome: 'crude umbral mace', pontos: 9 } } } };
+    const corpo = [peca({ iid: 'd1', nome: 'Zaoan helmet', slot: 'head', origem: 'corpo', dono: 'KNIGHT', ficha: { armor: 8 }, porVoc: { KNIGHT: { pontos: 0.6, linhas: [] } } }),
+                   peca({ iid: 'd2', nome: 'necromancer shield', slot: 'shield', origem: 'corpo', dono: 'KNIGHT', ficha: { defense: 37 }, porVoc: { KNIGHT: { pontos: 3, linhas: [] } } }),
+                   peca({ iid: 'd3', nome: 'crude umbral mace', slot: 'weapon', origem: 'corpo', dono: 'KNIGHT', ficha: { attack: 30 }, porVoc: { KNIGHT: { pontos: 9, linhas: [] } } })];
+    const D2 = P.normConta(relF('D2', 121, 2, corpo, vest)), D1 = P.normConta(relF('D1', 90, 1, corpo, vest));
+    const ids = (r, para) => r.filter(x => x.para === para).map(x => x.peca.iid).sort();
+    assert.deepStrictEqual(ids(P.valePassar([O, D2]), 'D2'), ['o2'], 'fase 2: só o royal helmet (armadura 9 ≥ 8); steel helmet (6) e a 2 mãos (defesa 31 < 37) ficam fora');
+    assert(ids(P.valePassar([O, D1]), 'D1').includes('o1'), 'fase 1: o steel helmet de regen. de mana entra como antes');
+    assert(ids(P.valePassar([O, D1]), 'D1').includes('o3'), 'fase 1: a 2 mãos entra (prova que é a trava que segura na fase 2)');
+});
 console.log(`${ok} testes ok${falhas ? ' (com falhas)' : ''}`);
 if (falhas) process.exit(1);
