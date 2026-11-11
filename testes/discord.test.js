@@ -345,7 +345,7 @@ t('2.33.5 varredura de 27/10 (Psyger-0 Hive Tower e Bog, lucasdela Shadow Nexus;
         assert(s && s.huntId === huntId && s.estatisticas && s.estatisticas.nivel === nivel, id);
         for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx(nivel)).avisos, [], id + ' ' + voc);
     }
-    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 222, title: 'Shadow Nexus' }).map(x => x.id), ['shadownexus-lucasdela', 'shadownexus-amigo-whatsapp', 'northon-222']);
+    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 222, title: 'Shadow Nexus' }).map(x => x.id), ['shadownexus-lucasdela', 'shadownexus-amigo-whatsapp', 'shadownexus-amigo-whatsapp-2', 'northon-222']);
     assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 198, title: 'Hive Tower' }).map(x => x.autor), ['Specter', 'Psyger-0']);
 });
 t('2.35.5 varredura de 29/10: Theus (Throne of Bazir e Verminor) tira os "Northon -" dos dois tronos; lucasdela troca a barra do Shadow Nexus; sem aviso no nível 170', () => {
@@ -546,5 +546,20 @@ t('2.36.8 Amigo do Whatsapp é a barra das fotos inteira: vida, mana, ataque, de
         assert.deepStrictEqual(k.supports, ['Protector', null]);
         assert.strictEqual(k.ammo, 'arrow'); // munição: fica a sua
     }
+});
+t('2.47.1 Amigo do Whatsapp 2 no Shadow Nexus (5 fotos, 10/11): barra completa dos 4, sem aviso no nível 200, munição fica a sua', () => {
+    const s = M.SETUPS_DISCORD.find(x => x.id === 'shadownexus-amigo-whatsapp-2');
+    assert(s && s.huntId === 222 && s.autor === 'Amigo do Whatsapp 2' && /Amigo do Whatsapp 2/.test(s.titulo) && s.pocaoDoMapa);
+    const ctx = Object.assign({}, CTX_POT, { nivel: 200, magias: SPELLS });
+    for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) {
+        const ch = s.chars[voc];
+        assert(ch.vida && ch.mana && ch.ataque.length === 4 && ch.defesa.length && ch.suporte.length, voc);
+        assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx).avisos, [], voc);
+    }
+    const k = M.dcConfigDe(s, 'KNIGHT', { ammo: 'arrow' }, ctx).cfg;
+    assert.deepStrictEqual(k.skills, ['Fierce Berserk', 'Berserk', 'Groundshaker', 'Lesser Front Sweep']);
+    assert.deepStrictEqual(k.supports, ['Train Party', null]);
+    assert.strictEqual(M.dcConfigDe(s, 'PALADIN', { ammo: 'arrow' }, ctx).cfg.ammo, 'arrow');
+    assert.deepStrictEqual(s.chars.DRUID.ataque[3], ['Energy Strike', 1]);
 });
 console.log(n + ' testes ok' + (process.exitCode ? ' (com falhas)' : ''));

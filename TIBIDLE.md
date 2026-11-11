@@ -7302,3 +7302,15 @@ Dono, no iPhone: "por que as magias não acham o mapa em que estou?".
 - Saem os "Northon -" de Foreign Quarter (45), Hero Fortress (106), Feyrist (163), Banshee (187), Fiehonja (193) e o de nível baixo
   de Cults Goroma (`northon-baixo-43`). Testes: os limites de Northon foram para ≥34/≥32 e os de nível baixo para 37; teste novo da
   varredura (sem aviso no nível do post, o Northon do mapa saiu, Fire Portal com 2 autores).
+
+## 2.47.1 (10/11) — Amigo do Whatsapp 2 no Shadow Nexus
+
+- Setup novo `shadownexus-amigo-whatsapp-2` ("Amigo do Whatsapp 2", personagem Psyger-999), lido de 5 fotos da tela tiradas pelo
+  celular. Ícones casados lado a lado com os oficiais v264. Cavaleiro: Supreme Health ≤40, Mana ≤8, Fierce Berserk/Berserk/Groundshaker
+  ≥2 + Lesser Front Sweep, Intense Wound Cleansing ≤30 + Wound Cleansing ≤55, Train Party. Paladino: Ultimate Spirit ≤30, Mana ≤5,
+  Caldera ≥2, thunderstorm ≥2, Strong Ethereal Spear, Divine Missile, Salvation ≤50 + Intense Healing ≤70, Protect Party, flecha comum.
+  Feiticeiro: Health ≤30, Mana ≤3, Energy Wave, thunderstorm ≥2, Ultimate e Strong Energy Strike, Ultimate Healing ≤60 + Intense ≤75,
+  Enchant Party. Druida: Health ≤50, Strong Mana ≤20, Strong Ice Wave, avalanche ≥2, Strong Ice Strike, Energy Strike, Ultimate
+  Healing ≤60 + Mass Healing ≤70 + Heal Friend ≤60, Heal Party.
+- Na foto o 0 e o 8 da fonte do jogo saem iguais: os limiares foram lidos como números redondos; a mana do Cavaleiro (um dígito) pode
+  ser 0 em vez de 8. Supreme Health pede nível 200 → o setup diz "200+".

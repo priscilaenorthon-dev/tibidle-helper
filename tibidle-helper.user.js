@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.47.0
+// @version      2.47.1
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.47.0';
+    const VERSAO = '2.47.1';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -9834,6 +9834,18 @@
             PALADIN: { vida: ['Ultimate Spirit Potion', 38], mana: ['Mana Potion', 10], ataque: [['Divine Caldera', 4], ['thunderstorm rune', 2], ['Strong Ethereal Spear', 1], ['Divine Missile', 1]], defesa: [['Salvation', 50], ['Intense Healing', 85]], suporte: ['Protect Party'] },
             SORCERER: { vida: ['Health Potion', 38], mana: ['Mana Potion', 10], ataque: [['Energy Wave', 1], ['thunderstorm rune', 2], ['Ultimate Energy Strike', 1], ['Strong Energy Strike', 1]], defesa: [['Ultimate Healing', 50], ['Intense Healing', 85]], suporte: ['Enchant Party'] },
             DRUID: { vida: ['Health Potion', 45], mana: ['Great Mana Potion', 20], ataque: [['Strong Ice Wave', 1], ['avalanche rune', 2], ['Strong Ice Strike', 1], ['Ice Strike', 1]], defesa: [['Ultimate Healing', 60], ['Mass Healing', 65], ['Heal Friend', 78]], suporte: ['Heal Party'] } } },
+        /* — 10/11 (2.47.1): 2.ª barra de um amigo do dono no WhatsApp (personagem Psyger-999), 5 fotos da tela pelo celular. Ícones casados
+         *   lado a lado com os oficiais v264 (poções: Supreme Health no Cavaleiro, Strong Mana no Druida; Energy Strike no Druida). Na fonte
+         *   do jogo o 0 sai igual ao 8 na foto: limiares lidos como números redondos (40, 30, 50, 70, 60); a mana do Cavaleiro é 1 dígito
+         *   só (lida como 8 — pode ser 0). */
+        { id: 'shadownexus-amigo-whatsapp-2', hunt: 'Shadow Nexus', huntId: 222, autor: 'Amigo do Whatsapp 2', data: '10/11', titulo: 'Amigo do Whatsapp 2 (Shadow Nexus, 10/11)', pocaoDoMapa: true,
+          lure: '', skills: '', nota: '', nivel: '200+ (Supreme Health Potion no Cavaleiro; recomendado 250)',
+          obs: 'Setup de um amigo do dono no WhatsApp (5 fotos da tela, 10/11). Diferente do 1.º Amigo do Whatsapp: o Cavaleiro bate (Fierce Berserk, Berserk e Groundshaker a partir de 2 criaturas) com Train Party, as curas dele são só as duas Wound Cleansing e a vida é a Supreme Health Potion; o Paladino põe a Caldera a partir de 2; o Druida troca o Ice Strike pelo Energy Strike e cura com Ultimate Healing, Mass Healing e Heal Friend. Mana quase desligada nos 3 primeiros (Cavaleiro ≤8 %, Paladino ≤5 %, Feiticeiro ≤3 %). Lido pelos ícones das fotos; na foto o 0 e o 8 da fonte do jogo se confundem, então os limiares foram lidos redondos e a mana do Cavaleiro pode ser 0 %. Paladino de flecha comum (arrow): a munição fica a sua.',
+          chars: {
+            KNIGHT: { vida: ['Supreme Health Potion', 40], mana: ['Mana Potion', 8], ataque: [['Fierce Berserk', 2], ['Berserk', 2], ['Groundshaker', 2], ['Lesser Front Sweep', 1]], defesa: [['Intense Wound Cleansing', 30], ['Wound Cleansing', 55]], suporte: ['Train Party'] },
+            PALADIN: { vida: ['Ultimate Spirit Potion', 30], mana: ['Mana Potion', 5], ataque: [['Divine Caldera', 2], ['thunderstorm rune', 2], ['Strong Ethereal Spear', 1], ['Divine Missile', 1]], defesa: [['Salvation', 50], ['Intense Healing', 70]], suporte: ['Protect Party'] },
+            SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 3], ataque: [['Energy Wave', 1], ['thunderstorm rune', 2], ['Ultimate Energy Strike', 1], ['Strong Energy Strike', 1]], defesa: [['Ultimate Healing', 60], ['Intense Healing', 75]], suporte: ['Enchant Party'] },
+            DRUID: { vida: ['Health Potion', 50], mana: ['Strong Mana Potion', 20], ataque: [['Strong Ice Wave', 1], ['avalanche rune', 2], ['Strong Ice Strike', 1], ['Energy Strike', 1]], defesa: [['Ultimate Healing', 60], ['Mass Healing', 70], ['Heal Friend', 60]], suporte: ['Heal Party'] } } },
         { id: 'bazir-theus', hunt: 'Throne of Bazir', huntId: 206, autor: 'Theus', data: '29/10', titulo: 'Throne of Bazir (Theus, 29/10)',
           lure: '', skills: '', nota: '', nivel: 'recomendado 130',
           obs: 'Theus (tópico "Acessos pra Inqui - Setups", 29/10): "fiz esse post para vocês postarem os melhores setups dos TRONOS INQ". O Cavaleiro NÃO ataca: os Phantasm são imunes a físico — ele só segura (Protector e as duas curas). Magos de fogo e Great Fireball. No print do Histórico: dano da party 15,47 M, cura 4,72 M, recebido 4,96 M. Paladino de flecha comum: a munição fica a sua.',
