@@ -7340,3 +7340,41 @@ indo e voltando do mercado, não tão sendo vendidas, pois têm status muito rui
   vida 1,9) e metal spats → leather boots. A Melhorias já seguia essa regra ("só entra armadura base maior").
 - **Painel das 3 contas** (artifact, versão 11): "Vale a pena passar?" ganhou a mesma trava (`travaDefesa`) para Cavaleiro de fase 2.
 - Testes: 2 novos no equip.test.js, 1 no painel.test.js.
+
+## 2.49.0 (15/11) — Varredura 10/11→15/11 e as ilhas novas Issavi e Marapur
+
+**Jogo (patch notes no Discord oficial):** 1.2.0 (10/11) — ilha **Issavi** no Silas, Selo da Caçada, Lives/YouTube Guias, loja de Issavi
+Tokens na Crystal, 3 caçadas novas (Werebeasts, Hero Fortress Underground, Grim Reapers Yalahar) e 3 Elites (Shadowpelt, Grand Hero of Edron,
+Soulharvest Reaper). 1.2.1 (13/11) — Token Tibidle das Lives, Database nova, ATUALIZAR no Coin Market. 1.2.2 (15/11) — ilha **Marapur** no Silas,
+loja de Marapur Tokens, verificação em duas etapas, recarga de 24 h do auto-uso de anel/amuleto a 2 coins/dia. Assets em **v272**.
+
+**Ilhas (lidas do `/islands` público do jogo — a wiki ainda não tem as duas):**
+- **Issavi**: o Silas pede **10.000.000 de ouro** (sem item). Caçadas (todas 8 criaturas, lure único): Exotic Cave (rec 150), Green Belt (180),
+  Kilmaresh Catacombs (230), Salt Caves (280), Ruins of Nuur (330). Elites (90 mil de vida): Exotic Arachne, Sun-Marked Goanna, Sister Hetai,
+  Neferi the Spy, Amenef — soltam o Issavi Fragment (6–15 %). Loja (10 fragmentos + 20 mil + 49 coins por token): Theurgic Talisman 12,
+  Terraforged Titan Armor 7, Shield of Blessings 6, dark whispers 5, pair of dreamwalkers 5, winged boots 5, Sphinx Dust 2.
+- **Marapur**: **10 Spectral Conch + 10.000.000 de ouro**. A concha cai do Elite **Entombed Wraithlord** (20,8 %), cuja chave sai da caçada nova
+  Haunted Nexus Tomb (Tibidle Island, rec 150). Caçadas: Great Pearl Fan Reef (160), Sea Serpent Depths (190), Temple of the Moon Goddess (240),
+  Seacrest Grounds (290), Emerald Gardens (340). Elites: Pearl-Crowned Turtle (magic plate armor 5 %), Leviathan, Moon-Blessed Naga, Abyssal
+  Seacrest Serpent, Corrupted Naga Matriarch — Marapur Fragment 6–15 %. Loja: Turtle Shell Amulet 12, Stormforged Colossus Armor 7, ghost
+  chestplate 7, Rimecaller Cowl 7, Snake God Wristguard 7, fabulous legs 6, Timira's Scale 2.
+- Nunca vender: issavi/marapur fragment e token e a spectral conch entraram na lista fixa.
+- O Specter (12/11): "Issavi eu só fui até a Goanna, o restante é muito tenso; a Goaninha é uma Fire Portal bufada"; dá numa party 160.
+
+**Setups novos (21 + 1 trocado):**
+- Discord: Specter, tópico novo "INQUISITION - SYMBIOTH EDITION" (12/11) — Latrivan (+300–400k/h), Ushuriel (+280–350k/h) e Shadow Nexus
+  (950k raw, +400–600k/h com mana/life leech; Mass Healing em ≤85 garante a party sem Utamo) — e Green Belt no "Aoba". lucasdela trocou o
+  Shadow Nexus de novo (mesmo id; 4 fotos do celular, 2 ícones do Druida em recarga). Atlas: Otherworld Zao no nível 230 (imagem pequena,
+  números com dúvida anotados na observação).
+- Site tibidle-community.com (presets 33–45; 35/38/42/46 são invasão): HERIKO Return of the Beholder; Xibara Hive Tower, Bottom of the Ocean,
+  Pits of Inferno Entrance, Deepling Library, Hero Fortress Underground (caçada nova), Thunderscar Peak, Lizard Chosen's Dojo, Lizard City;
+  rafabanterli Warzone I - Fungus (+367k/h).
+- Site novo **limware.github.io/Tibidle** (anunciado no tópico "Presets da comunidade" em 03/11, texto exato no DOM ao abrir "Mostrar a
+  configuração"): Palawar (Draken Walls, Bog, Thunderscar), Heron (Hive Tower, Hive Queen econômica), taina (Green Belt).
+- Saem os "Northon -" de Deepling Library, Lizard Chosen's Dojo, Latrivan, Ushuriel e Otherworld Zao. Entram 13 "Northon -" dos mapas novos
+  sem post (5 de Issavi, 5 de Marapur, Werebeasts, Putrid Mummies, Grim Reapers, Haunted Nexus Tomb — gerador da 2.28.2 com o `/hunts/select`
+  vivo); a fixture `hunts-discord.json` ganhou os 15 mapas novos.
+- Leitura dos prints: casador de ícones por correlação (scratchpad `dc/casa.py` da sessão 1a0b1ca1) com os ícones oficiais v264; números
+  pelo glifo em ASCII. Ficou de fora: o pedido de setup de Grim Reaper (Bucann, 15/11, sem resposta).
+- Testes: teste novo da varredura no discord.test.js (sem aviso no nível do post, Northon dos mapas com post saiu, um Northon por mapa novo,
+  itens das ilhas no nunca-vender); 4 testes antigos ajustados (lucasdela 12/11, Hive Tower e Bottom com mais autores).

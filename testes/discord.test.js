@@ -340,13 +340,13 @@ t('2.29.2 setups de 22/10 (Psyger-0 Behemoth e Hive Entrance, Pouca Telha WZ1): 
 });
 t('2.33.5 varredura de 27/10 (Psyger-0 Hive Tower e Bog, lucasdela Shadow Nexus; os do evento de Halloween saíram na 2.42.0): sem aviso no nível do print; o post real tira o "Northon - Shadow Nexus"', () => {
     const ctx = (nivel) => Object.assign({}, CTX_POT, { nivel, magias: SPELLS });
-    for (const [id, huntId, nivel] of [['hivetower-psyger', 198, 123], ['bog-psyger', 151, 112], ['shadownexus-lucasdela', 222, 185]]) {
+    for (const [id, huntId, nivel] of [['hivetower-psyger', 198, 123], ['bog-psyger', 151, 112], ['shadownexus-lucasdela', 222, 210]]) {
         const s = M.SETUPS_DISCORD.find(x => x.id === id);
         assert(s && s.huntId === huntId && s.estatisticas && s.estatisticas.nivel === nivel, id);
         for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx(nivel)).avisos, [], id + ' ' + voc);
     }
-    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 222, title: 'Shadow Nexus' }).map(x => x.id), ['shadownexus-lucasdela', 'shadownexus-amigo-whatsapp', 'shadownexus-amigo-whatsapp-2', 'northon-222']);
-    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 198, title: 'Hive Tower' }).map(x => x.autor), ['Specter', 'Psyger-0']);
+    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 222, title: 'Shadow Nexus' }).map(x => x.id), ['shadownexus-lucasdela', 'shadownexus-amigo-whatsapp', 'shadownexus-amigo-whatsapp-2', 'northon-222', 'shadownexus-specter']); // 2.49.0: Specter (Inquisition)
+    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 198, title: 'Hive Tower' }).map(x => x.autor), ['Specter', 'Psyger-0', 'Xibara', 'Heron']); // 2.49.0: site do Xibara e limware
 });
 t('2.35.5 varredura de 29/10: Theus (Throne of Bazir e Verminor) tira os "Northon -" dos dois tronos; lucasdela troca a barra do Shadow Nexus; sem aviso no nível 170', () => {
     const ctx = Object.assign({}, CTX_POT, { nivel: 170, magias: SPELLS });
@@ -358,8 +358,8 @@ t('2.35.5 varredura de 29/10: Theus (Throne of Bazir e Verminor) tira os "Northo
     }
     assert.deepStrictEqual(M.SETUPS_DISCORD.find(x => x.id === 'bazir-theus').chars.KNIGHT.ataque, [], 'Bazir: Cavaleiro não ataca (Phantasm imune a físico)');
     const sn = M.SETUPS_DISCORD.find(x => x.id === 'shadownexus-lucasdela');
-    assert.strictEqual(sn.data, '29/10');
-    assert.deepStrictEqual(sn.chars.KNIGHT.suporte, ['Protector']);
+    assert.strictEqual(sn.data, '12/11'); // 2.49.0: ele trocou de novo ("tira o anterior dos fixados e bota esse")
+    assert.deepStrictEqual(sn.chars.KNIGHT.suporte, ['Train Party']);
     assert.deepStrictEqual(sn.chars.DRUID.defesa.map(d => d[0]), ['Ultimate Healing', 'Mass Healing', 'Heal Friend']);
 });
 t('2.47.0 varredura de 05/11 a 10/11: 12 do Xibara e 1 do NaneRz (site), Fire Portal do Arquemerz e Draken Walls do Jandrey (Discord) — sem aviso no nível do post; os "Northon -" desses mapas saem', () => {
@@ -391,7 +391,7 @@ t('2.39.0 varredura de 02/11 (tela Histórico): Specter, FelipeS, Theus, Eduardo
         for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx).avisos, [], id + ' ' + voc);
         assert(!M.dcSetupsDaHunt({ id: huntId, title: s.hunt }).some(x => /^northon-\d+$/.test(x.id)), id + ': o "Northon -" do mapa saiu');
     }
-    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 197, title: 'Bottom of the Ocean' }).map(x => x.id), ['bottom-specter', 'bottom-psyger', 'bottom-theus', 'bottom-eduardo']);
+    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 197, title: 'Bottom of the Ocean' }).map(x => x.id), ['bottom-specter', 'bottom-psyger', 'bottom-theus', 'bottom-eduardo', 'bottom-xibara']); // 2.49.0: Xibara no site
     assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 201, title: 'Throne of Infernatil' }).map(x => x.id), ['infernatil-specter', 'infernatil-felipes', 'infernatil-nanerz']); // 2.47.0: NaneRz no site
     const fe = M.SETUPS_DISCORD.find(x => x.id === 'infernatil-felipes');
     assert.deepStrictEqual(fe.chars.SORCERER.ataque[0], ['Rage of the Skies', 6]);
@@ -561,5 +561,32 @@ t('2.47.1 Amigo do Whatsapp 2 no Shadow Nexus (5 fotos, 10/11): barra completa d
     assert.deepStrictEqual(k.supports, ['Train Party', null]);
     assert.strictEqual(M.dcConfigDe(s, 'PALADIN', { ammo: 'arrow' }, ctx).cfg.ammo, 'arrow');
     assert.deepStrictEqual(s.chars.DRUID.ataque[3], ['Energy Strike', 1]);
+});
+t('2.49.0 varredura de 10/11 a 15/11: Specter (Inquisition e Green Belt), lucasdela, Atlas, 10 do site tibidle-community e 6 do limware — sem aviso no nível do post; os "Northon -" desses mapas saem; ilhas novas com Northon', () => {
+    const lista = [['latrivan-specter', 210, 250], ['ushuriel-specter', 207, 250], ['shadownexus-specter', 222, 250], ['greenbelt-specter', 248, 250],
+        ['shadownexus-lucasdela', 222, 210], ['otherworldzao-atlas', 233, 230], ['beholder-heriko', 182, 76], ['hivetower-xibara', 198, 115],
+        ['fungus-rafabanterli', 214, 160], ['bottom-xibara', 197, 125], ['poi-xibara', 49, 120], ['deepling-xibara', 196, 121],
+        ['herofortressund-xibara', 60, 124], ['thunderscar-xibara', 183, 106], ['dojo-xibara', 107, 129], ['lizard-xibara', 62, 130],
+        ['draken-palawar', 192, 170], ['bog-palawar', 151, 80], ['hivetower-heron', 198, 140], ['greenbelt-taina', 248, 180],
+        ['thunderscar-palawar', 183, 110], ['hivequeen-heron', 199, 140]];
+    for (const [id, huntId, nivel] of lista) {
+        const s = M.SETUPS_DISCORD.find(x => x.id === id);
+        assert(s && s.huntId === huntId && M.dcCompleto(s), id);
+        const ctx = Object.assign({}, CTX_POT, { nivel, magias: SPELLS });
+        for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx).avisos, [], id + ' ' + voc);
+        assert(!M.dcSetupsDaHunt({ id: huntId, title: s.hunt }).some(x => /^northon-(baixo-)?\d+$/.test(x.id) && !x.comPost), id + ': o "Northon -" do mapa saiu');
+    }
+    /* o "Mas Res em 85 %" do texto do Specter é a régua dos números lidos no print */
+    assert.deepStrictEqual(M.SETUPS_DISCORD.find(x => x.id === 'shadownexus-specter').chars.DRUID.defesa[0], ['Mass Healing', 85]);
+    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 248, title: 'Green Belt' }).map(x => x.id), ['greenbelt-specter', 'greenbelt-taina']);
+    /* mapas novos (1.2.0/1.2.2) sem post: um "Northon -" cada, sem aviso no nível 170 (o teste do padrão de outubro cobre o resto) */
+    const novos = [63, 264, 247, 256, 257, 242, 243, 249, 244, 250, 245, 251, 246];
+    const ctx = Object.assign({}, CTX_POT, { nivel: 170, magias: SPELLS });
+    for (const h of novos) {
+        const ls = M.dcSetupsDaHunt({ id: h, title: '' });
+        assert.deepStrictEqual(ls.map(x => x.id), ['northon-' + h], 'mapa ' + h);
+        for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(ls[0], voc, null, ctx).avisos, [], h + ' ' + voc);
+    }
+    for (const nome of ['issavi fragment', 'issavi token', 'marapur fragment', 'marapur token', 'spectral conch']) assert(src.includes(`'${nome}'`), 'nunca vender: ' + nome);
 });
 console.log(n + ' testes ok' + (process.exitCode ? ' (com falhas)' : ''));
