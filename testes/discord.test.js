@@ -354,7 +354,7 @@ t('2.35.5 varredura de 29/10: Theus (Throne of Bazir e Verminor) tira os "Northo
         const s = M.SETUPS_DISCORD.find(x => x.id === id);
         assert(s && s.huntId === huntId && s.autor === 'Theus', id);
         for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx).avisos, [], id + ' ' + voc);
-        assert.deepStrictEqual(M.dcSetupsDaHunt({ id: huntId, title: s.hunt }).map(x => x.id), [id], 'o Northon do trono saiu');
+        assert.deepStrictEqual(M.dcSetupsDaHunt({ id: huntId, title: s.hunt }).map(x => x.id).filter(x => x !== 'bazir-xibara'), [id], 'o Northon do trono saiu'); // 2.50.0: o Bazir ganhou o do Xibara
     }
     assert.deepStrictEqual(M.SETUPS_DISCORD.find(x => x.id === 'bazir-theus').chars.KNIGHT.ataque, [], 'Bazir: Cavaleiro não ataca (Phantasm imune a físico)');
     const sn = M.SETUPS_DISCORD.find(x => x.id === 'shadownexus-lucasdela');
@@ -580,7 +580,7 @@ t('2.49.0 varredura de 10/11 a 15/11: Specter (Inquisition e Green Belt), lucasd
     assert.deepStrictEqual(M.SETUPS_DISCORD.find(x => x.id === 'shadownexus-specter').chars.DRUID.defesa[0], ['Mass Healing', 85]);
     assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 248, title: 'Green Belt' }).map(x => x.id), ['greenbelt-specter', 'greenbelt-taina']);
     /* mapas novos (1.2.0/1.2.2) sem post: um "Northon -" cada, sem aviso no nível 170 (o teste do padrão de outubro cobre o resto) */
-    const novos = [63, 264, 247, 256, 257, 242, 243, 249, 244, 250, 245, 251, 246];
+    const novos = [63, 264, 247, 256, 257, 242, 244, 250, 245, 251, 246]; // 2.50.0: Sea Serpent Depths (243) e Kilmaresh Catacombs (249) ganharam post
     const ctx = Object.assign({}, CTX_POT, { nivel: 170, magias: SPELLS });
     for (const h of novos) {
         const ls = M.dcSetupsDaHunt({ id: h, title: '' });
@@ -588,5 +588,23 @@ t('2.49.0 varredura de 10/11 a 15/11: Specter (Inquisition e Green Belt), lucasd
         for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(ls[0], voc, null, ctx).avisos, [], h + ' ' + voc);
     }
     for (const nome of ['issavi fragment', 'issavi token', 'marapur fragment', 'marapur token', 'spectral conch']) assert(src.includes(`'${nome}'`), 'nunca vender: ' + nome);
+});
+t('2.50.0 varredura de 15/11 a 17/11: NaneRz (Sea Serpent Depths), FelipeS (Kilmaresh Catacombs) e presets 47–50 do Xibara — sem aviso no nível do post; os "Northon -" de 243 e 249 saem', () => {
+    const lista = [['seaserpent-nanerz', 243, 200], ['kilmaresh-felipes', 249, 230], ['hivequeen-xibara', 199, 137], ['bazir-xibara', 206, 138],
+        ['earth-xibara', 224, 138], ['lower-xibara', 234, 139]];
+    for (const [id, huntId, nivel] of lista) {
+        const s = M.SETUPS_DISCORD.find(x => x.id === id);
+        assert(s && s.huntId === huntId && M.dcCompleto(s), id);
+        const ctx = Object.assign({}, CTX_POT, { nivel, magias: SPELLS });
+        for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx).avisos, [], id + ' ' + voc);
+        assert(!M.dcSetupsDaHunt({ id: huntId, title: s.hunt }).some(x => /^northon-(baixo-)?\d+$/.test(x.id) && !x.comPost), id + ': o "Northon -" do mapa saiu');
+    }
+    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 243, title: 'Sea Serpent Depths' }).map(x => x.id), ['seaserpent-nanerz']);
+    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 249, title: 'Kilmaresh Catacombs' }).map(x => x.id), ['kilmaresh-felipes']);
+    /* Throne of Bazir do Xibara: o Cavaleiro NÃO ataca (barra de ataque vazia), só segura */
+    const ctx = Object.assign({}, CTX_POT, { nivel: 138, magias: SPELLS });
+    assert.deepStrictEqual(M.dcConfigDe(M.SETUPS_DISCORD.find(x => x.id === 'bazir-xibara'), 'KNIGHT', null, ctx).cfg.skills, [null, null, null, null]);
+    /* FelipeS: Cavaleiro com o slot de mana vazio no print */
+    assert.deepStrictEqual(M.SETUPS_DISCORD.find(x => x.id === 'kilmaresh-felipes').chars.KNIGHT.mana, ['Mana Potion', 0]);
 });
 console.log(n + ' testes ok' + (process.exitCode ? ' (com falhas)' : ''));

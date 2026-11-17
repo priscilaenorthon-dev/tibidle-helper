@@ -7378,3 +7378,28 @@ loja de Marapur Tokens, verificação em duas etapas, recarga de 24 h do auto-us
   pelo glifo em ASCII. Ficou de fora: o pedido de setup de Grim Reaper (Bucann, 15/11, sem resposta).
 - Testes: teste novo da varredura no discord.test.js (sem aviso no nível do post, Northon dos mapas com post saiu, um Northon por mapa novo,
   itens das ilhas no nunca-vender); 4 testes antigos ajustados (lucasdela 12/11, Hive Tower e Bottom com mais autores).
+
+## 2.50.0 (17/11) — Varredura 15/11→17/11: 6 setups novos
+
+**Discord (fórum `guias-da-comunidade`):** nenhum tópico novo desde 15/11. Nos tópicos com movimento:
+- **Sea Serpent Depths (Marapur) — NaneRz**, Logbook 17/11, print do Histórico: 332,8k xp/h (298,5k raw), +100,6k/h. "Void basic na wand e na
+  rod", com prey e imbuements. Magos sem Magic Shield; Sudden Death rune em ≥1 no Feiticeiro e no Druida. `seaserpent-nanerz` (243).
+- **Kilmaresh Catacombs (as Sphinx de Issavi) — FelipeS**, "Aoba" 16/11, print do Histórico (sessão de 9h12): 400k xp/h raw, +77k/h, "só com
+  utamo nos mages", "mana leech e crit nas armas dos mages". Cavaleiro sem poção de mana. `kilmaresh-felipes` (249).
+- Saem `northon-243` e `northon-249` (o mapa ganhou post).
+- Pedidos sem resposta: Nagas de Marapur (Cilada Bino), Grim Reaper Yalahar (Bucann, de novo), caçadas da GT (Murillo). No tópico da
+  Inquisition: Tai (nível 205) morreu no Shadow Nexus e só segurou com a 2ª poção de mana ligada; Gus foi no mesmo nível com prey de
+  defesa no Druida e Utamo Tempo no Cavaleiro.
+
+**Site tibidle-community.com (presets 47–50, todos do Xibara, 16/11, texto exato):**
+- 47 Hive Queen Chamber nível 137 — +245,5k/h em 8h01, magos sem Magic Shield, Ultimate Health ≤50 + Protector no Cavaleiro. `hivequeen-xibara`.
+- 48 Throne of Bazir — +146,2k/h, 149,9k raw; o Cavaleiro não ataca (Phantasm imune a físico), thunderstorm nos três, Heal Friend ≤85. `bazir-xibara`.
+- 49 Earth Portal — +107,8k/h (leitura de 25 min); Paladino a 3 sqm do lado oposto por causa da maldição do Doomhauler. `earth-xibara`.
+- 50 Lower Spikes nível 139 — +82,6k/h, avalanche nos três, ~1 Turion Lunister key por hora fora do analisador. `lower-xibara`.
+
+**limware.github.io/Tibidle:** os mesmos 6 presets (o último é de 12/11).
+
+- Leitura dos prints: `casa.py` da sessão 1a0b1ca1 com os ícones oficiais (todas as magias ≥ 0,71; poções de vida do Cavaleiro e do Paladino
+  do FelipeS conferidas lado a lado com as oficiais — o ícone sai cortado no print, lidas como Ultimate).
+- Testes: teste novo da varredura no discord.test.js; 2 antigos ajustados (Bazir com dois autores; 243 e 249 fora da lista de mapas só com Northon).
+- Próxima varredura: a partir de 17/11 18h; site a partir do preset 51.
