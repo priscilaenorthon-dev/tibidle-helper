@@ -141,7 +141,7 @@ t('dcSetupsDaHunt: hunts com mais de um setup da comunidade (o dono escolhe): Hi
 });
 t("Quara's Domain (2.27.5, adaptados): 2 setups (forte e enxuto), nenhuma magia de fogo ou gelo (os quaras são imunes) e o Druida com runa e strike de energia", () => {
     const ls = M.dcSetupsDaHunt({ id: 191, title: "Quara's Domain Yalahar" });
-    assert.strictEqual(ls.length, 2);
+    assert.deepStrictEqual(ls.map(s => s.id), ['quaradomain-specter-adapt', 'quaradomain-bog-adapt', 'quaradomain-xibara']); // 2.51.0: + o post do Xibara (18/11)
     for (const s of ls) for (const [voc, ch] of Object.entries(s.chars)) for (const [nome] of (ch.ataque || [])) {
         const m = SPELLS.find(x => x.name === nome);
         assert(m && !/FIRE|ICE/.test(m.combatType || ''), `${s.id} ${voc}: ${nome} (${m && m.combatType})`);
@@ -167,7 +167,7 @@ t('Northon (2.28.0): título "Northon - <mapa>", a barra dos 4, nenhum mapa repe
             assert(!at.length || at.some(a => a[1] <= 1), s.id + ' ' + voc + ': nenhuma ≥1 (com 1 monstro vivo nada dispara)');
         }
     }
-    assert(M.SETUPS_DISCORD.filter(s => s.huntId === 191).every(s => /^Northon - /.test(s.titulo)));
+    assert(M.SETUPS_DISCORD.filter(s => s.huntId === 191 && /-adapt$/.test(s.id)).every(s => /^Northon - /.test(s.titulo))); // 2.51.0: o mapa ganhou o post do Xibara; os dois adaptados seguem "Northon -"
 });
 t('Northon (2.28.2): o padrão da comunidade — Cavaleiro de dano, a mesma runa nos três, nenhum slot que a fila nunca dispara', () => {
     const nn = M.SETUPS_DISCORD.filter(s => /^northon-\d+$/.test(s.id));
@@ -373,7 +373,7 @@ t('2.47.0 varredura de 05/11 a 10/11: 12 do Xibara e 1 do NaneRz (site), Fire Po
         for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx).avisos, [], id + ' ' + voc);
         assert(!M.dcSetupsDaHunt({ id: huntId, title: s.hunt }).some(x => /^northon-(baixo-)?\d+$/.test(x.id) && !x.comPost), id + ': o "Northon -" do mapa saiu');
     }
-    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 226, title: 'Fire Portal' }).map(x => x.id), ['fire-lucasdela', 'fire-arquemerz']);
+    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 226, title: 'Fire Portal' }).map(x => x.id), ['fire-lucasdela', 'fire-arquemerz', 'fire-specter']); // 2.51.0: + o do Specter (19/10)
     const fp = M.SETUPS_DISCORD.find(x => x.id === 'fire-arquemerz');
     assert.deepStrictEqual(fp.chars.SORCERER.ataque[0], ['Great Fire Wave', 2], 'Gran Flam Hur em primeiro');
     assert.deepStrictEqual(fp.chars.DRUID.ataque.map(a => a[0]), ['Strong Ice Wave', 'avalanche rune', 'Flame Strike']);
@@ -606,5 +606,20 @@ t('2.50.0 varredura de 15/11 a 17/11: NaneRz (Sea Serpent Depths), FelipeS (Kilm
     assert.deepStrictEqual(M.dcConfigDe(M.SETUPS_DISCORD.find(x => x.id === 'bazir-xibara'), 'KNIGHT', null, ctx).cfg.skills, [null, null, null, null]);
     /* FelipeS: Cavaleiro com o slot de mana vazio no print */
     assert.deepStrictEqual(M.SETUPS_DISCORD.find(x => x.id === 'kilmaresh-felipes').chars.KNIGHT.mana, ['Mana Potion', 0]);
+});
+t("2.51.0 varredura de 17/11 a 18/11: Quara's Domain do Xibara (preset 64) e os dois do Specter de 19/10 que faltavam (Draken Walls e Fire Portal) — sem aviso no nível do post", () => {
+    const lista = [['quaradomain-xibara', 191, 146], ['draken-specter', 192, 161], ['fire-specter', 226, 161]];
+    for (const [id, huntId, nivel] of lista) {
+        const s = M.SETUPS_DISCORD.find(x => x.id === id);
+        assert(s && s.huntId === huntId && M.dcCompleto(s), id);
+        const ctx = Object.assign({}, CTX_POT, { nivel, magias: SPELLS });
+        for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx).avisos, [], id + ' ' + voc);
+    }
+    /* Specter nos dois mapas: magos sem Magic Shield e avalanche nos três que atacam de longe */
+    for (const id of ['draken-specter', 'fire-specter']) {
+        const s = M.SETUPS_DISCORD.find(x => x.id === id);
+        for (const voc of ['PALADIN', 'SORCERER', 'DRUID']) assert.strictEqual(s.chars[voc].ataque[1][0], 'avalanche rune', id + ' ' + voc);
+        for (const voc of ['SORCERER', 'DRUID']) assert(!(s.chars[voc].suporte || []).includes('Magic Shield'), id + ' ' + voc);
+    }
 });
 console.log(n + ' testes ok' + (process.exitCode ? ' (com falhas)' : ''));

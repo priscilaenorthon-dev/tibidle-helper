@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.50.0
+// @version      2.52.0
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.50.0';
+    const VERSAO = '2.52.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -8946,6 +8946,81 @@
         }
         return res;
     }
+    /* v2.52.0 — O QUE FALTA PARA FICAR FORTE (dono, 18/11: "vê no Discord o que cada personagem precisa para ficar forte, equipamentos
+     * e armas, para ajustar a aba Melhorias"). Réguas que a comunidade escreveu no fórum de guias, conferidas uma a uma na peça que cada
+     * um veste (ou vai vestir, pelo Equip):
+     *   • regen. de mana somada nas peças: 18 no Cavaleiro, 18 no Paladino, 20 no Feiticeiro, 21 no Druida (grampeador_, 04/11, nível 120);
+     *   • arma com linha de dano %: físico no Cavaleiro (SCA +4 com 7,5 %), sagrado no Paladino (3,5 %), o elemento do mago na wand/rod
+     *     (3,6–3,9 %) — grampeador_ 04/11, NunohS 11/10;
+     *   • arma refinada até +4 ("primeiro o refino para ter a potência, depois os atributos" — Aranha/netao, 28/10–03/11);
+     *   • potência ≥ 350 em toda peça ("pega uns itens 350 no mercado ou leilão e refina" — Gabs, 03/11; 400+ só cai de elite/boss — netao);
+     *   • Cavaleiro com 16 % de proteção física (Specter, 12/11) — "foca na defesa do kina e no dano dos outros" (Gabs);
+     *   • imbuements: 2× Void (mana) no Cavaleiro; Void + Strike (crítico) no Paladino e na arma dos magos; Vampirism (vida) é dispensável
+     *     (Specter e FelipeS, 15–17/11: "o crítico sobe uns 30k na raw, compensa em todos"; "tirar o gasto do EK com pot usando mana leech").
+     * Só leitura: devolve {VOC: [{chave, ok, titulo, texto}]}; potência, refino, proteção e imbuement só entram na fase 2 (nível ≥ 110). */
+    const ML_META_REGEN = { KNIGHT: 18, PALADIN: 18, SORCERER: 20, DRUID: 21 };
+    const ML_META_PROT_FISICA_KN = 16, ML_META_POTENCIA = 350, ML_META_REFINO_ARMA = 4;
+    const ML_DANO_ARMA = { KNIGHT: ['dano_fisico'], PALADIN: ['dano_elem_sagrado', 'dano_fisico'],
+                           SORCERER: ['dano_elem_energia', 'dano_elem_fogo', 'dano_magico'], DRUID: ['dano_elem_gelo', 'dano_elem_terra', 'dano_magico'] };
+    const ML_DANO_ARMA_TXT = { KNIGHT: 'dano físico %', PALADIN: 'dano sagrado % (ou físico %)', SORCERER: 'dano de energia/fogo % (ou dano mágico %)', DRUID: 'dano de gelo/terra % (ou dano mágico %)' };
+    const ML_IMBU_COMUNIDADE = { KNIGHT: [[2, 2]], PALADIN: [[2, 1], [3, 1]], SORCERER: [[2, 1], [3, 1]], DRUID: [[2, 1], [3, 1]] }; // [categoria, quantos]
+    function mlChecklist(porVoc, ctx) {
+        const out = {}, fase2 = faseEquip(ctx) === 2, n1 = (x) => Math.round(x * 10) / 10;
+        const txt1 = (x) => String(n1(x)).replace('.', ',');
+        for (const [v, slots] of Object.entries(porVoc || {})) {
+            const pecas = SLOTS_EQUIP.map(sl => { const x = slots && slots[sl]; const p = x && (x.melhor || x.atual); return p ? { slot: sl, p } : null; }).filter(Boolean);
+            const linhas = (p) => ((p && p.forja && Array.isArray(p.forja.atributos)) ? p.forja.atributos : []);
+            const soma = (id) => pecas.reduce((t, k) => t + linhas(k.p).filter(a => a && a.id === id).reduce((u, a) => u + (Number(a.valor) || 0), 0), 0);
+            const l = [];
+            /* regen. de mana */
+            const regen = soma('regen_mana'), metaR = ML_META_REGEN[v];
+            if (metaR) {
+                const sem = pecas.filter(k => k.slot !== 'weapon' && k.slot !== 'necklace' && !linhas(k.p).some(a => a && a.id === 'regen_mana')).map(k => k.slot);
+                l.push({ chave: 'regen', ok: regen >= metaR, titulo: `Regen. de mana ${txt1(regen)} de ${metaR}`, valor: n1(regen), meta: metaR, semLinha: sem,
+                         texto: regen >= metaR ? 'na régua da comunidade (grampeador_, nível 120)' : `faltam ${txt1(metaR - regen)}` + (sem.length ? ' — sem linha de regen. de mana: ' + sem.join(', ') : ' — as linhas existem, mas são baixas: potência maior dá linha maior') });
+            }
+            /* arma */
+            const arma = (pecas.find(k => k.slot === 'weapon') || {}).p || null;
+            if (!arma) l.push({ chave: 'arma', ok: false, titulo: 'Sem arma', texto: 'nenhuma arma vestida nem guardada para ele' });
+            else {
+                const ids = ML_DANO_ARMA[v] || [], tem = linhas(arma).filter(a => a && ids.includes(a.id) && Number(a.valor) > 0);
+                l.push({ chave: 'arma-dano', ok: tem.length > 0, titulo: tem.length ? `Arma com ${tem.map(a => a.id.replace(/^dano_elem_/, 'dano ').replace('_', ' ') + ' ' + txt1(Number(a.valor)) + ' %').join(' + ')}` : 'Arma sem linha de dano %', peca: arma.nome,
+                         texto: tem.length ? arma.nome : `${arma.nome}: a comunidade põe ${ML_DANO_ARMA_TXT[v]} na arma (aba Forja)` });
+                if (fase2) {
+                    const ref = Number(arma.forja && arma.forja.refino) || 0;
+                    l.push({ chave: 'arma-refino', ok: ref >= ML_META_REFINO_ARMA, titulo: `Arma +${ref}${ref >= ML_META_REFINO_ARMA ? '' : ' (meta +' + ML_META_REFINO_ARMA + ')'}`, peca: arma.nome,
+                             texto: ref >= ML_META_REFINO_ARMA ? arma.nome : `${arma.nome}: refine até +${ML_META_REFINO_ARMA} antes de mexer nas linhas (+1 a +4 não cai na falha; cada refino = +50 de potência)` });
+                }
+            }
+            if (fase2) {
+                /* potência: só as peças em que o jogo informou a potência base */
+                const fracas = pecas.filter(k => potenciaDe(k.p) > 0 && potenciaTotal(k.p) < ML_META_POTENCIA).map(k => ({ slot: k.slot, nome: k.p.nome, potencia: potenciaTotal(k.p) }));
+                l.push({ chave: 'potencia', ok: !fracas.length, titulo: fracas.length ? `${fracas.length} peça(s) com potência abaixo de ${ML_META_POTENCIA}` : `Todas as peças com potência ≥ ${ML_META_POTENCIA}`, fracas,
+                         texto: fracas.length ? fracas.map(f => `${f.slot}: ${f.nome} (${f.potencia})`).join(' · ') + ' — troque por base de 350+ (Mercado/leilão; 400+ só de elite e boss) ou refine' : 'base boa para receber linha' });
+                if (v === 'KNIGHT') {
+                    const pf = soma('resist_fisica');
+                    l.push({ chave: 'prot-fisica', ok: pf >= ML_META_PROT_FISICA_KN, titulo: `Proteção física ${txt1(pf)} % de ${ML_META_PROT_FISICA_KN} %`, valor: n1(pf), meta: ML_META_PROT_FISICA_KN,
+                             texto: pf >= ML_META_PROT_FISICA_KN ? 'na régua do Specter (Inquisition, 12/11)' : `faltam ${txt1(ML_META_PROT_FISICA_KN - pf)} % — linha de resistência física no elmo, armadura, calça, bota, escudo e anel` });
+                }
+                /* imbuements que a comunidade usa */
+                const usados = pecas.flatMap(k => (Array.isArray(k.p.imbuements) ? k.p.imbuements : []).filter(Boolean).map(im => Number(im.category)));
+                const falta = [];
+                for (const [cat, q] of (ML_IMBU_COMUNIDADE[v] || [])) {
+                    const tem = usados.filter(c => c === cat).length;
+                    if (tem < q) {
+                        const chaveAttr = Object.keys(IMB_CAT_ATTR).find(k => IMB_CAT_ATTR[k] === cat);
+                        const onde = pecas.filter(k => { const a = k.p.attrs || {}; const n = Number(a.imbuementslot) || (Array.isArray(k.p.imbuements) ? k.p.imbuements.length : 0); return n > (Array.isArray(k.p.imbuements) ? k.p.imbuements.filter(Boolean).length : 0) && chaveAttr in a; }).map(k => k.slot);
+                        falta.push({ cat, nome: IMB_NOME[cat], tem, quer: q, onde });
+                    }
+                }
+                const quer = (ML_IMBU_COMUNIDADE[v] || []).map(([c, q]) => (q > 1 ? q + '× ' : '') + IMB_NOME[c] + (c === 2 ? ' (mana)' : c === 3 ? ' (crítico)' : '')).join(' + ');
+                l.push({ chave: 'imbu', ok: !falta.length, titulo: falta.length ? `Imbuement: falta ${falta.map(f => (f.quer - f.tem > 1 ? (f.quer - f.tem) + '× ' : '') + f.nome).join(' e ')}` : `Imbuements: ${quer}`, falta,
+                         texto: falta.length ? `a comunidade usa ${quer}` + falta.map(f => f.onde.length ? ` · ${f.nome} cabe em: ${f.onde.join(', ')}` : ` · ${f.nome}: nenhuma peça dele tem espaço livre que aceite`).join('') + ' — dura 20 h de caçada e é feito por você na janela do jogo' : 'como a comunidade usa (Specter/FelipeS, 15–17/11)' });
+            }
+            out[v] = l;
+        }
+        return out;
+    }
     /* @@MELHORIAS-FIM */
     /* @@FORJA-INICIO — aba Forja (2.25.0): funções puras; testes/forja.test.js roda EQUIP-PURO + MELHORIAS + este trecho.
      *  Dono, 19/10: "Você vai ser agora um especialista de Forja. Nunca fiz, então quero que nossa automação tire de letra."
@@ -10748,6 +10823,37 @@
             PALADIN: { vida: ['Great Spirit Potion', 50], ataque: [['Divine Caldera', 1], ['avalanche rune', 2], ['Divine Missile', 1], ['Strong Ethereal Spear', 1]], defesa: [['Recovery', 40], ['Divine Healing', 50], ['Intense Healing', 70], ['Light Healing', 85]], suporte: ['Protect Party'] },
             SORCERER: { vida: ['Health Potion', 75], mana: ['Mana Potion', 50], ataque: [['Rage of the Skies', 3], ['avalanche rune', 2], ['Energy Wave', 2], ['Ultimate Energy Strike', 1]], defesa: [['Ultimate Healing', 75], ['Intense Healing', 60], ['Light Healing', 70], ['Magic Patch', 85]], suporte: ['Enchant Party'] },
             DRUID: { vida: ['Health Potion', 75], mana: ['Mana Potion', 50], ataque: [['Strong Ice Wave', 2], ['avalanche rune', 2], ['Ultimate Ice Strike', 1], ['Strong Ice Strike', 1]], defesa: [['Heal Friend', 70], ['Mass Healing', 40], ['Ultimate Healing', 75], ['Intense Healing', 70]], suporte: ['Heal Party'] } } },
+        /* — 2.51.0 (18/11): varredura de 17/11 a 18/11. Discord: nenhum tópico nem barra nova (só conversa). Site tibidle-community.com:
+         *   preset 64 do Xibara (Quara's Domain, texto exato) e as republicações 53–62 dos posts do Specter/Theus — oito já estavam aqui;
+         *   faltavam o Draken Walls e o Fire Portal do Specter (19/10, barras antigas em imagem, lidas à mão). 51/52/63 são invasão e
+         *   65 é o Elite Jaws (fora do modelo). limware.github.io/Tibidle sem preset novo. */
+        { id: 'quaradomain-xibara', hunt: "Quara's Domain Yalahar", huntId: 191, autor: 'Xibara', data: '18/11', titulo: "Quara's Domain Yalahar (Xibara, 18/11)",
+          lure: 'Extremo — 8 criaturas', skills: 'melee 67 · shield 62 · distance 71 · ML 52/53', nota: '', nivel: '146',
+          obs: "Xibara, presets/64 (18/11): 111,5k xp/h (101,6k raw), +23,7k/h, loot 114,1k/h, gasto 90,3k/h, 1h02 (1.722 abates) sem morte, sem Prey; o loot variou de 104k a 139k/h. Caiu ~1 jaws key por hora, que o analisador não conta (o Elite Jaws dá Yalahar Soul Fragments e gear wheel 35 %). Os três quaras são imunes a gelo e fogo, +25 % de energia e +10 % de terra: thunderstorm nos três, Feiticeiro todo de energia, Druida todo de terra, Paladino de sagrado com flecha comum. Magos SEM Magic Shield (custava ~600 Mana Potions/h; o golpe mais forte neles é um terço da vida). Heal Friend em ≤80 (em ≤70 o Cavaleiro chegou a 34 % e tomava o dobro de Ultimate); o Druida gasta ~1.260 Mana Potions/h curando o Cavaleiro. Não vale: crystalline arrow (69k/h por ~12 % de dano). Formação: Feiticeiro a 4 de um lado; Druida a 4 e Paladino a 2 do outro. Cavaleiro e Paladino sem poção de mana no post.",
+          estatisticas: { xpH: '111,5k', lucroH: '+23,7k', nivel: 146 },
+          chars: {
+            KNIGHT: { vida: ['Ultimate Health Potion', 50], ataque: [['Groundshaker', 3], ['Berserk', 2], ['Brutal Strike', 1], ['Lesser Front Sweep', 1]], defesa: [['Wound Cleansing', 90], ['Intense Wound Cleansing', 40]], suporte: ['Train Party', 'Protector'] },
+            PALADIN: { vida: ['Strong Health Potion', 50], ataque: [['Divine Caldera', 1], ['thunderstorm rune', 2], ['Divine Missile', 1], ['Strong Ethereal Spear', 1]], defesa: [['Recovery', 40], ['Divine Healing', 50], ['Intense Healing', 70], ['Light Healing', 85]], suporte: ['Protect Party'] },
+            SORCERER: { vida: ['Health Potion', 75], mana: ['Mana Potion', 50], ataque: [['Rage of the Skies', 3], ['thunderstorm rune', 2], ['Energy Wave', 2], ['Ultimate Energy Strike', 1]], defesa: [['Ultimate Healing', 75], ['Intense Healing', 60], ['Light Healing', 70], ['Magic Patch', 85]], suporte: ['Enchant Party'] },
+            DRUID: { vida: ['Health Potion', 75], mana: ['Mana Potion', 50], ataque: [['Terra Wave', 2], ['thunderstorm rune', 2], ['Ultimate Terra Strike', 1], ['Strong Terra Strike', 1]], defesa: [['Mass Healing', 40], ['Ultimate Healing', 75], ['Intense Healing', 70], ['Heal Friend', 80]], suporte: ['Heal Party'] } } },
+        { id: 'draken-specter', hunt: 'Draken Walls', huntId: 192, autor: 'Specter', data: '19/10', titulo: 'Draken Walls (Specter, 19/10)',
+          lure: '', skills: '', nota: '', nivel: '',
+          obs: 'Specter ("Aoba meu povo", 19/10; republicado pelo Xibara em presets/53 em 18/11): "XP raw 235–250k/h, profit 180–270k/h a depender da sorte. Setup SEM utamo vita — existe uma chance não muito baixa dos mages morrerem; coloquem set de proteção a fogo e façam bestiário de max HP. Com utamo vita não dá pra profitar aqui, mas é mais seguro. Tenho 1,1k de vida nos mages e ainda rola combo que joga eles pra menos de 100 de HP." Barra antiga em imagem, lida à mão pelo padrão dos outros posts dele; a 1ª cura do Cavaleiro (Intense Recovery) estava em recarga e o gatilho parece ≤95.',
+          estatisticas: { xpH: '245,5k', lucroH: '+264,7k', nivel: 161 }, posicoes: 'Symbioth (EK, ciano) à esquerda, no meio de nove marcas azuis (pontos de spawn); RP (amarelo), ED (azul) e MS (vermelho) lado a lado, em linha, à direita das marcas.',
+          chars: {
+            KNIGHT: { vida: ['Great Health Potion', 35], mana: ['Mana Potion', 60], ataque: [['Fierce Berserk', 4], ['Berserk', 2], ['Groundshaker', 2], ['Lesser Front Sweep', 1]], defesa: [['Intense Recovery', 95], ['Intense Wound Cleansing', 40], ['Wound Cleansing', 85]] },
+            PALADIN: { vida: ['Great Spirit Potion', 30], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2], ['avalanche rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Divine Healing', 60], ['Intense Healing', 70]] },
+            SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Energy Wave', 2], ['avalanche rune', 2], ['Strong Energy Strike', 1], ['Ice Strike', 1]], defesa: [['Ultimate Healing', 60], ['Intense Healing', 75]], suporte: ['Enchant Party'] },
+            DRUID: { vida: ['Health Potion', 40], mana: ['Mana Potion', 60], ataque: [['Strong Ice Wave', 2], ['avalanche rune', 2], ['Strong Ice Strike', 1], ['Ice Strike', 1]], defesa: [['Heal Friend', 65], ['Mass Healing', 70], ['Ultimate Healing', 60]], suporte: ['Heal Party'] } } },
+        { id: 'fire-specter', hunt: 'Fire Portal', huntId: 226, autor: 'Specter', data: '19/10', titulo: 'Fire Portal (Specter, 19/10)',
+          lure: '', skills: '', nota: '', nivel: '',
+          obs: 'Specter ("Aoba meu povo", 19/10; republicado pelo Xibara em presets/54 em 18/11): "Setupzinho pra dar uma rushada nos lvl. XP 275–290k/h na raw, profit 80–120k/h a depender da sorte. Hunt suave, Lizard City melhorada. Set de proteção a terra nos mages só pra garantir — o combo alto é dano de terra; o físico é baixo, mas mais consistente." Magos sem Magic Shield. Barra antiga em imagem, lida à mão pelo padrão dos outros posts dele; a 1ª cura do Cavaleiro (Intense Recovery) estava em recarga e o gatilho parece ≤95.',
+          estatisticas: { xpH: '282,1k', lucroH: '+95k', nivel: 161 }, posicoes: 'MS (vermelho) sozinho à esquerda; Symbioth (EK, ciano) no centro, na ponte, cercado pelas marcas azuis de spawn; RP (amarelo) e ED (azul) lado a lado à direita.',
+          chars: {
+            KNIGHT: { vida: ['Great Health Potion', 35], mana: ['Mana Potion', 60], ataque: [['Fierce Berserk', 4], ['Berserk', 2], ['Groundshaker', 2], ['Lesser Front Sweep', 1]], defesa: [['Intense Recovery', 95], ['Intense Wound Cleansing', 40], ['Wound Cleansing', 85]] },
+            PALADIN: { vida: ['Great Spirit Potion', 30], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2], ['avalanche rune', 2], ['Strong Ethereal Spear', 1], ['Divine Missile', 1]], defesa: [['Divine Healing', 70], ['Intense Healing', 85]] },
+            SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 60], ataque: [['Great Fire Wave', 2], ['avalanche rune', 2], ['Strong Flame Strike', 1], ['Flame Strike', 1]], defesa: [['Ultimate Healing', 60], ['Intense Healing', 75]], suporte: ['Enchant Party'] },
+            DRUID: { vida: ['Health Potion', 40], mana: ['Mana Potion', 60], ataque: [['Strong Ice Wave', 2], ['avalanche rune', 2], ['Strong Ice Strike', 1], ['Ice Strike', 1]], defesa: [['Heal Friend', 70], ['Mass Healing', 70], ['Ultimate Healing', 60]], suporte: ['Heal Party'] } } },
         /* — 2.49.0 (15/11): "Northon - <mapa>" dos mapas novos sem post — 5 de Issavi (1.2.0), 5 de Marapur (1.2.2) e Werebeasts, Putrid
          *   Mummies, Grim Reapers Yalahar e Haunted Nexus Tomb (1.2.0). Mesmo gerador da 2.28.2 (elemento pela vida × peso dos monstros do
          *   /hunts/select vivo, faixa pelo recomendado). Hero Fortress Underground e Green Belt já nasceram com post. */
@@ -17572,6 +17678,25 @@
             (o.forjaMaisBarata ? mlForjaAviso(o) : '') +
             `<button type="button" class="tb-bt${o.recomendada ? ' pri' : ''} mini" id="tb-ml-c-${i}" ${pode ? '' : 'disabled'} style="margin-top:3px">${ML.comprando === o.orderId ? 'COMPRANDO…' : o.recomendada ? 'COMPRAR (2 toques)' : 'não recomendada: se quiser, compre pela janela do jogo'}</button></div>`;
     }
+    /* v2.52.0 — "O que falta para ficar forte": a régua da comunidade conferida nas peças de cada um (só leitura) */
+    function mlTelaForte() {
+        if (!EQUIP.res || !EQUIP.res.porVoc) return '';
+        const ck = mlChecklist(EQUIP.res.porVoc, EQUIP.ctx);
+        let h = `<h4 style="margin:8px 0 2px">O que falta para ficar forte <span class="tb-mut">(régua da comunidade, Discord 18/11)</span></h4>`;
+        for (const v of ML_ORDEM_CLASSE) {
+            const l = ck[v] || []; if (!l.length) continue;
+            const feitos = l.filter(x => x.ok).length;
+            h += `<details class="tb-aj" data-k="ml-forte-${v}"${feitos < l.length ? ' open' : ''}><summary>${escHtml(VOC_ROTULO[v] || v)} — ${feitos} de ${l.length}${feitos === l.length ? ' ✓' : ''}</summary><div>` +
+                 l.map(x => `<div class="tb-eq-nota"><span class="${x.ok ? 'tb-ok' : 'tb-ruim'}">${x.ok ? '✓' : '✗'}</span> <b>${escHtml(x.titulo)}</b> <span class="tb-mut">— ${escHtml(x.texto)}</span></div>`).join('') + `</div></details>`;
+        }
+        if (faseEquip(EQUIP.ctx) !== 2) h += `<div class="tb-mut tb-eq-nota">Antes do nível 110 só a regen. de mana e a linha da arma: potência, refino, proteção e imbuement entram na fase 2.</div>`;
+        /* onde pôr imbuement, pela régua normal do Equip (a aba Aguentar faz a mesma conta contra um alvo) */
+        if (faseEquip(EQUIP.ctx) === 2) {
+            if (!PROG.imbu && !PROG.imbuPedido) pgCarregarImbu().then(() => renderizar()).catch(() => { });
+            h += `<details class="tb-aj" data-k="ml-imbu"><summary>onde pôr imbuement</summary><div>${sbTelaImbu(EQUIP.ctx, EQUIP.res.porVoc)}</div></details>`;
+        }
+        return h + aj('ml-forte-como', 'Só leitura. Confere a peça que cada um veste (ou a melhor guardada, que o Equip manda vestir) contra o que a comunidade escreveu no fórum de guias do Discord: regen. de mana 18/18/20/21 (grampeador_, nível 120); arma com linha de dano % — físico no Cavaleiro, sagrado no Paladino, o elemento na wand/rod; arma +4 antes das linhas; base com potência 350+ ("pega uns itens 350 no mercado ou leilão e refina" — Gabs; 400+ só cai de elite e boss — netao); Cavaleiro com 16 % de proteção física (Specter); imbuements 2× Void no Cavaleiro, Void + Strike no Paladino e na arma dos magos — Vampirism é dispensável (Specter/FelipeS, 15–17/11). "Foca na defesa do kina e no dano dos outros." São metas de quem está no nível 120–250: não precisa fechar tudo de uma vez — a ordem dos vídeos é arma e colar do Cavaleiro, Feiticeiro, Druida, set do Cavaleiro e o Paladino por último. A proteção ao elemento do mapa (terra na Hive Queen e no Fire Portal, fogo no Draken Walls e no Shadow Nexus, gelo no Bottom) fica na aba Aguentar, que é por alvo.', 'de onde vêm estas metas');
+    }
     function telaMelhorias() {
         const cfg = mlCfg(), ouro = mlOuroNormal(), prem = mkPremiumAgora();
         ML.botoes = [];
@@ -17587,6 +17712,7 @@
              `<label class="tb-l"><input type="checkbox" id="tb-ml-perdas" ${cfg.verPerdas ? 'checked' : ''}> mostrar também as que perdem encaixe</label></div>`;
         if (ML.erro) h += `<div class="tb-cx tb-ruim">${escHtml(ML.erro)}</div>`;
         if (!ML.res) {
+            h += mlTelaForte(); // v2.52.0
             h += `<div class="tb-mut" style="margin-top:6px">Lê o equipamento dos 4 e todos os equipamentos à venda no Mercado (8 categorias, ~40 s) e mostra só o que é <b>melhor do que a melhor peça que cada um já tem</b> — vestida, no depósito ou na mochila — <b>sem perder</b> regen. de mana (todos; nos magos ela pode sair para entrar nível mágico), regen. de vida (Knight) nem nível mágico/skill/dano na arma e no colar. A mesma peça anunciada várias vezes (ou com outra raridade / linha que não conta para a vocação) aparece uma vez, a mais barata. Só lê: nada é comprado sem você clicar 2 vezes.</div>`;
             return h + `</div>`;
         }
@@ -17621,6 +17747,7 @@
             const n = Object.values(slots).reduce((a, x) => a + ofertasDe(x.ofertas).length, 0);
             h += `<details class="tb-aj" data-k="ml-${v}"><summary>${escHtml(VOC_ROTULO[v] || v)} — ${n ? n + ' melhoria(s)' : 'nada melhor à venda'}</summary><div>${linhas.join('') || '<div class="tb-mut">Todos os espaços já estão no melhor que o Mercado tem hoje.</div>'}</div></details>`;
         }
+        h += mlTelaForte(); // v2.52.0
         h += aj('ml-como', `<b>Ponto (pt)</b> é a régua do Equip: 1 pt ≈ +1 % do dano da party ≈ 450 de ouro/h; "paga-se em ~X h" = preço ÷ (ganho × 450). A comparação é com a <b>melhor peça que o personagem já tem</b> naquele espaço (não só a vestida) e pesa tudo o que a peça dá (armadura, regen., resistências, skill, dano, crítico em par). <b>Recomendada</b> = não perde encaixe nobre (regen. de mana em todos — nos magos ela pode dar lugar a nível mágico —, regen. de vida no Knight, nível mágico/skill/dano/crítico na arma e no colar), e, no Knight, o ganho não vem quase todo de armadura/defesa (a régua ainda superestima defesa). <b>Troca compensada</b> (2.34.2, nos 4 personagens e em todo espaço, colar incluído): o encaixe nobre que sai vira "↔ troca" — e não perda — quando a oferta, já descontada a linha perdida, ainda ganha ≥ 1 pt pela régua (a regen. de mana 1,5 do Knight vale ~13,5 pt a nível 160; uma calça de resist. física 2 % com +2 cobre isso e sobra). Sem cobrir, continua escondida. Só a recomendada tem botão de compra; as outras aparecem por personagem com o motivo. Marcando "mostrar também", aparecem até as que perdem encaixe. O Mercado devolve os anúncios de cada categoria como o jogo manda: se a categoria tiver muitos, pode faltar algum. Arma de 2 mãos do Knight concorre com arma + escudo. <b>Set só sobe de nível</b> (elmo, armadura, calça, bota e escudo): só aparece a peça com armadura base maior (defesa no escudo) que TODAS as que o personagem já tem naquele espaço — no empate, nível exigido maior; ou com nível mágico/skill de fábrica maior (Hat of the Mad). Peça do MESMO nível (a Zaoan Legs 8 sobre a Knight Legs 8) entra se o encaixe ganhar ≥ 1 pt pela régua (2.34.2); a mesma peça com regen. um pouco maior continua de fora, e nível abaixo nunca aparece. Sem perder regen. de mana/vida; nos 3 que não são Knight a armadura não muda o dano (o corpo a corpo vai no Knight), então ali o nível superior só ganha botão com linha melhor. <b>Wand/rod nunca regride</b>: só aparece a do mesmo nível exigido ou acima e com dano do tiro igual ou maior que a maior que o personagem já tem (a vortex/snakebite forjada não passa mais na frente da sua); entre essas, ganham as linhas da forja, o dano e a mana por tiro, e o elemento conta neutro (a compra serve a todos os mapas). Peça que pede nível acima do seu não aparece. O seu próprio anúncio nunca aparece. <b>Comprar</b> (wiki /mercado): é imediato e não pode ser desfeito; Premium não paga taxa; só ouro normal (não o travado); o item vai para a mochila (cheia: depósito). Antes de comprar, o helper relê o anúncio e confere preço e ouro. Depois, equipe pela aba Equip. <b>⚒ Forjar a sua</b> (embaixo de cada espaço com oferta): quanto custaria, em média, pôr uma linha que vale na peça que você já tem — só quando ela tem encaixe vazio (ou falta 1 grau de raridade para abrir um); conta Atributo T1 20 mil + Limpeza T2 40 mil por tentativa repetida, Raridade T1 30 mil, 100 fragmentos por gema (preço do fragmento do Mercado, ou 2 mil estimado) e a chance de sorteio da wiki. A forja só aparece como "mais em conta" quando sai 1/3 mais barata por ponto, porque comprar é certo e a forja é sorteio.`, 'como funciona');
         return h + `<div class="tb-mut" style="margin-top:6px">${ML.nCands} peças à venda conferidas. Só COMPRAR (2 toques) envia comando ao jogo.</div></div>`;
     }
@@ -18049,13 +18176,13 @@
         return h + aj('sb-ajuda', 'Passe o mouse (ou toque e segure) no nome da peça para ver pontos, linhas e origem. A tela usa o dano guardado do alvo (por personagem e elemento) e ranqueia corpo, mochila e depósito com a defesa pesando 3×. Nada dispara sozinho: EQUIPAR, VESTIR CONSUMÍVEIS e comprar são 2 toques, só na cidade.') + `</div>`;
     }
     /* v2.35.6 — "Onde pôr imbuement": a melhor opção de cada espaço livre, em tier médio, e o que já está vestido */
-    function sbTelaImbu(ctx) {
+    function sbTelaImbu(ctx, porVoc) { // v2.52.0: porVoc de fora = aba Melhorias (régua normal, sem alvo)
         let h = `<h4 style="margin:8px 0 2px">Imbuements <span class="tb-mut">(nas peças que cada um vai vestir; duram 20 h de caçada)</span></h4>`;
         if (!PROG.imbu) return h + `<div class="tb-mut tb-eq-nota">${PROG.imbuErro ? 'o catálogo de imbuements não carregou (' + escHtml(PROG.imbuErro) + ')' : 'carregando o catálogo de imbuements…'}</div>`;
         const precoDe = (nome) => { const c = MK.catalogo && MK.catalogo[mkMin(nome)]; return c && Number(c.sellOrders) > 0 && Number(c.minSell) > 0 ? Number(c.minSell) : null; };
-        const r = sbImbuSugestoes(SB.res.porVoc, ctx, PROG.imbu, precoDe);
+        const r = sbImbuSugestoes(porVoc || SB.res.porVoc, ctx, PROG.imbu, precoDe);
         if (r.ja.length) h += `<div class="tb-mut tb-eq-nota">já vestidos: ${r.ja.map(j => `${SB_VOC_ABR[j.voc]} ${escHtml(slotPt(j.slot))} ${escHtml(j.nome)} ${['', 'T1', 'T2', 'T3'][j.tier] || ''}${j.restaMs ? ' (' + fmtHoras(j.restaMs / 3600000) + ')' : ''} = ${numBR(j.pt, 1)} pt`).join(' · ')}</div>`;
-        if (!r.sugestoes.length) return h + `<div class="tb-mut tb-eq-nota">nenhum espaço livre que valha contra este alvo.</div>`;
+        if (!r.sugestoes.length) return h + `<div class="tb-mut tb-eq-nota">nenhum espaço livre que valha${porVoc ? '' : ' contra este alvo'}.</div>`;
         const custo = (t) => (t.custo != null ? mkFmt(t.custo) : t.semPreco.length ? 'sem preço de ' + t.semPreco.join(', ') : '—');
         for (const s of r.sugestoes.slice(0, 8)) {
             const o = s.opcoes[0], t2 = o.tiers[1], t3 = o.tiers[2];

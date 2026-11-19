@@ -4,7 +4,7 @@ const fs = require('fs'), path = require('path'), assert = require('assert');
 const src = fs.readFileSync(path.join(__dirname, '..', 'tibidle-helper.user.js'), 'utf8');
 const trecho = (a, b) => { const i = src.indexOf(a), f = src.indexOf(b); assert(i > 0 && f > i, 'marcador ausente: ' + a); return src.slice(i, f); };
 const M = new Function(trecho('/* @@EQUIP-PURO-INICIO */', '/* @@EQUIP-PURO-FIM */') + trecho('/* @@MELHORIAS-INICIO', '/* @@MELHORIAS-FIM */') +
-    '\nreturn { mlCandidatosMercado, mlAvaliar, mlPerdas, distribuirEquip, ML_GANHO_MIN, mlForjar, mlForjaMaisBarata };')();
+    '\nreturn { mlCandidatosMercado, mlAvaliar, mlPerdas, distribuirEquip, ML_GANHO_MIN, mlForjar, mlForjaMaisBarata, mlChecklist };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 const F = (r, ...at) => ({ raridade: r, atributos: at.map(([id, valor]) => ({ id, valor })) });
@@ -357,4 +357,31 @@ t('2.24.0 fase 2: peça TRABALHADA (refino ≥ 1) com potência total < 350 não
     assert(por(72) && !por(72).potenciaBaixa && por(72).recomendada, 'sem refino: a regra não se aplica');
     const r1 = M.mlAvaliar(porVoc, M.mlCandidatosMercado({ elmos: [baixa] }, BASE), null, { ouro: 100000 });
     assert(r1.porVoc.KNIGHT.head.ofertas[0].recomendada, 'fase 1: não se aplica');
+});
+t('2.52.0 "o que falta para ficar forte": regen. somada contra 18/18/20/21, linha de dano % na arma, e na fase 2 refino +4, potência 350, proteção física do Cavaleiro e imbuements da comunidade', () => {
+    const espada = { iid: 'Ke', nome: 'two handed sword', slot: 'weapon', attrs: BASE['two handed sword'].attrs, forja: Object.assign(F(1, ['dano_fisico', 7.5]), { refino: 4, potenciaBase: 400 }), origem: 'corpo', dono: 'KNIGHT' };
+    const wand = { iid: 'Sw', nome: 'wand of inferno', slot: 'weapon', attrs: Object.assign({ imbuementslot: 2, 'mana leech': 1, 'critical hit': 1 }, BASE['wand of inferno'].attrs),
+                   forja: Object.assign(F(1, ['nivel_magico', 1]), { refino: 2, potenciaBase: 200 }), imbuements: [{ category: 2, base: 3 }, null], origem: 'corpo', dono: 'SORCERER' };
+    const porVoc = cenario(vestidos().concat([espada, wand]));
+    /* fase 1: só regen. e a linha da arma */
+    const f1 = M.mlChecklist(porVoc, { nivel: 60 });
+    assert.deepStrictEqual(f1.KNIGHT.map(x => x.chave), ['regen', 'arma-dano']);
+    assert.strictEqual(f1.KNIGHT[0].valor, 3.5); assert.strictEqual(f1.KNIGHT[0].meta, 18); assert(!f1.KNIGHT[0].ok);
+    assert(f1.KNIGHT[1].ok, 'dano físico 7,5 % na espada');
+    assert.strictEqual(f1.DRUID[0].meta, 21);
+    assert.deepStrictEqual(f1.DRUID.map(x => x.chave), ['regen', 'arma']); assert(!f1.DRUID[1].ok, 'Druida sem arma');
+    /* fase 2 */
+    const f2 = M.mlChecklist(porVoc, { nivel: 130 });
+    const de = (v, c) => f2[v].find(x => x.chave === c);
+    assert.deepStrictEqual(f2.KNIGHT.map(x => x.chave), ['regen', 'arma-dano', 'arma-refino', 'potencia', 'prot-fisica', 'imbu']);
+    assert(de('KNIGHT', 'arma-refino').ok && de('KNIGHT', 'potencia').ok, 'espada +4 com potência 600');
+    assert(!de('KNIGHT', 'prot-fisica').ok && de('KNIGHT', 'prot-fisica').meta === 16);
+    assert(!de('KNIGHT', 'imbu').ok && de('KNIGHT', 'imbu').falta[0].cat === 2 && de('KNIGHT', 'imbu').falta[0].quer === 2, 'Cavaleiro: 2× Void');
+    assert(!de('SORCERER', 'arma-dano').ok, 'ML não é linha de dano %');
+    assert(!de('SORCERER', 'arma-refino').ok);
+    assert.deepStrictEqual(de('SORCERER', 'potencia').fracas.map(x => x.slot), ['weapon'], 'wand 200 + 2 refinos = 300 < 350; peça sem potência lida não entra');
+    const im = de('SORCERER', 'imbu');
+    assert(!im.ok && im.falta.length === 1 && im.falta[0].cat === 3, 'já tem Void; falta Strike');
+    assert.deepStrictEqual(im.falta[0].onde, ['weapon'], 'a wand tem 1 espaço livre que aceita crítico');
+    assert(!('prot-fisica' in Object.fromEntries(f2.SORCERER.map(x => [x.chave, 1]))), 'proteção física é só do Cavaleiro');
 });

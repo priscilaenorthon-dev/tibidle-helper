@@ -7403,3 +7403,58 @@ loja de Marapur Tokens, verificação em duas etapas, recarga de 24 h do auto-us
   do FelipeS conferidas lado a lado com as oficiais — o ícone sai cortado no print, lidas como Ultimate).
 - Testes: teste novo da varredura no discord.test.js; 2 antigos ajustados (Bazir com dois autores; 243 e 249 fora da lista de mapas só com Northon).
 - Próxima varredura: a partir de 17/11 18h; site a partir do preset 51.
+
+## 2.51.0 (18/11) — Varredura 17/11→18/11: 3 setups novos
+
+**Discord (fórum `guias-da-comunidade`):** nenhum tópico novo e nenhuma barra nova desde 17/11 18h. Só conversa: no "Aoba", FelipeS
+respondeu que "fire + terra padrão deve resolver" (sem barra); no tópico do Theus perguntaram o set; no "PRESETS DE CAÇADAS" um pedido
+de ajuda pago. Logbook parado desde o post do NaneRz (17/11). Pedidos ainda sem resposta: Nagas de Marapur, Grim Reaper Yalahar, GT.
+
+**Site tibidle-community.com (presets 51–65, 17–18/11):**
+- **64 Quara's Domain Yalahar — Xibara** (18/11, texto exato): nível 146, Extremo, 101,6k raw, +23,7k/h em 1h02; thunderstorm nos três,
+  Feiticeiro de energia, Druida de terra, magos sem Magic Shield, Heal Friend ≤80. `quaradomain-xibara` (191), ao lado dos dois
+  "Northon -" adaptados (que ficam: o dono aprovou em 20/10).
+- **53–62 são republicações** (Xibara, "original de Specter/Theus", com link para o Discord). Oito já estavam no helper (Latrivan, Ushuriel,
+  Shadow Nexus, Pumin, Ashfalor, Infernatil, Tafariel, Apocalypse). **Faltavam dois do Specter, de 19/10 no "Aoba"**, que nunca tinham
+  entrado: **Draken Walls** (235–250k raw, profit 180–270k, magos sem utamo vita, set de fogo) → `draken-specter` (192) e **Fire Portal**
+  (275–290k raw, profit 80–120k, set de terra nos magos) → `fire-specter` (226). Barras antigas em imagem (765×78), lidas à mão pelo
+  padrão dos outros posts dele; o gatilho da Intense Recovery do Cavaleiro (em recarga na imagem) parece ≤95.
+- 51, 52 e 63 são invasão (Edward Teach, Enraged Necropharus, Zushuka) e 65 é o Elite Jaws — fora do modelo Discord.
+
+**limware.github.io/Tibidle:** os mesmos 6 presets.
+
+- Testes: teste novo da varredura; 3 antigos ajustados (Fire Portal com três autores; Quara's Domain com três setups; "Northon -" no 191
+  só para os adaptados).
+- Próxima varredura: a partir de 18/11 21h; site a partir do preset 66.
+
+## 2.52.0 (18/11) — Melhorias: "O que falta para ficar forte" (régua da comunidade)
+
+Pedido do dono: ver no Discord o que cada personagem precisa para ficar forte (equipamentos e armas) e ajustar a aba Melhorias.
+
+**Lido no fórum de guias (18/11):** "Equipes e Refinos" (Aranha, netao, Psyger-0), "Hive Queen level 120" (grampeador_), "INQUISITION -
+SYMBIOTH EDITION" (Specter, Theus, FelipeS), "Bottom" (Psyger-0, EduardoLacerda, Palawar), "Aoba meu povo" (Gabs, lucasdela) e os dois
+guias do Kmzera. O que a comunidade diz:
+
+- **Base:** potência 400+ só cai de elite/boss; "pega uns itens 350 no mercado ou leilão e refina" (Gabs). Cada refino = +50 de potência,
+  cada tier = +5 (netao). Primeiro o refino, depois as linhas. Shiny Blade × Stonecutter: com 400+ "tanto faz" (a Shiny dá +1 de skill).
+- **Prioridade:** "foca na defesa do kina e no dano dos outros" (Gabs). Specter: Cavaleiro com 16 % de proteção física.
+- **Regen. de mana (nível 120):** 18 no Cavaleiro, 18 no Paladino, 20 no Feiticeiro, 21 no Druida (grampeador_).
+- **Arma:** linha de dano % — SCA +4 com 7,5 % físico; Paladino 3,5 % sagrado; wand/rod 3,6–3,9 % do elemento.
+- **Imbuements (Specter, 15/11, nível 217→246):** 2× mana leech no Cavaleiro ("tira o gasto absurdo do EK com pot"), mana leech + crítico
+  no Paladino; "o crítico sobe uns 30k na raw, compensa em todos"; FelipeS: mana leech e crítico nas armas dos magos. Life leech saiu.
+- **Proteção ao elemento do mapa** nos magos (terra: Hive Queen/Fire Portal; fogo: Draken Walls/Shadow Nexus; gelo: Bottom — 5 % numa
+  armadura = 37 mil de dano a menos). Isso já é a aba Aguentar (por alvo); o Equip continua sem depender do mapa.
+- Skills/legado pesam mais que nível (Kmzera; Specter com legados 3/3/4/5).
+
+**O que já batia com o helper (nada mudou):** base 350/400 e refino até +4 antes das linhas (Forja 2.43), fase 2 = defesa no Cavaleiro,
+linhas nobres por vocação, wand/rod nunca regride, set só sobe de nível.
+
+**O que entrou:** `mlChecklist(porVoc, ctx)` (bloco MELHORIAS, pura) e a seção **"O que falta para ficar forte"** na aba Melhorias, por
+personagem, com ✓/✗: regen. de mana somada × 18/18/20/21 (diz os espaços sem a linha); arma com linha de dano % da vocação; e, na fase 2
+(nível ≥ 110), arma +4, peças com potência < 350 (só as que têm potência lida), proteção física do Cavaleiro × 16 % e os imbuements da
+comunidade (diz em que peça cabe). Abaixo, "onde pôr imbuement" reaproveita a conta da aba Aguentar com a régua normal do Equip
+(`sbTelaImbu(ctx, porVoc)`). Tudo só leitura; aparece assim que o Equip foi lido, antes mesmo de procurar no Mercado.
+
+- Não mudou a pontuação das peças nem o que é recomendado comprar. Dano do elemento não virou linha nobre dos magos (travaria o desmanche
+  de metade das sobras de arma/colar); a régua já conta 0,6 × a fatia do mago.
+- Testes: 1 novo em `testes/melhorias.test.js`. Sem teste ao vivo (não entrei no jogo).
