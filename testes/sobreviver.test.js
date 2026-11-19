@@ -5,7 +5,7 @@ const fs = require('fs'), path = require('path'), assert = require('assert');
 const src = fs.readFileSync(path.join(__dirname, '..', 'tibidle-helper.user.js'), 'utf8');
 const trecho = (a, b) => { const i = src.indexOf(a), f = src.indexOf(b); assert(i > 0 && f > i, 'marcador ausente: ' + a); return src.slice(i, f); };
 const M = new Function(trecho('/* @@EQUIP-PURO-INICIO */', '/* @@EQUIP-PURO-FIM */') + trecho('/* @@SOBREVIVER-PURO-INICIO', '/* @@SOBREVIVER-PURO-FIM */') +
-    '\nreturn { sbPartyDoDano, sbConsumiveis, sbPlano, pesosDaVoc, pontuarPeca, SB_IDS_DEFESA, SB_FATOR, SB_ATAQUE, SB_POCOES, imbValor, imbPontos, sbImbuSugestoes };')();
+    '\nreturn { sbPartyDoDano, sbConsumiveis, sbPlano, pesosDaVoc, pontuarPeca, SB_IDS_DEFESA, SB_FATOR, SB_ATAQUE, SB_POCOES, imbValor, imbPontos, sbImbuSugestoes, sbElemDoAlvo, sbAplicarPalpite, sbProtecao, sbProtecaoPeca, SB_AVISOS };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 const DM = { seg: 1800, sessoes: 2, tomadoH: 900000, mortes: 1, elemPorVoc: { KNIGHT: { tomadoH: 720000, golpesH: 7200, frac: { fisico: 0.62, fogo: 0.3, energia: 0.08 } }, SORCERER: { tomadoH: 90000, golpesH: 0, frac: { fogo: 0.7, energia: 0.3 } }, DRUID: { tomadoH: 90000, frac: { fogo: 1 } } }, crias: [] };
@@ -138,5 +138,46 @@ t('2.35.6 sbImbuSugestoes: espaço livre → categorias que a peça aceita, cust
     assert.deepStrictEqual(h.opcoes[0].tiers[1].semPreco, ['rope belt', 'silencer claws']);
     assert(!r.sugestoes.some(x => x.peca.iid === 's1'), 'spellbook já imbuído e sem espaço livre');
     assert(r.ja.length === 1 && r.ja[0].voc === 'DRUID' && r.ja[0].nome === 'Dragon Hide' && r.ja[0].tier === 2 && r.ja[0].pt > 0);
+});
+t('2.53.0 sbElemDoAlvo: comunidade manda (Bottom = gelo, Lizard City = fogo apesar de imune a terra); sem comunidade, a imunidade entra pela metade; sem nada, null', () => {
+    const el = (t2, p) => ({ type: 'COMBAT_' + t2 + 'DAMAGE', percent: p });
+    const bottom = M.sbElemDoAlvo({ id: 197, monsters: [{ name: 'Deepling', health: 4500, weight: 3, elements: [el('FIRE', 100), el('ICE', 100)] }] });
+    assert.strictEqual(bottom.fonte, 'comunidade'); assert(bottom.frac.gelo > 0.85 && bottom.frac.fogo < 0.05);
+    const liz = M.sbElemDoAlvo({ id: 62, monsters: [{ name: 'Lizard', health: 2000, weight: 1, elements: [el('EARTH', 100)] }] });
+    assert(liz.fonte === 'comunidade' && liz.frac.fogo > 0.85);
+    const novo = M.sbElemDoAlvo({ id: 9001, monsters: [{ name: 'A', health: 1000, weight: 1, elements: [el('EARTH', 100), el('FIRE', 45)] }] });
+    assert.strictEqual(novo.fonte, 'imunidade'); assert.deepStrictEqual(novo.elems, ['terra']);
+    assert(novo.frac.terra > novo.frac.fogo && novo.frac.fogo > novo.frac.gelo, 'terra na frente, fogo ainda como reserva: ' + JSON.stringify(novo.frac));
+    const soma = Object.values(novo.frac).reduce((a, b) => a + b, 0); assert(Math.abs(soma - 1) < 0.01, 'soma 1: ' + soma);
+    assert.strictEqual(M.sbElemDoAlvo({ id: 9002, monsters: [{ name: 'B', health: 1, weight: 1, elements: [el('FIRE', 30)] }] }), null);
+    assert.strictEqual(M.sbElemDoAlvo({ id: 'boss:Hive Queen', boss: 'Hive Queen', monsters: [] }).fonte, 'comunidade');
+    assert(Array.isArray(M.SB_AVISOS[222]) && M.SB_AVISOS[222].length === 2);
+});
+t('2.53.0 palpite muda o peso: sem medição, alvo de gelo pesa gelo (não fogo) no Feiticeiro e no Cavaleiro; elemVoc de outros mapas é repartido', () => {
+    const frac = M.sbElemDoAlvo({ id: 197, monsters: [] }).frac, nivel = 160;
+    const antes = M.pesosDaVoc('SORCERER', { nivel, party: {}, sobreviver: true });
+    assert(antes.resist_fogo > antes.resist_gelo, 'padrão antigo: fogo');
+    const dep = M.pesosDaVoc('SORCERER', { nivel, party: M.sbAplicarPalpite({}, frac), sobreviver: true });
+    assert(dep.resist_gelo > dep.resist_fogo * 5, `gelo ${dep.resist_gelo} × fogo ${dep.resist_fogo}`);
+    const kn = M.pesosDaVoc('KNIGHT', { nivel, party: M.sbAplicarPalpite({}, frac), sobreviver: true });
+    assert(kn.resist_gelo > kn.resist_fogo * 5);
+    const p = M.sbAplicarPalpite({ elemVoc: { SORCERER: { tomadoS: 20, frac: { fisico: 0.2, fogo: 0.8 } } } }, frac);
+    assert.strictEqual(p.elemVoc.SORCERER.tomadoS, 20); assert.strictEqual(p.elemVoc.SORCERER.frac.fisico, 0.2);
+    assert(p.elemVoc.SORCERER.frac.gelo > 0.6 && p.elemVoc.SORCERER.frac.fogo < 0.05);
+    assert.strictEqual(M.sbAplicarPalpite({ tomadoS: 5 }, null).elemPalpite, undefined);
+});
+t('2.53.0 sbProtecao: soma ficha + forja + proteção mágica + imbuement; hoje → com a troca; Cavaleiro com meta de 16 % física; lateral que não apanha', () => {
+    const magma = { iid: 'm', nome: 'magma coat', slot: 'armor', attrs: { armor: 11, absorbpercentfire: 8 }, forja: { atributos: [{ id: 'protecao_magica', valor: 2 }] }, imbuements: [{ category: 6, base: 2 }] };
+    const cape = { iid: 'c', nome: 'cape', slot: 'armor', attrs: { armor: 9 }, forja: { atributos: [{ id: 'resist_gelo', valor: 3 }] } };
+    assert.strictEqual(M.sbProtecaoPeca(magma, 'fogo'), 18); assert.strictEqual(M.sbProtecaoPeca(magma, 'gelo'), 2); assert.strictEqual(M.sbProtecaoPeca(magma, 'fisico'), 0);
+    const plate = { iid: 'p', nome: 'plate', slot: 'armor', attrs: { armor: 12, absorbpercentphysical: 4 }, forja: { atributos: [{ id: 'resist_fisica', valor: 9 }] } };
+    const party = M.sbPartyDoDano(DM, {}).party;
+    const r = M.sbProtecao({ KNIGHT: { armor: { atual: plate, melhor: plate } }, SORCERER: { armor: { atual: cape, melhor: magma } }, PALADIN: {} }, party, ['KNIGHT', 'SORCERER', 'PALADIN']);
+    const k = r[0].linhas.find(l => l.elem === 'fisico');
+    assert(k.hoje === 13 && k.meta === 16 && k.estado === 'av', 'Cavaleiro 13 % físico: abaixo da meta');
+    const s = r[1].linhas.find(l => l.elem === 'fogo');
+    assert(s.hoje === 0 && s.depois === 18 && s.estado === 'av', JSON.stringify(s));
+    assert(!r[1].linhas.some(l => l.elem === 'gelo'), 'gelo não bate neste alvo');
+    assert(r[2].semDano === true, 'Paladino medido sem dano');
 });
 console.log(`\n${n} testes ok`);

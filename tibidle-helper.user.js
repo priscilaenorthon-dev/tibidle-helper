@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.52.0
+// @version      2.53.0
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.52.0';
+    const VERSAO = '2.53.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -7194,13 +7194,14 @@
         hpMinK: null, // v2.18.2 — vida mínima MEDIDA do Knight (%), quando há; sem medida, a defesa vale cheia
         elemVoc: null, // v2.21.0 — {VOC: {tomadoS, frac: {fisico, fogo, …}}} medido no mapa; sem medida, a divisão de antes
         ladoApanha: 1, // ×defesa dos laterais (4 = mapa de magia de área)
+        elemPalpite: null, // v2.53.0 — aba Aguentar, alvo SEM medição: {fogo, gelo, …} somando 1 (comunidade ou imunidade dos monstros) no lugar do "fogo por padrão"
         ouroPorMana: 0.6
     };
     function partyDoCtx(ctx) {
         const p = (ctx && ctx.party) || {}, R = {}, fase2 = faseEquip(ctx) === 2;
         for (const k of Object.keys(PARTY_REF)) {
             const ref = fase2 && k in PARTY_REF_FASE2 ? PARTY_REF_FASE2[k] : PARTY_REF[k], v = p[k]; // v2.24.0
-            if (k === 'elemVoc') { R[k] = v && typeof v === 'object' ? v : null; continue; } // v2.21.0
+            if (k === 'elemVoc' || k === 'elemPalpite') { R[k] = v && typeof v === 'object' ? v : null; continue; } // v2.21.0, v2.53.0
             if (ref && typeof ref === 'object') { R[k] = Object.assign({}, ref); for (const [kk, vv] of Object.entries(v || {})) if (typeof vv === 'boolean' || Number.isFinite(vv)) R[k][kk] = vv; }
             else R[k] = Number.isFinite(v) && v >= 0 ? v : ref;
         }
@@ -7539,7 +7540,7 @@
             const ek = R.elemVoc && R.elemVoc.KNIGHT && R.elemVoc.KNIGHT.frac;
             /* v2.24.0 — sem medida, na fase 2 o padrão é FOGO (vídeos: "a maior parte dos danos é de fogo"): metade do peso da magia
              * das criaturas vai para fogo, 10 % para cada um dos outros */
-            for (const e of ELEM) P['resist_' + e] = P['absorbpercent' + ELEM_EN[e]] = _r((ek ? R.tomadoS / 100 * VIDA_PT_KNIGHT * (ek[e] || 0) : k1 * (1 - R.fisico) * (fase2 ? (e === 'fogo' ? 0.5 : 0.1) : 0.25)) * folga);
+            for (const e of ELEM) P['resist_' + e] = P['absorbpercent' + ELEM_EN[e]] = _r((ek ? R.tomadoS / 100 * VIDA_PT_KNIGHT * (ek[e] || 0) : k1 * (1 - R.fisico) * (R.elemPalpite ? (Number(R.elemPalpite[e]) || 0) : fase2 ? (e === 'fogo' ? 0.5 : 0.1) : 0.25)) * folga); // v2.53.0: palpite do alvo
             /* v2.38.0 — decisão 1 do dono (31/10): na fase 2 resistência e proteção mágica pesam KN_DEF_FASE2× (no modo Aguentar o
              * ×SB_FATOR do fim já faz isso — não soma os dois) */
             if (fase2 && !(ctx && ctx.sobreviver)) {
@@ -7566,7 +7567,7 @@
             P.regen_vida = _r(VIDA_PT_LADO * laV); P.max_hp = _r((fase2 ? 0.04 : 0.01) * laV);
             P.resist_fisica = P.absorbpercentphysical = _r(ev ? tS / 100 * VIDA_PT_LADO * (ev.frac.fisico || 0) : 0.02 * la);
             P.protecao_magica = _r(ev ? tS / 100 * VIDA_PT_LADO * (1 - (ev.frac.fisico || 0)) : 0.15 * la);
-            for (const e of ELEM) P['resist_' + e] = P['absorbpercent' + ELEM_EN[e]] = _r(ev ? tS / 100 * VIDA_PT_LADO * (ev.frac[e] || 0) : (fase2 ? (e === 'fogo' ? 0.15 : 0.03) : 0.05) * la); // v2.24.0: fogo por padrão na fase 2
+            for (const e of ELEM) P['resist_' + e] = P['absorbpercent' + ELEM_EN[e]] = _r(ev ? tS / 100 * VIDA_PT_LADO * (ev.frac[e] || 0) : (R.elemPalpite ? 0.3 * (Number(R.elemPalpite[e]) || 0) : fase2 ? (e === 'fogo' ? 0.15 : 0.03) : 0.05) * la); // v2.24.0: fogo por padrão na fase 2; v2.53.0: palpite do alvo (mesmo total, 0,30)
             P.absorbpercentpoison = P.resist_terra;
             P.elemMedido = !!ev;
             P.cura_propria = _r(ev ? tS / 200 * VIDA_PT_LADO : 0.05 * la); // v2.35.6: medido = metade do que ele toma volta pela cura própria
@@ -8538,6 +8539,101 @@
         p.hpMinK = null; // no modo aguentar a defesa vale cheia
         return { party: p, medido: true, mortes: Number(dm.mortes) || 0 };
     }
+    /* v2.53.0 — ALVO SEM MEDIÇÃO: com que elemento ele bate (dono, 18/11). Antes a conta punha "fogo por padrão" e mandava magma para
+     * mapa de gelo ou de terra. Ordem: (1) o que a comunidade disse do mapa (SB_ELEM_COMUNIDADE, do Discord); (2) a imunidade dos
+     * monstros (quem é imune a um elemento costuma bater com ele — vale no Bottom, Hive Queen, Fire Portal; NÃO vale na Lizard City,
+     * imune a terra e batendo de fogo), por isso entra só pela metade, misturada com o padrão antigo. A medição de 2 minutos manda. */
+    const SB_ELEM_COMUNIDADE = {
+        62: { fogo: 1 }, 192: { fogo: 1 }, 197: { gelo: 1 }, 199: { terra: 1 }, 200: { terra: 1 }, 201: { fogo: 1 }, 222: { fogo: 0.7, energia: 0.3 }, 226: { terra: 1 },
+        'boss:Hive Queen': { terra: 1 }
+    };
+    /* avisos da comunidade por caçada (Discord, 27/10–18/11): aparecem no Plano da aba Aguentar */
+    const SB_AVISOS = {
+        62: ['Specter (30/10): nunca vá na Lizard City sem set de magma nos magos; o combo do Lizard Noble dá 700 de dano.'],
+        192: ['Specter (30/10): nunca vá na Draken Walls sem set de magma; sem Utamo Vita a morte do Druida é falta de turno (Sio → Mass Healing → combo) — cura própria primeiro.'],
+        197: ['Psyger-0 (30/10): os magos morrem fácil — o dano é de gelo; uma armadura com 5 % de gelo tirou 37 mil de dano do Feiticeiro.'],
+        199: ['Fórum de guias (18/11): o dano nos magos é de terra — proteção de terra neles, não magma.'],
+        200: ['Theus/lhulhu (29/10): o dano aqui é de terra, não precisa do set de magma; os monstros são imunes a terra.'],
+        201: ['Specter (01/11): sem magma amulet os magos morrem sem Utamo Vita; o Cavaleiro precisa de proteção física (os DT arrebentam o knight).'],
+        206: ['Theus (29/10): Phantasm é imune a físico — o Cavaleiro não ataca, só segura (Protector e curas).'],
+        222: ['lucasdela (27/10): set de magma nos magos; sem prey de defesa o Cavaleiro vai de Utamo Tempo; o que mata é o combo de área dos Demons.', 'Specter (15/11): Mass Healing tem raio 3 — o Druida fica a até 3 casas de todos.'],
+        226: ['Fórum de guias (18/11): o dano nos magos é de terra — proteção de terra neles, não magma.'],
+        238: ['Specter (30/10): combo raro de ~800 físico + veneno; 2 bichos juntos matam mago.'],
+        239: ['netao/Specter (31/10): metade dos monstros imune a energia, metade a fogo — o Feiticeiro vai só de Great Fire Wave; set de magma nos magos.']
+    };
+    const SB_ELEM_CAT = { FIRE: 'fogo', ICE: 'gelo', ENERGY: 'energia', EARTH: 'terra', POISON: 'terra', DEATH: 'morte', HOLY: 'sagrado' };
+    function sbElemDoAlvo(alvo) {
+        if (!alvo) return null;
+        const espalha = (base, peso) => { const f = {}; let tot = 0; for (const e of ELEM) tot += Number(base[e]) || 0; if (!(tot > 0)) return null; for (const e of ELEM) f[e] = Math.round(((Number(base[e]) || 0) / tot * peso + (1 - peso) / ELEM.length) * 1000) / 1000; return f; };
+        const com = SB_ELEM_COMUNIDADE[alvo.boss ? 'boss:' + alvo.boss : alvo.id];
+        if (com) { const frac = espalha(com, 0.88); return { frac, fonte: 'comunidade', elems: Object.keys(com) }; }
+        const peso = {};
+        for (const m of (alvo.monsters || [])) {
+            const p = (Number(m.health) || 1) * (Number(m.weight) || 1);
+            for (const x of (m.elements || [])) {
+                const e = SB_ELEM_CAT[String(x && x.type || '').toUpperCase().replace(/^COMBAT_/, '').replace(/DAMAGE$/, '')];
+                if (e && Number(x.percent) >= 100) peso[e] = (peso[e] || 0) + p;
+            }
+        }
+        const est = espalha(peso, 1); if (!est) return null;
+        const frac = {}; for (const e of ELEM) frac[e] = Math.round((est[e] * 0.5 + (e === 'fogo' ? 0.5 : 0.1) * 0.5) * 1000) / 1000; // metade imunidade, metade o padrão antigo
+        return { frac, fonte: 'imunidade', elems: Object.keys(peso).sort((a, b) => peso[b] - peso[a]) };
+    }
+    /* aplica o palpite ao grupo: o que vier medido de OUTROS mapas (elemVoc consolidado) mantém o quanto cada um toma e a parte física,
+     * e a parte mágica é repartida pelo palpite deste alvo */
+    function sbAplicarPalpite(party, frac) {
+        const p = Object.assign({}, party || {}); if (!frac) return p;
+        p.elemPalpite = frac;
+        if (p.elemVoc && typeof p.elemVoc === 'object') {
+            const ev = {};
+            for (const [v, x] of Object.entries(p.elemVoc)) {
+                if (!x) continue;
+                const fis = Number(x.frac && x.frac.fisico) || 0, f = { fisico: fis };
+                for (const e of ELEM) f[e] = (1 - fis) * (Number(frac[e]) || 0);
+                ev[v] = Object.assign({}, x, { frac: f });
+            }
+            p.elemVoc = ev;
+        }
+        return p;
+    }
+    /* v2.53.0 — PROTEÇÃO QUE CADA UM TEM contra o que o alvo bate: soma, nas peças do corpo, da resistência da ficha, das linhas de
+     * resistência da forja, da proteção mágica (só nos elementos) e dos imbuements de proteção. `campo` = 'atual' (hoje) ou 'melhor'
+     * (depois das trocas propostas). Régua: descoberto < 10 % (físico 5 %), fraco < 20 % (físico 12 %); o Cavaleiro tem a meta da
+     * comunidade de 16 % de proteção física (Specter). */
+    const SB_ELEM_EN = { fisico: 'physical', fogo: 'fire', gelo: 'ice', energia: 'energy', terra: 'earth', morte: 'death', sagrado: 'holy' };
+    function sbProtecaoPeca(p, elem) {
+        if (!p) return 0;
+        let a = attrsComRefino(p); if (p.equipPreview && p.equipPreview.attrs) a = Object.assign({}, a, p.equipPreview.attrs);
+        let t = Number(a['absorbpercent' + SB_ELEM_EN[elem]]) || 0;
+        if (elem === 'terra') t += Number(a.absorbpercentpoison) || 0;
+        for (const f of ((p.forja && p.forja.atributos) || [])) {
+            if (f.id === (elem === 'fisico' ? 'resist_fisica' : 'resist_' + elem)) t += Number(f.valor) || 0;
+            if (f.id === 'protecao_magica' && elem !== 'fisico') t += Number(f.valor) || 0;
+        }
+        for (const im of (Array.isArray(p.imbuements) ? p.imbuements : [])) if (im && IMB_ELEM[Number(im.category)] === elem) t += imbValor(im);
+        return t;
+    }
+    function sbProtecao(porVoc, party, vocs) {
+        const P = party || {}, out = [];
+        for (const v of (vocs || VOCS_EQUIP)) {
+            const ev = P.elemVoc && P.elemVoc[v], frac = (ev && ev.frac) || {};
+            const elems = [];
+            if (v === 'KNIGHT' || (Number(frac.fisico) || 0) >= 0.05) elems.push('fisico');
+            const mag = ELEM.map(e => [e, ev && ev.tomadoS > 0 ? (Number(frac[e]) || 0) : P.elemPalpite ? (Number(P.elemPalpite[e]) || 0) : 0]).filter(x => x[1] >= (ev && ev.tomadoS > 0 ? 0.05 : 0.15)).sort((a, b) => b[1] - a[1]).map(x => x[0]);
+            /* lateral medido que não apanha: nada a cobrir */
+            if (v !== 'KNIGHT' && ev && !(ev.tomadoS > 0) && !P.elemPalpite) { out.push({ voc: v, linhas: [], semDano: true }); continue; }
+            const linhas = [];
+            for (const e of elems.concat(mag)) {
+                const soma = (campo) => Math.round(Object.values((porVoc && porVoc[v]) || {}).reduce((t, x) => t + sbProtecaoPeca(x && (campo === 'melhor' ? (x.melhor || x.atual) : x.atual), e), 0) * 10) / 10;
+                const hoje = soma('atual'), depois = soma('melhor');
+                const desc = e === 'fisico' ? 5 : 10, fraco = e === 'fisico' ? 12 : 20, meta = v === 'KNIGHT' && e === 'fisico' ? 16 : null;
+                const estado = depois < desc ? 'ruim' : depois < (meta || fraco) ? 'av' : 'ok';
+                linhas.push({ elem: e, hoje, depois, estado, meta });
+            }
+            out.push({ voc: v, linhas, semDano: false });
+        }
+        return out;
+    }
     /* consumíveis (anel e colar com cargas ou tempo) que valem para ESTA luta: a nota com o contexto do alvo contra a peça vestida ali.
      * Um por personagem e espaço; só quem ganha ≥ 0,5 pt. `pecas` = candidatosEquip (corpo, mochila, depósito). */
     function sbConsumiveis(pecas, porVoc, vocs, ctx) {
@@ -8576,8 +8672,10 @@
         const tS = Number(P.tomadoS) || 0, fis = P.fisico != null ? Number(P.fisico) : 0.65, prey = ent.prey || {};
         const pct = (x) => Math.round(x * 100);
         const alvoNome = alvo.boss || alvo.title || 'o alvo';
-        if (!ent.medido) out.push({ chave: 'medida', nivel: 'av', titulo: 'Sem medição deste alvo', texto: `O helper ainda não viu ${alvoNome}: a conta abaixo usa a referência (Cavaleiro tomando ${Math.round(tS)}/s, ${pct(fis)} % físico, fogo nas magias). Uma luta ou caçada de 2 minutos com o helper aberto grava o dano real por personagem e elemento, e a tela refaz tudo.` });
+        if (!ent.medido) out.push({ chave: 'medida', nivel: 'av', titulo: 'Sem medição deste alvo', texto: `O helper ainda não viu ${alvoNome}: a conta abaixo usa a referência (Cavaleiro tomando ${Math.round(tS)}/s, ${pct(fis)} % físico, ${ent.elem && ent.elem.elems && ent.elem.elems.length ? ent.elem.elems.map(e => SB_ELEM_PT[e] || e).join(' e ') + ' nas magias — ' + (ent.elem.fonte === 'comunidade' ? 'dito pela comunidade no Discord' : 'estimativa: os monstros são imunes a esse elemento e costumam bater com ele') : 'fogo nas magias, o padrão dos mapas altos'}). Uma luta ou caçada de 2 minutos com o helper aberto grava o dano real por personagem e elemento, e a tela refaz tudo.` });
         else out.push({ chave: 'medida', nivel: 'ok', titulo: 'O que o alvo faz', texto: `Cavaleiro toma ${Math.round(tS)}/s (${pct(fis)} % corpo a corpo${P.elemVoc && P.elemVoc.KNIGHT ? ', ' + Object.entries(P.elemVoc.KNIGHT.frac || {}).filter(([e]) => e !== 'fisico').sort((a, b) => b[1] - a[1]).slice(0, 2).map(([e, f]) => pct(f) + ' % ' + (SB_ELEM_PT[e] || e)).join(', ') : ''}).` + (ent.mortes > 0 ? ` ${ent.mortes} morte(s) registrada(s) aqui.` : '') + (ent.hpMinK != null ? ` Vida mínima do Cavaleiro já vista: ${Math.round(ent.hpMinK)} %.` : '') });
+        /* v2.53.0 — avisos da comunidade deste alvo */
+        for (const a of (ent.avisos || [])) { const m = /^([^:]{2,40}):\s*(.*)$/.exec(String(a)); out.push({ chave: 'comunidade', nivel: 'av', titulo: 'Comunidade — ' + (m ? m[1] : 'aviso'), texto: m ? m[2] : String(a) }); }
         /* laterais */
         const lados = ['PALADIN', 'SORCERER', 'DRUID'].filter(v => P.elemVoc && P.elemVoc[v] && P.elemVoc[v].tomadoS > 0);
         if (lados.length) out.push({ chave: 'laterais', nivel: 'av', titulo: 'Magia de área cobre as casas laterais', texto: lados.map(v => { const x = P.elemVoc[v]; const top = Object.entries(x.frac || {}).sort((a, b) => b[1] - a[1])[0]; return `${SB_VOC_PT[v]} toma ${Math.round(x.tomadoS)}/s${top ? ' (' + pct(top[1]) + ' % ' + (SB_ELEM_PT[top[0]] || top[0]) + ')' : ''}`; }).join(' · ') + `. Para eles: resistência ao elemento (anel, colar, forja, imbuement) e Magic Shield nos magos (o dano vai para a mana; mantenha a poção de mana). Vida máxima também conta: mago morto encerra a caçada.` + (ent.celulasCobremTudo ? ' As magias cobrem todas as casas da formação: mover não reduz.' : alvo.boss ? ' Na aba Magia › Boss a grade de formação mostra a casa mais segura.' : '') });
@@ -18027,7 +18125,10 @@
         if (!EQUIP.ctx) return null;
         const dm = danoMapa(sbChave(alvo));
         const base = sbPartyDoDano(dm, EQUIP.ctx.party || {});
-        return { ctx: Object.assign({}, EQUIP.ctx, { party: base.party, notas: null, sobreviver: true, semImbu: true, escolhas: [], memo: new Map() }), dm, medido: base.medido, mortes: base.mortes };
+        /* v2.53.0 — alvo sem medição: o elemento vem da comunidade ou da imunidade dos monstros, não mais "fogo por padrão" */
+        const elem = base.medido ? null : sbElemDoAlvo(alvo);
+        const party = elem ? sbAplicarPalpite(base.party, elem.frac) : base.party;
+        return { ctx: Object.assign({}, EQUIP.ctx, { party, notas: null, sobreviver: true, semImbu: true, escolhas: [], memo: new Map() }), dm, medido: base.medido, mortes: base.mortes, elem };
     }
     function sbPreyBuffs() { const p = PROG && PROG.prey; return p && p.buffs ? p.buffs : {}; }
     async function sbLer() {
@@ -18051,7 +18152,8 @@
             }
             let hpMinK = null; try { for (const r of Object.values(scanResultados() || {})) { if (r && r.id === alvo.id && r.razao && r.razao.porVoc && r.razao.porVoc.KNIGHT && r.razao.porVoc.KNIGHT.hpMin != null) hpMinK = Number(r.razao.porVoc.KNIGHT.hpMin); } } catch { hpMinK = null; }
             const cobre = !!(c.dm && (c.dm.crias || []).some(cr => (cr.magias || []).some(m => Array.isArray(m.celulas) && m.celulas.length >= 18)));
-            SB.plano = sbPlano({ nivel: nivelAtual(), party: SB.ctx.party, medido: c.medido, mortes: c.mortes + (alvo.id != null ? (radarMortes(alvo.id) || 0) : 0), hpMinK, prey: sbPreyBuffs(), alvo: { boss: alvo.boss, title: alvo.title, levelMin: alvo.levelMin, recommendedLevel: alvo.recommendedLevel, lureTiers: alvo.lureTiers, maxLure: alvo.maxLure }, celulasCobremTudo: cobre });
+            SB.plano = sbPlano({ nivel: nivelAtual(), party: SB.ctx.party, medido: c.medido, mortes: c.mortes + (alvo.id != null ? (radarMortes(alvo.id) || 0) : 0), hpMinK, prey: sbPreyBuffs(), alvo: { boss: alvo.boss, title: alvo.title, levelMin: alvo.levelMin, recommendedLevel: alvo.recommendedLevel, lureTiers: alvo.lureTiers, maxLure: alvo.maxLure }, celulasCobremTudo: cobre, elem: c.elem, avisos: SB_AVISOS[alvo.boss ? 'boss:' + alvo.boss : alvo.id] || [] });
+            SB.elem = c.elem;
             sbMercadoRecalcular();
             SB.t = Date.now();
             const trocas = Object.values(SB.res.porVoc).reduce((n, v) => n + Object.values(v).filter(eqMexer).length, 0);
@@ -18139,8 +18241,18 @@
         h += `<div class="tb-cx tb-sb-plano"><b>Plano contra ${escHtml(alvo.boss || alvo.title)}</b>` +
              SB.plano.map(it => `<div class="tb-sb-it" title="${escHtml(it.texto)}">${ico[it.nivel] || ico.ok} ${escHtml(it.titulo)}</div>`).join('') +
              aj('sb-plano-pq', SB.plano.map(it => `<div style="margin-top:3px"><b>${escHtml(it.titulo)}</b> ${escHtml(it.texto)}</div>`).join(''), 'por quê') + `</div>`;
-        /* trocas */
+        /* v2.53.0 — proteção de cada um contra o que o alvo bate (hoje → com as trocas) */
         const ctx = SB.ctx, muda = [];
+        {
+            const prot = sbProtecao(SB.res.porVoc, (ctx && ctx.party) || {}, VOCS_EQUIP), icoP = { ruim: '<span class="tb-ruim">✗</span>', av: '<span class="tb-av">⚠</span>', ok: '<span class="tb-ok">✓</span>' };
+            h += `<h4 style="margin:8px 0 2px">Proteção contra o alvo <span class="tb-mut">(${SB.medido ? 'elementos medidos' : SB.elem ? (SB.elem.fonte === 'comunidade' ? 'elemento dito pela comunidade' : 'elemento estimado pela imunidade dos monstros') : 'sem medição'})</span></h4>`;
+            for (const p of prot) {
+                if (p.semDano) { h += `<div class="tb-sb-lin"><span class="tb-sb-q">${SB_VOC_ABR[p.voc]}</span><span class="tb-sb-n tb-mut">não apanha aqui</span></div>`; continue; }
+                if (!p.linhas.length) continue;
+                h += `<div class="tb-sb-lin"><span class="tb-sb-q" title="${VOC_ROTULO[p.voc]}">${SB_VOC_ABR[p.voc]}</span><span class="tb-sb-n" style="white-space:normal">` + p.linhas.map(l => `<span title="${l.estado === 'ruim' ? 'descoberto' : l.estado === 'av' ? (l.meta ? 'abaixo da meta da comunidade (' + l.meta + ' %)' : 'fraco') : 'coberto'}: soma das peças do corpo (ficha, forja, proteção mágica, imbuement)">${icoP[l.estado]} ${escHtml(SB_ELEM_PT[l.elem] || l.elem)} <b>${numBR(l.hoje, 1)} %</b>${l.depois !== l.hoje ? ' → ' + numBR(l.depois, 1) + ' %' : ''}${l.meta ? ' <span class="tb-mut">(meta ' + l.meta + ')</span>' : ''}</span>`).join(' · ') + `</span></div>`;
+            }
+            h += `<div class="tb-mut tb-eq-nota">✗ abaixo de 10 % (físico 5 %) · ⚠ abaixo de 20 % (físico 12 %; Cavaleiro: meta de 16 %). A seta mostra como fica com as trocas abaixo.</div>`;
+        }
         for (const v of VOCS_EQUIP) { for (const [s, x] of Object.entries(SB.res.porVoc[v] || {})) { if (x && eqMexer(x)) muda.push({ v, s, x }); } }
         h += `<h4 style="margin:8px 0 2px">Vestir para aguentar <span class="tb-mut">(defesa ×3)</span></h4>`;
         if (!muda.length) h += `<div class="tb-mut tb-eq-nota">os 4 já vestem o melhor que você tem para este alvo.</div>`;

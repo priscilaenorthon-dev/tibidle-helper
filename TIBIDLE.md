@@ -7458,3 +7458,22 @@ comunidade (diz em que peça cabe). Abaixo, "onde pôr imbuement" reaproveita a 
 - Não mudou a pontuação das peças nem o que é recomendado comprar. Dano do elemento não virou linha nobre dos magos (travaria o desmanche
   de metade das sobras de arma/colar); a régua já conta 0,6 × a fatia do mago.
 - Testes: 1 novo em `testes/melhorias.test.js`. Sem teste ao vivo (não entrei no jogo).
+
+## 2.53.0 (18/11) — Aguentar: elemento do alvo sem medição, quadro de proteção e avisos da comunidade
+
+Dono: "a aba Aguentar tá ok ou precisa de melhorias?". Em mapa já medido ela estava certa; faltavam três coisas, todas só leitura.
+
+- **Alvo sem medição não é mais "fogo por padrão"** (`sbElemDoAlvo` + `sbAplicarPalpite`, `party.elemPalpite`). Ordem: o que a
+  comunidade disse do mapa (`SB_ELEM_COMUNIDADE`: Lizard City, Draken Walls, Throne of Infernatil e Shadow Nexus = fogo; Bottom = gelo;
+  Hive Queen Chamber, boss Hive Queen, Throne of Verminor e Fire Portal = terra); senão a imunidade dos monstros (imune a um elemento
+  costuma bater com ele), que entra só pela METADE, misturada com o padrão antigo — na Lizard City a regra erra (imune a terra, bate de
+  fogo). O dano medido de outros mapas (`elemVoc` consolidado) mantém quanto cada um toma e a parte física; a parte mágica é repartida
+  pelo palpite. Alvo medido: nada mudou. O Plano diz de onde veio o elemento.
+- **"Proteção contra o alvo"** (`sbProtecao`/`sbProtecaoPeca`): por personagem, só os elementos que batem ali, a soma nas peças do
+  corpo (ficha + linhas de resistência + proteção mágica + imbuement de proteção), hoje → com as trocas. ✗ < 10 % (físico 5 %),
+  ⚠ < 20 % (físico 12 %); Cavaleiro com a meta de 16 % física (Specter). Mesma régua do Painel das 3 contas. Obs.: aqui a física conta
+  também a ficha e o imbuement; a linha da Melhorias (`mlChecklist`) conta só as linhas da forja.
+- **Avisos da comunidade no Plano** (`SB_AVISOS`, 11 caçadas, 27/10–18/11): os 9 do Painel + Hive Queen Chamber/Fire Portal (terra)
+  e o Mass Healing de raio 3 no Shadow Nexus.
+- Não feito (item 4 da análise): poções do Plano continuam genéricas por nível.
+- Testes: 3 novos em `testes/sobreviver.test.js`. Sem teste ao vivo (não entrei no jogo).
