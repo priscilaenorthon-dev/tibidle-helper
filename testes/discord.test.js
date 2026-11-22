@@ -345,7 +345,7 @@ t('2.33.5 varredura de 27/10 (Psyger-0 Hive Tower e Bog, lucasdela Shadow Nexus;
         assert(s && s.huntId === huntId && s.estatisticas && s.estatisticas.nivel === nivel, id);
         for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx(nivel)).avisos, [], id + ' ' + voc);
     }
-    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 222, title: 'Shadow Nexus' }).map(x => x.id), ['shadownexus-lucasdela', 'shadownexus-amigo-whatsapp', 'shadownexus-amigo-whatsapp-2', 'northon-222', 'shadownexus-specter']); // 2.49.0: Specter (Inquisition)
+    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 222, title: 'Shadow Nexus' }).map(x => x.id), ['shadownexus-lucasdela', 'shadownexus-amigo-whatsapp', 'shadownexus-amigo-whatsapp-2', 'northon-222', 'shadownexus-specter', 'shadownexus-ayud', 'shadownexus-palawar']); // 2.49.0: Specter (Inquisition); 2.54.0: ayud e Palawar
     assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 198, title: 'Hive Tower' }).map(x => x.autor), ['Specter', 'Psyger-0', 'Xibara', 'Heron']); // 2.49.0: site do Xibara e limware
 });
 t('2.35.5 varredura de 29/10: Theus (Throne of Bazir e Verminor) tira os "Northon -" dos dois tronos; lucasdela troca a barra do Shadow Nexus; sem aviso no nível 170', () => {
@@ -354,7 +354,7 @@ t('2.35.5 varredura de 29/10: Theus (Throne of Bazir e Verminor) tira os "Northo
         const s = M.SETUPS_DISCORD.find(x => x.id === id);
         assert(s && s.huntId === huntId && s.autor === 'Theus', id);
         for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx).avisos, [], id + ' ' + voc);
-        assert.deepStrictEqual(M.dcSetupsDaHunt({ id: huntId, title: s.hunt }).map(x => x.id).filter(x => x !== 'bazir-xibara'), [id], 'o Northon do trono saiu'); // 2.50.0: o Bazir ganhou o do Xibara
+        assert.deepStrictEqual(M.dcSetupsDaHunt({ id: huntId, title: s.hunt }).map(x => x.id).filter(x => x !== 'bazir-xibara' && x !== 'verminor-biggie'), [id], 'o Northon do trono saiu'); // 2.50.0: o Bazir ganhou o do Xibara; 2.54.0: o Verminor ganhou o do Biggie Smalls
     }
     assert.deepStrictEqual(M.SETUPS_DISCORD.find(x => x.id === 'bazir-theus').chars.KNIGHT.ataque, [], 'Bazir: Cavaleiro não ataca (Phantasm imune a físico)');
     const sn = M.SETUPS_DISCORD.find(x => x.id === 'shadownexus-lucasdela');
@@ -580,7 +580,7 @@ t('2.49.0 varredura de 10/11 a 15/11: Specter (Inquisition e Green Belt), lucasd
     assert.deepStrictEqual(M.SETUPS_DISCORD.find(x => x.id === 'shadownexus-specter').chars.DRUID.defesa[0], ['Mass Healing', 85]);
     assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 248, title: 'Green Belt' }).map(x => x.id), ['greenbelt-specter', 'greenbelt-taina']);
     /* mapas novos (1.2.0/1.2.2) sem post: um "Northon -" cada, sem aviso no nível 170 (o teste do padrão de outubro cobre o resto) */
-    const novos = [63, 264, 247, 256, 257, 242, 244, 250, 245, 251, 246]; // 2.50.0: Sea Serpent Depths (243) e Kilmaresh Catacombs (249) ganharam post
+    const novos = [63, 264, 247, 257, 242, 250, 245, 251, 246]; // 2.50.0: Sea Serpent Depths (243) e Kilmaresh Catacombs (249) ganharam post; 2.54.0: Grim Reapers Yalahar (256) e Temple of the Moon Goddess (244) também
     const ctx = Object.assign({}, CTX_POT, { nivel: 170, magias: SPELLS });
     for (const h of novos) {
         const ls = M.dcSetupsDaHunt({ id: h, title: '' });
@@ -621,5 +621,33 @@ t("2.51.0 varredura de 17/11 a 18/11: Quara's Domain do Xibara (preset 64) e os 
         for (const voc of ['PALADIN', 'SORCERER', 'DRUID']) assert.strictEqual(s.chars[voc].ataque[1][0], 'avalanche rune', id + ' ' + voc);
         for (const voc of ['SORCERER', 'DRUID']) assert(!(s.chars[voc].suporte || []).includes('Magic Shield'), id + ' ' + voc);
     }
+});
+t('2.54.0 varredura de 18/11 a 22/11 e ilha Dream Courts: ayud e Palawar (Shadow Nexus), Theus (Temple of the Moon Goddess), Biggie Smalls (Verminor), Xibara (Grim Reapers) e HERIKO (Lizard City) — sem aviso no nível do post; saem northon-256/244; 7 mapas novos com Northon', () => {
+    const lista = [['grim-xibara', 256, 147], ['lizard-heriko', 62, 120], ['shadownexus-ayud', 222, 180], ['shadownexus-palawar', 222, 207],
+        ['moongoddess-theus', 244, 230], ['verminor-biggie', 200, 195]];
+    for (const [id, huntId, nivel] of lista) {
+        const s = M.SETUPS_DISCORD.find(x => x.id === id);
+        assert(s && s.huntId === huntId && M.dcCompleto(s), id);
+        const ctx = Object.assign({}, CTX_POT, { nivel, magias: SPELLS });
+        for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx).avisos, [], id + ' ' + voc);
+    }
+    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 256, title: 'Grim Reapers Yalahar' }).map(x => x.id), ['grim-xibara']);
+    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 244, title: 'Temple of the Moon Goddess' }).map(x => x.id), ['moongoddess-theus']);
+    /* Xibara no Grim Reaper: a onda e a Caldera vêm ANTES da runa, e os magos jogam sem Magic Shield */
+    const g = M.SETUPS_DISCORD.find(x => x.id === 'grim-xibara');
+    assert.deepStrictEqual(g.chars.SORCERER.ataque.map(a => a[0]), ['Energy Wave', 'thunderstorm rune', 'Ultimate Energy Strike']);
+    assert.deepStrictEqual(g.chars.PALADIN.ataque.slice(0, 3).map(a => a[0]), ['Divine Caldera', 'Strong Ethereal Spear', 'thunderstorm rune']);
+    for (const id of ['grim-xibara', 'shadownexus-palawar', 'verminor-biggie']) for (const voc of ['SORCERER', 'DRUID'])
+        assert(!(M.SETUPS_DISCORD.find(x => x.id === id).chars[voc].suporte || []).includes('Magic Shield'), id + ' ' + voc);
+    /* poção no meio das curas (slot de defesa do print) fica na fila de cura */
+    assert.deepStrictEqual(M.SETUPS_DISCORD.find(x => x.id === 'moongoddess-theus').chars.KNIGHT.defesa[0], ['Ultimate Health Potion', 35]);
+    /* ilha Dream Courts (5) + Haunted Nexus Temple/Cellar: um "Northon -" cada, sem aviso no nível 170 */
+    const ctx = Object.assign({}, CTX_POT, { nivel: 170, magias: SPELLS });
+    for (const h of [133, 252, 253, 254, 255, 258, 259]) {
+        const ls = M.dcSetupsDaHunt({ id: h, title: '' });
+        assert.deepStrictEqual(ls.map(x => x.id), ['northon-' + h], 'mapa ' + h);
+        for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(ls[0], voc, null, ctx).avisos, [], h + ' ' + voc);
+    }
+    for (const nome of ['haunted sigil', 'dream courts fragment', 'dream courts token']) assert(src.includes(`'${nome}'`), 'nunca vender: ' + nome);
 });
 console.log(n + ' testes ok' + (process.exitCode ? ' (com falhas)' : ''));

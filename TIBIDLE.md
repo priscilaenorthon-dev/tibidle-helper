@@ -7477,3 +7477,25 @@ Dono: "a aba Aguentar tá ok ou precisa de melhorias?". Em mapa já medido ela e
   e o Mass Healing de raio 3 no Shadow Nexus.
 - Não feito (item 4 da análise): poções do Plano continuam genéricas por nível.
 - Testes: 3 novos em `testes/sobreviver.test.js`. Sem teste ao vivo (não entrei no jogo).
+
+## 2.54.0 (22/11) — Ilha Dream Courts e varredura 18/11→22/11
+
+Dono: "chegou uma ilha nova com várias hunts novas; coloque elas na nossa lista de magias; e verifica se no Discord saiu setup novo".
+
+- **Ilha nova: Dream Courts** (`/islands`, id `dream_labyrinths`). O Silas pede **10 Haunted Sigil + 15 milhões de ouro**. O sigil cai
+  dos Elites **Hollow High Priest** (10,4 %, chave da caçada nova Haunted Nexus Temple, rec 170) e **Wailing Matron** (20,8 %, chave da
+  Haunted Nexus Cellar, rec 190) — as duas na Tibidle Island, 1 chave por hora. Caçadas da ilha: 133 Carnivora's Rocks (rec 170, lure 6
+  ou 8), 252 Winter Court (200), 253 Summer Court (250, fogo até 1.480), 254 Buried Cathedral (300), 255 Dream Talisman (350, físico até
+  2.288). Loja: token = 10 Dream Courts Fragment + 20 mil + 49 coins; Voltaic Pendulet (12), Dreamweave Shawl (14), Tideforged Leviathan
+  Armor e Pyrecaller Cowl (7). `haunted sigil`, `dream courts fragment` e `dream courts token` entraram no nunca-vender.
+- **7 "Northon - <mapa>"** (ids `northon-133/252/253/254/255/258/259`), mesmo gerador da 2.28.2/2.49.0 com o `/hunts/select` vivo:
+  Carnivora fogo; Haunted Temple gelo; Haunted Cellar fogo; Winter Court fogo (Druida de terra); Summer Court gelo; Buried Cathedral
+  energia; Dream Talisman terra. O texto de cada um diz de que elemento o mapa bate e a chave que dá.
+- **6 setups da comunidade:** Discord — `shadownexus-ayud` (tópico novo "790k de xp - Shadow nexos desde o lvl 150", nível 180, 778k
+  raw, +336,8k/h, com Magic Shield), `shadownexus-palawar` (nível 207, sem Magic Shield), `moongoddess-theus` (Temple of the Moon
+  Goddess, "Aoba meu povo"; sai o `northon-244`), `verminor-biggie` (Throne of Verminor, +266,4k/h em 6h, tópico "PRESETS DE CAÇADAS").
+  Site tibidle-community — `grim-xibara` (preset 66, Grim Reapers Yalahar, +144,1k/h no nível 147; sai o `northon-256`) e
+  `lizard-heriko` (preset 70, Lizard City nível 120, 230k xp/h; print pequeno, dois limiares ambíguos anotados no texto).
+  Fora: preset 67 (Elite), 68/69 (invasão), print de morte do KairusZ. limware sem novidade; Logbook parado desde 17/11.
+- Testes: 1 novo em `testes/discord.test.js` (520 no total); fixture `hunts-discord.json` +7 mapas. Sem teste ao vivo (não entrei no jogo).
+- Próxima varredura: Discord a partir de 22/11 19h; site a partir do preset 71.
