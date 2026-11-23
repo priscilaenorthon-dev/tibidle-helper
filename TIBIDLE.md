@@ -7499,3 +7499,24 @@ Dono: "chegou uma ilha nova com várias hunts novas; coloque elas na nossa lista
   Fora: preset 67 (Elite), 68/69 (invasão), print de morte do KairusZ. limware sem novidade; Logbook parado desde 17/11.
 - Testes: 1 novo em `testes/discord.test.js` (520 no total); fixture `hunts-discord.json` +7 mapas. Sem teste ao vivo (não entrei no jogo).
 - Próxima varredura: Discord a partir de 22/11 19h; site a partir do preset 71.
+
+## 2.55.0 (22/11) — Boss: auditoria nos 147 bosses e três ajustes
+
+Dono: "vê se o setup que monta para atacar os boss tá todo certo, ou se dá para melhorar". Auditoria no node (planejador extraído
+como nos testes, `/spells`, `/potions` e `/bosses/select` vivos, 138 Elites + 9 bosses, níveis 216/147/60 com ML/skill estimados): cada
+kit do modelo Boss comparado com a busca exaustiva de todas as combinações de até 4. Nenhum ataque em elemento imune, nenhum slot morto;
+média 0,2 % abaixo do ótimo, pior 3,5 %. A fórmula bate com o que o Xibara mediu no Elite Soulharvest Reaper (presets/67, nível 147):
+Rage 633 × 644, Ultimate Energy Strike 419 × 426, thunderstorm 160 × 162, Strong Ethereal Spear 328 × 332.
+
+- **Ultimate Strike na busca** (`melhorKitBoss`): além das 5 por dano/segundo e das 2 de maior dano (quase sempre Hell's Core e Rage, as
+  duas do grupo `focus`), entra a mais forte de cada grupo secundário ainda fora do pool (até 2). Depois disso nenhum boss fica mais de
+  2 % abaixo da busca completa; 94 kits mudaram no nível 216, quase todos ganhando o Ultimate Strike na frente da runa.
+- **Intense Recovery no Cavaleiro** (`BOSS_PADRAO`, ≤90, 3 curas): está na barra de quem segura mapa forte (ayud, Theus, Specter).
+- **Boss imune ao que a vocação bate** (Cavaleiro contra The Weeping Matriarch, Aftershock e Countess Sorrow, imunes a físico): o aplicar
+  sozinho deixava a barra da caçada gastando mana em dano zero; agora fica só o golpe mais barato em ≥1 (`bossAtaqueBarato`) e o Log avisa.
+- Não mexido: Blood Rage (mais dano e mais risco) e a sudden death rune como kit único dos magos em ~metade dos bosses (162 de ouro por
+  runa, ~4,9 mil/min por mago — decisão antiga: no boss o ouro pesa pouco).
+- **Não confirmado:** onda/feixe contra um alvo só. No Soulharvest o helper dá ao Feiticeiro Hell's Core + Energy Wave + Great Fire Wave +
+  Great Energy Beam (165 de dano/s na conta) e o Xibara usa Rage + Strikes + runa (~110); só vale se a onda pegar o boss de onde o mago
+  fica. Pede teste ao vivo num Elite (gasta chave).
+- Testes: 3 novos (1 em `magia.test.js`, 2 em `boss-padrao.test.js`; 523 no total). Sem teste ao vivo.

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.54.0
+// @version      2.55.0
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.54.0';
+    const VERSAO = '2.55.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -3426,7 +3426,18 @@
         const longas0 = cands.filter(a => !enchimento(a)).sort((a, b) => valor(b) - valor(a)).slice(0, 5);
         /* v2.17.3 — e as 2 de MAIOR dano por lançamento (Hell's Core 599 a cada 40 s): por dano/segundo elas nunca entravam no pool,
          * mas na frente de uma runa de 2 s (sempre pronta) só vale o slot que bate mais forte que ela num lançamento só */
-        const longas = longas0.concat(cands.filter(a => !enchimento(a) && !longas0.includes(a)).sort((a, b) => b.porLancamento - a.porLancamento).slice(0, 2));
+        const longas1 = longas0.concat(cands.filter(a => !enchimento(a) && !longas0.includes(a)).sort((a, b) => b.porLancamento - a.porLancamento).slice(0, 2));
+        /* v2.55.0 — e a mais forte de cada grupo secundário que ainda não está no pool (auditoria de 22/11 nos 147 bosses do
+         * /bosses/select: as 2 de maior dano eram quase sempre Hell's Core e Rage of the Skies, as duas do grupo `focus`, e o
+         * Ultimate Strike — 30 s, grupo de 2 s, bate mais que a runa — nunca era visto: até 3,5 % de dano a menos no Druida e no
+         * Feiticeiro em 17 bosses). No máximo 2 a mais, para a busca continuar pequena. */
+        const gruposNoPool = new Set(longas1.map(a => a.m.secondaryGroup).filter(Boolean)), extras = [];
+        for (const a of cands.filter(x => !enchimento(x) && !longas1.includes(x) && x.m.secondaryGroup).sort((x, y) => y.porLancamento - x.porLancamento)) {
+            if (extras.length >= 2) break;
+            if (gruposNoPool.has(a.m.secondaryGroup)) continue;
+            gruposNoPool.add(a.m.secondaryGroup); extras.push(a);
+        }
+        const longas = longas1.concat(extras);
         const ench = cands.filter(enchimento).sort((a, b) => b.porLancamento - a.porLancamento);
         const pool = longas.concat(ench.filter(a => a.m.isRune).slice(0, 1), ench.filter(a => !a.m.isRune).slice(0, 2));
         const o = Object.assign({ lure: 1, matarS: 1e6, esperaS: 0, seg: 90, pocao: ent.bebe }, ent.mana);
@@ -4438,6 +4449,14 @@
         const lvl = nivelAtual();
         return padraoBoss(voc, lvl, n => temMagia(n, voc, lvl), { vida: listaPocoes('vida'), mana: listaPocoes('mana') });
     }
+    /* v2.55.0 — o ataque de menor mana que a vocação tem no nível (magia, não runa); null se não há catálogo */
+    function bossAtaqueBarato(voc) {
+        const lvl = nivelAtual();
+        const l = (CAT.magias || []).filter(m => m && !m.isRune && m.group === 'attack' && m.available !== false && m.formula && (m.level || 1) <= lvl
+            && (m.vocations || []).some(v => VOC_CAT[voc].includes(v)));
+        l.sort((a, b) => ((a.mana || 0) - (b.mana || 0)) || ((b.cooldownMs || 2000) - (a.cooldownMs || 2000)));
+        return l.length ? l[0].name : null;
+    }
     async function bossAutoAplicar(nome) {
         if (!bossAutoLigado() || !socketAberto() || _aplicando || !ESTADO_WS.boss) return;
         const h = huntDeBoss(nome);
@@ -4448,7 +4467,7 @@
             guardar('boss_foto', { t: Date.now(), boss: nome, cfgs });
         }
         _aplicando = true; renderizar();
-        let n = 0; const partes = [];
+        let n = 0; const partes = [], semDano = [];
         try {
             for (const voc of VOCS) {
                 const who = indiceDaVoc(voc), atual = configAtiva(voc);
@@ -4458,13 +4477,20 @@
                     const sk = [null, null, null, null], mc = {};
                     r.plano.slice(0, 4).forEach((p, i) => { sk[i] = p.av.m.name; mc[p.av.m.name] = p.minimo; });
                     nova.skills = sk; nova.minCreatures = mc;
+                } else if (r && !r.erro) {
+                    /* v2.55.0 — boss imune a tudo o que a vocação bate (Cavaleiro contra The Weeping Matriarch, Aftershock e Countess
+                     * Sorrow, imunes a físico): ficava a barra da caçada, 4 golpes gastando mana em dano zero. Fica só o golpe mais
+                     * barato em ≥1 — a barra não fica vazia (o jogo deixa de usar poção em quem não tem ataque) e a mana vai para a cura. */
+                    const barato = bossAtaqueBarato(voc);
+                    nova.skills = [barato, null, null, null]; nova.minCreatures = barato ? { [barato]: 1 } : {};
+                    semDano.push(VOC_CURTO[voc]);
                 }
                 if (bossPadraoLigado()) { const x = extrasBoss(voc); if (x) Object.assign(nova, { heals: x.heals, manaPotion: x.manaPotion, supports: x.supports }); }
                 enviarWS({ type: 'update_battle_config', data: payloadBattleConfig(nova, who) });
                 n++; partes.push(VOC_CURTO[voc] + ': ' + (nova.skills.filter(Boolean).join(', ') || '—'));
                 await dorme(150);
             }
-            log(`boss ${nome}: ${bossPadraoLigado() ? 'ataque + padrão forte (vida, mana, defesa, suporte)' : 'ataque'} aplicado nos ${n} — só nesta luta; na volta à caçada a barra de antes volta · ` + partes.join(' · '), n ? 'ok' : 'erro');
+            log(`boss ${nome}: ${bossPadraoLigado() ? 'ataque + padrão forte (vida, mana, defesa, suporte)' : 'ataque'} aplicado nos ${n} — só nesta luta; na volta à caçada a barra de antes volta · ` + partes.join(' · ') + (semDano.length ? ` · ${semDano.join(', ')}: o boss é imune ao que ele bate — ficou só o golpe mais barato` : ''), n ? 'ok' : 'erro');
         } catch (e) { falhou('boss (aplicar sozinho)', e); }
         finally { _aplicando = false; renderizar(); }
     }
@@ -11301,7 +11327,9 @@
      * suportes de luta. Magia que o nível ainda não tem sai (as contas de nível baixo ficam com o que têm); poção da vocação errada
      * nunca entra. Gatilho de mana moderado: a poção e a runa dividem a mesma recarga de 1 s. */
     const BOSS_PADRAO = {
-        KNIGHT: { vida: 55, mana: 30, maxCuras: 2, curas: [['Intense Wound Cleansing', 35], ['Wound Cleansing', 75]], sups: ['Protector', 'Train Party'] },
+        /* v2.55.0 — Intense Recovery no Cavaleiro (nível 100): está na barra de quem segura mapa forte (ayud ≤70, Theus ≤85, Specter ≤95);
+         * gatilho alto porque é regeneração ao longo do tempo, não cura de emergência */
+        KNIGHT: { vida: 55, mana: 30, maxCuras: 3, curas: [['Intense Wound Cleansing', 35], ['Wound Cleansing', 75], ['Intense Recovery', 90]], sups: ['Protector', 'Train Party'] },
         PALADIN: { vida: 50, mana: 35, maxCuras: 3, curas: [['Salvation', 40], ['Divine Healing', 65], ['Intense Healing', 80], ['Light Healing', 85]], sups: ['Sharpshooter', 'Protect Party'] },
         SORCERER: { vida: 45, mana: 40, maxCuras: 3, curas: [['Ultimate Healing', 50], ['Intense Healing', 75], ['Light Healing', 85]], sups: ['Enchant Party', 'Magic Shield'] },
         DRUID: { vida: 45, mana: 40, maxCuras: 3, curas: [['Ultimate Healing', 50], ['Mass Healing', 60], ['Heal Friend', 70], ['Intense Healing', 80], ['Light Healing', 85]], sups: ['Heal Party', 'Magic Shield'] }

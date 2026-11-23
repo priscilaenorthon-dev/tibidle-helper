@@ -44,6 +44,18 @@ t('curas da forte (gatilho baixo) para a leve; a poção no meio; no máximo 5 e
     assert.deepStrictEqual(B.padraoBoss('KNIGHT', 170, todas, POC).supports, ['Protector', 'Train Party']);
 });
 
+t('2.55.0 — Cavaleiro com Intense Recovery (gatilho alto, por último) quando o nível tem; sem ela ficam as duas curas de antes', () => {
+    const k = B.padraoBoss('KNIGHT', 170, todas, POC).heals.filter(Boolean);
+    assert.deepStrictEqual(k.map(h => h.name), ['Intense Wound Cleansing', 'Ultimate Health Potion', 'Wound Cleansing', 'Intense Recovery']);
+    assert.strictEqual(k[3].percent, 90);
+    const semIR = B.padraoBoss('KNIGHT', 90, n => n !== 'Intense Recovery', POC).heals.filter(Boolean).map(h => h.name);
+    assert.deepStrictEqual(semIR, ['Intense Wound Cleansing', 'Great Health Potion', 'Wound Cleansing']);
+});
+
+t('2.55.0 — boss imune ao que a vocação bate: fica só o golpe mais barato (função no script, usada no aplicar sozinho)', () => {
+    assert(/function bossAtaqueBarato\(voc\)/.test(src) && /nova\.skills = \[barato, null, null, null\]/.test(src));
+});
+
 t('nomes do padrão existem nos setups do Discord (mesma grafia do catálogo)', () => {
     for (const v of Object.keys(B.BOSS_PADRAO)) for (const [nome] of B.BOSS_PADRAO[v].curas.concat(B.BOSS_PADRAO[v].sups.map(s => [s]))) assert(src.includes("'" + nome + "'"), nome);
 });

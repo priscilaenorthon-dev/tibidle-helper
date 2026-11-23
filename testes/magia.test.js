@@ -403,4 +403,21 @@ t('2.14.15 — Equilibrado: a "forte" é de rotação (recarga < 30 s); a ultima
     M.MEM.danos_SORCERER = antes; M.invalidarPlanos();
 });
 
+t('2.55.0 — Boss: o Ultimate Strike entra na busca (a mais forte de cada grupo secundário fora do pool); antes só Hell\'s Core e Rage, as duas do grupo focus, eram vistas', () => {
+    const antes = Object.assign({}, STATS);
+    Object.assign(STATS, { KNIGHT: { ml: 9, skill: 67, attack: 45 }, PALADIN: { ml: 20, skill: 71, attack: 40 }, SORCERER: { ml: 52, skill: 10, attack: 0 }, DRUID: { ml: 53, skill: 10, attack: 0 } });
+    try {
+        semear(150);
+        let comUltimate = 0;
+        for (const nome of BOSS_NOMES) for (const voc of ['SORCERER', 'DRUID']) {
+            const r = M.montarPlano('boss', M.huntDeBoss(nome), voc), k = r.plano.map(p => p.av.m);
+            if (k.some(m => /^Ultimate \w+ Strike$/.test(m.name))) comUltimate++;
+            const g = k.map(m => m.secondaryGroup).filter(Boolean);
+            assert(new Set(g).size === g.length, `${nome} ${voc}: grupo secundário repetido: ${txt2(r)}`);
+            assert(r.plano.length <= 4 && r.plano.every(p => p.minimo === 1), `${nome} ${voc}: ${txt2(r)}`);
+        }
+        assert(comUltimate >= 3, 'Ultimate Strike em pelo menos 3 kits de boss dos magos no nível 150: ' + comUltimate);
+    } finally { Object.assign(STATS, antes); semear(62); }
+});
+
 Promise.all(pendentes).then(() => console.log(`\n${n} testes ok`));
