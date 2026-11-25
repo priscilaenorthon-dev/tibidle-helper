@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.55.0
+// @version      2.56.0
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.55.0';
+    const VERSAO = '2.56.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -11157,6 +11157,38 @@
             PALADIN: { vida: ['Ultimate Spirit Potion', 35], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2], ['stone shower rune', 2], ['Strong Ethereal Spear', 1], ['Ethereal Spear', 1]], defesa: [['Salvation', 50], ['Divine Healing', 70], ['Intense Healing', 85]], suporte: ['Protect Party'] },
             SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 50], ataque: [['Energy Wave', 2], ['stone shower rune', 2], ['Ultimate Energy Strike', 1], ['Terra Strike', 1]], defesa: [['Ultimate Healing', 60], ['Intense Healing', 75]], suporte: ['Enchant Party', 'Magic Shield'] },
             DRUID: { vida: ['Health Potion', 30], mana: ['Mana Potion', 50], ataque: [['Terra Wave', 2], ['stone shower rune', 2], ['Ultimate Terra Strike', 1], ['Terra Strike', 1]], defesa: [['Ultimate Healing', 60], ['Mass Healing', 60], ['Heal Friend', 70]], suporte: ['Heal Party', 'Magic Shield'] } } },
+        /* — 2.56.0 (24/11): varredura de 22/11 19h a 24/11 21h. Discord: Matheustlm no "Acessos pra Inqui - Setups" (Throne of Apocalypse e
+         *   Throne of Tafariel, prints do Histórico de 11 h cada) e xXZeNoS no tópico do ayud (Shadow Nexus, 9 h 21 sem morte, com o Resumo).
+         *   "SOU NOVATO…" e "Aoba" sem barra. Site tibidle-community.com sem preset novo (o último segue o 70); limware sem preset novo.
+         *   Ícones casados com os oficiais (casa.py); Hell's Core não está no conjunto de ícones — lido pelo desenho e pelo mínimo ≥4
+         *   (golpe de área de 40 s, o mesmo grupo do Eternal Winter ≥8 do Druida no mesmo print). Munição fora. */
+        { id: 'apocalypse-matheustlm', hunt: 'Throne of Apocalypse', huntId: 203, autor: 'Matheustlm', data: '23/11', titulo: 'Throne of Apocalypse — fogo no Feiticeiro (Matheustlm, 23/11)',
+          lure: '', skills: '', nota: '', nivel: '200',
+          obs: "Matheustlm (tópico \"Acessos pra Inqui - Setups\", 23/11), print do Histórico de 11 h 36 (21/11; dano da party 62,99 M, cura 13,02 M, recebido 13,91 M): \"Peguei level 200 e resolvi farmar os outros relics que faltavam. Apocalypse eu substituí o vis hur do feiticeiro pelo gran flam hur. Motivo: tem muito mais box de destroyer do que de fury/jugger; numa box só de destroyer o vis hur é inútil, já que ele é imune! A xp fica em 250/277k/h e 250/252 na raw. Profit é uma porcaria, depende muito de drop, mas fica na faixa dos 40–50k/h.\" Feiticeiro com Great Fire Wave (o Destroyer é imune a energia); o Energy Strike dele está com mínimo 8 no print (fica como está — quase nunca dispara). Cavaleiro com Front Sweep e Brutal Strike (sem Groundshaker); Paladino com Salvation; ninguém com suporte. Munição genérica, fora.",
+          estatisticas: { xpH: '250–277k (≈250k raw)', lucroH: '+40–50k', nivel: 200 },
+          chars: {
+            KNIGHT: { vida: ['Great Health Potion', 50], mana: ['Mana Potion', 50], ataque: [['Fierce Berserk', 4], ['Berserk', 2], ['Front Sweep', 1], ['Brutal Strike', 1]], defesa: [['Intense Recovery', 100], ['Intense Wound Cleansing', 40], ['Wound Cleansing', 70]] },
+            PALADIN: { vida: ['Great Spirit Potion', 30], mana: ['Mana Potion', 50], ataque: [['Divine Caldera', 4], ['avalanche rune', 3], ['Strong Ethereal Spear', 1], ['Divine Missile', 1]], defesa: [['Salvation', 60], ['Intense Healing', 80]] },
+            SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 30], ataque: [['Great Fire Wave', 4], ['avalanche rune', 2], ['Ultimate Energy Strike', 1], ['Energy Strike', 8]], defesa: [['Ultimate Healing', 65], ['Intense Healing', 70], ['Light Healing', 85]] },
+            DRUID: { vida: ['Health Potion', 50], mana: ['Mana Potion', 50], ataque: [['Strong Ice Wave', 2], ['avalanche rune', 2], ['Ultimate Ice Strike', 1], ['Energy Strike', 1]], defesa: [['Heal Friend', 75], ['Mass Healing', 70], ['Ultimate Healing', 60], ['Intense Healing', 85]] } } },
+        { id: 'tafariel-matheustlm', hunt: 'Throne of Tafariel', huntId: 202, autor: 'Matheustlm', data: '23/11', titulo: 'Throne of Tafariel (Matheustlm, 23/11)',
+          lure: '', skills: '', nota: '', nivel: '200',
+          obs: "Matheustlm (tópico \"Acessos pra Inqui - Setups\", 23/11), print do Histórico de 11 h 25 (22/11; dano da party 68,54 M, cura 13,75 M, recebido 14,92 M): \"O do Tafariel não tem grandes mudanças, mas pra mim foi uma surpresa a xp! Fica em torno de uns 350k/h (320k/h na raw)! O profit é uma porcaria, eu fiquei negativo na hunt por umas 2–3 h até começar a subir! Peguei os relics e acho muito difícil retornar lá.\" Mesma base do Apocalypse dele, com o Feiticeiro de energia (Energy Wave e avalanche a partir de 3, Ice Strike no fim). Ninguém com suporte. Ele contou também o Infernatil, sem print: 200–210k xp/h raw, +190–210k/h. Munição genérica, fora.",
+          estatisticas: { xpH: '≈350k (320k raw)', nivel: 200 },
+          chars: {
+            KNIGHT: { vida: ['Great Health Potion', 50], mana: ['Mana Potion', 70], ataque: [['Fierce Berserk', 4], ['Berserk', 2], ['Front Sweep', 1], ['Brutal Strike', 1]], defesa: [['Intense Recovery', 100], ['Intense Wound Cleansing', 40], ['Wound Cleansing', 70]] },
+            PALADIN: { vida: ['Great Spirit Potion', 30], mana: ['Mana Potion', 50], ataque: [['Divine Caldera', 4], ['avalanche rune', 3], ['Strong Ethereal Spear', 1], ['Divine Missile', 1]], defesa: [['Salvation', 60], ['Intense Healing', 80]] },
+            SORCERER: { vida: ['Health Potion', 30], mana: ['Mana Potion', 30], ataque: [['Energy Wave', 3], ['avalanche rune', 3], ['Ultimate Energy Strike', 1], ['Ice Strike', 1]], defesa: [['Ultimate Healing', 60], ['Intense Healing', 85]] },
+            DRUID: { vida: ['Health Potion', 50], mana: ['Mana Potion', 50], ataque: [['Strong Ice Wave', 2], ['avalanche rune', 2], ['Ultimate Ice Strike', 1], ['Ice Strike', 1]], defesa: [['Heal Friend', 75], ['Mass Healing', 70], ['Ultimate Healing', 60], ['Intense Healing', 85]] } } },
+        { id: 'shadownexus-xxzenos', hunt: 'Shadow Nexus', huntId: 222, autor: 'xXZeNoS', data: '24/11', titulo: 'Shadow Nexus — 9 h sem morte, nível 201→206 (xXZeNoS, 24/11)',
+          lure: '', skills: '', nota: '', nivel: '201–206',
+          obs: "xXZeNoS, no tópico do ayud (24/11): \"Esse é meu resumo da Shadow Nexus: usem imbuement de mana em todas as armas; eu também comprei um shield pro druid e coloquei imbuement de resistência a fogo. Fiquei quase 10 h e não morri.\" Prints do Histórico de 9 h 21 (do nível 201 ao 206): 985,8k xp/h (838,5k raw), +238,3k/h, loot 6,46 M, gasto 4,23 M (poções 2,3 M, runas 111k, munição 1,82 M); dano da party 96,07 M, cura 10,13 M, recebido 14,48 M. Ultimates de 40 s abrindo a área: Hell's Core ≥4 no Feiticeiro e Eternal Winter ≥8 no Druida; Annihilation no Cavaleiro. Só o Druida com Magic Shield; Feiticeiro com Strong Mana Potion. Paladino com Intense Recovery sempre ligada (≤100), Protect Party e Sharpshooter. A poção de vida do Cavaleiro casou mal com os ícones (provável Ultimate Health Potion). Na mesma conversa (24/11), Aranha (nível 206) disse que fica no prejuízo com Utamo e sem ele o Druida morre; Guilherme Tessari respondeu: \"set magma com resistência a fogo e o imbuement de resistência a fogo no shield\". Munição fica a sua.",
+          estatisticas: { xpH: '985,8k (838,5k raw)', lucroH: '+238,3k', nivel: 206 },
+          chars: {
+            KNIGHT: { vida: ['Ultimate Health Potion', 45], mana: ['Mana Potion', 30], ataque: [['Fierce Berserk', 4], ['Berserk', 3], ['Front Sweep', 2], ['Annihilation', 1]], defesa: [['Intense Wound Cleansing', 30], ['Intense Recovery', 70], ['Wound Cleansing', 85]], suporte: ['Train Party'] },
+            PALADIN: { vida: ['Great Spirit Potion', 30], mana: ['Mana Potion', 30], ataque: [['Divine Caldera', 2], ['avalanche rune', 2], ['Strong Ethereal Spear', 1], ['Divine Missile', 1]], defesa: [['Intense Recovery', 100], ['Intense Healing', 60], ['Divine Healing', 70]], suporte: ['Protect Party', 'Sharpshooter'] },
+            SORCERER: { vida: ['Health Potion', 50], mana: ['Strong Mana Potion', 70], ataque: [["Hell's Core", 4], ['Energy Wave', 2], ['avalanche rune', 2], ['Strong Energy Strike', 1]], defesa: [['Ultimate Healing', 60], ['Intense Healing', 75]], suporte: ['Enchant Party'] },
+            DRUID: { vida: ['Health Potion', 70], mana: ['Mana Potion', 70], ataque: [['Eternal Winter', 8], ['Strong Ice Wave', 2], ['avalanche rune', 2], ['Energy Strike', 1]], defesa: [['Ultimate Healing', 60], ['Heal Friend', 75], ['Mass Healing', 75]], suporte: ['Heal Party', 'Magic Shield'] } } },
     ];
     /* v2.36.9 — post de jogador (todo setup que não é "Northon - <mapa>") aplica a barra inteira, poções incluídas; os gerados
      * pelo helper só com `pocaoDoMapa` (Draken Walls, Shadow Nexus) */

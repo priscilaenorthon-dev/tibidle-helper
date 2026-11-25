@@ -7520,3 +7520,22 @@ Rage 633 × 644, Ultimate Energy Strike 419 × 426, thunderstorm 160 × 162, Str
   Great Energy Beam (165 de dano/s na conta) e o Xibara usa Rage + Strikes + runa (~110); só vale se a onda pegar o boss de onde o mago
   fica. Pede teste ao vivo num Elite (gasta chave).
 - Testes: 3 novos (1 em `magia.test.js`, 2 em `boss-padrao.test.js`; 523 no total). Sem teste ao vivo.
+
+## 2.56.0 (24/11) — Varredura de 22/11 19h a 24/11 21h: 3 setups novos
+
+Dono: "verificar o discord e ver se tem setup novos para as hunts".
+
+- **Discord, "Acessos pra Inqui - Setups"** — Matheustlm (nível 200, 23/11), prints do Histórico de ~11 h cada:
+  - `apocalypse-matheustlm` (Throne of Apocalypse): Feiticeiro com Great Fire Wave no lugar da Energy Wave ("tem muito mais box de
+    Destroyer, que é imune a energia"); 250–277k xp/h (≈250k raw), +40–50k/h. O Energy Strike do Feiticeiro está com mínimo 8 no
+    print (ficou como está).
+  - `tafariel-matheustlm` (Throne of Tafariel): ≈350k xp/h (320k raw); lucro fraco (negativo nas 2–3 h iniciais). Ele contou também o
+    Infernatil sem print (200–210k raw, +190–210k/h).
+- **Discord, tópico do ayud** — `shadownexus-xxzenos` (Shadow Nexus, 24/11): 9 h 21 sem morte, nível 201→206, 985,8k xp/h (838,5k raw),
+  +238,3k/h. Hell's Core ≥4 no Feiticeiro e Eternal Winter ≥8 no Druida, Annihilation no Cavaleiro, só o Druida com Magic Shield;
+  "imbuement de mana em todas as armas, shield no Druida com imbuement de resistência a fogo". Hell's Core não está no conjunto de ícones
+  oficiais do casa.py: foi lido pelo desenho e pelo mínimo ≥4. A poção de vida do Cavaleiro casou mal (provável Ultimate Health Potion).
+- Sem barra: "SOU NOVATO…" (rota de níveis do netao), "Aoba" e "PRESETS DE CAÇADAS" sem mensagem nova no período.
+  tibidle-community.com sem preset novo (o último segue o 70; 71+ dão 404); limware sem novidade.
+- Nenhum "Northon -" sai (os três mapas já tinham post). Testes: 1 novo em `testes/discord.test.js` (524 no total). Sem teste ao vivo.
+- Próxima varredura: Discord a partir de 24/11 21h; site a partir do preset 71.

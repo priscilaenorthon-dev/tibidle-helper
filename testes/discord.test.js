@@ -345,7 +345,7 @@ t('2.33.5 varredura de 27/10 (Psyger-0 Hive Tower e Bog, lucasdela Shadow Nexus;
         assert(s && s.huntId === huntId && s.estatisticas && s.estatisticas.nivel === nivel, id);
         for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx(nivel)).avisos, [], id + ' ' + voc);
     }
-    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 222, title: 'Shadow Nexus' }).map(x => x.id), ['shadownexus-lucasdela', 'shadownexus-amigo-whatsapp', 'shadownexus-amigo-whatsapp-2', 'northon-222', 'shadownexus-specter', 'shadownexus-ayud', 'shadownexus-palawar']); // 2.49.0: Specter (Inquisition); 2.54.0: ayud e Palawar
+    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 222, title: 'Shadow Nexus' }).map(x => x.id), ['shadownexus-lucasdela', 'shadownexus-amigo-whatsapp', 'shadownexus-amigo-whatsapp-2', 'northon-222', 'shadownexus-specter', 'shadownexus-ayud', 'shadownexus-palawar', 'shadownexus-xxzenos']); // 2.49.0: Specter (Inquisition); 2.54.0: ayud e Palawar; 2.56.0: xXZeNoS
     assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 198, title: 'Hive Tower' }).map(x => x.autor), ['Specter', 'Psyger-0', 'Xibara', 'Heron']); // 2.49.0: site do Xibara e limware
 });
 t('2.35.5 varredura de 29/10: Theus (Throne of Bazir e Verminor) tira os "Northon -" dos dois tronos; lucasdela troca a barra do Shadow Nexus; sem aviso no nível 170', () => {
@@ -649,5 +649,23 @@ t('2.54.0 varredura de 18/11 a 22/11 e ilha Dream Courts: ayud e Palawar (Shadow
         for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(ls[0], voc, null, ctx).avisos, [], h + ' ' + voc);
     }
     for (const nome of ['haunted sigil', 'dream courts fragment', 'dream courts token']) assert(src.includes(`'${nome}'`), 'nunca vender: ' + nome);
+});
+t('2.56.0 varredura de 22/11 a 24/11: Matheustlm (Throne of Apocalypse e Tafariel) e xXZeNoS (Shadow Nexus) — sem aviso no nível do print; os tronos já tinham post, nenhum "Northon -" sai', () => {
+    const lista = [['apocalypse-matheustlm', 203, 200], ['tafariel-matheustlm', 202, 200], ['shadownexus-xxzenos', 222, 206]];
+    for (const [id, huntId, nivel] of lista) {
+        const s = M.SETUPS_DISCORD.find(x => x.id === id);
+        assert(s && s.huntId === huntId && M.dcCompleto(s), id);
+        const ctx = Object.assign({}, CTX_POT, { nivel, magias: SPELLS });
+        for (const voc of ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']) assert.deepStrictEqual(M.dcConfigDe(s, voc, null, ctx).avisos, [], id + ' ' + voc);
+    }
+    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 203, title: 'Throne of Apocalypse' }).map(x => x.id), ['apocalypse-specter', 'apocalypse-matheustlm']);
+    assert.deepStrictEqual(M.dcSetupsDaHunt({ id: 202, title: 'Throne of Tafariel' }).map(x => x.id), ['tafariel-specter', 'tafariel-matheustlm']);
+    /* Apocalypse: gran flam hur no lugar do vis hur (o Destroyer é imune a energia) */
+    assert.strictEqual(M.SETUPS_DISCORD.find(x => x.id === 'apocalypse-matheustlm').chars.SORCERER.ataque[0][0], 'Great Fire Wave');
+    /* xXZeNoS: ultimates de 40 s abrindo a área e só o Druida com Magic Shield */
+    const z = M.SETUPS_DISCORD.find(x => x.id === 'shadownexus-xxzenos');
+    assert.deepStrictEqual(z.chars.SORCERER.ataque[0], ["Hell's Core", 4]);
+    assert.deepStrictEqual(z.chars.DRUID.ataque[0], ['Eternal Winter', 8]);
+    assert(z.chars.DRUID.suporte.includes('Magic Shield') && !z.chars.SORCERER.suporte.includes('Magic Shield'));
 });
 console.log(n + ' testes ok' + (process.exitCode ? ' (com falhas)' : ''));
