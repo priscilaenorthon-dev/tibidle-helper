@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.59.0
+// @version      2.60.0
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.59.0';
+    const VERSAO = '2.60.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -11622,8 +11622,12 @@
         pesoMoer: 0.8, raioMoer: 3, vidaMoer: 0.3, densMax: 12,
         cacarBoss: true, cacarComUlt: true, reservarPar: true, vidaCaca: 0.4, distBoss: 1, pesoBoss: 1.5, medoDoAlvo: 0.1,
         /* cartas: ordem das magias preferidas (a passiva de par vem junto); vazio = qualquer uma */
-        /* 2.58.1 — a build do 115 ao vivo; no simulador (5 buffs, 30 sementes) 120 de média contra 117 sem preferência */
-        magiasPreferidas: ['Whirlwind Throw', 'Front Sweep', 'Annihilation', 'Inflict Wound'], passivasExtras: ['Sorte', 'Ímã', 'Sabedoria'], curaAbaixo: 0.5,
+        /* 2.60.0 — as 70 builds de 4 magias no simulador (5 buffs, 12 sementes): Front Sweep está nas 7 melhores; com o Haste primeiro,
+         * Front Sweep + Inflict Wound + Brutal Strike + Whirlwind Throw = 131 de média contra 125 da build do 115 (Annihilation no lugar do Brutal) */
+        magiasPreferidas: ['Front Sweep', 'Inflict Wound', 'Brutal Strike', 'Whirlwind Throw'], passivasExtras: ['Sorte', 'Ímã', 'Sabedoria'], curaAbaixo: 0.5,
+        /* 2.60.0 — dono, 26/11: "Haste é bem melhor, para correr". No motor cada nível = passo 8 % mais curto (até 40 % no 5);
+         * entra assim que aparece e sobe antes de nível de magia sem par */
+        passivasPrioridade: ['Haste'],
         saidaMin: 3, pesoSaida: 1
     };
     const SV_DIRS = []; for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) if (dx || dy) SV_DIRS.push([dx, dy]);
@@ -11830,6 +11834,11 @@
             case 'passiva-nova': {
                 const dono = SV_PAR_INV[p];
                 if (dono && mags.includes(dono)) return 200;
+                /* 2.60.0 — passiva prioritária (Haste): pega na hora se houver vaga e não roubar a do par de uma magia que fica sem U */
+                if ((C.passivasPrioridade || []).includes(p) && pass.length < 4) {
+                    const livresP = 4 - pass.length, precisamP = mags.filter(x => !pass.includes(SV_PAR[x])).length + (4 - mags.length);
+                    if (livresP > precisamP || (dono && (pref.includes(dono) || !pref.length) && mags.length < 4)) return 160;
+                }
                 if (C.reservarPar === false) { if (dono && pref.includes(dono) && mags.length < 4) return 60 + bonusPref(dono) / 2; return (C.passivasExtras || []).includes(p) ? 40 : 20; }
                 /* vaga de passiva é do par: só sobra vaga para outra se ainda couber o par de toda magia (atual e futura) */
                 const livres = 4 - pass.length, precisam = mags.filter(x => !pass.includes(SV_PAR[x])).length + (4 - mags.length);
@@ -11839,7 +11848,7 @@
                 if (livres > precisam) return (C.passivasExtras || []).includes(p) ? 25 : 12;
                 return -100;
             }
-            case 'nivel-de-passiva': { const dono = SV_PAR_INV[p]; return dono && mags.includes(dono) ? 70 : 30; }
+            case 'nivel-de-passiva': { const dono = SV_PAR_INV[p]; if ((C.passivasPrioridade || []).includes(p)) return 120; return dono && mags.includes(dono) ? 70 : 30; }
             default: return 10;
         }
     }

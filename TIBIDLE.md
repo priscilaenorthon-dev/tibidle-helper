@@ -7606,3 +7606,16 @@ no lugar do Haste).
   golpe dela não cair enquanto estiver ali. Ficar parado também virou opção.
 - Testados e desligados (sem ganho no simulador): caçar conjurador no fim (`cacarConj`), fugir do alcance de conjurador (`pesoAlcance`).
 - Testes novos em `testes/arena.test.js` (540 no total). Validação ao vivo a pedido do dono (simulações longas demoram).
+
+## 2.60.0 (26/11) — Sobrevivência: Haste primeiro
+
+- Dono: "Haste é bem melhor, para correr". No motor cada nível de Haste encurta o passo do Knight em 8 % (até 40 % no nível 5,
+  `.08*nT(baralho,"Haste")`). É também o par do Front Sweep (U = Varredura Total).
+- `SV_CFG.passivasPrioridade = ['Haste']`: carta nova de Haste vale 160 (acima de magia nova e de nível de magia) se houver vaga e não
+  roubar a do par de uma magia que ficaria sem U; nível de Haste vale 120 (acima de nível de magia sem par e de nível das outras passivas).
+- Como ganhar a U: magia no nível 8 + a passiva de par no baralho + matar o boss (a cada 2 min) e abrir o baú, que oferece até 3
+  ultimates das magias elegíveis (sorteia se houver mais).
+- **Build nova** (`magiasPreferidas`): Front Sweep + Inflict Wound + Brutal Strike + Whirlwind Throw. As 70 combinações de 4 magias no
+  simulador (5 buffs, 12 sementes): Front Sweep está nas 7 primeiras; a build do 115 (com Annihilation) ficou em 37º (122,8). Com o
+  Haste primeiro: nova 131,3 · nova sem a prioridade 127,4 · build do 115 125,3.
+- Teste novo em `testes/arena.test.js` (541 no total). Falta a validação ao vivo.

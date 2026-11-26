@@ -110,4 +110,12 @@ t('2.59.0: não anda para dentro de árvore/pedra do chão', () => {
     const d = A.svDecidir(st, {}, A.SV_CFG);
     assert(!A.svParede(px - 1 + d[0], py + d[1]), 'o passo não cai na parede');
 });
+t('2.60.0: Haste entra assim que aparece e sobe antes de nível de magia sem par (dono, 26/11: "para correr")', () => {
+    const of = [{ especie: 'nivel-de-magia', magia: 'Annihilation' }, { especie: 'passiva-nova', passiva: 'Haste' }];
+    const st = estado({ baralho: { magias: [{ nome: 'Whirlwind Throw', nivel: 3 }, { nome: 'Annihilation', nivel: 2 }], passivas: [{ nome: 'Ímã', nivel: 1 }], oferta: of } });
+    assert.strictEqual(A.svEscolherCarta(st, A.SV_CFG), 1, 'Haste novo vence nível de magia');
+    const of2 = [{ especie: 'nivel-de-passiva', passiva: 'Ímã' }, { especie: 'nivel-de-passiva', passiva: 'Haste' }, { especie: 'nivel-de-magia', magia: 'Inflict Wound' }];
+    const st2 = estado({ baralho: { magias: [{ nome: 'Whirlwind Throw', nivel: 3 }, { nome: 'Inflict Wound', nivel: 2 }], passivas: [{ nome: 'Ímã', nivel: 1 }, { nome: 'Haste', nivel: 1 }], oferta: of2 } });
+    assert.strictEqual(A.svEscolherCarta(st2, A.SV_CFG), 1, 'nível de Haste vence nível de magia sem par');
+});
 console.log(`\n${n} testes ok`);
