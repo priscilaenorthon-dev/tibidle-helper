@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.56.0
+// @version      2.57.0
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.56.0';
+    const VERSAO = '2.57.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -11504,6 +11504,7 @@
     #tb-corpo [style*="font-size:8"],#tb-corpo [style*="font-size:9"],#tb-corpo [style*="font-size:10px"]{font-size:var(--tb-fmin)!important}
     #tb-caixa.tb-cel{--tb-fmin:12px;--tb-alvo:40px;left:0;right:0}
     #tb-trilho.tb-denso .tb-ico{height:31px}
+    #tb-trilho.tb-denso2 .tb-ico{height:30px}
     .tb-cel #tb-trilho{width:auto;flex-direction:row;align-items:stretch;padding:2px;gap:0;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
     .tb-cel .tb-ico{flex:1 1 0;min-width:40px;height:52px;font-size:19px;gap:4px}
     .tb-cel .tb-ico .tb-rot{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:9px/1 system-ui,-apple-system,sans-serif;letter-spacing:.2px}
@@ -11593,7 +11594,7 @@
         return UI;
     };
     const guardarUI = (patch) => { UI = Object.assign(ui(), patch); guardar('ui', UI); };
-    const ICONES = [['estado', '⌂', 'Status'], ['magia', '✦', 'Magia'], ['autohunt', '↻', 'Auto Hunt'], ['scan', '◎', 'Scan'], ['equip', '⛨', 'Equip'], ['analise', '▤', 'Analisador'], ['progresso', '⚑', 'Progresso'], ['mercado', '⚖', 'Mercado'], ['melhorias', '⇧', 'Melhorias'], ['forja', '⚒', 'Forja'], ['sobreviver', '🛡', 'Aguentar'], ['radar', '⌖', 'Radar'], ['log', '≡', 'Log']];
+    const ICONES = [['estado', '⌂', 'Status'], ['magia', '✦', 'Magia'], ['autohunt', '↻', 'Auto Hunt'], ['scan', '◎', 'Scan'], ['equip', '⛨', 'Equip'], ['analise', '▤', 'Analisador'], ['progresso', '⚑', 'Progresso'], ['mercado', '⚖', 'Mercado'], ['melhorias', '⇧', 'Melhorias'], ['forja', '⚒', 'Forja'], ['sobreviver', '🛡', 'Aguentar'], ['arena', '☠', 'Sobrevivência'], ['radar', '⌖', 'Radar'], ['log', '≡', 'Log']];
     /* "?" com a explicação escondida; data-k preserva aberto/fechado ao repintar */
     const aj = (k, html, rotulo) => `<details class="tb-aj" data-k="${k}"><summary>${rotulo || '?'}</summary><div class="tb-mut">${html}</div></details>`;
 
@@ -11608,6 +11609,157 @@
      * dentro da cena e para antes da barra de ação. Arrastar ao fundo tirava 6
      * ícones da tela (o limite olhava só 120 px do trilho): agora o trilho
      * inteiro fica na tela e a gaveta cresce para cima quando embaixo não cabe. */
+    /* @@ARENA-PURO-INICIO — Sobrevivência (2.57.0): decisões do robô, puras (o tempo é st.tempoMs, sem DOM).
+     * st = estado da simulação do cliente (ref.current.st do componente da partida). O mesmo código rodou no simulador
+     * (motor do jogo, chunk 8606, no node) em 26/11: fugir sempre = ameaça média 100; moer a multidão + caçar boss +
+     * vaga de passiva reservada ao par da magia (ultimate no baú do boss) = 117 (máx. 141). testes/arena.test.js roda este trecho. */
+    const SV_PAR = { 'Berserk': 'Blood Rage', 'Whirlwind Throw': 'Ímã', 'Brutal Strike': 'Recarga', 'Annihilation': 'Crítico',
+        'Front Sweep': 'Haste', 'Groundshaker': 'Área', 'Inflict Wound': 'Recovery', 'Lâminas do Céu': 'Sorte' };
+    const SV_PAR_INV = Object.fromEntries(Object.entries(SV_PAR).map(([m, p]) => [p, m]));
+    const SV_CFG = {
+        raioPerigo2: 16, raioLonge2: 81, pesoAlvo: 1.2, pesoAlvoVidaBaixa: 0.5, vidaBaixa: 0.35, pesoAviso: 12,
+        pesoPerigoAlvo: 0.3, valorFogueira: 25, divCristal: 25,
+        pesoMoer: 0.8, raioMoer: 3, vidaMoer: 0.3, densMax: 12,
+        cacarBoss: true, cacarComUlt: true, reservarPar: true, vidaCaca: 0.4, distBoss: 1, pesoBoss: 1.5, medoDoAlvo: 0.1,
+        /* cartas: ordem das magias preferidas (a passiva de par vem junto); vazio = qualquer uma */
+        magiasPreferidas: [], passivasExtras: ['Sorte', 'Ímã', 'Sabedoria'], curaAbaixo: 0.5
+    };
+    const SV_DIRS = []; for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) if (dx || dy) SV_DIRS.push([dx, dy]);
+
+    function svCasasDeAviso(st) {
+        const s = new Set();
+        for (const a of st.avisos || []) for (const t of a.tiles || []) s.add(t.x + ',' + t.y);
+        return s;
+    }
+    function svPerigo(st, x, y, C) {
+        let p = 0;
+        for (const b of st.bichos) {
+            const d2 = (b.x - x) ** 2 + (b.y - y) ** 2;
+            const longe = b.ehBoss || b.ehConjurador;
+            if (d2 > (longe ? C.raioLonge2 : C.raioPerigo2)) continue;
+            const cong = b.congeladoAte && b.congeladoAte > st.tempoMs;
+            p += (b.ehBoss ? 4 : b.ehConjurador ? 1.5 : 1) * (cong ? 0.1 : 1) / Math.max(0.5, longe ? Math.sqrt(d2) * 2 : d2);
+        }
+        if (st.reaper) { const d2 = (st.reaper.x - x) ** 2 + (st.reaper.y - y) ** 2; p += 60 / Math.max(0.3, d2); }
+        return p;
+    }
+    function svEscolherAlvo(st, C) {
+        const K = st.knight, hp = K.hp / K.maxHp;
+        const grade = new Map();
+        for (const o of st.itens) if (o.tipo === 'cristal' && !o.voando) { const k = Math.floor(o.x / 3) + ',' + Math.floor(o.y / 3); grade.set(k, (grade.get(k) || 0) + o.xp); }
+        let melhor = null, mv = 0;
+        const olhar = (x, y, v, tipo) => {
+            const d = Math.hypot(x - K.x, y - K.y);
+            const nota = v / (d + 3) - C.pesoPerigoAlvo * svPerigo(st, x, y, C);
+            if (nota > mv) { mv = nota; melhor = { x, y, v, tipo }; }
+        };
+        for (const it of st.itens) {
+            if (it.voando) continue;
+            let v = 0;
+            if (it.tipo === 'orbe') v = 120;
+            else if (it.tipo === 'bau') v = 100;
+            else if (it.tipo === 'caveira') v = 40 + st.bichos.length * 0.5;
+            else if (it.tipo === 'comida') v = hp < 0.85 ? 150 * (1 - hp) : 1;
+            else if (it.tipo === 'gelo') v = 15 + (hp < 0.5 ? 40 : 0);
+            else if (it.tipo === 'cristal') v = (grade.get(Math.floor(it.x / 3) + ',' + Math.floor(it.y / 3)) || 0) / C.divCristal;
+            olhar(it.x, it.y, v, it.tipo);
+        }
+        for (const f of st.fogueiras) olhar(f.x, f.y, C.valorFogueira + (hp < 0.6 ? 20 : 0), 'fogueira');
+        /* caçar boss (dono, 26/11): um de cada vez, do mais fácil (menos vida restante) ao mais difícil; só com vida boa.
+         * Baú, orbe e caveira por perto continuam na frente. */
+        const pass = st.baralho.passivas.map(p => p.nome || p);
+        const ultPronta = st.baralho.magias.some(m => m.nivel >= 8 && !m.evoluiu && pass.includes(SV_PAR[m.nome]));
+        if ((C.cacarBoss || (C.cacarComUlt && ultPronta)) && hp >= C.vidaCaca &&!(melhor && ['bau', 'orbe', 'caveira'].includes(melhor.tipo) && Math.hypot(melhor.x - K.x, melhor.y - K.y) < 12)) {
+            const bosses = st.bichos.filter(b => b.ehBoss).sort((a, b) => a.hp - b.hp);
+            if (bosses.length) { const b = bosses[0]; return { x: b.x, y: b.y, v: 999, tipo: 'boss', id: b.id }; }
+        }
+        return melhor;
+    }
+    /* saída do aviso: busca em largura (8 direções, sem atravessar bicho) até a casa fora de todo aviso mais perto; devolve o 1º passo */
+    function svSairDoAviso(st, aviso, ocupado) {
+        const K = st.knight, ini = K.x + ',' + K.y, veio = new Map([[ini, null]]), fila = [[K.x, K.y, 0]];
+        while (fila.length) {
+            const [x, y, d] = fila.shift();
+            const k = x + ',' + y;
+            if (!aviso.has(k)) { let c = k; while (veio.get(c) !== ini && veio.get(c) !== null) c = veio.get(c); const [cx, cy] = c.split(',').map(Number); return [cx - K.x, cy - K.y]; }
+            if (d >= 8) continue;
+            for (const [dx, dy] of SV_DIRS) {
+                const nx = x + dx, ny = y + dy, nk = nx + ',' + ny;
+                if (veio.has(nk) || ocupado.has(nk)) continue;
+                veio.set(nk, k); fila.push([nx, ny, d + 1]);
+            }
+        }
+        return null;
+    }
+    /* direção do próximo passo: [dx, dy]; B guarda alvo e o "estou parado" entre chamadas */
+    function svDecidir(st, B, C) {
+        const K = st.knight, hp = K.hp / K.maxHp, agora = st.tempoMs;
+        const aviso = svCasasDeAviso(st);
+        const ocupado0 = new Set(st.bichos.map(b => b.x + ',' + b.y));
+        if (C.fugaDura !== false && aviso.has(K.x + ',' + K.y)) { const s = svSairDoAviso(st, aviso, ocupado0); if (s) { B.alvo = null; return s; } }
+        if (!B.alvo || agora - (B.alvoEm || 0) >= 400 || (B.alvo.x === K.x && B.alvo.y === K.y)) { B.alvo = st.reaper ? null : svEscolherAlvo(st, C); B.alvoEm = agora; }
+        const baixa = hp < C.vidaBaixa, pesoPerigo = baixa ? 3 : 1, pesoAlvo = baixa ? C.pesoAlvoVidaBaixa : C.pesoAlvo;
+        const ocupado = new Set(st.bichos.map(b => b.x + ',' + b.y));
+        let melhor = SV_DIRS[0], mn = -Infinity;
+        for (const [dx, dy] of SV_DIRS) {
+            const x1 = K.x + dx, y1 = K.y + dy, x2 = K.x + 2 * dx, y2 = K.y + 2 * dy;
+            let nota = -pesoPerigo * (svPerigo(st, x1, y1, C) + 0.5 * svPerigo(st, x2, y2, C));
+            if (aviso.has(x1 + ',' + y1)) nota -= C.fugaDura !== false ? 1000 : C.pesoAviso;
+            if (aviso.has(x2 + ',' + y2)) nota -= C.pesoAviso / 3;
+            if (ocupado.has(x1 + ',' + y1)) nota -= 5;
+            /* moer: com vida boa, ficar onde há mais bicho comum ao alcance das áreas (a ameaça sobe com o dano causado) */
+            if (C.pesoMoer && hp >= C.vidaMoer && !st.reaper) {
+                let dens = 0; const r = C.raioMoer;
+                for (const b of st.bichos) if (!b.ehBoss && Math.abs(b.x - x1) <= r && Math.abs(b.y - y1) <= r) dens++;
+                nota += C.pesoMoer * Math.min(dens, C.densMax) * (hp - C.vidaMoer) / (1 - C.vidaMoer);
+            }
+            if (B.alvo && B.alvo.tipo === 'boss') {
+                /* fica no anel de distância distBoss do boss (as áreas em volta do Knight pegam, o golpe dele nem sempre) */
+                const bb = st.bichos.find(b => b.id === B.alvo.id) || B.alvo, D = C.distBoss;
+                const d0 = Math.hypot(bb.x - K.x, bb.y - K.y), d1 = Math.hypot(bb.x - x1, bb.y - y1);
+                nota += C.pesoBoss * (Math.abs(d0 - D) - Math.abs(d1 - D));
+                /* o perigo do próprio boss alvo já foi contado: devolve parte dele */
+                if (d1 > 0) nota += pesoPerigo * 4 * (1 - C.medoDoAlvo) / Math.max(0.5, d1 * 2);
+            } else if (B.alvo) { const d0 = Math.hypot(B.alvo.x - K.x, B.alvo.y - K.y), d1 = Math.hypot(B.alvo.x - x1, B.alvo.y - y1); nota += pesoAlvo * (d0 - d1); }
+            if (B.proibida && B.proibida[0] === dx && B.proibida[1] === dy) nota -= 3;
+            if (nota > mn) { mn = nota; melhor = [dx, dy]; }
+        }
+        const pos = K.x + ',' + K.y;
+        if (pos !== B.ultimaPos) { B.ultimaPos = pos; B.paradoDesde = agora; B.proibida = null; }
+        else if (agora - (B.paradoDesde || 0) > 900) { B.proibida = melhor; B.paradoDesde = agora; B.alvo = null; }
+        return melhor;
+    }
+    function svNotaCarta(st, o, C) {
+        const hp = st.knight.hp / st.knight.maxHp;
+        const mags = st.baralho.magias.map(m => m.nome), pass = st.baralho.passivas.map(p => p.nome || p);
+        const pref = C.magiasPreferidas || [];
+        const bonusPref = (m) => { const i = pref.indexOf(m); return i < 0 ? (pref.length ? -40 : 0) : 30 - i * 5; };
+        const m = o.magia, p = o.passiva;
+        switch (o.especie) {
+            case 'cura': return hp < C.curaAbaixo ? 300 : 3;
+            case 'bau': case 'ultimate': return 250;
+            case 'nivel-de-magia': return 100 + (pass.includes(SV_PAR[m]) ? 30 : 0) + bonusPref(m) / 2;
+            case 'magia-nova': return mags.length < 4 ? 90 + (pass.includes(SV_PAR[m]) ? 40 : 0) + bonusPref(m) : 0;
+            case 'passiva-nova': {
+                const dono = SV_PAR_INV[p];
+                if (dono && mags.includes(dono)) return 200;
+                if (C.reservarPar === false) { if (dono && pref.includes(dono) && mags.length < 4) return 60 + bonusPref(dono) / 2; return (C.passivasExtras || []).includes(p) ? 40 : 20; }
+                /* vaga de passiva é do par: só sobra vaga para outra se ainda couber o par de toda magia (atual e futura) */
+                const livres = 4 - pass.length, precisam = mags.filter(x => !pass.includes(SV_PAR[x])).length + (4 - mags.length);
+                if (dono && mags.length < 4 && livres > precisam - 1) return 50 + bonusPref(dono) / 2; // par de uma magia que ainda pode vir
+                if (livres > precisam) return (C.passivasExtras || []).includes(p) ? 25 : 12;
+                return -100;
+            }
+            case 'nivel-de-passiva': { const dono = SV_PAR_INV[p]; return dono && mags.includes(dono) ? 70 : 30; }
+            default: return 10;
+        }
+    }
+    function svEscolherCarta(st, C) {
+        let k = 0, m = -Infinity;
+        st.baralho.oferta.forEach((o, i) => { const n = svNotaCarta(st, o, C); if (n > m) { m = n; k = i; } });
+        return k;
+    }
+    /* @@ARENA-PURO-FIM */
     /* @@CASCA-INICIO — geometria e contas puras da casca (sem DOM); testes/casca.test.js roda este trecho no node. */
     const CEL_MAX = 640, MARGEM = 8;
     const limitar = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -11722,7 +11874,7 @@
     }
     function voltarAoPadrao() { _arrasto = null; guardarUI({ livre: false, yCel: null }); posicionarCaixa(); avisar(ABA, 'helper de volta ao lugar padrão', 'ok'); }
     /* rótulo de 9 px sob o ícone no celular; sem entrada aqui, usa o nome de ICONES */
-    const ROTULO_CURTO = { autohunt: 'Auto', analise: 'Análise', melhorias: 'Melhor' };
+    const ROTULO_CURTO = { autohunt: 'Auto', analise: 'Análise', melhorias: 'Melhor', arena: 'Sobrev' };
     function montarPainel() {
         if ($('#tb-trilho')) return;
         const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
@@ -11732,7 +11884,7 @@
          * <div> sem tabindex: o Tab não chegava a nada); aria-pressed marca a
          * aba aberta. O trilho vem antes da gaveta no DOM (ordem do Tab). */
         const bt = (id, cls, rot, txt) => `<button type="button" id="${id}"${cls ? ` class="${cls}"` : ''} title="${rot}" aria-label="${rot}">${txt}</button>`;
-        const t = document.createElement('div'); t.id = 'tb-trilho'; if (ICONES.length >= 13) t.classList.add('tb-denso'); // v2.34.0 — 14 ícones: 31 px cada para caber em 1366×768
+        const t = document.createElement('div'); t.id = 'tb-trilho'; if (ICONES.length >= 13) t.classList.add('tb-denso'); if (ICONES.length >= 14) t.classList.add('tb-denso2'); // v2.34.0 — 31 px cada para caber em 1366×768; 2.57.0 (14 ícones): 30 px
         t.setAttribute('role', 'group'); t.setAttribute('aria-label', 'Tibidle Helper');
         t.innerHTML = bt('tb-alca', '', 'mover o helper (arraste ou use as setas; duplo clique volta ao lugar padrão)', '') +
             ICONES.map(([k, ic, nome]) => `<button type="button" class="tb-ico" data-aba="${k}" title="${nome}" aria-label="${nome}" aria-pressed="false" aria-controls="tb-gaveta"><span aria-hidden="true">${ic}</span><span class="tb-rot" aria-hidden="true">${ROTULO_CURTO[k] || nome}</span><span class="tb-dot"></span>${k === 'log' || k === 'radar' ? '<span class="tb-cont" hidden></span>' : ''}</button>`).join('') +
@@ -18263,6 +18415,147 @@
     `;
     function fjGarantirCss() { if (document.getElementById('tb-fj-css')) return; const st = document.createElement('style'); st.id = 'tb-fj-css'; st.textContent = FJ_CSS; (document.head || document.documentElement).appendChild(st); }
     const fjSeloTxt = { vale: '✓ vale', estoque: 'falta gema', ouro: 'falta ouro', nao: 'não vale' };
+    /* @@ARENA-INICIO — aba Sobrevivência ☠ (2.57.0, dono 26/11: "colocar na nossa automação para fazer automaticamente").
+     * O robô lê o estado da simulação do cliente (o mesmo que o jogo desenha) e aperta as setas e as teclas 1-2-3 como o jogador:
+     * nada novo vai pelo socket — o próprio cliente manda run_keys. Só roda com o dono ligando (como o Auto Hunt).
+     * Mecânica (motor v9, lido em 26/11): Reaper aos 15:00; ameaça sobe por dano causado (cota, mínimo 12 s por nível) ou
+     * relógio (45 s); fogueira a cada 15 s, quebra a 1 casa ou por golpe físico, solta comida (cura 30 %), gelo (congela 6 s),
+     * orbe (puxa todos os cristais) ou caveira (mata tudo); coleta a 1 casa (+Ímã); aviso de golpe = casas vermelhas, bate 1 s
+     * depois; boss a cada 2 min (até 7), baú = ultimate da magia nível 8 com a passiva de par. */
+    const ARENA = { ligado: false, recomecar: false, mapa: true, ref: null, B: {}, timer: null, timerMapa: null, ultimaCarta: -1, fimDe: null, recomecarEm: 0, apertadas: new Set(), ultPinta: 0 };
+    function svCfgArena() { return Object.assign({}, SV_CFG); }
+    function svAcharRef() {
+        const el = document.querySelector('[data-testid="sobrevivencia-camada"]'); if (!el) return null;
+        const k = Object.keys(el).find(x => x.startsWith('__reactFiber')); let topo = k && el[k];
+        for (let i = 0; i < 15 && topo && topo.return; i++) topo = topo.return;
+        const pilha = topo ? [topo] : []; let n = 0;
+        while (pilha.length && n < 8000) {
+            const f = pilha.pop(); n++;
+            let s = f.memoizedState, g = 0;
+            while (s && g < 100) { const v = s.memoizedState; if (v && v.current && v.current.st && v.current.st.knight && Array.isArray(v.current.st.bichos)) return v.current; s = s.next; g++; }
+            if (f.child) pilha.push(f.child);
+            if (f.sibling && n > 1) pilha.push(f.sibling);
+        }
+        return null;
+    }
+    function svTecla(tipo, key, code) { const o = { key, code: code || key, bubbles: true }; window.dispatchEvent(new KeyboardEvent(tipo, o)); document.dispatchEvent(new KeyboardEvent(tipo, o)); }
+    function svSegurar(q) {
+        for (const k of [...ARENA.apertadas]) if (!q.has(k)) { svTecla('keyup', k); ARENA.apertadas.delete(k); }
+        for (const k of q) if (!ARENA.apertadas.has(k)) { svTecla('keydown', k); ARENA.apertadas.add(k); }
+    }
+    function svEstado() { const camada = document.querySelector('[data-testid="sobrevivencia-camada"]'); if (!camada) { ARENA.ref = null; return null; } if (!ARENA.ref || !ARENA.ref.st) { ARENA.ref = svAcharRef(); ARENA.B = {}; } return ARENA.ref && ARENA.ref.st; }
+    function svAnotarFim(st) {
+        if (ARENA.fimDe === ARENA.ref) return;
+        ARENA.fimDe = ARENA.ref;
+        const p = { em: Date.now(), ameaca: st.ameaca.nivel, inicial: st.ameaca.inicial, s: Math.round(st.tempoMs / 1000), nivel: st.nivel, abates: st.abates, desfecho: st.desfecho,
+            magias: st.baralho.magias.map(m => (m.evoluiu ? '★' : '') + m.nome + ' ' + m.nivel).join(', '), passivas: st.baralho.passivas.map(x => (x.nome || x) + ' ' + (x.nivel || '')).join(', ') };
+        const lista = ler('sv_partidas', []); lista.unshift(p); guardar('sv_partidas', lista.slice(0, 30));
+        log(`sobrevivência: ameaça ${p.ameaca} aos ${Math.floor(p.s / 60)}:${String(p.s % 60).padStart(2, '0')} · nível ${p.nivel} · ${p.abates} abates`, 'ok');
+        if (ARENA.recomecar) ARENA.recomecarEm = Date.now() + 6000;
+    }
+    function svPasso() {
+        try {
+            const st = svEstado();
+            if (!st) {
+                svSegurar(new Set());
+                /* recomeçar: a tela de fim fecha a camada? então o clique vem da tela de entrada */
+                if (ARENA.recomecar && ARENA.recomecarEm && Date.now() > ARENA.recomecarEm) svRecomecar();
+                return;
+            }
+            if (st.desfecho || st.fimEm || st.fase === 'fim') {
+                svSegurar(new Set()); svAnotarFim(st);
+                if (ARENA.recomecar && ARENA.recomecarEm && Date.now() > ARENA.recomecarEm) svRecomecar();
+                return;
+            }
+            const C = svCfgArena();
+            if (st.fase === 'carta') {
+                svSegurar(new Set());
+                if (st.baralho.oferta.length && !st.esperandoCristaisMs && ARENA.ultimaCarta !== st.passoN && !ARENA.ref.escolhaPendente) {
+                    const k = svEscolherCarta(st, C); ARENA.ultimaCarta = st.passoN;
+                    svTecla('keydown', String(k + 1), 'Digit' + (k + 1)); setTimeout(() => svTecla('keyup', String(k + 1), 'Digit' + (k + 1)), 50);
+                }
+                return;
+            }
+            if (st.fase !== 'mapa') { svSegurar(new Set()); return; }
+            const d = svDecidir(st, ARENA.B, C), q = new Set();
+            if (d[0] < 0) q.add('ArrowLeft'); if (d[0] > 0) q.add('ArrowRight'); if (d[1] < 0) q.add('ArrowUp'); if (d[1] > 0) q.add('ArrowDown');
+            svSegurar(q);
+        } catch (e) { falhou('sobrevivência', e); }
+        if (ABA === 'arena' && Date.now() - ARENA.ultPinta > 1000) { ARENA.ultPinta = Date.now(); renderizar(); }
+    }
+    /* JOGAR DE NOVO (tela de fim) → COMEÇAR PARTIDA (tela de entrada). Os buffs ficam como o dono marcou na tela do jogo. */
+    function svRecomecar() {
+        ARENA.recomecarEm = Date.now() + 8000;
+        const dn = document.querySelector('[data-testid="sobrevivencia-fim-jogar-de-novo"]');
+        if (dn) { dn.click(); return; }
+        const cm = document.querySelector('[data-testid="sobrevivencia-comecar"]');
+        if (cm && !cm.disabled) { cm.click(); ARENA.recomecarEm = 0; ARENA.ref = null; return; }
+        const md = document.querySelector('[data-testid="sobrevivencia-medalhao"]');
+        if (md) md.click();
+    }
+    const SV_COR = { cristal: '#3ddc6a', orbe: '#5aa9ff', caveira: '#f2f2f2', comida: '#ff9f43', gelo: '#9be7ff', bau: '#ffd23f' };
+    function svDesenhar() {
+        const st = ARENA.ligado && ARENA.mapa ? (ARENA.ref && ARENA.ref.st) : null;
+        let cv = document.getElementById('tb-sv-mapa');
+        if (!st || !document.querySelector('[data-testid="sobrevivencia-camada"]')) { if (cv) cv.style.display = 'none'; return; }
+        if (!cv) {
+            cv = document.createElement('canvas'); cv.id = 'tb-sv-mapa'; cv.width = 240; cv.height = 240;
+            Object.assign(cv.style, { position: 'fixed', left: '12px', bottom: '12px', zIndex: 2147483000, background: 'rgba(10,12,16,.82)', border: '1px solid #c9a14a', borderRadius: '6px', pointerEvents: 'none' });
+            document.body.appendChild(cv);
+        }
+        cv.style.display = '';
+        const ctx = cv.getContext('2d'), K = st.knight, R = 40, esc = cv.width / (2 * R), B = ARENA.B;
+        const p = (x, y) => [(x - K.x + R) * esc, (y - K.y + R) * esc];
+        ctx.clearRect(0, 0, cv.width, cv.height);
+        ctx.fillStyle = 'rgba(255,40,40,.25)';
+        for (const a of st.avisos || []) for (const t of a.tiles || []) { const [x, y] = p(t.x, t.y); ctx.fillRect(x - esc / 2, y - esc / 2, esc, esc); }
+        for (const it of st.itens) { const [a, b] = p(it.x, it.y); if (a < 0 || b < 0 || a > cv.width || b > cv.height) continue; ctx.fillStyle = SV_COR[it.tipo] || '#fff'; const s = it.tipo === 'cristal' ? 2 : 6; ctx.fillRect(a - s / 2, b - s / 2, s, s); }
+        for (const f of st.fogueiras) { const [a, b] = p(f.x, f.y); ctx.fillStyle = '#ff5a1f'; ctx.beginPath(); ctx.arc(a, b, 5, 0, 7); ctx.fill(); }
+        for (const m of st.bichos) { const [a, b] = p(m.x, m.y); ctx.fillStyle = m.ehBoss ? '#ff2bd6' : 'rgba(255,60,60,.8)'; const s = m.ehBoss ? 7 : 3; ctx.fillRect(a - s / 2, b - s / 2, s, s); }
+        if (st.reaper) { const [a, b] = p(st.reaper.x, st.reaper.y); ctx.fillStyle = '#000'; ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.arc(a, b, 7, 0, 7); ctx.fill(); ctx.stroke(); }
+        if (B.alvo) { const [a, b] = p(B.alvo.x, B.alvo.y); ctx.strokeStyle = '#ffd23f'; ctx.setLineDash([4, 3]); ctx.beginPath(); ctx.moveTo(cv.width / 2, cv.height / 2); ctx.lineTo(a, b); ctx.stroke(); ctx.setLineDash([]); ctx.strokeRect(a - 5, b - 5, 10, 10); }
+        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(cv.width / 2, cv.height / 2, 4, 0, 7); ctx.fill();
+        ctx.font = '11px monospace'; ctx.fillStyle = '#e8d9a8';
+        const t = Math.round(st.tempoMs / 1000);
+        ctx.fillText(`${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}  ameaça ${st.ameaca.nivel}  nv ${st.nivel}  vida ${Math.round(100 * K.hp / K.maxHp)}%`, 6, 13);
+        ctx.fillText(`alvo: ${B.alvo ? B.alvo.tipo : '-'}`, 6, cv.height - 6);
+    }
+    function svLigar(on) {
+        ARENA.ligado = !!on; guardar('sv_ligado', ARENA.ligado);
+        clearInterval(ARENA.timer); clearInterval(ARENA.timerMapa); ARENA.timer = ARENA.timerMapa = null; svSegurar(new Set());
+        if (ARENA.ligado) { ARENA.ref = null; ARENA.timer = setInterval(svPasso, 50); ARENA.timerMapa = setInterval(svDesenhar, 150); log('sobrevivência: robô ligado', 'ok'); }
+        else { svDesenhar(); log('sobrevivência: robô desligado', 'info'); }
+    }
+    function svIniciar() {
+        ARENA.recomecar = !!ler('sv_recomecar', false); ARENA.mapa = ler('sv_mapa', true) !== false;
+        if (ler('sv_ligado', false)) svLigar(true);
+    }
+    function telaArena() {
+        const st = ARENA.ref && ARENA.ref.st && document.querySelector('[data-testid="sobrevivencia-camada"]') ? ARENA.ref.st : null;
+        const ps = ler('sv_partidas', []), melhor = ps.reduce((m, p) => (!m || p.ameaca > m.ameaca ? p : m), null);
+        const mmss = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+        let h = `<div id="tb-arena"><div class="tb-eq-bts"><button type="button" class="tb-bt ${ARENA.ligado ? 'pri' : ''}" id="tb-sv-ligar" title="o robô joga a partida da Sobrevivência que estiver aberta: anda, foge dos avisos, mói a multidão, caça boss e escolhe as cartas">${ARENA.ligado ? 'ROBÔ LIGADO — DESLIGAR' : 'LIGAR ROBÔ'}</button>` +
+                `<button type="button" class="tb-bt" id="tb-sv-comecar" ${st ? 'disabled' : ''} title="abre a Sobrevivência e clica COMEÇAR PARTIDA (os buffs marcados na tela do jogo são cobrados)">COMEÇAR PARTIDA</button></div>`;
+        h += `<div class="tb-linha" style="margin-top:4px"><label class="tb-l"><input type="checkbox" id="tb-sv-recomecar" ${ARENA.recomecar ? 'checked' : ''}> recomeçar sozinho ao acabar</label> <label class="tb-l"><input type="checkbox" id="tb-sv-mapa" ${ARENA.mapa ? 'checked' : ''}> minimapa</label></div>`;
+        if (st) {
+            const K = st.knight, t = Math.round(st.tempoMs / 1000), bos = st.bichos.filter(b => b.ehBoss);
+            h += `<div class="tb-cx"><b>Partida</b> ${mmss(t)} · ameaça <b>${st.ameaca.nivel}</b> (início ${st.ameaca.inicial}) · nível ${st.nivel} · vida ${Math.round(100 * K.hp / K.maxHp)} % · ${st.abates} abates` +
+                 `<div class="tb-mut">alvo: ${ARENA.B.alvo ? escHtml(ARENA.B.alvo.tipo) : '—'} · ${bos.length} boss(es) vivo(s) · ${st.itens.filter(i => i.tipo === 'cristal').length} cristais no chão · ${st.fogueiras.length} fogueira(s)${st.reaper ? ' · <span class="tb-ruim">Reaper chegou</span>' : ''}</div>` +
+                 `<div class="tb-mut">magias: ${escHtml(st.baralho.magias.map(m => (m.evoluiu ? '★' : '') + m.nome + ' ' + m.nivel).join(', ') || '—')}<br>passivas: ${escHtml(st.baralho.passivas.map(x => (x.nome || x) + ' ' + (x.nivel || '')).join(', ') || '—')}</div></div>`;
+        } else h += `<div class="tb-mut" style="margin-top:4px">${ARENA.ligado ? 'Esperando uma partida: abra a Sobrevivência (medalhão na cidade) e comece, ou use COMEÇAR PARTIDA.' : 'Robô desligado.'}</div>`;
+        if (melhor) h += `<div class="tb-mut" style="margin-top:4px">Melhor partida guardada: ameaça <b>${melhor.ameaca}</b> aos ${mmss(melhor.s)} (nível ${melhor.nivel}).</div>`;
+        if (ps.length) h += `<h4 style="margin:8px 0 2px">Últimas partidas</h4>` + ps.slice(0, 8).map(p => `<div class="tb-sb-lin" title="${escHtml(p.magias + ' · ' + p.passivas)}"><span class="tb-sb-n">${new Date(p.em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} · ameaça <b>${p.ameaca}</b> aos ${mmss(p.s)} · nv ${p.nivel} · ${p.abates} abates</span></div>`).join('');
+        h += aj('sv-ajuda', 'O robô lê a partida que o próprio jogo simula e aperta as setas e 1-2-3, como você. <b>Prioridades:</b> sair do aviso vermelho (o golpe cai 1 s depois); com vida acima de 30 %, ficar no meio dos bichos (a ameaça — a pontuação — sobe com o dano causado); baú, orbe, caveira e fogueira (comida cura 30 %); cristais; boss do mais fácil ao mais difícil. <b>Cartas:</b> 4 magias, e a vaga de passiva fica para o par de cada uma (Facas+Recarga, Aura+Recovery, Groundshaker+Área, Berserk+Blood Rage, Espadas+Haste, Whirlwind+Ímã, Lâminas+Sorte, Annihilation+Crítico): nível 8 com o par vira ultimate no baú do boss. <b>Buffs</b> da partida: marque na tela do jogo (no simulador, os 5 juntos deram +9 de ameaça média; Velocidade sozinha, +5). O Reaper chega aos 15:00.', 'como funciona');
+        return h + `</div>`;
+    }
+    function ligarArena() {
+        const l = $('#tb-sv-ligar'); if (l) l.onclick = () => { svLigar(!ARENA.ligado); renderizar(); };
+        const c = $('#tb-sv-comecar'); if (c) c.onclick = () => { if (!ARENA.ligado) svLigar(true); ARENA.recomecarEm = 0; ARENA.fimDe = null; svRecomecar(); setTimeout(svRecomecar, 2500); renderizar(); };
+        const r = $('#tb-sv-recomecar'); if (r) r.onchange = () => { ARENA.recomecar = r.checked; guardar('sv_recomecar', r.checked); renderizar(); };
+        const m = $('#tb-sv-mapa'); if (m) m.onchange = () => { ARENA.mapa = m.checked; guardar('sv_mapa', m.checked); svDesenhar(); };
+    }
+    setTimeout(svIniciar, 3000); // volta ligado se o dono deixou ligado
+    /* @@ARENA-FIM */
     /* @@SOBREVIVER-INICIO — aba SOBREVIVER 🛡 (2.34.0): para um mapa de nível 150+ ou um boss/Elite forte, o que vestir (corpo, mochila,
      * depósito) com a defesa pesando 3×, os consumíveis da luta, o que comprar no Mercado e o plano (Protector, prey de defesa,
      * poções, lure). Só lê; EQUIPAR, CONSUMÍVEIS e COMPRAR são botões de 2 toques, só na cidade. */
@@ -18757,7 +19050,8 @@
             equip: EQUIP.equipando || EQUIP.lendo ? 'av pulsa' : '',
             mercado: MK.ocupado ? 'av pulsa' : '',
             radar: ler('pch_alerta', null) ? 'ruim pulsa' : RADAR.rodando || MK.ocupado === 'radar' || PCH.lendo ? 'av pulsa' : alertasCfg().vigiar || pchCfg().vigiar ? 'ok' : '', // v2.29.0 — Pechinchas
-            forja: FJ.lendo || FJ.forjando || FJ.simulando || FJ.comprando ? 'av pulsa' : '' // v2.25.0
+            forja: FJ.lendo || FJ.forjando || FJ.simulando || FJ.comprando ? 'av pulsa' : '', // v2.25.0
+            arena: ARENA.ligado ? (ARENA.ref && ARENA.ref.st && !ARENA.ref.st.desfecho ? 'ok pulsa' : 'ok') : '' // v2.57.0
         };
         $$('.tb-ico[data-aba]', t).forEach(i => { const on = !!u.aberta && !u.oculto && i.dataset.aba === ABA; i.classList.toggle('on', on); i.setAttribute('aria-pressed', on ? 'true' : 'false'); const d = $('.tb-dot', i); if (d) d.className = 'tb-dot ' + (estado[i.dataset.aba] || ''); });
         const at = $('#tb-atualizar', t); if (at) { at.style.display = NOVA_VERSAO ? 'flex' : 'none'; at.title = NOVA_VERSAO ? 'versão ' + NOVA_VERSAO + ' disponível — clique para atualizar no Tampermonkey' : ''; }
@@ -18805,7 +19099,7 @@
         const mesmaAba = _abaPintada === ABA;
         const html = ABA === 'estado' ? telaEstado() : ABA === 'autohunt' ? telaAutoHunt() : ABA === 'scan' ? telaScan()
             : ABA === 'magia' ? telaMagia() : ABA === 'analise' ? telaAnalise() : ABA === 'equip' ? telaEquip()
-            : ABA === 'progresso' ? telaProgresso() : ABA === 'mercado' ? telaMercado() : ABA === 'melhorias' ? telaMelhorias() : ABA === 'radar' ? telaRadar() : ABA === 'forja' ? telaForja() : ABA === 'sobreviver' ? telaSobreviver() : `<div id="tb-log"></div>`;
+            : ABA === 'progresso' ? telaProgresso() : ABA === 'mercado' ? telaMercado() : ABA === 'melhorias' ? telaMelhorias() : ABA === 'radar' ? telaRadar() : ABA === 'forja' ? telaForja() : ABA === 'sobreviver' ? telaSobreviver() : ABA === 'arena' ? telaArena() : `<div id="tb-log"></div>`;
         if (mesmaAba && html === _htmlPintado) { if (ABA === 'log') pintarLog(); return; }
         if (mesmaAba) { const f = campoEmUso(c); if (f) { adiarRepinte(f); return; } }
         /* v2.3.0 — trocar o innerHTML zera a rolagem: marcar um mapa no Scan
@@ -18829,6 +19123,7 @@
         if (ABA === 'radar') ligarRadar(); // v2.13.0
         if (ABA === 'forja') ligarForja(); // v2.25.0
         if (ABA === 'sobreviver') ligarSobreviver(); // v2.34.0
+        if (ABA === 'arena') ligarArena(); // v2.57.0
         if (ABA === 'melhorias') ligarMelhorias(); // v2.18.0
         if (ABA === 'scan') ligarScan(); // v2.11 — handlers do Scan ao lado da tela
         if (ABA === 'autohunt') ligarAutoHunt(); // v2.11 — handlers do Auto Hunt ao lado da tela

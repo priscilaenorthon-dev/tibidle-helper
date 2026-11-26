@@ -7539,3 +7539,29 @@ Dono: "verificar o discord e ver se tem setup novos para as hunts".
   tibidle-community.com sem preset novo (o último segue o 70; 71+ dão 404); limware sem novidade.
 - Nenhum "Northon -" sai (os três mapas já tinham post). Testes: 1 novo em `testes/discord.test.js` (524 no total). Sem teste ao vivo.
 - Próxima varredura: Discord a partir de 24/11 21h; site a partir do preset 71.
+
+## 2.57.0 (26/11) — Aba Sobrevivência ☠: o robô joga a partida sozinho
+
+Dono: "entrar na Sobrevivência, aprender como é e colocar na nossa automação para fazer automaticamente"; depois "matar o boss, 1 de
+cada vez do mais fácil ao mais difícil", "focar em baús e fogueiras", "ficar em primeiro do rank".
+
+- **O modo** (sem página na wiki; lido no cliente, motor v9 = chunk 8606, módulo 28606): só o Cavaleiro, com o equipamento que veste;
+  setas andam, 1-2-3 escolhem carta; socket próprio (`run*.tibidle.com`, `run_keys {tick, bits, escolha}`, `run_alive` com fps/ping/
+  navegador/tela, `run_hash` do servidor conferindo a simulação). Ameaça = pontuação: sobe por dano causado (cota de 50 "vidas de
+  bicho", mínimo 12 s por nível) ou relógio (45 s). Reaper aos 15:00. Cristal inicial = 21 cartas de uma vez. 4 magias + 4 passivas;
+  magia nível 8 + passiva de par vira ultimate no baú do boss. Fogueira a cada 15 s (máx. 5), quebra a 1 casa ou golpe físico,
+  50 % de soltar comida (cura 30 %) / gelo (congela 6 s) / orbe (puxa todos os cristais) / caveira (mata tudo). Coleta a 1 casa (+Ímã).
+  Aviso de golpe (casas vermelhas, de boss e de conjurador) só nasce com o Knight dentro e bate 1 s depois. Boss a cada 2 min (até 7).
+  Ranking global e semanal (o semanal é só de quem nunca teve Premium; top 3 ganham dias de Premium). Buffs pagos por partida.
+- **Simulador**: o motor do jogo roda no node (`.playwright-mcp/sim/sim.js` + catálogos da partida em `sv-catalogos.json`, fora do
+  git); uma partida de 15 min em ~2 s. Achados (24–30 sementes por linha): fugir sempre = ameaça média 100; mover/peso/raio ±4;
+  as cartas chamavam `nova-magia`/`nova-passiva` mas o motor manda `magia-nova`/`passiva-nova` — corrigido, as ultimates foram de 0,9
+  para 2,7 por partida; moer a multidão (peso 0,8, raio 3, recua abaixo de 30 % de vida) +5; os 5 buffs juntos +9 (Velocidade sozinha
+  +5); caçar boss do de menos vida ao de mais. Melhor: média 117, máx. 141 (sem buff ~103).
+- **Aba ☠** (`@@ARENA-PURO` = decisões puras, `@@ARENA` = robô/tela): LIGAR ROBÔ (o dono liga, como o Auto Hunt), COMEÇAR PARTIDA,
+  "recomeçar sozinho ao acabar", minimapa (avisos, cristais, fogueiras, bichos, bosses, Reaper e o alvo). Nada novo vai pelo socket:
+  o robô aperta as teclas e o cliente manda `run_keys`. Buffs = os marcados na tela do jogo. Guarda as últimas 30 partidas (`sv_partidas`).
+- Trilho com 14 ícones: denso de 30 px (`tb-denso2`) para caber em 1366×768.
+- Ao vivo (u2tag, nível 244, sem buff): robô antigo (fugir) ameaça 97 aos 10:21 (146º); robô novo aos 4:17 já estava em 88, nível 46,
+  2 ultimates, bosses mortos.
+- Testes: `testes/arena.test.js` (9) e o do trilho em `casca.test.js` (14 ícones); 533 no total.
