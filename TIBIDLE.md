@@ -7589,3 +7589,20 @@ no meio da multidão. Testado (30 sementes, 5 buffs): caçar conjurador 118–11
 `saidaMin 3`); build preferida Whirlwind Throw + Front Sweep + Annihilation + Inflict Wound = a do 115 ao vivo, 120 contra 117 (entra
 como padrão). Teto ≈ 120 de média com o Knight de nível 244; o ranking guarda a melhor partida, então partidas repetidas sobem o
 recorde (máx. 132–141 nas 30 sementes). Teste novo em `testes/arena.test.js` (536 no total).
+
+## 2.59.0 (26/11) — Sobrevivência: cura no fim, U nas magias da build, paredes e fuga com relógio
+
+Dono: "no final ir usando cura" e "olha essas barras de magias, não dá para deixar tudo no U?" (barra com Front Sweep 8 sem U e Sorte
+no lugar do Haste).
+- **Cartas com a build cheia**: o motor oferece 2 `limite` (+8 % de dano na magia, acumula) e 1 `pocao` (cura 30 % da vida). O robô
+  procurava `cura` (não existe) e pegava sempre o 1º limite. Agora a poção entra abaixo de 50 % da vida, e depois dos 9:00 abaixo de
+  80 % (`curaTarde`/`curaTardeMs`); o limite vai para a magia que já virou U e depois para a da build.
+- **Vaga de passiva**: só fica reservada para o par de uma magia da build preferida (`soParPreferido`). A Sorte (par de Lâminas do Céu,
+  que a build nunca pega) não toma mais a vaga do Haste.
+- **Paredes**: árvores e pedras do chão bloqueiam o Knight (motor: hash da casa, 4,5 % viram decoração, lista das que bloqueiam).
+  `svParede` refaz a conta. Antes o robô empurrava a parede dentro do aviso até o golpe cair. Se o Knight aparecer numa casa que a
+  conta diz ser parede, o robô para de usar a conta (a paleta mudou).
+- **Fuga com relógio** (`svFugaComRelogio`): cada golpe cai na hora dele, a diagonal custa 1,5 passo. Pisa em casa avisada só se o
+  golpe dela não cair enquanto estiver ali. Ficar parado também virou opção.
+- Testados e desligados (sem ganho no simulador): caçar conjurador no fim (`cacarConj`), fugir do alcance de conjurador (`pesoAlcance`).
+- Testes novos em `testes/arena.test.js` (540 no total). Validação ao vivo a pedido do dono (simulações longas demoram).

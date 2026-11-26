@@ -4,7 +4,7 @@ const fs = require('fs'), path = require('path'), assert = require('assert');
 const src = fs.readFileSync(path.join(__dirname, '..', 'tibidle-helper.user.js'), 'utf8');
 const i = src.indexOf('/* @@ARENA-PURO-INICIO'), f = src.indexOf('/* @@ARENA-PURO-FIM');
 assert(i > 0 && f > i, 'trecho @@ARENA-PURO não encontrado');
-const A = new Function(src.slice(i, f) + '\nreturn { SV_PAR, SV_CFG, svDecidir, svEscolherAlvo, svEscolherCarta, svNotaCarta, svPerigo, SV_BUFFS, svBuffsParaClicar };')();
+const A = new Function(src.slice(i, f) + '\nreturn { SV_PAR, SV_CFG, svDecidir, svEscolherAlvo, svEscolherCarta, svNotaCarta, svPerigo, SV_BUFFS, svBuffsParaClicar, svParede };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 
@@ -81,5 +81,33 @@ t('2.58.0: buffs — clica só o que difere da escolha (marca os pedidos, desmar
     assert.deepStrictEqual(A.svBuffsParaClicar(tela, ['protecao_elemental', 'critico']), []);
     assert.deepStrictEqual(A.svBuffsParaClicar(tela, []).sort(), ['critico', 'protecao_elemental'], 'sem escolha = nenhum buff (sem gasto)');
     assert.deepStrictEqual(A.SV_BUFFS.map(b => b.id).sort(), Object.keys(tela).sort(), 'os 5 ids da loja do jogo');
+});
+t('2.59.0: carta de cura do motor é "pocao" — entra com vida baixa, e depois dos 9:00 já abaixo de 80 %', () => {
+    const of = [{ especie: 'limite', magia: 'Front Sweep' }, { especie: 'limite', magia: 'Annihilation' }, { especie: 'pocao' }];
+    const cedo = estado({ tempoMs: 300000, knight: { x: 0, y: 0, hp: 700, maxHp: 1000 }, baralho: { magias: [], passivas: [], oferta: of } });
+    assert.notStrictEqual(A.svEscolherCarta(cedo, A.SV_CFG), 2, 'aos 5:00 com 70 % fica com o limite');
+    const tarde = estado({ tempoMs: 600000, knight: { x: 0, y: 0, hp: 700, maxHp: 1000 }, baralho: { magias: [], passivas: [], oferta: of } });
+    assert.strictEqual(A.svEscolherCarta(tarde, A.SV_CFG), 2, 'aos 10:00 com 70 % pega a cura');
+    const ferido = estado({ tempoMs: 300000, knight: { x: 0, y: 0, hp: 400, maxHp: 1000 }, baralho: { magias: [], passivas: [], oferta: of } });
+    assert.strictEqual(A.svEscolherCarta(ferido, A.SV_CFG), 2);
+});
+t('2.59.0: limite vai para a magia que já virou U', () => {
+    const st = estado({ baralho: { magias: [{ nome: 'Front Sweep', nivel: 8 }, { nome: 'Annihilation', nivel: 8, evoluiu: true }], passivas: [],
+        oferta: [{ especie: 'limite', magia: 'Front Sweep' }, { especie: 'limite', magia: 'Annihilation' }] } });
+    assert.strictEqual(A.svEscolherCarta(st, A.SV_CFG), 1);
+});
+t('2.59.0: passiva de par de magia fora da build não toma a vaga (Sorte no lugar do Haste, 26/11)', () => {
+    const st = estado({ baralho: { magias: [{ nome: 'Whirlwind Throw', nivel: 5 }, { nome: 'Annihilation', nivel: 5 }, { nome: 'Inflict Wound', nivel: 5 }],
+        passivas: [{ nome: 'Ímã', nivel: 1 }, { nome: 'Crítico', nivel: 1 }, { nome: 'Recovery', nivel: 1 }], oferta: [{ especie: 'passiva-nova', passiva: 'Sorte' }] } });
+    assert(A.svNotaCarta(st, st.baralho.oferta[0], A.SV_CFG) < 0, 'a última vaga é do Haste (Front Sweep)');
+});
+t('2.59.0: não anda para dentro de árvore/pedra do chão', () => {
+    let px = null, py = null;
+    for (let x = 2; x < 60 && px === null; x++) for (let y = -30; y < 30; y++) if (A.svParede(x, y) && !A.svParede(x - 1, y)) { px = x; py = y; break; }
+    assert(px !== null, 'achou uma parede');
+    assert(!A.svParede(0, 0) && !A.svParede(1, 1), 'o centro é livre');
+    const st = estado({ knight: { x: px - 1, y: py, hp: 1000, maxHp: 1000 }, itens: [{ id: 1, tipo: 'bau', x: px + 3, y: py }] });
+    const d = A.svDecidir(st, {}, A.SV_CFG);
+    assert(!A.svParede(px - 1 + d[0], py + d[1]), 'o passo não cai na parede');
 });
 console.log(`\n${n} testes ok`);

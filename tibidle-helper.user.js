@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.58.1
+// @version      2.59.0
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.58.1';
+    const VERSAO = '2.59.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -11627,6 +11627,22 @@
         saidaMin: 3, pesoSaida: 1
     };
     const SV_DIRS = []; for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) if (dx || dy) SV_DIRS.push([dx, dy]);
+    /* 2.59.0 — árvores e pedras do chão bloqueiam o Knight (motor: nl/nc/nd + cfg.paletaDoChao, lido em 26/11). O robô não sabia:
+     * dentro do aviso empurrava a parede até o golpe cair (no simulador, 290 de 343 acertos tardios tinham saída a tempo).
+     * Conta igual à do motor: hash da casa → 4,5 % viram decoração → sorteio por peso → bloqueia se o id está na lista. */
+    const SV_CHAO = {
+        decoracao: [[1856, 11], [1865, 8], [1866, 7], [1867, 6], [3614, 7], [3615, 8], [3616, 5], [3617, 5], [3622, 6], [3634, 2], [3635, 2], [3654, 17], [3681, 58], [3682, 73], [3690, 7]],
+        chance: 0.045, bloqueiam: [3614, 3615, 3616, 3617, 3622, 3634, 3635, 3681, 3682]
+    };
+    const SV_CHAO_PESO = SV_CHAO.decoracao.reduce((a, d) => a + d[1], 0);
+    function svHashChao(x, y, s) { let n = 0x165667b1 * x + 0x27d4eb2f * y + 0x7fffffff * s | 0; n = Math.imul(n ^ n >>> 13, 0x4bf19f61); return ((n ^= n >>> 16) >>> 0) / 0x100000000; }
+    function svParede(x, y) {
+        if (x >= -1 && x <= 1 && y >= -1 && y <= 1) return false;
+        if (svHashChao(x, y, 2) > SV_CHAO.chance) return false;
+        let t = svHashChao(x, y, 3) * SV_CHAO_PESO, id = SV_CHAO.decoracao[SV_CHAO.decoracao.length - 1][0];
+        for (const [d, p] of SV_CHAO.decoracao) if ((t -= p) <= 0) { id = d; break; }
+        return SV_CHAO.bloqueiam.includes(id);
+    }
 
     function svCasasDeAviso(st) {
         const s = new Set();
@@ -11671,14 +11687,20 @@
          * Baú, orbe e caveira por perto continuam na frente. */
         const pass = st.baralho.passivas.map(p => p.nome || p);
         const ultPronta = st.baralho.magias.some(m => m.nivel >= 8 && !m.evoluiu && pass.includes(SV_PAR[m.nome]));
+        /* 2.59.0 (teste) — fim de partida: ir matar o conjurador mais perto (o fogo dele vem de 7 casas) */
+        if (C.cacarConj && st.tempoMs >= C.cacarConj && hp >= C.vidaCaca) {
+            let cj = null, dc = C.raioConj || 9;
+            for (const b of st.bichos) if (b.ehConjurador && !b.ehBoss) { const d = Math.max(Math.abs(b.x - K.x), Math.abs(b.y - K.y)); if (d <= dc) { dc = d; cj = b; } }
+            if (cj && !(melhor && ['bau', 'orbe'].includes(melhor.tipo) && Math.hypot(melhor.x - K.x, melhor.y - K.y) < 6)) return { x: cj.x, y: cj.y, v: 500, tipo: 'conj', id: cj.id };
+        }
         if ((C.cacarBoss || (C.cacarComUlt && ultPronta)) && hp >= C.vidaCaca &&!(melhor && ['bau', 'orbe', 'caveira'].includes(melhor.tipo) && Math.hypot(melhor.x - K.x, melhor.y - K.y) < 12)) {
             const bosses = st.bichos.filter(b => b.ehBoss).sort((a, b) => a.hp - b.hp);
             if (bosses.length) { const b = bosses[0]; return { x: b.x, y: b.y, v: 999, tipo: 'boss', id: b.id }; }
         }
         return melhor;
     }
-    /* saída do aviso: busca em largura (8 direções, sem atravessar bicho) até a casa fora de todo aviso mais perto; devolve o 1º passo */
-    function svSairDoAviso(st, aviso, ocupado) {
+    /* saída do aviso: busca em largura (8 direções, sem atravessar bicho nem parede) até a casa fora de todo aviso mais perto; devolve o 1º passo */
+    function svSairDoAviso(st, aviso, ocupado, parede) {
         const K = st.knight, ini = K.x + ',' + K.y, veio = new Map([[ini, null]]), fila = [[K.x, K.y, 0]];
         while (fila.length) {
             const [x, y, d] = fila.shift();
@@ -11687,8 +11709,44 @@
             if (d >= 8) continue;
             for (const [dx, dy] of SV_DIRS) {
                 const nx = x + dx, ny = y + dy, nk = nx + ',' + ny;
-                if (veio.has(nk) || ocupado.has(nk)) continue;
+                if (veio.has(nk) || ocupado.has(nk) || (parede && parede(nx, ny))) continue;
                 veio.set(nk, k); fila.push([nx, ny, d + 1]);
+            }
+        }
+        return null;
+    }
+    /* 2.59.0 — fuga com relógio. Cada golpe avisado cai na hora dele (bateEm); o Knight anda 1 casa por passo.intervalo e a
+     * DIAGONAL custa 1,5 passo (motor). Busca pelo menor tempo: só pisa numa casa avisada se o golpe dela não cair enquanto ele
+     * estiver ali, e o destino é uma casa onde nenhum golpe pendente vai cair. Sem caminho limpo → null (a busca antiga decide).
+     * Antes: a busca por casas tratava todos os avisos iguais, a diagonal como 1 passo, e trocava de lado a cada 100 ms. */
+    function svFugaComRelogio(st, ocupado, parede, B) {
+        const K = st.knight, agora = st.tempoMs, P = (K.passo && K.passo.intervalo > 0) ? K.passo.intervalo : 200;
+        const ac = K.passo ? K.passo.acumulado : 0;
+        const t1 = ac < 0 ? 100 : Math.max(100, Math.ceil((P - ac) / 100) * 100);
+        const av = (st.avisos || []).map(a => ({ bate: a.bateEm - agora, casas: new Set((a.tiles || []).map(t => t.x + ',' + t.y)) }));
+        const cai = (k, de, ate) => av.some(a => a.bate >= de - 50 && a.bate <= ate + 50 && a.casas.has(k));
+        const seguro = (k, de) => !av.some(a => a.bate >= de - 50 && a.casas.has(k));
+        const ini = K.x + ',' + K.y, nos = new Map([[ini, { x: K.x, y: K.y, T: 0, sai: t1, pai: null, d0: null }]]);
+        const abertos = [nos.get(ini)];
+        while (abertos.length) {
+            let bi = 0;
+            for (let i = 1; i < abertos.length; i++) {
+                const a = abertos[i], b = abertos[bi];
+                if (a.T < b.T || (a.T === b.T && B.fugaDir && a.d0 && a.d0[0] === B.fugaDir[0] && a.d0[1] === B.fugaDir[1])) bi = i;
+            }
+            const n = abertos.splice(bi, 1)[0];
+            const k = n.x + ',' + n.y;
+            if (n.pai && seguro(k, n.T)) { B.fugaDir = n.d0; return n.d0; }
+            if (n.T > 3000 || Math.max(Math.abs(n.x - K.x), Math.abs(n.y - K.y)) >= 10) continue;
+            for (const [dx, dy] of SV_DIRS) {
+                const x = n.x + dx, y = n.y + dy, kk = x + ',' + y;
+                if (ocupado.has(kk) || (parede && parede(x, y))) continue;
+                const T = n.sai, sai = T + (dx && dy ? 1.5 * P : P);
+                if (cai(kk, T, sai)) continue;
+                const velho = nos.get(kk);
+                if (velho && velho.T <= T) continue;
+                const no = { x, y, T, sai, pai: n, d0: n.pai ? n.d0 : [dx, dy] };
+                nos.set(kk, no); abertos.push(no);
             }
         }
         return null;
@@ -11698,21 +11756,37 @@
         const K = st.knight, hp = K.hp / K.maxHp, agora = st.tempoMs;
         const aviso = svCasasDeAviso(st);
         const ocupado0 = new Set(st.bichos.map(b => b.x + ',' + b.y));
-        if (C.fugaDura !== false && aviso.has(K.x + ',' + K.y)) { const s = svSairDoAviso(st, aviso, ocupado0); if (s) { B.alvo = null; return s; } }
+        /* 2.59.0 — conferência: se o Knight estiver numa casa que a conta diz ser parede, a paleta do jogo mudou → para de usar */
+        if (!B.semParede && C.paredes !== false && svParede(K.x, K.y)) B.semParede = true;
+        const parede = (C.paredes === false || B.semParede) ? null : svParede;
+        if (C.fugaDura !== false && aviso.has(K.x + ',' + K.y)) {
+            const s = (C.fugaRelogio !== false && svFugaComRelogio(st, ocupado0, parede, B)) || svSairDoAviso(st, aviso, ocupado0, parede);
+            if (s) { B.alvo = null; return s; }
+        }
+        B.fugaDir = null;
         if (!B.alvo || agora - (B.alvoEm || 0) >= 400 || (B.alvo.x === K.x && B.alvo.y === K.y)) { B.alvo = st.reaper ? null : svEscolherAlvo(st, C); B.alvoEm = agora; }
         const baixa = hp < C.vidaBaixa, pesoPerigo = baixa ? 3 : 1, pesoAlvo = baixa ? C.pesoAlvoVidaBaixa : C.pesoAlvo;
         const ocupado = new Set(st.bichos.map(b => b.x + ',' + b.y));
         let melhor = SV_DIRS[0], mn = -Infinity;
-        for (const [dx, dy] of SV_DIRS) {
+        /* 2.59.0 — ficar parado também é opção (antes sempre andava: numa casa segura entre dois avisos, entrava num deles) */
+        for (const [dx, dy] of (C.ficar !== false ? [[0, 0], ...SV_DIRS] : SV_DIRS)) {
             const x1 = K.x + dx, y1 = K.y + dy, x2 = K.x + 2 * dx, y2 = K.y + 2 * dy;
             let nota = -pesoPerigo * (svPerigo(st, x1, y1, C) + 0.5 * svPerigo(st, x2, y2, C));
             if (aviso.has(x1 + ',' + y1)) nota -= C.fugaDura !== false ? 1000 : C.pesoAviso;
             if (aviso.has(x2 + ',' + y2)) nota -= C.pesoAviso / 3;
             if (ocupado.has(x1 + ',' + y1)) nota -= 5;
+            if (parede && parede(x1, y1)) nota -= 500;
+            /* 2.59.0 — conjurador ao alcance: o fogo do Demon tem alcance 7 e RAIO 7 centrado no Knight (aviso de 900 ms, não dá
+             * para sair andando). A única defesa é não ficar a ≤ alcanceConj casas de conjurador. */
+            if (C.pesoAlcance && agora >= (C.alcanceDepois || 0)) {
+                let n = 0;
+                for (const b of st.bichos) if (b.ehConjurador && Math.max(Math.abs(b.x - x1), Math.abs(b.y - y1)) <= C.alcanceConj) n++;
+                nota -= C.pesoAlcance * n;
+            }
             /* 2.58.1 — no meio da multidão, não ficar sem casa livre para fugir do aviso (cercado = o golpe pega) */
             if (C.saidaMin) {
                 let livres = 0;
-                for (const [ex, ey] of SV_DIRS) { const k = (x1 + ex) + ',' + (y1 + ey); if (!ocupado.has(k) && !aviso.has(k)) livres++; }
+                for (const [ex, ey] of SV_DIRS) { const k = (x1 + ex) + ',' + (y1 + ey); if (!ocupado.has(k) && !aviso.has(k) && !(parede && parede(x1 + ex, y1 + ey))) livres++; }
                 if (livres < C.saidaMin) nota -= C.pesoSaida * (C.saidaMin - livres);
             }
             /* moer: com vida boa, ficar onde há mais bicho comum ao alcance das áreas (a ameaça sobe com o dano causado) */
@@ -11733,7 +11807,7 @@
             if (nota > mn) { mn = nota; melhor = [dx, dy]; }
         }
         const pos = K.x + ',' + K.y;
-        if (pos !== B.ultimaPos) { B.ultimaPos = pos; B.paradoDesde = agora; B.proibida = null; }
+        if (pos !== B.ultimaPos || (!melhor[0] && !melhor[1])) { B.ultimaPos = pos; B.paradoDesde = agora; B.proibida = null; }
         else if (agora - (B.paradoDesde || 0) > 900) { B.proibida = melhor; B.paradoDesde = agora; B.alvo = null; }
         return melhor;
     }
@@ -11744,7 +11818,12 @@
         const bonusPref = (m) => { const i = pref.indexOf(m); return i < 0 ? (pref.length ? -40 : 0) : 30 - i * 5; };
         const m = o.magia, p = o.passiva;
         switch (o.especie) {
-            case 'cura': return hp < C.curaAbaixo ? 300 : 3;
+            /* 2.59.0 — build cheia: o jogo oferece 2 "limite" (+8 % de dano na magia, acumula) e 1 "pocao" (cura 30 % da vida).
+             * Antes o robô procurava 'cura' (não existe) e pegava sempre o limite (dono, 26/11: "no final ir usando cura"). */
+            /* depois dos 9:00 (a rajada do fim) a cura entra mais cedo: 26/11, 5 buffs, vida 100 % até ~9:00 e morte em ~20 s às 11:06 */
+            case 'pocao': case 'cura': return hp < (st.tempoMs >= (C.curaTardeMs || 540000) ? (C.curaTarde || 0.8) : C.curaAbaixo) ? 300 : 5;
+            /* limite: +8 % de dano na magia — na que já virou U (dano maior) e na da build */
+            case 'limite': { const mg = st.baralho.magias.find(x => x.nome === m); return 60 + (mg && mg.evoluiu ? 15 : 0) + bonusPref(m) / 6; }
             case 'bau': case 'ultimate': return 250;
             case 'nivel-de-magia': return 100 + (pass.includes(SV_PAR[m]) ? 30 : 0) + bonusPref(m) / 2;
             case 'magia-nova': return mags.length < 4 ? 90 + (pass.includes(SV_PAR[m]) ? 40 : 0) + bonusPref(m) : 0;
@@ -11754,7 +11833,9 @@
                 if (C.reservarPar === false) { if (dono && pref.includes(dono) && mags.length < 4) return 60 + bonusPref(dono) / 2; return (C.passivasExtras || []).includes(p) ? 40 : 20; }
                 /* vaga de passiva é do par: só sobra vaga para outra se ainda couber o par de toda magia (atual e futura) */
                 const livres = 4 - pass.length, precisam = mags.filter(x => !pass.includes(SV_PAR[x])).length + (4 - mags.length);
-                if (dono && mags.length < 4 && livres > precisam - 1) return 50 + bonusPref(dono) / 2; // par de uma magia que ainda pode vir
+                /* 2.59.0 — só reserva para magia que ainda pode vir se ela é da build preferida (dono, 26/11: barra com Sorte no lugar do Haste,
+                 * Front Sweep 8 sem U — Sorte é par de Lâminas do Céu, que a build nunca pega) */
+                if (dono && mags.length < 4 && livres > precisam - 1 && (C.soParPreferido === false || !pref.length || pref.includes(dono))) return 50 + bonusPref(dono) / 2;
                 if (livres > precisam) return (C.passivasExtras || []).includes(p) ? 25 : 12;
                 return -100;
             }
