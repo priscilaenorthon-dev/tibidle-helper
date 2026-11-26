@@ -1083,6 +1083,32 @@ t('2.64.0 pilha grande de giro baixo: a nota avisa a taxa do lote inteiro e mand
     assert.strictEqual(l.preco, 3000); assert(/giro baixo: 1 negócio\(s\) em 30 dias/.test(l.nota) && /450\.000 de taxa/.test(l.nota), l.nota);
 });
 
+/* ============ 2.64.3 — conta de um lado só e pedido absurdo não fazem preço (ao vivo 26/11) */
+t('2.64.3 piso da raridade de baixo ignora pedido absurdo (> 3× a mediana): trousers Rara não sai a 385 mil por uma Incomum a 350 mil', () => {
+    const F = (rar, ...a) => ({ raridade: rar, refino: 0, potenciaBase: 200, atributos: a.map(([id, valor]) => ({ id, valor })) });
+    const cp = (id, preco, f) => ({ orderId: id, itemName: 'plate legs', unitPrice: preco, instance: { iid: 'i' + id, name: 'plate legs', forja: f } });
+    const copies = [cp('a', 15000, F(2, ['regen_vida', 1.7], ['resist_sagrado', 1.1])), cp('b', 15000, F(2, ['regen_vida', 1.2])),
+        ...[1, 2, 3, 4, 5].map(i => cp('c' + i, 15000 + i, F(1, ['resist_fogo', 0.8]))), cp('x', 350000, F(1, ['resist_fogo', 0.8]))];
+    const j = P.precoReferencia({ nome: 'plate legs', forja: F(2, ['resist_terra', 1.8], ['regen_vida', 2.3]) }, { 'cat:pernas': { copies } }, new Set());
+    assert(j && j.preco != null, JSON.stringify(j));
+    assert(j.preco < 100000 && !(j.piso > 20000), 'preço puxado pelo pedido absurdo: ' + JSON.stringify(j)); // antes: piso 385.000
+});
+t('2.64.3 só uma inferior (extrapola > 2×): manda o preço medido, nunca abaixo da inferior +1', () => {
+    const copias = catSintetica();
+    /* do item, só UMA crown armor Rara com regen. de mana 0,4 a 100 mil: a regra antiga extrapolava ×10 (1 milhão) */
+    copias['cat:armaduras'].copies = copias['cat:armaduras'].copies.filter(c => c.itemName !== 'crown armor');
+    copias['cat:armaduras'].copies.push({ orderId: 'inf', itemName: 'crown armor', unitPrice: 100000, instance: { iid: 'inf', name: 'crown armor', forja: { raridade: 2, refino: 0, potenciaBase: 200, atributos: [{ id: 'regen_mana', valor: 0.4 }] } } });
+    const e = base({ tradeable: TRAD2, catalogo: { 'crown armor': { name: 'crown armor', copyOrders: 1, trades30d: 4 } }, copias,
+        depot: [{ itemName: 'crown armor', count: 1, iid: 'c1', forja: { raridade: 2, refino: 0, potenciaBase: 200, atributos: [{ id: 'regen_mana', valor: 1.2 }] } }],
+        equip: { usadas: [], reservas: [], sobras: ['c1'] } });
+    const antigo = P.precoReferencia({ nome: 'crown armor', forja: e.depot[0].forja }, copias, new Set());
+    assert(antigo.preco > 200000, 'a regra antiga extrapolava: ' + antigo.preco);
+    const l = linha(P2.mkMontar(e), 'i:c1');
+    assert.strictEqual(l.origem, 'medido-item', l.origem + ' · ' + l.nota);
+    assert(l.preco > 100000 && l.preco < antigo.preco, `medido ${l.preco} entre a inferior (100.000) e o antigo (${antigo.preco})`);
+    assert(l.faixa.rapido > 100000, 'nem o rápido desce abaixo da inferior: ' + l.faixa.rapido);
+});
+
 t('2.64.1 potência nunca barateia: piso = a mais cara das cópias iguais de potência menor (+1), sem pedido absurdo, até a de potência maior (−1)', () => {
     const cp = (id, preco, pot) => ({ orderId: id, itemName: 'plate armor', unitPrice: preco, instance: { iid: 'i' + id, name: 'plate armor', forja: { raridade: 0, refino: 0, potenciaBase: pot } } });
     const e = (copies) => base({ catalogo: { 'plate armor': { name: 'plate armor', copyOrders: copies.length, trades30d: 5 } }, copias: { 'cat:armaduras': { copies } },

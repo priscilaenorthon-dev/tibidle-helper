@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.64.2
+// @version      2.64.3
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.64.2';
+    const VERSAO = '2.64.3';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -15580,8 +15580,12 @@
         /* dono, 20/10: "item inferior vendido com regen 1,5 e o nosso é mais forte com status um pouco menor → o nosso tem que ser mais
          * caro": cópia de raridade MENOR (ou mesma raridade e refino menor) cujas nobres são as minhas (ou nenhuma) e cujas linhas não
          * passam das minhas em mais de 15 % → piso = a mais cara dessas × 1,1 */
-        const inferiorTier = doItem.filter(y => mkAtrIds(y.f).length && (mkRar(y.f, -1) < mkRar(x.forja, 0) || (mkRar(y.f, -1) === mkRar(x.forja, 0) && mkRef(y.f, -1) < mkRef(x.forja, 0)))
+        const inferiorTier0 = doItem.filter(y => mkAtrIds(y.f).length && (mkRar(y.f, -1) < mkRar(x.forja, 0) || (mkRar(y.f, -1) === mkRar(x.forja, 0) && mkRef(y.f, -1) < mkRef(x.forja, 0)))
             && nobresDe(y.f).every(id => nobres.includes(id)) && mkRazaoValor(x.forja, y.f) <= 1 + MK_LINHA_PERTO + 1e-9).map(y => y.p);
+        /* v2.64.3 — pedido absurdo não é piso (ao vivo 26/11: trousers of the ancients Rara a 385 mil porque um vendedor pede 350 mil
+         * numa Incomum, enquanto as Raras vendem a 15 mil): fica de fora o que passa de 3× a mediana dessas inferiores */
+        const mdInf = inferiorTier0.length ? inferiorTier0.slice().sort((a, b) => a - b)[Math.floor((inferiorTier0.length - 1) / 2)] : 0;
+        const inferiorTier = inferiorTier0.filter(p => p <= 3 * mdInf);
         if (ids.length && inferiorTier.length) piso = Math.max(piso || 0, Math.round(Math.max(...inferiorTier) * 1.1));
         const comPiso = (r) => {
             if (!r || r.preco == null || piso == null || r.preco >= piso) return r;
@@ -15894,12 +15898,24 @@
                 if (outros.length && justo && !justo.piso) justo = null;
                 pisoPot = mkPisoPotencia(x, doItem.map(y => ({ p: Number(y.unitPrice), f: y.instance && y.instance.forja }))); // v2.64.1
                 /* v2.64.0 — sem preço pela regra de cima ('nobre'/'vazio') e sem cópia igual nem anúncio meu: o preço MEDIDO */
-                if (!outros.length && !meus.length && !(justo && justo.preco != null)) {
+                /* v2.64.3 — a regra antiga só com UM lado (só uma inferior: extrapola até 10×; só uma melhor; ou a faixa da raridade) dava
+                 * preço que ninguém paga (ao vivo 26/11: knight armor Rara 1,4 milhão contra uma inferior a 250 mil; guardian shield Raro
+                 * 440 mil; royal helmet Incomum 364 mil a partir de uma melhor a 900 mil). Quando a conta de um lado só se afasta mais de 2× da
+                 * única referência, ou é a faixa da raridade, manda o preço MEDIDO na categoria, se houver */
+                const umLado = !!(justo && justo.preco != null && (justo.origem === 'faixa' ||
+                    (justo.origem === 'justo' && !(justo.inferior && justo.melhor) && justo.ref > 0 && (justo.preco > 2 * justo.ref || justo.preco < justo.ref / 2)))); // extrapolou mais de 2× da única referência
+                if (!outros.length && !meus.length && (!(justo && justo.preco != null) || umLado)) {
                     const st = e.stats && e.stats[n];
                     if (!doItem.length && c && Number(c.trades30d) > 0 && !st) pendente = { tipo: 'market_stats', data: { itemName: x.nome }, chave: 'stats:' + n, cache: 'stats', alvo: n, rotulo: 'vendas de ' + x.nome, erro: null };
                     else {
                         const vendas = st && !st.erro && Array.isArray(st.vendas) ? st.vendas : null;
                         const m = mkJustoMedido(x, mkjPrepDe(cp, cat, e, meusIds), doItem.map(y => ({ p: Number(y.unitPrice), f: y.instance && y.instance.forja })), vendas, { npc: e.npc, taxa: e.taxa });
+                        /* v2.64.3 — com a regra antiga de um lado só, a comparação dela continua valendo como LIMITE do medido: nunca acima
+                         * da melhor (pelo valor da linha) −1 nem abaixo da inferior +1 — "comparar com itens melhores e inferiores" (dono) */
+                        if (m && umLado) {
+                            const lo = justo.inferior ? justo.inferior.p + 1 : 1, hi = justo.melhor ? justo.melhor.p - 1 : Infinity;
+                            if (lo <= hi) { const c = (v) => Math.min(hi, Math.max(lo, v)); m.preco = c(m.preco); m.rapido = Math.min(m.preco, c(m.rapido)); m.paciente = Math.max(m.preco, c(m.paciente)); m.limiteAntigo = { lo: justo.inferior ? lo : null, hi: justo.melhor ? hi : null }; }
+                        }
                         if (m) justo = Object.assign(m, { antes: justo ? justo.origem : 'vazio', faixaMin: justo && justo.min, faixaMax: justo && justo.max });
                     }
                 }
@@ -15929,6 +15945,8 @@
                : justo.origem === 'medido-vendas' ? `nenhuma à venda: ${justo.nVendas} vendas (mediana ${mkFmt(justo.ref)})`
                : `nenhuma à venda nem vendida: pela ficha, contra ${justo.nItens} itens da categoria`) + fatTxt +
               (justo.teto != null && justo.preco >= justo.teto ? ` · teto: uma melhor a ${mkFmt(justo.teto + 1)}` : '') + (justo.piso != null && justo.preco <= justo.piso ? ` · piso: uma inferior a ${mkFmt(justo.piso - 1)}` : '') +
+              (justo.limiteAntigo && justo.limiteAntigo.lo != null && justo.preco <= justo.limiteAntigo.lo ? ` · acima da inferior a ${mkFmt(justo.limiteAntigo.lo - 1)}` : '') +
+              (justo.limiteAntigo && justo.limiteAntigo.hi != null && justo.preco >= justo.limiteAntigo.hi ? ` · abaixo da melhor a ${mkFmt(justo.limiteAntigo.hi + 1)}` : '') + // v2.64.3
               (justo.confira ? ' · CONFIRA (pouca referência)' : ''); // v2.64.1: rápido/paciente só nos botões
         const partes = [];
         if (temSug) {

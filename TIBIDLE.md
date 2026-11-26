@@ -7732,3 +7732,13 @@ no lugar do Haste).
   forja entram, a não ser com a caixinha nova **"guardar reservas e bases de forja do Equip"** (padrão desligada; `mk_guardar_reservas`),
   e aí aparecem fora com o motivo separado ("base de forja (Equip guarda para forjar…)" × "melhor ou reserva de um personagem"). 1 teste vm
   novo (52); o de 2.15.0 (liberação) roda com a caixinha ligada.
+
+## 2.64.3 (26/11) — Mercado: conta de um lado só e pedido absurdo não fazem preço
+- Ao vivo, antes de anunciar as peças liberadas na 2.64.2: knight armor Rara a 1,4 milhão (uma inferior a 250 mil, extrapolada ×5,6),
+  guardian shield Raro a 440 mil, royal helmet Incomum regen. de mana a 364 mil (uma melhor a 900 mil), trousers of the ancients Rara a
+  385 mil (as Raras vendem a 15 mil) — anúncio que não vende e paga 5 % que não volta.
+- `precoReferencia`: o piso "a sua é melhor que a da raridade de baixo" (a mais cara × 1,1) ignora pedido > 3× a mediana dessas inferiores.
+- `mkRefCopia`: quando a regra antiga só tem UM lado (só inferior ou só melhor) e se afasta mais de 2× da única referência, ou é a faixa da
+  raridade, manda o preço MEDIDO (2.64.0) — limitado pela comparação antiga (acima da inferior +1, abaixo da melhor −1; nota "acima da
+  inferior a…"/"abaixo da melhor a…"). Com os dados ao vivo (68 peças): 9 preços mudaram (trousers 385 mil → 27 mil, royal helmet 364 mil →
+  69 mil, guardian shield 440 → 221 mil, chain helmet Épico 62 → 34 mil, crystal sword 3,7 → 20–50 mil). 2 testes novos (54).
