@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.64.1
+// @version      2.64.2
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.64.1';
+    const VERSAO = '2.64.2';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -16008,7 +16008,7 @@
         const eq = e.equip ? new Set([...(e.equip.usadas || []), ...(e.equip.reservas || [])]) : null;
         /* v2.15.0 — liberadas: iids que o dono mandou do Equip (botões ANUNCIAR das caixinhas). Tiram a barreira
          * "melhor ou reserva" e a lista branca das sobras SÓ para esses iids; o que está no corpo nunca entra. */
-        const usadas = new Set((e.equip && e.equip.usadas) || []), lib = new Set(e.liberadas || []);
+        const usadas = new Set((e.equip && e.equip.usadas) || []), lib = new Set(e.liberadas || []), basesEq = new Set((e.equip && e.equip.bases) || []);
         /* v2.11.20 — LISTA BRANCA (auditoria 30/09): a cópia de equipamento só pode ser marcada se a última
          * leitura do Equip a pôs nas SOBRAS. Antes o Mercado só barrava o que o Equip conhecia (melhor,
          * reserva): peça que entrou depois da leitura, peça do depósito com o depósito não lido, peça de
@@ -16025,7 +16025,8 @@
             : mkImbuido(x.imbuements) ? 'imbuído'
             : mkUsado(x.wear) ? 'usado (cargas ou tempo gastos)'
             : usadas.has(x.iid) ? 'no corpo de alguém (tire antes)'
-            : eq && x.iid && eq.has(x.iid) && !lib.has(x.iid) ? 'melhor ou reserva no Equip' : null);
+            : eq && x.iid && basesEq.has(x.iid) && !lib.has(x.iid) ? 'base de forja (Equip guarda para forjar — ANUNCIAR na aba Equip libera)' // v2.64.2
+            : eq && x.iid && eq.has(x.iid) && !lib.has(x.iid) ? 'melhor ou reserva de um personagem (Equip)' : null);
         const pilha = (nome) => {
             const n = mkMin(nome);
             let p = pilhas.get(n);
@@ -16359,10 +16360,18 @@
         const b = mkBagAtual(), R = EQUIP.res;
         return { bag: b ? b.bag : null, bagInst: b ? b.inst : null, depot: ESTADO_WS.depot ? ESTADO_WS.depot.entries : null,
                  tradeable: MK.tradeable, npc: MK.npc, taxa: MK.taxa, catalogo: MK.catalogo, minhas: MK.minhas, livros: MK.livros, copias: MK.copias, stats: MK.stats,
-                 prot: mkProtegidos(), protLido: MK.protLido, nunca: autoHunt().nuncaVender || [], equip: R ? { usadas: [...(R.usadas || [])], reservas: [...(R.reservas || []), ...(R.nobres || []).map(p => p.iid), ...(R.bases || []).map(p => p.iid)],
-                                                                         sobras: (R.dispensaveis || []).map(p => p.iid).filter(Boolean) } : null,
+                 prot: mkProtegidos(), protLido: MK.protLido, nunca: autoHunt().nuncaVender || [], equip: R ? mkEquipDaLista(R, !!ler('mk_guardar_reservas', false)) : null,
                  naCidade: !emHunt(), digitados: MK.digitados, marcados: [...MK.marcados], liberadas: [...MK.liberadas],
                  base: MK.base || null, escada: (ler('mk_giro', null) || {}).escada || null }; // v2.64.0: ficha dos itens da categoria e escada do histórico
+    }
+    /* v2.64.2 — o que o Equip segura fora do Mercado (dono, 26/11: "esses itens por que não anunciou?"; "pode retirar item de reserva e
+     * item de forja, eu não uso eles"). O melhor de cada personagem (R.usadas: vestido ou a trocar) fica SEMPRE fora. "Encaixe que o
+     * Mercado paga" (R.nobres: linha boa que ninguém usa — 50 peças presas na ShamanBr) entra sempre. Reserva (2.ª melhor de cada slot)
+     * e base de forja (Épica+) só ficam fora com a caixinha "guardar reservas e bases de forja" ligada (padrão: desligada). */
+    function mkEquipDaLista(R, guardarRes) {
+        const iids = (l) => (l || []).map(p => p && p.iid).filter(Boolean), bases = iids(R.bases), res = [...(R.reservas || [])];
+        return { usadas: [...(R.usadas || [])], reservas: guardarRes ? res.concat(bases) : [], bases: guardarRes ? bases : [],
+                 sobras: iids(R.dispensaveis).concat(iids(R.nobres), guardarRes ? [] : bases.concat(res)) };
     }
     const mkVista = () => mkMontar(mkEntrada());
     /* premium sem o welcome (helper instalado com o jogo aberto): o estado do
@@ -16788,11 +16797,13 @@
         if (MK.erro) h += `<div class="mk-ruim">${escHtml(MK.erro)}</div>`;
         const abas = [['anunciar', 'Anunciar', v ? v.plano.n : null], ['meus', 'Meus anúncios', nMinhas], ['caixa', 'Caixa', nCaixa]];
         h += `<div class="tb-sub" role="tablist">${abas.map(([k, n, c]) => `<button type="button" id="tb-mk-sub-${k}" class="${k === sub ? 'on' : ''}" role="tab" aria-selected="${k === sub}">${n}${c ? ` <b>${c}</b>` : ''}</button>`).join('')}</div>`;
+        if (sub === 'anunciar') h += `<div class="tb-linha" style="margin:2px 0"><label class="tb-l" title="ligado: a reserva (2.ª melhor de cada slot de cada personagem) e as bases de forja (Épica ou melhor) da aba Equip ficam fora da lista. O melhor de cada um fica sempre fora."><input type="checkbox" id="tb-mk-guardar-res" ${ler('mk_guardar_reservas', false) ? 'checked' : ''}> guardar reservas e bases de forja do Equip</label></div>`; // v2.64.2
         h += sub === 'meus' ? mkTelaMeus() : sub === 'caixa' ? mkTelaCaixa() : mkTelaAnunciar(v || { linhas: [], fora: [], plano: { n: 0, itens: [], taxa: 0, liquido: 0 } });
-        h += aj('mk-ajuda', 'Preço sugerido: menor anúncio de OUTRO vendedor −1 (as suas ordens não contam; se o menor já é seu, fica o seu); sem concorrente, a média dos últimos 30 dias; sem histórico, digite. Forjado: só cópias da mesma raridade, do mesmo refino, com os MESMOS atributos nos encaixes e com o VALOR das linhas nobres em ±10 % do seu são "iguais" (menor −1). Sem igual, o preço é AJUSTADO pelo valor: a cópia inferior (ou a melhor) com o mesmo encaixe, numa curva de potência 4 (ao vivo: regen. de mana 1,1 → 25 mil, 2,0 → 450 mil); sem nenhuma com o encaixe, a mais barata da mesma raridade −1, ou a mais cara da raridade abaixo × 1,25. v2.64.0 — PREÇO MEDIDO: peça com linha nobre sem cópia parecida, ou item sem nenhuma cópia à venda, é comparada com TODOS os itens da categoria à venda (melhores e inferiores): o quanto valem a raridade, o refino, a potência e cada linha é medido na hora; o nível do item vem das cópias dele com outros encaixes, das vendas reais, ou da ficha (nível, NPC, força — "confira"). Preço = o medido +15 %, nunca acima de uma melhor do mesmo item nem abaixo de uma inferior; os botões rápido / justo / paciente só preenchem o preço. ESCADA: se o mesmo item voltou vencido perto deste preço, a linha sugere −25 % sobre o da última volta; depois de 3 voltas, NPC ou desmanche (nada re-anuncia sozinho). A nota diz de onde veio cada preço. Nunca abaixo do NPC: se o que sobra depois da taxa não passa do que o NPC paga, a linha vira "vender no NPC". Fora da lista: selado, imbuído, protegido, usado, o melhor e a reserva de cada personagem (aba Equip) e a sua lista "nunca vender" do Auto Hunt. Taxa de 5 % paga ao anunciar e que NUNCA volta; ordem vale 3 dias; o mercado não cruza ordens; o ouro da venda cai na Caixa. Ritmo: 1 pedido a cada 3,5 s (limite do jogo: 20 ações/min). Anunciar: retira do depósito → confere a mochila → cria a ordem → próximo.');
+        h += aj('mk-ajuda', 'Preço sugerido: menor anúncio de OUTRO vendedor −1 (as suas ordens não contam; se o menor já é seu, fica o seu); sem concorrente, a média dos últimos 30 dias; sem histórico, digite. Forjado: só cópias da mesma raridade, do mesmo refino, com os MESMOS atributos nos encaixes e com o VALOR das linhas nobres em ±10 % do seu são "iguais" (menor −1). Sem igual, o preço é AJUSTADO pelo valor: a cópia inferior (ou a melhor) com o mesmo encaixe, numa curva de potência 4 (ao vivo: regen. de mana 1,1 → 25 mil, 2,0 → 450 mil); sem nenhuma com o encaixe, a mais barata da mesma raridade −1, ou a mais cara da raridade abaixo × 1,25. v2.64.0 — PREÇO MEDIDO: peça com linha nobre sem cópia parecida, ou item sem nenhuma cópia à venda, é comparada com TODOS os itens da categoria à venda (melhores e inferiores): o quanto valem a raridade, o refino, a potência e cada linha é medido na hora; o nível do item vem das cópias dele com outros encaixes, das vendas reais, ou da ficha (nível, NPC, força — "confira"). Preço = o medido +15 %, nunca acima de uma melhor do mesmo item nem abaixo de uma inferior; os botões rápido / justo / paciente só preenchem o preço. ESCADA: se o mesmo item voltou vencido perto deste preço, a linha sugere −25 % sobre o da última volta; depois de 3 voltas, NPC ou desmanche (nada re-anuncia sozinho). A nota diz de onde veio cada preço. Nunca abaixo do NPC: se o que sobra depois da taxa não passa do que o NPC paga, a linha vira "vender no NPC". Fora da lista: selado, imbuído, protegido, usado, o melhor de cada personagem (aba Equip — a reserva e as bases de forja só com a caixinha "guardar" ligada) e a sua lista "nunca vender" do Auto Hunt. Taxa de 5 % paga ao anunciar e que NUNCA volta; ordem vale 3 dias; o mercado não cruza ordens; o ouro da venda cai na Caixa. Ritmo: 1 pedido a cada 3,5 s (limite do jogo: 20 ações/min). Anunciar: retira do depósito → confere a mochila → cria a ordem → próximo.');
         return h + '</div>';
     }
     function ligarMercado() {
+        const gr = $('#tb-mk-guardar-res'); if (gr) gr.onchange = () => { guardar('mk_guardar_reservas', gr.checked); MK.conf = null; renderizar(); }; // v2.64.2
         const at = $('#tb-mk-atualizar');
         if (at) at.onclick = () => { if (MK.ocupado) { MK.parar = true; avisar('mercado', 'mercado: paro depois do pedido atual', 'info'); } else mkAtualizar(); };
         ['anunciar', 'meus', 'caixa'].forEach(k => { const b = $('#tb-mk-sub-' + k); if (b) b.onclick = () => { guardar('mercado_sub', k); MK.conf = null; renderizar(); }; });

@@ -7722,3 +7722,13 @@ no lugar do Haste).
 - Tela (print do dono): os botões rápido / justo / paciente caíam na coluna de 28 px da caixinha e saíam letra por letra na vertical →
   `.mk-fx` ocupa da 2ª coluna ao fim (como a `.mk-info`), botões com largura do texto. Notas mais curtas: "3 cópias do item (10.000–100.000)
   + 95 itens da categoria · a sua: raridade ×1,7"; rápido/paciente só nos botões; escada "voltou 4× (última a 20.000) → −25 %".
+
+## 2.64.2 (26/11) — Mercado: o Equip só segura o melhor de cada personagem
+- Dono (print do depósito): "e esses itens, por que não anunciou?" — fire sword ×4, crystal sword ×3, royal helmet ×6, gold ring, guardian
+  shield… 75 peças ficavam "melhor ou reserva no Equip". O Equip separa: 18 reservas (2.ª melhor de cada slot), 11 bases de forja (Épica+) e
+  **50 "encaixe que o Mercado paga"** (linha boa que ninguém usa) — e o Mercado barrava as três (o botão ANUNCIAR da caixinha do Equip, que
+  libera, ninguém achava). Dono: "pode retirar item de reserva e item de forja, eu não uso eles".
+- `mkEquipDaLista`: o melhor de cada personagem (R.usadas: vestido ou a trocar) fica sempre fora; R.nobres entra sempre; reserva e base de
+  forja entram, a não ser com a caixinha nova **"guardar reservas e bases de forja do Equip"** (padrão desligada; `mk_guardar_reservas`),
+  e aí aparecem fora com o motivo separado ("base de forja (Equip guarda para forjar…)" × "melhor ou reserva de um personagem"). 1 teste vm
+  novo (52); o de 2.15.0 (liberação) roda com a caixinha ligada.

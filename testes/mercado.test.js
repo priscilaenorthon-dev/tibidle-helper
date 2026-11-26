@@ -846,7 +846,7 @@ t('vm: caixa de entrada — LER só lê; RESGATAR TUDO manda um market_claim por
 t('vm (2.15.0): MK.liberadas sobrevive ao ATUALIZAR do Mercado e cai ao desmarcar a peça, no "desmarcar" e depois de anunciar', async () => {
     const copias = { armas: [{ orderId: 'o1', itemName: 'elvish bow', unitPrice: 2500, sellerName: 'Outro', instance: { iid: 'z1', name: 'elvish bow', forja: { raridade: 1, refino: 0 } }, expiresAt: 1 }] };
     const mundo = () => mundoMercado({ bag: { 'elvish bow': 1 }, inst: [{ iid: 'b1', name: 'elvish bow', forja: { raridade: 1, refino: 0 } }],
-        catalogo: CAT_BASE, copias, equip: { usadas: [], reservas: ['b1'], sobras: [] } });
+        catalogo: CAT_BASE, copias, equip: { usadas: [], reservas: ['b1'], sobras: [] }, ls: { tb_helper_mk_guardar_reservas: 'true' } }); // 2.64.2: com "guardar" ligado a reserva fica fora
     /* reserva do Equip liberada antes do ATUALIZAR (é o que o botão da caixinha do Equip faz na Task 7) */
     const M = await mundo(); const MK = M.W.H.MERCADO;
     MK.liberadas.add('b1'); MK.marcados.add('i:b1');
@@ -1099,6 +1099,31 @@ t('2.64.1 potência nunca barateia: piso = a mais cara das cópias iguais de pot
     /* sem cópia mais fraca: menor −1 de sempre */
     l = linha(P2.mkMontar(e([cp('a', 12000, 300), cp('f', 13000, 400)])), 'i:p1');
     assert.strictEqual(l.preco, 11999); assert.strictEqual(l.origem, 'menor');
+});
+
+t('vm (2.64.2): o Equip só segura o melhor de cada um; encaixe que o Mercado paga, reserva e base de forja entram (a caixinha "guardar" segura as duas últimas)', async () => {
+    const F = (atr) => ({ raridade: 1, refino: 0, potenciaBase: 200, atributos: atr || [] });
+    const M = await mundoMercado({ ls: { tb_helper_ui: JSON.stringify({ aba: 'mercado', aberta: true, oculto: false }) } });
+    M.W.H.EQUIP.res = { porVoc: { KNIGHT: {}, PALADIN: {}, SORCERER: {}, DRUID: {} }, usadas: new Set(['u1']), reservas: new Set(['r1']), temporarios: [],
+                        bases: [{ iid: 'b1' }], nobres: [{ iid: 'n1' }], dispensaveis: [] };
+    M.W.H.MERCADO.t = M.W.agora; M.W.H.MERCADO.tradeable = TRAD; M.W.H.MERCADO.npc = NPC;
+    M.ws.emitir({ type: 'depot_result', data: { entries: [
+        { itemName: 'plate armor', count: 1, iid: 'n1', forja: F([{ id: 'regen_mana', valor: 1.4 }]) },
+        { itemName: 'plate armor', count: 1, iid: 'b1', forja: Object.assign(F(), { raridade: 3 }) },
+        { itemName: 'plate armor', count: 1, iid: 'r1', forja: F() }, { itemName: 'plate armor', count: 1, iid: 'u1', forja: F() }] } });
+    await M.W.avancar(0);
+    let L = M.W.H.MERCADO.pintadas || [];
+    igual(L.map(l => l.chave).sort(), ['i:b1', 'i:n1', 'i:r1'], 'padrão: só o melhor (u1) fica fora');
+    M.W.store.set('tb_helper_mk_guardar_reservas', 'true');
+    M.ws.emitir({ type: 'depot_result', data: { entries: M.W.H.MERCADO.pintadas ? [
+        { itemName: 'plate armor', count: 1, iid: 'n1', forja: F([{ id: 'regen_mana', valor: 1.4 }]) },
+        { itemName: 'plate armor', count: 1, iid: 'b1', forja: Object.assign(F(), { raridade: 3 }) },
+        { itemName: 'plate armor', count: 1, iid: 'r1', forja: F() }] : [] } });
+    await M.W.avancar(0);
+    L = M.W.H.MERCADO.pintadas || [];
+    igual(L.map(l => l.chave), ['i:n1'], 'com "guardar", reserva e base ficam fora');
+    const html = M.W.porId.get('tb-corpo').innerHTML;
+    assert(/base de forja \(Equip guarda para forjar/.test(html) && /melhor ou reserva de um personagem \(Equip\)/.test(html), 'motivos fora da lista');
 });
 
 rodar();
