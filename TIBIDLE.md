@@ -7570,3 +7570,11 @@ cada vez do mais fácil ao mais difícil", "focar em baús e fogueiras", "ficar 
 
 Dono: "mini mapa não abriu". O quadro e a caixinha "minimapa" da aba usavam o mesmo id (`tb-sv-mapa`): o desenho achava a caixinha e o
 quadro nunca era criado. Agora o quadro é `tb-sv-minimapa`. Teste novo em `testes/arena.test.js` (534 no total).
+
+## 2.58.0 (26/11) — Sobrevivência com buffs
+
+Dono: "coloca a opção na automação, para a gente fazer com buff também". A aba ☠ ganhou 5 caixinhas (Velocidade 77 mil, Proteção
+elemental 50 mil, Dano 65 mil, Roubo de vida 45 mil, Crítico 13 mil = 250 mil com todos), guardadas em `sv_buffs` (padrão: nenhum).
+Antes de cada partida (COMEÇAR PARTIDA ou recomeçar sozinho) o robô deixa a loja do jogo igual à escolha (`svBuffsParaClicar`, clica só
+o que difere) e só então começa; o jogo cobra ao começar. Sem ouro, o jogo não cobra e não começa. Simulador: os 5 = +9 de ameaça
+média, Velocidade sozinha +5. Teste novo em `testes/arena.test.js` (535 no total).

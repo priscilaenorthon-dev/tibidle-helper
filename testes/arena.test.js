@@ -4,7 +4,7 @@ const fs = require('fs'), path = require('path'), assert = require('assert');
 const src = fs.readFileSync(path.join(__dirname, '..', 'tibidle-helper.user.js'), 'utf8');
 const i = src.indexOf('/* @@ARENA-PURO-INICIO'), f = src.indexOf('/* @@ARENA-PURO-FIM');
 assert(i > 0 && f > i, 'trecho @@ARENA-PURO não encontrado');
-const A = new Function(src.slice(i, f) + '\nreturn { SV_PAR, SV_CFG, svDecidir, svEscolherAlvo, svEscolherCarta, svNotaCarta, svPerigo };')();
+const A = new Function(src.slice(i, f) + '\nreturn { SV_PAR, SV_CFG, svDecidir, svEscolherAlvo, svEscolherCarta, svNotaCarta, svPerigo, SV_BUFFS, svBuffsParaClicar };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 
@@ -68,5 +68,12 @@ t('2.57.1: o minimapa e a caixinha "minimapa" da aba não dividem o id (o quadro
     const ids = [...src.matchAll(/id="(tb-sv-[\w-]+)"/g)].map(m => m[1]);
     assert(!ids.includes('tb-sv-minimapa'), 'a tela não pode usar o id do quadro');
     assert(/cv\.id = 'tb-sv-minimapa'/.test(src) && /getElementById\('tb-sv-minimapa'\)/.test(src));
+});
+t('2.58.0: buffs — clica só o que difere da escolha (marca os pedidos, desmarca os que sobram, nada se já igual)', () => {
+    const tela = { roubo_de_vida: false, protecao_elemental: true, velocidade: false, dano: false, critico: true };
+    assert.deepStrictEqual(A.svBuffsParaClicar(tela, ['velocidade', 'critico']).sort(), ['protecao_elemental', 'velocidade']);
+    assert.deepStrictEqual(A.svBuffsParaClicar(tela, ['protecao_elemental', 'critico']), []);
+    assert.deepStrictEqual(A.svBuffsParaClicar(tela, []).sort(), ['critico', 'protecao_elemental'], 'sem escolha = nenhum buff (sem gasto)');
+    assert.deepStrictEqual(A.SV_BUFFS.map(b => b.id).sort(), Object.keys(tela).sort(), 'os 5 ids da loja do jogo');
 });
 console.log(`\n${n} testes ok`);
