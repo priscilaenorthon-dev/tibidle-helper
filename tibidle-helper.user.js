@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.57.0
+// @version      2.57.1
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.57.0';
+    const VERSAO = '2.57.1';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -18496,10 +18496,10 @@
     const SV_COR = { cristal: '#3ddc6a', orbe: '#5aa9ff', caveira: '#f2f2f2', comida: '#ff9f43', gelo: '#9be7ff', bau: '#ffd23f' };
     function svDesenhar() {
         const st = ARENA.ligado && ARENA.mapa ? (ARENA.ref && ARENA.ref.st) : null;
-        let cv = document.getElementById('tb-sv-mapa');
+        let cv = document.getElementById('tb-sv-minimapa'); // 2.57.1: era 'tb-sv-mapa', o mesmo id da caixinha da aba — o minimapa nunca nascia
         if (!st || !document.querySelector('[data-testid="sobrevivencia-camada"]')) { if (cv) cv.style.display = 'none'; return; }
         if (!cv) {
-            cv = document.createElement('canvas'); cv.id = 'tb-sv-mapa'; cv.width = 240; cv.height = 240;
+            cv = document.createElement('canvas'); cv.id = 'tb-sv-minimapa'; cv.width = 240; cv.height = 240;
             Object.assign(cv.style, { position: 'fixed', left: '12px', bottom: '12px', zIndex: 2147483000, background: 'rgba(10,12,16,.82)', border: '1px solid #c9a14a', borderRadius: '6px', pointerEvents: 'none' });
             document.body.appendChild(cv);
         }

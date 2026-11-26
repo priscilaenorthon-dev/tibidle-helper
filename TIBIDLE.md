@@ -7565,3 +7565,8 @@ cada vez do mais fácil ao mais difícil", "focar em baús e fogueiras", "ficar 
 - Ao vivo (u2tag, nível 244, sem buff): robô antigo (fugir) ameaça 97 aos 10:21 (146º); robô novo aos 4:17 já estava em 88, nível 46,
   2 ultimates, bosses mortos.
 - Testes: `testes/arena.test.js` (9) e o do trilho em `casca.test.js` (14 ícones); 533 no total.
+
+## 2.57.1 (26/11) — minimapa da Sobrevivência
+
+Dono: "mini mapa não abriu". O quadro e a caixinha "minimapa" da aba usavam o mesmo id (`tb-sv-mapa`): o desenho achava a caixinha e o
+quadro nunca era criado. Agora o quadro é `tb-sv-minimapa`. Teste novo em `testes/arena.test.js` (534 no total).
