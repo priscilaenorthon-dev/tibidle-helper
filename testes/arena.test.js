@@ -123,4 +123,23 @@ t('2.60.1: oferta só com passivas sem par — vida/defesa antes de Sabedoria (2
         passivas: [{ nome: 'Ímã', nivel: 1 }], oferta: [{ especie: 'passiva-nova', passiva: 'Sabedoria' }, { especie: 'passiva-nova', passiva: 'Área' }, { especie: 'passiva-nova', passiva: 'Vida máxima' }] } });
     assert.strictEqual(A.svEscolherCarta(st, A.SV_CFG), 2);
 });
+t('2.61.0: baú longe, no meio da multidão e com boss vivo — o alvo é o baú (dono, 26/11: "nem que ande e volte")', () => {
+    const bichos = [bicho(1, 5, 5, { ehBoss: true, hp: 10 })]; for (let k = 0; k < 20; k++) bichos.push(bicho(10 + k, 28 + (k % 5), -2 + Math.floor(k / 5)));
+    const st = estado({ bichos, itens: [{ id: 2, tipo: 'bau', x: 30, y: 0 }, { id: 3, tipo: 'cristal', x: 2, y: 0, xp: 5000 }] });
+    const a = A.svEscolherAlvo(st, A.SV_CFG);
+    assert.strictEqual(a.tipo, 'bau'); assert.strictEqual(a.x, 30);
+    const d = A.svDecidir(st, {}, A.SV_CFG);
+    assert.strictEqual(d[0], 1, 'anda em direção ao baú');
+});
+t('2.61.0: com as 4 magias em U, não caça boss e se afasta dele', () => {
+    const mags = ['Front Sweep', 'Inflict Wound', 'Brutal Strike', 'Whirlwind Throw'].map(nome => ({ nome, nivel: 8, evoluiu: true }));
+    const pass = ['Haste', 'Recovery', 'Recarga', 'Ímã'].map(nome => ({ nome, nivel: 3 }));
+    const st = estado({ bichos: [bicho(1, 2, 0, { ehBoss: true })], baralho: { magias: mags, passivas: pass, oferta: [] } });
+    const a = A.svEscolherAlvo(st, A.SV_CFG);
+    assert.ok(!a || a.tipo !== 'boss', 'sem ultimate a ganhar, boss não é alvo');
+    const d = A.svDecidir(st, {}, A.SV_CFG);
+    assert.ok(d[0] <= 0, 'não anda para o lado do boss');
+    const falta = estado({ bichos: [bicho(1, 2, 0, { ehBoss: true })], baralho: { magias: mags.map((m, i) => i ? m : Object.assign({}, m, { evoluiu: false })), passivas: pass, oferta: [] } });
+    assert.strictEqual(A.svEscolherAlvo(falta, A.SV_CFG).tipo, 'boss', 'ainda falta U: caça');
+});
 console.log(`\n${n} testes ok`);

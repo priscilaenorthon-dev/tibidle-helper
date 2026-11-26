@@ -7632,3 +7632,13 @@ no lugar do Haste).
   (`run_preset_save {pinos}`); 13 passivas (Protector −8 %/nível, Vida máxima +15 %, Sabedoria +15 % xp, Roubo de vida 2 %, Onda de choque);
   trocar cartas = 100k + 50k × trocas; o servidor reexecuta as teclas (`run_keys` a cada 100 ms) e recebe telemetria em `run_alive` (fps, ping,
   teclas atrasadas) — motivo "flag" tira do ranking.
+
+## 2.61.0 (26/11) — Sobrevivência: baú do boss sempre e boss só enquanto falta ultimate
+- Dono, ao vivo: "quando mata o boss fica o baú no mapa e você não pega; nem que ande e volte, tem que pegar" (print com 2 baús fora da tela)
+  e "no nível alto morre tentando matar o boss; é para matar bicho, já está completo".
+- Causa do baú (simulador): o baú tinha nota 100/(d+3) contra cristais e perigo, o alvo zerava a cada fuga de aviso e a moagem puxava o Knight
+  de volta para a multidão — baú a 3 casas terminou a 150. Agora o baú no chão é o alvo antes de tudo (o mais perto), com puxão próprio
+  (`pesoBau` 4, metade com vida baixa) e sem a moagem no caminho; a fuga do aviso continua na frente. 12 sementes, 5 buffs: 59/65 → 64/64.
+- Boss: `svFaltaUltimate` — só caça enquanto alguma magia ainda pode virar U (par na barra ou vaga de passiva). Depois disso (≈8:30 no
+  simulador) mantém 4 casas do boss (`pesoFogeBoss` 5). Morte com boss perto no último minuto: 18 % → 8 %; ameaça média 131,6 → 132,8 (ruído).
+  O resto das mortes do fim é aviso de conjurador (fogo de raio 7) — próximo alvo.

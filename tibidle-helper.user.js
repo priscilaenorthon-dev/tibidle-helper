@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.60.1
+// @version      2.61.0
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.60.1';
+    const VERSAO = '2.61.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -11630,7 +11630,9 @@
         passivasPrioridade: ['Haste'],
         /* 2.60.1 — quando a oferta obriga a pegar passiva sem par: a morte vem na rajada do fim, então vida e defesa antes de xp */
         passivasForcadas: ['Vida máxima', 'Protector', 'Roubo de vida', 'Onda de choque', 'Sabedoria'],
-        saidaMin: 3, pesoSaida: 1
+        saidaMin: 3, pesoSaida: 1,
+        /* 2.61.0 — baú do boss sempre (puxão próprio, sem a moagem); boss só enquanto falta ultimate, depois distância dele */
+        bauSempre: true, pesoBau: 4, cacarSemUlt: false, pesoFogeBoss: 5, distFogeBoss: 4
     };
     const SV_DIRS = []; for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) if (dx || dy) SV_DIRS.push([dx, dy]);
     /* 2.59.0 — árvores e pedras do chão bloqueiam o Knight (motor: nl/nc/nd + cfg.paletaDoChao, lido em 26/11). O robô não sabia:
@@ -11667,8 +11669,22 @@
         if (st.reaper) { const d2 = (st.reaper.x - x) ** 2 + (st.reaper.y - y) ** 2; p += 60 / Math.max(0.3, d2); }
         return p;
     }
+    /* 2.61.0 — ainda há ultimate a ganhar? (magia fora do U com o par na barra ou vaga para ele, ou vaga de magia). Sem isso o baú
+     * do boss só dá nível/limite: com a build cheia, caçar boss é só risco (dono, 26/11: "no nível alto morre tentando matar o boss") */
+    function svFaltaUltimate(st) {
+        const mags = st.baralho.magias, pass = st.baralho.passivas.map(p => p.nome || p);
+        if (mags.length < 4) return true;
+        return mags.some(m => !m.evoluiu && (pass.includes(SV_PAR[m.nome]) || pass.length < 4));
+    }
     function svEscolherAlvo(st, C) {
         const K = st.knight, hp = K.hp / K.maxHp;
+        /* 2.61.0 — baú no chão vem antes de tudo (dono, 26/11: "nem que ande e volte, tem que pegar"). Antes ele tinha nota 100/(d+3)
+         * contra cristais e perigo, e a moagem puxava o Knight para a multidão: no simulador, baú a 3 casas terminou a 150. */
+        if (C.bauSempre !== false) {
+            let bz = null, db = Infinity;
+            for (const it of st.itens) if (it.tipo === 'bau' && !it.voando) { const d = Math.max(Math.abs(it.x - K.x), Math.abs(it.y - K.y)); if (d < db) { db = d; bz = it; } }
+            if (bz) return { x: bz.x, y: bz.y, v: 999, tipo: 'bau', id: bz.id };
+        }
         const grade = new Map();
         for (const o of st.itens) if (o.tipo === 'cristal' && !o.voando) { const k = Math.floor(o.x / 3) + ',' + Math.floor(o.y / 3); grade.set(k, (grade.get(k) || 0) + o.xp); }
         let melhor = null, mv = 0;
@@ -11699,7 +11715,7 @@
             for (const b of st.bichos) if (b.ehConjurador && !b.ehBoss) { const d = Math.max(Math.abs(b.x - K.x), Math.abs(b.y - K.y)); if (d <= dc) { dc = d; cj = b; } }
             if (cj && !(melhor && ['bau', 'orbe'].includes(melhor.tipo) && Math.hypot(melhor.x - K.x, melhor.y - K.y) < 6)) return { x: cj.x, y: cj.y, v: 500, tipo: 'conj', id: cj.id };
         }
-        if ((C.cacarBoss || (C.cacarComUlt && ultPronta)) && hp >= C.vidaCaca &&!(melhor && ['bau', 'orbe', 'caveira'].includes(melhor.tipo) && Math.hypot(melhor.x - K.x, melhor.y - K.y) < 12)) {
+        if ((C.cacarBoss || (C.cacarComUlt && ultPronta)) && hp >= C.vidaCaca && (C.cacarSemUlt || svFaltaUltimate(st)) && !(melhor && ['bau', 'orbe', 'caveira'].includes(melhor.tipo) && Math.hypot(melhor.x - K.x, melhor.y - K.y) < 12)) {
             const bosses = st.bichos.filter(b => b.ehBoss).sort((a, b) => a.hp - b.hp);
             if (bosses.length) { const b = bosses[0]; return { x: b.x, y: b.y, v: 999, tipo: 'boss', id: b.id }; }
         }
@@ -11796,7 +11812,12 @@
                 if (livres < C.saidaMin) nota -= C.pesoSaida * (C.saidaMin - livres);
             }
             /* moer: com vida boa, ficar onde há mais bicho comum ao alcance das áreas (a ameaça sobe com o dano causado) */
-            if (C.pesoMoer && hp >= C.vidaMoer && !st.reaper) {
+            /* 2.61.0 — com a build cheia (ou sem vida para caçar), boss é só perigo: manter distância (o golpe dele vem em área) */
+            if (C.pesoFogeBoss && !(B.alvo && B.alvo.tipo === 'boss') && (hp < C.vidaCaca || !(C.cacarSemUlt || svFaltaUltimate(st)))) {
+                for (const b of st.bichos) if (b.ehBoss) { const db = Math.max(Math.abs(b.x - x1), Math.abs(b.y - y1)); if (db < C.distFogeBoss) nota -= C.pesoFogeBoss * (C.distFogeBoss - db); }
+            }
+            /* indo ao baú, a moagem não puxa de volta para a multidão */
+            if (C.pesoMoer && hp >= C.vidaMoer && !st.reaper && !(B.alvo && B.alvo.tipo === 'bau')) {
                 let dens = 0; const r = C.raioMoer;
                 for (const b of st.bichos) if (!b.ehBoss && Math.abs(b.x - x1) <= r && Math.abs(b.y - y1) <= r) dens++;
                 nota += C.pesoMoer * Math.min(dens, C.densMax) * (hp - C.vidaMoer) / (1 - C.vidaMoer);
@@ -11808,7 +11829,7 @@
                 nota += C.pesoBoss * (Math.abs(d0 - D) - Math.abs(d1 - D));
                 /* o perigo do próprio boss alvo já foi contado: devolve parte dele */
                 if (d1 > 0) nota += pesoPerigo * 4 * (1 - C.medoDoAlvo) / Math.max(0.5, d1 * 2);
-            } else if (B.alvo) { const d0 = Math.hypot(B.alvo.x - K.x, B.alvo.y - K.y), d1 = Math.hypot(B.alvo.x - x1, B.alvo.y - y1); nota += pesoAlvo * (d0 - d1); }
+            } else if (B.alvo) { const d0 = Math.hypot(B.alvo.x - K.x, B.alvo.y - K.y), d1 = Math.hypot(B.alvo.x - x1, B.alvo.y - y1); nota += (B.alvo.tipo === 'bau' && C.pesoBau ? C.pesoBau * (baixa ? 0.5 : 1) : pesoAlvo) * (d0 - d1); }
             if (B.proibida && B.proibida[0] === dx && B.proibida[1] === dy) nota -= 3;
             if (nota > mn) { mn = nota; melhor = [dx, dy]; }
         }
