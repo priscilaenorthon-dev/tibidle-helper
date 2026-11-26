@@ -1048,7 +1048,7 @@ t('2.64.0 peça com linha nobre sem cópia parecida: preço MEDIDO nas cópias d
     /* verdade da categoria: 60.000 × 4 (raro) × 3 (regen. de mana) = 720 mil; medido × 1,15 → perto de 830 mil */
     assert(l.preco > 500000 && l.preco < 1200000, 'preço medido fora da faixa: ' + l.preco);
     assert(l.faixa && l.faixa.rapido <= l.preco && l.preco <= l.faixa.paciente, JSON.stringify(l.faixa));
-    assert(/preço medido: 3 cópias de crown armor/.test(l.nota) && /regen\. de mana ×/.test(l.nota), l.nota);
+    assert(/3 cópias do item/.test(l.nota) && /regen\. de mana ×/.test(l.nota), l.nota);
     assert.strictEqual(l.bloqueio, null, 'a linha pode ser marcada: ' + l.bloqueio);
     /* teto: uma crown armor ÉPICA com regen. de mana 1,5 a 300 mil DOMINA a minha → nunca acima de 299.999 */
     copias['cat:armaduras'].copies.push({ orderId: 'top', itemName: 'crown armor', unitPrice: 300000, instance: { iid: 'top', name: 'crown armor', forja: { raridade: 3, refino: 0, potenciaBase: 250, atributos: [{ id: 'regen_mana', valor: 1.5 }] } } });
@@ -1072,7 +1072,7 @@ t('2.64.0 escada: o mesmo item voltou vencido perto do preço → −25 % sobre 
     igual(P2.mkEscadaDe(H), { 'small ruby': { seguidas: 2, ultPreco: 920, at: 40 } });
     const cat = { 'small ruby': { name: 'small ruby', sellOrders: 1, minSell: 950, trades30d: 4 } };
     let l = linha(P2.mkMontar(base({ bag: { 'small ruby': 2 }, catalogo: cat, stats: { 'small ruby': { stats: { avg: 900 } } }, escada: P2.mkEscadaDe(H) })), 'n:small ruby');
-    assert.strictEqual(l.origem, 'escada'); assert.strictEqual(l.preco, 690); assert(/voltou 2× sem vender/.test(l.nota), l.nota);
+    assert.strictEqual(l.origem, 'escada'); assert.strictEqual(l.preco, 690); assert(/voltou 2× \(última a 920\) → −25 %/.test(l.nota), l.nota);
     /* preço muito acima da volta (outra peça de mesmo nome, bem melhor): a escada não mexe */
     l = linha(P2.mkMontar(base({ bag: { 'small ruby': 2 }, catalogo: { 'small ruby': { name: 'small ruby', sellOrders: 1, minSell: 5000, trades30d: 4 } }, stats: { 'small ruby': { stats: { avg: 900 } } }, escada: P2.mkEscadaDe(H) })), 'n:small ruby');
     assert.strictEqual(l.origem, 'menor'); assert.strictEqual(l.preco, 4999);
@@ -1081,6 +1081,24 @@ t('2.64.0 pilha grande de giro baixo: a nota avisa a taxa do lote inteiro e mand
     const cat = { 'orc tooth': { name: 'orc tooth', sellOrders: 1, minSell: 3001, trades30d: 1 } };
     const l = linha(P2.mkMontar(base({ bag: { 'orc tooth': 3000 }, catalogo: cat, stats: { 'orc tooth': { stats: { avg: 3000 } } } })), 'n:orc tooth');
     assert.strictEqual(l.preco, 3000); assert(/giro baixo: 1 negócio\(s\) em 30 dias/.test(l.nota) && /450\.000 de taxa/.test(l.nota), l.nota);
+});
+
+t('2.64.1 potência nunca barateia: piso = a mais cara das cópias iguais de potência menor (+1), sem pedido absurdo, até a de potência maior (−1)', () => {
+    const cp = (id, preco, pot) => ({ orderId: id, itemName: 'plate armor', unitPrice: preco, instance: { iid: 'i' + id, name: 'plate armor', forja: { raridade: 0, refino: 0, potenciaBase: pot } } });
+    const e = (copies) => base({ catalogo: { 'plate armor': { name: 'plate armor', copyOrders: copies.length, trades30d: 5 } }, copias: { 'cat:armaduras': { copies } },
+        depot: [{ itemName: 'plate armor', count: 1, iid: 'p1', forja: { raridade: 0, refino: 0, potenciaBase: 328 } }], equip: { usadas: [], reservas: [], sobras: ['p1'] } });
+    /* ao vivo (magma coat): a "igual" mais barata (potência 300) a 12.000; as de potência 144 e 140 a 15.000 e 14.000 */
+    let l = linha(P2.mkMontar(e([cp('a', 12000, 300), cp('b', 15000, 144), cp('c', 14000, 140)])), 'i:p1');
+    assert.strictEqual(l.preco, 15001); assert.strictEqual(l.origem, 'pisoPot'); assert(/potência 328: nunca abaixo de uma cópia igual de potência 144 a 15\.000/.test(l.nota), l.nota);
+    /* pedido absurdo de uma fraca (10 milhões) não conta */
+    l = linha(P2.mkMontar(e([cp('a', 12000, 300), cp('b', 15000, 144), cp('c', 14000, 140), cp('d', 14500, 150), cp('x', 10000000, 100)])), 'i:p1');
+    assert.strictEqual(l.preco, 15001, 'o de 10 M é mais de 3× a mediana das fracas');
+    /* uma de potência MAIOR a 13.000: o piso para em 12.999 */
+    l = linha(P2.mkMontar(e([cp('a', 12000, 300), cp('b', 15000, 144), cp('f', 13000, 400)])), 'i:p1');
+    assert.strictEqual(l.preco, 12999); assert(/limitado a 12\.999/.test(l.nota), l.nota);
+    /* sem cópia mais fraca: menor −1 de sempre */
+    l = linha(P2.mkMontar(e([cp('a', 12000, 300), cp('f', 13000, 400)])), 'i:p1');
+    assert.strictEqual(l.preco, 11999); assert.strictEqual(l.origem, 'menor');
 });
 
 rodar();

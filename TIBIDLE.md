@@ -7706,3 +7706,19 @@ no lugar do Haste).
 - Empilhável sem negócio que o NPC compra: origem "vender no NPC" (era "sem referência"). Pilha grande de giro baixo (demon horn ×3.217,
   1 negócio em 30 dias): a nota avisa a taxa do lote inteiro (482 mil) e manda o resto ao NPC.
 - 4 testes novos no mercado.test.js (50); 2 ajustados (origem 'npc'; o ATUALIZAR lê o histórico).
+
+## 2.64.1 (26/11) — Mercado: potência nunca barateia
+- Teste ao vivo da 2.64.0 (ShamanBr, na cidade): ATUALIZAR em 2 min 13 s, 72 linhas; **52 anunciados** pelo botão (2 toques), taxa 397.406,
+  líquido esperado ~7,55 M; nenhuma falha (Meus anúncios 81 → 133). Ficaram de fora: demon horn (giro baixo), fragmentos (guardados para
+  forjar), war axe que voltou 4× e o que a aba manda ao NPC. Os medidos entraram: giant sword Épica 350 mil, crude umbral spellbook 3,43 M
+  (7 vendas, mediana 3,5 M), wand of everblazing +4 2,19 M, heavy mace Raro 127 mil, war axe dano mágico 28 mil.
+- Dono: "tem itens com potência alta, tá levando em conta esse valor?". No preço medido, sim (potência e o degrau ≥ 400). No "menor −1" de
+  uma cópia "igual" (potência entre ~−25 % e +35 %), só pela janela: magma coat potência 328 saiu a 11.999 e a de 144 a 14.999; terra rod
+  316 a 23.999 e a de 38 a 24.999 (cada uma copiava um vendedor).
+- `mkPisoPotencia`: piso = a mais cara das cópias do MESMO item com o mesmo corte e encaixe, linhas ≤ as suas e potência < 90 % da sua, +1;
+  pedido > 3× a mediana dessas fracas não conta; nunca acima da mais barata com potência ≥ e linhas ≥ as suas, −1. Vale sobre menor −1,
+  igual, justo, faixa e medido (não sobre o seu anúncio nem o digitado); vem antes da escada. Origem "piso da potência". Na leitura de
+  hoje mudam 9 peças (ex.: war axe dano físico potência 350 de ~10 mil → 16.001). 1 teste novo (51).
+- Tela (print do dono): os botões rápido / justo / paciente caíam na coluna de 28 px da caixinha e saíam letra por letra na vertical →
+  `.mk-fx` ocupa da 2ª coluna ao fim (como a `.mk-info`), botões com largura do texto. Notas mais curtas: "3 cópias do item (10.000–100.000)
+  + 95 itens da categoria · a sua: raridade ×1,7"; rápido/paciente só nos botões; escada "voltou 4× (última a 20.000) → −25 %".

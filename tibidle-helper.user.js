@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.64.0
+// @version      2.64.1
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.64.0';
+    const VERSAO = '2.64.1';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -15763,6 +15763,24 @@
         return { preco, rapido, paciente, origem, ref: di.length ? mkjMed(di.map(c => c.p)) : vs.length ? mkjMed(vs) : null, teto, piso, nItem: di.length, nVendas: vs.length,
                  nItens: prep.nItens, fatores: fatores.slice(0, 3), confira, min: di.length ? Math.min(...di.map(c => c.p)) : null, max: di.length ? Math.max(...di.map(c => c.p)) : null };
     }
+    /* v2.64.1 — POTÊNCIA NUNCA BARATEIA (dono, 26/11: "tem itens com potência alta, tá levando em conta esse valor?"). Ao vivo: magma
+     * coat Comum potência 328 saiu a 11.999 (a "igual" mais barata) e a de potência 144 a 14.999; terra rod 316 a 23.999 e a de 38 a
+     * 24.999 — cada uma copiava um vendedor. Piso: a maior entre as cópias do MESMO item com o mesmo corte e encaixe, linhas ≤ as suas e
+     * potência < 90 % da sua (+1); pedido absurdo (> 3× a mediana dessas) não conta; nunca acima da mais barata com potência ≥ a sua e
+     * linhas ≥ as suas (−1). doItem [{p, f}] (sem as minhas ordens) → {piso, ref, n, potRef} | null */
+    function mkPisoPotencia(x, doItem) {
+        const f = x && x.forja, pm = mkPot(f); if (!f || !pm) return null;
+        const linhasAte = (a, b) => mkAtrIds(b).every(id => (mkValorDe(b, id) || 0) <= (mkValorDe(a, id) || 0)); // as linhas de b ≤ as de a
+        const mesmos = (doItem || []).filter(y => y && y.p > 0 && y.f && mkMesmoEncaixe(f, y.f));
+        const fracas = mesmos.filter(y => { const py = mkPot(y.f); return py && py < pm * 0.9 && linhasAte(f, y.f); });
+        if (!fracas.length) return null;
+        const md = mkjMed(fracas.map(y => y.p)), validas = fracas.filter(y => y.p <= 3 * md);
+        const top = validas.reduce((a, b) => (b.p > a.p ? b : a));
+        const fortes = mesmos.filter(y => { const py = mkPot(y.f); return py && py >= pm && linhasAte(y.f, f); }).map(y => y.p);
+        let piso = top.p + 1, teto = null;
+        if (fortes.length) { teto = Math.min(...fortes) - 1; piso = Math.min(piso, teto); }
+        return piso > 0 ? { piso, ref: top.p, potRef: mkPot(top.f), n: fracas.length, teto: teto != null && teto < top.p + 1 ? teto : null } : null;
+    }
     /* fatores da categoria guardados por objeto de cópias lido (ATUALIZAR novo = objeto novo); a chave muda com as minhas ordens e a ficha */
     const MKJ_CACHE = new WeakMap();
     function mkjPrepDe(cp, cat, e, meusIds) {
@@ -15858,7 +15876,7 @@
         const c = e.catalogo[n] || null;
         const minhasDoItem = minhas.filter(o => mkMin(o.itemName) === n && o.forja);
         const meus = minhasDoItem.filter(o => mkIgualLinhas(x.forja, o.forja)).map(o => o.unitPrice); // v2.27.0 — o meu anúncio da mesma peça, sem olhar potência
-        let outros = [], parecidas = [], inferiores = [], pendente = null, justo = null;
+        let outros = [], parecidas = [], inferiores = [], pendente = null, justo = null, pisoPot = null;
         /* v2.64.0 — com a categoria conhecida, as cópias da categoria inteira são lidas mesmo sem cópia do item: são os vizinhos
          * (itens melhores e inferiores) do preço justo medido */
         if ((c && (Number(c.copyOrders) || 0) > minhasDoItem.length) || cat) {
@@ -15874,6 +15892,7 @@
                 /* sem cópia igual: o preço justo (ajustado pelo valor), a parecida, ou a faixa da raridade — todo item sai com preço */
                 justo = precoReferencia(x, { [k]: cp }, meusIds); // v2.27.0 — sempre: com cópia igual ele só serve de PISO (peça com linha ≥ sem linha; item inferior com linha parecida)
                 if (outros.length && justo && !justo.piso) justo = null;
+                pisoPot = mkPisoPotencia(x, doItem.map(y => ({ p: Number(y.unitPrice), f: y.instance && y.instance.forja }))); // v2.64.1
                 /* v2.64.0 — sem preço pela regra de cima ('nobre'/'vazio') e sem cópia igual nem anúncio meu: o preço MEDIDO */
                 if (!outros.length && !meus.length && !(justo && justo.preco != null)) {
                     const st = e.stats && e.stats[n];
@@ -15904,13 +15923,13 @@
         const infTxt = inferiores.length ? `cópias com o mesmo encaixe e valor MENOR que o seu a partir de ${mkFmt(Math.min(...inferiores))}` : null;
         /* v2.64.0 — de onde veio o preço medido, em uma frase */
         const medido = temSug && /^medido/.test(justo.origem);
-        const fatTxt = medido && justo.fatores.length ? ' — a sua: ' + justo.fatores.map(([k, v]) => k + ' ×' + (Math.round(v * 10) / 10).toLocaleString('pt-BR')).join(', ') : '';
+        const fatTxt = medido && justo.fatores.length ? ' · a sua: ' + justo.fatores.map(([k, v]) => k + ' ×' + (Math.round(v * 10) / 10).toLocaleString('pt-BR')).join(', ') : '';
         const mTxt = !medido ? null
-            : (justo.origem === 'medido-item' ? `preço medido: ${justo.nItem} cópia${justo.nItem === 1 ? '' : 's'} de ${x.nome} com outros encaixes (${mkFmt(justo.min)}${justo.max !== justo.min ? ' a ' + mkFmt(justo.max) : ''}) comparadas com ${justo.nItens} itens da categoria`
-               : justo.origem === 'medido-vendas' ? `nenhuma cópia de ${x.nome} à venda: ${justo.nVendas} vendas recentes (mediana ${mkFmt(justo.ref)}) ajustadas pela forja`
-               : `nenhuma cópia nem venda de ${x.nome}: comparado pela ficha (nível, NPC, força) com ${justo.nItens} itens da categoria`) + fatTxt +
+            : (justo.origem === 'medido-item' ? `${justo.nItem} cópia${justo.nItem === 1 ? '' : 's'} do item (${mkFmt(justo.min)}${justo.max !== justo.min ? '–' + mkFmt(justo.max) : ''}) + ${justo.nItens} itens da categoria`
+               : justo.origem === 'medido-vendas' ? `nenhuma à venda: ${justo.nVendas} vendas (mediana ${mkFmt(justo.ref)})`
+               : `nenhuma à venda nem vendida: pela ficha, contra ${justo.nItens} itens da categoria`) + fatTxt +
               (justo.teto != null && justo.preco >= justo.teto ? ` · teto: uma melhor a ${mkFmt(justo.teto + 1)}` : '') + (justo.piso != null && justo.preco <= justo.piso ? ` · piso: uma inferior a ${mkFmt(justo.piso - 1)}` : '') +
-              ` · rápido ${mkFmt(justo.rapido)} · paciente ${mkFmt(justo.paciente)}` + (justo.confira ? ' · CONFIRA (pouca referência)' : '');
+              (justo.confira ? ' · CONFIRA (pouca referência)' : ''); // v2.64.1: rápido/paciente só nos botões
         const partes = [];
         if (temSug) {
             if (medido) partes.push(mTxt); else if (justo.origem === 'justo') partes.push(jTxt); else if (justo.origem === 'faixa') partes.push(fTxt);
@@ -15921,7 +15940,7 @@
         const nota = pendente || outros.length || meus.length ? null
             : temSug ? (partes.join(' · ') || null)
             : nobreTxt || `nenhuma cópia de ${x.nome} à venda — digite o preço (a média de 30 dias mistura todas as raridades)`;
-        return { ref: { outros, meus, media: null }, pendente, nota, encaixe: encaixe || null, justo: temSug ? justo : null, inferior: inferiores.length ? Math.min(...inferiores) : null };
+        return { ref: { outros, meus, media: null }, pendente, nota, encaixe: encaixe || null, justo: temSug ? justo : null, inferior: inferiores.length ? Math.min(...inferiores) : null, pisoPot };
     }
     function mkLinha(b, r, e, marcados) {
         const dig = e.digitados ? e.digitados[b.chave] : undefined;
@@ -15930,12 +15949,19 @@
         /* v2.27.0 — piso: nem o menor −1 de uma cópia igual desce abaixo do piso (peça com linha nunca vale menos que a sem linha) */
         if (sug.preco != null && r.justo && r.justo.piso && sug.preco < r.justo.piso) sug = { preco: r.justo.piso, origem: 'piso', ref: sug.ref, piso: r.justo.piso };
         if (sug.origem === 'vazio' && r.justo && r.justo.preco) sug = { preco: r.justo.preco, origem: r.justo.origem, ref: r.justo.ref };
+        /* v2.64.1 — piso da potência: nunca abaixo de uma cópia do mesmo encaixe com potência menor (+1); o seu anúncio e o digitado ficam */
+        let potNota = null;
+        if (r.pisoPot && sug.preco != null && sug.origem !== 'meu' && sug.preco < r.pisoPot.piso) {
+            potNota = `potência ${mkPot(b.forja)}: nunca abaixo de uma cópia igual de potência ${r.pisoPot.potRef} a ${mkFmt(r.pisoPot.ref)} (+1)` +
+                (r.pisoPot.teto != null ? ` — limitado a ${mkFmt(r.pisoPot.teto)} por uma de potência maior ou igual à sua a ${mkFmt(r.pisoPot.teto + 1)}` : '');
+            sug = { preco: r.pisoPot.piso, origem: 'pisoPot', ref: r.pisoPot.ref };
+        }
         /* v2.64.0 — ESCADA: o mesmo item voltou vencido perto deste preço (−5 % a +25 %) → sugere −25 % sobre o preço da última volta */
         const esc = e.escada && e.escada[b.n];
         let escNota = null;
         if (esc && sug.preco != null && esc.ultPreco > 0 && sug.preco >= esc.ultPreco * 0.95 && sug.preco <= esc.ultPreco * 1.25) {
             const novo = Math.max(1, Math.round(esc.ultPreco * (1 - MKJ_DESCIDA)));
-            escNota = `voltou ${esc.seguidas}× sem vender (a última a ${mkFmt(esc.ultPreco)}): −25 % = ${mkFmt(novo)}` + (esc.seguidas >= MKJ_VOLTAS ? ' — já são 3 voltas: melhor NPC ou desmanche' : '');
+            escNota = `voltou ${esc.seguidas}× (última a ${mkFmt(esc.ultPreco)}) → −25 %` + (esc.seguidas >= MKJ_VOLTAS ? ' · 3+ voltas: melhor NPC ou desmanche' : '');
             sug = { preco: novo, origem: 'escada', ref: esc.ultPreco, voltas: esc.seguidas };
         }
         const bruto = temDig ? Math.floor(Number(dig)) : sug.preco;
@@ -15962,7 +15988,7 @@
         const c30 = b.tipo === 'pilha' && e.catalogo ? e.catalogo[b.n] : null;
         const giroNota = c30 && ok && npc > 0 && Number(c30.trades30d) >= 0 && b.qtd > 10 * Math.max(1, Number(c30.trades30d) || 0) && taxa > npc * 10
             ? `giro baixo: ${Number(c30.trades30d) || 0} negócio(s) em 30 dias — anunciar ${mkFmt(b.qtd)} paga ${mkFmt(taxa)} de taxa que não volta; melhor um lote pequeno no Mercado e o resto no NPC (${mkFmt(npc * b.qtd)} na hora)` : null;
-        const nota = [r.nota, escNota, giroNota, r.compra != null && preco != null && r.compra >= preco ? `há COMPRA aberta a ${r.compra} — aceitar no mercado do jogo é na hora e sem taxa` : null].filter(Boolean).join(' · ') || null;
+        const nota = [r.nota, potNota, escNota, giroNota, r.compra != null && preco != null && r.compra >= preco ? `há COMPRA aberta a ${r.compra} — aceitar no mercado do jogo é na hora e sem taxa` : null].filter(Boolean).join(' · ') || null;
         const faixa = r.justo && r.justo.rapido != null && /^medido/.test(r.justo.origem) ? { rapido: r.justo.rapido, justo: r.justo.preco, paciente: r.justo.paciente, confira: !!r.justo.confira } : null;
         return Object.assign(b, { sug, preco, origem, nota, faixa, encaixe: r.encaixe || null, compra: r.compra != null ? r.compra : null, taxa, liquido, npc, npcTotal: npc != null ? npc * b.qtd : null,
                                   abaixoNpc: abaixo, bloqueio, marcado: !bloqueio && marcados.has(b.chave) });
@@ -16186,7 +16212,7 @@
     };
     const mkErroTexto = (c) => MK_ERROS[c] ? MK_ERROS[c] + ' (' + c + ')' : String(c);
     const MK_ORIGEM = { menor: 'menor −1', parecida: 'parecida −1', justo: 'ajustado pelo valor', faixa: 'faixa da raridade', meu: 'seu anúncio', media: 'média 30 d', piso: 'piso da média 30 d', vazio: 'sem referência', digitado: 'digitado', pendente: 'falta ler',
-                        'medido-item': 'preço medido', 'medido-vendas': 'medido pelas vendas', 'medido-ficha': 'medido pela ficha', escada: '−25 % (voltou)', npc: 'vender no NPC' }; // v2.64.0
+                        'medido-item': 'preço medido', 'medido-vendas': 'medido pelas vendas', 'medido-ficha': 'medido pela ficha', escada: '−25 % (voltou)', npc: 'vender no NPC', pisoPot: 'piso da potência' }; // v2.64.0/2.64.1
     const MK_MOTIVO_CAIXA = { trade_proceeds: 'venda', order_cancelled: 'ordem cancelada', order_expired: 'ordem expirada', capacity: 'não coube', offline: 'offline' };
     const MK = { premiumAte: undefined, bag: null, bagInst: null, bag_t: 0, protMeta: { nomes: [], iids: [] }, protInv: { nomes: [], iids: [] }, protLido: false,
                  taxa: null, taxaWiki: false, tradeable: null, npc: null, restErro: null,
@@ -16633,7 +16659,7 @@
     #tb-mk .mk-info{grid-column:2/-1;font-size:var(--tb-fmin,10.5px);color:#9aa4b8;line-height:1.35;padding-bottom:2px}
     #tb-mk .mk-org{font-size:var(--tb-fmin,10.5px);padding:0 5px;border-radius:9px;background:#2b3242;color:#c3cad6;white-space:nowrap}
     #tb-mk .mk-org.menor{background:#1f4a2c;color:#8ff0a8}#tb-mk .mk-org.media,#tb-mk .mk-org.parecida{background:#4a3b14;color:#ffd479}
-    #tb-mk .mk-org.digitado{background:#1d3550;color:#9fd0ff}#tb-mk .mk-org.medido-item,#tb-mk .mk-org.medido-vendas{background:#1f3b2a;color:#9fe0b0}#tb-mk .mk-org.medido-ficha,#tb-mk .mk-org.escada{background:#4a3a14;color:#ffd27a}#tb-mk .mk-org.npc{background:#2b2b2b;color:#ddd}#tb-mk .mk-fx{margin-top:2px;display:flex;gap:4px;flex-wrap:wrap}#tb-mk .mk-fx .tb-bt{padding:1px 6px;font-size:10.5px}#tb-mk .mk-org.vazio,#tb-mk .mk-org.pendente{background:#4a1f1f;color:#ff9b93}
+    #tb-mk .mk-org.digitado{background:#1d3550;color:#9fd0ff}#tb-mk .mk-org.medido-item,#tb-mk .mk-org.medido-vendas{background:#1f3b2a;color:#9fe0b0}#tb-mk .mk-org.medido-ficha,#tb-mk .mk-org.escada{background:#4a3a14;color:#ffd27a}#tb-mk .mk-org.npc{background:#2b2b2b;color:#ddd}#tb-mk .mk-org.pisoPot{background:#1f3b2a;color:#9fe0b0}#tb-mk .mk-fx{grid-column:2/-1;margin:2px 0 3px;display:flex;gap:4px;flex-wrap:wrap;align-items:center}#tb-mk .mk-fx .tb-bt{padding:1px 6px;font-size:10.5px;white-space:nowrap;width:auto;flex:0 0 auto}#tb-mk .mk-org.vazio,#tb-mk .mk-org.pendente{background:#4a1f1f;color:#ff9b93}
     #tb-mk .mk-rodape{position:sticky;bottom:-8px;background:#12151c;padding:6px 0 4px;margin-top:6px;border-top:1px solid #2b3242}
     #tb-mk .mk-rodape .tb-bt.pri{width:100%;font-size:12px;padding:6px}
     #tb-mk .mk-ord{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 6px;align-items:center;padding:4px 0;border-bottom:1px dotted #262d3b}
