@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.60.0
+// @version      2.60.1
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.60.0';
+    const VERSAO = '2.60.1';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -11628,6 +11628,8 @@
         /* 2.60.0 — dono, 26/11: "Haste é bem melhor, para correr". No motor cada nível = passo 8 % mais curto (até 40 % no 5);
          * entra assim que aparece e sobe antes de nível de magia sem par */
         passivasPrioridade: ['Haste'],
+        /* 2.60.1 — quando a oferta obriga a pegar passiva sem par: a morte vem na rajada do fim, então vida e defesa antes de xp */
+        passivasForcadas: ['Vida máxima', 'Protector', 'Roubo de vida', 'Onda de choque', 'Sabedoria'],
         saidaMin: 3, pesoSaida: 1
     };
     const SV_DIRS = []; for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) if (dx || dy) SV_DIRS.push([dx, dy]);
@@ -11846,7 +11848,10 @@
                  * Front Sweep 8 sem U — Sorte é par de Lâminas do Céu, que a build nunca pega) */
                 if (dono && mags.length < 4 && livres > precisam - 1 && (C.soParPreferido === false || !pref.length || pref.includes(dono))) return 50 + bonusPref(dono) / 2;
                 if (livres > precisam) return (C.passivasExtras || []).includes(p) ? 25 : 12;
-                return -100;
+                /* 2.60.1 — oferta só com passivas sem par (o jogo obriga a escolher; 15 s e sorteia): antes todas davam −100 e saía a 1ª
+                 * (26/11 ao vivo: Sabedoria tomou a vaga do Haste, Front Sweep 8 sem U, morte às 11:11). A morte é no fim → vida/defesa primeiro */
+                const forcada = C.passivasForcadas || [];
+                return forcada.includes(p) ? -60 - forcada.indexOf(p) * 5 : -100;
             }
             case 'nivel-de-passiva': { const dono = SV_PAR_INV[p]; if ((C.passivasPrioridade || []).includes(p)) return 120; return dono && mags.includes(dono) ? 70 : 30; }
             default: return 10;

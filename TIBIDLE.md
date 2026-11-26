@@ -7619,3 +7619,16 @@ no lugar do Haste).
   simulador (5 buffs, 12 sementes): Front Sweep está nas 7 primeiras; a build do 115 (com Annihilation) ficou em 37º (122,8). Com o
   Haste primeiro: nova 131,3 · nova sem a prioridade 127,4 · build do 115 125,3.
 - Teste novo em `testes/arena.test.js` (541 no total). Falta a validação ao vivo.
+
+## 2.60.1 (26/11)
+- Ao vivo 26/11 com 2.60.0 e 5 buffs: **126 aos 11:32** (recorde; Haste 5, 4 ultimates) e depois 121 aos 11:11 — nessa, a abertura
+  ("o cristal deu N níveis") ofereceu só passivas sem par e o robô pegou a 1ª (Sabedoria): vaga do Haste perdida, Front Sweep 8 sem U.
+- Correção: `passivasForcadas` = Vida máxima › Protector › Roubo de vida › Onda de choque › Sabedoria quando a oferta obriga a pegar
+  passiva sem par (a morte é na rajada do fim, não falta de xp).
+- Vida baixa já afasta (boss < 40 %, perigo ×3 < 35 %, sem moer < 30 %). Simulador, 12 sementes, 5 buffs: atual 131,7 · afastar em 40 % 131,7 ·
+  em 50 % 129,8 → mantido.
+- Pesquisa (bundle 1.3.0, chunks 8606/8177/4218/page; wiki e tibidle-community sem nada): partida de 15:00 e depois o Reaper; ranking Global e
+  **Semanal (só conta que nunca teve Premium; 1º–3º ganham 30 dias de Premium)**; imbuements não valem; equipamento pode ser "pinado" por slot
+  (`run_preset_save {pinos}`); 13 passivas (Protector −8 %/nível, Vida máxima +15 %, Sabedoria +15 % xp, Roubo de vida 2 %, Onda de choque);
+  trocar cartas = 100k + 50k × trocas; o servidor reexecuta as teclas (`run_keys` a cada 100 ms) e recebe telemetria em `run_alive` (fps, ping,
+  teclas atrasadas) — motivo "flag" tira do ranking.

@@ -118,4 +118,9 @@ t('2.60.0: Haste entra assim que aparece e sobe antes de nível de magia sem par
     const st2 = estado({ baralho: { magias: [{ nome: 'Whirlwind Throw', nivel: 3 }, { nome: 'Inflict Wound', nivel: 2 }], passivas: [{ nome: 'Ímã', nivel: 1 }, { nome: 'Haste', nivel: 1 }], oferta: of2 } });
     assert.strictEqual(A.svEscolherCarta(st2, A.SV_CFG), 1, 'nível de Haste vence nível de magia sem par');
 });
+t('2.60.1: oferta só com passivas sem par — vida/defesa antes de Sabedoria (26/11 ao vivo)', () => {
+    const st = estado({ baralho: { magias: [{ nome: 'Front Sweep', nivel: 3 }, { nome: 'Inflict Wound', nivel: 3 }, { nome: 'Whirlwind Throw', nivel: 2 }, { nome: 'Berserk', nivel: 2 }],
+        passivas: [{ nome: 'Ímã', nivel: 1 }], oferta: [{ especie: 'passiva-nova', passiva: 'Sabedoria' }, { especie: 'passiva-nova', passiva: 'Área' }, { especie: 'passiva-nova', passiva: 'Vida máxima' }] } });
+    assert.strictEqual(A.svEscolherCarta(st, A.SV_CFG), 2);
+});
 console.log(`\n${n} testes ok`);
