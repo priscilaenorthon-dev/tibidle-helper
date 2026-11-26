@@ -120,13 +120,13 @@ t('sem concorrente: média de 30 dias (arredondada); sem histórico: vazio, sem 
     r = P.mkMontar(base({ bag: { 'orc tooth': 4 }, catalogo: cat(0) }));
     l = linha(r, 'n:orc tooth');
     assert.strictEqual(r.pendencias.length, 0, 'sem negócio em 30 d não pede média');
-    assert.strictEqual(l.preco, null); assert.strictEqual(l.origem, 'vazio'); assert.strictEqual(l.bloqueio, 'vender no NPC', '2.16.5: sem negócio em 30 d e o NPC compra → NPC, não "digite"');
+    assert.strictEqual(l.preco, null); assert.strictEqual(l.origem, 'npc', '2.64.0: a origem diz "vender no NPC"'); assert.strictEqual(l.bloqueio, 'vender no NPC', '2.16.5: sem negócio em 30 d e o NPC compra → NPC, não "digite"');
     r = P.mkMontar(base({ bag: { 'orc tooth': 4 }, catalogo: cat(0), digitados: { 'n:orc tooth': '300' }, marcados: ['n:orc tooth'] }));
     l = linha(r, 'n:orc tooth'); assert.strictEqual(l.preco, 300); assert.strictEqual(l.origem, 'digitado'); assert.strictEqual(l.bloqueio, null);
     assert.strictEqual(r.plano.n, 1);
     // item nunca listado nem negociado (fora do catálogo do mercado): vazio, sem pedido
     r = P.mkMontar(base({ bag: { 'wolf paw': 2 }, catalogo: {} }));
-    assert.strictEqual(r.pendencias.length, 0); assert.strictEqual(linha(r, 'n:wolf paw').origem, 'vazio');
+    assert.strictEqual(r.pendencias.length, 0); assert.strictEqual(linha(r, 'n:wolf paw').origem, 'npc', '2.64.0: o NPC compra (70) → "vender no NPC"');
 });
 
 t('cópia forjada: só mesma raridade E mesmo refino; minha cópia não conta; 1 pedido por categoria', () => {
@@ -687,7 +687,7 @@ t('vm: ATUALIZAR só LÊ (catálogo, ordens, caixa, média) e monta a lista com 
         stats: { 'orc tooth': { avg: 412.4, min: 300, max: 500, samples: 9 } } });
     await M.atualizar();
     assert.strictEqual(M.S.tipos(...ESCRITA).length, 0, 'ATUALIZAR mandou escrita: ' + M.S.tipos(...ESCRITA).map(x => x.o.type));
-    igual(M.S.recebidos.map(x => x.o.type), ['depot_get', 'market_catalog', 'market_my_orders', 'market_inbox', 'market_stats', 'market_stats'], '2.27.0: a média é lida também para o small ruby (piso)');
+    igual(M.S.recebidos.map(x => x.o.type), ['depot_get', 'market_catalog', 'market_my_orders', 'market_inbox', 'market_stats', 'market_stats', 'market_history'], '2.27.0: a média é lida também para o small ruby (piso); 2.64.0: o histórico (escada) é lido — só leitura');
     igual(M.S.tipos('market_stats').map(x => x.o.data.itemName).sort(), ['orc tooth', 'small ruby']);
     const mk = M.S.recebidos.filter(x => /^market_/.test(x.o.type));
     for (let i = 1; i < mk.length; i++) assert(mk[i].t - mk[i - 1].t >= 3500, 'pedidos ao mercado a menos de 3,5 s: ' + (mk[i].t - mk[i - 1].t));
@@ -1015,6 +1015,72 @@ t('vm (2.35.7) celular: erro do servidor no sell_loot para o ciclo com o motivo 
     assert.strictEqual(M.S.tipos('depot_store_all').length, 0, 'não guardou no depot depois do erro');
     assert(/parou no passo "vender": sell_loot pelo socket: item protegido/.test(logTxt(M.W)) && /automação DESLIGADA/.test(logTxt(M.W)), logTxt(M.W));
     assert.strictEqual(M.W.H.autoHunt().on, false);
+});
+
+/* ============ 2.64.0 — preço justo MEDIDO na categoria, vendas reais, escada −25 %, pilha de giro baixo */
+const P2 = new Function(`${trecho('/* @@MERCADO-INICIO', '/* @@MERCADO-PURO-FIM */')}
+    return { mkMontar, mkJustoMedido, mkjPreparar, mkEscadaDe };`)();
+/* categoria sintética: 8 armaduras, preço = base do item × 2 por degrau de raridade × 3 com regen. de mana (ruído ±10 %) */
+function catSintetica(semItem) {
+    const itens = { 'leather armor': 2000, 'chain armor': 4000, 'brass armor': 6000, 'scale armor': 9000, 'plate armor': 15000, 'knight armor': 30000, 'crown armor': 60000, 'magic plate armor': 120000 };
+    const copies = []; let k = 0;
+    for (const [nome, b] of Object.entries(itens)) {
+        if (nome === semItem) continue;
+        for (let i = 0; i < 6; i++) {
+            const rar = i % 3, mana = i >= 3, ruido = 1 + 0.1 * Math.sin(++k * 1.7);
+            const atributos = mana ? [{ id: 'regen_mana', valor: 1.2 }] : [{ id: 'resist_gelo', valor: 0.8 }];
+            copies.push({ orderId: 'o' + k, itemName: nome, unitPrice: Math.round(b * Math.pow(2, rar) * (mana ? 3 : 1) * ruido), sellerName: 'x',
+                          instance: { iid: 'i' + k, name: nome, forja: { raridade: rar, refino: 0, potenciaBase: 200, atributos } }, expiresAt: 1 });
+        }
+    }
+    return { 'cat:armaduras': { copies } };
+}
+const TRAD2 = Object.assign({}, TRAD, { 'crown armor': { cat: 'armaduras', forjavel: true } });
+t('2.64.0 peça com linha nobre sem cópia parecida: preço MEDIDO nas cópias da categoria (não fica "digite")', () => {
+    /* crown armor Raro com regen. de mana; à venda do item só cópias com resist. gelo (sem nobre) → antes: 'nobre', sem preço */
+    const copias = catSintetica();
+    copias['cat:armaduras'].copies = copias['cat:armaduras'].copies.filter(c => !(c.itemName === 'crown armor' && c.instance.forja.atributos[0].id === 'regen_mana'));
+    const e = base({ tradeable: TRAD2, catalogo: { 'crown armor': { name: 'crown armor', copyOrders: 3, trades30d: 4 } }, copias,
+        depot: [{ itemName: 'crown armor', count: 1, iid: 'c1', forja: { raridade: 2, refino: 0, potenciaBase: 200, atributos: [{ id: 'regen_mana', valor: 1.2 }] } }],
+        equip: { usadas: [], reservas: [], sobras: ['c1'] } });
+    const l = linha(P2.mkMontar(e), 'i:c1');
+    assert.strictEqual(l.origem, 'medido-item', l.origem + ' · ' + l.nota);
+    /* verdade da categoria: 60.000 × 4 (raro) × 3 (regen. de mana) = 720 mil; medido × 1,15 → perto de 830 mil */
+    assert(l.preco > 500000 && l.preco < 1200000, 'preço medido fora da faixa: ' + l.preco);
+    assert(l.faixa && l.faixa.rapido <= l.preco && l.preco <= l.faixa.paciente, JSON.stringify(l.faixa));
+    assert(/preço medido: 3 cópias de crown armor/.test(l.nota) && /regen\. de mana ×/.test(l.nota), l.nota);
+    assert.strictEqual(l.bloqueio, null, 'a linha pode ser marcada: ' + l.bloqueio);
+    /* teto: uma crown armor ÉPICA com regen. de mana 1,5 a 300 mil DOMINA a minha → nunca acima de 299.999 */
+    copias['cat:armaduras'].copies.push({ orderId: 'top', itemName: 'crown armor', unitPrice: 300000, instance: { iid: 'top', name: 'crown armor', forja: { raridade: 3, refino: 0, potenciaBase: 250, atributos: [{ id: 'regen_mana', valor: 1.5 }] } } });
+    const l2 = linha(P2.mkMontar(e), 'i:c1');
+    assert.strictEqual(l2.preco, 299999, 'teto da melhor −1');
+});
+t('2.64.0 item sem nenhuma cópia à venda: lê as vendas (market_stats) e mede por elas; sem vendas nem ficha fica "digite"', () => {
+    const copias = catSintetica('crown armor'), dep = [{ itemName: 'crown armor', count: 1, iid: 'c1', forja: { raridade: 0, refino: 0, potenciaBase: 200, atributos: [{ id: 'resist_gelo', valor: 0.8 }] } }];
+    const e = (x) => base(Object.assign({ tradeable: TRAD2, catalogo: { 'crown armor': { name: 'crown armor', copyOrders: 0, trades30d: 5 } }, copias, depot: dep, equip: { usadas: [], reservas: [], sobras: ['c1'] } }, x || {}));
+    let r = P2.mkMontar(e());
+    igual(r.pendencias.map(p => [p.tipo, p.data]), [['market_stats', { itemName: 'crown armor' }]], 'pede as vendas do item');
+    r = P2.mkMontar(e({ stats: { 'crown armor': { stats: { avg: 70000 }, vendas: [55000, 60000, 65000, 70000] } } }));
+    const l = linha(r, 'i:c1');
+    assert.strictEqual(l.origem, 'medido-vendas', l.nota); assert(l.preco > 20000 && l.preco < 200000, String(l.preco));
+    r = P2.mkMontar(e({ stats: { 'crown armor': { stats: null, vendas: [] } } }));
+    assert.strictEqual(linha(r, 'i:c1').preco, null, 'sem cópia, sem venda e sem ficha: o dono digita');
+});
+t('2.64.0 escada: o mesmo item voltou vencido perto do preço → −25 % sobre o da última volta; só as voltas depois da última venda', () => {
+    const H = [{ type: 'expired', itemName: 'Small Ruby', unitPrice: 1000, at: 10 }, { type: 'sell', itemName: 'small ruby', unitPrice: 950, at: 20 },
+               { type: 'expired', itemName: 'small ruby', unitPrice: 900, at: 30 }, { type: 'expired', itemName: 'small ruby', unitPrice: 920, at: 40 }, { type: 'created', itemName: 'small ruby', at: 50 }];
+    igual(P2.mkEscadaDe(H), { 'small ruby': { seguidas: 2, ultPreco: 920, at: 40 } });
+    const cat = { 'small ruby': { name: 'small ruby', sellOrders: 1, minSell: 950, trades30d: 4 } };
+    let l = linha(P2.mkMontar(base({ bag: { 'small ruby': 2 }, catalogo: cat, stats: { 'small ruby': { stats: { avg: 900 } } }, escada: P2.mkEscadaDe(H) })), 'n:small ruby');
+    assert.strictEqual(l.origem, 'escada'); assert.strictEqual(l.preco, 690); assert(/voltou 2× sem vender/.test(l.nota), l.nota);
+    /* preço muito acima da volta (outra peça de mesmo nome, bem melhor): a escada não mexe */
+    l = linha(P2.mkMontar(base({ bag: { 'small ruby': 2 }, catalogo: { 'small ruby': { name: 'small ruby', sellOrders: 1, minSell: 5000, trades30d: 4 } }, stats: { 'small ruby': { stats: { avg: 900 } } }, escada: P2.mkEscadaDe(H) })), 'n:small ruby');
+    assert.strictEqual(l.origem, 'menor'); assert.strictEqual(l.preco, 4999);
+});
+t('2.64.0 pilha grande de giro baixo: a nota avisa a taxa do lote inteiro e manda o resto ao NPC', () => {
+    const cat = { 'orc tooth': { name: 'orc tooth', sellOrders: 1, minSell: 3001, trades30d: 1 } };
+    const l = linha(P2.mkMontar(base({ bag: { 'orc tooth': 3000 }, catalogo: cat, stats: { 'orc tooth': { stats: { avg: 3000 } } } })), 'n:orc tooth');
+    assert.strictEqual(l.preco, 3000); assert(/giro baixo: 1 negócio\(s\) em 30 dias/.test(l.nota) && /450\.000 de taxa/.test(l.nota), l.nota);
 });
 
 rodar();

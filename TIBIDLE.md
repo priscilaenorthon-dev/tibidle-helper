@@ -7676,3 +7676,33 @@ no lugar do Haste).
 - Pendências vistas ao vivo: (1) 0–210 s a cota não enche (um nível a cada ~18 s; ~5 de ameaça perdidos) — poucos bichos e magias baixas;
   (2) dos 526 s ao fim o nível parou em 55 com ~400 cristais no chão (teto do jogo ou cristal deixado para trás?) → sem carta de poção no fim.
 - sim.js agora faz troca de cartas (`cfg.trocas`), igual ao svQuerReroll.
+
+## 2.64.0 (26/11) — Mercado: preço justo MEDIDO para a peça sem cópia parecida, escada −25 % e "vender no NPC"
+- Dono: "tem uns itens no depósito que não são postos à venda de jeito nenhum, pois não tem item parecido; comparar com itens melhores e
+  inferiores para ter um valor justo; o valor tem que estar bom; vou usar em outras contas". Leitura ao vivo (ShamanBr, só leitura): 92
+  peças forjadas no depósito, **40 sem preço** na 2.63 (36 'nobre' = linha nobre sem cópia parecida; 4 'vazio' = nenhuma cópia do item).
+  `dano_fisico`/`dano_magico` contam como nobres, então quase toda arma com linha caía aqui. Arquivo: `data/mercado-sem-preco-2026-11-26.json`.
+- Estudo (agente, 3.868 cópias de outros vendedores, 8 categorias): o ITEM manda no preço e a ficha explica pouco; o pedido é ruidoso
+  (cópias idênticas ×2,5). Medido: raridade ×1,7–2,7 por degrau, refino ×2 por +1, potência ≥ 400 ×2–3,4, regen. de mana ×2 só de ter;
+  dano físico/mágico em arma ≈ ×1. Os pedidos abertos ficam acima do que vende (giant sword: pedida a 120 mil, vendida a 10 mil).
+- `mkJustoMedido` (@@MERCADO, só quando a regra antiga não dá preço e não há cópia igual nem anúncio meu): regressão de mediana (IRLS,
+  ridge 2) do log do preço das cópias da CATEGORIA com efeito de cada item (`mkjPreparar`, guardada por leitura em `MKJ_CACHE`). Efeito
+  do item: (a) cópias do mesmo item com outros encaixes, a ficha valendo 1 cópia → 'medido-item'; (b) sem cópia, as vendas reais
+  (`market_stats.recentTrades`, ≥ 3, agora guardadas em `MK.stats[n].vendas`) → 'medido-vendas'; (c) a ficha (`/item/info`: nível, NPC,
+  força, vocação, giro) contra os itens da categoria → 'medido-ficha' ("confira"). Preço = medido × 1,15; nunca acima da mais barata do
+  mesmo item que DOMINA a sua −1, nunca abaixo da mais barata que a sua domina +1; peça com linha ≥ mediana das sem linha (de raridade e
+  refino ≤ os seus) × 1,25. Botões **rápido / justo / paciente** (quartis 25/75 % dos resíduos) só preenchem o preço. "CONFIRA" quando
+  é pela ficha, com 1 cópia de âncora ou com raridade/refino acima de tudo o que há do item.
+- Leave-one-out (escondendo o item): peças com nobre erro mediano ×2, 50 % dentro de ×2 (2.63: 0 % com preço; mediana item+raridade ×2,4
+  com 55 % abaixo de 0,67× do real); item sem nenhuma cópia ×2,5. Nos 40 do dono: Zaoan shoes regen. mana 1,2 → 505 mil; tower shield
+  regen. mana 1,8 → 697 mil (confira: 1 cópia +1 a 900 mil); crude umbral spellbook → 3,36 M pelas vendas (1,5–5 M); wand of everblazing
+  +4 → 2,2 M (confira); giant sword Épica → 398 mil (vende a 10 mil: comece no rápido); war axe dano mágico → 27 mil.
+- O ATUALIZAR agora lê as cópias da categoria mesmo sem cópia do item (os vizinhos), as vendas do item sem cópia, a ficha de todos os
+  itens das categorias lidas (`basePorNome`, cache 7 dias) e o histórico voltou × vendeu (`mkLerGiro`, se > 6 h). Tudo só leitura.
+- **Escada** (simulação do agente sobre o leave-one-out: justo uma vez vende 51 % e fica com 3 % do valor; justo −25 % a cada volta, até 3
+  voltas, vende 75 % e fica com 38 %): `mkEscadaDe` (do `market_history` expired/sell, guardado em `mk_giro.escada`) conta as voltas
+  depois da última venda e o preço da última; a linha com preço entre −5 % e +25 % do da última volta sugere −25 % ('escada'); com 3
+  voltas a nota diz "melhor NPC ou desmanche". Nada re-anuncia sozinho.
+- Empilhável sem negócio que o NPC compra: origem "vender no NPC" (era "sem referência"). Pilha grande de giro baixo (demon horn ×3.217,
+  1 negócio em 30 dias): a nota avisa a taxa do lote inteiro (482 mil) e manda o resto ao NPC.
+- 4 testes novos no mercado.test.js (50); 2 ajustados (origem 'npc'; o ATUALIZAR lê o histórico).

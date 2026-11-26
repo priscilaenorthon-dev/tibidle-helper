@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.63.0
+// @version      2.64.0
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.63.0';
+    const VERSAO = '2.64.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -15606,6 +15606,193 @@
         if (abaixo.length) { const mx = Math.max(...abaixo); return { preco: Math.max(1, Math.round(mx * MK_FAIXA_ABAIXO)), origem: 'faixa', ref: mx, min: Math.min(...abaixo), max: mx, abaixo: true }; }
         return vazio;
     }
+    /* v2.64.0 — PREÇO JUSTO MEDIDO (dono, 26/11: "itens no depósito que não são postos à venda de jeito nenhum, pois não tem item
+     * parecido; comparar com itens melhores e inferiores para ter um valor justo para cada item"; "vou usar em outras contas").
+     * Entra só quando a regra acima não dá preço ('nobre' = linha nobre sem cópia parecida; 'vazio' = nenhuma cópia do item).
+     * Tudo é MEDIDO na hora nas cópias à venda da CATEGORIA inteira (market_copies {category}): log(preço) = efeito do item +
+     * β·forja, β por regressão de mediana (IRLS, ridge λ 2) alternada com o efeito de cada item (mediana dos resíduos dele). Nenhuma
+     * constante de item: vale para qualquer conta. Estudo em 26/11 (3.868 cópias de outros vendedores, 8 categorias; leave-one-out
+     * escondendo o item): erro mediano ×2 nas peças com nobre (helper 2.63: 0 % com preço; mediana do item+raridade ×2,4, 55 % abaixo
+     * de 0,67× do real). Medido: raridade ×1,7–2,7 por degrau, refino ×2 por +1, potência ≥400 ×2–3,4, regen. de mana ×2 só de ter;
+     * dano físico/mágico em arma ≈ ×1. Efeito do item, nesta ordem: (a) cópias do MESMO item com outros encaixes, a ficha valendo
+     * 1 cópia ('medido-item'); (b) sem cópia, as vendas reais (market_stats recentTrades, ≥ 3) menos a forja típica ('medido-vendas');
+     * (c) pela ficha (nível, NPC, força, vocação, giro) contra os itens da categoria — fraco, "confira" ('medido-ficha').
+     * Preço = previsão × 1,15 ("o valor tem que estar bom": 40 → 33 % das peças abaixo de 0,67× do real), nunca acima da mais barata
+     * do mesmo item que DOMINA a sua −1 nem abaixo da mais barata que a sua domina +1; peça com linha ≥ mediana das sem linha × 1,25.
+     * rápido / paciente = quartis 25 % / 75 % dos resíduos. */
+    const MKJ_MULT = 1.15, MKJ_K0 = 1, MKJ_LAMBDA = 2, MKJ_MIN_COPIAS = 30, MKJ_MIN_ITENS = 8, MKJ_MIN_VENDAS = 3;
+    const MKJ_ITEM_F = ['lvl', 'lvl2', 'npc', 'forca', 'mago', 'dist', 'wand', 'livro', 'giro'];
+    const MKJ_CAT_ARMADURA = ['armaduras', 'elmos', 'pernas', 'botas'];
+    const mkjMed = (v) => { const s = v.filter(Number.isFinite).sort((a, b) => a - b), n = s.length; return n ? (n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2) : null; };
+    /* (A + λI) β = b por eliminação de Gauss com pivô */
+    function mkjResolver(A, b) {
+        const n = b.length, M = A.map((r, i) => r.concat([b[i]]));
+        for (let i = 0; i < n; i++) {
+            let p = i; for (let k = i + 1; k < n; k++) if (Math.abs(M[k][i]) > Math.abs(M[p][i])) p = k;
+            [M[i], M[p]] = [M[p], M[i]];
+            const d = M[i][i] || 1e-12;
+            for (let k = i + 1; k < n; k++) { const f = M[k][i] / d; if (f) for (let j = i; j <= n; j++) M[k][j] -= f * M[i][j]; }
+        }
+        const x = new Array(n).fill(0);
+        for (let i = n - 1; i >= 0; i--) { let s = M[i][n]; for (let j = i + 1; j < n; j++) s -= M[i][j] * x[j]; x[i] = s / (M[i][i] || 1e-12); }
+        return x;
+    }
+    /* regressão de MEDIANA por mínimos quadrados repesados (IRLS), ridge leve fora do intercepto; linhas [{x:{nome: v}, y}] */
+    function mkjAjustar(linhas, nomes, opc) {
+        const lam = (opc && opc.lambda) || 1, it = (opc && opc.iter) || 15, k = nomes.length + 1;
+        const X = linhas.map(l => [1].concat(nomes.map(n => l.x[n] || 0))), y = linhas.map(l => l.y);
+        let w = y.map(() => 1), beta = new Array(k).fill(0);
+        for (let t = 0; t < it; t++) {
+            const A = Array.from({ length: k }, () => new Array(k).fill(0)), b = new Array(k).fill(0);
+            for (let i = 0; i < X.length; i++) { const xi = X[i], wi = w[i]; for (let a = 0; a < k; a++) { const wa = wi * xi[a]; if (!wa) continue; b[a] += wa * y[i]; for (let c = a; c < k; c++) A[a][c] += wa * xi[c]; } }
+            for (let a = 0; a < k; a++) { for (let c = 0; c < a; c++) A[a][c] = A[c][a]; if (a > 0) A[a][a] += lam; }
+            beta = mkjResolver(A, b);
+            for (let i = 0; i < X.length; i++) { let r = y[i]; for (let j = 0; j < k; j++) r -= X[i][j] * beta[j]; w[i] = 0.5 / Math.max(0.05, Math.abs(r)); }
+        }
+        return { beta, nomes, prever: (x) => { let s = beta[0]; for (let j = 0; j < nomes.length; j++) s += (x[nomes[j]] || 0) * beta[j + 1]; return s; } };
+    }
+    /* valor típico (mediana) de cada linha na categoria: o valor da linha entra relativo a ele */
+    function mkjTipicos(lista) {
+        const t = {};
+        for (const c of lista) for (const a of ((c.f && Array.isArray(c.f.atributos)) ? c.f.atributos : [])) { const id = mkIdAtr(a), v = mkValorDe(c.f, id); if (id && v > 0) (t[id] = t[id] || []).push(v); }
+        for (const k of Object.keys(t)) t[k] = mkjMed(t[k]);
+        return t;
+    }
+    function mkjCopiaFeat(f, tip) {
+        f = f || {};
+        const ids = mkAtrIds(f), x = {}, rar = mkRar(f, 0), pot = mkPot(f) || 100;
+        x.rar = rar; x.rar3 = rar >= 3 ? 1 : 0; x.ref = Math.max(0, mkRef(f, 0));
+        x.elite = f.fonte === 'elite' ? 1 : 0; x.boss = f.fonte === 'boss' ? 1 : 0;
+        x.pot = Math.log(Math.max(20, pot) / 200); x.pot400 = pot >= 400 ? 1 : 0;
+        for (const id of MK_ATR_NOBRES) { const v = mkValorDe(f, id); x['n_' + id] = v > 0 ? 1 : 0; x['v_' + id] = v > 0 ? Math.log(v / (tip[id] || v)) : 0; }
+        let outras = 0, soma = 0;
+        for (const id of ids) if (!MK_ATR_NOBRES.includes(id)) { outras++; const v = mkValorDe(f, id); soma += v > 0 ? Math.log(v / (tip[id] || v)) : 0; }
+        x.outras = outras; x.vOutras = soma; x.semLinha = ids.length ? 0 : 1;
+        return x;
+    }
+    /* ficha do item (/item/info): nível, NPC, força base, vocação, tipo, giro do catálogo — null sem ficha */
+    function mkjItemFeat(n, cat, ctx) {
+        const b = ctx && ctx.base && ctx.base[n]; if (!b) return null;
+        const a = b.attrs || {}, voc = String(a.vocation || '').toLowerCase(), ml = Number(a.magiclevelpoints || a.skillmagic) || 0;
+        const wand = cat === 'armas' && (a.weaponType === 'wand' || !!a.wandType), dist = cat === 'armas' && (a.weaponType === 'distance' || a.weaponType === 'missile');
+        let forca = 0;
+        if (MKJ_CAT_ARMADURA.includes(cat)) forca = (Number(a.armor) || 0) + 2 * ml;
+        else if (cat === 'escudos') forca = (Number(a.defense) || 0) + 2 * ml;
+        else if (cat === 'armas') forca = wand ? ((Number(a.fromDamage) || 0) + (Number(a.toDamage) || 0)) / 2 + 5 * ml : (Number(a.attack) || 0) + (Number(a.extradef) || 0) + 3 * ml;
+        const lv = (Number(a.level) || 0) / 100, npc = ctx.npc ? Number(ctx.npc[n]) || 0 : (Number(b.sell) || 0), c30 = ctx.catalogo && ctx.catalogo[n];
+        return { lvl: lv, lvl2: lv * lv, npc: Math.log10(npc + 10), forca, mago: /sorcerer|druid/.test(voc) && !/knight|paladin/.test(voc) ? 1 : 0,
+                 dist: dist ? 1 : 0, wand: wand ? 1 : 0, livro: cat === 'escudos' && a.weaponType === 'spellbook' ? 1 : 0, giro: Math.log10(1 + (c30 ? Number(c30.trades30d) || 0 : 0)) };
+    }
+    /* fatores da categoria — UMA vez por leitura (cópias de OUTROS vendedores [{n, p, f}]; ctx {cat, base, npc, catalogo}) */
+    function mkjPreparar(lista, ctx) {
+        ctx = ctx || {};
+        const ls = (lista || []).filter(c => c && c.p > 0 && c.f && c.n);
+        if (ls.length < MKJ_MIN_COPIAS) return null;
+        const tip = mkjTipicos(ls), nomes = Object.keys(mkjCopiaFeat({}, tip));
+        const linhas = ls.map(c => ({ n: c.n, x: mkjCopiaFeat(c.f, tip), y: Math.log(c.p) }));
+        const porItem = {}; for (const l of linhas) (porItem[l.n] = porItem[l.n] || []).push(l);
+        const a = {}; for (const [n, l] of Object.entries(porItem)) a[n] = mkjMed(l.map(z => z.y));
+        /* alternância: β ← regressão de (y − a[item]); a[item] ← mediana de (y − β·x) do item */
+        const passo = (a0) => {
+            const m = mkjAjustar(linhas.map(l => ({ x: l.x, y: l.y - a0[l.n] })), nomes, { lambda: MKJ_LAMBDA, iter: 15 });
+            const a1 = {}; for (const [n, l] of Object.entries(porItem)) a1[n] = mkjMed(l.map(z => z.y - m.prever(z.x)));
+            return { m, a1 };
+        };
+        let mod = null, aa = a;
+        for (let t = 0; t < 4; t++) { const r = passo(aa); mod = r.m; aa = r.a1; }
+        Object.assign(a, aa);
+        const resid = linhas.map(l => l.y - a[l.n] - mod.prever(l.x)).sort((p, q) => p - q);
+        const qRes = (t) => resid[Math.min(resid.length - 1, Math.max(0, Math.floor(t * (resid.length - 1))))];
+        const tipico = mkjMed(linhas.map(l => mod.prever(l.x)));
+        let modItem = null, pad = null;
+        const itens = Object.keys(porItem).map(n => ({ n, x: mkjItemFeat(n, ctx.cat, ctx), y: a[n] })).filter(i => i.x);
+        if (itens.length >= MKJ_MIN_ITENS) {
+            const fs = itens.map(i => i.x.forca), mf = fs.reduce((s, v) => s + v, 0) / fs.length, sf = Math.sqrt(fs.reduce((s, v) => s + (v - mf) ** 2, 0) / fs.length) || 1;
+            pad = (x) => Object.assign({}, x, { forca: (x.forca - mf) / sf });
+            modItem = mkjAjustar(itens.map(i => ({ x: pad(i.x), y: i.y })), MKJ_ITEM_F, { lambda: 3, iter: 20 });
+        }
+        const aFicha = (n) => { if (!modItem) return null; const x = mkjItemFeat(n, ctx.cat, ctx); return x ? modItem.prever(pad(x)) : null; };
+        return { tip, mod, a, qRes, tipico, aFicha, nomes, nItens: Object.keys(porItem).length, nCopias: ls.length };
+    }
+    /* y DOMINA x: raridade, refino e potência ≥ e cada nobre de x em y com valor ≥ (y pode ter mais linhas) */
+    const mkjNobres = (f) => mkAtrIds(f).filter(id => MK_ATR_NOBRES.includes(id));
+    function mkjDomina(y, x) {
+        if (mkRar(y, 0) < mkRar(x, 0) || mkRef(y, 0) < mkRef(x, 0)) return false;
+        const py = mkPot(y), px = mkPot(x); if (px && (!py || py < px)) return false;
+        return mkjNobres(x).every(id => (mkValorDe(y, id) || 0) >= (mkValorDe(x, id) || 0));
+    }
+    const MKJ_ROTULO = { rar: 'raridade', rar3: 'épico+', ref: 'refino', elite: 'elite', boss: 'boss', pot: 'potência', pot400: 'potência ≥ 400', outras: 'linhas comuns', vOutras: 'valor das linhas comuns', semLinha: 'sem linha',
+                         regen_mana: 'regen. de mana', regen_vida: 'regen. de vida', nivel_magico: 'nível mágico', distancia: 'distância', corpo_a_corpo: 'corpo a corpo', dano_fisico: 'dano físico', dano_magico: 'dano mágico', chance_de_loot: 'chance de loot' };
+    /* x {nome, forja}; doItem = cópias do MESMO item de outros vendedores [{p, f}]; vendas = preços das vendas recentes do item;
+     * ctx {npc, taxa} → {preco, rapido, paciente, origem, teto, piso, nItem, nVendas, fatores, confira} | null */
+    function mkJustoMedido(x, prep, doItem, vendas, ctx) {
+        if (!prep || !x) return null;
+        const f = x.forja || {}, n = mkMin(x.nome), xc = mkjCopiaFeat(f, prep.tip);
+        const di = (doItem || []).filter(c => c && c.p > 0 && c.f), vs = (vendas || []).map(Number).filter(v => v > 0);
+        let ai = null, origem;
+        if (di.length) {
+            ai = mkjMed(di.map(c => Math.log(c.p) - prep.mod.prever(mkjCopiaFeat(c.f, prep.tip))));
+            const fi = prep.aFicha(n); if (fi != null) ai = (di.length * ai + MKJ_K0 * fi) / (di.length + MKJ_K0);
+            origem = 'medido-item';
+        } else if (vs.length >= MKJ_MIN_VENDAS) { ai = Math.log(mkjMed(vs)) - prep.tipico; origem = 'medido-vendas'; }
+        else { ai = prep.aFicha(n); origem = 'medido-ficha'; }
+        if (ai == null || !Number.isFinite(ai)) return null;
+        const lg = ai + prep.mod.prever(xc);
+        let preco = Math.exp(lg) * MKJ_MULT;
+        let teto = null, piso = null;
+        for (const c of di) {
+            if (mkjDomina(c.f, f)) teto = teto == null ? c.p - 1 : Math.min(teto, c.p - 1);
+            else if (mkjDomina(f, c.f) && mkjNobres(c.f).every(id => mkjNobres(f).includes(id))) piso = piso == null ? c.p + 1 : Math.min(piso, c.p + 1);
+        }
+        /* regra do dono: peça com linha nunca abaixo das cópias sem linha do item (mediana × 1,25) — só as que a sua domina em raridade
+         * e refino (tower shield Incomum +0 regen. de mana 1,8 contra uma +1 sem linha a 900 mil: o +1 vale ×2, não é piso) */
+        const semLinha = mkAtrIds(f).length ? di.filter(c => !mkAtrIds(c.f).length && mkRar(c.f, 0) <= mkRar(f, 0) && mkRef(c.f, 0) <= mkRef(f, 0)).map(c => c.p) : [];
+        if (semLinha.length) piso = Math.max(piso || 0, Math.round(mkjMed(semLinha) * MK_FAIXA_ABAIXO));
+        if (teto != null && piso != null && piso > teto) piso = null;
+        if (teto != null) preco = Math.min(preco, teto);
+        if (piso != null) preco = Math.max(preco, piso);
+        preco = Math.max(1, Math.round(preco));
+        const rapido = Math.max(1, Math.round(Math.min(preco, Math.exp(lg + prep.qRes(0.25)))));
+        const pac0 = Math.exp(lg + prep.qRes(0.75)) * MKJ_MULT, paciente = Math.max(preco, Math.round(teto != null ? Math.min(teto, pac0) : pac0));
+        const fatores = [];
+        prep.nomes.forEach((nm, j) => { const b = prep.mod.beta[j + 1], v = xc[nm] || 0; if (Math.abs(b * v) >= 0.15) fatores.push([MKJ_ROTULO[nm.replace(/^[nv]_/, '')] || nm, Math.exp(b * v)]); });
+        fatores.sort((p, q) => Math.abs(Math.log(q[1])) - Math.abs(Math.log(p[1])));
+        /* "confira": pela ficha, âncora de 1 cópia, ou raridade/refino acima de tudo o que há do item à venda (extrapolação) */
+        const confira = origem === 'medido-ficha' || (origem === 'medido-item' && di.length < 2) ||
+            (di.length > 0 && (mkRef(f, 0) > Math.max(...di.map(c => mkRef(c.f, 0))) || mkRar(f, 0) > Math.max(...di.map(c => mkRar(c.f, 0)))));
+        return { preco, rapido, paciente, origem, ref: di.length ? mkjMed(di.map(c => c.p)) : vs.length ? mkjMed(vs) : null, teto, piso, nItem: di.length, nVendas: vs.length,
+                 nItens: prep.nItens, fatores: fatores.slice(0, 3), confira, min: di.length ? Math.min(...di.map(c => c.p)) : null, max: di.length ? Math.max(...di.map(c => c.p)) : null };
+    }
+    /* fatores da categoria guardados por objeto de cópias lido (ATUALIZAR novo = objeto novo); a chave muda com as minhas ordens e a ficha */
+    const MKJ_CACHE = new WeakMap();
+    function mkjPrepDe(cp, cat, e, meusIds) {
+        if (!cp || !Array.isArray(cp.copies)) return null;
+        const nb = e.base ? Object.keys(e.base).length : 0, chave = [...meusIds].sort().join(',') + '|' + nb + '|' + (e.catalogo ? 1 : 0);
+        const c = MKJ_CACHE.get(cp); if (c && c.chave === chave) return c.prep;
+        const lista = cp.copies.filter(y => y && !meusIds.has(y.orderId) && y.instance && y.instance.forja)
+            .map(y => ({ n: mkMin(y.itemName || y.instance.name), p: Number(y.unitPrice), f: y.instance.forja }));
+        const prep = mkjPreparar(lista, { cat, base: e.base || null, npc: e.npc || null, catalogo: e.catalogo || null });
+        MKJ_CACHE.set(cp, { chave, prep });
+        return prep;
+    }
+    /* v2.64.0 — ESCADA (estudo 26/11: anunciar no justo e descer 25 % a cada volta, até 3 voltas, vendeu 75 % das peças e ficou com
+     * 38 % do valor por peça; justo uma vez só: 51 % e 3 %). Do histórico (market_history expired/sell, 30 d) por nome: quantas vezes
+     * voltou vencido DEPOIS da última venda e o preço da última volta. Nada re-anuncia sozinho: a linha só SUGERE o preço −25 %. */
+    const MKJ_DESCIDA = 0.25, MKJ_VOLTAS = 3;
+    function mkEscadaDe(entries) {
+        const por = {};
+        for (const x of entries || []) {
+            if (!x || (x.type !== 'expired' && x.type !== 'sell') || !x.itemName) continue;
+            const n = mkMin(x.itemName), at = Number(x.at) || 0, g = por[n] || (por[n] = { ultVenda: 0, voltas: [] });
+            if (x.type === 'sell') g.ultVenda = Math.max(g.ultVenda, at); else g.voltas.push({ at, preco: Number(x.unitPrice) || 0 });
+        }
+        const r = {};
+        for (const [n, g] of Object.entries(por)) {
+            const vs = g.voltas.filter(v => v.at > g.ultVenda && v.preco > 0).sort((a, b) => b.at - a.at);
+            if (vs.length) r[n] = { seguidas: vs.length, ultPreco: vs[0].preco, at: vs[0].at };
+        }
+        return r;
+    }
     const mkAbertaVenda = (o) => !!(o && o.status === 'OPEN' && o.side === 'SELL' && (o.asset == null || o.asset === 'ITEM') && Number(o.quantityRemaining) > 0);
     const mkChaveCopias = (d) => (d && d.category ? 'cat:' + d.category : 'item:' + mkMin(d && d.itemName));
     const mkPremium = (ate, agora) => (ate === undefined ? null : !ate ? false : (Number.isFinite(Date.parse(ate)) && Date.parse(ate) > agora));
@@ -15672,7 +15859,9 @@
         const minhasDoItem = minhas.filter(o => mkMin(o.itemName) === n && o.forja);
         const meus = minhasDoItem.filter(o => mkIgualLinhas(x.forja, o.forja)).map(o => o.unitPrice); // v2.27.0 — o meu anúncio da mesma peça, sem olhar potência
         let outros = [], parecidas = [], inferiores = [], pendente = null, justo = null;
-        if (c && (Number(c.copyOrders) || 0) > minhasDoItem.length) {
+        /* v2.64.0 — com a categoria conhecida, as cópias da categoria inteira são lidas mesmo sem cópia do item: são os vizinhos
+         * (itens melhores e inferiores) do preço justo medido */
+        if ((c && (Number(c.copyOrders) || 0) > minhasDoItem.length) || cat) {
             const data = cat ? { category: cat } : { itemName: x.nome }, k = mkChaveCopias(data);
             const cp = e.copias && e.copias[k];
             if (cp && !cp.erro) {
@@ -15685,6 +15874,16 @@
                 /* sem cópia igual: o preço justo (ajustado pelo valor), a parecida, ou a faixa da raridade — todo item sai com preço */
                 justo = precoReferencia(x, { [k]: cp }, meusIds); // v2.27.0 — sempre: com cópia igual ele só serve de PISO (peça com linha ≥ sem linha; item inferior com linha parecida)
                 if (outros.length && justo && !justo.piso) justo = null;
+                /* v2.64.0 — sem preço pela regra de cima ('nobre'/'vazio') e sem cópia igual nem anúncio meu: o preço MEDIDO */
+                if (!outros.length && !meus.length && !(justo && justo.preco != null)) {
+                    const st = e.stats && e.stats[n];
+                    if (!doItem.length && c && Number(c.trades30d) > 0 && !st) pendente = { tipo: 'market_stats', data: { itemName: x.nome }, chave: 'stats:' + n, cache: 'stats', alvo: n, rotulo: 'vendas de ' + x.nome, erro: null };
+                    else {
+                        const vendas = st && !st.erro && Array.isArray(st.vendas) ? st.vendas : null;
+                        const m = mkJustoMedido(x, mkjPrepDe(cp, cat, e, meusIds), doItem.map(y => ({ p: Number(y.unitPrice), f: y.instance && y.instance.forja })), vendas, { npc: e.npc, taxa: e.taxa });
+                        if (m) justo = Object.assign(m, { antes: justo ? justo.origem : 'vazio', faixaMin: justo && justo.min, faixaMax: justo && justo.max });
+                    }
+                }
             } else pendente = { tipo: 'market_copies', data, chave: k, cache: 'copias', alvo: k, rotulo: 'cópias de ' + (cat ? (MK_CATS[cat] || cat) : x.nome), erro: cp ? cp.erro : null };
         }
         /* v2.11.8 — SEM MÉDIA PARA CÓPIA. A média de 30 dias é do item inteiro e
@@ -15703,11 +15902,20 @@
         const fTxt = temSug && justo.origem === 'faixa' ? (justo.abaixo ? `sem cópia ${mkCorteTxt(x.forja)} à venda: a mais cara da raridade abaixo (${mkFmt(justo.ref)}) × 1,25` : `sem cópia com este encaixe: a MEDIANA ${mkCorteTxt(x.forja)} (${mkFmt(justo.ref)}, de ${mkFmt(justo.min)} a ${mkFmt(justo.max)}) — confira`) : null;
         const nobreTxt = justo && justo.origem === 'nobre' ? `linha nobre sem cópia parecida à venda — digite o preço${justo.min != null ? ` (o corte ${mkCorteTxt(x.forja)} vai de ${mkFmt(justo.min)} a ${mkFmt(justo.max)}; a sua vale pela linha, não pelo mais barato)` : ''}` : null;
         const infTxt = inferiores.length ? `cópias com o mesmo encaixe e valor MENOR que o seu a partir de ${mkFmt(Math.min(...inferiores))}` : null;
+        /* v2.64.0 — de onde veio o preço medido, em uma frase */
+        const medido = temSug && /^medido/.test(justo.origem);
+        const fatTxt = medido && justo.fatores.length ? ' — a sua: ' + justo.fatores.map(([k, v]) => k + ' ×' + (Math.round(v * 10) / 10).toLocaleString('pt-BR')).join(', ') : '';
+        const mTxt = !medido ? null
+            : (justo.origem === 'medido-item' ? `preço medido: ${justo.nItem} cópia${justo.nItem === 1 ? '' : 's'} de ${x.nome} com outros encaixes (${mkFmt(justo.min)}${justo.max !== justo.min ? ' a ' + mkFmt(justo.max) : ''}) comparadas com ${justo.nItens} itens da categoria`
+               : justo.origem === 'medido-vendas' ? `nenhuma cópia de ${x.nome} à venda: ${justo.nVendas} vendas recentes (mediana ${mkFmt(justo.ref)}) ajustadas pela forja`
+               : `nenhuma cópia nem venda de ${x.nome}: comparado pela ficha (nível, NPC, força) com ${justo.nItens} itens da categoria`) + fatTxt +
+              (justo.teto != null && justo.preco >= justo.teto ? ` · teto: uma melhor a ${mkFmt(justo.teto + 1)}` : '') + (justo.piso != null && justo.preco <= justo.piso ? ` · piso: uma inferior a ${mkFmt(justo.piso - 1)}` : '') +
+              ` · rápido ${mkFmt(justo.rapido)} · paciente ${mkFmt(justo.paciente)}` + (justo.confira ? ' · CONFIRA (pouca referência)' : '');
         const partes = [];
         if (temSug) {
-            if (justo.origem === 'justo') partes.push(jTxt); else if (justo.origem === 'faixa') partes.push(fTxt);
-            if (justo.piso) partes.push(`piso: peça com linha nunca abaixo das cópias sem linha (mediana × 1,25 = ${mkFmt(justo.piso)})`);
-            if (justo.origem !== 'faixa' && faixaTxt) partes.push('faixa dos ' + faixaTxt);
+            if (medido) partes.push(mTxt); else if (justo.origem === 'justo') partes.push(jTxt); else if (justo.origem === 'faixa') partes.push(fTxt);
+            if (justo.piso && !medido) partes.push(`piso: peça com linha nunca abaixo das cópias sem linha (mediana × 1,25 = ${mkFmt(justo.piso)})`);
+            if (justo.origem !== 'faixa' && !medido && faixaTxt) partes.push('faixa dos ' + faixaTxt);
             if (infTxt && justo.origem !== 'justo') partes.push(infTxt);
         }
         const nota = pendente || outros.length || meus.length ? null
@@ -15722,10 +15930,20 @@
         /* v2.27.0 — piso: nem o menor −1 de uma cópia igual desce abaixo do piso (peça com linha nunca vale menos que a sem linha) */
         if (sug.preco != null && r.justo && r.justo.piso && sug.preco < r.justo.piso) sug = { preco: r.justo.piso, origem: 'piso', ref: sug.ref, piso: r.justo.piso };
         if (sug.origem === 'vazio' && r.justo && r.justo.preco) sug = { preco: r.justo.preco, origem: r.justo.origem, ref: r.justo.ref };
+        /* v2.64.0 — ESCADA: o mesmo item voltou vencido perto deste preço (−5 % a +25 %) → sugere −25 % sobre o preço da última volta */
+        const esc = e.escada && e.escada[b.n];
+        let escNota = null;
+        if (esc && sug.preco != null && esc.ultPreco > 0 && sug.preco >= esc.ultPreco * 0.95 && sug.preco <= esc.ultPreco * 1.25) {
+            const novo = Math.max(1, Math.round(esc.ultPreco * (1 - MKJ_DESCIDA)));
+            escNota = `voltou ${esc.seguidas}× sem vender (a última a ${mkFmt(esc.ultPreco)}): −25 % = ${mkFmt(novo)}` + (esc.seguidas >= MKJ_VOLTAS ? ' — já são 3 voltas: melhor NPC ou desmanche' : '');
+            sug = { preco: novo, origem: 'escada', ref: esc.ultPreco, voltas: esc.seguidas };
+        }
         const bruto = temDig ? Math.floor(Number(dig)) : sug.preco;
         const preco = Number.isFinite(bruto) ? bruto : null;
-        const origem = temDig ? 'digitado' : sug.origem;
         const npc = e.npc ? (mkNum(e.npc[b.n]) || 0) : null;
+        /* v2.64.0 — empilhável que ninguém negocia e que o NPC compra: a origem diz "vender no NPC" (antes: "sem referência") */
+        const soNpc = preco == null && !temDig && b.tipo === 'pilha' && npc > 0 && !(e.catalogo && e.catalogo[b.n] && Number(e.catalogo[b.n].trades30d) > 0);
+        const origem = temDig ? 'digitado' : soNpc ? 'npc' : sug.origem;
         const ok = preco != null && mkPrecoValido(preco, b.qtd);
         const taxa = ok ? mkTaxa(preco, b.qtd, e.taxa) : null;
         const liquido = ok ? preco * b.qtd - taxa : null;
@@ -15740,8 +15958,13 @@
                 : b.tipo === 'pilha' && npc > 0 && !(e.catalogo && e.catalogo[b.n] && Number(e.catalogo[b.n].trades30d) > 0) ? 'vender no NPC' : 'sem referência de preço — digite um')
             : !ok ? 'preço inválido (inteiro ≥ 1, total até 2 bilhões)'
             : abaixo ? 'vender no NPC' : null;
-        const nota = [r.nota, r.compra != null && preco != null && r.compra >= preco ? `há COMPRA aberta a ${r.compra} — aceitar no mercado do jogo é na hora e sem taxa` : null].filter(Boolean).join(' · ') || null;
-        return Object.assign(b, { sug, preco, origem, nota, encaixe: r.encaixe || null, compra: r.compra != null ? r.compra : null, taxa, liquido, npc, npcTotal: npc != null ? npc * b.qtd : null,
+        /* v2.64.0 — pilha grande de giro baixo (demon horn: 3.217 no depósito, 1 negócio em 30 dias): a taxa do lote inteiro não volta */
+        const c30 = b.tipo === 'pilha' && e.catalogo ? e.catalogo[b.n] : null;
+        const giroNota = c30 && ok && npc > 0 && Number(c30.trades30d) >= 0 && b.qtd > 10 * Math.max(1, Number(c30.trades30d) || 0) && taxa > npc * 10
+            ? `giro baixo: ${Number(c30.trades30d) || 0} negócio(s) em 30 dias — anunciar ${mkFmt(b.qtd)} paga ${mkFmt(taxa)} de taxa que não volta; melhor um lote pequeno no Mercado e o resto no NPC (${mkFmt(npc * b.qtd)} na hora)` : null;
+        const nota = [r.nota, escNota, giroNota, r.compra != null && preco != null && r.compra >= preco ? `há COMPRA aberta a ${r.compra} — aceitar no mercado do jogo é na hora e sem taxa` : null].filter(Boolean).join(' · ') || null;
+        const faixa = r.justo && r.justo.rapido != null && /^medido/.test(r.justo.origem) ? { rapido: r.justo.rapido, justo: r.justo.preco, paciente: r.justo.paciente, confira: !!r.justo.confira } : null;
+        return Object.assign(b, { sug, preco, origem, nota, faixa, encaixe: r.encaixe || null, compra: r.compra != null ? r.compra : null, taxa, liquido, npc, npcTotal: npc != null ? npc * b.qtd : null,
                                   abaixoNpc: abaixo, bloqueio, marcado: !bloqueio && marcados.has(b.chave) });
     }
     /* A LISTA. e = {bag {nome: qtd}, bagInst [{iid,name,forja,wear,imbuements}],
@@ -15962,7 +16185,8 @@
         sem_socket: 'socket do jogo não está aberto', sem_dado: 'a resposta não trouxe o dado esperado'
     };
     const mkErroTexto = (c) => MK_ERROS[c] ? MK_ERROS[c] + ' (' + c + ')' : String(c);
-    const MK_ORIGEM = { menor: 'menor −1', parecida: 'parecida −1', justo: 'ajustado pelo valor', faixa: 'faixa da raridade', meu: 'seu anúncio', media: 'média 30 d', piso: 'piso da média 30 d', vazio: 'sem referência', digitado: 'digitado', pendente: 'falta ler' };
+    const MK_ORIGEM = { menor: 'menor −1', parecida: 'parecida −1', justo: 'ajustado pelo valor', faixa: 'faixa da raridade', meu: 'seu anúncio', media: 'média 30 d', piso: 'piso da média 30 d', vazio: 'sem referência', digitado: 'digitado', pendente: 'falta ler',
+                        'medido-item': 'preço medido', 'medido-vendas': 'medido pelas vendas', 'medido-ficha': 'medido pela ficha', escada: '−25 % (voltou)', npc: 'vender no NPC' }; // v2.64.0
     const MK_MOTIVO_CAIXA = { trade_proceeds: 'venda', order_cancelled: 'ordem cancelada', order_expired: 'ordem expirada', capacity: 'não coube', offline: 'offline' };
     const MK = { premiumAte: undefined, bag: null, bagInst: null, bag_t: 0, protMeta: { nomes: [], iids: [] }, protInv: { nomes: [], iids: [] }, protLido: false,
                  taxa: null, taxaWiki: false, tradeable: null, npc: null, restErro: null,
@@ -16030,7 +16254,7 @@
         }
         else if (t === 'market_inbox_result' && Array.isArray(d.entries)) { MK.inbox = clonar(d.entries); MK.inbox_t = agora; }
         else if (t === 'market_list_result' && d.asset !== 'COIN' && d.itemName) MK.livros[mkMin(d.itemName)] = { orders: clonar(d.orders || []), t: agora };
-        else if (t === 'market_stats_result' && d.itemName) MK.stats[mkMin(d.itemName)] = { stats: d.stats || null, t: agora };
+        else if (t === 'market_stats_result' && d.itemName) MK.stats[mkMin(d.itemName)] = { stats: d.stats || null, vendas: (Array.isArray(d.recentTrades) ? d.recentTrades : []).map(x => Number(x && x.unitPrice)).filter(v => v > 0), t: agora }; // v2.64.0: vendas reais
         else if (t === 'market_copies_result' && Array.isArray(d.copies) && MK.pend && MK.pend.tipo === 'market_copies') MK.copias[mkChaveCopias(MK.pend.data)] = { copies: clonar(d.copies), t: agora };
         else if (t === 'market_create_result' && d.order && Array.isArray(MK.minhas)) { if (!MK.minhas.some(x => x.id === d.order.id)) MK.minhas.push(clonar(d.order)); }
         else if (t === 'market_cancel_result' && d.order && Array.isArray(MK.minhas)) MK.minhas = MK.minhas.filter(x => x.id !== d.order.id);
@@ -16111,7 +16335,8 @@
                  tradeable: MK.tradeable, npc: MK.npc, taxa: MK.taxa, catalogo: MK.catalogo, minhas: MK.minhas, livros: MK.livros, copias: MK.copias, stats: MK.stats,
                  prot: mkProtegidos(), protLido: MK.protLido, nunca: autoHunt().nuncaVender || [], equip: R ? { usadas: [...(R.usadas || [])], reservas: [...(R.reservas || []), ...(R.nobres || []).map(p => p.iid), ...(R.bases || []).map(p => p.iid)],
                                                                          sobras: (R.dispensaveis || []).map(p => p.iid).filter(Boolean) } : null,
-                 naCidade: !emHunt(), digitados: MK.digitados, marcados: [...MK.marcados], liberadas: [...MK.liberadas] };
+                 naCidade: !emHunt(), digitados: MK.digitados, marcados: [...MK.marcados], liberadas: [...MK.liberadas],
+                 base: MK.base || null, escada: (ler('mk_giro', null) || {}).escada || null }; // v2.64.0: ficha dos itens da categoria e escada do histórico
     }
     const mkVista = () => mkMontar(mkEntrada());
     /* premium sem o welcome (helper instalado com o jogo aberto): o estado do
@@ -16196,6 +16421,16 @@
             MK.livros = {}; MK.copias = {}; MK.stats = {};
             if (await mkLerBase([['market_catalog', 'preços do mercado'], ['market_my_orders', 'suas ordens'], ['market_inbox', 'caixa de entrada']])) {
                 await mkBuscarPendencias(() => mkVista().pendencias, 'preços');
+                /* v2.64.0 — ficha (/item/info, público, guardada 7 dias) de todos os itens das categorias lidas: o preço medido compara
+                 * o item sem cópia com os itens melhores e inferiores da categoria; e o histórico (voltou × vendeu) para a escada −25 % */
+                if (!MK.parar) {
+                    const nomes = new Set();
+                    for (const cp of Object.values(MK.copias || {})) for (const y of ((cp && cp.copies) || [])) { const nm = y && (y.itemName || (y.instance && y.instance.name)); if (nm) nomes.add(nm); }
+                    for (const l of mkVista().linhas) if (l.tipo === 'copia') nomes.add(l.nome);
+                    if (nomes.size) { MK.progresso = 'ficha dos itens da categoria…'; renderizar(); try { const bs = await basePorNome([...nomes]); MK.base = Object.fromEntries(Object.entries(bs || {}).map(([k, v]) => [mkMin(k), v])); } catch (e) { log('mercado: ficha dos itens não veio — ' + e.message, 'erro'); } }
+                    const hg = ler('mk_giro', null);
+                    if (!hg || !hg.escada || Date.now() - (hg.t || 0) > EQUIP_MERCADO_VALE_MS) { MK.progresso = 'seu histórico (voltou × vendeu, 30 dias)…'; renderizar(); await mkLerGiro(); }
+                }
             }
             MK.t = Date.now();
             const v = mkVista(), prontos = v.linhas.filter(l => !l.bloqueio).length;
@@ -16300,13 +16535,13 @@
                 const r = await mkPedir('market_history', { page: pg, type, period: '30d' });
                 if (r.erro) { log('mercado: histórico (' + (type === 'sell' ? 'vendas' : 'vencidos') + ') não lido — ' + mkErroTexto(r.erro), 'erro'); return false; }
                 const d = r.data || {}, e = Array.isArray(d.entries) ? d.entries : [];
-                entries.push(...e.map(x => ({ type: x.type || type, itemName: x.itemName })));
+                entries.push(...e.map(x => ({ type: x.type || type, itemName: x.itemName, unitPrice: x.unitPrice, at: x.at }))); // v2.64.0: preço e hora para a escada
                 const tam = Number(d.pageSize) || e.length || 0;
                 if (!e.length || e.length < tam || (Number(d.total) > 0 && entries.filter(x => x.type === type).length >= Number(d.total))) break;
             }
         }
         const por = giroMercado(entries);
-        guardar('mk_giro', { por, t: Date.now(), voltou: entries.filter(x => x.type === 'expired').length, vendeu: entries.filter(x => x.type === 'sell').length });
+        guardar('mk_giro', { por, escada: mkEscadaDe(entries), t: Date.now(), voltou: entries.filter(x => x.type === 'expired').length, vendeu: entries.filter(x => x.type === 'sell').length });
         return true;
     }
     async function mkRevisar() {
@@ -16398,7 +16633,7 @@
     #tb-mk .mk-info{grid-column:2/-1;font-size:var(--tb-fmin,10.5px);color:#9aa4b8;line-height:1.35;padding-bottom:2px}
     #tb-mk .mk-org{font-size:var(--tb-fmin,10.5px);padding:0 5px;border-radius:9px;background:#2b3242;color:#c3cad6;white-space:nowrap}
     #tb-mk .mk-org.menor{background:#1f4a2c;color:#8ff0a8}#tb-mk .mk-org.media,#tb-mk .mk-org.parecida{background:#4a3b14;color:#ffd479}
-    #tb-mk .mk-org.digitado{background:#1d3550;color:#9fd0ff}#tb-mk .mk-org.vazio,#tb-mk .mk-org.pendente{background:#4a1f1f;color:#ff9b93}
+    #tb-mk .mk-org.digitado{background:#1d3550;color:#9fd0ff}#tb-mk .mk-org.medido-item,#tb-mk .mk-org.medido-vendas{background:#1f3b2a;color:#9fe0b0}#tb-mk .mk-org.medido-ficha,#tb-mk .mk-org.escada{background:#4a3a14;color:#ffd27a}#tb-mk .mk-org.npc{background:#2b2b2b;color:#ddd}#tb-mk .mk-fx{margin-top:2px;display:flex;gap:4px;flex-wrap:wrap}#tb-mk .mk-fx .tb-bt{padding:1px 6px;font-size:10.5px}#tb-mk .mk-org.vazio,#tb-mk .mk-org.pendente{background:#4a1f1f;color:#ff9b93}
     #tb-mk .mk-rodape{position:sticky;bottom:-8px;background:#12151c;padding:6px 0 4px;margin-top:6px;border-top:1px solid #2b3242}
     #tb-mk .mk-rodape .tb-bt.pri{width:100%;font-size:12px;padding:6px}
     #tb-mk .mk-ord{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 6px;align-items:center;padding:4px 0;border-bottom:1px dotted #262d3b}
@@ -16449,6 +16684,7 @@
                 <div class="mk-nome"><b>${escHtml(l.nome)}</b> <span class="tb-mut">${!l.qtd && l.deposito ? `${mkFmt(l.deposito)} no depósito` : '×' + mkFmt(l.qtd)}</span>${mkCorte(l.forja)}${mkPecaTxt(l.forja)}</div>
                 <input class="tb-in mk-preco" id="tb-mk-p-${i}" type="number" min="1" step="1" inputmode="numeric" placeholder="preço" value="${escHtml(valor == null ? '' : valor)}" aria-label="preço unitário de ${escHtml(l.nome)}" ${ocup ? 'disabled' : ''}>
                 <div class="mk-info"><span class="mk-org ${escHtml(l.origem)}">${escHtml(org)}</span> · ${escHtml(onde)}${l.liquido != null ? ' · líq. ' + mkFmt(l.liquido) : ''} · ${npcTxt}${l.nota ? ` · <span class="tb-av">${escHtml(l.nota)}</span>` : ''}${blq ? '<br>' + blq : ''}</div>
+                ${l.faixa ? `<div class="mk-fx" title="preço medido no Mercado: rápido vende mais fácil, paciente espera um comprador que pague mais. Tocar só preenche o preço — nada é anunciado sem marcar e confirmar">${[['rapido', 'rápido'], ['justo', 'justo'], ['paciente', 'paciente']].map(([k, r]) => `<button type="button" class="tb-bt mini" id="tb-mk-fx-${k}-${i}" ${ocup ? 'disabled' : ''}>${r} ${mkFmt(l.faixa[k])}</button>`).join('')}${l.faixa.confira ? ' <span class="tb-av">confira</span>' : ''}</div>` : ''}
               </div>`;
         });
         if (v.fora.length) {
@@ -16527,7 +16763,7 @@
         const abas = [['anunciar', 'Anunciar', v ? v.plano.n : null], ['meus', 'Meus anúncios', nMinhas], ['caixa', 'Caixa', nCaixa]];
         h += `<div class="tb-sub" role="tablist">${abas.map(([k, n, c]) => `<button type="button" id="tb-mk-sub-${k}" class="${k === sub ? 'on' : ''}" role="tab" aria-selected="${k === sub}">${n}${c ? ` <b>${c}</b>` : ''}</button>`).join('')}</div>`;
         h += sub === 'meus' ? mkTelaMeus() : sub === 'caixa' ? mkTelaCaixa() : mkTelaAnunciar(v || { linhas: [], fora: [], plano: { n: 0, itens: [], taxa: 0, liquido: 0 } });
-        h += aj('mk-ajuda', 'Preço sugerido: menor anúncio de OUTRO vendedor −1 (as suas ordens não contam; se o menor já é seu, fica o seu); sem concorrente, a média dos últimos 30 dias; sem histórico, digite. Forjado: só cópias da mesma raridade, do mesmo refino, com os MESMOS atributos nos encaixes e com o VALOR das linhas nobres em ±10 % do seu são "iguais" (menor −1). Sem igual, o preço é AJUSTADO pelo valor: a cópia inferior (ou a melhor) com o mesmo encaixe, numa curva de potência 4 (ao vivo: regen. de mana 1,1 → 25 mil, 2,0 → 450 mil); sem nenhuma com o encaixe, a mais barata da mesma raridade −1, ou a mais cara da raridade abaixo × 1,25 — todo item sai com preço, e a nota diz de onde veio. Nunca abaixo do NPC: se o que sobra depois da taxa não passa do que o NPC paga, a linha vira "vender no NPC". Fora da lista: selado, imbuído, protegido, usado, o melhor e a reserva de cada personagem (aba Equip) e a sua lista "nunca vender" do Auto Hunt. Taxa de 5 % paga ao anunciar e que NUNCA volta; ordem vale 3 dias; o mercado não cruza ordens; o ouro da venda cai na Caixa. Ritmo: 1 pedido a cada 3,5 s (limite do jogo: 20 ações/min). Anunciar: retira do depósito → confere a mochila → cria a ordem → próximo.');
+        h += aj('mk-ajuda', 'Preço sugerido: menor anúncio de OUTRO vendedor −1 (as suas ordens não contam; se o menor já é seu, fica o seu); sem concorrente, a média dos últimos 30 dias; sem histórico, digite. Forjado: só cópias da mesma raridade, do mesmo refino, com os MESMOS atributos nos encaixes e com o VALOR das linhas nobres em ±10 % do seu são "iguais" (menor −1). Sem igual, o preço é AJUSTADO pelo valor: a cópia inferior (ou a melhor) com o mesmo encaixe, numa curva de potência 4 (ao vivo: regen. de mana 1,1 → 25 mil, 2,0 → 450 mil); sem nenhuma com o encaixe, a mais barata da mesma raridade −1, ou a mais cara da raridade abaixo × 1,25. v2.64.0 — PREÇO MEDIDO: peça com linha nobre sem cópia parecida, ou item sem nenhuma cópia à venda, é comparada com TODOS os itens da categoria à venda (melhores e inferiores): o quanto valem a raridade, o refino, a potência e cada linha é medido na hora; o nível do item vem das cópias dele com outros encaixes, das vendas reais, ou da ficha (nível, NPC, força — "confira"). Preço = o medido +15 %, nunca acima de uma melhor do mesmo item nem abaixo de uma inferior; os botões rápido / justo / paciente só preenchem o preço. ESCADA: se o mesmo item voltou vencido perto deste preço, a linha sugere −25 % sobre o da última volta; depois de 3 voltas, NPC ou desmanche (nada re-anuncia sozinho). A nota diz de onde veio cada preço. Nunca abaixo do NPC: se o que sobra depois da taxa não passa do que o NPC paga, a linha vira "vender no NPC". Fora da lista: selado, imbuído, protegido, usado, o melhor e a reserva de cada personagem (aba Equip) e a sua lista "nunca vender" do Auto Hunt. Taxa de 5 % paga ao anunciar e que NUNCA volta; ordem vale 3 dias; o mercado não cruza ordens; o ouro da venda cai na Caixa. Ritmo: 1 pedido a cada 3,5 s (limite do jogo: 20 ações/min). Anunciar: retira do depósito → confere a mochila → cria a ordem → próximo.');
         return h + '</div>';
     }
     function ligarMercado() {
@@ -16539,6 +16775,8 @@
             const c = $('#tb-mk-c-' + i);
             /* v2.15.0 — desmarcar uma peça liberada pelo Equip desfaz a liberação (volta à barreira "melhor ou reserva") */
             if (c) c.onchange = () => { if (MK.ocupado || l.bloqueio) return; if (c.checked) MK.marcados.add(l.chave); else { MK.marcados.delete(l.chave); if (l.iid) MK.liberadas.delete(l.iid); } MK.conf = null; renderizar(); };
+            /* v2.64.0 — rápido / justo / paciente: só preenchem o preço da linha (digitado) */
+            if (l.faixa) ['rapido', 'justo', 'paciente'].forEach(k => { const b = $('#tb-mk-fx-' + k + '-' + i); if (b) b.onclick = () => { if (MK.ocupado) return; MK.digitados[l.chave] = String(l.faixa[k]); MK.conf = null; renderizar(); }; });
             const p = $('#tb-mk-p-' + i);
             if (!p) return;
             /* digitar não repinta (perderia o foco); o total do rodapé muda no change */
