@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.61.0
+// @version      2.62.0
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.61.0';
+    const VERSAO = '2.62.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -11748,6 +11748,7 @@
         const av = (st.avisos || []).map(a => ({ bate: a.bateEm - agora, casas: new Set((a.tiles || []).map(t => t.x + ',' + t.y)) }));
         const cai = (k, de, ate) => av.some(a => a.bate >= de - 50 && a.bate <= ate + 50 && a.casas.has(k));
         const seguro = (k, de) => !av.some(a => a.bate >= de - 50 && a.casas.has(k));
+        const bauAlvo = B.alvo && B.alvo.tipo === 'bau' ? [Math.sign(B.alvo.x - K.x), Math.sign(B.alvo.y - K.y)] : null;
         const ini = K.x + ',' + K.y, nos = new Map([[ini, { x: K.x, y: K.y, T: 0, sai: t1, pai: null, d0: null }]]);
         const abertos = [nos.get(ini)];
         while (abertos.length) {
@@ -11755,6 +11756,8 @@
             for (let i = 1; i < abertos.length; i++) {
                 const a = abertos[i], b = abertos[bi];
                 if (a.T < b.T || (a.T === b.T && B.fugaDir && a.d0 && a.d0[0] === B.fugaDir[0] && a.d0[1] === B.fugaDir[1])) bi = i;
+                /* empate sem direção de fuga guardada: a saída que vai para o baú */
+                else if (a.T === b.T && !B.fugaDir && bauAlvo && a.d0 && b.d0 && (a.d0[0] * bauAlvo[0] + a.d0[1] * bauAlvo[1]) > (b.d0[0] * bauAlvo[0] + b.d0[1] * bauAlvo[1])) bi = i;
             }
             const n = abertos.splice(bi, 1)[0];
             const k = n.x + ',' + n.y;
@@ -11774,6 +11777,23 @@
         return null;
     }
     /* direção do próximo passo: [dx, dy]; B guarda alvo e o "estou parado" entre chamadas */
+    /* direção (das 8) com menos bicho no corredor à frente (até retaAlcance casas, largura ±retaLargura); a atual ganha desconto
+     * para não ficar trocando. Bicho perto pesa mais. */
+    function svDirecaoLivre(st, atual, C) {
+        const K = st.knight, A = C.retaAlcance || 18, L = C.retaLargura || 4;
+        let melhor = atual || SV_DIRS[0], mn = Infinity;
+        for (const [dx, dy] of SV_DIRS) {
+            const n = Math.hypot(dx, dy), ux = dx / n, uy = dy / n;
+            let custo = 0;
+            for (const b of st.bichos) {
+                const rx = b.x - K.x, ry = b.y - K.y, fr = rx * ux + ry * uy, la = Math.abs(-rx * uy + ry * ux);
+                if (fr > -1 && fr <= A && la <= L) custo += (b.ehBoss ? 6 : b.ehConjurador ? 3 : 1) / (1 + Math.max(0, fr) / 4);
+            }
+            if (atual && atual[0] === dx && atual[1] === dy) custo *= (C.retaFica || 0.75);
+            if (custo < mn) { mn = custo; melhor = [dx, dy]; }
+        }
+        return melhor;
+    }
     function svDecidir(st, B, C) {
         const K = st.knight, hp = K.hp / K.maxHp, agora = st.tempoMs;
         const aviso = svCasasDeAviso(st);
@@ -11783,10 +11803,18 @@
         const parede = (C.paredes === false || B.semParede) ? null : svParede;
         if (C.fugaDura !== false && aviso.has(K.x + ',' + K.y)) {
             const s = (C.fugaRelogio !== false && svFugaComRelogio(st, ocupado0, parede, B)) || svSairDoAviso(st, aviso, ocupado0, parede);
-            if (s) { B.alvo = null; return s; }
+            /* 2.62.0 — a fuga não apaga o baú (ao vivo 26/11: no fim há aviso quase sempre e o alvo piscava baú/—; 24 s para 49 casas) */
+            if (s) { if (!(B.alvo && B.alvo.tipo === 'bau')) B.alvo = null; return s; }
         }
         B.fugaDir = null;
         if (!B.alvo || agora - (B.alvoEm || 0) >= 400 || (B.alvo.x === K.x && B.alvo.y === K.y)) { B.alvo = st.reaper ? null : svEscolherAlvo(st, C); B.alvoEm = agora; }
+        /* 2.62.0 — corrida em linha reta no fim (dono, 26/11: "o mapa é sem fim; em vez de rodar em círculo, correr reto para sobreviver").
+         * Escolhe a direção com menos bicho à frente e mantém; só larga a reta para o baú ou item colado (≤ retaPega casas). */
+        const reta = C.retaDepois != null && agora >= C.retaDepois && !st.reaper && !(B.alvo && B.alvo.tipo === 'bau');
+        if (reta) {
+            if (B.alvo && Math.max(Math.abs(B.alvo.x - K.x), Math.abs(B.alvo.y - K.y)) > (C.retaPega || 0)) B.alvo = null;
+            if (!B.retaDir || agora - (B.retaEm || 0) >= (C.retaTroca || 3000)) B.retaDir = svDirecaoLivre(st, B.retaDir, C), B.retaEm = agora;
+        }
         const baixa = hp < C.vidaBaixa, pesoPerigo = baixa ? 3 : 1, pesoAlvo = baixa ? C.pesoAlvoVidaBaixa : C.pesoAlvo;
         const ocupado = new Set(st.bichos.map(b => b.x + ',' + b.y));
         let melhor = SV_DIRS[0], mn = -Infinity;
@@ -11817,7 +11845,8 @@
                 for (const b of st.bichos) if (b.ehBoss) { const db = Math.max(Math.abs(b.x - x1), Math.abs(b.y - y1)); if (db < C.distFogeBoss) nota -= C.pesoFogeBoss * (C.distFogeBoss - db); }
             }
             /* indo ao baú, a moagem não puxa de volta para a multidão */
-            if (C.pesoMoer && hp >= C.vidaMoer && !st.reaper && !(B.alvo && B.alvo.tipo === 'bau')) {
+            if (reta && (dx || dy)) nota += C.pesoReta * (dx * B.retaDir[0] + dy * B.retaDir[1]) / (Math.hypot(dx, dy) * Math.hypot(B.retaDir[0], B.retaDir[1]));
+            if (C.pesoMoer && hp >= C.vidaMoer && !st.reaper && !reta && !(B.alvo && B.alvo.tipo === 'bau')) {
                 let dens = 0; const r = C.raioMoer;
                 for (const b of st.bichos) if (!b.ehBoss && Math.abs(b.x - x1) <= r && Math.abs(b.y - y1) <= r) dens++;
                 nota += C.pesoMoer * Math.min(dens, C.densMax) * (hp - C.vidaMoer) / (1 - C.vidaMoer);
@@ -11877,6 +11906,14 @@
             case 'nivel-de-passiva': { const dono = SV_PAR_INV[p]; if ((C.passivasPrioridade || []).includes(p)) return 120; return dono && mags.includes(dono) ? 70 : 30; }
             default: return 10;
         }
+    }
+    /* 2.62.0 — trocar a oferta (botão "Trocar cartas" do jogo, tecla T) quando a melhor carta é passiva morta (nota < 0): a vaga do par
+     * se perdia e a magia 8 ficava sem U (simulador, 24 partidas com 5 buffs: 15 → 5 sem U, média 133,0 → 134,7, 5 → 8 chegam aos 15:00).
+     * Só na tela de nível; custa 100 mil + 50 mil por troca já feita na partida. max = trocas por partida (0 = nunca). */
+    function svQuerReroll(st, C, max) {
+        if (!max || (st.rerolls || 0) >= max || st.rerollPendente || (st.telasDevidas && st.telasDevidas[0] !== 'nivel')) return false;
+        let m = -Infinity; for (const o of st.baralho.oferta) m = Math.max(m, svNotaCarta(st, o, C));
+        return m < (C.rerollAbaixo != null ? C.rerollAbaixo : 0);
     }
     function svEscolherCarta(st, C) {
         let k = 0, m = -Infinity;
@@ -18609,6 +18646,12 @@
             if (st.fase === 'carta') {
                 svSegurar(new Set());
                 if (st.baralho.oferta.length && !st.esperandoCristaisMs && ARENA.ultimaCarta !== st.passoN && !ARENA.ref.escolhaPendente) {
+                    /* troca de cartas: clica o botão do jogo (ele cobra e manda ao servidor); espera a resposta antes de outra decisão */
+                    if (st.rerollPendente || Date.now() - (ARENA.trocaEm || 0) < 1500) return;
+                    const bt = document.querySelector('[data-testid="sobrevivencia-trocar"]');
+                    if (bt && !bt.disabled && !/trocando|sem_gold|sem_opcoes/.test(bt.dataset.estado || '') && svQuerReroll(st, C, ARENA.trocas)) {
+                        ARENA.trocaEm = Date.now(); bt.click(); log(`sobrevivência: troquei as cartas (${(st.rerolls || 0) + 1}ª nesta partida)`, 'info'); return;
+                    }
                     const k = svEscolherCarta(st, C); ARENA.ultimaCarta = st.passoN;
                     svTecla('keydown', String(k + 1), 'Digit' + (k + 1)); setTimeout(() => svTecla('keyup', String(k + 1), 'Digit' + (k + 1)), 50);
                 }
@@ -18674,7 +18717,7 @@
         else { svDesenhar(); log('sobrevivência: robô desligado', 'info'); }
     }
     function svIniciar() {
-        ARENA.recomecar = !!ler('sv_recomecar', false); ARENA.mapa = ler('sv_mapa', true) !== false;
+        ARENA.recomecar = !!ler('sv_recomecar', false); ARENA.trocas = +ler('sv_trocas', 0) || 0; ARENA.mapa = ler('sv_mapa', true) !== false;
         if (ler('sv_ligado', false)) svLigar(true);
     }
     function telaArena() {
@@ -18684,6 +18727,7 @@
         let h = `<div id="tb-arena"><div class="tb-eq-bts"><button type="button" class="tb-bt ${ARENA.ligado ? 'pri' : ''}" id="tb-sv-ligar" title="o robô joga a partida da Sobrevivência que estiver aberta: anda, foge dos avisos, mói a multidão, caça boss e escolhe as cartas">${ARENA.ligado ? 'ROBÔ LIGADO — DESLIGAR' : 'LIGAR ROBÔ'}</button>` +
                 `<button type="button" class="tb-bt" id="tb-sv-comecar" ${st ? 'disabled' : ''} title="abre a Sobrevivência, acerta os buffs escolhidos aqui e clica COMEÇAR PARTIDA (os buffs são cobrados)">COMEÇAR PARTIDA</button></div>`;
         h += `<div class="tb-linha" style="margin-top:4px"><label class="tb-l"><input type="checkbox" id="tb-sv-recomecar" ${ARENA.recomecar ? 'checked' : ''}> recomeçar sozinho ao acabar</label> <label class="tb-l"><input type="checkbox" id="tb-sv-mapa" ${ARENA.mapa ? 'checked' : ''}> minimapa</label></div>`;
+        h += `<div class="tb-linha" style="margin-top:2px"><label class="tb-l" title="quando a oferta só tem passiva que toma a vaga do par (a magia 8 ficaria sem ultimate), o robô aperta Trocar cartas. Custa 100 mil, 150 mil, 200 mil… de ouro (sobe 50 mil a cada troca na mesma partida). Simulador: média 133,0 → 134,7; 0,8 troca por partida">Trocar cartas ruins: até <select id="tb-sv-trocas">${[0, 1, 2, 3].map(n => `<option value="${n}" ${ARENA.trocas === n ? 'selected' : ''}>${n ? n + ' por partida' : 'nunca'}</option>`).join('')}</select></label></div>`;
         {
             const qb = ler('sv_buffs', []), tot = SV_BUFFS.filter(b => qb.includes(b.id)).reduce((x, b) => x + b.preco, 0);
             h += `<div class="tb-linha" style="margin-top:2px;flex-wrap:wrap"><span class="tb-mut">Buffs a cada partida:</span> ` + SV_BUFFS.map(b => `<label class="tb-l" title="${numBR(b.preco)} de ouro por partida"><input type="checkbox" data-sv-buff="${b.id}" ${qb.includes(b.id) ? 'checked' : ''}> ${escHtml(b.nome)}</label>`).join(' ') +
@@ -18697,7 +18741,7 @@
         } else h += `<div class="tb-mut" style="margin-top:4px">${ARENA.ligado ? 'Esperando uma partida: abra a Sobrevivência (medalhão na cidade) e comece, ou use COMEÇAR PARTIDA.' : 'Robô desligado.'}</div>`;
         if (melhor) h += `<div class="tb-mut" style="margin-top:4px">Melhor partida guardada: ameaça <b>${melhor.ameaca}</b> aos ${mmss(melhor.s)} (nível ${melhor.nivel}).</div>`;
         if (ps.length) h += `<h4 style="margin:8px 0 2px">Últimas partidas</h4>` + ps.slice(0, 8).map(p => `<div class="tb-sb-lin" title="${escHtml(p.magias + ' · ' + p.passivas)}"><span class="tb-sb-n">${new Date(p.em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} · ameaça <b>${p.ameaca}</b> aos ${mmss(p.s)} · nv ${p.nivel} · ${p.abates} abates</span></div>`).join('');
-        h += aj('sv-ajuda', 'O robô lê a partida que o próprio jogo simula e aperta as setas e 1-2-3, como você. <b>Prioridades:</b> sair do aviso vermelho (o golpe cai 1 s depois); com vida acima de 30 %, ficar no meio dos bichos (a ameaça — a pontuação — sobe com o dano causado); baú, orbe, caveira e fogueira (comida cura 30 %); cristais; boss do mais fácil ao mais difícil. <b>Cartas:</b> 4 magias, e a vaga de passiva fica para o par de cada uma (Facas+Recarga, Aura+Recovery, Groundshaker+Área, Berserk+Blood Rage, Espadas+Haste, Whirlwind+Ímã, Lâminas+Sorte, Annihilation+Crítico): nível 8 com o par vira ultimate no baú do boss. <b>Buffs</b>: marque aqui; antes de cada partida o robô deixa a loja do jogo igual (no simulador, os 5 juntos deram +9 de ameaça média; Velocidade sozinha, +5). Sem ouro para os marcados, o jogo não cobra nada e a partida não começa. O Reaper chega aos 15:00.', 'como funciona');
+        h += aj('sv-ajuda', 'O robô lê a partida que o próprio jogo simula e aperta as setas e 1-2-3, como você. <b>Prioridades:</b> sair do aviso vermelho (o golpe cai 1 s depois); com vida acima de 30 %, ficar no meio dos bichos (a ameaça — a pontuação — é a inicial + 1 a cada 12 s vivo, desde que o dano encha a cota do nível: moer garante a cota e o xp das cartas); baú, orbe, caveira e fogueira (comida cura 30 %); cristais; boss do mais fácil ao mais difícil. <b>Cartas:</b> 4 magias, e a vaga de passiva fica para o par de cada uma (Facas+Recarga, Aura+Recovery, Groundshaker+Área, Berserk+Blood Rage, Espadas+Haste, Whirlwind+Ímã, Lâminas+Sorte, Annihilation+Crítico): nível 8 com o par vira ultimate no baú do boss. <b>Buffs</b>: marque aqui; antes de cada partida o robô deixa a loja do jogo igual (no simulador, os 5 juntos deram +9 de ameaça média; Velocidade sozinha, +5). Sem ouro para os marcados, o jogo não cobra nada e a partida não começa. O Reaper chega aos 15:00 (fim da partida): o teto é a ameaça inicial + 75. <b>Trocar cartas</b>: oferta só com passiva que tomaria a vaga do par → aperta Trocar cartas (ouro).', 'como funciona');
         return h + `</div>`;
     }
     function ligarArena() {
@@ -18705,6 +18749,7 @@
         const c = $('#tb-sv-comecar'); if (c) c.onclick = () => { if (!ARENA.ligado) svLigar(true); ARENA.recomecarEm = 0; ARENA.fimDe = null; svRecomecar(); setTimeout(svRecomecar, 2500); renderizar(); };
         const r = $('#tb-sv-recomecar'); if (r) r.onchange = () => { ARENA.recomecar = r.checked; guardar('sv_recomecar', r.checked); renderizar(); };
         $$('[data-sv-buff]').forEach(cx => { cx.onchange = () => { const q = new Set(ler('sv_buffs', [])); if (cx.checked) q.add(cx.dataset.svBuff); else q.delete(cx.dataset.svBuff); guardar('sv_buffs', [...q]); renderizar(); }; });
+        const tr = $('#tb-sv-trocas'); if (tr) tr.onchange = () => { ARENA.trocas = +tr.value || 0; guardar('sv_trocas', ARENA.trocas); };
         const m = $('#tb-sv-mapa'); if (m) m.onchange = () => { ARENA.mapa = m.checked; guardar('sv_mapa', m.checked); svDesenhar(); };
     }
     setTimeout(svIniciar, 3000); // volta ligado se o dono deixou ligado

@@ -4,7 +4,7 @@ const fs = require('fs'), path = require('path'), assert = require('assert');
 const src = fs.readFileSync(path.join(__dirname, '..', 'tibidle-helper.user.js'), 'utf8');
 const i = src.indexOf('/* @@ARENA-PURO-INICIO'), f = src.indexOf('/* @@ARENA-PURO-FIM');
 assert(i > 0 && f > i, 'trecho @@ARENA-PURO não encontrado');
-const A = new Function(src.slice(i, f) + '\nreturn { SV_PAR, SV_CFG, svDecidir, svEscolherAlvo, svEscolherCarta, svNotaCarta, svPerigo, SV_BUFFS, svBuffsParaClicar, svParede };')();
+const A = new Function(src.slice(i, f) + '\nreturn { SV_PAR, SV_CFG, svDecidir, svEscolherAlvo, svEscolherCarta, svNotaCarta, svPerigo, SV_BUFFS, svBuffsParaClicar, svParede, svQuerReroll };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 
@@ -141,5 +141,24 @@ t('2.61.0: com as 4 magias em U, não caça boss e se afasta dele', () => {
     assert.ok(d[0] <= 0, 'não anda para o lado do boss');
     const falta = estado({ bichos: [bicho(1, 2, 0, { ehBoss: true })], baralho: { magias: mags.map((m, i) => i ? m : Object.assign({}, m, { evoluiu: false })), passivas: pass, oferta: [] } });
     assert.strictEqual(A.svEscolherAlvo(falta, A.SV_CFG).tipo, 'boss', 'ainda falta U: caça');
+});
+t('2.62.0: troca de cartas só quando a melhor da oferta é passiva morta, e no máximo N por partida', () => {
+    const mags = ['Front Sweep', 'Inflict Wound', 'Whirlwind Throw', 'Berserk'].map(nome => ({ nome, nivel: 3 }));
+    const morta = estado({ baralho: { magias: mags, passivas: ['Haste', 'Recovery', 'Ímã'].map(nome => ({ nome, nivel: 1 })),
+        oferta: [{ especie: 'passiva-nova', passiva: 'Sabedoria' }, { especie: 'passiva-nova', passiva: 'Área' }, { especie: 'passiva-nova', passiva: 'Sorte' }] } });
+    morta.telasDevidas = ['nivel']; morta.rerolls = 0;
+    assert.strictEqual(A.svQuerReroll(morta, A.SV_CFG, 3), true, 'só passiva sem par → troca');
+    assert.strictEqual(A.svQuerReroll(morta, A.SV_CFG, 0), false, 'desligado (nunca) → não troca');
+    assert.strictEqual(A.svQuerReroll(Object.assign({}, morta, { rerolls: 3 }), A.SV_CFG, 3), false, 'já trocou 3 → não troca');
+    assert.strictEqual(A.svQuerReroll(Object.assign({}, morta, { telasDevidas: ['bau'] }), A.SV_CFG, 3), false, 'tela de baú não troca');
+    const boa = Object.assign({}, morta, { baralho: Object.assign({}, morta.baralho, { oferta: [{ especie: 'passiva-nova', passiva: 'Blood Rage' }, { especie: 'passiva-nova', passiva: 'Área' }] }) });
+    assert.strictEqual(A.svQuerReroll(boa, A.SV_CFG, 3), false, 'par do Berserk na oferta → escolhe, não troca');
+});
+t('2.62.0: fugindo do aviso, o baú continua sendo o alvo', () => {
+    const st = estado({ itens: [{ id: 2, tipo: 'bau', x: 20, y: 0 }] });
+    st.avisos = [{ id: 9, tiles: [{ x: 0, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }], bateEm: st.tempoMs + 900 }];
+    const B = { alvo: { x: 20, y: 0, tipo: 'bau', v: 999 } };
+    A.svDecidir(st, B, A.SV_CFG);
+    assert.ok(B.alvo && B.alvo.tipo === 'bau');
 });
 console.log(`\n${n} testes ok`);

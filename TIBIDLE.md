@@ -7642,3 +7642,17 @@ no lugar do Haste).
 - Boss: `svFaltaUltimate` — só caça enquanto alguma magia ainda pode virar U (par na barra ou vaga de passiva). Depois disso (≈8:30 no
   simulador) mantém 4 casas do boss (`pesoFogeBoss` 5). Morte com boss perto no último minuto: 18 % → 8 %; ameaça média 131,6 → 132,8 (ruído).
   O resto das mortes do fim é aviso de conjurador (fogo de raio 7) — próximo alvo.
+
+## 2.62.0 (26/11) — Sobrevivência: trocar cartas ruins e baú na fuga; o placar é tempo vivo
+- Motor lido (agente): ameaça final = inicial + 1 a cada 12 s no mapa, desde que o dano encha a cota do nível (50 × vida do bicho do
+  degrau; o excedente se perde). Abates, bosses e baús não somam. Fim aos 15:00 (Reaper) → teto = inicial + 75 (+1 se vivo aos 912 s).
+  A conta do dono começa em 70 (vem do servidor no welcome, com o Knight "congelado": level, equipamento) → teto ≈ 146; o 166 do 1º lugar
+  começa de ≈ 91. Há também o ranking semanal "de quem nunca teve Premium" (3 primeiros ganham 30 dias).
+- Ao vivo (2.61.0, 5 buffs): morte às 10:08 (117) — troca de capítulo (ameaça múltipla de 5) repõe a horda pelas 4 bordas, o anel fechou
+  em 4 s e ele morreu preso; build travada: Whirlwind Throw 8 e Berserk 8 sem U (vagas de passiva com Haste e Protector) → fugia dos bosses.
+- Troca de cartas: oferta só com passiva morta (nota < 0) → o robô aperta "Trocar cartas" (`sobrevivencia-trocar`, 100 mil + 50 mil por
+  troca na partida). Caixinha "Trocar cartas ruins: até N" na aba, padrão "nunca" (gasta ouro). Simulador, 24 sementes, 5 buffs:
+  132,5 → 134,6 de média, mínimo 116 → 124, chegam aos 15:00 4 → 7, magia 8 sem U 15 → 5; 0,8 troca por partida.
+- A fuga do aviso não apaga mais o baú como alvo, e no empate escolhe a saída para o lado dele (ao vivo: alvo piscava baú/—, 24 s para 49 casas).
+- Testado sem ganho (fica desligado no código): correr em linha reta no fim (`retaDepois`/`pesoReta`, `svDirecaoLivre`) e furar o anel na
+  troca de capítulo; menos/mais moagem; fugir do alcance do conjurador; barra de passivas de sobrevivência (−4 a −9); largar cristais (−7).
