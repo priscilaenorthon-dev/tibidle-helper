@@ -64,4 +64,9 @@ t('Reaper: foge dele mesmo com baú perto', () => {
     const st = estado({ reaper: { x: 3, y: 0 }, itens: [{ id: 1, tipo: 'bau', x: 4, y: 0 }] });
     assert.strictEqual(A.svDecidir(st, {}, A.SV_CFG)[0], -1);
 });
+t('2.57.1: o minimapa e a caixinha "minimapa" da aba não dividem o id (o quadro nunca nascia)', () => {
+    const ids = [...src.matchAll(/id="(tb-sv-[\w-]+)"/g)].map(m => m[1]);
+    assert(!ids.includes('tb-sv-minimapa'), 'a tela não pode usar o id do quadro');
+    assert(/cv\.id = 'tb-sv-minimapa'/.test(src) && /getElementById\('tb-sv-minimapa'\)/.test(src));
+});
 console.log(`\n${n} testes ok`);
