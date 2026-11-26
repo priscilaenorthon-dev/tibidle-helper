@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.62.0
+// @version      2.63.0
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.62.0';
+    const VERSAO = '2.63.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -11629,10 +11629,12 @@
          * entra assim que aparece e sobe antes de nível de magia sem par */
         passivasPrioridade: ['Haste'],
         /* 2.60.1 — quando a oferta obriga a pegar passiva sem par: a morte vem na rajada do fim, então vida e defesa antes de xp */
-        passivasForcadas: ['Vida máxima', 'Protector', 'Roubo de vida', 'Onda de choque', 'Sabedoria'],
+        passivasForcadas: ['Vida máxima', 'Protector', 'Roubo de vida', 'Onda de choque', 'Sabedoria'], cartaEstrita: true,
         saidaMin: 3, pesoSaida: 1,
         /* 2.61.0 — baú do boss sempre (puxão próprio, sem a moagem); boss só enquanto falta ultimate, depois distância dele */
-        bauSempre: true, pesoBau: 4, cacarSemUlt: false, pesoFogeBoss: 5, distFogeBoss: 4
+        bauSempre: true, pesoBau: 4, cacarSemUlt: false, pesoFogeBoss: 5, distFogeBoss: 4,
+        /* 2.63.0 — fuga do aviso sem vai-e-volta e sem entrar na horda (simulador, 48 partidas, 5 buffs, 3 trocas: 135,5 → 136,2) */
+        fugaFica: 1, fugaHorda: 1, fugaLivres: 3
     };
     const SV_DIRS = []; for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) if (dx || dy) SV_DIRS.push([dx, dy]);
     /* 2.59.0 — árvores e pedras do chão bloqueiam o Knight (motor: nl/nc/nd + cfg.paletaDoChao, lido em 26/11). O robô não sabia:
@@ -11688,7 +11690,10 @@
         const grade = new Map();
         for (const o of st.itens) if (o.tipo === 'cristal' && !o.voando) { const k = Math.floor(o.x / 3) + ',' + Math.floor(o.y / 3); grade.set(k, (grade.get(k) || 0) + o.xp); }
         let melhor = null, mv = 0;
+        /* 2.63.0 (legista): −10 % e −8 % indo a cristal ao lado de 2 bosses → cristal/fogueira a ≤ longeBoss casas de boss não é alvo */
+        const bossesV = C.longeBoss ? st.bichos.filter(b => b.ehBoss) : [];
         const olhar = (x, y, v, tipo) => {
+            if (bossesV.length && (tipo === 'cristal' || tipo === 'fogueira') && bossesV.some(b => Math.max(Math.abs(b.x - x), Math.abs(b.y - y)) <= C.longeBoss)) return;
             const d = Math.hypot(x - K.x, y - K.y);
             const nota = v / (d + 3) - C.pesoPerigoAlvo * svPerigo(st, x, y, C);
             if (nota > mv) { mv = nota; melhor = { x, y, v, tipo }; }
@@ -11741,7 +11746,7 @@
      * DIAGONAL custa 1,5 passo (motor). Busca pelo menor tempo: só pisa numa casa avisada se o golpe dela não cair enquanto ele
      * estiver ali, e o destino é uma casa onde nenhum golpe pendente vai cair. Sem caminho limpo → null (a busca antiga decide).
      * Antes: a busca por casas tratava todos os avisos iguais, a diagonal como 1 passo, e trocava de lado a cada 100 ms. */
-    function svFugaComRelogio(st, ocupado, parede, B) {
+    function svFugaComRelogio(st, ocupado, parede, B, C) {
         const K = st.knight, agora = st.tempoMs, P = (K.passo && K.passo.intervalo > 0) ? K.passo.intervalo : 200;
         const ac = K.passo ? K.passo.acumulado : 0;
         const t1 = ac < 0 ? 100 : Math.max(100, Math.ceil((P - ac) / 100) * 100);
@@ -11749,31 +11754,45 @@
         const cai = (k, de, ate) => av.some(a => a.bate >= de - 50 && a.bate <= ate + 50 && a.casas.has(k));
         const seguro = (k, de) => !av.some(a => a.bate >= de - 50 && a.casas.has(k));
         const bauAlvo = B.alvo && B.alvo.tipo === 'bau' ? [Math.sign(B.alvo.x - K.x), Math.sign(B.alvo.y - K.y)] : null;
-        const ini = K.x + ',' + K.y, nos = new Map([[ini, { x: K.x, y: K.y, T: 0, sai: t1, pai: null, d0: null }]]);
+        /* 2.63.0 (legista ao vivo, 26/11): ~65 % dos golpes eram evitáveis — (1) vai-e-volta: um bicho entrando na rota trocava o lado
+         * inteiro da fuga a cada 50 ms → a direção guardada ganha desconto de fugaFica passos; (2) a fuga entrava na horda (−15 % aos 9:32,
+         * 8 bichos colados) → cada bicho vizinho da casa custa fugaHorda passo, e o destino precisa de fugaLivres casas livres em volta
+         * (sem nenhum assim, vale o 1º seguro). A ordem usa o custo c; os testes de golpe usam o tempo real T/sai. */
+        const ocV = (x, y) => { let n = 0; for (const [ex, ey] of SV_DIRS) if (ocupado.has((x + ex) + ',' + (y + ey))) n++; return n; };
+        const livresEm = (x, y) => { let n = 0; for (const [ex, ey] of SV_DIRS) { const xx = x + ex, yy = y + ey; if (!ocupado.has(xx + ',' + yy) && !(parede && parede(xx, yy))) n++; } return n; };
+        const fica = (C && C.fugaFica || 0) * P, horda = (C && C.fugaHorda || 0) * P, minLivres = (C && C.fugaLivres) || 0;
+        const ef = (n) => n.c - (fica && B.fugaDir && n.d0 && n.d0[0] === B.fugaDir[0] && n.d0[1] === B.fugaDir[1] ? fica : 0);
+        let reserva = null;
+        const ini = K.x + ',' + K.y, nos = new Map([[ini, { x: K.x, y: K.y, T: 0, c: 0, sai: t1, cs: t1, pai: null, d0: null }]]);
         const abertos = [nos.get(ini)];
         while (abertos.length) {
             let bi = 0;
             for (let i = 1; i < abertos.length; i++) {
-                const a = abertos[i], b = abertos[bi];
-                if (a.T < b.T || (a.T === b.T && B.fugaDir && a.d0 && a.d0[0] === B.fugaDir[0] && a.d0[1] === B.fugaDir[1])) bi = i;
+                const a = abertos[i], b = abertos[bi], ea = ef(a), eb = ef(b);
+                if (ea < eb || (ea === eb && B.fugaDir && a.d0 && a.d0[0] === B.fugaDir[0] && a.d0[1] === B.fugaDir[1])) bi = i;
                 /* empate sem direção de fuga guardada: a saída que vai para o baú */
-                else if (a.T === b.T && !B.fugaDir && bauAlvo && a.d0 && b.d0 && (a.d0[0] * bauAlvo[0] + a.d0[1] * bauAlvo[1]) > (b.d0[0] * bauAlvo[0] + b.d0[1] * bauAlvo[1])) bi = i;
+                else if (ea === eb && !B.fugaDir && bauAlvo && a.d0 && b.d0 && (a.d0[0] * bauAlvo[0] + a.d0[1] * bauAlvo[1]) > (b.d0[0] * bauAlvo[0] + b.d0[1] * bauAlvo[1])) bi = i;
             }
             const n = abertos.splice(bi, 1)[0];
             const k = n.x + ',' + n.y;
-            if (n.pai && seguro(k, n.T)) { B.fugaDir = n.d0; return n.d0; }
+            if (n.pai && seguro(k, n.T)) {
+                if (!minLivres || livresEm(n.x, n.y) >= minLivres) { B.fugaDir = n.d0; return n.d0; }
+                if (!reserva) reserva = n;
+            }
             if (n.T > 3000 || Math.max(Math.abs(n.x - K.x), Math.abs(n.y - K.y)) >= 10) continue;
             for (const [dx, dy] of SV_DIRS) {
                 const x = n.x + dx, y = n.y + dy, kk = x + ',' + y;
                 if (ocupado.has(kk) || (parede && parede(x, y))) continue;
                 const T = n.sai, sai = T + (dx && dy ? 1.5 * P : P);
                 if (cai(kk, T, sai)) continue;
+                const c = n.cs, cs = c + (sai - T) + (horda ? horda * ocV(x, y) : 0);
                 const velho = nos.get(kk);
-                if (velho && velho.T <= T) continue;
-                const no = { x, y, T, sai, pai: n, d0: n.pai ? n.d0 : [dx, dy] };
+                if (velho && velho.c <= c && velho.T <= T) continue;
+                const no = { x, y, T, c, sai, cs, pai: n, d0: n.pai ? n.d0 : [dx, dy] };
                 nos.set(kk, no); abertos.push(no);
             }
         }
+        if (reserva) { B.fugaDir = reserva.d0; return reserva.d0; }
         return null;
     }
     /* direção do próximo passo: [dx, dy]; B guarda alvo e o "estou parado" entre chamadas */
@@ -11802,7 +11821,7 @@
         if (!B.semParede && C.paredes !== false && svParede(K.x, K.y)) B.semParede = true;
         const parede = (C.paredes === false || B.semParede) ? null : svParede;
         if (C.fugaDura !== false && aviso.has(K.x + ',' + K.y)) {
-            const s = (C.fugaRelogio !== false && svFugaComRelogio(st, ocupado0, parede, B)) || svSairDoAviso(st, aviso, ocupado0, parede);
+            const s = (C.fugaRelogio !== false && svFugaComRelogio(st, ocupado0, parede, B, C)) || svSairDoAviso(st, aviso, ocupado0, parede);
             /* 2.62.0 — a fuga não apaga o baú (ao vivo 26/11: no fim há aviso quase sempre e o alvo piscava baú/—; 24 s para 49 casas) */
             if (s) { if (!(B.alvo && B.alvo.tipo === 'bau')) B.alvo = null; return s; }
         }
@@ -11841,12 +11860,12 @@
             }
             /* moer: com vida boa, ficar onde há mais bicho comum ao alcance das áreas (a ameaça sobe com o dano causado) */
             /* 2.61.0 — com a build cheia (ou sem vida para caçar), boss é só perigo: manter distância (o golpe dele vem em área) */
-            if (C.pesoFogeBoss && !(B.alvo && B.alvo.tipo === 'boss') && (hp < C.vidaCaca || !(C.cacarSemUlt || svFaltaUltimate(st)))) {
+            if (C.pesoFogeBoss && !(B.alvo && B.alvo.tipo === 'boss') && (C.fogeBossSempre || hp < C.vidaCaca || !(C.cacarSemUlt || svFaltaUltimate(st)))) {
                 for (const b of st.bichos) if (b.ehBoss) { const db = Math.max(Math.abs(b.x - x1), Math.abs(b.y - y1)); if (db < C.distFogeBoss) nota -= C.pesoFogeBoss * (C.distFogeBoss - db); }
             }
             /* indo ao baú, a moagem não puxa de volta para a multidão */
             if (reta && (dx || dy)) nota += C.pesoReta * (dx * B.retaDir[0] + dy * B.retaDir[1]) / (Math.hypot(dx, dy) * Math.hypot(B.retaDir[0], B.retaDir[1]));
-            if (C.pesoMoer && hp >= C.vidaMoer && !st.reaper && !reta && !(B.alvo && B.alvo.tipo === 'bau')) {
+            if (C.pesoMoer && hp >= C.vidaMoer && !st.reaper && !reta && !(B.alvo && B.alvo.tipo === 'bau') && !(C.moerAte && agora >= C.moerAte) && !(C.moerAvisos && (st.avisos || []).length >= C.moerAvisos)) {
                 let dens = 0; const r = C.raioMoer;
                 for (const b of st.bichos) if (!b.ehBoss && Math.abs(b.x - x1) <= r && Math.abs(b.y - y1) <= r) dens++;
                 nota += C.pesoMoer * Math.min(dens, C.densMax) * (hp - C.vidaMoer) / (1 - C.vidaMoer);
@@ -11873,6 +11892,9 @@
         const pref = C.magiasPreferidas || [];
         const bonusPref = (m) => { const i = pref.indexOf(m); return i < 0 ? (pref.length ? -40 : 0) : 30 - i * 5; };
         const m = o.magia, p = o.passiva;
+        /* 2.63.0 — só enquanto sobra troca de cartas na partida (C.trocas = máximo escolhido na aba): sem troca a regra estrita piorava
+         * (simulador, 24 partidas, 5 buffs: estrita sem troca 129,4; atual 132,5; atual + 3 trocas 134,6; estrita + 3 trocas 135,7, 10/24 aos 15:00) */
+        const estrita = !!(C.cartaEstrita && pref.length && (st.rerolls || 0) < (C.trocas || 0));
         switch (o.especie) {
             /* 2.59.0 — build cheia: o jogo oferece 2 "limite" (+8 % de dano na magia, acumula) e 1 "pocao" (cura 30 % da vida).
              * Antes o robô procurava 'cura' (não existe) e pegava sempre o limite (dono, 26/11: "no final ir usando cura"). */
@@ -11882,10 +11904,20 @@
             case 'limite': { const mg = st.baralho.magias.find(x => x.nome === m); return 60 + (mg && mg.evoluiu ? 15 : 0) + bonusPref(m) / 6; }
             case 'bau': case 'ultimate': return 250;
             case 'nivel-de-magia': return 100 + (pass.includes(SV_PAR[m]) ? 30 : 0) + bonusPref(m) / 2;
-            case 'magia-nova': return mags.length < 4 ? 90 + (pass.includes(SV_PAR[m]) ? 40 : 0) + bonusPref(m) : 0;
+            /* 2.63.0 — cartaEstrita: a partida abre no nível 22 com 21 cartas seguidas; magia fora da build valia 50 e tomava a vaga para sempre
+             * (ao vivo 26/11: Groundshaker + Annihilation, sem Front Sweep). Agora magia fora da build e passiva que não é par da build ficam
+             * negativas — o robô troca a oferta (se houver troca) e, sem troca, prefere subir nível a ocupar vaga. */
+            case 'magia-nova':
+                if (estrita && !pref.includes(m)) return -80;
+                return mags.length < 4 ? 90 + (pass.includes(SV_PAR[m]) ? 40 : 0) + bonusPref(m) : 0;
             case 'passiva-nova': {
                 const dono = SV_PAR_INV[p];
                 if (dono && mags.includes(dono)) return 200;
+                if (estrita) {
+                    if (dono && pref.includes(dono)) return 200;
+                    const forcadaE = C.passivasForcadas || [];
+                    return forcadaE.includes(p) ? -90 - forcadaE.indexOf(p) * 2 : -100;
+                }
                 /* 2.60.0 — passiva prioritária (Haste): pega na hora se houver vaga e não roubar a do par de uma magia que fica sem U */
                 if ((C.passivasPrioridade || []).includes(p) && pass.length < 4) {
                     const livresP = 4 - pass.length, precisamP = mags.filter(x => !pass.includes(SV_PAR[x])).length + (4 - mags.length);
@@ -18598,7 +18630,7 @@
      * orbe (puxa todos os cristais) ou caveira (mata tudo); coleta a 1 casa (+Ímã); aviso de golpe = casas vermelhas, bate 1 s
      * depois; boss a cada 2 min (até 7), baú = ultimate da magia nível 8 com a passiva de par. */
     const ARENA = { ligado: false, recomecar: false, mapa: true, ref: null, B: {}, timer: null, timerMapa: null, ultimaCarta: -1, fimDe: null, recomecarEm: 0, apertadas: new Set(), ultPinta: 0 };
-    function svCfgArena() { return Object.assign({}, SV_CFG); }
+    function svCfgArena() { return Object.assign({}, SV_CFG, { trocas: ARENA.trocas || 0 }); }
     function svAcharRef() {
         const el = document.querySelector('[data-testid="sobrevivencia-camada"]'); if (!el) return null;
         const k = Object.keys(el).find(x => x.startsWith('__reactFiber')); let topo = k && el[k];

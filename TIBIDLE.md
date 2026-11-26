@@ -7656,3 +7656,23 @@ no lugar do Haste).
 - A fuga do aviso não apaga mais o baú como alvo, e no empate escolhe a saída para o lado dele (ao vivo: alvo piscava baú/—, 24 s para 49 casas).
 - Testado sem ganho (fica desligado no código): correr em linha reta no fim (`retaDepois`/`pesoReta`, `svDirecaoLivre`) e furar o anel na
   troca de capítulo; menos/mais moagem; fugir do alcance do conjurador; barra de passivas de sobrevivência (−4 a −9); largar cristais (−7).
+
+## 2.63.0 (26/11) — Sobrevivência: abertura estrita com troca de cartas e fuga do aviso sem vai-e-volta
+- Ao vivo (2.62.0, ShamanBr, 5 buffs, 3 trocas): **138 aos 14:45 — recorde** (era 127), caiu 15 s antes do Reaper com 3 bosses vivos.
+  Antes, a partida da queda de luz voltou sozinha (o jogo guarda a run) e fechou em 124 aos 11:23.
+- Agente comparou o bundle de hoje com a cópia do simulador: **o jogo não mudou** (SHA-1 e catálogos iguais). A partida abre no nível 22
+  ("o cristal deu 21 níveis") desde antes — degrau inicial 70 vem do servidor. A abertura de 21 cartas decide a build: magia fora da
+  build valia 50 e tomava a vaga para sempre (Groundshaker + Annihilation, sem Front Sweep); a troca só disparava com nota < 0.
+- `cartaEstrita` (svNotaCarta): enquanto sobra troca na partida (`C.trocas` = escolha da aba, `st.rerolls` < trocas), magia fora da build
+  = −80 e passiva que não é par da build = −90/−100 → o robô troca a oferta; passiva par de magia da build que ainda não veio = 200.
+  Sem troca, regra antiga. Simulador, 24 partidas: estrita sem troca 129,4 (pior, por isso o portão); atual 132,5; atual + 3 trocas 134,6;
+  2.63 + 3 trocas 134,7 com 10/24 aos 15:00 (7/24 antes). A 1ª oferta do simulador sempre traz o Front Sweep — ao vivo o ganho deve ser maior.
+  Ressalva: o recorde de 138 saiu SEM a build preferida (★Brutal, ★Inflict Wound, ★Annihilation, Groundshaker 8 sem U).
+- Legista ao vivo (caixa-preta 5/s): ~65 % dos golpes evitáveis — vai-e-volta dentro do aviso (bicho entrando na rota trocava o lado da
+  fuga a cada 50 ms) e fuga entrando na horda (−15 % com 8 colados). `svFugaComRelogio`: direção guardada ganha `fugaFica` passo de
+  desconto; cada bicho vizinho custa `fugaHorda` passo; destino com ≥ `fugaLivres` casas livres (senão o 1º seguro). Simulador, 48
+  partidas, 3 trocas: 135,5 → 136,2. Testados sem ganho (ficam desligados): cristal/fogueira longe de boss (`longeBoss`), fugir de boss
+  sempre a 6 casas (`fogeBossSempre`), parar de moer depois dos 9:00 ou com 2+ avisos (`moerAte`/`moerAvisos`).
+- Pendências vistas ao vivo: (1) 0–210 s a cota não enche (um nível a cada ~18 s; ~5 de ameaça perdidos) — poucos bichos e magias baixas;
+  (2) dos 526 s ao fim o nível parou em 55 com ~400 cristais no chão (teto do jogo ou cristal deixado para trás?) → sem carta de poção no fim.
+- sim.js agora faz troca de cartas (`cfg.trocas`), igual ao svQuerReroll.

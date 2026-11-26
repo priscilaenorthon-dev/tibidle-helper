@@ -161,4 +161,17 @@ t('2.62.0: fugindo do aviso, o baú continua sendo o alvo', () => {
     A.svDecidir(st, B, A.SV_CFG);
     assert.ok(B.alvo && B.alvo.tipo === 'bau');
 });
+t('2.63.0: abertura estrita — magia fora da build troca a oferta enquanto sobra troca; sem troca, regra antiga', () => {
+    const st = estado({ baralho: { magias: [{ nome: 'Inflict Wound', nivel: 3 }], passivas: [{ nome: 'Recovery', nivel: 1 }],
+        oferta: [{ especie: 'magia-nova', magia: 'Groundshaker' }, { especie: 'magia-nova', magia: 'Annihilation' }, { especie: 'passiva-nova', passiva: 'Sabedoria' }] } });
+    st.telasDevidas = ['nivel']; st.rerolls = 0;
+    const C3 = Object.assign({}, A.SV_CFG, { trocas: 3 });
+    assert.strictEqual(A.svQuerReroll(st, C3, 3), true, 'só magia fora da build + passiva sem par → troca');
+    assert.ok(A.svNotaCarta(st, st.baralho.oferta[0], C3) < 0);
+    const semTroca = Object.assign({}, st, { rerolls: 3 });
+    assert.ok(A.svNotaCarta(semTroca, st.baralho.oferta[0], C3) > 0, 'trocas acabaram → magia fora da build volta a valer (vaga vazia é pior)');
+    assert.ok(A.svNotaCarta(st, st.baralho.oferta[0], A.SV_CFG) > 0, 'trocas "nunca" → regra antiga');
+    const haste = { especie: 'passiva-nova', passiva: 'Haste' };
+    assert.strictEqual(A.svNotaCarta(st, haste, C3), 200, 'par de magia da build que ainda não veio reserva a vaga');
+});
 console.log(`\n${n} testes ok`);
