@@ -7578,3 +7578,14 @@ elemental 50 mil, Dano 65 mil, Roubo de vida 45 mil, Crítico 13 mil = 250 mil c
 Antes de cada partida (COMEÇAR PARTIDA ou recomeçar sozinho) o robô deixa a loja do jogo igual à escolha (`svBuffsParaClicar`, clica só
 o que difere) e só então começa; o jogo cobra ao começar. Sem ouro, o jogo não cobra e não começa. Simulador: os 5 = +9 de ameaça
 média, Velocidade sozinha +5. Teste novo em `testes/arena.test.js` (535 no total).
+
+## 2.58.1 (26/11) — Sobrevivência: build do 115 e "não ficar cercado"
+
+Dono: "verifica de onde vêm os maiores danos e tenta matar eles se for do boss". Motor instrumentado no simulador
+(`.playwright-mcp/sim/quem.js`, etiqueta em cada dano no Knight), 10 partidas com a regulagem da 2.58 e os 5 buffs:
+avisos de conjurador 53 % (32 % de vivos + 21 % de aviso que cai depois do dono morrer), corpo a corpo de bicho comum 37 %
+(Hand of Cursed Fate, Haunted Burster, Phantasm), boss 3 %. Matar boss não reduz o dano; o golpe pega quando o Knight está cercado
+no meio da multidão. Testado (30 sementes, 5 buffs): caçar conjurador 118–119 (pior); casa livre mínima 121 (≈ ruído, entra:
+`saidaMin 3`); build preferida Whirlwind Throw + Front Sweep + Annihilation + Inflict Wound = a do 115 ao vivo, 120 contra 117 (entra
+como padrão). Teto ≈ 120 de média com o Knight de nível 244; o ranking guarda a melhor partida, então partidas repetidas sobem o
+recorde (máx. 132–141 nas 30 sementes). Teste novo em `testes/arena.test.js` (536 no total).

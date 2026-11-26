@@ -58,7 +58,13 @@ t('cartas: sem vaga sobrando, passiva que não é par fica de fora', () => {
 });
 t('cartas: os nomes do motor (magia-nova / passiva-nova) — erro de 26/11, quando nova-* nunca casava', () => {
     const st = estado({ baralho: { magias: [], passivas: [], oferta: [{ especie: 'magia-nova', magia: 'Berserk' }] } });
-    assert(A.svNotaCarta(st, st.baralho.oferta[0], A.SV_CFG) >= 90);
+    assert(A.svNotaCarta(st, st.baralho.oferta[0], Object.assign({}, A.SV_CFG, { magiasPreferidas: [] })) >= 90);
+});
+t('2.58.1: build preferida (a do 115) ganha de magia de fora, e a de fora ainda entra se não vier outra', () => {
+    const st = estado({ baralho: { magias: [], passivas: [], oferta: [{ especie: 'magia-nova', magia: 'Berserk' }, { especie: 'magia-nova', magia: 'Front Sweep' }] } });
+    assert.strictEqual(A.svEscolherCarta(st, A.SV_CFG), 1);
+    const so = estado({ baralho: { magias: [], passivas: [], oferta: [{ especie: 'magia-nova', magia: 'Berserk' }, { especie: 'nivel-de-passiva', passiva: 'Protector' }] } });
+    assert.strictEqual(A.svEscolherCarta(so, A.SV_CFG), 0);
 });
 t('Reaper: foge dele mesmo com baú perto', () => {
     const st = estado({ reaper: { x: 3, y: 0 }, itens: [{ id: 1, tipo: 'bau', x: 4, y: 0 }] });

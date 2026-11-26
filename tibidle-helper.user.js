@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.58.0
+// @version      2.58.1
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.58.0';
+    const VERSAO = '2.58.1';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -11622,7 +11622,9 @@
         pesoMoer: 0.8, raioMoer: 3, vidaMoer: 0.3, densMax: 12,
         cacarBoss: true, cacarComUlt: true, reservarPar: true, vidaCaca: 0.4, distBoss: 1, pesoBoss: 1.5, medoDoAlvo: 0.1,
         /* cartas: ordem das magias preferidas (a passiva de par vem junto); vazio = qualquer uma */
-        magiasPreferidas: [], passivasExtras: ['Sorte', 'Ímã', 'Sabedoria'], curaAbaixo: 0.5
+        /* 2.58.1 — a build do 115 ao vivo; no simulador (5 buffs, 30 sementes) 120 de média contra 117 sem preferência */
+        magiasPreferidas: ['Whirlwind Throw', 'Front Sweep', 'Annihilation', 'Inflict Wound'], passivasExtras: ['Sorte', 'Ímã', 'Sabedoria'], curaAbaixo: 0.5,
+        saidaMin: 3, pesoSaida: 1
     };
     const SV_DIRS = []; for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) if (dx || dy) SV_DIRS.push([dx, dy]);
 
@@ -11707,6 +11709,12 @@
             if (aviso.has(x1 + ',' + y1)) nota -= C.fugaDura !== false ? 1000 : C.pesoAviso;
             if (aviso.has(x2 + ',' + y2)) nota -= C.pesoAviso / 3;
             if (ocupado.has(x1 + ',' + y1)) nota -= 5;
+            /* 2.58.1 — no meio da multidão, não ficar sem casa livre para fugir do aviso (cercado = o golpe pega) */
+            if (C.saidaMin) {
+                let livres = 0;
+                for (const [ex, ey] of SV_DIRS) { const k = (x1 + ex) + ',' + (y1 + ey); if (!ocupado.has(k) && !aviso.has(k)) livres++; }
+                if (livres < C.saidaMin) nota -= C.pesoSaida * (C.saidaMin - livres);
+            }
             /* moer: com vida boa, ficar onde há mais bicho comum ao alcance das áreas (a ameaça sobe com o dano causado) */
             if (C.pesoMoer && hp >= C.vidaMoer && !st.reaper) {
                 let dens = 0; const r = C.raioMoer;
