@@ -201,6 +201,24 @@ t('trXpAtual / trRecDe / trMortesRecentes', () => {
     assert.strictEqual(T.trMortesRecentes(foto({ t: 0, mortes: f.mortes }), T.TR_BASE, 7).length, 0, 'sem foto.t não há "recente"');
 });
 
+// teste ao vivo 27/11: logo depois de trocar de mapa o analisador tinha 0,4 min (35 mil XP/h) e virou "a XP/h de agora"
+t('trXpAtual: medida de agora com menos de 5 min não vale (cai na medida do mapa)', () => {
+    const h = huntSN({ id: 222 });
+    assert.strictEqual(T.trXpAtual(foto({ hunt: h, medidoAtual: { xpH: 34667, min: 0.4 }, mapas: [mapa(222, 'Shadow Nexus', 520000)] })), 520000);
+    assert.strictEqual(T.trXpAtual(foto({ hunt: h, medidoAtual: { xpH: 34667, min: 0.4 } })), null);
+    assert.strictEqual(T.trXpAtual(foto({ hunt: h, medidoAtual: { xpH: 540000, min: 5 } })), 540000);
+});
+t('upar: sessão recém-aberta (0,4 min) não manda trocar de mapa nem diz "rende 35 mil"', () => {
+    const f = foto({ nivel: 251, hunt: huntSN({ id: 222 }), medidoAtual: { xpH: 34667, min: 0.4 },
+        mapas: [mapa(222, 'Shadow Nexus', 520000), mapa(2, 'Summer Court', 500000)] });
+    const cs = T.trAgenteUpar(f, T.TR_BASE);
+    assert.strictEqual(acoes(cs, 'ir-mapa').length, 0);
+    assert(!cs.some(c => /35 mil/.test(c.porque || '')), cs.map(c => c.porque).join(' | '));
+    const f2 = foto({ nivel: 251, hunt: huntSN({ id: 222 }), medidoAtual: { xpH: 34667, min: 0.4 },
+        mapas: [mapa(222, 'Shadow Nexus', 520000), mapa(2, 'Summer Court', 540000)] });
+    assert.strictEqual(acoes(T.trAgenteUpar(f2, T.TR_BASE), 'ir-mapa').length, 0, '+4 % não passa os 10 %');
+});
+
 // ── Task 4: Onde upar
 t('upar: atual 540k × Summer Court medido 650k → ir-mapa com +20,4 %', () => {
     const f = foto({ nivel: 238, hunt: huntSN(), medidoAtual: { xpH: 540000 },
@@ -915,7 +933,8 @@ t('bestiário: bônus de dano passa pelo teto de spawn — limitada por spawn �
     assert.strictEqual(best(fBest({ bestiario: [lb(7, 'Otherworld Zao', 'magicLevel', 6, 500000, { ganho: 2 })] }))[0].impacto, 6);
     assert.strictEqual(best(fBest({ bestiario: [lb(8, 'Warzone I - Fungus', 'manaRegen', 5, 500000, { ganho: 3 })] }))[0].impacto, 1);
     // sem medida da limitação: 3 × 0,7
-    assert(Math.abs(best(fBest({ bestiario: r, medidoAtual: { xpH: 540000, min: 2 } }))[0].impacto - 2.1) < 1e-12);
+    // (a XP/h de agora vem do mapa: a medida de 2 min não vale desde o teste ao vivo de 27/11)
+    assert(Math.abs(best(fBest({ bestiario: r, medidoAtual: { xpH: 540000, min: 2 }, mapas: [mapa(1, 'Shadow Nexus', 540000)] }))[0].impacto - 2.1) < 1e-12);
 });
 t('bestiário: horas desconhecidas ou bônus fora da prioridade → ignorado', () => {
     for (const r of [lb(7, 'Otherworld Zao', 'magicLevel', null, 500000), lb(7, 'Otherworld Zao', 'capacity', 2, 500000)]) {

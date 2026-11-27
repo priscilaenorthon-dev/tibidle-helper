@@ -12006,10 +12006,13 @@
         const st = foto.ilhas.find(x => x && [x.id, x.nome].some(v => v != null && nomes.includes(String(v).toLowerCase())));
         return !!(st && st.aberta === false);
     }
+    // A medida de agora (analisador) vale como XP/h? Só com ≥ 5 min (teste ao vivo 27/11: 0,4 min depois de trocar de mapa = 35 mil
+    // XP/h, e o Upar comparava os mapas com isso). min ausente = vale (foto antiga/teste).
+    const trMaValida = (ma) => !!ma && trNum(ma.xpH) > 0 && !(trNum(ma.min) < 5);
     // XP/h de agora: o analisador da caçada (medidoAtual) ou, sem ele, a medida do mapa da caçada em foto.mapas. null = não sei.
     function trXpAtual(foto) {
         const ma = foto.medidoAtual, h = foto.hunt;
-        if (ma && trNum(ma.xpH) > 0) return Number(ma.xpH);
+        if (trMaValida(ma)) return Number(ma.xpH);
         const m = h && Array.isArray(foto.mapas) ? foto.mapas.find(x => x && trMesmoId(x.id, h.id)) : null;
         return m && trNum(m.xpH) > 0 ? Number(m.xpH) : null;
     }
@@ -12161,7 +12164,7 @@
         const daCacada = hunt ? mapas.find(m => trMesmoId(m.id, hunt.id)) || null : null;
         const xpAtual = trXpAtual(foto);
         // nota de agora na mesma régua: o analisador vale como medido; a medida do mapa, pelo peso da fonte dela
-        const notaAtual = xpAtual == null ? null : ma && trNum(ma.xpH) > 0 ? xpAtual : xpAtual * trPeso(daCacada && daCacada.fonte);
+        const notaAtual = xpAtual == null ? null : trMaValida(ma) ? xpAtual : xpAtual * trPeso(daCacada && daCacada.fonte);
         return { nivel, hunt, ma, mapas, ilhaDe, nota, melhorDe, cand, fechados, melhor: melhorDe(cand), melhorFechado: melhorDe(fechados), daCacada, xpAtual, notaAtual };
     }
     // O que falta para abrir uma ilha de base.ilhas: materiais (falta = qtd − depósito, preço do Mercado) e custo (ouro + a parte com preço).
@@ -21057,7 +21060,7 @@
         const tp = foto.topo, ma = foto.medidoAtual;
         const sit = [foto.nivel ? 'nível ' + foto.nivel : null,
                      tp && tp.pos && tp.idadeH != null ? `${tp.pos}º de ${tp.total}` : null,
-                     ma && ma.xpH > 0 ? trQtd(ma.xpH) + ' XP/h raw' : null,
+                     trMaValida(ma) ? trQtd(ma.xpH) + ' XP/h raw' : ma && ma.xpH > 0 ? `medindo (${trPct(ma.min)} min)` : null,
                      Number.isFinite(foto.ouroLivre) ? 'livre ' + trQtd(foto.ouroLivre) : null].filter(Boolean);
         let h = `<div class="tr-sit tb-mut">${escHtml(sit.join(' · ') || 'entre no jogo para eu ler a conta')}</div>`;
         if (TR.agindo) h += `<div class="tb-av tr-sit">fazendo: ${escHtml(TR.agindo)}…</div>`;
