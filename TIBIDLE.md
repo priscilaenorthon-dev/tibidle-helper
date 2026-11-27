@@ -7805,3 +7805,18 @@ no lugar do Haste).
   ENCERRAR → "partida acabou — robô desligado" no mesmo segundo; F5 com o robô ligado e sem partida → desligou em ~90 s.
   Armadilhas do teste: com a partida aberta a gaveta do helper fica oculta (o DOM do botão fica velho até reabrir); depois de
   recarregar, o jogo cai no lobby "Seu grupo" e JOGAR não acha o medalhão até ENTRAR NO JOGO. 2 testes novos em `testes/arena.test.js`.
+- **Arma comprada para o capítulo 15 (27/11, 17:30)**: magic longsword (55) NÃO é negociável neste jogo (fora do `/tradeable`);
+  hammer/chopper/slayer of destruction (53/52/52) e axe of destruction (51) sem anúncio. Comprada **jungle flail** (ataque 52, 2 mãos,
+  nível 150) por 218.999 (`market_execute`, cai na mochila). Partida grátis no Dragon Lair com ela vestida (sem escudo):
+  **forca 187 → degrauInicial 75** (servidor confirmou ameaçaInicial 75 no `run_over`). +2 de ataque deu +4 de forca (de 183 caçando);
+  limiar do cap. 15 entre 184 e 187. Teto novo ≈ 75 + 75 + 1 = 151 (10º do ranking = 152). A flail ficou no depósito (é Comum: a
+  venda automática poderia levá-la); para caçar, o Knight voltou a stonecutter + great shield.
+- **Partida valendo com a flail (27/11, 17:31, 2.66.0 do Tampermonkey, 5 buffs + 3 trocas, party no Dragon Lair)**: forca 187,
+  inicial 75, ritmo cheio (+5/min) do 1º ao 12º minuto (86 aos 2:43, 108 aos 7:13, 130 aos 11:33) e **morte aos 12:55 com 137**
+  (`causaDaMorte` stone-eater, 5 bosses, 14.609 abates, 3 ultimates: Brutal Strike, Whirlwind Throw, Inflict Wound — Annihilation sem).
+  Posição da partida 37º; a melhor segue 142 (18º). Com a inicial 70 a u2tag chegava viva aos 15:00 (139–142); começar 5 degraus acima
+  deixa a escada 5 degraus mais dura a partida inteira e o fim (cap. 28, Stone-eater) matou. Se sobrevivesse: ~151.
+  Gasto: buffs ~250 mil + 3 trocas 450 mil (+ flail 219 mil). As 3 trocas saíram na abertura (2 s entre elas).
+  A 2.66.0 anotou a partida e desligou o robô sozinha na morte. Sem escudo na partida (flail de 2 mãos): não se sabe se pesou — o motor
+  (agente, 26/11) não lista defesa do escudo entre o que conta. Teste possível: corpo com a flail (forca 187) e PINO de stonecutter +
+  great shield no "Equipamento da partida" (pino não muda a forca).
