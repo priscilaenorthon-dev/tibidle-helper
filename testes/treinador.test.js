@@ -268,7 +268,7 @@ t('upar: já no melhor mapa medido → estado ok e sem ir-mapa', () => {
     assert(cs.some(c => c.estado === 'ok' && /melhor mapa/.test(c.titulo)));
 });
 // lure: evidência + modelo do teto de spawn
-const ses = (morte, extra) => Object.assign({ hunt: 'Shadow Nexus', huntId: 1, dur: 60, xpH: 500000, ouroH: 0, morte }, extra || {});
+const ses = (morte, extra) => Object.assign({ hunt: 'Shadow Nexus', huntId: 1, durMin: 60, xpH: 500000, ouroH: 0, morte }, extra || {});
 t('upar: lure com sessões sem morte e limitação desconhecida → subir 1 degrau, impacto 8', () => {
     const base = { nivel: 238, hunt: huntSN({ lure: 2 }), mapas: [mapa(1, 'Shadow Nexus', 540000)] };
     let l = acoes(T.trAgenteUpar(foto(Object.assign({ sessoes: [ses(true), ses(false), ses(false)] }, base)), T.TR_BASE), 'lure');
@@ -684,6 +684,16 @@ t('erros: a party inteira no mesmo instante = 1 evento ("1 morte (party inteira)
     assert.strictEqual(c.numeros.n, 1); assert.strictEqual(c.titulo, '1 morte (party inteira) em Shadow Nexus');
     assert(Math.abs(c.impacto - 1 / 7 * 0.0227 * 254e6 / (540000 * 24) * 100) < 1e-6, String(c.impacto));
 });
+t('erros: "party inteira" só quando UM evento tem as 4 vocações (K+P e S+D separados não)', () => {
+    const mortes = [['KNIGHT', 0], ['PALADIN', 0], ['SORCERER', 2 * H], ['DRUID', 2 * H]].map(([voc, dt]) => ({ t: 1.8e12 - 3 * H + dt, hunt: 'Shadow Nexus', huntId: 1, voc }));
+    const c = erro(fErros({ bencaos: { tem: 0 }, mortes }), 'mortes');
+    assert.strictEqual(c.numeros.n, 2); assert(!/party inteira/.test(c.titulo), c.titulo);
+    assert.strictEqual(c.titulo, '2 mortes (Cavaleiro, Paladino, Feiticeiro, Druida) em Shadow Nexus');
+});
+t('erros: sessão com só "dur" (segundos, formato antigo) não conta: a foto usa durMin', () => {
+    const sessoes = [ses(false, { xpH: 800000, durMin: undefined, dur: 3600 }), ses(false, { xpH: 800000, durMin: undefined, dur: 3600 })];
+    assert.strictEqual(erro(fErros({ sessoes, medidoAtual: { xpH: 400000, min: 10, ouroH: 0 } }), 'xp-caiu'), undefined);
+});
 t('erros: muitas mortes → teto de 50 no ranking; o porquê mostra o bruto e o teto', () => {
     const mortes = Array.from({ length: 10 }, (_, k) => ({ t: 1.8e12 - (k * 12 + 1) * H, hunt: 'Shadow Nexus', huntId: 1, voc: 'DRUID' }));
     const c = erro(fErros({ bencaos: { tem: 0 }, mortes }), 'mortes');
@@ -769,7 +779,7 @@ t('erros: XP/h < 70 % da melhor sessão do mesmo mapa (≥ 2 sessões) → aviso
     assert.strictEqual(erro(fErros({ sessoes, medidoAtual: { xpH: 400000, min: 3, ouroH: 0 } }), 'xp-caiu'), undefined, 'medida curta');
 });
 t('erros: sessão curta (< 5 min) não vale como "melhor" nem conta para as 2 sessões', () => {
-    const sessoes = [ses(false, { xpH: 2e6, dur: 3 }), ses(false, { xpH: 600000 }), ses(false, { xpH: 550000 })];
+    const sessoes = [ses(false, { xpH: 2e6, durMin: 3 }), ses(false, { xpH: 600000 }), ses(false, { xpH: 550000 })];
     assert.strictEqual(erro(fErros({ sessoes, medidoAtual: { xpH: 500000, min: 10, ouroH: 0 } }), 'xp-caiu'), undefined);
     assert.strictEqual(erro(fErros({ sessoes: sessoes.slice(0, 2), medidoAtual: { xpH: 100000, min: 10, ouroH: 0 } }), 'xp-caiu'), undefined, 'só 1 sessão longa');
 });

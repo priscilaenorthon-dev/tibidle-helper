@@ -11860,7 +11860,8 @@
     //   party: [{ voc, skills: { melee, dist, ml, escudo }, eq: { SLOT: { nome, refino, raridade, potencia, atributos: [{ id, valor }], imbuSlots, imbu: [], duasMaos? } } }]
     //          SLOT ∈ TR_SLOTS; slot vazio = ausente/null/sem nome; duasMaos = attrs.slotType === 'two-handed' (sem a dica, vale o nome: TR_BASE.equip.duasMaosNomes)
     //   checklist: { VOC: [{ chave, ok, titulo, texto }] } | null — o mlChecklist da aba Melhorias (régua "ficar forte" da comunidade)
-    //   mortes: [{ t, hunt, huntId, voc }] · sessoes: [{ hunt, huntId, dur, xpH, ouroH, morte }] em ordem de tempo (a última no fim)
+    //   mortes: [{ t, hunt, huntId, voc }] · sessoes: [{ hunt, huntId, durMin, xpH, ouroH, morte }] em ordem de tempo (a última no fim)
+    //          durMin = duração em MINUTOS (a foto converte o `dur` em segundos do helper ÷ 60)
     //   chaves: { usadas, max, elites: [{ nome, qtd }] } | null · deposito: { nomeItem: qtd } (depósito + mochila; nomes comparados sem maiúsculas)
     //   invasao: { inscrito, proxima } | null · precos: { nomeItem: ouro } (nomes sem maiúsculas)
     //   topo: { pos, total, top1, idadeH, perto: [{ nome, nivel, skills: { melee, dist, ml } }], perfis: [{ nivel, voc: { VOC: { SLOT: nomeItem } } }] } | null
@@ -12414,7 +12415,8 @@
         const eventos = trEventosMorte(foto, b, 1);
         if (eventos.length) {
             const n = eventos.length, quem = [...new Set(eventos.flatMap(e => e.vocs))];
-            const todos = Object.keys(TR_VOC_PT).every(v => quem.includes(v));
+            // "party inteira" = algum EVENTO com as 4 vocações (não a soma de eventos separados)
+            const todos = eventos.some(e => Object.keys(TR_VOC_PT).every(v => e.vocs.includes(v)));
             const porMapa = {};
             for (const e of eventos) {
                 const k = e.hunt || (hunt && trMesmoId(e.huntId, hunt.id) ? hunt.title : null);
@@ -12490,7 +12492,7 @@
         const curta = ma && trNum(ma.xpH) > 0 && trNum(ma.min) < 5;
         let sessoesVistas = false;
         if (hunt && xpH > 0 && !curta) {
-            const daqui = (Array.isArray(foto.sessoes) ? foto.sessoes : []).filter(s => s && trMesmoId(s.huntId, hunt.id) && trNum(s.xpH) > 0 && trNum(s.dur) >= 5);
+            const daqui = (Array.isArray(foto.sessoes) ? foto.sessoes : []).filter(s => s && trMesmoId(s.huntId, hunt.id) && trNum(s.xpH) > 0 && trNum(s.durMin) >= 5);
             sessoesVistas = daqui.length >= 2;
             const melhor = daqui.length >= 2 ? Math.max(...daqui.map(s => Number(s.xpH))) : 0;
             if (melhor > 0 && xpH < 0.7 * melhor) {
