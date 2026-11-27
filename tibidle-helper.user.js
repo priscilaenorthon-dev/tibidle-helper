@@ -5242,10 +5242,7 @@
         /* v2.11 — analisador zerado (botão da janela ou o Scan): a sessão do
          * Analisador fecha aqui — as contas dela partiam do zero antigo. */
         if (o.type === 'analyzer_reset') { if (SESSAO) fecharSessao('analisador zerado'); }
-        /* v2.22.0 — Legado, Loyalty e o snapshot do grupo (dano recebido por elemento, por personagem) */
-        if (o.type === 'legacy_state') { ESTADO_WS.legado = { ativo: d.ativo === true, personagens: Array.isArray(d.personagens) ? clonar(d.personagens) : [] }; return; }
-        if (o.type === 'loyalty_update') { ESTADO_WS.loyalty = { points: Number(d.points) || 0, level: Number(d.level) || 0, bonus: Number(d.bonus) || 0, t: Date.now() }; return; }
-        if (o.type === 'party_snapshot' && Array.isArray(d.members)) { ESTADO_WS.snap = Object.assign({ t: Date.now(), huntId: ESTADO_WS.huntId }, clonar(d)); return; }
+        /* v2.22.0 — Legado, Loyalty e o snapshot do grupo: 2.67.0 moveu para observarRecebido (são mensagens RECEBIDAS; aqui nunca chegavam) */
     }
     function observarRecebido(o) {
         try { observarProgresso(o); } catch { } // v2.11 — aba Progresso: só leitura (chaves, bestiário, prey, plano offline)
@@ -5259,6 +5256,11 @@
         try { radarObservar(o); } catch (e) { falhou('radar (observar)', e); } // v2.13.0 — aba Radar: loot ao vivo e o dia (só leitura)
         if (!o || !o.type) return;
         const d = (o.data && typeof o.data === 'object') ? o.data : {};
+        /* v2.22.0 — Legado, Loyalty e o snapshot do grupo (dano recebido por elemento, por personagem). 2.67.0: estavam em observarEnviado,
+         * mas o servidor é quem MANDA estas três — ESTADO_WS.legado/loyalty/snap nunca enchiam (legacy_state visto ao vivo em 27/11). Mesmo formato. */
+        if (o.type === 'legacy_state') { ESTADO_WS.legado = { ativo: d.ativo === true, personagens: Array.isArray(d.personagens) ? clonar(d.personagens) : [] }; return; }
+        if (o.type === 'loyalty_update') { ESTADO_WS.loyalty = { points: Number(d.points) || 0, level: Number(d.level) || 0, bonus: Number(d.bonus) || 0, t: Date.now() }; return; }
+        if (o.type === 'party_snapshot') { if (Array.isArray(d.members)) ESTADO_WS.snap = Object.assign({ t: Date.now(), huntId: ESTADO_WS.huntId }, clonar(d)); return; }
         if (o.type === 'depot_state' && Array.isArray(d.entries)) {
             ESTADO_WS.depot = { entries: clonar(d.entries), used: d.used, total: d.total }; ESTADO_WS.depot_t = Date.now();
             ESTADO_WS.depotReal = ESTADO_WS.depot; // v2.29.1 — o depósito inteiro (gemas, fragmentos, pilhas), que a foto do Equip não tem
@@ -6822,7 +6824,7 @@
             ouroH: Math.round(dOuro / dur * 3600),
             expH: dExp != null ? Math.round(dExp / dur * 3600) : null,
             /* 2.67.0 — XP RAW (sem party/premium/prey/boost): o treinador compara mapas e sessões nessa base */
-            expRawH: anOk && a0.anXpRaw > 0 && aN.anXpRaw >= a0.anXpRaw ? Math.round((aN.anXpRaw - a0.anXpRaw) / dur * 3600) : null,
+            expRawH: anOk && a0.anXpRaw != null && aN.anXpRaw != null && aN.anXpRaw >= a0.anXpRaw ? Math.round((aN.anXpRaw - a0.anXpRaw) / dur * 3600) : null,
             abates: dAbates, abatesH: dAbates != null ? Math.round(dAbates / dur * 3600) : null,
             mochilaPctMax: Math.round(pctMax * 100),
             suja, regen,
@@ -20324,9 +20326,6 @@
             if (ch && Number(ch.level) > 0) (x.conta || (x.conta = {})).nivel = Number(ch.level);
             return;
         }
-        /* legacy_state é RECEBIDO, mas o tratamento da 2.22.0 ficou em observarEnviado: ESTADO_WS.legado nunca enchia (visto ao vivo em 27/11:
-         * {ativo: true, personagens: [{vocation, visto}]}). Mesmo formato de lá; legadoDaConta passa a funcionar. */
-        if (tipo === 'legacy_state') { ESTADO_WS.legado = { ativo: d.ativo === true, personagens: Array.isArray(d.personagens) ? clonar(d.personagens) : [] }; return; }
         const meta = d.meta && typeof d.meta === 'object' ? d.meta : tipo === 'meta_state' ? d : null;
         if (meta) {
             if (Array.isArray(meta.blessings)) x.bencaos = { ids: meta.blessings.map(Number).filter(Number.isFinite), t: agora };
@@ -20394,19 +20393,19 @@
             try { fn(); } catch (e) { if (!TR.avisados.has(nome)) { TR.avisados.add(nome); falhou('treinador (foto: ' + nome + ')', e); } }
         };
         const hs = CAT.hunts || [], huntDe = (id) => hs.find(h => h && trMesmoId(h.id, id)) || null;
+        // regra dos blocos: montar numa variável local e só atribuir ao `f` no fim — um bloco que quebra no meio não deixa campo pela metade
         bloco('base', () => {
             const el = tid('rail-level-n') || tid('mobile-hud-level'), nDom = el ? parseInt((el.textContent || '').replace(/\D/g, ''), 10) : NaN;
-            const fr = ESTADO_WS.frame;
-            f.nivel = nDom > 0 ? nDom : fr && fr.nivel > 0 ? Number(fr.nivel) : x.conta && x.conta.nivel > 0 ? x.conta.nivel : null;
-            f.xpTotal = x.conta && x.conta.xp > 0 ? x.conta.xp : null;
-            f.emHunt = emHunt();
-            f.naCidade = !f.emHunt;
+            const fr = ESTADO_WS.frame, eh = emHunt();
+            const nivel = nDom > 0 ? nDom : fr && fr.nivel > 0 ? Number(fr.nivel) : x.conta && x.conta.nivel > 0 ? x.conta.nivel : null;
+            Object.assign(f, { nivel, xpTotal: x.conta && x.conta.xp > 0 ? x.conta.xp : null, emHunt: eh, naCidade: !eh });
         });
         bloco('ouro', () => {
             const fr = frameFresco() && ESTADO_WS.frame.balance != null ? Number(ESTADO_WS.frame.balance) : null;
             const pe = PROG.estado && agora - PROG.estado.t < 10 * 60000 ? PROG.estado : null;
-            f.ouro = Number.isFinite(fr) ? fr : pe && pe.ouro != null ? pe.ouro : x.conta && Number.isFinite(x.conta.ouro) ? x.conta.ouro : null;
-            f.ouroTravado = pe && pe.trav != null ? pe.trav : x.conta && Number.isFinite(x.conta.trav) ? x.conta.trav : null;
+            const ouro = Number.isFinite(fr) ? fr : pe && pe.ouro != null ? pe.ouro : x.conta && Number.isFinite(x.conta.ouro) ? x.conta.ouro : null;
+            const trav = pe && pe.trav != null ? pe.trav : x.conta && Number.isFinite(x.conta.trav) ? x.conta.trav : null;
+            Object.assign(f, { ouro, ouroTravado: trav });
         });
         bloco('premium', () => {
             const ate = x.conta && 'premiumAte' in x.conta ? x.conta.premiumAte : MK.premiumAte;
@@ -20419,9 +20418,10 @@
             const lt = h && Array.isArray(h.lureTiers) ? h.lureTiers.map(z => ({ min: trNum(z && z.min), max: trNum(z && z.max) })) : [];
             const salvo = ESTADO_WS.lureTierByHunt ? trNum(ESTADO_WS.lureTierByHunt[id]) : NaN;
             const lure = fr && trNum(fr.lureTier) > 0 ? Number(fr.lureTier) : salvo > 0 ? salvo : null;
-            f.hunt = { id: Number(id), title: h ? h.title : null, lure, maxLure: lt.length || (h && trNum(h.maxLure) > 0 ? Number(h.maxLure) : null),
-                       lureTiers: lt, levelMin: h && trNum(h.levelMin) > 0 ? Number(h.levelMin) : null, ilha: trIlhaCat(h) };
-            f.hunt.rec = trRecDe(f.hunt, TR_BASE);
+            const hunt = { id: Number(id), title: h ? h.title : null, lure, maxLure: lt.length || (h && trNum(h.maxLure) > 0 ? Number(h.maxLure) : null),
+                           lureTiers: lt, levelMin: h && trNum(h.levelMin) > 0 ? Number(h.levelMin) : null, ilha: trIlhaCat(h) };
+            hunt.rec = trRecDe(hunt, TR_BASE);
+            f.hunt = hunt;
         });
         bloco('medidoAtual', () => {
             const an = frameFresco() && ESTADO_WS.frame.an ? ESTADO_WS.frame.an : null;
@@ -20443,8 +20443,9 @@
             // o estado padrão do cliente traz unlockedIslands [] e tudo virava "fechado" (visto ao vivo em 27/11)
             let sh = null;
             if (!x.ilhas) { try { sh = lerShellFibra(); } catch { sh = null; } }
-            abertas = x.ilhas ? x.ilhas.lista : sh && Array.isArray(sh.roster) && sh.roster.length && Array.isArray(sh.unlockedIslands) ? sh.unlockedIslands.map(String) : null;
-            if (abertas) f.ilhas = (TR_BASE.ilhas || []).map(i => ({ id: i.id, nome: i.nome, aberta: abertas.includes(i.id) }));
+            const lista = x.ilhas ? x.ilhas.lista : sh && Array.isArray(sh.roster) && sh.roster.length && Array.isArray(sh.unlockedIslands) ? sh.unlockedIslands.map(String) : null;
+            if (lista) f.ilhas = (TR_BASE.ilhas || []).map(i => ({ id: i.id, nome: i.nome, aberta: lista.includes(i.id) }));
+            abertas = lista;
         });
         bloco('mapas', () => {
             const porId = new Map(), peso = { medido: 3, comunidade: 2, wiki: 1, estimado: 0 };
@@ -20561,7 +20562,7 @@
             const rm = ler('radar_mortes', {}) || {}, out = [], desde = agora - 30 * TR_DIA;
             for (const [id, z] of Object.entries(rm)) {
                 if (!z || typeof z !== 'object') continue;
-                const hunt = (huntDe(id) || {}).title || null, huntId = trNum(id);
+                const hunt = (huntDe(id) || {}).title || null, huntId = Number.isFinite(trNum(id)) ? Number(id) : null;
                 const laudos = (Array.isArray(z.laudos) ? z.laudos : []).filter(l => l && l.tipo === 'morte' && trNum(l.t) >= desde);
                 for (const l of laudos) out.push({ t: Number(l.t), hunt, huntId, voc: VOCS.includes(l.voc) ? l.voc : null, fonte: 'autópsia' });
                 // o `ended` com motivo de morte conta em z.n/z.t; sem autópsia perto desse t, vira 1 entrada sem vocação
@@ -20608,8 +20609,7 @@
             const d0 = ESTADO_WS.depotReal || (ESTADO_WS.depot && !ESTADO_WS.depot.lembrado ? ESTADO_WS.depot : null);
             for (const e of (d0 && Array.isArray(d0.entries) ? d0.entries : [])) if (e) soma(e.itemName || e.name, e.count != null ? e.count : 1);
             for (const [n, q] of Object.entries(MK.bag || {})) soma(n, q);
-            f.deposito = dep;
-            f.depositoLido = !!d0; // false = só a mochila: o depósito não foi lido nesta sessão (na caçada o jogo não manda)
+            Object.assign(f, { deposito: dep, depositoLido: !!d0 }); // depositoLido false = só a mochila: o depósito não foi lido nesta sessão (na caçada o jogo não manda)
         });
         bloco('invasao', () => { if (x.invasao) f.invasao = { inscrito: x.invasao.inscrito, proxima: x.invasao.proxima }; });
         bloco('forja', () => {
@@ -20632,8 +20632,9 @@
                 const pot = potenciaTotal(e);
                 if (pot >= fb.potBase) bases.push({ nome: String(e.itemName || e.name), potencia: pot });
             }
-            f.forja = { idadeH: FJ.t > 0 ? Math.round((agora - FJ.t) / TR_H * 10) / 10 : null, basesParadas: bases.sort((p, q) => q.potencia - p.potencia).slice(0, 20) };
-            if (f.party.length) f.forja.abaixo4 = abaixo4; // sem party lida não afirma "tudo em +4"
+            const forja = { idadeH: FJ.t > 0 ? Math.round((agora - FJ.t) / TR_H * 10) / 10 : null, basesParadas: bases.sort((p, q) => q.potencia - p.potencia).slice(0, 20) };
+            if (f.party.length) forja.abaixo4 = abaixo4; // sem party lida não afirma "tudo em +4"
+            f.forja = forja;
         });
         bloco('topo', () => {
             const tp = lerComum('tr_topo', null);
@@ -20683,7 +20684,9 @@
         try { nivel = trFoto().nivel; } catch { nivel = null; }
         if (!(nivel > 0)) return 'sem o nível da conta: entre no jogo e tente de novo';
         const salvo = lerComum('tr_topo', null);
-        const mesma = !!(salvo && salvo.conta && nome && trNome(salvo.conta) === trNome(nome) && Math.abs((trNum(salvo.nivel) || 0) - nivel) <= 30);
+        // outra conta só quando os dois nomes existem e diferem: sem o nome (conta ou leitura), o freio vale pelo salvo.t (pos fica null)
+        const outraConta = !!(salvo && salvo.conta && nome && trNome(salvo.conta) !== trNome(nome));
+        const mesma = !!(salvo && !outraConta && Math.abs((trNum(salvo.nivel) || 0) - nivel) <= 30);
         const idade = mesma && salvo.t > 0 ? (agora - salvo.t) / TR_H : Infinity;
         const idadePerfis = mesma && salvo.tPerfis > 0 ? (agora - salvo.tPerfis) / TR_H : Infinity;
         if (!opc.forcar && idade < TR_TOPO_LB_H) return `topo lido há ${trHorasPt(idade)} h: leio de novo em ${trHorasPt(TR_TOPO_LB_H - idade)} h`;

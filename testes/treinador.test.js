@@ -1386,4 +1386,31 @@ t('foto XundaBr: mochila de chaves cheia, Premium e ilha fechada medida', () => 
     const r = T.trRodar(FOTOS.xundabr, T.TR_BASE), ids = r.todos.map(c => c.id);
     for (const id of ['erros:chaves', 'mult:premium', 'upar:abrir-ilha']) assert(ids.includes(id), id + ' ∉ ' + ids.join());
 });
+// ── observarRecebido: legacy_state, loyalty_update e party_snapshot são mensagens RECEBIDAS (a 2.22.0 as tratava em observarEnviado
+//    e ESTADO_WS.legado/loyalty/snap nunca enchiam — visto ao vivo em 27/11). Recorte da função com stubs: tudo antes do despacho por
+//    tipo está em try, então os observadores que não existem aqui só caem no falhou (stub).
+function observarRecebidoIsolado() {
+    const iR = src.indexOf('    function observarRecebido(o) {'), fR = src.indexOf('    /* v2.11 — O ANALISADOR DO PRÓPRIO JOGO PRIMEIRO');
+    assert(iR > 0 && fR > iR, 'observarRecebido não encontrado');
+    const E = { huntId: 222, legado: null, loyalty: null, snap: null };
+    const fn = new Function('ESTADO_WS', 'clonar', 'falhou', src.slice(iR, fR) + '\nreturn observarRecebido;')(E, (x) => JSON.parse(JSON.stringify(x)), () => null);
+    return { E, fn };
+}
+t('observarRecebido: legacy_state enche ESTADO_WS.legado (ativo e personagens)', () => {
+    const { E, fn } = observarRecebidoIsolado();
+    fn({ type: 'legacy_state', data: { ativo: true, personagens: [{ vocation: 'KNIGHT', visto: 1 }, { vocation: 'DRUID', visto: 5 }] } });
+    assert.deepStrictEqual(E.legado, { ativo: true, personagens: [{ vocation: 'KNIGHT', visto: 1 }, { vocation: 'DRUID', visto: 5 }] });
+});
+t('observarRecebido: loyalty_update enche ESTADO_WS.loyalty no formato do painel (points, level, bonus, t)', () => {
+    const { E, fn } = observarRecebidoIsolado();
+    fn({ type: 'loyalty_update', data: { points: 3, level: 2, bonus: 2 } });
+    assert.deepStrictEqual([E.loyalty.points, E.loyalty.level, E.loyalty.bonus], [3, 2, 2]); assert(E.loyalty.t > 0);
+});
+t('observarRecebido: party_snapshot enche ESTADO_WS.snap com a caçada de agora (o formato de snapElemPorVoc)', () => {
+    const { E, fn } = observarRecebidoIsolado();
+    fn({ type: 'party_snapshot', data: { elapsedSec: 600, members: [{ vocation: 'DRUID', stats: { taken: { COMBAT_FIREDAMAGE: 10 } } }] } });
+    assert.strictEqual(E.snap.huntId, 222); assert.strictEqual(E.snap.elapsedSec, 600); assert.strictEqual(E.snap.members[0].vocation, 'DRUID'); assert(E.snap.t > 0);
+    fn({ type: 'party_snapshot', data: { elapsedSec: 1 } }); // sem members: ignora
+    assert.strictEqual(E.snap.elapsedSec, 600);
+});
 process.on('exit', () => { if (!process.exitCode) console.log(`\n${n} testes ok`); });
