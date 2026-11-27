@@ -1251,4 +1251,63 @@ t('mult: prey em outro mapa → só "trazer a prey", sem sugerir trocar o tipo',
     assert(T.trAgenteMult(f, T.TR_BASE).some(c => /prey-tipo/.test(c.id)));
 });
 
+// ── Integração: os 10 agentes reais em cenários da revisão (nível 262, Shadow Nexus) — o top-3 tem de fazer sentido
+const pcI = (nome, refino, extra) => Object.assign({ nome, refino, potencia: 300 + 50 * refino, atributos: [], imbuSlots: 2, imbu: ['a', 'b'] }, extra || {});
+const anel = (nome) => pcI(nome, 0, { imbuSlots: 0, imbu: [] });
+function cenario(o) {
+    const t0 = 1.8e12, partyI = [
+        { voc: 'KNIGHT', skills: { melee: 64, escudo: 70 }, eq: { head: pcI('Zaoan helmet', 4), necklace: pcI('onyx pendant', 4), armor: pcI('magic plate armor', 4), weapon: pcI('stonecutter axe', 0, { ataque: 50 }),
+            shield: pcI('tower shield', 4), ring: anel('crystal ring'), legs: pcI('Zaoan legs', 4), boots: pcI('guardian boots', 4) } },
+        { voc: 'PALADIN', skills: { dist: 68 }, eq: { head: pcI('jade hat', 4), necklace: pcI('onyx pendant', 4), armor: pcI('paladin armor', 4), weapon: pcI('living vine bow', 4, { ataque: 40 }),
+            ring: anel('crystal ring'), legs: pcI('Zaoan legs', 4), ammo: anel('diamond arrow') } },
+        { voc: 'SORCERER', skills: { ml: 70 }, eq: { head: pcI('jade hat', 4), necklace: pcI('magma amulet', 4), armor: pcI('magma coat', 4), weapon: pcI('wand', 0), shield: pcI('spellbook of mind control', 4),
+            ring: anel('ring'), legs: pcI('magma legs', 4), boots: pcI('magma boots', 4) } },
+        { voc: 'DRUID', skills: { ml: 72 }, eq: { head: pcI('jade hat', 4), necklace: pcI('magma amulet', 4), armor: pcI('magma coat', 4), weapon: pcI('rod', 0), shield: pcI('spellbook of enlightenment', 4),
+            ring: anel('ring'), legs: pcI('magma legs', 4), boots: pcI('magma boots', 4) } }];
+    if (o && o.botas) { partyI[1].eq.boots = pcI('guardian boots', 4); delete o.botas; }
+    return Object.assign(T.trFotoVazia(), {
+        t: t0, nivel: 262, xpTotal: 262 ** 3 * 16.7, ouro: 6e6, ouroLivre: 3e6, premium: { ativo: true }, emHunt: true,
+        hunt: { id: 11, title: 'Shadow Nexus', lure: 3, maxLure: 4, rec: 250, levelMin: 200, ilha: 'the_inquisition', lureTiers: [{ min: 2, max: 3 }, { min: 3, max: 4 }, { min: 4, max: 5 }, { min: 5, max: 6 }] },
+        medidoAtual: { xpH: 540000, xpRawH: 200000, ouroH: 117000, gastoH: 400000, abatesH: 600, min: 30 },
+        mapas: [mapa(11, 'Shadow Nexus', 540000, { ouroH: 117000 }), mapa(12, 'Summer Court', 600000, { levelMin: 220, fonte: 'comunidade', idadeH: 50 }),
+            mapa(13, 'Otherworld Zao', 500000, { levelMin: 220, idadeH: 30 }), mapa(14, 'Salt Caves', 700000, { rec: 280, levelMin: 250, fonte: 'comunidade', aberta: false, ilha: 'issavi', idadeH: undefined })],
+        party: partyI,
+        legado: { KNIGHT: { skill: 64, marcoAtual: 60, proxMarco: 65, falta: 1, bonusAtual: 2, bonusProx: 5 }, DRUID: { skill: 72, marcoAtual: 70, proxMarco: 75, falta: 3, bonusAtual: 9, bonusProx: 14 } },
+        prey: { huntId: 99, huntLocked: false, huntMsLeft: 0, buffs: { KNIGHT: { tipo: 'xp', tier: 5 }, PALADIN: { tipo: 'damage', tier: 3 }, SORCERER: { tipo: 'loot', tier: 2 }, DRUID: { tipo: 'defense', tier: 4 } }, wildcards: 12 },
+        bencaos: { tem: 7, total: 7 }, ampulhetas: { KNIGHT: { usadasH: 0 }, DRUID: { usadasH: 8 } }, selo: { ativo: false, abundante: null },
+        mortes: [{ t: t0 - 3 * H, hunt: 'Shadow Nexus', huntId: 11, voc: 'DRUID' }, { t: t0 - 3 * DIA, hunt: 'Shadow Nexus', huntId: 11, voc: 'DRUID' }, { t: t0 - 3 * DIA + 20e3, hunt: 'Shadow Nexus', huntId: 11, voc: 'SORCERER' }],
+        sessoes: [{ hunt: 'Shadow Nexus', huntId: 11, durMin: 600, xpH: 560000, ouroH: 100000, morte: false }, { hunt: 'Shadow Nexus', huntId: 11, durMin: 180, xpH: 520000, ouroH: 120000, morte: true }],
+        checklist: { KNIGHT: [{ chave: 'protFis', ok: false, titulo: '16 % de proteção física', texto: 'tem 9 %' }], DRUID: [{ chave: 'vida', ok: false, titulo: 'vida 1100+', texto: 'tem 980' }] },
+        bestiario: [{ huntId: 11, title: 'Shadow Nexus', bonus: 'magicLevel', ganho: 1, falta: 30000, horas: 40, xpH: 540000 }, { huntId: 13, title: 'Otherworld Zao', bonus: 'magicLevel', ganho: 1, falta: 12000, horas: 15, xpH: 500000 }],
+        chaves: { usadas: 10, max: 20, elites: [{ nome: 'Viscous', qtd: 6 }] }, deposito: { 'spectral conch': 2 }, invasao: { inscrito: false },
+        forja: { abaixo4: [{ voc: 'KNIGHT', slot: 'weapon', nome: 'stonecutter axe', refino: 0, custo: 1450000 }, { voc: 'KNIGHT', slot: 'ring', nome: 'crystal ring', refino: 0, custo: 300000 }], idadeH: 3, basesParadas: [{ nome: 'avenger', potencia: 450 }] },
+        topo: null, precos: { 'stonecutter axe': 3e6 },
+        ilhas: [{ id: 'issavi', aberta: false }, { id: 'marapur', aberta: false }, { id: 'dream_courts', aberta: true }, { id: 'the_inquisition', aberta: true }] }, o || {});
+}
+const trCustoZero = (c) => T.trCustoEfetivo(c) === 0;
+const top3 = (f) => T.trRodar(f, T.TR_BASE).passos.map(p => p.id);
+t('integração A (limitada por dano, morte, bota faltando, prey fora): top-3 = bota, morte, prey', () => {
+    assert.deepStrictEqual(top3(cenario()).sort(), ['erros:mortes', 'erros:slot-PALADIN', 'mult:prey-mapa']);
+});
+t('integração B (limitada por spawn): lure no topo; sem refino nem Legado no top-3', () => {
+    const p = top3(cenario({ botas: true, mortes: [], sessoes: [{ hunt: 'Shadow Nexus', huntId: 11, durMin: 600, xpH: 560000, morte: false }],
+        medidoAtual: { xpH: 540000, ouroH: 117000, gastoH: 400000, abatesH: 950, min: 30 } }));
+    assert.strictEqual(p[0], 'upar:lure'); assert(!p.some(id => /^forja:refino|^legado:/.test(id)), p.join(' | '));
+});
+t('integração D (saldo −300 mil/h, 400 mil livres): "ouro acaba" no topo e o Selo fora do plano do Dinheiro', () => {
+    const r = T.trRodar(cenario({ botas: true, mortes: [], ouroLivre: 400000, medidoAtual: { xpH: 540000, ouroH: -300000, abatesH: 600, min: 30 } }), T.TR_BASE);
+    assert.strictEqual(r.passos[0].id, 'erros:ouro');
+    const plano = r.todos.find(c => c.id === 'ouro:plano');
+    assert(!plano || !plano.numeros.escolhidos.includes('mult:selo'), plano && plano.titulo);
+});
+t('integração E (ouro livre −100 mil e prejuízo): o aviso de ouro sai uma vez só', () => {
+    const r = T.trRodar(cenario({ botas: true, mortes: [], ouroLivre: -100000, medidoAtual: { xpH: 540000, ouroH: -300000, abatesH: 600, min: 30 } }), T.TR_BASE);
+    assert.strictEqual(r.passos[0].id, 'erros:ouro'); assert(!r.todos.some(c => c.agente === 'ouro'), r.todos.filter(c => c.agente === 'ouro').map(c => c.id).join());
+});
+t('integração G (lucro +117 mil/h, ouro livre −200 mil): nada de "Não gaste" como erro; grátis não é penalizado', () => {
+    const r = T.trRodar(cenario({ botas: true, mortes: [], ouroLivre: -200000 }), T.TR_BASE);
+    assert(!r.todos.some(c => c.id === 'ouro:nao-gaste')); assert(r.todos.some(c => c.id === 'ouro:baixo' && c.estado === 'aviso'));
+    assert(r.passos.length === 3 && r.passos.every(p => !p.semOuro || trCustoZero(p) === false), r.passos.map(p => p.id).join(' | '));
+    assert.strictEqual(r.passos[0].id, 'mult:prey-mapa'); assert.strictEqual(r.passos[0].semOuro, false);
+});
 process.on('exit', () => { if (!process.exitCode) console.log(`\n${n} testes ok`); });

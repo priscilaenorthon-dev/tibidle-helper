@@ -81,6 +81,29 @@ sem dependências), eslint 10, Playwright para o teste ao vivo.
 >   Itens: o ouro fica sempre visível; materiais por extenso enquanto cabem, o resto vira "+ N itens".
 > - Forja: "Peças vestidas já em +4" só quando nada vestido ficou abaixo de +4; se só arma de mago/anel/colar/munição estão abaixo,
 >   o ok vira "Refino que rende XP já em +4" e lista no porquê o que ficou fora da conta.
+
+> **Atualização 27/11 (após a revisão da combinação dos agentes) — chefe, ilha alvo e Dinheiro; vale para as Tasks 14–17:**
+> - [contrato] **Custo efetivo** `trCustoEfetivo(c) = custo + 3 × numeros.custoH` (o mesmo horizonte de 3 h do ouro livre; NaN = 0, Infinity fica).
+>   `trOrdenar`: `semOuro = custoEfetivo > 0 && (custoEfetivo > ouroLivre || ficou fora de ouro:plano.numeros.escolhidos)` — conselho grátis
+>   nunca é penalizado, nem com ouro livre negativo.
+> - [contrato] **Dedupe no chefe**: `numeros.dedupe` (texto). `trOrdenar` junta os do mesmo valor: fica o de maior impacto × peso, que herda
+>   `acao`, `custo` e `numeros.custoH` do outro quando não tem; o passo leva `ids` (todos os ids juntados). Upar (`upar:abrir-ilha`) e
+>   Caçar itens (`itens:ilha-<id>`) usam `dedupe: 'ilha:<id>'` → 1 passo com o impacto do Upar e a ação/custo do Itens. Os cartões mostram os dois.
+> - [contrato] **Ilha alvo única** `trIlhaAlvo(foto, base)` (Upar e Itens): (1) melhor mapa MEDIDO de ilha fechada pela régua xpH × peso,
+>   se ≥ 110 % do melhor aberto e da XP/h de agora (a folga do ir-mapa) — Upar com impacto real `(xpH ÷ agora − 1) × 100` e a confiança da fonte;
+>   (2) sem isso, ilhas fechadas com caçada de Rec acima da de agora e ≤ nível + 20, ordenadas por (materiais sem preço, custo) — Upar com 5
+>   estimado, e só se nenhum mapa aberto medido passa o de agora. Ajudantes `trMapasUpar` e `trCustoIlha`.
+> - [contrato] `TR_BASE.cacadasTopo` passou a ter TODAS as caçadas com Rec da wiki (Rec ≥ 80; `ilha: null` = Tibidle Island); o nome ficou.
+> - Dinheiro: custo efetivo; com `medidoAtual.ouroH < 0` (≥ 5 min) nada com `custoH > 0` entra; custo não finito fica fora. Ouro livre ≤ 0:
+>   com `erros:ouro` nos conselhos → não emite nada; erro "Não gaste" só com prejuízo medido; senão `ouro:baixo` (aviso, impacto 0).
+>   [contrato] Campo opcional `curto` no conselho (rótulo para o plano: "Selo", "bênçãos", "refino <peça>", "abrir <ilha>", "ampulheta do <voc>", o item do topo).
+> - Bestiário: bônus de dano (ML/ataque/corpo a corpo/distância) = `trDanoParaXp(3 × ganho)` (3 % de dano do grupo por +1, estimado);
+>   regen. de mana = ganho ÷ 3; vida 1; armadura/escudo 0,5; tudo ÷ max(1, horas ÷ 10). Mapa atual > 10 h → aviso de impacto 0.
+> - Erros/régua: pula sempre `arma-refino` (Forja); `arma` se já saiu `erros:slot-<voc>`; `potencia` se há `forja.basesParadas`; `imbu` com encaixe livre.
+> - Mult: com a prey em outro mapa (ou sem caçada) não sugere trocar o TIPO; só trazê-la.
+> - Ajudantes comuns (usar em todo agente): `trDanoDeUm(pct)` (= `trDanoParaXp(pct ÷ preyColunas)`), `trParty`, `trVelho(idadeH, maxH = 24)`, `trEhMago`.
+> - Integração em `testes/treinador.test.js` (`cenario()` da revisão, nível 262): A → bota/morte/prey; B → lure no topo; D → "ouro acaba" no topo
+>   e sem Selo no plano; E → o ouro avisado uma vez; G → sem "Não gaste".
 >   `deposito`/`precos` por nome via `trPorNome` (preço > 0 conta; 0/ausente = sem preço → "Caçar").
 > - [contrato] **Forja**: `foto.forja = { abaixo4: [{ voc, slot, nome, refino, custo | null }], idadeH, basesParadas: [{ nome, potencia }] } | null`.
 >   `abaixo4` = só peças VESTIDAS (slot em `TR_SLOTS`; arma de mago pode vir, é pulada); quando existe, vence `party[].eq`.
