@@ -6,7 +6,7 @@ const i = src.indexOf('/* @@TREINADOR-PURO-INICIO'), f = src.indexOf('/* @@TREIN
 assert(i > 0 && f > i, 'trecho @@TREINADOR-PURO não encontrado');
 const T = new Function(src.slice(i, f) + '\nreturn { TR_BASE, TR_AGENTES, trConselho, trOrdenar, trRodar, trFotoVazia, trCacada, trAgenteUpar, trAgenteMult, trAgenteLegado, '
     + 'trMesmoId, trQtd, trLimitadoPorDano, trDanoParaXp, trTipoPrey, trXpAtual, trRecDe, trMortesRecentes, trAgenteTopo, trAgenteErros, trXpPerdidaMorte, trAgenteBoss, trEventosMorte, trImpactoMorte, '
-    + 'trAgenteBestiario, trAgenteItens, trAgenteForja };')();
+    + 'trAgenteBestiario, trAgenteItens, trAgenteForja, trAgenteDinheiro };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 // agentes falsos: troca os de verdade pelos falsos, roda e devolve os de verdade sempre
@@ -1023,6 +1023,55 @@ t('forja: tudo em +4 e cálculo fresco → só ok; foto vazia → sem passo; reg
         .map(c => [c.id, c.estado]), [['forja:ok', 'ok']]);
     assert(forja(T.trFotoVazia()).every(c => !(c.impacto > 0)));
     assert(T.TR_AGENTES.some(a => a.id === 'forja' && a.rodar === T.trAgenteForja && a.icone === '⚒'));
+});
+
+// ── Dinheiro ($), fase 2
+const comCusto = () => [T.trConselho('a', 'c400', { titulo: 'Passo de 400 mil', custo: 400000, impacto: 5, confianca: 'wiki' }),
+    T.trConselho('a', 'c500', { titulo: 'Passo de 500 mil', custo: 500000, impacto: 4, confianca: 'wiki' }),
+    T.trConselho('a', 'c900', { titulo: 'Passo de 900 mil', custo: 900000, impacto: 9, confianca: 'wiki' })];
+const din = (f, todos) => T.trAgenteDinheiro(f, T.TR_BASE, todos);
+t('dinheiro: 1 M livres, custos 400/500/900 mil e impactos 5/4/9 → guloso por impacto/milhão: 400 + 500 mil; "Juntar para" o de 900 mil', () => {
+    const cs = din(foto({ ouroLivre: 1e6 }), comCusto());
+    const p = cs.find(c => c.id === 'ouro:plano'), j = cs.find(c => c.id === 'ouro:juntar');
+    assert(p && j);
+    assert.deepStrictEqual(p.numeros.escolhidos, ['a:c400', 'a:c500']); assert.strictEqual(p.numeros.total, 900000);
+    assert.strictEqual(p.titulo, 'Com 1 M livres: Passo de 400 mil, Passo de 500 mil');
+    assert(Math.abs(p.impacto - 0.9) < 1e-12); assert.strictEqual(p.estado, 'aviso'); assert.strictEqual(p.acao, null); assert.strictEqual(p.custo, 0);
+    // depois dos dois sobram 100 mil; o de 900 mil precisa de mais 800 mil
+    assert.strictEqual(j.impacto, 0); assert.strictEqual(j.numeros.id, 'a:c900'); assert.strictEqual(j.numeros.sobra, 100000); assert.strictEqual(j.numeros.falta, 800000);
+    assert.strictEqual(j.titulo, 'Juntar para: Passo de 900 mil (falta 800 mil)');
+});
+t('dinheiro: a confiança pesa na ordem (impacto × peso ÷ custo)', () => {
+    const todos = comCusto(); todos[0].confianca = 'estimado'; // 5 × 0,4 ÷ 0,4 M = 5/M < 900 mil: 9 × 0,6 ÷ 0,9 = 6/M
+    const p = din(foto({ ouroLivre: 1e6 }), todos).find(c => c.id === 'ouro:plano');
+    assert.deepStrictEqual(p.numeros.escolhidos, ['a:c900']);
+});
+t('dinheiro: ignora ok, impacto ≤ 0 e sem custo; nada com custo → ok', () => {
+    const todos = [T.trConselho('a', 'ok', { custo: 1000, impacto: 3, estado: 'ok' }), T.trConselho('a', 'zero', { custo: 1000, impacto: 0 }),
+        T.trConselho('a', 'gratis', { custo: 0, impacto: 5 })];
+    assert.deepStrictEqual(din(foto({ ouroLivre: 1e6 }), todos).map(c => [c.id, c.estado, c.titulo]), [['ouro:ok', 'ok', 'Nada com custo para planejar']]);
+});
+t('dinheiro: nada cabe → só "Juntar para" o melhor', () => {
+    const cs = din(foto({ ouroLivre: 300000 }), comCusto());
+    assert.deepStrictEqual(cs.map(c => c.id), ['ouro:juntar']); // o melhor por ouro é o de 400 mil
+    assert.strictEqual(cs[0].numeros.id, 'a:c400'); assert.strictEqual(cs[0].numeros.falta, 100000); // 400 mil − 300 mil
+    assert(/o ouro livre é 300 mil/.test(cs[0].porque), cs[0].porque);
+});
+t('dinheiro: ouroLivre ≤ 0 → erro "Não gaste" (medido, 3, sem ação); desconhecido → aviso impacto 0', () => {
+    const c = din(foto({ ouroLivre: -50000 }), comCusto());
+    assert.deepStrictEqual(c.map(x => [x.id, x.estado, x.titulo, x.impacto, x.confianca, x.acao]), [['ouro:nao-gaste', 'erro', 'Não gaste: o ouro mal paga a caçada', 3, 'medido', null]]);
+    const d = din(foto({ ouroLivre: null }), comCusto());
+    assert.deepStrictEqual(d.map(x => [x.id, x.titulo, x.impacto]), [['ouro:livre', 'Ouro livre desconhecido', 0]]);
+});
+t('dinheiro: fase 2 recebe os conselhos da fase 1 pelo trRodar e não passa à frente dos passos', () => comAgentes([
+    ag('a', () => comCusto()), ag('ouro', T.trAgenteDinheiro, { fase: 2 })], () => {
+    const r = T.trRodar(foto({ ouroLivre: 1e6 }), T.TR_BASE);
+    const cartao = r.cartoes.find(c => c.id === 'ouro');
+    assert(cartao.conselhos.some(c => c.id === 'ouro:plano' && c.numeros.escolhidos.length === 2));
+    assert.deepStrictEqual(r.passos.map(c => c.id), ['a:c900', 'a:c400', 'a:c500']);
+}));
+t('dinheiro: registrado como fase 2', () => {
+    assert(T.TR_AGENTES.some(a => a.id === 'ouro' && a.rodar === T.trAgenteDinheiro && a.icone === '$' && a.fase === 2));
 });
 
 process.on('exit', () => { if (!process.exitCode) console.log(`\n${n} testes ok`); });

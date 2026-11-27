@@ -12739,6 +12739,51 @@
         return out;
     }
     TR_AGENTES.push({ id: 'forja', nome: 'Forja e refino', icone: '⚒', rodar: trAgenteForja });
+
+    // ── Especialista 10: Dinheiro ($) — FASE 2: recebe em `todos` os conselhos da fase 1. foto.ouroLivre vem da FOTO
+    //    (ouro − 3 × gasto/h da caçada − bênçãos que faltam). Escolhe guloso, dentro do ouro livre, os passos com custo > 0,
+    //    pela ordem (impacto × peso da confiança) ÷ custo. O resumo vale 0,1 × a soma dos impactos escolhidos: é um lembrete,
+    //    não pode passar à frente dos próprios passos. O melhor que não coube → "Juntar para" (impacto 0; falta = custo − o que sobra).
+    function trAgenteDinheiro(foto, base, todos) {
+        const livre = trNum(foto.ouroLivre);
+        if (!Number.isFinite(livre)) {
+            return [trConselho('ouro', 'livre', { titulo: 'Ouro livre desconhecido', impacto: 0,
+                porque: 'Sem o ouro e o gasto/h da caçada não dá para planejar compras.' })];
+        }
+        if (livre <= 0) {
+            return [trConselho('ouro', 'nao-gaste', { titulo: 'Não gaste: o ouro mal paga a caçada', estado: 'erro', impacto: 3, confianca: 'medido',
+                porque: `Ouro livre ${trQtd(livre)}: o ouro de agora mal cobre 3 h de gasto da caçada (e as bênçãos). Junte antes de comprar qualquer coisa.`,
+                numeros: { ouroLivre: livre } })];
+        }
+        const nota = (c) => Number(c.impacto) * trPeso(c.confianca) / Number(c.custo);
+        const cand = (Array.isArray(todos) ? todos : []).filter(c => c && c.estado !== 'ok' && trNum(c.custo) > 0 && trNum(c.impacto) > 0)
+            .sort((x, y) => nota(y) - nota(x));
+        if (!cand.length) {
+            return [trConselho('ouro', 'ok', { titulo: 'Nada com custo para planejar', estado: 'ok',
+                porque: `Nenhum passo dos outros especialistas custa ouro agora (ouro livre ${trQtd(livre)}).` })];
+        }
+        const escolhidos = [];
+        let sobra = livre, fora = null;
+        for (const c of cand) {
+            if (Number(c.custo) <= sobra) { escolhidos.push(c); sobra -= Number(c.custo); } else if (!fora) fora = c;
+        }
+        const out = [], total = livre - sobra;
+        if (escolhidos.length) {
+            out.push(trConselho('ouro', 'plano', { impacto: 0.1 * escolhidos.reduce((s, c) => s + Number(c.impacto), 0),
+                titulo: trCorta(`Com ${trQtd(livre)} livres: ${escolhidos.map(c => c.titulo).join(', ')}`),
+                porque: `Pelo ganho por ouro: ${escolhidos.map(c => `${c.titulo} (${trQtd(c.custo)})`).join('; ')}. Total ${trQtd(total)}; sobram ${trQtd(sobra)}.`,
+                numeros: { escolhidos: escolhidos.map(c => c.id), total, sobra } }));
+        }
+        if (fora) {
+            const falta = Number(fora.custo) - sobra, fim = ` (falta ${trQtd(falta)})`;
+            out.push(trConselho('ouro', 'juntar', { impacto: 0,
+                titulo: `Juntar para: ${trCorta(fora.titulo, 70 - 'Juntar para: '.length - fim.length)}${fim}`,
+                porque: `${fora.titulo} custa ${trQtd(fora.custo)}` + (escolhidos.length ? `; depois dos passos acima sobram ${trQtd(sobra)}.` : `; o ouro livre é ${trQtd(livre)}.`),
+                numeros: { id: fora.id, custo: Number(fora.custo), sobra, falta } }));
+        }
+        return out;
+    }
+    TR_AGENTES.push({ id: 'ouro', nome: 'Dinheiro', icone: '$', fase: 2, rodar: trAgenteDinheiro });
     /* @@TREINADOR-PURO-FIM */
     /* @@ARENA-PURO-INICIO — Sobrevivência (2.57.0): decisões do robô, puras (o tempo é st.tempoMs, sem DOM).
      * st = estado da simulação do cliente (ref.current.st do componente da partida). O mesmo código rodou no simulador
