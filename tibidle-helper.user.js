@@ -11748,9 +11748,9 @@
               onde: "Quara's Domain Yalahar Box (Jaws) 3,6 %", drops: 'Yalahar Island Box: wand of cosmic energy, tower shield 15 %; onyx pendant, paladin armor 10 %; Yalahar Gem Pack 40 refine t2', vale: 'único boss que dá XP (6.000)' },
             { nome: 'Jaul', ilha: 'gray_island', rec: null, vida: 70000, tentativa: [{ item: 'trophy of Tanjis', qtd: 5 }, { item: 'trophy of Obujos', qtd: 5 }],
               onde: 'Bottom of the Ocean Box (Tanjis) / Deepling Library Box (Obujos) 5 %', drops: 'Gray Island Box: depth/ornate 4–8 %; Gray Island Gem Pack 68 refine t2', vale: 'boss mais fraco (70k)' } ],
-        bossDicas: ['encher a mana numa caçada antes e ir sem poção (magos); nunca de frente', // comunidade (vídeos 22/10)
-                    'XP Boost ativo é gasto à toa no boss (só corre em caçada comum)', // wiki/loja
-                    'testar 1 tentativa antes do Auto-boss: com o jogo fechado ele gasta todas'], // wiki/bosses
+        bossDicas: { manaAntes: 'encher a mana numa caçada antes e ir sem poção (magos); nunca de frente', // comunidade (vídeos 22/10)
+                     boost: 'XP Boost ativo é gasto à toa no boss (só corre em caçada comum)', // wiki/loja
+                     autoBoss: 'testar 1 tentativa antes do Auto-boss: com o jogo fechado ele gasta todas' }, // wiki/bosses
         // ── Forja (Uzgod) e tier (Thorgal)
         purificacao: { hunt: { comum: 86, incomum: 11, raro: 2.5, epico: 0.45, lendario: 0.05, base: [0, 350] }, // wiki/forja (% por raridade; base = potência)
                        elite: { comum: 76, incomum: 18, raro: 5, epico: 0.85, lendario: 0.15, base: [50, 420] },
@@ -12101,10 +12101,11 @@
                 const tiers = Array.isArray(hunt.lureTiers) ? hunt.lureTiers : [];
                 const cAgora = trNum((tiers[lure - 1] || {}).min), cProx = trNum((tiers[lure] || {}).min);
                 const porCriatura = lim === false && cAgora > 0 && cProx > 0; // número real de criaturas por degrau
-                const n = lure + 1, imp = porCriatura ? Math.min((cProx - cAgora) / cAgora * 100, 40) : lim === false ? Math.min(100 / Math.max(1, lure), 25) : 8;
+                const bruto = porCriatura ? (cProx - cAgora) / cAgora * 100 : null;
+                const n = lure + 1, imp = porCriatura ? Math.min(bruto, 40) : lim === false ? Math.min(100 / Math.max(1, lure), 25) : 8;
                 out.push(trConselho('upar', 'lure', { titulo: `Subir a lure para ${n}`, impacto: imp,
                     porque: `Lure ${lure} de ${maxLure} e nenhuma morte aqui nas últimas sessões. `
-                        + (porCriatura ? `A caçada está limitada por spawn: a lure ${n} leva de ${cAgora} → ${cProx} criaturas por onda (≈ +${Math.round(imp)} % de XP/h${imp >= 40 ? ', teto do modelo' : ''}).`
+                        + (porCriatura ? `A caçada está limitada por spawn: a lure ${n} leva de ${cAgora} → ${cProx} criaturas por onda (≈ +${Math.round(imp)} % de XP/h${bruto > 40 ? ', teto do modelo' : ''}).`
                             : lim === false ? `A caçada está limitada por spawn: a lure ${n} sobe o teto de criaturas (≈ +${Math.round(imp)} % de XP/h).`
                                 : 'Mais lure = mais criaturas por onda (≈ +8 % de XP/h por degrau, estimado).') + ' Se morrer, o "Aguentar" mostra por quê.',
                     numeros: { lure, maxLure, limite: lim === false ? 'spawn' : null, criaturas: porCriatura ? [cAgora, cProx] : null },
@@ -12295,7 +12296,7 @@
         const minusc = (s) => String(s || '').trim().toLowerCase();
         const party = (Array.isArray(foto.party) ? foto.party : []).filter(m => m && m.voc);
         const perfis = (Array.isArray(tp.perfis) ? tp.perfis : []).filter(p => naFaixa(p) && p.voc && typeof p.voc === 'object');
-        let itens = 0;
+        let itens = 0, comparados = 0;
         if (perfis.length < 3) {
             out.push(trConselho('topo', 'poucos', { titulo: 'Poucos perfis visíveis para comparar', impacto: 0,
                 porque: `Só ${perfis.length} perfil(is) do topo com equipamento à mostra no ${faixa}; preciso de 3.`, numeros: { n: perfis.length } }));
@@ -12303,7 +12304,9 @@
             for (const m of party) {
                 const eq = m.eq && typeof m.eq === 'object' ? m.eq : null;
                 const deles = perfis.map(p => p.voc[m.voc]).filter(x => x && typeof x === 'object' && Object.keys(x).length);
-                if (!eq || deles.length < 3) continue;
+                // eq não lido (ausente ou sem nenhum slot com nome) não é "veste nada": não compara
+                if (!eq || !TR_SLOTS.some(sl => eq[sl] && String(eq[sl].nome || '').trim()) || deles.length < 3) continue;
+                comparados++;
                 let melhor = null;
                 for (const slot of TR_SLOTS) {
                     const meu = minusc(eq[slot] && eq[slot].nome), cont = new Map();
@@ -12316,7 +12319,7 @@
                 if (!melhor) continue;
                 itens++;
                 const preco = trPorNome(foto.precos, melhor.item, true), n = deles.length, nome = trVocPt(m.voc);
-                out.push(trConselho('topo', 'item-' + m.voc, { titulo: `${nome}: o topo usa ${melhor.item} (${trSlotPt(melhor.slot)})`,
+                out.push(trConselho('topo', 'item-' + m.voc, { titulo: trCorta(`${nome}: o topo usa ${melhor.item} (${trSlotPt(melhor.slot)})`),
                     confianca: 'comunidade', impacto: 3, custo: preco > 0 ? preco : 0,
                     porque: `${melhor.k} de ${n} perfis do topo (${faixa}) vestem ${melhor.item} como ${trSlotPt(melhor.slot)}; o ${nome} usa ${melhor.meu || 'nada'}. `
                         + (preco > 0 ? `No Mercado ≈ ${trQtd(preco)}. ` : '') + 'A aba Melhorias diz quanto a troca rende de verdade.',
@@ -12339,7 +12342,7 @@
                 porque: `Mediana de ${n} jogadores do topo (${faixa}): ${trPct(med)}. A skill treinada vira dano para sempre pelo Legado — veja o especialista "Treino e Legado".`,
                 numeros: { voc: m.voc, skill: chave, minha, mediana: med, n } }));
         }
-        if (perfis.length >= 3 && !itens && !skills) {
+        if (comparados > 0 && !itens && !skills) { // "bate" só com pelo menos 1 set de verdade comparado
             out.push(trConselho('topo', 'ok', { titulo: 'Seu set bate com o do topo', estado: 'ok', confianca: 'comunidade',
                 porque: `Nenhum item que ≥ 50 % dos ${perfis.length} perfis do topo (${faixa}) vestem falta no seu set, e as skills estão perto da mediana.` }));
         }
@@ -12365,7 +12368,7 @@
             const mapas = Object.keys(porMapa).sort((x, y) => porMapa[y] - porMapa[x]);
             const tem = foto.bencaos && Number.isFinite(trNum(foto.bencaos.tem)) ? Number(foto.bencaos.tem) : 0;
             const perda = trXpPerdidaMorte(foto, b, tem), conta = perda != null && xpH > 0;
-            const impacto = conta ? n * perda / (xpH * 24) * 100 : 3;
+            const impacto = conta ? Math.min(50, n * perda / (xpH * 24) * 100) : 3; // teto 50 (decisão do controlador): morte não engole o resto
             out.push(trConselho('erros', 'mortes', { estado: 'erro', confianca: conta ? 'wiki' : 'estimado', impacto,
                 titulo: trCorta(`${n} ${n > 1 ? 'mortes' : 'morte'}` + (quem.length ? ` (${quem.map(trVocPt).join(', ')})` : '')
                     + (mapas.length === 1 ? ` em ${mapas[0]}` : mapas.length > 1 ? ` em ${mapas.length} mapas` : '')),
@@ -12478,10 +12481,10 @@
             if (!itens.length) continue;
             const k = Math.min(...itens.map(x => Math.floor(x.tem / x.qtd)));
             if (k >= 1) {
-                out.push(trConselho('boss', 'lutar-' + bo.nome, { titulo: `Pode lutar ${bo.nome} ${k} ${k > 1 ? 'vezes' : 'vez'}`, impacto: 2,
-                    porque: `Por luta: ${itens.map(x => `${x.qtd} ${x.item}`).join(' + ')} (troca no Silas, na cidade). Cai: ${bo.drops}.` + (b.bossDicas[2] ? ` Dica: ${b.bossDicas[2]}.` : ''),
+                out.push(trConselho('boss', 'lutar-' + bo.nome, { titulo: trCorta(`Pode lutar ${bo.nome} ${k} ${k > 1 ? 'vezes' : 'vez'}`), impacto: 2,
+                    porque: `Por luta: ${itens.map(x => `${x.qtd} ${x.item}`).join(' + ')} (troca no Silas, na cidade). Cai: ${bo.drops}.` + (b.bossDicas && b.bossDicas.autoBoss ? ` Dica: ${b.bossDicas.autoBoss}.` : ''),
                     numeros: { boss: bo.nome, qtd: k, rec: bo.rec ?? null, vida: bo.vida },
-                    acao: { tipo: 'boss-trocar', boss: bo.nome, qtd: k, rotulo: 'Trocar tentativa' } }));
+                    acao: Object.assign({ tipo: 'boss-trocar', boss: bo.nome }, bo.nomeJogo ? { nomeJogo: bo.nomeJogo } : {}, { qtd: k, rotulo: 'Trocar tentativa' }) }));
                 continue;
             }
             const perto = Math.min(...itens.map(x => Math.min(1, x.tem / x.qtd)));

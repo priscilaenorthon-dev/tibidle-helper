@@ -492,11 +492,13 @@ t('upar: lure com lureTiers (Shadow Nexus 3/5/7/8) limitada por spawn → 2 → 
     const base = { nivel: 238, mapas: [mapa(1, 'Shadow Nexus', 540000)] };
     let l = acoes(T.trAgenteUpar(foto(Object.assign({ hunt: huntSN({ lure: 2, lureTiers: tiers }), medidoAtual: { xpH: 540000, min: 10, abatesH: 650 } }, base)), T.TR_BASE), 'lure');
     assert.strictEqual(l.length, 1); assert.strictEqual(l[0].impacto, 40); assert(/40 %/.test(l[0].porque) && /5 → 7/.test(l[0].porque), l[0].porque);
+    assert(!/teto/.test(l[0].porque), '40 exato não foi cortado: ' + l[0].porque);
     l = acoes(T.trAgenteUpar(foto(Object.assign({ hunt: huntSN({ lure: 3, lureTiers: tiers }), medidoAtual: { xpH: 540000, min: 10, abatesH: 1000 } }, base)), T.TR_BASE), 'lure');
     assert(Math.abs(l[0].impacto - (8 / 7 - 1) * 100) < 1e-9, String(l[0].impacto)); assert(/14 %/.test(l[0].porque), l[0].porque);
-    // degrau que mais que dobra as criaturas fica no teto de 40
+    assert(!/teto/.test(l[0].porque), l[0].porque);
+    // degrau que mais que dobra as criaturas (bruto 300) fica no teto de 40, e o porquê diz que cortou
     l = acoes(T.trAgenteUpar(foto(Object.assign({ hunt: huntSN({ lure: 1, lureTiers: [{ min: 1, max: 2 }, { min: 4, max: 5 }] }), medidoAtual: { xpH: 540000, min: 10, abatesH: 330 } }, base)), T.TR_BASE), 'lure');
-    assert.strictEqual(l[0].impacto, 40);
+    assert.strictEqual(l[0].impacto, 40); assert(/teto do modelo/.test(l[0].porque), l[0].porque);
     // lureTiers incompleto → volta ao modelo antigo (min(100/lure, 25))
     l = acoes(T.trAgenteUpar(foto(Object.assign({ hunt: huntSN({ lure: 2, lureTiers: [{ min: 3 }] }), medidoAtual: { xpH: 540000, min: 10, abatesH: 650 } }, base)), T.TR_BASE), 'lure');
     assert.strictEqual(l[0].impacto, 25);
@@ -549,6 +551,19 @@ t('topo: Royal Signet no Cavaleiro (2 de 9, < 50 %) → não sugere', () => {
 t('topo: tudo igual ou melhor → ok "Seu set bate com o do topo"', () => {
     const cs = T.trAgenteTopo(foto({ nivel: 250, topo: topoDe(), party: partyTopo() }), T.TR_BASE);
     assert.deepStrictEqual(cs.map(c => c.estado), ['ok']); assert(/bate com o do topo/.test(cs[0].titulo));
+});
+t('topo: sem nenhum eq lido na party → nada de "Seu set bate" (não comparou set nenhum)', () => {
+    const semEq = partyTopo().map(m => ({ voc: m.voc, skills: m.skills }));
+    for (const party of [semEq, partyTopo().map(m => Object.assign({}, m, { eq: {} })), []]) {
+        const cs = T.trAgenteTopo(foto({ nivel: 250, topo: topoDe(), party }), T.TR_BASE);
+        assert(!cs.some(c => c.estado === 'ok'), cs.map(c => c.titulo).join(' | '));
+    }
+});
+t('topo: título com nome de item longo fica em ≤ 70', () => {
+    const longo = 'extraordinarily long legendary trousers of the ancient forgotten dream courts';
+    const perfis = [1, 2, 3].map(k => ({ nivel: 260 + k, voc: { SORCERER: { legs: longo } } }));
+    const c = acoes(T.trAgenteTopo(foto({ nivel: 250, topo: topoDe({ perfis }), party: partyTopo() }), T.TR_BASE), 'abrir-melhorias')[0];
+    assert(c); assert(c.titulo.length <= 70, c.titulo); assert.strictEqual(c.acao.item, longo);
 });
 t('topo: skill principal < mediana − 3 → aviso sem ação e impacto 0 (Cavaleiro melee 64 × 69; Druida 62 × 65 não)', () => {
     const party = partyTopo(); party[0].skills.melee = 64; party[3].skills.ml = 62;
@@ -605,17 +620,24 @@ t('erros: foto limpa → só "Nenhum erro visível" (ok); foto vazia também', (
 t('erros: 2 mortes do Druida em 24 h → erro, abrir-aguentar, impacto = XP perdida ÷ XP de um dia', () => {
     const mortes = [{ t: 1.8e12 - 2 * H, hunt: 'Shadow Nexus', huntId: 1, voc: 'DRUID' }, { t: 1.8e12 - 5 * H, hunt: 'Shadow Nexus', huntId: 1, voc: 'DRUID' },
         { t: 1.8e12 - 30 * H, hunt: 'Ice Portal', voc: 'KNIGHT' }];
-    const c = erro(fErros({ bencaos: { tem: 0 }, mortes }), 'mortes');
+    // com as 7 bênçãos a perda é 44 % da sem bênção: 2 × 0,0227 × 254 M × 0,44 ÷ (540 mil × 24) ≈ 39 (abaixo do teto de 50)
+    const c = erro(fErros({ bencaos: { tem: 7 }, mortes }), 'mortes');
     assert(c); assert.strictEqual(c.estado, 'erro'); assert.strictEqual(c.acao.tipo, 'abrir-aguentar'); assert.strictEqual(c.numeros.n, 2);
-    assert(Math.abs(c.impacto - 2 * 0.0227 * 254e6 / (540000 * 24) * 100) < 1e-9, String(c.impacto));
+    assert(Math.abs(c.impacto - 2 * 0.0227 * 254e6 * 0.44 / (540000 * 24) * 100) < 1e-6, String(c.impacto));
     assert.strictEqual(c.titulo, '2 mortes (Druida) em Shadow Nexus');
-    // com as 7 bênçãos a perda cai para 44 %
-    const c7 = erro(fErros({ bencaos: { tem: 7 }, mortes }), 'mortes');
-    assert(Math.abs(c7.impacto - c.impacto * 0.44) < 1e-9);
+    // sem bênção dá ≈ 89: TETO de 50 (decisão do controlador)
+    assert.strictEqual(erro(fErros({ bencaos: { tem: 0 }, mortes }), 'mortes').impacto, 50);
     // sem xpTotal: impacto 3 estimado
     const ce = erro(fErros({ xpTotal: null, mortes }), 'mortes');
     assert.strictEqual(ce.impacto, 3); assert.strictEqual(ce.confianca, 'estimado');
     assert.strictEqual(erro(fErros({ mortes: mortes.slice(2) }), 'mortes'), undefined, 'morte de 30 h atrás não conta');
+});
+t('erros: 3 mortes no nível 250 → impacto no teto de 50', () => {
+    const mortes = ['KNIGHT', 'DRUID', 'DRUID'].map((voc, k) => ({ t: 1.8e12 - (k + 1) * H, hunt: 'Shadow Nexus', huntId: 1, voc }));
+    for (const tem of [0, 7]) {
+        const c = erro(fErros({ nivel: 250, bencaos: { tem }, mortes }), 'mortes');
+        assert.strictEqual(c.impacto, 50, 'bênçãos ' + tem); assert.strictEqual(c.numeros.n, 3);
+    }
 });
 t('erros: ouro/h negativo e ouro livre < 3 h dele → "O ouro acaba em 2 h nesta caçada" (erro, abrir-magia)', () => {
     const ma = { xpH: 540000, min: 10, ouroH: -100000 };
@@ -711,11 +733,24 @@ t("boss: Timira (Rec 340) no 330 — 5 escamas = 1 luta; 10 = 2 (nomes sem maiú
     c = acoes(boss(fBoss({ nivel: 330, deposito: { "Timira's Scale": 7, "TIMIRA'S SCALE": 3 } })), 'boss-trocar');
     assert.deepStrictEqual(c.map(x => [x.acao.boss, x.acao.qtd]), [['Timira', 2]]); assert.strictEqual(c[0].titulo, 'Pode lutar Timira 2 vezes');
     assert.strictEqual(c[0].impacto, 2); assert.strictEqual(c[0].estado, 'aviso');
+    assert.strictEqual(c[0].acao.nomeJogo, 'Timira the Many-Headed', 'nome do jogo na ação');
+    assert(/Auto-boss/.test(c[0].porque) && /^Dica|Dica:/.test(c[0].porque), c[0].porque);
+});
+t('TR_BASE: bossDicas com chaves nomeadas', () => {
+    const d = T.TR_BASE.bossDicas;
+    assert(!Array.isArray(d)); for (const k of ['manaAntes', 'boost', 'autoBoss']) assert(typeof d[k] === 'string' && d[k], k);
+});
+t('boss: "Pode lutar" com nome longo fica em ≤ 70', () => {
+    const nome = 'The Extraordinarily Ancient And Forgotten Dream Courts Guardian Of Nightmares';
+    const base = Object.assign({}, T.TR_BASE, { bosses: [{ nome, ilha: 'x', rec: null, vida: 1, tentativa: [{ item: 'coisa', qtd: 1 }], onde: 'aqui', drops: 'nada', vale: 'teste' }] });
+    const c = acoes(T.trAgenteBoss(fBoss({ deposito: { coisa: 3 } }), base), 'boss-trocar')[0];
+    assert(c); assert(c.titulo.length <= 70, c.titulo); assert.strictEqual(c.acao.boss, nome); assert.strictEqual(c.acao.qtd, 3);
 });
 t('boss: Jaul pede os 2 troféus', () => {
     assert.strictEqual(acoes(boss(fBoss({ deposito: { 'trophy of Tanjis': 10 } })), 'boss-trocar').length, 0);
     const c = acoes(boss(fBoss({ deposito: { 'trophy of Tanjis': 10, 'trophy of Obujos': 5 } })), 'boss-trocar');
     assert.deepStrictEqual(c.map(x => [x.acao.boss, x.acao.qtd]), [['Jaul', 1]]);
+    assert(!('nomeJogo' in c[0].acao), 'sem nomeJogo no TR_BASE → a ação não inventa');
 });
 t('boss: Izcandar (Rec 350) no 250 não entra, mesmo com tentativa; no 330 entra', () => {
     assert.strictEqual(acoes(boss(fBoss({ deposito: { "izcandar's shard": 10 } })), 'boss-trocar').length, 0);
