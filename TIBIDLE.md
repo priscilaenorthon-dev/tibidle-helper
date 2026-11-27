@@ -7759,3 +7759,6 @@ no lugar do Haste).
 - **Mudança**: `SV_CFG.moerCedoMs 240000, pesoMoerCedo 3` — até 4:00 a moagem pesa 3 (0,8 depois). Simulador, 36 sementes novas:
   perda do começo 4,7 → 2,8; quem chega aos 15:00 fecha em 142,5 contra 141,0 (máx. 144). Testados: peso 2 até 3:30 (perda 3,6) e
   peso 5 + densMax 20 (sem ganho a mais, menos partidas chegam ao fim). Teste novo em `testes/arena.test.js`.
+- **Ao vivo com a 2.65.0 (27/11, 5 buffs, 3 trocas)**: 141 aos 15:11 (abertura sorteada pelo timer: o robô ligou na carta 14 — Onda de
+  choque tomou a vaga do Ímã) e **142 aos 15:09** (4 ultimates aos 9:10, vida mínima 66 %, cristais recolhidos). Ritmo de 12 s desde 1:42
+  (antes, ~3:45). u2tag 20º → **18º** (140 → 142). Ligar o robô com a aba ☠ aberta antes de COMEÇAR, senão o timer de 10 s escolhe.
