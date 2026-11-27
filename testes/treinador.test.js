@@ -4,7 +4,7 @@ const fs = require('fs'), path = require('path'), assert = require('assert');
 const src = fs.readFileSync(path.join(__dirname, '..', 'tibidle-helper.user.js'), 'utf8');
 const i = src.indexOf('/* @@TREINADOR-PURO-INICIO'), f = src.indexOf('/* @@TREINADOR-PURO-FIM');
 assert(i > 0 && f > i, 'trecho @@TREINADOR-PURO não encontrado');
-const T = new Function(src.slice(i, f) + '\nreturn { TR_BASE, TR_AGENTES, trConselho, trOrdenar, trRodar, trFotoVazia, trCacada, trAgenteUpar };')();
+const T = new Function(src.slice(i, f) + '\nreturn { TR_BASE, TR_AGENTES, trConselho, trOrdenar, trRodar, trFotoVazia, trCacada, trAgenteUpar, trAgenteMult };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 // agentes falsos: troca os de verdade pelos falsos, roda e devolve os de verdade sempre
@@ -235,6 +235,84 @@ t('upar: foto vazia → só o "Medir" sem impacto (nada de passo)', () => {
 });
 t('upar: registrado em TR_AGENTES', () => {
     assert(T.TR_AGENTES.some(a => a.id === 'upar' && a.rodar === T.trAgenteUpar && a.icone === '⤴'));
+});
+
+// ── Task 5: Multiplicadores
+const DIA = 864e5;
+const preyDe = (buffs, extra) => Object.assign({ huntId: 1, wildcards: 10, buffs }, extra || {});
+const buff = (tipo, tier, extra) => Object.assign({ tipo, tier, locked: true, msLeft: 3600e3, huntId: 1 }, extra || {});
+t('mult: Premium desligado → abrir-loja, impacto = premium ÷ (100 + party), wiki, custo 0', () => {
+    const cs = T.trAgenteMult(foto({ nivel: 238, premium: { ativo: false } }), T.TR_BASE);
+    const c = acoes(cs, 'abrir-loja')[0];
+    assert(c && /Premium/.test(c.titulo)); assert.strictEqual(c.confianca, 'wiki'); assert.strictEqual(c.custo, 0);
+    assert(Math.abs(c.impacto - T.TR_BASE.xp.premium / (100 + T.TR_BASE.xp.party) * 100) < 1e-9);
+    assert.strictEqual(acoes(T.trAgenteMult(foto({ nivel: 238, premium: { ativo: true } }), T.TR_BASE), 'abrir-loja').length, 0);
+});
+t('mult: prey em outro mapa → prey-escolher com a caçada atual (5 wildcards no texto)', () => {
+    const f = foto({ nivel: 238, hunt: huntSN(), prey: preyDe({ KNIGHT: buff('exp', 5) }, { huntId: 9 }) });
+    const c = acoes(T.trAgenteMult(f, T.TR_BASE), 'prey-escolher')[0];
+    assert(c); assert.strictEqual(c.acao.huntId, 1); assert(/5 wildcards/.test(c.porque)); assert(c.impacto > 0);
+    assert.strictEqual(acoes(T.trAgenteMult(foto({ nivel: 238, hunt: huntSN(), prey: preyDe({ KNIGHT: buff('exp', 5) }) }), T.TR_BASE), 'prey-escolher').length, 0);
+});
+t('mult: caçada limitada por spawn → prey de DANO vira EXP', () => {
+    const f = foto({ nivel: 238, hunt: huntSN(), medidoAtual: { xpH: 540000, abatesH: 1300 }, // teto 340 × 4 = 1360; 1300 ≥ 85 %
+        prey: preyDe({ KNIGHT: buff('dano', 5), DRUID: buff('exp', 5) }) });
+    const tr = acoes(T.trAgenteMult(f, T.TR_BASE), 'prey-trocar');
+    assert.deepStrictEqual(tr.map(c => c.acao.voc), ['KNIGHT']); assert(/EXP/.test(tr[0].titulo) && /Cavaleiro/.test(tr[0].titulo), tr[0].titulo);
+    assert(Math.abs(tr[0].impacto - 5 / 200 * 100) < 1e-9); // EXP ★5 = +5 % ÷ (100 + 100)
+});
+t('mult: caçada limitada por dano → prey de EXP vira DANO', () => {
+    const f = foto({ nivel: 238, hunt: huntSN(), medidoAtual: { xpH: 540000, abatesH: 500 },
+        prey: preyDe({ KNIGHT: buff('exp', 5), PALADIN: buff('dano', 5) }) });
+    const tr = acoes(T.trAgenteMult(f, T.TR_BASE), 'prey-trocar');
+    assert.deepStrictEqual(tr.map(c => c.acao.voc), ['KNIGHT']); assert(/DANO/.test(tr[0].titulo));
+    assert(Math.abs(tr[0].impacto - (4 * 5 / 4 - 5 / 2)) < 1e-9); // DANO ★5 = 20 % de 1 dos 4 → 5; menos o EXP ★5 (2,5)
+});
+t('mult: sem abates medidos não opina no tipo; defesa de quem morreu fica', () => {
+    let f = foto({ nivel: 238, hunt: huntSN(), prey: preyDe({ KNIGHT: buff('loot', 5) }) });
+    assert.strictEqual(acoes(T.trAgenteMult(f, T.TR_BASE), 'prey-trocar').length, 0);
+    f = foto({ nivel: 238, hunt: huntSN(), medidoAtual: { abatesH: 1300 }, mortes: [{ t: 1.8e12 - DIA, hunt: 'Shadow Nexus', voc: 'DRUID' }],
+        prey: preyDe({ DRUID: buff('defesa', 5) }) });
+    assert.strictEqual(acoes(T.trAgenteMult(f, T.TR_BASE), 'prey-trocar').length, 0);
+});
+t('mult: tier 6 destravada com tempo → trancar; travada, tier 10 ou sem tempo → nada', () => {
+    const base = { nivel: 238, hunt: huntSN(), medidoAtual: { abatesH: 1300 } };
+    let tc = acoes(T.trAgenteMult(foto(Object.assign({ prey: preyDe({ SORCERER: buff('exp', 6, { locked: false }) }) }, base)), T.TR_BASE), 'prey-trancar');
+    assert.strictEqual(tc.length, 1); assert.strictEqual(tc[0].acao.voc, 'SORCERER'); assert(/tier 6/.test(tc[0].titulo)); assert.strictEqual(tc[0].impacto, 2);
+    for (const b of [buff('exp', 6), buff('exp', 10, { locked: false }), buff('exp', 6, { locked: false, msLeft: 0 })]) {
+        tc = acoes(T.trAgenteMult(foto(Object.assign({ prey: preyDe({ SORCERER: b }) }, base)), T.TR_BASE), 'prey-trancar');
+        assert.strictEqual(tc.length, 0, JSON.stringify(b));
+    }
+});
+t('mult: bênçãos faltando + morte recente → custo = total(250) e impacto > 0', () => {
+    const f = foto({ nivel: 250, xpTotal: 254e6, hunt: huntSN(), medidoAtual: { xpH: 540000 }, bencaos: { tem: 0, total: 7 },
+        mortes: [{ t: 1.8e12 - 2 * DIA, hunt: 'Shadow Nexus', voc: 'DRUID' }] });
+    const c = acoes(T.trAgenteMult(f, T.TR_BASE), 'bencaos')[0];
+    assert(c, 'sem conselho'); assert.strictEqual(c.custo, T.TR_BASE.bencaos.total(250)); assert(c.impacto > 0); assert.strictEqual(c.confianca, 'wiki');
+    assert(c.titulo.length <= 70 && /bênçãos/.test(c.titulo), c.titulo);
+});
+t('mult: bênçãos — sem morte em 7 dias, já com as 7 ou abaixo do 120 → nada', () => {
+    const base = { nivel: 250, xpTotal: 254e6, hunt: huntSN(), medidoAtual: { xpH: 540000 }, bencaos: { tem: 0, total: 7 } };
+    for (const o of [{}, { mortes: [{ t: 1.8e12 - 10 * DIA, hunt: 'Shadow Nexus', voc: 'DRUID' }] },
+        { bencaos: { tem: 7, total: 7 }, mortes: [{ t: 1.8e12 - DIA }] }, { nivel: 100, mortes: [{ t: 1.8e12 - DIA }] }]) {
+        assert.strictEqual(acoes(T.trAgenteMult(foto(Object.assign({}, base, o)), T.TR_BASE), 'bencaos').length, 0, JSON.stringify(o));
+    }
+    // morte na medida do mapa atual também conta
+    const f = foto(Object.assign({}, base, { mapas: [mapa(1, 'Shadow Nexus', 540000, { mortes: 1 })] }));
+    assert.strictEqual(acoes(T.trAgenteMult(f, T.TR_BASE), 'bencaos').length, 1);
+});
+t('mult: Selo desligado em caçada de XP → custo/h no título, ação selo, wiki', () => {
+    const f = foto({ nivel: 238, hunt: huntSN(), selo: { ativo: false, abundante: null } });
+    const c = acoes(T.trAgenteMult(f, T.TR_BASE), 'selo')[0];
+    assert(c); assert.strictEqual(c.acao.huntId, 1); assert.strictEqual(c.confianca, 'wiki');
+    assert(Math.abs(c.impacto - 4 / 200 * 100) < 1e-9);
+    const hora = 100 * Math.round(T.TR_BASE.selo.rolar(250) * 43 / 1000); // 1 pacto T1 (peso 4,3)
+    assert.strictEqual(c.custo, hora); assert(/mil\/h/.test(c.titulo) && c.titulo.length <= 70, c.titulo);
+    assert.strictEqual(acoes(T.trAgenteMult(foto({ nivel: 238, hunt: huntSN(), selo: { ativo: true } }), T.TR_BASE), 'selo').length, 0);
+});
+t('mult: foto vazia → nenhum conselho; registrado em TR_AGENTES', () => {
+    assert.deepStrictEqual(T.trAgenteMult(T.trFotoVazia(), T.TR_BASE), []);
+    assert(T.TR_AGENTES.some(a => a.id === 'mult' && a.rodar === T.trAgenteMult && a.icone === '✕'));
 });
 
 process.on('exit', () => { if (!process.exitCode) console.log(`\n${n} testes ok`); });

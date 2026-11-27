@@ -12005,6 +12005,110 @@
         return out;
     }
     TR_AGENTES.push({ id: 'upar', nome: 'Onde upar', icone: '⤴', rodar: trAgenteUpar });
+
+    // ── Especialista 2: Multiplicadores (✕). Premium, Prey (caçada, tipo e trava), bênçãos e Selo.
+    //    Régua do impacto: os bônus de XP SOMAM; +k pontos valem k ÷ (100 + party) da XP/h de agora (premium/prey/boost fora do denominador, simples de propósito).
+    const TR_VOC_PT = { KNIGHT: 'Cavaleiro', PALADIN: 'Paladino', SORCERER: 'Feiticeiro', DRUID: 'Druida' };
+    const trVocPt = (v) => TR_VOC_PT[v] || String(v || '?');
+    const trOuroTxt = (v) => (v >= 1e6 ? String(Math.round(v / 1e5) / 10).replace('.', ',') + ' M' : v >= 1e3 ? Math.round(v / 1e3) + ' mil' : String(Math.round(v)));
+    const trPct = (v) => String(Math.round(v * 10) / 10).replace('.', ','); // 4.75 → '4,8'
+    const TR_SEMANA_MS = 7 * 864e5;
+    function trAgenteMult(foto, base) {
+        const b = base || TR_BASE, out = [], den = 100 + b.xp.party;
+        const nivel = Number.isFinite(foto.nivel) ? foto.nivel : null, hunt = foto.hunt || null;
+        const mapas = Array.isArray(foto.mapas) ? foto.mapas : [];
+        const daCacada = hunt ? mapas.find(m => m && m.id === hunt.id) || null : null;
+        const mortes = (Array.isArray(foto.mortes) ? foto.mortes : []).filter(m => m && Number.isFinite(m.t) && foto.t > 0 && m.t >= foto.t - TR_SEMANA_MS);
+        // Premium: +10 de XP (soma com party/prey/boost)
+        if (foto.premium && !foto.premium.ativo) {
+            out.push(trConselho('mult', 'premium', { titulo: `Ativar Premium (+${b.xp.premium} % de XP)`, confianca: 'wiki', custo: 0,
+                impacto: b.xp.premium / den * 100,
+                porque: `+${b.xp.premium} de XP somados aos +${b.xp.party} da party = +${trPct(b.xp.premium / den * 100)} % na XP/h. `
+                    + `Custa ${b.premium.coins} coins por ${b.premium.dias} dias (não sai do ouro); também liga a venda automática.`,
+                acao: { tipo: 'abrir-loja', rotulo: 'Abrir a loja' } }));
+        }
+        // Prey: EXP vale para o grupo (★T = +T de XP); DANO só no personagem da coluna (★T = +4T % do dano dele ≈ +T % do grupo).
+        const prey = foto.prey && typeof foto.prey === 'object' ? foto.prey : null;
+        if (prey && hunt) {
+            const porDano = trLimitadoPorDano(foto, b), ma = foto.medidoAtual || {};
+            const folga = porDano ? (b.spawn.porLure * Number(hunt.lure) / Number(ma.abatesH) - 1) * 100 : Infinity; // o dano não passa o teto de spawn
+            const tierMax = b.prey.tierMax, xpPorTier = b.xp.preyColunaMax / tierMax;
+            const valor = (tipo, tier) => {
+                if (tipo === 'exp') return tier * xpPorTier / den * 100;
+                if (tipo === 'dano') return porDano === true ? Math.min(b.prey.danoPorTier * tier / 4, folga) : porDano === null ? b.prey.danoPorTier * tier / 8 : 0;
+                return 0;
+            };
+            const buffs = prey.buffs && typeof prey.buffs === 'object' ? prey.buffs : {};
+            const huntPrey = prey.huntId != null ? prey.huntId : (Object.values(buffs).find(x => x && x.huntId != null) || {}).huntId;
+            if (huntPrey !== hunt.id) {
+                const perdido = Object.values(buffs).reduce((s, x) => s + (x ? valor(x.tipo, Math.max(0, Number(x.tier) || 0)) : 0), 0);
+                const wc = Number.isFinite(prey.wildcards) ? ` (você tem ${prey.wildcards})` : '';
+                out.push(trConselho('mult', 'prey-mapa', { titulo: huntPrey == null ? 'A prey não tem caçada' : 'A prey está em outro mapa',
+                    impacto: Math.max(1, perdido),
+                    porque: `O bônus da prey só vale (e o tempo só corre) na caçada da prey. ESCOLHER CAÇADA põe ${hunt.title || 'esta caçada'} por ${b.prey.escolherWildcards} wildcards${wc}.`,
+                    numeros: { huntPrey, huntAtual: hunt.id, perdido },
+                    acao: { tipo: 'prey-escolher', huntId: hunt.id, rotulo: 'Prey aqui' } }));
+            }
+            const ideal = porDano === true ? 'dano' : porDano === false ? 'exp' : null;
+            for (const voc of Object.keys(buffs)) {
+                const x = buffs[voc];
+                if (!x) continue;
+                const tier = Math.max(0, Number(x.tier) || 0), nome = trVocPt(voc);
+                const morreu = mortes.some(m => m.voc === voc);
+                const trocar = ideal && x.tipo !== ideal && !(x.tipo === 'defesa' && morreu);
+                if (trocar) {
+                    const t1 = Math.max(1, tier), ganho = valor(ideal, t1) - valor(x.tipo, t1);
+                    if (ganho > 0) {
+                        out.push(trConselho('mult', 'prey-tipo-' + voc, { titulo: `Prey do ${nome}: trocar para ${ideal.toUpperCase()}`, impacto: ganho,
+                            porque: (ideal === 'dano' ? `A caçada está limitada por dano (abates abaixo de ${Math.round(b.spawn.limitadoPorSpawnFrac * 100)} % do teto de spawn): `
+                                + `DANO ★${t1} dá +${b.prey.danoPorTier * t1} % ao ${nome} (≈ +${trPct(b.prey.danoPorTier * t1 / 4)} % do grupo, 1 de 4).`
+                                : `A caçada está limitada por spawn: mais dano não vira XP. EXP ★${t1} soma +${t1 * xpPorTier} de XP para o grupo todo.`)
+                                + ` O sorteio é aleatório (1º do dia grátis, depois 1 wildcard) e o tier sobe a cada sorteio com o bônus ativo.`,
+                            numeros: { voc, tipo: x.tipo, ideal, tier },
+                            acao: { tipo: 'prey-trocar', voc, rotulo: 'Sortear' } }));
+                    }
+                } else if (tier >= 1 && tier < tierMax && !x.locked && Number(x.msLeft) > 0 && (ideal ? x.tipo === ideal : x.tipo === 'exp' || x.tipo === 'dano')) {
+                    out.push(trConselho('mult', 'prey-trava-' + voc, { titulo: `Trancar a prey do ${nome} (tier ${tier})`, impacto: 2,
+                        porque: `Sem trava, quando as ${b.prey.duracaoH} h acabam o tier zera. Travada, renova sozinha no mesmo tier por ${b.prey.travaWildcards} wildcard.`,
+                        numeros: { voc, tipo: x.tipo, tier },
+                        acao: { tipo: 'prey-trancar', voc, rotulo: 'Trancar' } }));
+                }
+            }
+        }
+        // Bênçãos: só a partir do 120 e com morte em 7 dias (ou na medida do mapa atual). Somem na morte: protegem 1 morte por compra.
+        const bc = foto.bencaos && typeof foto.bencaos === 'object' ? foto.bencaos : null;
+        const tem = bc ? Math.max(0, Number(bc.tem) || 0) : null;
+        const morteMapa = !!(daCacada && daCacada.mortes);
+        if (bc && tem < b.bencaos.n && nivel != null && nivel >= 120 && (mortes.length || morteMapa)) {
+            const nMortes = Math.max(mortes.length, morteMapa ? 1 : 0), faltam = b.bencaos.n - tem;
+            const custo = Math.round(b.bencaos.total(nivel) * faltam / b.bencaos.n);
+            const xpH = foto.medidoAtual && foto.medidoAtual.xpH > 0 ? foto.medidoAtual.xpH : daCacada && daCacada.xpH > 0 ? daCacada.xpH : null;
+            // XP salva por semana = mortes × perda sem bênção (fração da XP total) × corte das que faltam; ÷ XP de uma semana caçando 24 h/dia
+            const salvo = Number(foto.xpTotal) > 0 ? nMortes * b.morte.perdaFracSemBencao * foto.xpTotal * faltam * b.bencaos.cortePorFrac : null;
+            const impacto = salvo != null && xpH ? salvo / (xpH * 24 * 7) * 100 : 1;
+            out.push(trConselho('mult', 'bencaos', { titulo: `Comprar as bênçãos (≈ ${trOuroTxt(custo)} de ouro)`, confianca: 'wiki', custo, impacto,
+                porque: `${nMortes} ${nMortes > 1 ? 'mortes' : 'morte'} na última semana. Sem bênção a morte leva ≈ ${trPct(b.morte.perdaFracSemBencao * 100)} % da XP total; `
+                    + `as ${faltam} que faltam cortam ${Math.round(faltam * b.bencaos.cortePorFrac * 100)} % disso`
+                    + (salvo != null ? ` (≈ ${trOuroTxt(salvo / nMortes)} de XP por morte)` : '') + '. Somem na morte: recompre depois de cada uma.',
+                numeros: { nMortes, faltam, salvo, xpH },
+                acao: { tipo: 'bencaos', rotulo: 'Comprar' } }));
+        }
+        // Selo da Caçada desligado numa caçada comum: Abundante soma XP, mas cada hora ligada custa ouro (o buff é sorteado).
+        const selo = foto.selo && typeof foto.selo === 'object' ? foto.selo : null;
+        const rec = hunt ? Number(hunt.rec) || (trCacada(hunt.title, b) || {}).rec || Number(hunt.levelMin) || 0 : 0;
+        if (selo && !selo.ativo && hunt && rec >= 20) {
+            const tier = Math.min(5, Math.max(1, Number(selo.abundante) || 1)), pct = b.xp.seloAbundante[tier - 1];
+            const hora = 100 * Math.round(b.selo.rolar(rec) * Math.round(10 * b.selo.pesoHora[tier - 1]) / 1000); // protocolo: 1 pacto do tier
+            out.push(trConselho('mult', 'selo', { titulo: `Ligar o Selo: +${pct} % de XP por ≈ ${trOuroTxt(hora)}/h`, confianca: 'wiki', custo: hora,
+                impacto: pct / den * 100,
+                porque: (selo.abundante ? `Seu Selo aqui tem Abundante T${tier} (+${pct} de XP, × o Perigo). ` : `Abundante T1 dá +${pct} de XP (sai em 25 % dos pactos; o buff é sorteado). `)
+                    + `Cada hora ligada custa ≈ ${trOuroTxt(hora)} de ouro por pacto (faixa ${10 * Math.floor(rec / 10)}); os debuffs podem matar.`,
+                numeros: { rec, tier, hora },
+                acao: { tipo: 'selo', huntId: hunt.id, rotulo: 'Selo' } }));
+        }
+        return out;
+    }
+    TR_AGENTES.push({ id: 'mult', nome: 'Multiplicadores', icone: '✕', rodar: trAgenteMult });
     /* @@TREINADOR-PURO-FIM */
     /* @@ARENA-PURO-INICIO — Sobrevivência (2.57.0): decisões do robô, puras (o tempo é st.tempoMs, sem DOM).
      * st = estado da simulação do cliente (ref.current.st do componente da partida). O mesmo código rodou no simulador
