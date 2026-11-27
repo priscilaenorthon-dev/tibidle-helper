@@ -11832,6 +11832,9 @@
             'Great Mana Potion no Druid: 195k/h (medido)',
             'mana leech pode dar prejuízo: medir ≥ 1 h antes de decidir (comunidade TV de Souza)',
             'XP Boost ligado em Elite/Boss/Torre não corre (wiki/loja)' ],
+        // ── Equipamento: slots que nunca ficam vazios (escudo só com arma de 1 mão; munição só no Paladino — regra no agente "Onde estou errando")
+        equip: { obrigatorios: ['head', 'necklace', 'armor', 'weapon', 'ring', 'legs', 'boots'],
+                 duasMaosNomes: ['bow', 'crossbow', 'arbalest'] }, // jogo: arco/besta são de 2 mãos; o resto vem de attrs.slotType ('two-handed') em eq.weapon.duasMaos
         topoSkills: null, // preenchido em tempo de execução pelo /leaderboard
     };
     // Caçada pelo título (sem diferença de maiúsculas): { rec, ilha, faixa } — rec/ilha só das de Rec ≥ 200 (cacadasTopo); null se a base não conhece.
@@ -12003,6 +12006,25 @@
         const a = (lista || []).map(trNum).filter(Number.isFinite).sort((x, y) => x - y), m = a.length >> 1;
         return !a.length ? null : a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
     }
+    // XP perdida numa morte tendo `bencaos` bênçãos (wiki/bencaos e durante-a-cacada: cada bênção corta cortePorFrac da perda sem bênção).
+    // null sem foto.xpTotal. XP que as bênçãos salvam = perda(tem) − perda(todas).
+    function trXpPerdidaMorte(foto, base, bencaos) {
+        const b = base || TR_BASE, xp = trNum(foto.xpTotal);
+        if (!(xp > 0)) return null;
+        const n = Math.min(b.bencaos.n, Math.max(0, trNum(bencaos) || 0));
+        return b.morte.perdaFracSemBencao * xp * (1 - n * b.bencaos.cortePorFrac);
+    }
+    // Arma de 2 mãos? A dica da foto (eq.weapon.duasMaos, do attrs.slotType) vence; sem ela, o nome (arco/besta).
+    function trDuasMaos(peca, base) {
+        if (!peca) return false;
+        if (typeof peca.duasMaos === 'boolean') return peca.duasMaos;
+        const nome = String(peca.nome || '').toLowerCase();
+        return ((base || TR_BASE).equip.duasMaosNomes || []).some(w => new RegExp('\\b' + w + '\\b').test(nome));
+    }
+    // Título no limite da tela (70); o resto vai no porquê.
+    const trCorta = (s, n) => { const t = String(s), max = n || 70; return t.length <= max ? t : t.slice(0, max - 1).trimEnd() + '…'; };
+    // ['elmo', 'anel', 'bota'] → 'elmo, anel e bota'
+    const trLista = (a) => (a.length > 1 ? a.slice(0, -1).join(', ') + ' e ' + a[a.length - 1] : a.join(''));
 
     // ── Especialista 1: Onde upar (⤴). Só compara mapas com XP/h conhecida, sem morte, abertos e do nível.
     //    Régua: xpH × peso da fonte (medido 1 · comunidade 0,8 · wiki 0,6 · estimado 0,4); trocar só com ≥ 10 % de vantagem.
@@ -12189,7 +12211,7 @@
         const morteMapa = !!(daCacada && trNum(daCacada.mortes) > 0);
         if (tem != null && tem < b.bencaos.n && nivel != null && nivel >= 120 && (mortes7.length || morteMapa)) {
             const faltam = b.bencaos.n - tem, custo = Math.round(b.bencaos.total(nivel) * faltam / b.bencaos.n), xpH = trXpAtual(foto);
-            const salvo = trNum(foto.xpTotal) > 0 ? b.morte.perdaFracSemBencao * Number(foto.xpTotal) * faltam * b.bencaos.cortePorFrac : null;
+            const perdaAgora = trXpPerdidaMorte(foto, b, tem), salvo = perdaAgora == null ? null : perdaAgora - trXpPerdidaMorte(foto, b, b.bencaos.n);
             const impacto = salvo != null && xpH ? salvo / (xpH * 24 * 7) * 100 : 1;
             const nMortes = Math.max(mortes7.length, morteMapa ? 1 : 0);
             out.push(trConselho('mult', 'bencaos', { titulo: `Comprar as bênçãos (≈ ${trQtd(custo)} de ouro)`, confianca: 'wiki', custo, impacto,
@@ -12324,6 +12346,112 @@
         return out;
     }
     TR_AGENTES.push({ id: 'topo', nome: 'Set × topo do rank', icone: '♛', rodar: trAgenteTopo });
+
+    // ── Especialista 5: Onde estou errando (⚠). Uma regra = um conselho; estado 'erro' quando custa XP agora.
+    //    Mortes 24 h · ouro acabando · slot vazio · encaixe de imbuement livre · régua "ficar forte" · XP caiu no mapa · mochila de chaves cheia.
+    function trAgenteErros(foto, base) {
+        const b = base || TR_BASE, out = [], hunt = foto.hunt || null, ma = foto.medidoAtual || null, xpH = trXpAtual(foto);
+        const party = (Array.isArray(foto.party) ? foto.party : []).filter(m => m && m.voc);
+        // 1) Mortes nas últimas 24 h: cada uma encerra a caçada e leva trXpPerdidaMorte (com as bênçãos de agora).
+        //    impacto = XP perdida nas mortes ÷ XP de um dia (24 h na XP/h de agora); sem xpTotal ou XP/h → 3 (estimado)
+        const mortes = trMortesRecentes(foto, b, 1);
+        if (mortes.length) {
+            const n = mortes.length, quem = [...new Set(mortes.map(m => m.voc).filter(Boolean))];
+            const porMapa = {};
+            for (const m of mortes) {
+                const k = m.hunt || (hunt && trMesmoId(m.huntId, hunt.id) ? hunt.title : null);
+                if (k) porMapa[k] = (porMapa[k] || 0) + 1;
+            }
+            const mapas = Object.keys(porMapa).sort((x, y) => porMapa[y] - porMapa[x]);
+            const tem = foto.bencaos && Number.isFinite(trNum(foto.bencaos.tem)) ? Number(foto.bencaos.tem) : 0;
+            const perda = trXpPerdidaMorte(foto, b, tem), conta = perda != null && xpH > 0;
+            const impacto = conta ? n * perda / (xpH * 24) * 100 : 3;
+            out.push(trConselho('erros', 'mortes', { estado: 'erro', confianca: conta ? 'wiki' : 'estimado', impacto,
+                titulo: trCorta(`${n} ${n > 1 ? 'mortes' : 'morte'}` + (quem.length ? ` (${quem.map(trVocPt).join(', ')})` : '')
+                    + (mapas.length === 1 ? ` em ${mapas[0]}` : mapas.length > 1 ? ` em ${mapas.length} mapas` : '')),
+                porque: 'Cada morte encerra a caçada' + (conta ? ` e leva ≈ ${trQtd(perda)} de XP (com ${tem} de ${b.bencaos.n} bênçãos): ${trPct(impacto)} % de um dia de XP` : '')
+                    + `. ${mapas.length > 1 ? 'Mapas: ' + mapas.map(k => `${k} (${porMapa[k]})`).join(', ') + '. ' : ''}O "Aguentar" mostra o que matou.`,
+                numeros: { n, vocs: quem, mapas: porMapa, perda, xpH, bencaos: tem },
+                acao: { tipo: 'abrir-aguentar', rotulo: 'Aguentar' } }));
+        }
+        // 2) Ouro acabando: caçada com saldo/h negativo (≥ 5 min medidos) e ouro livre para menos de 3 h. Impacto 5 estimado.
+        const ouroH = ma ? trNum(ma.ouroH) : NaN, livre = trNum(foto.ouroLivre);
+        if (ma && trNum(ma.min) >= 5 && ouroH < 0 && Number.isFinite(livre) && livre < 3 * -ouroH) {
+            const horas = Math.max(0, livre) / -ouroH;
+            out.push(trConselho('erros', 'ouro', { titulo: `O ouro acaba em ${trPct(horas)} h nesta caçada`, estado: 'erro', impacto: 5,
+                porque: `A caçada gasta ${trQtd(-ouroH)} de ouro por hora e sobram ${trQtd(livre)} livres. Sem ouro as poções param e o grupo morre: baixe o gasto (magias/poções) ou troque de mapa.`,
+                numeros: { ouroH, ouroLivre: livre, horas },
+                acao: { tipo: 'abrir-magia', rotulo: 'Magia' } }));
+        }
+        // 3) Slot vazio (escudo só com arma de 1 mão; munição no Paladino). Equipamento não lido (nenhum slot com nome) não opina.
+        // 4) Encaixes de imbuement livres em peça vestida (somados num aviso só).
+        let livres = 0;
+        const ondeImbu = [];
+        for (const m of party) {
+            const eq = m.eq && typeof m.eq === 'object' ? m.eq : null;
+            const tem = (s) => !!(eq && eq[s] && String(eq[s].nome || '').trim());
+            if (!TR_SLOTS.some(tem)) continue;
+            const faltam = TR_SLOTS.filter(s => !tem(s) && (b.equip.obrigatorios.includes(s)
+                || (s === 'shield' && tem('weapon') && !trDuasMaos(eq.weapon, b)) || (s === 'ammo' && m.voc === 'PALADIN')));
+            if (faltam.length) {
+                const nome = trVocPt(m.voc);
+                out.push(trConselho('erros', 'slot-' + m.voc, { titulo: trCorta(`${nome} sem ${trLista(faltam.map(trSlotPt))}`), estado: 'erro', impacto: 3,
+                    porque: `Slot vazio é atributo que não existe: qualquer peça do depósito ou do Mercado já rende mais que nada. A aba Equip escolhe a melhor para o ${nome}.`,
+                    numeros: { voc: m.voc, slots: faltam },
+                    acao: { tipo: 'abrir-equip', voc: m.voc, rotulo: 'Equip' } }));
+            }
+            for (const s of TR_SLOTS) {
+                if (!tem(s)) continue;
+                const p = eq[s], cabe = trNum(p.imbuSlots), usados = Array.isArray(p.imbu) ? p.imbu.filter(Boolean).length : 0;
+                if (cabe > usados) { livres += cabe - usados; ondeImbu.push(`${trVocPt(m.voc)}: ${trSlotPt(s)}`); }
+            }
+        }
+        if (livres > 0) {
+            out.push(trConselho('erros', 'imbu', { titulo: `${livres} ${livres > 1 ? 'encaixes' : 'encaixe'} de imbuement ${livres > 1 ? 'livres' : 'livre'}`, impacto: 2,
+                porque: `Encaixe vazio em ${ondeImbu.join(', ')}. A comunidade usa Void (mana) e Strike (crítico); cada carga dura ${b.imbuements.horasCarga} h de caçada. O "Aguentar" diz o que pôr em cada um.`,
+                numeros: { n: livres, onde: ondeImbu },
+                acao: { tipo: 'abrir-aguentar', rotulo: 'Aguentar' } }));
+        }
+        // 5) Régua "ficar forte" da comunidade (mlChecklist): o 1º item falho de cada vocação, até 3.
+        const ck = foto.checklist && typeof foto.checklist === 'object' ? foto.checklist : null;
+        let nCheck = 0;
+        for (const voc of ck ? Object.keys(ck) : []) {
+            const it = nCheck < 3 && Array.isArray(ck[voc]) ? ck[voc].find(x => x && x.ok === false) : null;
+            if (!it) continue;
+            nCheck++;
+            out.push(trConselho('erros', 'check-' + voc, { titulo: trCorta(`${trVocPt(voc)}: ${it.titulo || it.chave}`), impacto: 2, confianca: 'comunidade',
+                porque: (it.texto ? it.texto + '. ' : '') + 'Régua "ficar forte" da comunidade (aba Melhorias).',
+                numeros: { voc, chave: it.chave || null },
+                acao: { tipo: 'abrir-melhorias', voc, rotulo: 'Melhorias' } }));
+        }
+        // 6) XP/h de agora < 70 % da melhor sessão do MESMO mapa (≥ 2 sessões; medida de agora com ≥ 5 min, se houver). impacto = queda × 0,5 (estimado)
+        const curta = ma && trNum(ma.xpH) > 0 && trNum(ma.min) < 5;
+        if (hunt && xpH > 0 && !curta) {
+            const daqui = (Array.isArray(foto.sessoes) ? foto.sessoes : []).filter(s => s && trMesmoId(s.huntId, hunt.id) && trNum(s.xpH) > 0);
+            const melhor = daqui.length >= 2 ? Math.max(...daqui.map(s => Number(s.xpH))) : 0;
+            if (melhor > 0 && xpH < 0.7 * melhor) {
+                const queda = Math.round((1 - xpH / melhor) * 100);
+                out.push(trConselho('erros', 'xp-caiu', { titulo: `XP caiu ${queda} % neste mapa (setup/lure?)`, impacto: queda * 0.5,
+                    porque: `Agora ${trQtd(xpH)} XP/h; a melhor das ${daqui.length} sessões em ${hunt.title || 'este mapa'} fez ${trQtd(melhor)}. Confira a barra de magias, a lure e quem trocou de equipamento.`,
+                    numeros: { xpH, melhor, queda, n: daqui.length },
+                    acao: { tipo: 'abrir-magia', rotulo: 'Magia' } }));
+            }
+        }
+        // 7) Mochila de chaves cheia: a próxima chave que cair na caçada some (wiki/chaves-e-caixas).
+        const ch = foto.chaves && typeof foto.chaves === 'object' ? foto.chaves : null;
+        if (ch && trNum(ch.max) > 0 && trNum(ch.usadas) >= Number(ch.max)) {
+            out.push(trConselho('erros', 'chaves', { titulo: 'Mochila de chaves cheia: a próxima chave se perde', estado: 'erro', impacto: 2, confianca: 'wiki',
+                porque: `${ch.usadas}/${ch.max} chaves. Use as chaves nos Elites (sweep) ou guarde as extras no depósito.`,
+                numeros: { usadas: Number(ch.usadas), max: Number(ch.max) },
+                acao: { tipo: 'abrir-elite', rotulo: 'Elites' } }));
+        }
+        if (!out.length) {
+            out.push(trConselho('erros', 'ok', { titulo: 'Nenhum erro visível', estado: 'ok',
+                porque: 'Sem morte em 24 h, ouro sobrando, slots e encaixes cheios, régua da comunidade em dia e XP/h no nível das suas sessões.' }));
+        }
+        return out;
+    }
+    TR_AGENTES.push({ id: 'erros', nome: 'Onde estou errando', icone: '⚠', rodar: trAgenteErros });
     /* @@TREINADOR-PURO-FIM */
     /* @@ARENA-PURO-INICIO — Sobrevivência (2.57.0): decisões do robô, puras (o tempo é st.tempoMs, sem DOM).
      * st = estado da simulação do cliente (ref.current.st do componente da partida). O mesmo código rodou no simulador
