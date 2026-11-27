@@ -5,7 +5,8 @@ const src = fs.readFileSync(path.join(__dirname, '..', 'tibidle-helper.user.js')
 const i = src.indexOf('/* @@TREINADOR-PURO-INICIO'), f = src.indexOf('/* @@TREINADOR-PURO-FIM');
 assert(i > 0 && f > i, 'trecho @@TREINADOR-PURO não encontrado');
 const T = new Function(src.slice(i, f) + '\nreturn { TR_BASE, TR_AGENTES, trConselho, trOrdenar, trRodar, trFotoVazia, trCacada, trAgenteUpar, trAgenteMult, trAgenteLegado, '
-    + 'trMesmoId, trQtd, trLimitadoPorDano, trDanoParaXp, trTipoPrey, trXpAtual, trRecDe, trMortesRecentes, trAgenteTopo, trAgenteErros, trXpPerdidaMorte, trAgenteBoss, trEventosMorte, trImpactoMorte };')();
+    + 'trMesmoId, trQtd, trLimitadoPorDano, trDanoParaXp, trTipoPrey, trXpAtual, trRecDe, trMortesRecentes, trAgenteTopo, trAgenteErros, trXpPerdidaMorte, trAgenteBoss, trEventosMorte, trImpactoMorte, '
+    + 'trAgenteBestiario };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 // agentes falsos: troca os de verdade pelos falsos, roda e devolve os de verdade sempre
@@ -873,6 +874,58 @@ t('boss: nada a fazer → ok; foto vazia → ok; registrado', () => {
         assert.deepStrictEqual(boss(f).map(c => [c.id, c.estado]), [['boss:ok', 'ok']]);
     }
     assert(T.TR_AGENTES.some(a => a.id === 'boss' && a.rodar === T.trAgenteBoss && a.icone === '☗'));
+});
+
+// ── Bestiário (☰)
+const fBest = (o) => foto(Object.assign({ nivel: 238, hunt: huntSN(), medidoAtual: { xpH: 540000, min: 10, abatesH: 1000 } }, o || {}));
+const lb = (huntId, title, bonus, horas, xpH, extra) => Object.assign({ huntId, title, bonus, ganho: 1, falta: Number.isFinite(horas) ? horas * 1000 : 5000, horas, xpH }, extra || {});
+const best = (f) => T.trAgenteBestiario(f, T.TR_BASE);
+t('bestiário: marco do mapa atual a ≤ 10 h → ok "Já fechando ML +1 aqui (~8 h)"', () => {
+    const cs = best(fBest({ bestiario: [lb(1, 'Shadow Nexus', 'magicLevel', 8, 540000, { falta: 8000 })] }));
+    assert.deepStrictEqual(cs.map(c => [c.estado, c.titulo]), [['ok', 'Já fechando ML +1 aqui (~8 h)']]);
+    assert.strictEqual(cs[0].acao, null);
+});
+t('bestiário: mapa atual a mais de 10 h → conselho sem ação (já está lá)', () => {
+    const cs = best(fBest({ bestiario: [lb('1', 'Shadow Nexus', 'magicLevel', 20, 540000)] }));
+    assert.strictEqual(cs.length, 1); assert.strictEqual(cs[0].estado, 'aviso'); assert.strictEqual(cs[0].acao, null);
+    assert.strictEqual(cs[0].impacto, 3 / 2); assert.strictEqual(cs[0].titulo, 'Fechar ML +1 em Shadow Nexus (~20 h)');
+});
+t('bestiário: outro mapa com XP/h a 50 % da atual → ignorado', () => {
+    const cs = best(fBest({ bestiario: [lb(5, 'Ice Portal', 'magicLevel', 2, 270000)] }));
+    assert.deepStrictEqual(cs.map(c => [c.estado, c.titulo]), [['ok', 'Sem marco de bestiário que valha agora']]);
+});
+t('bestiário: ML em outro mapa (XP ≥ 80 %) em 6 h → impacto 3, ir-mapa', () => {
+    const c = best(fBest({ bestiario: [lb(7, 'Otherworld Zao', 'magicLevel', 6, 450000)] }))[0];
+    assert.strictEqual(c.impacto, 3); assert.strictEqual(c.estado, 'aviso'); assert.strictEqual(c.confianca, 'wiki');
+    assert.deepStrictEqual([c.acao.tipo, c.acao.huntId], ['ir-mapa', 7]);
+    assert.strictEqual(c.titulo, 'Fechar ML +1 em Otherworld Zao (~6 h)');
+    assert.deepStrictEqual([c.numeros.bonus, c.numeros.horas, c.numeros.xpH], ['magicLevel', 6, 450000]);
+});
+t('bestiário: regen. de mana +3 a 30 h → impacto 1/3; armadura → 0,5', () => {
+    let c = best(fBest({ bestiario: [lb(8, 'Warzone I - Fungus', 'manaRegen', 30, 500000, { ganho: 3 })] }))[0];
+    assert(Math.abs(c.impacto - 1 / 3) < 1e-12, String(c.impacto)); assert.strictEqual(c.titulo, 'Fechar regen. de mana +3 em Warzone I - Fungus (~30 h)');
+    c = best(fBest({ bestiario: [lb(9, 'Ice Portal', 'armor', 4, 500000)] }))[0];
+    assert.strictEqual(c.impacto, 0.5);
+});
+t('bestiário: horas desconhecidas ou bônus fora da prioridade → ignorado', () => {
+    for (const r of [lb(7, 'Otherworld Zao', 'magicLevel', null, 500000), lb(7, 'Otherworld Zao', 'capacity', 2, 500000)]) {
+        assert.deepStrictEqual(best(fBest({ bestiario: [r] })).map(c => c.estado), ['ok'], JSON.stringify(r));
+    }
+});
+t('bestiário: XP/h do mapa desconhecida → entra como estimado e com metade do impacto', () => {
+    const c = best(fBest({ bestiario: [lb(7, 'Otherworld Zao', 'magicLevel', 6, null)] }))[0];
+    assert.strictEqual(c.impacto, 1.5); assert.strictEqual(c.confianca, 'estimado');
+});
+t('bestiário: no máximo 2 conselhos (os de maior impacto) + o ok do mapa atual', () => {
+    const cs = best(fBest({ bestiario: [lb(8, 'Warzone I - Fungus', 'manaRegen', 3, 500000), lb(7, 'Otherworld Zao', 'magicLevel', 6, 500000),
+        lb(9, 'Fire Portal', 'attack', 25, 500000), lb(1, 'Shadow Nexus', 'magicLevel', 5, 540000)] }));
+    assert.deepStrictEqual(cs.filter(c => c.estado !== 'ok').map(c => c.numeros.huntId), [7, 9]); // 3 · 1,2 · (regen 1)
+    assert.strictEqual(cs.filter(c => c.estado === 'ok').length, 1);
+    assert(cs.every(c => c.titulo.length <= 70));
+});
+t('bestiário: foto vazia → ok; registrado', () => {
+    assert.deepStrictEqual(best(T.trFotoVazia()).map(c => c.estado), ['ok']);
+    assert(T.TR_AGENTES.some(a => a.id === 'best' && a.rodar === T.trAgenteBestiario && a.icone === '☰'));
 });
 
 process.on('exit', () => { if (!process.exitCode) console.log(`\n${n} testes ok`); });

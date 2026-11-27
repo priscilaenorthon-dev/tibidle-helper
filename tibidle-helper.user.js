@@ -12582,6 +12582,48 @@
         return out;
     }
     TR_AGENTES.push({ id: 'boss', nome: 'Boss e Elite', icone: '☗', rodar: trAgenteBoss });
+
+    // ── Especialista 7: Bestiário (☰). foto.bestiario = o próximo marco de cada caçada (pgLinhasBestiario): { huntId, title, bonus, ganho, falta, horas, xpH }.
+    //    Só bônus de base.bestiarioPrioridade, com horas conhecidas (abates/h medidos) e num mapa que rende ≥ 80 % da XP/h de agora.
+    //    impacto ESTIMADO por classe de bônus (ML/ataque/skill 3 · regen de mana/vida 1 · resto 0,5) ÷ max(1, horas ÷ 10): o que fecha logo vale mais.
+    //    XP/h do mapa (ou a de agora) desconhecida → entra como 'estimado' e com metade do impacto. Até 2 conselhos.
+    const TR_BONUS_PT = { magicLevel: 'ML', attack: 'ataque', melee: 'corpo a corpo', distance: 'distância', manaRegen: 'regen. de mana',
+                          maxHealth: 'vida máx.', armor: 'armadura', shielding: 'escudo' };
+    const TR_BONUS_IMPACTO = { magicLevel: 3, attack: 3, melee: 3, distance: 3, manaRegen: 1, maxHealth: 1 }; // o resto: 0,5
+    const trBonusPt = (k) => TR_BONUS_PT[k] || String(k || '?');
+    const trHorasPt = (h) => (h < 10 ? trPct(h) : String(Math.round(h))); // 8 → '8' · 2,46 → '2,5' · 29,6 → '30'
+    function trAgenteBestiario(foto, base) {
+        const b = base || TR_BASE, pri = b.bestiarioPrioridade || [], hunt = foto.hunt || null, xpAtual = trXpAtual(foto);
+        const out = [], cand = [];
+        for (const r of Array.isArray(foto.bestiario) ? foto.bestiario : []) {
+            if (!r || !pri.includes(r.bonus) || !(trNum(r.horas) >= 0)) continue;
+            const horas = Number(r.horas), xpH = trNum(r.xpH) > 0 ? Number(r.xpH) : null, aqui = !!hunt && trMesmoId(r.huntId, hunt.id);
+            const marco = `${trBonusPt(r.bonus)} +${trNum(r.ganho) > 0 ? Number(r.ganho) : '?'}`, mapa = r.title || (aqui && hunt.title) || 'outro mapa';
+            const numeros = { huntId: r.huntId ?? null, bonus: r.bonus, ganho: trNum(r.ganho) || null, falta: trNum(r.falta) || null, horas, xpH, xpAtual };
+            if (aqui && horas <= 10) {
+                out.push(trConselho('best', 'aqui', { titulo: trCorta(`Já fechando ${marco} aqui (~${trHorasPt(horas)} h)`), estado: 'ok', confianca: 'medido', numeros,
+                    porque: `Faltam ${trQtd(r.falta)} abates em ${mapa}: no seu ritmo, ~${trHorasPt(horas)} h. O bônus fica para sempre.` }));
+                continue;
+            }
+            const compara = aqui || (xpH != null && xpAtual != null);
+            if (compara && !aqui && xpH < 0.8 * xpAtual) continue; // trocar de mapa por bônus não pode custar mais de 20 % de XP/h
+            const imp = (TR_BONUS_IMPACTO[r.bonus] || 0.5) / Math.max(1, horas / 10) * (compara ? 1 : 0.5);
+            cand.push(trConselho('best', 'marco-' + (r.huntId ?? mapa), { titulo: trCorta(`Fechar ${marco} em ${mapa} (~${trHorasPt(horas)} h)`), impacto: imp,
+                confianca: compara ? 'wiki' : 'estimado', numeros,
+                porque: `Faltam ${trQtd(r.falta)} abates (~${trHorasPt(horas)} h no ritmo medido) para ${marco} permanente para a party. `
+                    + (aqui ? 'Você já caça aqui: é só continuar.'
+                        : compara ? `${mapa} rende ${trQtd(xpH)} XP/h contra ${trQtd(xpAtual)} agora.` : 'Sem XP/h medida para comparar com a de agora: meça antes de ficar.'),
+                acao: aqui ? null : { tipo: 'ir-mapa', huntId: r.huntId, rotulo: 'Ir para ' + mapa } }));
+        }
+        out.push(...cand.sort((x, y) => y.impacto - x.impacto).slice(0, 2));
+        if (!out.length) {
+            out.push(trConselho('best', 'ok', { titulo: 'Sem marco de bestiário que valha agora', estado: 'ok',
+                porque: (Array.isArray(foto.bestiario) && foto.bestiario.length ? 'Nenhum marco aberto de bônus útil fecha num mapa com XP/h perto da de agora.'
+                    : 'Sem marcos de bestiário lidos (abra a Rotina ▸ Bestiário).') }));
+        }
+        return out;
+    }
+    TR_AGENTES.push({ id: 'best', nome: 'Bestiário', icone: '☰', rodar: trAgenteBestiario });
     /* @@TREINADOR-PURO-FIM */
     /* @@ARENA-PURO-INICIO — Sobrevivência (2.57.0): decisões do robô, puras (o tempo é st.tempoMs, sem DOM).
      * st = estado da simulação do cliente (ref.current.st do componente da partida). O mesmo código rodou no simulador
