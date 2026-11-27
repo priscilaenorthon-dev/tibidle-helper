@@ -12326,7 +12326,8 @@
                 if (!x) continue;
                 const tier = Math.max(0, trNum(x.tier) || 0), nome = trVocPt(voc), tipo = trTipoPrey(x.tipo);
                 const morreu = mortes7.some(m => m.voc === voc);
-                if (ideal && tipo !== ideal && !(tipo === 'defense' && morreu)) {
+                // com a prey em outro mapa (ou sem caçada), o passo é trazê-la para cá; trocar o TIPO antes não rende nada
+                if (ideal && tipo !== ideal && !(tipo === 'defense' && morreu) && !outro && !semCacada) {
                     const t1 = Math.max(1, tier), ganho = valor(ideal, t1) - valor(tipo, t1);
                     if (ganho > 0) {
                         out.push(trConselho('mult', 'prey-tipo-' + voc, { titulo: `Prey do ${nome}: trocar para ${TR_PREY_PT[ideal]}`, impacto: ganho * chance,
@@ -12534,6 +12535,7 @@
         //    Equipamento não lido (nenhum slot com nome) não opina.
         // 4) Encaixes de imbuement livres em peça vestida (somados num aviso só).
         let livres = 0, comEq = 0;
+        const comSlot = new Set(); // vocações com slot vazio já apontado (o item 'arma' da régua não repete)
         const ondeImbu = [];
         for (const m of party) {
             const eq = m.eq && typeof m.eq === 'object' ? m.eq : null, tem = (s) => !!trPeca(eq, s);
@@ -12543,6 +12545,7 @@
             const faltam = TR_SLOTS.filter(s => !tem(s) && (b.equip.obrigatorios.includes(s)
                 || (s === 'shield' && arma && !trDuasMaos(arma, b)) || (s === 'ammo' && trUsaMunicao(arma, b))));
             if (faltam.length) {
+                comSlot.add(m.voc);
                 const nome = trVocPt(m.voc);
                 out.push(trConselho('erros', 'slot-' + m.voc, { titulo: trCorta(`${nome} sem ${trLista(faltam.map(trSlotPt))}`), estado: 'erro', impacto: 5, confianca: 'medido',
                     porque: `Slot vazio é atributo que não existe: qualquer peça do depósito ou do Mercado já rende mais que nada. A aba Equip escolhe a melhor para o ${nome}.`,
@@ -12562,11 +12565,14 @@
                 acao: { tipo: 'abrir-aguentar', rotulo: 'Aguentar' } }));
         }
         // 5) Régua "ficar forte" da comunidade (mlChecklist): o 1º item falho de cada vocação, até 3.
-        //    O item 'imbu' é pulado quando o aviso de encaixe livre já saiu (mesmo conselho duas vezes).
+        //    Pulados (o mesmo conselho já sai em outro lugar), passando ao próximo item falho: 'arma-refino' sempre (a Forja cuida);
+        //    'imbu' com aviso de encaixe livre; 'arma' com slot vazio já apontado; 'potencia' com base boa parada na Forja.
         const ck = foto.checklist && typeof foto.checklist === 'object' ? foto.checklist : null;
         let nCheck = 0;
+        const basesParadas = !!(foto.forja && Array.isArray(foto.forja.basesParadas) && foto.forja.basesParadas.length);
         for (const voc of ck ? Object.keys(ck) : []) {
-            const it = nCheck < 3 && Array.isArray(ck[voc]) ? ck[voc].find(x => x && x.ok === false && !(livres > 0 && x.chave === 'imbu')) : null;
+            const pula = (x) => x.chave === 'arma-refino' || (x.chave === 'imbu' && livres > 0) || (x.chave === 'arma' && comSlot.has(voc)) || (x.chave === 'potencia' && basesParadas);
+            const it = nCheck < 3 && Array.isArray(ck[voc]) ? ck[voc].find(x => x && x.ok === false && !pula(x)) : null;
             if (!it) continue;
             nCheck++;
             out.push(trConselho('erros', 'check-' + voc, { titulo: trCorta(`${trVocPt(voc)}: ${it.titulo || it.chave || 'item da régua da comunidade'}`), impacto: 2, confianca: 'comunidade',

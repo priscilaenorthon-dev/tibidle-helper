@@ -1230,4 +1230,25 @@ t('itens: nível 150 em Lizard City com Warzone/Otherworld/Inquisition fechadas 
     assert(/Warzone I - Fungus/.test(c.porque), c.porque);
 });
 
+t('erros/régua: pula arma-refino (Forja), arma com slot vazio já apontado e potencia com base parada; pega o próximo item', () => {
+    const ck = (itens2) => ({ KNIGHT: itens2.map(([chave, titulo]) => ({ chave, ok: false, titulo })) });
+    let c = erro(fErros({ checklist: ck([['arma-refino', 'Arma +0 (meta +4)'], ['regen', 'Regen. de mana 5 de 18']]) }), 'check-KNIGHT');
+    assert.strictEqual(c.numeros.chave, 'regen');
+    const p = partyTopo(); delete p[0].eq.weapon;
+    c = erro(fErros({ party: p, checklist: ck([['arma', 'Sem arma'], ['regen', 'Regen']]) }), 'check-KNIGHT');
+    assert.strictEqual(c.numeros.chave, 'regen'); assert(erro(fErros({ party: p }), 'slot-KNIGHT'));
+    assert.strictEqual(erro(fErros({ checklist: ck([['arma', 'Sem arma']]) }), 'check-KNIGHT').numeros.chave, 'arma', 'sem o slot apontado, conta');
+    const fj = { abaixo4: [], idadeH: 1, basesParadas: [{ nome: 'avenger', potencia: 450 }] };
+    assert.strictEqual(erro(fErros({ forja: fj, checklist: ck([['potencia', '2 peças < 350'], ['vida', 'Vida']]) }), 'check-KNIGHT').numeros.chave, 'vida');
+    assert.strictEqual(erro(fErros({ checklist: ck([['arma-refino', 'x']]) }), 'check-KNIGHT'), undefined);
+});
+t('mult: prey em outro mapa → só "trazer a prey", sem sugerir trocar o tipo', () => {
+    const f = foto({ nivel: 250, hunt: huntSN(), medidoAtual: { xpH: 540000, min: 10, abatesH: 600 },
+        prey: { huntId: 99, buffs: { KNIGHT: { tipo: 'xp', tier: 5 }, SORCERER: { tipo: 'loot', tier: 2 } }, wildcards: 3 } });
+    const cs = T.trAgenteMult(f, T.TR_BASE);
+    assert(cs.some(c => c.id === 'mult:prey-mapa')); assert(!cs.some(c => /prey-tipo/.test(c.id)), cs.map(c => c.id).join(' | '));
+    f.prey.huntId = 1; // aqui: agora sim, trocar tipo
+    assert(T.trAgenteMult(f, T.TR_BASE).some(c => /prey-tipo/.test(c.id)));
+});
+
 process.on('exit', () => { if (!process.exitCode) console.log(`\n${n} testes ok`); });
