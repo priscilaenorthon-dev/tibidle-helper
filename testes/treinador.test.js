@@ -1213,4 +1213,21 @@ t('itens: Inquisition (8 materiais sem preço) × Issavi pronta → Issavi, mesm
     assert.strictEqual(c.id, 'itens:ilha-issavi'); assert.strictEqual(c.acao.tipo, 'abrir-silas');
 });
 
+t('base: Rec e ilha das caçadas abaixo de 200 (wiki/cacadas) — trCacada e trRecDe em nível baixo', () => {
+    assert.deepStrictEqual([T.trCacada('Lizard City', T.TR_BASE).rec, T.trCacada('Lizard City', T.TR_BASE).ilha], [130, 'zao']);
+    assert.deepStrictEqual([T.trCacada('Haunted Nexus Tomb', T.TR_BASE).rec, T.trCacada('Haunted Nexus Tomb', T.TR_BASE).ilha], [150, null]);
+    assert.strictEqual(T.trRecDe({ title: "Souleater's Canyon" }, T.TR_BASE), 100);
+    assert.strictEqual(T.trCacada('Shadow Nexus', T.TR_BASE).rec, 250);
+    const ilhas = new Set(T.TR_BASE.ilhas.map(i => i.id));
+    for (const [t2, c] of Object.entries(T.TR_BASE.cacadasTopo)) assert(c.rec >= 80 && (c.ilha === null || ilhas.has(c.ilha)), t2);
+});
+t('itens: nível 150 em Lizard City com Warzone/Otherworld/Inquisition fechadas → a de menor custo que cabe (Warzone)', () => {
+    const f = foto({ nivel: 150, hunt: { id: 5, title: 'Lizard City' }, ilhas: ['warzone', 'otherworld', 'the_inquisition'].map(id => ({ id, aberta: false })),
+        precos: { 'Warzone Voucher': 10000, 'Thunderscar Spark': 200000 } });
+    const c = itens(f)[0];
+    assert.strictEqual(c.id, 'itens:ilha-warzone'); assert.strictEqual(c.custo, 3e6 + 40 * 10000); // Otherworld 3 M + 4 M; Inquisition sem caçada entre 131 e 170
+    assert.strictEqual(c.acao.tipo, 'comprar-mercado');
+    assert(/Warzone I - Fungus/.test(c.porque), c.porque);
+});
+
 process.on('exit', () => { if (!process.exitCode) console.log(`\n${n} testes ok`); });

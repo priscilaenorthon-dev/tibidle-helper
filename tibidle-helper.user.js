@@ -11674,8 +11674,41 @@
             { de: 250, ate: 300, hunts: ['Summer Court', 'Otherworld Zao', 'Shadow Nexus', 'Warzone III - Crystal Caves', 'Salt Caves', 'Seacrest Grounds'] },
             { de: 300, ate: 350, hunts: ['Buried Cathedral', 'Ruins of Nuur', 'Emerald Gardens'] },
             { de: 350, ate: 999, hunts: ['Dream Talisman'] } ],
-        // Rec e ilha (id do Silas) das caçadas de Rec ≥ 200 — wiki/cacadas. Use trCacada(titulo) para ler.
+        // Rec e ilha (id do Silas) de todas as caçadas com Rec na wiki (Rec ≥ 80; ilha null = Tibidle Island). Use trCacada(titulo) para ler.
+        // (o nome ficou cacadasTopo por contrato; abaixo de 200 entrou em 27/11 para o "Caçar itens" e o Rec funcionarem em nível baixo)
         cacadasTopo: {
+            // Rec < 200 — wiki/cacadas (todas as tabelas); ilha null = Tibidle Island (sempre aberta)
+            'Giant Spiders POH': { rec: 80, ilha: null }, 'Hero Fortress Entrance': { rec: 80, ilha: null }, 'The Behemoth Quest': { rec: 80, ilha: null },
+            'Upper Spikes': { rec: 80, ilha: null }, 'Middle Spikes': { rec: 100, ilha: null }, 'Petrified Hollow': { rec: 100, ilha: null },
+            'Thunderscar Peak': { rec: 100, ilha: null }, 'Inquisition Warlocks': { rec: 130, ilha: null }, 'Lower Spikes': { rec: 130, ilha: null },
+            'Inquisition Entrance': { rec: 150, ilha: null }, 'Werebeasts': { rec: 80, ilha: null }, 'Putrid Mummies': { rec: 100, ilha: null },
+            'Hero Fortress Underground': { rec: 120, ilha: null }, 'Haunted Nexus Tomb': { rec: 150, ilha: null }, 'Haunted Nexus Temple': { rec: 170, ilha: null },
+            'Haunted Nexus Cellar': { rec: 190, ilha: null },
+            "Carnivora's Rocks": { rec: 170, ilha: 'dream_courts' },
+            'Death Portal': { rec: 100, ilha: 'forgotten_knowledge' }, 'Earth Portal': { rec: 130, ilha: 'forgotten_knowledge' },
+            'Energy Portal': { rec: 130, ilha: 'forgotten_knowledge' }, 'Holy Portal': { rec: 150, ilha: 'forgotten_knowledge' },
+            'Fire Portal': { rec: 180, ilha: 'forgotten_knowledge' },
+            'Fiehonja Stairway': { rec: 80, ilha: 'gray_island' }, 'The Hive Entrance': { rec: 80, ilha: 'gray_island' },
+            'Hive Tower': { rec: 100, ilha: 'gray_island' }, 'Bottom of the Ocean': { rec: 130, ilha: 'gray_island' },
+            'Deepling Library': { rec: 130, ilha: 'gray_island' }, 'Hive Queen Chamber': { rec: 130, ilha: 'gray_island' },
+            'Exotic Cave': { rec: 150, ilha: 'issavi' }, 'Green Belt': { rec: 180, ilha: 'issavi' },
+            'Great Pearl Fan Reef': { rec: 160, ilha: 'marapur' }, 'Sea Serpent Depths': { rec: 190, ilha: 'marapur' },
+            'Otherworld Kazordoon': { rec: 130, ilha: 'otherworld' }, 'Otherworld Svargrond': { rec: 150, ilha: 'otherworld' },
+            'Otherworld Ankrahmun': { rec: 170, ilha: 'otherworld' }, 'Otherworld Edron': { rec: 190, ilha: 'otherworld' },
+            'Pits of Inferno Entrance': { rec: 100, ilha: 'pits_of_inferno' }, 'Throne of Bazir': { rec: 130, ilha: 'pits_of_inferno' },
+            'Throne of Ashfalor': { rec: 150, ilha: 'pits_of_inferno' }, 'Throne of Pumin': { rec: 150, ilha: 'pits_of_inferno' },
+            'Throne of Verminor': { rec: 150, ilha: 'pits_of_inferno' }, 'Throne of Apocalypse': { rec: 170, ilha: 'pits_of_inferno' },
+            'Throne of Tafariel': { rec: 170, ilha: 'pits_of_inferno' }, 'Throne of Infernatil': { rec: 180, ilha: 'pits_of_inferno' },
+            'Zugurosh Seal': { rec: 130, ilha: 'the_inquisition' }, 'Annihilon Seal': { rec: 180, ilha: 'the_inquisition' },
+            'Latrivan & Golgordan Seal': { rec: 180, ilha: 'the_inquisition' }, 'Madareth Seal': { rec: 180, ilha: 'the_inquisition' },
+            'Ushuriel Seal': { rec: 180, ilha: 'the_inquisition' },
+            'Crystal Keeper': { rec: 130, ilha: 'warzone' }, 'Mushroom Gardens': { rec: 130, ilha: 'warzone' }, 'Lava Hot Spot': { rec: 150, ilha: 'warzone' },
+            'Warzone I - Fungus': { rec: 160, ilha: 'warzone' }, 'Warzone - Lava Lurkers': { rec: 180, ilha: 'warzone' },
+            'Warzone I - Rocky Mountain': { rec: 180, ilha: 'warzone' },
+            "Quara's Domain Yalahar": { rec: 130, ilha: 'yalahar' }, 'Grim Reapers Yalahar': { rec: 150, ilha: 'yalahar' },
+            'Killer Caiman Caverns': { rec: 80, ilha: 'zao' }, 'Zao Entrance': { rec: 80, ilha: 'zao' }, 'Frozen Hell': { rec: 100, ilha: 'zao' },
+            "Souleater's Canyon": { rec: 100, ilha: 'zao' }, "Lizard Chosen's Dojo": { rec: 110, ilha: 'zao' }, 'Lizard City': { rec: 130, ilha: 'zao' },
+            'Zao Caverns': { rec: 130, ilha: 'zao' },
             'Winter Court': { rec: 200, ilha: 'dream_courts' }, // TODO confirmar id
             'Ice Portal': { rec: 200, ilha: 'forgotten_knowledge' },
             'Hellgorak Seal': { rec: 200, ilha: 'the_inquisition' },
@@ -11832,7 +11865,7 @@
                  municaoNomes: ['bow', 'crossbow', 'arbalest'] }, // jogo: só arco/besta gastam munição (lança/estrela não)
         topoSkills: null, // preenchido em tempo de execução pelo /leaderboard
     };
-    // Caçada pelo título (sem diferença de maiúsculas): { rec, ilha, faixa } — rec/ilha só das de Rec ≥ 200 (cacadasTopo); null se a base não conhece.
+    // Caçada pelo título (sem diferença de maiúsculas): { rec, ilha, faixa } — rec/ilha de base.cacadasTopo (todas com Rec na wiki); null se a base não conhece.
     function trCacada(titulo, base) {
         const b = base || TR_BASE, chave = String(titulo || '').trim().toLowerCase();
         if (!chave) return null;
