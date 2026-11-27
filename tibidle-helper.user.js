@@ -12913,6 +12913,27 @@
     //    → { pos, total, top1: { nivel } | null, perto: [{ nome, nivel, skills: { melee, dist, ml: { SORCERER, DRUID } } }],
     //        perfis: [{ nivel, voc: { VOC: { SLOT: nomeItem } } }], t } — o formato que trAgenteTopo lê (ml do topo é por vocação).
     const TR_TOPO_FAIXA = 150;
+    // Um perfil (resposta do player_profile ou já resumido) → { nivel, voc: { VOC: { SLOT: nomeItem } } } | null (sem peça à mostra).
+    function trResumoPerfil(p, nivel) {
+        if (!p || typeof p !== 'object' || p.equipmentVisible === false) return null;
+        const lv = trNum(nivel != null ? nivel : p.nivel != null ? p.nivel : p.level);
+        if (!Number.isFinite(lv)) return null;
+        let voc = null;
+        if (p.voc && typeof p.voc === 'object') voc = p.voc; // já resumido
+        else if (Array.isArray(p.characters)) {
+            voc = {};
+            for (const c of p.characters) {
+                if (!c || !c.vocation || !c.equipment || typeof c.equipment !== 'object') continue;
+                const eq = {};
+                for (const [slot, it] of Object.entries(c.equipment)) {
+                    const k = TR_SLOT_JOGO[slot] || slot, n = it && typeof it === 'object' ? it.name : it;
+                    if (TR_SLOTS.includes(k) && n) eq[k] = String(n);
+                }
+                if (Object.keys(eq).length) voc[c.vocation] = eq;
+            }
+        }
+        return voc && Object.keys(voc).length ? { nivel: lv, voc } : null;
+    }
     const TR_SLOT_JOGO = { feet: 'boots', hand: 'weapon', helmet: 'head', amulet: 'necklace', quiver: 'ammo' }; // nomes do jogo → TR_SLOTS
     function trResumirTopo(leaderboard, perfis, nivel, t, nome) {
         const lista = (Array.isArray(leaderboard) ? leaderboard : leaderboard && Array.isArray(leaderboard.players) ? leaderboard.players : [])
@@ -12932,21 +12953,8 @@
             if (!p || typeof p !== 'object' || p.equipmentVisible === false) continue;
             const lv = nivelDe(p);
             if (!Number.isFinite(lv) || !naFaixa(lv)) continue;
-            let voc = null;
-            if (p.voc && typeof p.voc === 'object') voc = p.voc; // já resumido
-            else if (Array.isArray(p.characters)) {
-                voc = {};
-                for (const c of p.characters) {
-                    if (!c || !c.vocation || !c.equipment || typeof c.equipment !== 'object') continue;
-                    const eq = {};
-                    for (const [slot, it] of Object.entries(c.equipment)) {
-                        const k = TR_SLOT_JOGO[slot] || slot, n = it && typeof it === 'object' ? it.name : it;
-                        if (TR_SLOTS.includes(k) && n) eq[k] = String(n);
-                    }
-                    if (Object.keys(eq).length) voc[c.vocation] = eq;
-                }
-            }
-            if (voc && Object.keys(voc).length) resumo.push({ nivel: lv, voc });
+            const r = trResumoPerfil(p, lv);
+            if (r) resumo.push(r);
         }
         return { pos: i >= 0 ? i + 1 : null, total: lista.length, top1: lista.length ? { nivel: Number(lista[0].level) } : null, perto, perfis: resumo, t: trNum(t) > 0 ? Number(t) : 0 };
     }
@@ -13024,8 +13032,8 @@
         if (tipo === 'selo_state') x.selo = { ativo: d.ativo !== false, selos: Array.isArray(d.selos) ? trCopia(d.selos) : [], t: agora };
         return x;
     }
-    // Freio do topo (Task 15), por conta: leaderboard a cada 6 h; perfis a cada 24 h; leitura de perfis que não trouxe nenhum visível
-    // (tPerfisParcial) espera só 1 h. Perfil a reler obriga a reler o leaderboard (é dele que sai a faixa). Outra conta/faixa: tudo.
+    // Freio do topo (Task 15), por conta: leaderboard a cada 6 h; perfis a cada 24 h; leitura de perfis que parou antes do fim
+    // ou não leu nada (tPerfisParcial) espera só 1 h. Perfil a reler obriga a reler o leaderboard (é dele que sai a faixa). Outra conta/faixa: tudo.
     const TR_TOPO_LB_H = 6, TR_TOPO_PERFIS_H = 24, TR_TOPO_PARCIAL_H = 1;
     function trFreioTopo(salvo, agora, mesmaConta) {
         if (!salvo || typeof salvo !== 'object' || !mesmaConta) return { lerLb: true, lerPerfis: true };
@@ -13033,14 +13041,23 @@
         const lerPerfis = !(idade('tPerfis') < TR_TOPO_PERFIS_H) && !(idade('tPerfisParcial') < TR_TOPO_PARCIAL_H);
         return { lerLb: lerPerfis || !(idade('t') < TR_TOPO_LB_H), lerPerfis };
     }
-    // Perfis depois de uma leitura r = { lidos, visiveis, parou, novos }: nenhum lido, ou parou sem nenhum visível → ficam os de antes
-    // (mesma conta) e marca tPerfisParcial; senão os novos valem (tPerfis = agora).
+    // Perfis depois de uma leitura r = { lidos, visiveis, parou, novos } (decisão do controlador, 27/11):
+    //   COMPLETA (leu algum e não parou) → só os novos, tPerfis = agora;
+    //   nada lido, ou PAROU antes do fim (cancelada, erro, sem resposta) → os novos JUNTOS com os antigos da mesma conta/faixa (`mesmaConta`),
+    //   sem repetir (o resumo não guarda nome: a chave é nível + itens), até TR_TOPO_MAX_PERFIS; tPerfis fica e tPerfisParcial = agora (1 h).
+    //   Tudo volta resumido ({ nivel, voc }), que é o que o trResumirTopo e o especialista leem.
+    const TR_TOPO_MAX_PERFIS = 25;
     function trPerfisDepois(salvo, mesmaConta, r, agora) {
         const velho = mesmaConta && salvo && typeof salvo === 'object' ? salvo : null;
-        if (!(r && r.lidos > 0) || (r.parou && !(r.visiveis > 0))) {
-            return { perfis: velho && Array.isArray(velho.perfis) ? velho.perfis : [], tPerfis: velho && trNum(velho.tPerfis) > 0 ? Number(velho.tPerfis) : null, tPerfisParcial: agora };
+        const novos = (r && Array.isArray(r.novos) ? r.novos : []).map(p => trResumoPerfil(p)).filter(Boolean);
+        if (r && r.lidos > 0 && !r.parou) return { perfis: novos.slice(0, TR_TOPO_MAX_PERFIS), tPerfis: agora, tPerfisParcial: null };
+        const chave = (p) => p.nivel + '|' + JSON.stringify(Object.keys(p.voc).sort().map(v => [v, Object.keys(p.voc[v]).sort().map(sl => [sl, trNome(p.voc[v][sl])])]));
+        const vistos = new Set(), juntos = [];
+        for (const p of novos.concat((velho && Array.isArray(velho.perfis) ? velho.perfis : []).map(q => trResumoPerfil(q)).filter(Boolean))) {
+            const k = chave(p);
+            if (!vistos.has(k)) { vistos.add(k); juntos.push(p); }
         }
-        return { perfis: Array.isArray(r.novos) ? r.novos : [], tPerfis: agora, tPerfisParcial: null };
+        return { perfis: juntos.slice(0, TR_TOPO_MAX_PERFIS), tPerfis: velho && trNum(velho.tPerfis) > 0 ? Number(velho.tPerfis) : null, tPerfisParcial: agora };
     }
     /* @@TREINADOR-PURO-FIM */
     /* @@ARENA-PURO-INICIO — Sobrevivência (2.57.0): decisões do robô, puras (o tempo é st.tempoMs, sem DOM).
@@ -20734,8 +20751,8 @@
      *   1) GET /leaderboard (público) → posição, top 1 e as skills da faixa [nível, nível + 150];
      *   2) player_profile {name} pelo socket (consulta: external_query no próprio cliente) de até 25 nomes da faixa, 1 por segundo,
      *      parando no 1º erro, sem resposta em 5 s ou com TR.topo.cancelar; só entram perfis com equipamento à mostra de verdade.
-     *   Freio (trFreioTopo, puro): leaderboard a cada 6 h, perfis a cada 24 h; leitura que não trouxe perfil visível espera 1 h e
-     *   mantém os perfis de antes (trPerfisDepois). Outra conta ou outra faixa de nível relê tudo.
+     *   Freio (trFreioTopo, puro): leaderboard a cada 6 h, perfis a cada 24 h; leitura que parou antes do fim (ou não leu nada) espera 1 h
+     *   e JUNTA os perfis novos com os de antes (trPerfisDepois). Outra conta ou outra faixa de nível relê tudo.
      *   Guarda o resumo (trResumirTopo) POR CONTA em guardar('tr_topo') com t, conta, nivel, tPerfis e tPerfisParcial. Devolve um texto curto. */
     const TR_TOPO_MAX = 25, TR_TOPO_ESPERA_MS = 5000, TR_TOPO_PASSO_MS = 1000;
     function trEsperarPerfil(nome) {
@@ -20796,10 +20813,10 @@
             const resumo = Object.assign(trResumirTopo(lista, pf.perfis, nivel, agora, nome), { conta: nome, nivel, tPerfis: pf.tPerfis, tPerfisParcial: pf.tPerfisParcial });
             guardar('tr_topo', resumo);
             const pos = resumo.pos ? `você é o ${resumo.pos}º de ${resumo.total}` : `fora dos ${resumo.total} do ranking`;
-            const manteve = fr.lerPerfis && pf.tPerfisParcial === agora && pf.perfis.length > 0;
+            const manteve = fr.lerPerfis && pf.tPerfisParcial === agora && pf.perfis.length > visiveis;
             const txt = !fr.lerPerfis ? `topo relido (${pos}); perfis de ${trHorasPt(idadeH('tPerfis'))} h atrás`
                 : `topo lido: ${pos}; ${visiveis} de ${lidos} perfis com equipamento à mostra` + (parou ? ` (parei: ${parou})` : '')
-                    + (manteve ? '; mantive os perfis da leitura anterior' : '');
+                    + (manteve ? `; juntei com a leitura anterior (${pf.perfis.length} perfis)` : '');
             TR.topo.status = txt;
             log('treinador: ' + txt, parou ? 'aviso' : 'ok');
             return txt;

@@ -1491,12 +1491,30 @@ t('trFreioTopo: leitura sem perfil visível (tPerfisParcial) espera só 1 h — 
     // perfis bons de 3 h + tentativa parcial depois: os bons valem 24 h
     assert.deepStrictEqual(T.trFreioTopo({ t: agora - 2 * h, tPerfis: agora - 3 * h, tPerfisParcial: agora - 2 * h }, agora, true), { lerLb: false, lerPerfis: false });
 });
-t('trPerfisDepois: nada lido, ou parou sem visível → ficam os de antes (mesma conta) e marca parcial; senão valem os novos', () => {
-    const salvo = { perfis: [{ nivel: 300, voc: {} }], tPerfis: 100 }, novos = [{ name: 'A' }];
+t('trPerfisDepois: nada lido → ficam os de antes (mesma conta), parcial; completa → valem os novos (resumidos), tPerfis = agora', () => {
+    const salvo = { perfis: [{ nivel: 300, voc: { KNIGHT: { head: 'Zaoan helmet' } } }], tPerfis: 100 };
+    const novo = { name: 'A', level: 320, equipmentVisible: true, characters: [{ vocation: 'KNIGHT', equipment: { feet: { name: 'guardian boots', id: 1 } } }] };
     assert.deepStrictEqual(T.trPerfisDepois(salvo, true, { lidos: 0, visiveis: 0, parou: null, novos: [] }, 999), { perfis: salvo.perfis, tPerfis: 100, tPerfisParcial: 999 });
-    assert.deepStrictEqual(T.trPerfisDepois(salvo, true, { lidos: 3, visiveis: 0, parou: 'sem resposta', novos: [] }, 999), { perfis: salvo.perfis, tPerfis: 100, tPerfisParcial: 999 });
     assert.deepStrictEqual(T.trPerfisDepois(salvo, false, { lidos: 0, visiveis: 0, parou: null, novos: [] }, 999), { perfis: [], tPerfis: null, tPerfisParcial: 999 });
-    assert.deepStrictEqual(T.trPerfisDepois(salvo, true, { lidos: 3, visiveis: 1, parou: 'sem resposta', novos }, 999), { perfis: novos, tPerfis: 999, tPerfisParcial: null });
+    assert.deepStrictEqual(T.trPerfisDepois(salvo, true, { lidos: 25, visiveis: 1, parou: null, novos: [novo] }, 999),
+        { perfis: [{ nivel: 320, voc: { KNIGHT: { boots: 'guardian boots' } } }], tPerfis: 999, tPerfisParcial: null });
     assert.deepStrictEqual(T.trPerfisDepois(salvo, true, { lidos: 25, visiveis: 0, parou: null, novos: [] }, 999), { perfis: [], tPerfis: 999, tPerfisParcial: null });
+});
+t('trPerfisDepois: leitura que parou (cancelada/erro) JUNTA os novos com os antigos, sem repetir; tPerfis fica, parcial = agora', () => {
+    const a1 = { nivel: 300, voc: { KNIGHT: { head: 'Zaoan helmet' } } }, a2 = { nivel: 350, voc: { DRUID: { armor: 'magma coat' } } };
+    const salvo = { perfis: [a1, a2], tPerfis: 100 };
+    const novo = { name: 'B', level: 387, equipmentVisible: true, characters: [{ vocation: 'PALADIN', equipment: { weapon: { name: 'living vine bow' } } }] };
+    const r = T.trPerfisDepois(salvo, true, { lidos: 2, visiveis: 1, parou: 'cancelado', novos: [novo] }, 999);
+    assert.strictEqual(r.perfis.length, 3); assert.deepStrictEqual([r.tPerfis, r.tPerfisParcial], [100, 999]);
+    assert.deepStrictEqual(r.perfis[0], { nivel: 387, voc: { PALADIN: { weapon: 'living vine bow' } } });
+    // o mesmo perfil (nível + itens) relido não duplica; outra conta não herda os antigos
+    const igual = { name: 'C', level: 300, characters: [{ vocation: 'KNIGHT', equipment: { head: { name: 'Zaoan helmet' } } }] };
+    assert.strictEqual(T.trPerfisDepois(salvo, true, { lidos: 1, visiveis: 1, parou: 'sem resposta', novos: [igual] }, 999).perfis.length, 2);
+    assert.deepStrictEqual(T.trPerfisDepois(salvo, false, { lidos: 1, visiveis: 1, parou: 'cancelado', novos: [novo] }, 999).perfis.length, 1);
+    // parou sem nenhum visível: ficam os antigos
+    assert.deepStrictEqual(T.trPerfisDepois(salvo, true, { lidos: 3, visiveis: 0, parou: 'sem resposta', novos: [] }, 999), { perfis: [a1, a2], tPerfis: 100, tPerfisParcial: 999 });
+    // limite de 25
+    const muitos = { perfis: Array.from({ length: 30 }, (_, k) => ({ nivel: 260 + k, voc: { KNIGHT: { head: 'h' + k } } })), tPerfis: 100 };
+    assert.strictEqual(T.trPerfisDepois(muitos, true, { lidos: 1, visiveis: 1, parou: 'cancelado', novos: [novo] }, 999).perfis.length, 25);
 });
 process.on('exit', () => { if (!process.exitCode) console.log(`\n${n} testes ok`); });
