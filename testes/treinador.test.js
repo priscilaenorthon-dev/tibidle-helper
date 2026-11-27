@@ -5,7 +5,7 @@ const src = fs.readFileSync(path.join(__dirname, '..', 'tibidle-helper.user.js')
 const i = src.indexOf('/* @@TREINADOR-PURO-INICIO'), f = src.indexOf('/* @@TREINADOR-PURO-FIM');
 assert(i > 0 && f > i, 'trecho @@TREINADOR-PURO não encontrado');
 const T = new Function(src.slice(i, f) + '\nreturn { TR_BASE, TR_AGENTES, trConselho, trOrdenar, trRodar, trFotoVazia, trCacada, trAgenteUpar, trAgenteMult, trAgenteLegado, '
-    + 'trMesmoId, trQtd, trLimitadoPorDano, trDanoParaXp, trTipoPrey, trXpAtual, trRecDe, trMortesRecentes, trAgenteTopo, trAgenteErros, trXpPerdidaMorte, trAgenteBoss };')();
+    + 'trMesmoId, trQtd, trLimitadoPorDano, trDanoParaXp, trTipoPrey, trXpAtual, trRecDe, trMortesRecentes, trAgenteTopo, trAgenteErros, trXpPerdidaMorte, trAgenteBoss, trEventosMorte, trImpactoMorte };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 // agentes falsos: troca os de verdade pelos falsos, roda e devolve os de verdade sempre
@@ -408,13 +408,16 @@ t('mult: trava da CAÇADA da prey quando ela está aqui e destravada', () => {
     assert.strictEqual(cacada(preyDe({}, { huntLocked: false, huntMsLeft: 0 })).length, 0);
 });
 const fBencao = (o) => foto(Object.assign({ nivel: 250, xpTotal: 254e6, hunt: huntSN(), medidoAtual: { xpH: 540000 }, bencaos: { tem: 0, total: 7 } }, o || {}));
-t('mult: bênçãos — impacto = XP salva em UMA morte ÷ XP da semana; custo = uma compra das que faltam', () => {
-    const salvo = 0.0227 * 254e6 * 7 * 0.08, esperado = salvo / (540000 * 24 * 7) * 100;
-    for (const mortes of [[{ t: 1.8e12 - 2 * DIA, hunt: 'Shadow Nexus', voc: 'DRUID' }], [{ t: 1.8e12 - DIA }, { t: 1.8e12 - 2 * DIA }]]) {
+t('mult: bênçãos — impacto = ritmo de EVENTOS (7 dias) × XP salva ÷ XP de um dia; custo = uma compra das que faltam', () => {
+    const salvo = 0.0227 * 254e6 * 7 * 0.08, esperado = salvo / (540000 * 24 * 7) * 100; // 1 evento na semana
+    const party = ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'].map(voc => ({ t: 1.8e12 - DIA, hunt: 'Shadow Nexus', huntId: 1, voc }));
+    for (const mortes of [[{ t: 1.8e12 - 2 * DIA, hunt: 'Shadow Nexus', voc: 'DRUID' }], party]) { // a party inteira no mesmo instante = 1 evento
         const c = acoes(T.trAgenteMult(fBencao({ mortes }), T.TR_BASE), 'bencaos')[0];
-        assert(c); assert(Math.abs(c.impacto - esperado) < 1e-9, String(c.impacto)); // 2 mortes não dobram
+        assert(c); assert(Math.abs(c.impacto - esperado) < 1e-6, String(c.impacto)); assert.strictEqual(c.numeros.nMortes, 1);
         assert.strictEqual(c.custo, T.TR_BASE.bencaos.total(250)); assert.strictEqual(c.confianca, 'wiki'); assert(c.titulo.length <= 70);
     }
+    const dois = acoes(T.trAgenteMult(fBencao({ mortes: [{ t: 1.8e12 - DIA }, { t: 1.8e12 - 2 * DIA }] }), T.TR_BASE), 'bencaos')[0];
+    assert(Math.abs(dois.impacto - 2 * esperado) < 1e-6, '2 eventos = ritmo dobrado');
     const c = acoes(T.trAgenteMult(fBencao({ bencaos: { tem: '3', total: 7 }, mortes: [{ t: 1.8e12 - DIA }] }), T.TR_BASE), 'bencaos')[0];
     assert.strictEqual(c.numeros.faltam, 4); assert.strictEqual(c.custo, Math.round(T.TR_BASE.bencaos.total(250) * 4 / 7));
 });
@@ -606,38 +609,70 @@ t('topo: foto vazia → ler-topo; registrado em TR_AGENTES', () => {
 const H = 3600e3;
 const fErros = (o) => foto(Object.assign({ nivel: 250, xpTotal: 254e6, hunt: huntSN(), medidoAtual: { xpH: 540000, min: 10, ouroH: 50000 }, ouroLivre: 5e6, party: partyTopo() }, o || {}));
 const erro = (f, id) => T.trAgenteErros(f, T.TR_BASE).find(c => c.id === 'erros:' + id);
-t('trXpPerdidaMorte: 2,27 % da XP total sem bênção; cada bênção corta 8 %; sem xpTotal → null', () => {
+t('trXpPerdidaMorte: 2,27 % da XP total sem bênção (100+); cada bênção corta 8 %; sem xpTotal → null', () => {
     assert(Math.abs(T.trXpPerdidaMorte(foto({ xpTotal: 254e6 }), T.TR_BASE, 0) - 0.0227 * 254e6) < 1e-6);
-    assert(Math.abs(T.trXpPerdidaMorte(foto({ xpTotal: 254e6 }), T.TR_BASE, 7) - 0.0227 * 254e6 * 0.44) < 1e-6);
+    assert(Math.abs(T.trXpPerdidaMorte(foto({ xpTotal: 254e6, nivel: 250 }), T.TR_BASE, 7) - 0.0227 * 254e6 * 0.44) < 1e-6);
     assert(Math.abs(T.trXpPerdidaMorte(foto({ xpTotal: 254e6 }), T.TR_BASE, 99) - 0.0227 * 254e6 * 0.44) < 1e-6, 'no máximo 7');
     assert.strictEqual(T.trXpPerdidaMorte(foto(), T.TR_BASE, 0), null);
+});
+t('trXpPerdidaMorte: nível baixo perde mais (interpola morte.perdaFracPorNivel)', () => {
+    const fr = (nivel) => T.trXpPerdidaMorte(foto({ xpTotal: 1e6, nivel }), T.TR_BASE, 0) / 1e6;
+    assert(Math.abs(fr(10) - 0.0478) < 1e-12); assert(Math.abs(fr(24) - 0.0478) < 1e-12); assert(Math.abs(fr(50) - 0.0306) < 1e-12);
+    assert(Math.abs(fr(75) - (0.0306 + 0.0227) / 2) < 1e-12); assert(Math.abs(fr(37) - (0.0478 + 0.0306) / 2) < 1e-12);
+    assert(Math.abs(fr(250) - 0.0227) < 1e-12);
+});
+t('trEventosMorte: 1 entrada por vocação; mesma caçada e |Δt| ≤ 60 s = 1 evento', () => {
+    const m = (voc, dt, extra) => Object.assign({ t: 1.8e12 - H + dt, hunt: 'Shadow Nexus', huntId: 1, voc }, extra || {});
+    let ev = T.trEventosMorte(foto({ mortes: [m('KNIGHT', 0), m('PALADIN', 0), m('SORCERER', 0), m('DRUID', 0)] }), T.TR_BASE, 1);
+    assert.strictEqual(ev.length, 1); assert.deepStrictEqual(ev[0].vocs, ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID']);
+    ev = T.trEventosMorte(foto({ mortes: [m('KNIGHT', 0), m('DRUID', 30e3, { huntId: '1' }), m('PALADIN', 61e3)] }), T.TR_BASE, 1);
+    assert.deepStrictEqual(ev.map(e => e.vocs), [['KNIGHT', 'DRUID'], ['PALADIN']], "'1' × 1 casa; 61 s depois é outro evento");
+    ev = T.trEventosMorte(foto({ mortes: [m('KNIGHT', 0), m('DRUID', 0, { huntId: 2, hunt: 'Ice Portal' })] }), T.TR_BASE, 1);
+    assert.strictEqual(ev.length, 2, 'caçadas diferentes');
+    assert.strictEqual(T.trEventosMorte(foto({ mortes: [m('KNIGHT', -2 * DIA)] }), T.TR_BASE, 1).length, 0, 'fora da janela');
+});
+t('mortes: 1 evento → razão Erros ÷ Bênçãos ≈ 1 ÷ 0,56 (mesma régua)', () => {
+    const f = fErros({ bencaos: { tem: 0, total: 7 }, mortes: [{ t: 1.8e12 - H, hunt: 'Shadow Nexus', huntId: 1, voc: 'DRUID' }] });
+    const e = erro(f, 'mortes'), bc = acoes(T.trAgenteMult(f, T.TR_BASE), 'bencaos')[0];
+    assert(e && bc); assert(Math.abs(e.impacto / bc.impacto - 1 / 0.56) < 0.1, e.impacto + ' / ' + bc.impacto);
 });
 t('erros: foto limpa → só "Nenhum erro visível" (ok); foto vazia também', () => {
     for (const f of [fErros(), T.trFotoVazia()]) {
         assert.deepStrictEqual(T.trAgenteErros(f, T.TR_BASE).map(c => [c.id, c.estado]), [['erros:ok', 'ok']]);
     }
 });
-t('erros: 2 mortes do Druida em 24 h → erro, abrir-aguentar, impacto = XP perdida ÷ XP de um dia', () => {
+t('erros: 2 mortes do Druida em 24 h → erro, abrir-aguentar, impacto = ritmo de 7 dias × XP perdida ÷ XP de um dia', () => {
     const mortes = [{ t: 1.8e12 - 2 * H, hunt: 'Shadow Nexus', huntId: 1, voc: 'DRUID' }, { t: 1.8e12 - 5 * H, hunt: 'Shadow Nexus', huntId: 1, voc: 'DRUID' },
         { t: 1.8e12 - 30 * H, hunt: 'Ice Portal', voc: 'KNIGHT' }];
-    // com as 7 bênçãos a perda é 44 % da sem bênção: 2 × 0,0227 × 254 M × 0,44 ÷ (540 mil × 24) ≈ 39 (abaixo do teto de 50)
+    // 3 eventos em 7 dias (2 nas 24 h); com as 7 bênçãos a perda é 44 % da sem bênção
     const c = erro(fErros({ bencaos: { tem: 7 }, mortes }), 'mortes');
     assert(c); assert.strictEqual(c.estado, 'erro'); assert.strictEqual(c.acao.tipo, 'abrir-aguentar'); assert.strictEqual(c.numeros.n, 2);
-    assert(Math.abs(c.impacto - 2 * 0.0227 * 254e6 * 0.44 / (540000 * 24) * 100) < 1e-6, String(c.impacto));
-    assert.strictEqual(c.titulo, '2 mortes (Druida) em Shadow Nexus');
-    // sem bênção dá ≈ 89: TETO de 50 (decisão do controlador)
-    assert.strictEqual(erro(fErros({ bencaos: { tem: 0 }, mortes }), 'mortes').impacto, 50);
+    assert(Math.abs(c.numeros.ritmo - 3 / 7) < 1e-12);
+    assert(Math.abs(c.impacto - 3 / 7 * 0.0227 * 254e6 * 0.44 / (540000 * 24) * 100) < 1e-6, String(c.impacto));
+    assert.strictEqual(c.numeros.impactoBruto, c.impacto); assert.strictEqual(c.titulo, '2 mortes (Druida) em Shadow Nexus');
     // sem xpTotal: impacto 3 estimado
     const ce = erro(fErros({ xpTotal: null, mortes }), 'mortes');
     assert.strictEqual(ce.impacto, 3); assert.strictEqual(ce.confianca, 'estimado');
     assert.strictEqual(erro(fErros({ mortes: mortes.slice(2) }), 'mortes'), undefined, 'morte de 30 h atrás não conta');
 });
-t('erros: 3 mortes no nível 250 → impacto no teto de 50', () => {
-    const mortes = ['KNIGHT', 'DRUID', 'DRUID'].map((voc, k) => ({ t: 1.8e12 - (k + 1) * H, hunt: 'Shadow Nexus', huntId: 1, voc }));
-    for (const tem of [0, 7]) {
-        const c = erro(fErros({ nivel: 250, bencaos: { tem }, mortes }), 'mortes');
-        assert.strictEqual(c.impacto, 50, 'bênçãos ' + tem); assert.strictEqual(c.numeros.n, 3);
-    }
+t('erros: morte com xpTotal mas sem XP/h → impacto 3 estimado e a perda no porquê', () => {
+    const c = erro(fErros({ medidoAtual: null, mortes: [{ t: 1.8e12 - H, hunt: 'Shadow Nexus', huntId: 1, voc: 'DRUID' }] }), 'mortes');
+    assert.strictEqual(c.impacto, 3); assert.strictEqual(c.confianca, 'estimado'); assert.strictEqual(c.numeros.impactoBruto, null);
+    assert(c.numeros.perda > 0); assert(/5,8 M de XP/.test(c.porque), c.porque);
+});
+t('erros: a party inteira no mesmo instante = 1 evento ("1 morte (party inteira)")', () => {
+    const mortes = ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'].map(voc => ({ t: 1.8e12 - H, hunt: 'Shadow Nexus', huntId: 1, voc }));
+    const c = erro(fErros({ bencaos: { tem: 0 }, mortes }), 'mortes');
+    assert.strictEqual(c.numeros.n, 1); assert.strictEqual(c.titulo, '1 morte (party inteira) em Shadow Nexus');
+    assert(Math.abs(c.impacto - 1 / 7 * 0.0227 * 254e6 / (540000 * 24) * 100) < 1e-6, String(c.impacto));
+});
+t('erros: muitas mortes → teto de 50 no ranking; o porquê mostra o bruto e o teto', () => {
+    const mortes = Array.from({ length: 10 }, (_, k) => ({ t: 1.8e12 - (k * 12 + 1) * H, hunt: 'Shadow Nexus', huntId: 1, voc: 'DRUID' }));
+    const c = erro(fErros({ bencaos: { tem: 0 }, mortes }), 'mortes');
+    const bruto = 10 / 7 * 0.0227 * 254e6 / (540000 * 24) * 100; // ≈ 63,6
+    assert.strictEqual(c.impacto, 50); assert(Math.abs(c.numeros.impactoBruto - bruto) < 1e-6);
+    assert(/teto 50 no ranking/.test(c.porque) && c.porque.includes(String(Math.round(bruto * 10) / 10).replace('.', ',')), c.porque);
+    assert.strictEqual(c.numeros.n, 2, 'só 2 nas últimas 24 h');
 });
 t('erros: ouro/h negativo e ouro livre < 3 h dele → "O ouro acaba em 2 h nesta caçada" (erro, abrir-magia)', () => {
     const ma = { xpH: 540000, min: 10, ouroH: -100000 };

@@ -11655,7 +11655,8 @@
                    preco: (nv) => nv <= 30 ? 2000 : nv < 120 ? 200 * (nv - 20) : 20000 + 75 * (nv - 120), // comum (ids 2–6)
                    precoEnh: (nv) => nv <= 30 ? 2000 : nv < 120 ? 260 * (nv - 20) : 26000 + 100 * (nv - 120), // enhanced (ids 7–8)
                    total(nv) { return 5 * this.preco(nv) + 2 * this.precoEnh(nv); } }, // as 7 juntas (nível 200 = 198.000, wiki)
-        morte: { perdaFracSemBencao: 0.0227, perdaFracPorNivel: { 24: 0.0478, 50: 0.0306, 100: 0.0227 } }, // wiki/durante-a-cacada (fração da XP total; usar como ordem de grandeza)
+        morte: { perdaFracSemBencao: 0.0227, perdaFracPorNivel: { 24: 0.0478, 50: 0.0306, 100: 0.0227 }, // wiki/durante-a-cacada (fração da XP total; usar como ordem de grandeza)
+                 tetoImpacto: 50, eventoS: 60 }, // decisão do controlador (27/11): impacto de morte no ranking ≤ 50; mortes da party a ≤ 60 s na mesma caçada = 1 evento
         // ── Faixas de nível → caçadas pelo Rec da wiki (faixa = [de, ate): Rec ≥ de e < ate). Abaixo de 80 o Radar já cobre (Tibidle Island, nível mínimo)
         faixas: [ // wiki/cacadas (coluna Rec)
             { de: 1, ate: 80, hunts: [] },
@@ -12006,13 +12007,52 @@
         const a = (lista || []).map(trNum).filter(Number.isFinite).sort((x, y) => x - y), m = a.length >> 1;
         return !a.length ? null : a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
     }
+    // Fração da XP total perdida numa morte SEM bênção, pelo nível: interpola morte.perdaFracPorNivel (24 → 4,78 %, 50 → 3,06 %,
+    // 100+ → 2,27 %; nível baixo perde mais). Nível desconhecido → perdaFracSemBencao.
+    function trPerdaFracMorte(nivel, base) {
+        const b = base || TR_BASE, nv = trNum(nivel);
+        const pts = Object.entries(b.morte.perdaFracPorNivel || {}).map(([n, f]) => [Number(n), Number(f)]).sort((x, y) => x[0] - y[0]);
+        if (!Number.isFinite(nv) || !pts.length) return b.morte.perdaFracSemBencao;
+        if (nv <= pts[0][0]) return pts[0][1];
+        for (let k = 1; k < pts.length; k++) {
+            const [n0, f0] = pts[k - 1], [n1, f1] = pts[k];
+            if (nv <= n1) return f0 + (f1 - f0) * (nv - n0) / (n1 - n0);
+        }
+        return pts[pts.length - 1][1];
+    }
     // XP perdida numa morte tendo `bencaos` bênçãos (wiki/bencaos e durante-a-cacada: cada bênção corta cortePorFrac da perda sem bênção).
     // null sem foto.xpTotal. XP que as bênçãos salvam = perda(tem) − perda(todas).
     function trXpPerdidaMorte(foto, base, bencaos) {
         const b = base || TR_BASE, xp = trNum(foto.xpTotal);
         if (!(xp > 0)) return null;
         const n = Math.min(b.bencaos.n, Math.max(0, trNum(bencaos) || 0));
-        return b.morte.perdaFracSemBencao * xp * (1 - n * b.bencaos.cortePorFrac);
+        return trPerdaFracMorte(foto.nivel, b) * xp * (1 - n * b.bencaos.cortePorFrac);
+    }
+    // [contrato] Mortes = EVENTOS: foto.mortes tem 1 entrada por vocação; mesma caçada (huntId por trMesmoId; sem os dois huntIds, o título;
+    // sem dado nenhum, não separa) e |Δt| ≤ morte.eventoS = 1 evento. → [{ t, hunt, huntId, vocs }] em ordem de tempo.
+    function trEventosMorte(foto, base, dias) {
+        const b = base || TR_BASE, jan = (b.morte.eventoS || 60) * 1000;
+        const mesma = (e, m) => (e.huntId != null && m.huntId != null ? trMesmoId(e.huntId, m.huntId)
+            : e.hunt && m.hunt ? String(e.hunt).toLowerCase() === String(m.hunt).toLowerCase() : true);
+        const ev = [];
+        for (const m of trMortesRecentes(foto, b, dias).slice().sort((x, y) => trNum(x.t) - trNum(y.t))) {
+            const e = ev.find(x => Math.abs(trNum(m.t) - x.t) <= jan && mesma(x, m));
+            if (!e) { ev.push({ t: trNum(m.t), hunt: m.hunt || null, huntId: m.huntId ?? null, vocs: m.voc ? [m.voc] : [] }); continue; }
+            if (m.voc && !e.vocs.includes(m.voc)) e.vocs.push(m.voc);
+            if (!e.hunt && m.hunt) e.hunt = m.hunt;
+            if (e.huntId == null && m.huntId != null) e.huntId = m.huntId;
+        }
+        return ev;
+    }
+    // [contrato] Régua ÚNICA do impacto de morte (Erros e bênçãos): ritmo = eventos em 7 dias ÷ 7 (por dia);
+    // bruto = ritmo × trXpPerdidaMorte(bencaosTem) ÷ (XP/h × 24) × 100; impacto = min(bruto, morte.tetoImpacto).
+    // Sem xpTotal ou sem XP/h → impacto/bruto null. `nEventos` (opcional) troca a contagem dos 7 dias.
+    function trImpactoMorte(foto, base, bencaosTem, nEventos) {
+        const b = base || TR_BASE, n = nEventos != null ? nEventos : trEventosMorte(foto, b, 7).length;
+        const ritmo = n / 7, perda = trXpPerdidaMorte(foto, b, bencaosTem), xpH = trXpAtual(foto);
+        if (perda == null || !(xpH > 0)) return { impacto: null, bruto: null, ritmo, perda };
+        const bruto = ritmo * perda / (xpH * 24) * 100;
+        return { impacto: Math.min(b.morte.tetoImpacto, bruto), bruto, ritmo, perda };
     }
     // Arma de 2 mãos? A dica da foto (eq.weapon.duasMaos, do attrs.slotType) vence; sem ela, o nome (arco/besta).
     function trDuasMaos(peca, base) {
@@ -12205,18 +12245,19 @@
                 }
             }
         }
-        // Bênçãos: nível ≥ 120, `tem` conhecido, faltando alguma, e morte em 7 dias (ou na medida do mapa atual).
-        // Somem na morte: 1 compra protege 1 morte → impacto = XP salva em UMA morte ÷ XP de uma semana (24 h/dia); custo = 1 compra das que faltam.
+        // Bênçãos: nível ≥ 120, `tem` conhecido, faltando alguma, e morte (evento) em 7 dias (ou na medida do mapa atual).
+        // Régua única das mortes (trImpactoMorte): impacto = bruto(tem) − bruto(todas), com o teto do ranking; custo = 1 compra das que faltam.
         const bc = foto.bencaos && typeof foto.bencaos === 'object' ? foto.bencaos : null;
         const tem = bc && Number.isFinite(trNum(bc.tem)) ? Math.max(0, Number(bc.tem)) : null;
-        const morteMapa = !!(daCacada && trNum(daCacada.mortes) > 0);
-        if (tem != null && tem < b.bencaos.n && nivel != null && nivel >= 120 && (mortes7.length || morteMapa)) {
+        const morteMapa = !!(daCacada && trNum(daCacada.mortes) > 0), eventos7 = trEventosMorte(foto, b, 7).length;
+        if (tem != null && tem < b.bencaos.n && nivel != null && nivel >= 120 && (eventos7 || morteMapa)) {
             const faltam = b.bencaos.n - tem, custo = Math.round(b.bencaos.total(nivel) * faltam / b.bencaos.n), xpH = trXpAtual(foto);
-            const perdaAgora = trXpPerdidaMorte(foto, b, tem), salvo = perdaAgora == null ? null : perdaAgora - trXpPerdidaMorte(foto, b, b.bencaos.n);
-            const impacto = salvo != null && xpH ? salvo / (xpH * 24 * 7) * 100 : 1;
-            const nMortes = Math.max(mortes7.length, morteMapa ? 1 : 0);
+            const nMortes = Math.max(eventos7, morteMapa ? 1 : 0);
+            const com = trImpactoMorte(foto, b, tem, nMortes), todas = trImpactoMorte(foto, b, b.bencaos.n, nMortes);
+            const salvo = com.perda == null ? null : com.perda - todas.perda;
+            const impacto = com.bruto != null ? Math.min(b.morte.tetoImpacto, com.bruto - todas.bruto) : 1;
             out.push(trConselho('mult', 'bencaos', { titulo: `Comprar as bênçãos (≈ ${trQtd(custo)} de ouro)`, confianca: 'wiki', custo, impacto,
-                porque: `${nMortes} ${nMortes > 1 ? 'mortes' : 'morte'} na última semana. Sem bênção a morte leva ≈ ${trPct(b.morte.perdaFracSemBencao * 100)} % da XP total; `
+                porque: `${nMortes} ${nMortes > 1 ? 'mortes' : 'morte'} na última semana. Sem bênção a morte leva ≈ ${trPct(trPerdaFracMorte(nivel, b) * 100)} % da XP total; `
                     + `as ${faltam} que faltam cortam ${Math.round(faltam * b.bencaos.cortePorFrac * 100)} % disso`
                     + (salvo != null ? ` (≈ ${trQtd(salvo)} de XP na próxima morte)` : '') + '. Somem na morte: recompre depois de cada uma.',
                 numeros: { nMortes, faltam, salvo, xpH },
@@ -12355,26 +12396,27 @@
     function trAgenteErros(foto, base) {
         const b = base || TR_BASE, out = [], hunt = foto.hunt || null, ma = foto.medidoAtual || null, xpH = trXpAtual(foto);
         const party = (Array.isArray(foto.party) ? foto.party : []).filter(m => m && m.voc);
-        // 1) Mortes nas últimas 24 h: cada uma encerra a caçada e leva trXpPerdidaMorte (com as bênçãos de agora).
-        //    impacto = XP perdida nas mortes ÷ XP de um dia (24 h na XP/h de agora); sem xpTotal ou XP/h → 3 (estimado)
-        const mortes = trMortesRecentes(foto, b, 1);
-        if (mortes.length) {
-            const n = mortes.length, quem = [...new Set(mortes.map(m => m.voc).filter(Boolean))];
+        // 1) Mortes (EVENTOS) nas últimas 24 h: dispara a regra. O impacto é a régua única trImpactoMorte (ritmo de 7 dias, bênçãos de agora,
+        //    teto 50); sem xpTotal ou XP/h → 3 (estimado).
+        const eventos = trEventosMorte(foto, b, 1);
+        if (eventos.length) {
+            const n = eventos.length, quem = [...new Set(eventos.flatMap(e => e.vocs))];
+            const todos = Object.keys(TR_VOC_PT).every(v => quem.includes(v));
             const porMapa = {};
-            for (const m of mortes) {
-                const k = m.hunt || (hunt && trMesmoId(m.huntId, hunt.id) ? hunt.title : null);
+            for (const e of eventos) {
+                const k = e.hunt || (hunt && trMesmoId(e.huntId, hunt.id) ? hunt.title : null);
                 if (k) porMapa[k] = (porMapa[k] || 0) + 1;
             }
             const mapas = Object.keys(porMapa).sort((x, y) => porMapa[y] - porMapa[x]);
             const tem = foto.bencaos && Number.isFinite(trNum(foto.bencaos.tem)) ? Number(foto.bencaos.tem) : 0;
-            const perda = trXpPerdidaMorte(foto, b, tem), conta = perda != null && xpH > 0;
-            const impacto = conta ? Math.min(50, n * perda / (xpH * 24) * 100) : 3; // teto 50 (decisão do controlador): morte não engole o resto
-            out.push(trConselho('erros', 'mortes', { estado: 'erro', confianca: conta ? 'wiki' : 'estimado', impacto,
-                titulo: trCorta(`${n} ${n > 1 ? 'mortes' : 'morte'}` + (quem.length ? ` (${quem.map(trVocPt).join(', ')})` : '')
+            const im = trImpactoMorte(foto, b, tem), conta = im.impacto != null, cortado = conta && im.bruto > im.impacto;
+            out.push(trConselho('erros', 'mortes', { estado: 'erro', confianca: conta ? 'wiki' : 'estimado', impacto: conta ? im.impacto : 3,
+                titulo: trCorta(`${n} ${n > 1 ? 'mortes' : 'morte'}` + (todos ? ' (party inteira)' : quem.length ? ` (${quem.map(trVocPt).join(', ')})` : '')
                     + (mapas.length === 1 ? ` em ${mapas[0]}` : mapas.length > 1 ? ` em ${mapas.length} mapas` : '')),
-                porque: 'Cada morte encerra a caçada' + (conta ? ` e leva ≈ ${trQtd(perda)} de XP (com ${tem} de ${b.bencaos.n} bênçãos): ${trPct(impacto)} % de um dia de XP` : '')
+                porque: 'Cada morte encerra a caçada' + (im.perda != null ? ` e leva ≈ ${trQtd(im.perda)} de XP (com ${tem} de ${b.bencaos.n} bênçãos)` : '')
+                    + (conta ? `. No ritmo de ${trPct(im.ritmo * 7)} em 7 dias, isso é ${trPct(im.bruto)} % de um dia de XP` + (cortado ? ` (teto ${b.morte.tetoImpacto} no ranking)` : '') : '')
                     + `. ${mapas.length > 1 ? 'Mapas: ' + mapas.map(k => `${k} (${porMapa[k]})`).join(', ') + '. ' : ''}O "Aguentar" mostra o que matou.`,
-                numeros: { n, vocs: quem, mapas: porMapa, perda, xpH, bencaos: tem },
+                numeros: { n, vocs: quem, mapas: porMapa, perda: im.perda, xpH, bencaos: tem, ritmo: im.ritmo, impactoBruto: im.bruto },
                 acao: { tipo: 'abrir-aguentar', rotulo: 'Aguentar' } }));
         }
         // 2) Ouro acabando: caçada com saldo/h negativo (≥ 5 min medidos) e ouro livre para menos de 3 h. Impacto 5 estimado.
