@@ -76,6 +76,10 @@ t('migração 2.9: right 8/top 84 (padrão antigo) vira lugar automático; arras
     assert.deepStrictEqual([c.livre, c.dx, c.logLido], [true, 40, 9], 'estado 2.10 não é remexido');
     assert.strictEqual(C.migrarUI(null, PADRAO, 1).livre, false);
 });
+t('migração 2.67: a aba "analise" salva abre o ▤ Progresso (treinador)', () => {
+    assert.strictEqual(C.migrarUI({ aba: 'analise', livre: false, logLido: 1 }, PADRAO, 2).aba, 'treinador');
+    assert.strictEqual(C.migrarUI({ aba: 'progresso', livre: false, logLido: 1 }, PADRAO, 2).aba, 'progresso', 'a Rotina continua com a chave progresso');
+});
 t('celular: trilho acima da folha por padrão, arrasto limitado à tela', () => {
     assert.strictEqual(C.alturaDoTrilhoCel(844, 58, PADRAO, null), 422 - 58 - 4);
     assert.strictEqual(C.alturaDoTrilhoCel(844, 58, PADRAO, { x: 0, y: 5000 }), 844 - 58);

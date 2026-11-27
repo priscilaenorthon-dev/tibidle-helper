@@ -6,7 +6,7 @@ const i = src.indexOf('/* @@TREINADOR-PURO-INICIO'), f = src.indexOf('/* @@TREIN
 assert(i > 0 && f > i, 'trecho @@TREINADOR-PURO não encontrado');
 const T = new Function(src.slice(i, f) + '\nreturn { TR_BASE, TR_AGENTES, trConselho, trOrdenar, trRodar, trFotoVazia, trCacada, trAgenteUpar, trAgenteMult, trAgenteLegado, '
     + 'trMesmoId, trQtd, trLimitadoPorDano, trDanoParaXp, trTipoPrey, trXpAtual, trRecDe, trMortesRecentes, trAgenteTopo, trAgenteErros, trXpPerdidaMorte, trAgenteBoss, trEventosMorte, trImpactoMorte, '
-    + 'trAgenteBestiario, trAgenteItens, trAgenteForja, trAgenteDinheiro, trCortaSufixo, trParty, trVelho, trEhMago, trDanoDeUm, trCustoEfetivo, trResumirTopo, trOuroLivre, trMesclarMapas, trAnotar, trFreioTopo, trPerfisDepois };')();
+    + 'trAgenteBestiario, trAgenteItens, trAgenteForja, trAgenteDinheiro, trCortaSufixo, trParty, trVelho, trEhMago, trDanoDeUm, trCustoEfetivo, trResumirTopo, trOuroLivre, trMesclarMapas, trAnotar, trFreioTopo, trPerfisDepois, trAcaoInfo, trCasaResposta, trPlanoCompra, trIdadePt, TR_ACAO_ROTULO, TR_ERRO_PT };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 // agentes falsos: troca os de verdade pelos falsos, roda e devolve os de verdade sempre
@@ -1516,5 +1516,121 @@ t('trPerfisDepois: leitura que parou (cancelada/erro) JUNTA os novos com os anti
     // limite de 25
     const muitos = { perfis: Array.from({ length: 30 }, (_, k) => ({ nivel: 260 + k, voc: { KNIGHT: { head: 'h' + k } } })), tPerfis: 100 };
     assert.strictEqual(T.trPerfisDepois(muitos, true, { lidos: 1, visiveis: 1, parou: 'cancelado', novos: [novo] }, 999).perfis.length, 25);
+});
+// ── Task 16: tela e botões (partes puras: trAcaoInfo, trCasaResposta, trPlanoCompra, trIdadePt)
+const TIPOS_DO_CODIGO = (() => { // todo `tipo: '…'` literal que os especialistas emitem (o trecho puro inteiro)
+    const trecho = src.slice(i, f), tipos = new Set();
+    for (const m of trecho.matchAll(/tipo: '([a-z-]+)'/g)) tipos.add(m[1]);
+    return tipos;
+})();
+t('trAcaoInfo: conhece TODO tipo de ação do código dos especialistas, e só eles', () => {
+    assert(TIPOS_DO_CODIGO.size >= 20, [...TIPOS_DO_CODIGO].join());
+    for (const tp of TIPOS_DO_CODIGO) assert(T.trAcaoInfo({ tipo: tp }, T.trFotoVazia()), 'sem trAcaoInfo: ' + tp);
+    assert.deepStrictEqual(Object.keys(T.TR_ACAO_ROTULO).sort(), [...TIPOS_DO_CODIGO].sort(), 'rótulo de tipo que ninguém emite (ou faltando)');
+    assert.strictEqual(T.trAcaoInfo({ tipo: 'qualquer' }, null), null); assert.strictEqual(T.trAcaoInfo(null, null), null);
+});
+t('trAcaoInfo: os tipos que saem do trRodar nas 3 fotos e em fotos sintéticas são todos conhecidos', () => {
+    const vistos = new Set();
+    const anota = (r) => { for (const c of r.todos.concat(r.passos)) if (c && c.acao) { vistos.add(c.acao.tipo); assert(T.trAcaoInfo(c.acao, null), 'desconhecido: ' + c.acao.tipo + ' (' + c.id + ')'); } };
+    for (const ft of Object.values(FOTOS)) anota(T.trRodar(ft, T.TR_BASE));
+    const sinteticas = [
+        foto({ nivel: 262, premium: { ativo: false }, hunt: huntSN({ lure: 2 }), medidoAtual: { xpH: 540000, min: 10, ouroH: -100000, abatesH: 900 }, ouroLivre: 200000,
+               sessoes: [{ huntId: 1, durMin: 30, xpH: 540000, morte: false }], prey: { huntId: 99, buffs: {}, wildcards: 9 },
+               invasao: { inscrito: false }, chaves: { usadas: 10, max: 10, elites: [{ nome: 'Viscous', qtd: 3 }] } }),
+        foto({ nivel: 330, deposito: { "timira's scale": 5 }, forja: { abaixo4: [{ voc: 'KNIGHT', slot: 'armor', nome: 'magma coat', refino: 1, custo: 300000 }], idadeH: 40, basesParadas: [{ nome: 'x', potencia: 450 }] } }),
+        fItens({ deposito: { 'spectral conch': 4 }, precos: { 'Spectral Conch': 300000 } }),
+        fItens({ deposito: { 'Spectral Conch': 12 } }),
+        foto({ nivel: 250, hunt: huntSN(), selo: { ativo: false, abundante: 3 }, legado: { KNIGHT: { skill: 64, marcoAtual: 1, proxMarco: 65, falta: 1, bonusAtual: 2, bonusProx: 5 } } }),
+        T.trFotoVazia()
+    ];
+    for (const ft of sinteticas) anota(T.trRodar(ft, T.TR_BASE));
+    for (const tp of ['ir-mapa', 'abrir-loja', 'ler-topo', 'abrir-elite', 'invasao', 'boss-trocar', 'comprar-mercado', 'abrir-silas', 'abrir-forja', 'forja-ler', 'ampulheta', 'selo'])
+        assert(vistos.has(tp), tp + ' não saiu de nenhuma foto: ' + [...vistos].join());
+});
+t('trAcaoInfo: abas do helper, telas do jogo e rótulo curto', () => {
+    const fv = T.trFotoVazia();
+    assert.deepStrictEqual(['abrir-melhorias', 'abrir-equip', 'abrir-aguentar', 'abrir-magia', 'abrir-forja'].map(tp => T.trAcaoInfo({ tipo: tp }, fv)).map(x => [x.modo, x.aba, x.dois]),
+        [['aba', 'melhorias', false], ['aba', 'equip', false], ['aba', 'sobreviver', false], ['aba', 'magia', false], ['aba', 'forja', false]]);
+    assert.deepStrictEqual(['abrir-loja', 'abrir-elite', 'ampulheta'].map(tp => [T.trAcaoInfo({ tipo: tp }, fv).modo, T.trAcaoInfo({ tipo: tp }, fv).tela]), [['tela', 'loja'], ['tela', 'elite'], ['tela', 'ampulheta']]);
+    assert.deepStrictEqual(['ler-topo', 'forja-ler'].map(tp => T.trAcaoInfo({ tipo: tp }, fv).modo), ['helper', 'helper']);
+    assert.strictEqual(T.trAcaoInfo({ tipo: 'ir-mapa', huntId: 9, rotulo: 'Ir para Warzone III Crystal Caves' }, fv).rotulo, 'Ir', 'rótulo longo vira o curto');
+    assert.strictEqual(T.trAcaoInfo({ tipo: 'lure', huntId: 1, lure: 3, rotulo: 'Lure 3' }, fv).rotulo, 'Lure 3');
+});
+t('trAcaoInfo: 2 toques no que gasta ou tira da caçada; motivo com a foto de agora', () => {
+    const caca = foto({ emHunt: true, hunt: huntSN(), ouro: 1000000, ouroTravado: 400000 });
+    assert.strictEqual(T.trAcaoInfo({ tipo: 'ir-mapa', huntId: 5 }, caca).dois, true);
+    assert.strictEqual(T.trAcaoInfo({ tipo: 'ir-mapa', huntId: 5 }, foto({ emHunt: false })).dois, false);
+    assert.strictEqual(T.trAcaoInfo({ tipo: 'ir-mapa' }, caca).motivo, 'sem mapa');
+    // lure: só dentro da MESMA caçada
+    assert.strictEqual(T.trAcaoInfo({ tipo: 'lure', huntId: 1, lure: 4 }, caca).motivo, null);
+    assert.strictEqual(T.trAcaoInfo({ tipo: 'lure', huntId: 2, lure: 4 }, caca).motivo, 'só dentro da caçada');
+    assert.strictEqual(T.trAcaoInfo({ tipo: 'lure', huntId: 1, lure: 4 }, foto({ hunt: huntSN() })).motivo, 'só dentro da caçada');
+    // medir: Scan troca de mapa
+    assert.deepStrictEqual([T.trAcaoInfo({ tipo: 'medir', alvos: [{ title: 'a', huntId: 1 }] }, caca).dois, T.trAcaoInfo({ tipo: 'medir', alvos: [] }, caca).motivo], [true, 'sem mapa para medir']);
+    // prey: wildcards
+    const pr = (wc, gratis) => foto({ prey: { wildcards: wc, buffs: { KNIGHT: { tipo: 'xp', tier: 3, gratis } } } });
+    assert.strictEqual(T.trAcaoInfo({ tipo: 'prey-escolher', huntId: 1 }, pr(3)).motivo, 'faltam wildcards (3/5)');
+    assert.deepStrictEqual([T.trAcaoInfo({ tipo: 'prey-escolher', huntId: 1 }, pr(5)).motivo, T.trAcaoInfo({ tipo: 'prey-escolher', huntId: 1 }, pr(5)).dois], [null, true]);
+    assert.deepStrictEqual([T.trAcaoInfo({ tipo: 'prey-trocar', voc: 'KNIGHT' }, pr(0, true)).dois, T.trAcaoInfo({ tipo: 'prey-trocar', voc: 'KNIGHT' }, pr(0, true)).motivo], [false, null], 'sorteio grátis do dia: 1 toque');
+    assert.deepStrictEqual([T.trAcaoInfo({ tipo: 'prey-trocar', voc: 'KNIGHT' }, pr(0, false)).dois, T.trAcaoInfo({ tipo: 'prey-trocar', voc: 'KNIGHT' }, pr(0, false)).motivo], [true, 'sem wildcard']);
+    assert.strictEqual(T.trAcaoInfo({ tipo: 'prey-trancar', alvo: 'hunt' }, pr(2)).dois, true);
+    // bênçãos: o ouro NORMAL (total − travado) paga
+    const bc = (c) => foto({ ouro: 1000000, ouroTravado: 400000, bencaos: { tem: 3, total: 7, custoFaltam: c } });
+    assert.deepStrictEqual([T.trAcaoInfo({ tipo: 'bencaos' }, bc(500000)).motivo, T.trAcaoInfo({ tipo: 'bencaos' }, bc(700000)).motivo], [null, 'falta ouro']);
+    assert.strictEqual(T.trAcaoInfo({ tipo: 'bencaos' }, bc(500000)).dois, true);
+    // Selo: com Abundante liga pelo socket (2 toques); sem pacto abre a tela; fora da caçada não
+    assert.deepStrictEqual(['modo', 'dois', 'motivo'].map(k => T.trAcaoInfo({ tipo: 'selo', huntId: 1 }, Object.assign({}, caca, { selo: { ativo: false, abundante: 2 } }))[k]), ['jogo', true, null]);
+    assert.deepStrictEqual(['modo', 'tela'].map(k => T.trAcaoInfo({ tipo: 'selo', huntId: 1 }, Object.assign({}, caca, { selo: { ativo: false, abundante: null } }))[k]), ['tela', 'selo']);
+    assert.strictEqual(T.trAcaoInfo({ tipo: 'selo', huntId: 1 }, foto({ selo: { abundante: 2 } })).motivo, 'só dentro da caçada');
+    // Silas: só na cidade; a ilha cobra ouro
+    assert.strictEqual(T.trAcaoInfo({ tipo: 'boss-trocar', boss: 'Timira', qtd: 1 }, caca).motivo, 'só na cidade (Silas)');
+    assert.deepStrictEqual(['dois', 'cidade', 'motivo'].map(k => T.trAcaoInfo({ tipo: 'boss-trocar', boss: 'Timira', qtd: 1 }, foto({}))[k]), [true, true, null]);
+    assert.strictEqual(T.trAcaoInfo({ tipo: 'boss-trocar', boss: 'Timira', qtd: 0 }, foto({})).motivo, 'nada a trocar');
+    assert.strictEqual(T.trAcaoInfo({ tipo: 'abrir-silas', ilha: 'marapur' }, foto({ ouro: 9e6 })).motivo, 'falta ouro');
+    assert.strictEqual(T.trAcaoInfo({ tipo: 'abrir-silas', ilha: 'marapur' }, foto({ ouro: 11e6 })).motivo, null);
+    assert.strictEqual(T.trAcaoInfo({ tipo: 'abrir-silas', ilha: 'marapur' }, caca).motivo, 'só na cidade (Silas)');
+    assert.strictEqual(T.trAcaoInfo({ tipo: 'abrir-silas', ilha: 'atlantida' }, foto({})).motivo, 'ilha desconhecida');
+    // Mercado: Premium e ouro
+    const it = [{ nome: 'Spectral Conch', qtd: 6, preco: 300000 }];
+    assert.strictEqual(T.trAcaoInfo({ tipo: 'comprar-mercado', itens: it }, foto({ premium: { ativo: false } })).motivo, 'Mercado só com Premium');
+    assert.strictEqual(T.trAcaoInfo({ tipo: 'comprar-mercado', itens: it }, foto({ ouro: 1e6 })).motivo, 'falta ouro');
+    assert.deepStrictEqual(['dois', 'motivo'].map(k => T.trAcaoInfo({ tipo: 'comprar-mercado', itens: it }, foto({ ouro: 2e6, premium: { ativo: true } }))[k]), [true, null]);
+    assert.strictEqual(T.trAcaoInfo({ tipo: 'comprar-mercado', itens: [] }, foto({})).motivo, 'nada a comprar');
+    // grátis: 1 toque
+    assert.strictEqual(T.trAcaoInfo({ tipo: 'invasao' }, foto({})).dois, false);
+    // sem ouro lido: não bloqueia (o servidor diz insufficient_gold)
+    assert.strictEqual(T.trAcaoInfo({ tipo: 'bencaos' }, foto({ bencaos: { custoFaltam: 5e5 } })).motivo, null);
+});
+t('trCasaResposta: requestId, action do meta_result, erro com/sem requestId e mensagem sem requestId', () => {
+    const p = { tipo: 'buy_all_blessings', rid: 'r1', espera: ['meta_result'] };
+    assert.strictEqual(T.trCasaResposta(p, { type: 'meta_result', data: { requestId: 'r1', action: 'buy_all_blessings', applied: true } }), 'res');
+    assert.strictEqual(T.trCasaResposta(p, { type: 'meta_result', data: { requestId: 'r2', action: 'buy_all_blessings' } }), null, 'outro pedido');
+    assert.strictEqual(T.trCasaResposta(p, { type: 'meta_result', data: { action: 'prey_hunt_roll' } }), null, 'outra ação');
+    assert.strictEqual(T.trCasaResposta(p, { type: 'meta_result', data: {} }), 'res', 'sem requestId nem action: vale o tipo');
+    assert.strictEqual(T.trCasaResposta(p, { type: 'frame', data: {} }), null);
+    assert.strictEqual(T.trCasaResposta(p, { type: 'error', data: { code: 'not_in_city', requestId: 'r1' } }), 'erro');
+    assert.strictEqual(T.trCasaResposta(p, { type: 'error', data: { code: 'rate_limited', requestId: 'zz' } }), null, 'erro de outro pedido');
+    assert.strictEqual(T.trCasaResposta(p, { type: 'error', data: { code: 'insufficient_gold' } }), 'erro', 'erro sem requestId: candidato (o DOM espera 1,2 s)');
+    const s = { tipo: 'selo_ligar', rid: null, espera: ['selo_state'] };
+    assert.strictEqual(T.trCasaResposta(s, { type: 'selo_state', data: { ativo: true, selos: [] } }), 'res');
+    assert.strictEqual(T.trCasaResposta(s, { type: 'error', data: { code: 'selo_perigo', requestId: 'outro' } }), null);
+    assert.strictEqual(T.trCasaResposta(null, { type: 'error', data: {} }), null);
+});
+t('trPlanoCompra: das mais baratas, teto = preço do conselho + 10 %, sem as minhas nem ordens de compra, dentro do ouro', () => {
+    const o = (id, preco, q, side) => ({ id, unitPrice: preco, quantityRemaining: q, side: side || 'SELL' });
+    const livros = { 'spectral conch': [o('a', 340000, 2), o('b', 280000, 3), o('c', 320000, 5), o('m', 100000, 9), o('buy', 50000, 9, 'BUY'), o('d', 331000, 9)] };
+    const r = T.trPlanoCompra([{ nome: 'Spectral Conch', qtd: 6, preco: 300000 }], livros, 5e6, new Set(['m']));
+    assert.deepStrictEqual(r.compras.map(c => [c.orderId, c.quantity, c.unitPrice]), [['b', 3, 280000], ['c', 3, 320000]], 'teto 330.000: a (340k) e d (331k) ficam de fora');
+    assert.strictEqual(r.total, 3 * 280000 + 3 * 320000); assert.deepStrictEqual(r.faltam, []);
+    const pouco = T.trPlanoCompra([{ nome: 'Spectral Conch', qtd: 6, preco: 300000 }], livros, 1000000, new Set());
+    assert.deepStrictEqual(pouco.compras.map(c => [c.orderId, c.quantity]), [['m', 6]], 'ordem minha não está no Set: a mais barata vale');
+    const caro = T.trPlanoCompra([{ nome: 'Spectral Conch', qtd: 6, preco: 300000 }], livros, 600000, new Set(['m']));
+    assert.deepStrictEqual([caro.compras.map(c => [c.orderId, c.quantity]), caro.faltam], [[['b', 2]], [{ nome: 'Spectral Conch', falta: 4, teto: 330000 }]]);
+    assert.deepStrictEqual(T.trPlanoCompra([{ nome: 'Haunted Sigil', qtd: 2, preco: 1 }], livros, 1e9, null).faltam, [{ nome: 'Haunted Sigil', falta: 2, teto: 1 }]);
+    assert.deepStrictEqual(T.trPlanoCompra(null, null, null, null), { compras: [], faltam: [], total: 0 });
+});
+t('trIdadePt e TR_ERRO_PT', () => {
+    assert.deepStrictEqual([null, NaN, -1, 0.4, 5.4, 47, 72].map(T.trIdadePt), ['—', '—', '—', '<1 h', '5 h', '47 h', '3 d']);
+    for (const c of ['not_in_city', 'too_far', 'insufficient_gold', 'selo_perigo', 'sem_resposta']) assert(T.TR_ERRO_PT[c], c);
 });
 process.on('exit', () => { if (!process.exitCode) console.log(`\n${n} testes ok`); });

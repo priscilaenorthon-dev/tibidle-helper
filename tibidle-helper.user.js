@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.66.0
+// @version      2.67.0
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.66.0';
+    const VERSAO = '2.67.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -11601,7 +11601,7 @@
         return UI;
     };
     const guardarUI = (patch) => { UI = Object.assign(ui(), patch); guardar('ui', UI); };
-    const ICONES = [['estado', '⌂', 'Status'], ['magia', '✦', 'Magia'], ['autohunt', '↻', 'Auto Hunt'], ['scan', '◎', 'Scan'], ['equip', '⛨', 'Equip'], ['analise', '▤', 'Analisador'], ['progresso', '⚑', 'Progresso'], ['mercado', '⚖', 'Mercado'], ['melhorias', '⇧', 'Melhorias'], ['forja', '⚒', 'Forja'], ['sobreviver', '🛡', 'Aguentar'], ['arena', '☠', 'Sobrevivência'], ['radar', '⌖', 'Radar'], ['log', '≡', 'Log']];
+    const ICONES = [['estado', '⌂', 'Status'], ['magia', '✦', 'Magia'], ['autohunt', '↻', 'Auto Hunt'], ['scan', '◎', 'Scan'], ['equip', '⛨', 'Equip'], ['treinador', '▤', 'Progresso'], ['progresso', '⚑', 'Rotina'], ['mercado', '⚖', 'Mercado'], ['melhorias', '⇧', 'Melhorias'], ['forja', '⚒', 'Forja'], ['sobreviver', '🛡', 'Aguentar'], ['arena', '☠', 'Sobrevivência'], ['radar', '⌖', 'Radar'], ['log', '≡', 'Log']];
     /* "?" com a explicação escondida; data-k preserva aberto/fechado ao repintar */
     const aj = (k, html, rotulo) => `<details class="tb-aj" data-k="${k}"><summary>${rotulo || '?'}</summary><div class="tb-mut">${html}</div></details>`;
 
@@ -13059,6 +13059,153 @@
         }
         return { perfis: juntos.slice(0, TR_TOPO_MAX_PERFIS), tPerfis: velho && trNum(velho.tPerfis) > 0 ? Number(velho.tPerfis) : null, tPerfisParcial: agora };
     }
+    // ── UI do treinador (Task 16): partes puras da tela e dos botões (o DOM — telaTreinador/ligarTreinador — só desenha e executa).
+    // trAcaoInfo(acao, foto) → o que o botão "Fazer" faz, sem tocar no jogo:
+    //   modo 'aba' (abre uma aba do helper) · 'tela' (abre a tela do jogo pelo data-testid, nada enviado) ·
+    //   'jogo' (manda a mensagem do protocolo e espera a resposta) · 'helper' (leitura do próprio helper: Forja, topo).
+    //   dois = 2 toques (gasta ouro/coins/wildcards/itens, ou tira a party da caçada); cidade = só na cidade (Silas);
+    //   cacando = só dentro da caçada; motivo = por que o botão fica desligado agora (null = pode).
+    // Todo `acao.tipo` que os especialistas emitem TEM de estar aqui (o teste varre o código e as fotos).
+    const TR_ACAO_ROTULO = { 'ir-mapa': 'Ir', lure: 'Lure', medir: 'Medir', 'abrir-loja': 'Loja', 'prey-escolher': 'Prey aqui', 'prey-trocar': 'Sortear',
+                             'prey-trancar': 'Trancar', bencaos: 'Comprar', ampulheta: 'Ampulheta', selo: 'Selo', 'ler-topo': 'Ler o topo',
+                             'abrir-melhorias': 'Melhorias', 'abrir-equip': 'Equip', 'abrir-aguentar': 'Aguentar', 'abrir-magia': 'Magia', 'abrir-forja': 'Forja',
+                             'abrir-elite': 'Elites', 'boss-trocar': 'Trocar', invasao: 'Inscrever', 'abrir-silas': 'Abrir ilha', 'comprar-mercado': 'Comprar',
+                             'forja-ler': 'Recalcular' };
+    const TR_ACAO_ABA = { 'abrir-melhorias': 'melhorias', 'abrir-equip': 'equip', 'abrir-aguentar': 'sobreviver', 'abrir-magia': 'magia', 'abrir-forja': 'forja' };
+    // ampulheta: a COMPRA (store_buy com a oferta de rules.cash) está "a confirmar" no protocolo e o item da mochila só vem por nome
+    // (sem itemId) — o botão abre a janela de Ampulhetas do jogo (Usar/Comprar lá). abrir-loja/abrir-elite não têm mensagem: são telas.
+    const TR_ACAO_TELA = { 'abrir-loja': 'loja', 'abrir-elite': 'elite', ampulheta: 'ampulheta' };
+    function trAcaoInfo(acao, foto) {
+        if (!acao || typeof acao !== 'object' || !Object.prototype.hasOwnProperty.call(TR_ACAO_ROTULO, acao.tipo)) return null;
+        const f = foto && typeof foto === 'object' ? foto : {}, tipo = acao.tipo, b = TR_BASE;
+        const r = typeof acao.rotulo === 'string' ? acao.rotulo.trim() : '';
+        const info = { tipo, modo: 'jogo', rotulo: r && r.length <= 14 ? r : TR_ACAO_ROTULO[tipo], dois: false, cidade: false, cacando: false, motivo: null, aba: null, tela: null };
+        const o = trNum(f.ouro), normal = Number.isFinite(o) ? o - Math.max(0, trNum(f.ouroTravado) || 0) : null; // o que se gasta (o travado só paga suprimento)
+        const wc = f.prey && typeof f.prey === 'object' ? trNum(f.prey.wildcards) : NaN;
+        const emHunt = f.emHunt === true;
+        if (TR_ACAO_ABA[tipo]) return Object.assign(info, { modo: 'aba', aba: TR_ACAO_ABA[tipo] });
+        if (TR_ACAO_TELA[tipo]) return Object.assign(info, { modo: 'tela', tela: TR_ACAO_TELA[tipo] });
+        switch (tipo) {
+        case 'ler-topo': case 'forja-ler': info.modo = 'helper'; break;
+        case 'ir-mapa':
+            info.dois = emHunt; // sai da caçada de agora
+            if (acao.huntId == null) info.motivo = 'sem mapa';
+            break;
+        case 'lure':
+            info.cacando = true;
+            if (!(trNum(acao.lure) >= 1)) info.motivo = 'lure inválida';
+            else if (!emHunt || !f.hunt || !trMesmoId(f.hunt.id, acao.huntId)) info.motivo = 'só dentro da caçada';
+            break;
+        case 'medir':
+            info.dois = true; // o Scan troca de mapa (5 min em cada)
+            if (!Array.isArray(acao.alvos) || !acao.alvos.length) info.motivo = 'sem mapa para medir';
+            break;
+        case 'prey-escolher':
+            info.dois = true;
+            if (Number.isFinite(wc) && wc < b.prey.escolherWildcards) info.motivo = `faltam wildcards (${wc}/${b.prey.escolherWildcards})`;
+            break;
+        case 'prey-trocar': {
+            const bf = f.prey && f.prey.buffs && f.prey.buffs[acao.voc];
+            info.dois = !(bf && bf.gratis === true); // 1º sorteio do dia grátis; depois 1 wildcard
+            if (info.dois && Number.isFinite(wc) && wc < 1) info.motivo = 'sem wildcard';
+            break;
+        }
+        case 'prey-trancar':
+            info.dois = true; // cada renovação de 2 h gasta 1 wildcard
+            if (Number.isFinite(wc) && wc < b.prey.travaWildcards) info.motivo = 'sem wildcard para renovar';
+            break;
+        case 'bencaos': {
+            info.dois = true;
+            const c = f.bencaos ? trNum(f.bencaos.custoFaltam) : NaN;
+            if (normal != null && c > normal) info.motivo = 'falta ouro';
+            break;
+        }
+        case 'selo':
+            info.cacando = true;
+            // com Abundante já no Selo desta caçada: liga (selo_ligar, cobra por hora); sem pacto: a tela do jogo (o pacto é sorteado
+            // e os debuffs podem matar — o dono olha antes de pagar o Rolar)
+            if (f.selo && trNum(f.selo.abundante) >= 1) info.dois = true;
+            else Object.assign(info, { modo: 'tela', tela: 'selo' });
+            if (!emHunt) info.motivo = 'só dentro da caçada';
+            break;
+        case 'boss-trocar':
+            Object.assign(info, { dois: true, cidade: true });
+            if (emHunt) info.motivo = 'só na cidade (Silas)';
+            else if (!(trNum(acao.qtd) >= 1)) info.motivo = 'nada a trocar';
+            break;
+        case 'invasao': break; // grátis
+        case 'abrir-silas': {
+            Object.assign(info, { dois: true, cidade: true });
+            const il = (b.ilhas || []).find(x => x.id === acao.ilha);
+            if (emHunt) info.motivo = 'só na cidade (Silas)';
+            else if (!il) info.motivo = 'ilha desconhecida';
+            else if (normal != null && (il.ouro || 0) > normal) info.motivo = 'falta ouro';
+            break;
+        }
+        case 'comprar-mercado': {
+            info.dois = true;
+            const itens = Array.isArray(acao.itens) ? acao.itens.filter(x => x && x.nome && trNum(x.qtd) > 0) : [];
+            const total = itens.reduce((s, x) => s + Number(x.qtd) * (trNum(x.preco) > 0 ? Number(x.preco) : 0), 0);
+            if (!itens.length) info.motivo = 'nada a comprar';
+            else if (f.premium && f.premium.ativo === false) info.motivo = 'Mercado só com Premium';
+            else if (normal != null && total > normal) info.motivo = 'falta ouro';
+            break;
+        }
+        default: break;
+        }
+        return info;
+    }
+    // Resposta do jogo para UMA ação pendente p = { tipo, rid (null = mensagem sem requestId), espera: [types] }.
+    //   'res' = é a resposta · 'erro' = `error` com o requestId dela (ou sem requestId: o DOM espera 1,2 s pela resposta de verdade) · null = outra.
+    //   meta_result casa também por `action` (= o type enviado), quando vem.
+    function trCasaResposta(p, o) {
+        if (!p || !o || typeof o.type !== 'string') return null;
+        const d = o.data && typeof o.data === 'object' ? o.data : {}, rid = d.requestId != null ? String(d.requestId) : null;
+        if (o.type === 'error') return rid == null || rid === p.rid ? 'erro' : null;
+        if (!Array.isArray(p.espera) || !p.espera.includes(o.type)) return null;
+        if (rid != null && p.rid != null && rid !== p.rid) return null;
+        if (o.type === 'meta_result' && d.action != null && d.action !== p.tipo) return null;
+        return 'res';
+    }
+    // Compra do "Caçar itens" (comprar-mercado): só ordens de VENDA de outros, das mais baratas, nunca acima do preço do conselho + 10 %,
+    // dentro do ouro normal. livros = { nomeMinúsculo: orders[] } (market_list); meus = Set de ids das minhas ordens.
+    // → { compras: [{ nome, orderId, quantity, unitPrice, total }], faltam: [{ nome, falta, teto }], total }
+    function trPlanoCompra(itens, livros, ouro, meus) {
+        const compras = [], faltam = [], caixa = Number.isFinite(trNum(ouro)) ? Number(ouro) : Infinity;
+        let total = 0;
+        for (const it of Array.isArray(itens) ? itens : []) {
+            if (!it || !it.nome || !(trNum(it.qtd) > 0)) continue;
+            const teto = trNum(it.preco) > 0 ? Math.floor(Number(it.preco) * 1.1) : 0;
+            let resta = Math.floor(Number(it.qtd));
+            const ordens = ((livros && livros[trNome(it.nome)]) || []).filter(x => x && String(x.side).toUpperCase() === 'SELL' && Number(x.quantityRemaining) > 0
+                && Number(x.unitPrice) > 0 && Number(x.unitPrice) <= teto && !(meus && meus.has(x.id))).sort((x, y) => Number(x.unitPrice) - Number(y.unitPrice));
+            for (const x of ordens) {
+                if (resta <= 0) break;
+                const p = Number(x.unitPrice), q = Math.min(resta, Number(x.quantityRemaining), Math.floor((caixa - total) / p));
+                if (q < 1) break;
+                compras.push({ nome: it.nome, orderId: x.id, quantity: q, unitPrice: p, total: q * p });
+                total += q * p; resta -= q;
+            }
+            if (resta > 0) faltam.push({ nome: it.nome, falta: resta, teto });
+        }
+        return { compras, faltam, total };
+    }
+    // Idade de um dado em horas → '—' · '<1 h' · '5 h' · '3 d'
+    function trIdadePt(h) {
+        const n = trNum(h);
+        if (!Number.isFinite(n) || n < 0) return '—';
+        return n < 1 ? '<1 h' : n < 48 ? Math.round(n) + ' h' : Math.round(n / 24) + ' d';
+    }
+    // Códigos de erro do servidor (protocolo) em português curto; o DOM cai no texto do Mercado para o resto.
+    const TR_ERRO_PT = { not_in_city: 'só na cidade', too_far: 'longe do NPC', insufficient_gold: 'falta ouro', insufficient_coins: 'faltam coins',
+                         invalid_blessing: 'bênção inválida', invalid_prey: 'prey inválida', prey_replay_em_curso: 'a prey está em replay', no_attempts: 'sem tentativas',
+                         boss_no_attempts: 'sem tentativas do boss', boss_locked: 'boss trancado', boss_week_lock: 'boss já feito nesta semana', boss_cooldown: 'boss em espera',
+                         boss_key_required: 'o boss pede chave', unknown_boss: 'boss desconhecido', island_locked: 'ilha trancada', already_unlocked: 'a ilha já está aberta',
+                         unknown_island: 'ilha desconhecida', invasion_unavailable: 'Invasão fechada agora', selo_off: 'Selo desligado no servidor',
+                         selo_indisponivel: 'Selo indisponível aqui', selo_cheio: 'Selo cheio', selo_incompleto: 'Selo sem pacto', selo_vazio: 'Selo vazio',
+                         selo_perigo: 'Perigo alto: aceite na tela do jogo', feature_disabled: 'recurso desligado no servidor', already_hunting: 'já está caçando',
+                         level_too_low: 'nível baixo', sem_socket: 'socket do jogo fechado', sem_resposta: 'o jogo não respondeu em 8 s (confira antes de repetir)',
+                         nao_aplicado: 'o jogo não aplicou' };
     /* @@TREINADOR-PURO-FIM */
     /* @@ARENA-PURO-INICIO — Sobrevivência (2.57.0): decisões do robô, puras (o tempo é st.tempoMs, sem DOM).
      * st = estado da simulação do cliente (ref.current.st do componente da partida). O mesmo código rodou no simulador
@@ -13455,6 +13602,7 @@
         }
         delete u.right; delete u.top;
         if (s.logLido === undefined) u.logLido = agora;
+        if (u.aba === 'analise') u.aba = 'treinador'; // 2.67.0 — o ▤ Analisador virou o ▤ Progresso (o treinador)
         return u;
     }
     /* canto de cima/esquerda do trilho no desktop. J = layout do jogo medido
@@ -13552,7 +13700,7 @@
     }
     function voltarAoPadrao() { _arrasto = null; guardarUI({ livre: false, yCel: null }); posicionarCaixa(); avisar(ABA, 'helper de volta ao lugar padrão', 'ok'); }
     /* rótulo de 9 px sob o ícone no celular; sem entrada aqui, usa o nome de ICONES */
-    const ROTULO_CURTO = { autohunt: 'Auto', analise: 'Análise', melhorias: 'Melhor', arena: 'Sobrev' };
+    const ROTULO_CURTO = { autohunt: 'Auto', treinador: 'Progr', progresso: 'Rotina', melhorias: 'Melhor', arena: 'Sobrev' };
     function montarPainel() {
         if ($('#tb-trilho')) return;
         const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
@@ -13811,6 +13959,25 @@
     table.tb-an col.c5{width:4.9em}table.tb-an col.c4{width:4.2em}table.tb-an col.c3{width:3.4em}
     .tb-an-exp .tb-linha{flex-wrap:nowrap}
     .tb-an-exp .tb-linha>span{flex:1 1 auto;min-width:0}
+    /* 2.67.0 — ▤ Progresso (treinador): passos e cartões em linhas curtas; o porquê atrás do "?" */
+    .tr-sit{font-size:var(--tb-fmin);margin:2px 0 4px}
+    .tr-c{display:flex;flex-wrap:wrap;align-items:center;gap:2px 5px;padding:3px 0;border-bottom:1px dotted #1f2531;min-width:0}
+    .tr-c:last-child{border-bottom:0}
+    .tr-passo>.tr-t{flex:1 1 100%;line-height:1.3;overflow-wrap:anywhere}
+    .tr-linha>.tr-t{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--tb-fmin)}
+    .tr-c details.tb-aj{margin:0}
+    .tr-c details.tb-aj[open]{flex:1 1 100%;order:9}
+    .tr-imp{font-size:var(--tb-fmin);font-weight:bold;white-space:nowrap}
+    .tr-custo,.tr-motivo{font-size:var(--tb-fmin);white-space:nowrap}
+    #tb-corpo .tr-fazer{margin:0 0 0 auto;white-space:nowrap}
+    .tr-meta{display:flex;flex-wrap:wrap;gap:3px;margin-bottom:2px}
+    .tr-card{margin:3px 0;border:1px solid #262d3b;border-radius:7px;background:var(--tb-cx);padding:0 6px}
+    .tr-card>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:5px;min-height:var(--tb-alvo)}
+    .tr-card>summary::-webkit-details-marker{display:none}
+    .tr-card[open]>summary{border-bottom:1px solid #262d3b}
+    .tr-ic{width:1.2em;text-align:center;color:var(--tb-ouro)}
+    .tr-n{margin-left:auto;font-size:var(--tb-fmin)}
+    .tr-rod{font-size:var(--tb-fmin);margin-top:4px}
     .tb-an-exp textarea{display:block;width:100%;height:120px;box-sizing:border-box;margin-top:3px;resize:vertical;font:var(--tb-fmin)/1.35 ui-monospace,Consolas,monospace;background:#0d1016;color:var(--tb-texto);border:1px solid var(--tb-borda);border-radius:5px}
     `;
     function garantirCssTelas() {
@@ -14512,82 +14679,10 @@
         }
         if (h.monsters && h.monsters.some(m => !BESTIARIO[m.name])) buscarUmaVez('best:' + h.id, () => bestiarioHunt(h).then(() => renderizar()));
     }
-    /* v2.11 (D2) — ANALISADOR: nomes de hunt inteiros (a coluna tinha 1/5 da
-     * tabela e "Barbarian Camp" virava "Barbari an Camp"); agora a hunt leva o
-     * que sobra das colunas numéricas (largura em em, vale no celular) e só
-     * quebra palavra que sozinha não cabe. Título de sessão, hunt e tipo de
-     * frame do socket escapados. A caixa do "copiar JSON" é estado
-     * (_exportacao): com a área de transferência bloqueada ela era o único
-     * lugar dos dados e sumia no repinte seguinte (4 s). */
+    /* 2.67.0 — o ▤ Analisador saiu (virou o ▤ Progresso, o treinador). A COLETA das sessões continua (amostrar/fecharSessao/sessoes:
+     * Radar, Bestiário e o treinador usam); o "copiar JSON" e o "limpar" das sessões ficaram no rodapé do Progresso. A caixa do JSON
+     * é estado (_exportacao): com a área de transferência bloqueada ela é o único lugar dos dados e não pode sumir no repinte. */
     let _exportacao = null; // { texto, copiado: null|true|false, selecionar }
-    function telaAnalise() {
-        garantirCssTelas();
-        const lin = (a, b) => `<div class="tb-lin"><span class="tb-mut">${a}</span><span>${b}</span></div>`;
-        const sinal = n => (n >= 0 ? '+' : '') + milBR(n);
-        let corpo = '';
-        if (SESSAO && SESSAO.amostras.length >= 2) {
-            const a0 = SESSAO.amostras[0], aN = SESSAO.amostras[SESSAO.amostras.length - 1];
-            const dur = Math.max(1, (aN.t - a0.t) / 1000);
-            const ouroH = Math.round((aN.ouro - a0.ouro) / dur * 3600);
-            const expH = (aN.exp != null && a0.exp != null) ? Math.round((aN.exp - a0.exp) / dur * 3600) : null;
-            const ab = (aN.abates != null && a0.abates != null) ? aN.abates - a0.abates : null;
-            const pct = Math.round((aN.mochilaPct || 0) * 100);
-            corpo += `<div class="tb-cx" style="border-color:#2c5c3a"><div class="tb-mut">medindo — ${escHtml(SESSAO.huntTitle)} · ${Math.floor(dur / 60)}m${String(Math.round(dur % 60)).padStart(2, '0')}</div>
-                ${lin('ouro/h', isFinite(ouroH) ? `<b class="${ouroH >= 0 ? 'tb-ok' : 'tb-ruim'}">${ouroH >= 0 ? '+' : ''}${numBR(ouroH)}</b>` : '—')}
-                ${lin('exp/h', numBR(expH))}
-                ${lin('abates', ab != null ? `${numBR(ab)} (${numBR(Math.round(ab / dur * 3600))}/h)` : '—')}
-                ${lin('mochila', `<span class="${pct > 85 ? 'tb-ruim' : pct > 60 ? 'tb-av' : ''}">${pct}%</span>`)}
-                ${pct > 85 ? '<div class="tb-ruim tb-nota">mochila acima de 85%: o loot se perde e a medição sai suja</div>' : ''}</div>`;
-        } else corpo += `<div class="tb-mut">sem medição: liga sozinho ao entrar numa caçada</div>`;
-        const res = resumoPorHunt();
-        if (res.length) {
-            corpo += `<table class="tb-an"><colgroup><col><col class="c5"><col class="c5"><col class="c4"><col class="c3"></colgroup>` +
-              `<thead><tr><th>hunt</th><th>ouro/h</th><th>exp/h</th><th>tempo</th><th>fator</th></tr></thead><tbody>` +
-              res.map(p => `<tr><td>${escHtml(p.hunt)}${p.sujas ? ` <span class="tb-tag tb-ruim">${numBR(p.sujas)} suja${p.sujas > 1 ? 's' : ''}</span>` : ''}${p.regen ? ` <span class="tb-tag">regen</span>` : ''}</td>` +
-                `<td class="${p.ouroH >= 0 ? 'tb-ok' : 'tb-ruim'}">${sinal(p.ouroH)}</td><td>${milBR(p.expH)}</td><td class="tb-mut">${fmtHoras(p.dur / 3600)}</td><td class="tb-av">${numBR(p.fatorMedio, 2)}</td></tr>`).join('') + `</tbody></table>`;
-            const comFator = res.filter(p => p.fatorMedio != null && p.hp);
-            if (comFator.length) corpo += aj('an-curva', `<table class="tb-an"><colgroup><col><col class="c4"><col class="c4"><col class="c4"><col class="c4"></colgroup><thead><tr><th>hunt</th><th>HP</th><th>curva</th><th>medido</th><th>erro</th></tr></thead><tbody>` + comFator.map(p => { const prev = Math.round(fatorDesperdicio(p.hp) * 100) / 100; const erro = Math.round((p.fatorMedio / prev - 1) * 100); return `<tr><td>${escHtml(p.hunt)}</td><td>${numBR(p.hp)}</td><td>${numBR(prev, 2)}</td><td class="tb-av">${numBR(p.fatorMedio, 2)}</td><td class="${Math.abs(erro) < 25 ? 'tb-ok' : 'tb-ruim'}">${erro > 0 ? '+' : ''}${numBR(erro)}%</td></tr>`; }).join('') + `</tbody></table><div class="tb-nota">fator = desperdício real por abate contra a curva 0,47 × HP^0,332 (2 pontos).</div>`, 'calibração');
-        }
-        const tipos = Object.keys(WS.tipos).sort((a, b) => WS.tipos[b] - WS.tipos[a]);
-        const envs = Object.keys(WS.enviados).sort((a, b) => WS.enviados[b].n - WS.enviados[a].n);
-        corpo += aj('an-ws', `socket ${WS.socket ? '<span class="tb-ok">capturado</span>' : '<span class="tb-av">ainda não</span>'} · ${numBR(WS.frames)} frames em ~${Math.max(1, Math.round((Date.now() - WS.desde) / 60000))} min<br>` +
-            (tipos.length ? 'recebidos: ' + tipos.slice(0, 10).map(t => `<span class="tb-tag">${escHtml(t)} ×${numBR(WS.tipos[t])}</span>`).join('') + '<br>' : '') +
-            (envs.length ? 'enviados: ' + envs.map(t => `<span class="tb-tag tb-ok">${escHtml(t)} ×${numBR(WS.enviados[t].n)}</span>`).join('') : 'nenhum frame enviado ainda'), 'websocket');
-        corpo += `<div class="tb-linha" style="margin-top:4px"><button type="button" class="tb-bt mini" id="tb-exportar">copiar JSON</button><button type="button" class="tb-bt mini" id="tb-limpar-sessoes" title="apaga as sessões medidas (pede confirmação)">limpar histórico</button></div>`;
-        if (_exportacao) { corpo += `<div class="tb-an-exp"><div class="tb-linha"><span class="${_exportacao.copiado === false ? 'tb-av' : 'tb-mut'}">${_exportacao.copiado === true ? 'copiado — e também aqui:' : _exportacao.copiado === false ? 'área de transferência bloqueada: selecione e copie daqui' : 'copiando…'}</span>` +
-            `<button type="button" class="tb-bt mini" id="tb-exportar-fechar" style="margin-left:auto" aria-label="fechar a caixa do JSON">fechar</button></div>` +
-            `<textarea id="tb-exportar-caixa" readonly spellcheck="false" aria-label="dados do Analisador em JSON"></textarea></div>`; }
-        return corpo;
-    }
-    /* handlers do Analisador (antes dentro de _renderizar). O texto do JSON
-     * vai para a caixa por .value (não entra no HTML: não pesa na comparação
-     * do repinte nem precisa de escape). */
-    function ligarAnalise() {
-        const exp = $('#tb-exportar');
-        if (exp) { exp.onclick = () => {
-            const dados = JSON.stringify({
-                sessoes: sessoes(), resumo: resumoPorHunt(),
-                ws: { frames: WS.frames, tipos: WS.tipos, binarios: WS.bin,
-                      amostrasRecebidas: WS.amostras, ENVIADOS: WS.enviados }
-            }, null, 2);
-            const x = _exportacao = { texto: dados, copiado: null, selecionar: true };
-            renderizar();
-            /* writeText ainda dentro do clique (o navegador exige o gesto) */
-            let p;
-            try { p = navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(dados) : Promise.reject(new Error('sem clipboard')); } catch (e) { p = Promise.reject(e); }
-            p.then(() => { x.copiado = true; avisar('analise', 'JSON copiado para a área de transferência (e na caixa abaixo)', 'ok'); })
-             .catch(() => { x.copiado = false; x.selecionar = true; avisar('analise', 'área de transferência bloqueada — o JSON está na caixa abaixo do botão', 'erro'); })
-             .finally(renderizar);
-        }; }
-        const caixa = $('#tb-exportar-caixa');
-        if (caixa && _exportacao) {
-            caixa.value = _exportacao.texto;
-            if (_exportacao.selecionar) { _exportacao.selecionar = false; try { caixa.focus({ preventScroll: true }); caixa.select(); } catch { /* caixa fora da página */ } }
-        }
-        const fx = $('#tb-exportar-fechar'); if (fx) fx.onclick = () => { _exportacao = null; renderizar(); };
-        const lim = $('#tb-limpar-sessoes');
-        if (lim) ligarDoisToques(lim, 'limpar-sessoes', 'apagar o histórico?', () => { guardar('sessoes', []); avisar('analise', 'histórico de sessões apagado', 'ok'); renderizar(); });
-    }
     /* v2.4.0 — EQUIP. 4 sub-abas; por slot: atual → melhor (+ganho) e 2
      * motivos; clique expande os atributos (mortos riscados). Seções
      * Dispensáveis e Reservas. NADA equipa nem descarta. */
@@ -20419,7 +20514,8 @@
      *                          FJ.custos ou fjCustoGemas), idadeH de FJ.t, bases ≥ potBase do depósito/mochila
      *   topo ................. ler('tr_topo') — por conta (trLerTopo) · ilhas: unlockedIslands × TR_BASE.ilhas */
     // topo: progresso 'k/n' a cada perfil e cancelar = true para o laço (a tela da Task 16 usa os dois)
-    const TR = { topo: { lendo: false, status: null, progresso: null, cancelar: false }, esperas: [], avisados: new Set() };
+    // ultimo = { t, foto, r, radarH, nSessoes } (cache de 60 s da tela) · agindo = rótulo da ação em curso · pend = ação esperando resposta (trPedir) · acoes = botões da tela
+    const TR = { topo: { lendo: false, status: null, progresso: null, cancelar: false }, esperas: [], avisados: new Set(), ultimo: null, agindo: null, pend: null, acoes: new Map() };
     const TR_H = 3600000, TR_DIA = 864e5;
     /* Uma linha em observarRecebido: guarda o que a foto precisa e o helper ainda não guardava (nada é enviado daqui). */
     function trObservar(o) {
@@ -20434,6 +20530,13 @@
                 clearTimeout(e.timer); TR.esperas = TR.esperas.filter(z => z !== e);
                 if (tipo === 'error') e.rej(new Error('o jogo respondeu erro: ' + (d.code || d.key || '?'))); else e.res(clonar(d));
             }
+        }
+        // resposta da ação do botão "Fazer" (trPedir): casa pelo requestId/tipo (trCasaResposta, puro)
+        const p = TR.pend;
+        if (p && !p.res) {
+            const k = trCasaResposta(p, o);
+            if (k === 'res') p.res = { type: tipo, data: clonar(d) };
+            else if (k === 'erro' && !p.erro) p.erro = { code: String(d.code || d.key || '?'), t: agora, meu: d.requestId != null && String(d.requestId) === p.rid };
         }
         trAnotar(x, o, agora); // conta, bênçãos, Invasão, ilhas, ampulheta, Selo e o ouro de qualquer mensagem (@@TREINADOR-PURO)
     }
@@ -20824,6 +20927,297 @@
             falhou('treinador (topo)', e);
             return (TR.topo.status = 'não consegui ler o topo: ' + e.message);
         } finally { TR.topo.lendo = false; }
+    }
+    /* ── Tela ▤ Progresso (Task 16). trRodar no máximo 1× por minuto (TR.ultimo) ou no "Atualizar"; o template só lê o cache.
+     * Botões: trAcaoInfo (puro) diz o modo de cada ação; trFazer confere de novo NA HORA do clique (foto nova: socket, cidade/caçada,
+     * ouro) e executa. Nada dispara sozinho; nada encadeia: cada "Fazer" é uma ação, e depois a tela recalcula (TR.ultimo = null).
+     * Log: o resultado de cada ação sai como "treinador: …" (avisar = Log + faixa da aba). */
+    const TR_CACHE_MS = 60000;
+    const trK = (s) => String(s == null ? '' : s).replace(/[^\w:.-]/g, '_'); // id de conselho → chave segura (data-k, data-tr)
+    function trResultado(forcar) {
+        const agora = Date.now();
+        if (forcar || !TR.ultimo || agora - TR.ultimo.t > TR_CACHE_MS) {
+            const foto = trFoto(), r = trRodar(foto, TR_BASE);
+            // idades do rodapé lidas aqui (1× por minuto), não no template: o radar_rank guardado é grande
+            let radarH = null, nSessoes = 0;
+            try { const rk = ler('radar_rank', null); radarH = rk && rk.t > 0 ? (agora - rk.t) / TR_H : null; } catch { radarH = null; }
+            try { nSessoes = (sessoes() || []).length; } catch { nSessoes = 0; }
+            TR.ultimo = { t: agora, foto, r, radarH, nSessoes };
+        }
+        return TR.ultimo;
+    }
+    function trMetaHtml(c) {
+        const imp = c.estado === 'erro' ? '<span class="tr-imp tb-ruim">corrigir</span>'
+            : Number(c.impacto) > 0 ? `<span class="tr-imp tb-ok">+${trPct(Number(c.impacto))} % XP/h</span>` : '';
+        const custo = Number(c.custo) > 0 ? trQtd(c.custo) : '', ch = c.numeros && Number(c.numeros.custoH) > 0 ? trQtd(c.numeros.custoH) + '/h' : '';
+        const cst = custo || ch ? `<span class="tr-custo ${c.semOuro ? 'tb-ruim' : 'tb-mut'}"${c.semOuro ? ' title="falta ouro livre"' : ''}>${escHtml([custo, ch].filter(Boolean).join(' + '))}</span>` : '';
+        return imp + cst + `<span class="tb-tag">${escHtml(c.confianca || 'estimado')}</span>`;
+    }
+    function trBotaoHtml(chave, acao, foto, comMotivo) {
+        const info = acao ? trAcaoInfo(acao, foto) : null;
+        if (!info) return '';
+        const id = 'tr-b-' + TR.acoes.size; // id em ordem fixa: o mesmo HTML repinta igual (e o ligarTreinador acha por #id)
+        TR.acoes.set(id, { acao, chave });
+        const motivo = info.motivo || (TR.agindo ? 'espere: ' + TR.agindo : null);
+        const dica = info.dois ? 'gasta ou troca de mapa: 2 toques' : info.modo === 'tela' ? 'abre a tela do jogo' : info.modo === 'aba' ? 'abre a aba do helper' : '';
+        return `<button type="button" class="tb-bt mini tr-fazer" id="${id}" data-tr="${escHtml(chave)}"${motivo ? ' disabled' : ''} title="${escHtml(motivo || dica)}">${escHtml(info.rotulo)}</button>`
+            + (comMotivo && info.motivo ? `<span class="tb-mut tr-motivo">${escHtml(info.motivo)}</span>` : '');
+    }
+    function telaTreinador() {
+        garantirCssTelas();
+        let u;
+        try { u = trResultado(false); } catch (e) { falhou('treinador (calcular)', e); return '<div class="tb-ruim">não consegui montar a análise (veja o Log)</div>'; }
+        const { foto, r } = u;
+        TR.acoes = new Map();
+        const tp = foto.topo, ma = foto.medidoAtual;
+        const sit = [foto.nivel ? 'nível ' + foto.nivel : null,
+                     tp && tp.pos && tp.idadeH != null ? `${tp.pos}º de ${tp.total}` : null,
+                     ma && ma.xpH > 0 ? trQtd(ma.xpH) + ' XP/h raw' : null,
+                     Number.isFinite(foto.ouroLivre) ? 'livre ' + trQtd(foto.ouroLivre) : null].filter(Boolean);
+        let h = `<div class="tr-sit tb-mut">${escHtml(sit.join(' · ') || 'entre no jogo para eu ler a conta')}</div>`;
+        if (TR.agindo) h += `<div class="tb-av tr-sit">fazendo: ${escHtml(TR.agindo)}…</div>`;
+        const passos = r.passos.map((c, i) => `<div class="tr-c tr-passo"><span class="tr-t"><b>${i + 1}.</b> ${escHtml(c.titulo)}</span>${trMetaHtml(c)}`
+            + aj('tr-p-' + trK(c.id), escHtml(c.porque || '—')) + trBotaoHtml('p:' + trK(c.id), c.acao, foto, true) + '</div>').join('');
+        h += `<div class="tb-cx"><b>Próximos passos</b>${passos || '<div class="tb-mut tr-sit">nada urgente: veja os especialistas abaixo</div>'}</div>`;
+        const est = { erro: '<span class="tr-est tb-ruim">✗</span>', aviso: '<span class="tr-est tb-av">⚠</span>', ok: '<span class="tr-est tb-ok">✓</span>' };
+        h += r.cartoes.map(cd => {
+            const linhas = cd.conselhos.map(c => `<div class="tr-c tr-linha"><span class="tr-t" title="${escHtml(c.titulo)}">${escHtml(c.titulo)}</span>`
+                + aj('tr-c-' + trK(c.id), `<div class="tr-meta">${trMetaHtml(c)}</div>${escHtml(c.porque || '—')}`) + trBotaoHtml('c:' + trK(c.id), c.acao, foto, false) + '</div>').join('');
+            return `<details class="tr-card" data-k="tr-card-${trK(cd.id)}"><summary><span class="tr-ic">${escHtml(cd.icone)}</span>${escHtml(cd.nome)}${est[cd.estado] || est.aviso}`
+                + `<span class="tb-mut tr-n">${cd.conselhos.length}</span></summary>${linhas || '<div class="tb-mut tr-sit">—</div>'}</details>`;
+        }).join('');
+        // rodapé: idade dos dados, Atualizar, Comparar com o topo (com progresso e Cancelar) e as sessões do Analisador
+        const medidos = foto.mapas.filter(m => m.fonte === 'medido').length, fj = foto.forja;
+        const idades = [`Radar ${trIdadePt(u.radarH)}`, `Forja ${trIdadePt(fj && fj.idadeH)}`, `Topo ${trIdadePt(tp && tp.idadeH)}`, `${medidos} ${medidos === 1 ? 'mapa medido' : 'mapas medidos'}`];
+        h += `<div class="tr-rod tb-mut">${escHtml(idades.join(' · '))} · calculado ${trIdadeMin(Date.now() - u.t)}</div>`;
+        const lendo = TR.topo.lendo;
+        h += '<div class="tb-linha"><button type="button" class="tb-bt mini" id="tr-atualizar"' + (TR.agindo ? ' disabled' : '') + '>Atualizar</button>'
+            + (lendo ? `<span class="tb-av tr-rod">lendo o topo ${escHtml(TR.topo.progresso || '')}</span><button type="button" class="tb-bt mini" id="tr-cancelar"${TR.topo.cancelar ? ' disabled' : ''}>${TR.topo.cancelar ? 'cancelando…' : 'Cancelar'}</button>`
+                : `<button type="button" class="tb-bt mini" id="tr-topo"${TR.agindo ? ' disabled' : ''}>Comparar com o topo</button>`) + '</div>';
+        if (TR.topo.status && !lendo) h += `<div class="tr-rod tb-mut">${escHtml(TR.topo.status)}</div>`;
+        // as sessões medidas (o Analisador saiu; a coleta continua: Radar, Bestiário e o treinador usam)
+        h += `<div class="tb-linha tr-rod"><span class="tb-mut">sessões: ${u.nSessoes}</span><button type="button" class="tb-bt mini" id="tb-exportar">copiar JSON</button>`
+            + '<button type="button" class="tb-bt mini" id="tb-limpar-sessoes" title="apaga as sessões medidas (2 toques)">limpar</button></div>';
+        if (_exportacao) {
+            h += `<div class="tb-an-exp"><div class="tb-linha"><span class="${_exportacao.copiado === false ? 'tb-av' : 'tb-mut'}">${_exportacao.copiado === true ? 'copiado — e também aqui:' : _exportacao.copiado === false ? 'área de transferência bloqueada: selecione e copie daqui' : 'copiando…'}</span>`
+                + '<button type="button" class="tb-bt mini" id="tb-exportar-fechar" style="margin-left:auto" aria-label="fechar a caixa do JSON">fechar</button></div>'
+                + '<textarea id="tb-exportar-caixa" readonly spellcheck="false" aria-label="sessões medidas em JSON"></textarea></div>';
+        }
+        return `<div id="tr-tela">${h}</div>`;
+    }
+    const trIdadeMin = (ms) => (ms < 60000 ? 'agora' : `há ${Math.round(ms / 60000)} min`);
+    function ligarTreinador() {
+        const c = $('#tb-corpo'); if (!c) return;
+        const foto = TR.ultimo ? TR.ultimo.foto : null;
+        for (const [id, { acao, chave }] of TR.acoes) {
+            const btn = $('#' + id), info = btn ? trAcaoInfo(acao, foto) : null;
+            if (!info) continue;
+            if (info.dois) ligarDoisToques(btn, 'tr:' + chave, 'confirmar?', () => trFazer(acao));
+            else btn.onclick = () => trFazer(acao);
+        }
+        const at = $('#tr-atualizar'); if (at) at.onclick = () => { TR.ultimo = null; renderizar(); };
+        const tp = $('#tr-topo'); if (tp) tp.onclick = () => trFazer({ tipo: 'ler-topo' });
+        const cn = $('#tr-cancelar'); if (cn) cn.onclick = () => { TR.topo.cancelar = true; renderizar(); };
+        const exp = $('#tb-exportar');
+        if (exp) {
+            exp.onclick = () => {
+                const dados = JSON.stringify({ sessoes: sessoes(), resumo: resumoPorHunt(),
+                                               ws: { frames: WS.frames, tipos: WS.tipos, binarios: WS.bin, amostrasRecebidas: WS.amostras, ENVIADOS: WS.enviados } }, null, 2);
+                const x = _exportacao = { texto: dados, copiado: null, selecionar: true };
+                renderizar();
+                let p; // writeText ainda dentro do clique (o navegador exige o gesto)
+                try { p = navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(dados) : Promise.reject(new Error('sem clipboard')); } catch (e) { p = Promise.reject(e); }
+                p.then(() => { x.copiado = true; avisar('treinador', 'sessões copiadas para a área de transferência (e na caixa abaixo)', 'ok'); })
+                    .catch(() => { x.copiado = false; x.selecionar = true; avisar('treinador', 'área de transferência bloqueada — o JSON está na caixa abaixo do botão', 'erro'); })
+                    .finally(renderizar);
+            };
+        }
+        const caixa = $('#tb-exportar-caixa');
+        if (caixa && _exportacao) {
+            caixa.value = _exportacao.texto;
+            if (_exportacao.selecionar) { _exportacao.selecionar = false; try { caixa.focus({ preventScroll: true }); caixa.select(); } catch { /* caixa fora da página */ } }
+        }
+        const fx = $('#tb-exportar-fechar'); if (fx) fx.onclick = () => { _exportacao = null; renderizar(); };
+        const lim = $('#tb-limpar-sessoes');
+        if (lim) ligarDoisToques(lim, 'limpar-sessoes', 'apagar?', () => { guardar('sessoes', []); TR.ultimo = null; avisar('treinador', 'histórico de sessões apagado', 'ok'); renderizar(); });
+    }
+    /* Uma ação do jogo pelo socket, esperando a resposta (8 s): { ok, type, data } | { erro: code }. Uma de cada vez (TR.pend);
+     * o casamento da resposta é o trCasaResposta (puro), chamado pelo trObservar. Erro sem requestId: espera 1,2 s pela resposta de verdade. */
+    async function trPedir(tipo, data, espera, opc) {
+        if (!socketAberto()) return { erro: 'sem_socket' };
+        if (TR.pend) return { erro: 'ocupado' };
+        const semRid = !!(opc && opc.semRid), rid = semRid ? null : mkRid();
+        const p = TR.pend = { tipo, rid, espera, res: null, erro: null };
+        try { enviarWS({ type: tipo, data: semRid ? data : Object.assign({}, data, { requestId: rid }) }); } catch { TR.pend = null; return { erro: 'sem_socket' }; }
+        await esperarQue(() => p.res || (p.erro && (p.erro.meu || Date.now() - p.erro.t >= MK_GRACA_ERRO_MS)), MK_PRAZO_MS, 100);
+        if (TR.pend === p) TR.pend = null;
+        if (p.res) return { ok: true, type: p.res.type, data: p.res.data };
+        if (p.erro) return { erro: p.erro.code };
+        return { erro: 'sem_resposta' };
+    }
+    const trErroTxt = (code) => TR_ERRO_PT[code] || mkErroTexto(code);
+    // resposta → resultado da tela; meta_result com applied:false = o jogo recusou (o notice diz por quê)
+    function trResposta(r, nome, okMsg) {
+        if (r.erro) return { erro: true, code: r.erro, msg: `${nome}: ${trErroTxt(r.erro)}` };
+        const d = r.data || {};
+        if (r.type === 'meta_result' && d.applied === false) return { erro: true, code: 'nao_aplicado', msg: `${nome}: ${trErroTxt('nao_aplicado')}` + (d.notice && d.notice.key ? ` (${d.notice.key})` : '') };
+        return { msg: okMsg };
+    }
+    /* Telas do jogo (só clica no botão do próprio jogo; nada vai pelo socket). data-testid do bundle de 27/11 (docs/protocolo-treinador.md). */
+    const TR_TELA_PT = { loja: 'a Loja', elite: 'os Elites', ampulheta: 'as Ampulhetas', selo: 'o Selo da Caçada', silas: 'o Silas', invasao: 'a Invasão' };
+    async function trAbrirTela(tela) {
+        const clicar = (el) => { if (!el) return false; try { el.click(); return true; } catch { return false; } };
+        switch (tela) {
+        case 'loja': return clicar(tid('hud-store') || tid('premium-cta'));
+        case 'ampulheta': return clicar(tid('ampulheta-placa'));
+        case 'selo': return clicar(tid('hunt-aba-selo') || tid('selo-aba'));
+        case 'invasao': return clicar(tid('invasao-icone'));
+        case 'silas': { // na cidade: "falar com o Silas" na tela de caçadas, ou NAVEGAÇÃO › Silas (o personagem anda até ele)
+            if (clicar(tid('explore-falar-silas')) || clicar(tid('nav-quests-ilhas'))) return true;
+            if (!clicar(tid('topmenu-navegacao') || tid('topmenu-sheet-navegacao'))) return false;
+            return clicar(await esperarQue(() => tid('nav-quests-ilhas'), 2000, 100));
+        }
+        case 'elite': { // CAÇADAS (na caçada) ou JOGAR (na cidade) → aba Elite (explore-tab-minibosses)
+            if (!tid('explore-tab-minibosses') && !clicar(tid('actionbar-explore') || tid('actionbar-hunt'))) return false;
+            return clicar(await esperarQue(() => tid('explore-tab-minibosses'), 3000, 150));
+        }
+        default: return false;
+        }
+    }
+    async function trFazer(acao) {
+        if (!acao) return;
+        if (TR.agindo) { avisar('treinador', 'treinador: espere — ' + TR.agindo, 'erro'); return; }
+        let foto = null;
+        try { foto = trFoto(); } catch { foto = TR.ultimo ? TR.ultimo.foto : null; } // confere com o estado de AGORA, não o do cache
+        const info = trAcaoInfo(acao, foto);
+        if (!info) { avisar('treinador', 'treinador: ação desconhecida (' + acao.tipo + ')', 'erro'); return; }
+        if (info.motivo) { avisar('treinador', `treinador: ${info.rotulo} — ${info.motivo}`, 'erro'); renderizar(); return; }
+        if (info.modo === 'aba') {
+            log('treinador: abrir a aba ' + ((ICONES.find(x => x[0] === info.aba) || [])[2] || info.aba), 'info');
+            ABA = info.aba; guardarUI({ aba: info.aba, aberta: true }); renderizar();
+            return;
+        }
+        if (info.modo === 'tela') {
+            const ok = await trAbrirTela(info.tela);
+            avisar('treinador', ok ? `treinador: abri ${TR_TELA_PT[info.tela]} no jogo` : `treinador: não achei ${TR_TELA_PT[info.tela]} na tela — abra no jogo`, ok ? 'ok' : 'erro');
+            return;
+        }
+        TR.agindo = info.rotulo; renderizar();
+        let r = null;
+        try { r = await trExecutar(acao); } catch (e) { r = { erro: true, msg: info.rotulo + ': ' + e.message }; falhou('treinador (' + acao.tipo + ')', e); }
+        finally { TR.agindo = null; TR.ultimo = null; }
+        if (r && r.msg) {
+            if (r.jaLogou) AVISOS.treinador = { t: Date.now(), msg: String(r.msg), tipo: r.erro ? 'erro' : 'ok' }; // quem executou já escreveu no Log
+            else avisar('treinador', 'treinador: ' + r.msg, r.erro ? 'erro' : 'ok');
+        }
+        renderizar();
+    }
+    async function trExecutar(acao) {
+        const n = (v) => Number(v), vazio = { erro: true, msg: 'socket do jogo fechado: dê F5 com o helper instalado' };
+        switch (acao.tipo) {
+        case 'ler-topo': {
+            const t = await trLerTopo();
+            return { msg: t, erro: /^não consegui|^sem o nível/.test(t), jaLogou: /^topo lido:|^topo relido/.test(t) };
+        }
+        case 'forja-ler':
+            await fjLer();
+            return FJ.erro ? { erro: true, msg: 'Forja: ' + FJ.erro } : { msg: 'Forja recalculada' };
+        case 'ir-mapa': {
+            const h = (CAT.hunts || []).find(x => x && trMesmoId(x.id, acao.huntId));
+            if (!h) return { erro: true, msg: 'mapa ' + acao.huntId + ' fora do catálogo' };
+            log('treinador: ir para ' + h.title, 'info');
+            await scanIrPara(h.id); // trava do jogo, boss e socket conferidos lá; o resultado detalhado vai para o Log
+            return trMesmoId(ESTADO_WS.huntId, h.id) ? { msg: 'em ' + h.title } : { erro: true, msg: 'não entrei em ' + h.title + ' (veja o Log)' };
+        }
+        case 'lure': {
+            const lure = n(acao.lure);
+            if (!socketAberto()) return vazio;
+            if (!frameFresco() || !trMesmoId(ESTADO_WS.huntId, acao.huntId)) return { erro: true, msg: 'a lure muda só dentro da caçada' };
+            const ocup = travaJogo(); if (ocup) return { erro: true, msg: ocup + ' em andamento' };
+            ESTADO_WS.ultimoErro = null;
+            enviarWS({ type: 'set_lure', data: { tier: lure } }); // tier = índice do degrau (o mesmo do Scan)
+            const ok = await esperarQue(() => frameFresco() && Number(ESTADO_WS.frame.lureTier) === lure, 6000, 250);
+            return ok ? { msg: 'lure ' + lure } : { erro: true, msg: `enviei a lure ${lure} e o jogo não confirmou` + (ESTADO_WS.ultimoErro ? ` (${trErroTxt(ESTADO_WS.ultimoErro)})` : '') };
+        }
+        case 'medir': { // Scan de 5 min em cada mapa (memória: rodada de medição = 5 min); o huntId null vem pelo título do catálogo
+            const hs = CAT.hunts || [];
+            const ids = [...new Set((acao.alvos || []).map(a => (a && a.huntId != null ? n(a.huntId) : ((hs.find(x => x && a && trNome(x.title) === trNome(a.title)) || {}).id)))
+                .filter(id => id != null && hs.some(x => x && x.id === id)))];
+            if (!ids.length) return { erro: true, msg: 'nenhum desses mapas está no catálogo' };
+            return scanIniciar({ mapas: ids, minutos: 5, comparar: false }) ? { msg: `medindo ${ids.length} ${ids.length > 1 ? 'mapas' : 'mapa'}, 5 min cada (aba Scan)` }
+                : { erro: true, msg: 'o Scan não ligou (veja o Log)' };
+        }
+        case 'prey-escolher':
+            return trResposta(await trPedir('prey_hunt_pick', { huntId: n(acao.huntId) }, ['meta_result']), 'prey', 'prey nesta caçada');
+        case 'prey-trocar':
+            return trResposta(await trPedir('prey_buff_roll', { vocation: String(acao.voc) }, ['meta_result']), 'prey', 'prey do ' + trVocPt(acao.voc) + ' sorteada');
+        case 'prey-trancar': {
+            const alvo = acao.alvo === 'hunt' ? 'hunt' : String(acao.alvo || acao.voc);
+            return trResposta(await trPedir('prey_lock_set', { target: alvo, on: true }, ['meta_result']), 'prey', alvo === 'hunt' ? 'caçada da prey trancada' : 'prey do ' + trVocPt(alvo) + ' trancada');
+        }
+        case 'bencaos': // o servidor pode pedir a cidade (não confirmado ao vivo): o not_in_city volta como "só na cidade"
+            return trResposta(await trPedir('buy_all_blessings', {}, ['meta_result']), 'bênçãos', 'bênçãos compradas');
+        case 'selo': { // só chega aqui com Abundante no Selo desta caçada (trAcaoInfo); selo_ligar não leva requestId (protocolo)
+            const r = trResposta(await trPedir('selo_ligar', { huntId: n(acao.huntId) }, ['selo_state'], { semRid: true }), 'Selo', 'Selo ligado');
+            if (r.code === 'selo_perigo') await trAbrirTela('selo'); // perigo > 5 pede o "aceitar" do dono na tela do jogo
+            return r;
+        }
+        case 'boss-trocar': {
+            if (emHunt()) return { erro: true, msg: 'trocar tentativa só na cidade (Silas)' };
+            const nome = String(acao.nomeJogo || acao.boss), q = Math.floor(n(acao.qtd));
+            const r = trResposta(await trPedir('boss_deliver', { bossName: nome, quantity: q }, ['boss_deliver_result']), nome, `${q} ${q > 1 ? 'tentativas' : 'tentativa'} de ${nome}`);
+            if (r.code === 'too_far' || r.code === 'not_in_city') { if (await trAbrirTela('silas')) r.msg += ' — abri o Silas: toque de novo perto dele'; }
+            return r;
+        }
+        case 'invasao': {
+            // a resposta exata do invasion_join está "a confirmar" no protocolo: sem resposta, vale o estado guardado (invasion_update)
+            const r = await trPedir('invasion_join', {}, ['invasion_update', 'meta_result']);
+            const inscrito = !!(ESTADO_WS.tr && ESTADO_WS.tr.invasao && ESTADO_WS.tr.invasao.inscrito);
+            if (r.erro === 'sem_resposta') { if (inscrito) return { msg: 'inscrito na Invasão' }; await trAbrirTela('invasao'); return { erro: true, msg: 'Invasão: o jogo não confirmou — abri o ícone da Invasão para conferir' }; }
+            return trResposta(r, 'Invasão', 'inscrito na Invasão');
+        }
+        case 'abrir-silas': {
+            if (emHunt()) return { erro: true, msg: 'abrir ilha só na cidade (Silas)' };
+            const nome = trNomeIlha(TR_BASE, acao.ilha);
+            const r = trResposta(await trPedir('island_deliver', { islandId: String(acao.ilha) }, ['island_deliver_result']), nome, nome + ' aberta');
+            if (r.code === 'too_far' || r.code === 'not_in_city') { if (await trAbrirTela('silas')) r.msg += ' — abri o Silas: toque de novo perto dele'; }
+            return r;
+        }
+        case 'comprar-mercado':
+            return trComprarMercado(acao.itens);
+        default:
+            return { erro: true, msg: 'ação sem execução: ' + acao.tipo };
+        }
+    }
+    /* comprar-mercado: relê o livro de cada item AGORA e compra das ordens de venda mais baratas de outros, nunca acima do preço do
+     * conselho + 10 % (trPlanoCompra), dentro do ouro normal. A fila do Mercado (mkPedir) dá o ritmo; sem resposta = para (não repete). */
+    async function trComprarMercado(itens) {
+        const imp = mkImpedimento(); if (imp) return { erro: true, msg: 'Mercado: ' + imp };
+        if (MK.ocupado) return { erro: true, msg: 'o Mercado está ocupado (' + MK.ocupado + ')' };
+        MK.ocupado = 'treinador';
+        try {
+            const lista = (Array.isArray(itens) ? itens : []).filter(x => x && x.nome && trNum(x.qtd) > 0), livros = {};
+            for (const it of lista) {
+                const r = await mkPedir('market_list', { asset: 'ITEM', itemName: it.nome });
+                if (r.erro) return { erro: true, msg: `livro de ${it.nome}: ${mkErroTexto(r.erro)} — nada comprado` };
+                livros[trNome(it.nome)] = (r.data && r.data.orders) || [];
+            }
+            const plano = trPlanoCompra(lista, livros, mlOuroNormal(), new Set((MK.minhas || []).map(o => o && o.id)));
+            if (!plano.compras.length) return { erro: true, msg: 'nenhum anúncio até o preço do conselho + 10 % — nada comprado' };
+            const feitas = [];
+            let parou = null;
+            for (const c of plano.compras) {
+                const r = await mkPedir('market_execute', { orderId: c.orderId, quantity: c.quantity, requestId: mkRid() });
+                if (r.erro) { parou = `parei em ${c.quantity} ${c.nome}: ${r.erro === 'sem_resposta' ? 'sem resposta, confira a mochila antes de repetir' : mkErroTexto(r.erro)}`; break; }
+                feitas.push(c);
+                log(`treinador: comprado ${c.quantity} ${c.nome} a ${mkFmt(c.unitPrice)} (${mkFmt(c.total)})`, 'ok');
+                await dorme(400);
+            }
+            const gasto = feitas.reduce((s, c) => s + c.total, 0), qtd = feitas.reduce((s, c) => s + c.quantity, 0);
+            const falta = plano.faltam.map(x => `${x.falta} ${x.nome}`);
+            return { erro: !feitas.length || !!parou, msg: (feitas.length ? `comprei ${qtd} ${qtd > 1 ? 'itens' : 'item'} por ${mkFmt(gasto)}` : 'nada comprado')
+                + (falta.length ? `; sem anúncio até o teto: ${falta.join(', ')}` : '') + (parou ? '; ' + parou : '') };
+        } finally { if (MK.ocupado === 'treinador') MK.ocupado = null; }
     }
     /* @@TREINADOR-FIM */
     /* @@ARENA-INICIO — aba Sobrevivência ☠ (2.57.0, dono 26/11: "colocar na nossa automação para fazer automaticamente").
@@ -21502,6 +21896,7 @@
             mercado: MK.ocupado ? 'av pulsa' : '',
             radar: ler('pch_alerta', null) ? 'ruim pulsa' : RADAR.rodando || MK.ocupado === 'radar' || PCH.lendo ? 'av pulsa' : alertasCfg().vigiar || pchCfg().vigiar ? 'ok' : '', // v2.29.0 — Pechinchas
             forja: FJ.lendo || FJ.forjando || FJ.simulando || FJ.comprando ? 'av pulsa' : '', // v2.25.0
+            treinador: TR.topo.lendo || TR.agindo ? 'av pulsa' : '', // 2.67.0
             arena: ARENA.ligado ? (ARENA.ref && ARENA.ref.st && !ARENA.ref.st.desfecho ? 'ok pulsa' : 'ok') : '' // v2.57.0
         };
         $$('.tb-ico[data-aba]', t).forEach(i => { const on = !!u.aberta && !u.oculto && i.dataset.aba === ABA; i.classList.toggle('on', on); i.setAttribute('aria-pressed', on ? 'true' : 'false'); const d = $('.tb-dot', i); if (d) d.className = 'tb-dot ' + (estado[i.dataset.aba] || ''); });
@@ -21549,7 +21944,7 @@
         const tit = $('#tb-titulo'); if (tit) tit.textContent = (ICONES.find(x => x[0] === ABA) || [])[2] || ABA;
         const mesmaAba = _abaPintada === ABA;
         const html = ABA === 'estado' ? telaEstado() : ABA === 'autohunt' ? telaAutoHunt() : ABA === 'scan' ? telaScan()
-            : ABA === 'magia' ? telaMagia() : ABA === 'analise' ? telaAnalise() : ABA === 'equip' ? telaEquip()
+            : ABA === 'magia' ? telaMagia() : ABA === 'treinador' ? telaTreinador() : ABA === 'equip' ? telaEquip()
             : ABA === 'progresso' ? telaProgresso() : ABA === 'mercado' ? telaMercado() : ABA === 'melhorias' ? telaMelhorias() : ABA === 'radar' ? telaRadar() : ABA === 'forja' ? telaForja() : ABA === 'sobreviver' ? telaSobreviver() : ABA === 'arena' ? telaArena() : `<div id="tb-log"></div>`;
         if (mesmaAba && html === _htmlPintado) { if (ABA === 'log') pintarLog(); return; }
         if (mesmaAba) { const f = campoEmUso(c); if (f) { adiarRepinte(f); return; } }
@@ -21567,7 +21962,7 @@
         _abaPintada = ABA;
         if (ABA === 'estado') ligarEstado(); // v2.11 (D2) — handlers ao lado de cada tela
         if (ABA === 'magia') ligarMagia();
-        if (ABA === 'analise') ligarAnalise();
+        if (ABA === 'treinador') ligarTreinador(); // 2.67.0
         if (ABA === 'equip') ligarEquip();
         if (ABA === 'progresso') ligarProgresso();
         if (ABA === 'mercado') ligarMercado();
@@ -21637,8 +22032,8 @@
          * dispara quando a party ENTRA numa cacada, o que cobre o boot no
          * lobby e a troca de hunt de uma vez. */
         renderizar();
-        // repinta Estado e Analisador sozinhos; as outras só quando o usuário mexe
-        setInterval(() => { try { pintarTrilho(); } catch (e) { } if ((ABA === 'estado' || ABA === 'analise' || ABA === 'autohunt' || (ABA === 'scan' && SCAN.ativo) || (ABA === 'magia' && ler('modelo', 'equilibrado') === 'mana') || (ABA === 'radar' && ler('radar_sub', 'mapas') === 'loot')) && ui().aberta && $('#tb-gaveta') && !$('#tb-ah-pct:focus') && !$('#tb-ah-oz:focus') && !$('#tb-scan-min:focus') && !$('#tb-scan-filtro:focus')) renderizar(); }, 4000);
+        // repinta o Status sozinho (e o Progresso enquanto lê o topo ou faz uma ação); as outras só quando o usuário mexe
+        setInterval(() => { try { pintarTrilho(); } catch (e) { } if ((ABA === 'estado' || (ABA === 'treinador' && (TR.topo.lendo || TR.agindo)) || ABA === 'autohunt' || (ABA === 'scan' && SCAN.ativo) || (ABA === 'magia' && ler('modelo', 'equilibrado') === 'mana') || (ABA === 'radar' && ler('radar_sub', 'mapas') === 'loot')) && ui().aberta && $('#tb-gaveta') && !$('#tb-ah-pct:focus') && !$('#tb-ah-oz:focus') && !$('#tb-scan-min:focus') && !$('#tb-scan-filtro:focus')) renderizar(); }, 4000);
 
         /* o analisador roda SEMPRE, mesmo com a aba fechada — é o que garante
          * que nenhuma caçada passe sem virar dado. Fecha a sessão ao sair da
@@ -21705,8 +22100,9 @@
         pchItensVigiaveis, pchVigiados, pchCandidato, pchLivro, pchAvaliar, get PCH() { return PCH; },
         // v2.17.0 — Invasão (leituras e o plano; o salvar só pelo botão)
         invPlanoHoje, invPosicoes, invMontarPreset, invResumoReplay, invTemplateDoReplay, invAplicarTemplate, invModelos, get INV() { return INV; },
-        // 2.67.0 — treinador (foto e especialistas: só leitura). trLerTopo manda só player_profile (consulta) com freio de 6/24 h.
-        trFoto, trRodar, trResumirTopo, trLerTopo, TR_BASE, get TR() { return TR; }
+        // 2.67.0 — treinador (foto, especialistas e o que cada botão faria: só leitura). A leitura do topo (trLerTopo) e as ações
+        // ficam de fora: manda mensagens ao jogo, só pelo botão da aba.
+        trFoto, trRodar, trResumirTopo, trAcaoInfo, TR_BASE, get TR() { return TR; }
     }; }
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar);

@@ -1,5 +1,5 @@
 // Roda: node testes/telas.test.js
-// Onda 2 (D2) da 2.11 — CONTEÚDO DAS TELAS Status, Magia, Equip, Analisador e Log.
+// Onda 2 (D2) da 2.11 — CONTEÚDO DAS TELAS Status, Magia, Equip, Progresso (era o Analisador) e Log.
 // Carrega o userscript INTEIRO num vm (mesmo padrão de testes/fumaca.test.js) com um
 // DOM falso um pouco mais rico: o innerHTML cria um elemento por id="…" com a tag, o
 // `disabled` e o pai (contains), há document.activeElement, focus/blur e ouvintes.
@@ -515,28 +515,45 @@ t('Equip: escape de itens, slots e vocações em português, "8 slots" como inte
     assert(!/anunciado/.test(logTxt(W)), 'nada pode ter sido anunciado');
 });
 
-t('Analisador: escape (sessões, sessão viva, tipos do socket), tabela com colunas fixas', async () => {
-    const sess = [{ hunt: 'Barbarian Camp', dur: 900, ouroH: 4000, expH: 30000, abates: 300, regen: true },
-                  { hunt: 'Djinn ' + XSS(9), dur: 1800, ouroH: -12000, expH: 58000, abates: 400, hp: 330, loot: 40, fatorReal: 1.3 }];
-    const W = criarMundo({ ls: comAba('analise', { tb_helper_hunt_id: '34', tb_helper_sessoes: JSON.stringify(sess) }) });
+t('Progresso (treinador): "analise" salva abre aqui; 10 cartões, passo com botão curto, texto do jogo escapado, nada enviado', async () => {
+    /* sessões medidas: Orc (nome malicioso, hunt 34) rende 3× a caçada de agora (Elfs, 32) → "Upar em Orc…" com Ir (ir-mapa) */
+    const ini = 1759150000000 - 2 * 3600e3;
+    const sess = [{ hunt: HUNT_MAL, huntId: 34, inicio: ini, dur: 1800, expRawH: 900000, ouroH: 1000 },
+                  { hunt: 'Elfs Shadowthorn', huntId: 32, inicio: ini + 1900e3, dur: 1800, expRawH: 300000, ouroH: 500 }];
+    const W = criarMundo({ ls: comAba('analise', { tb_helper_hunt_id: '32', tb_helper_sessoes: JSON.stringify(sess) }) });
     await W.avancar(0);
     const ws = new W.window.WebSocket('wss://jogo');
     ws.emitir({ type: 'welcome', data: {} });
-    ws.emitir({ type: XSS(10), data: {} });
-    ws.emitir({ type: 'hunt_started', data: { huntId: 34, state: { party: party4() } } });
-    for (let s = 0; s < 12; s++) { ws.emitir(frame({ balance: 5000 + 10 * s }, { killsTotal: s, elapsedMs: s * 1000 })); await W.avancar(1000); }
-    await W.avancar(4000);
+    ws.emitir({ type: 'hunt_started', data: { huntId: 32, state: { party: party4() } } });
+    ws.emitir(frame({ lureTier: 3 }, { elapsedMs: 600000, xpRaw: 50000 }));
+    await W.avancar(0);
+    W.el('tr-atualizar').click(); // a foto do 1º desenho é de antes do frame: "Atualizar" recalcula
+    await W.avancar(0);
     const h = W.html();
-    semXss(h, 'Analisador');
-    assert(/medindo — Orc &lt;img/.test(h), 'título da sessão viva não escapado: ' + (h.match(/medindo.{0,80}/) || [''])[0]);
-    assert(/Djinn &lt;img/.test(h), 'hunt do histórico não escapada');
-    assert(/&lt;img src=x onerror=&quot;window.__xss=10&quot;&gt; ×1/.test(h), 'tipo do socket não escapado');
-    assert(/<table class="tb-an"><colgroup><col><col class="c5">/.test(h), 'tabela sem colunas de largura fixa');
-    assert(/-12,0k/.test(h) && /\+4,0k/.test(h) && /15min/.test(h), 'números fora do pt-BR');
+    assert(/id="tr-tela"/.test(h), 'a aba "analise" salva não abriu o Progresso: ' + h.slice(0, 200));
+    semXss(h, 'Progresso');
+    assert.strictEqual((h.match(/<details class="tr-card"/g) || []).length, 10, '10 cartões');
+    assert(/Próximos passos/.test(h) && /id="tr-atualizar"/.test(h) && /id="tr-topo"/.test(h) && /id="tb-exportar"/.test(h), 'passos e rodapé');
+    assert(/Upar em Orc &lt;img/.test(h), 'o passo do mapa com nome do jogo (escapado) não apareceu: ' + (h.match(/Próximos passos.{0,600}/) || [''])[0]);
+    const m = /<button[^>]*data-tr="p:upar:mapa"[^>]*>([^<]*)</.exec(h);
+    assert(m && m[1] === 'Ir', 'botão curto "Ir" no passo: ' + (m ? m[0] : 'sem botão'));
+    assert(!/start_hunt|prey_|buy_|selo_|island_|boss_deliver|invasion_join|market_execute|set_lure/.test(ws.saida.join('\n')), 'o Progresso mandou ação ao jogo sozinho: ' + ws.saida.join(' | '));
+    /* "Ir" tira a party da caçada: o 1º toque só vira "confirmar?" (nada enviado) */
+    const idIr = (/<button[^>]*id="(tr-b-\d+)" data-tr="p:upar:mapa"/.exec(W.html()) || [])[1], ir = idIr && W.el(idIr);
+    assert(ir, 'o botão Ir não foi ligado');
+    ir.click(); await W.avancar(0);
+    assert(/confirmar\?/.test(ir.textContent), '1º toque: ' + ir.textContent);
+    assert(!/start_hunt/.test(ws.saida.join('\n')), '1 toque não pode trocar de mapa');
+    /* "Comparar com o topo": o /leaderboard não existe aqui → o resultado vai para o Log como "treinador: …" e o botão volta */
+    W.el('tr-topo').click();
+    await W.avancar(2000);
+    assert(/não consegui ler o topo/.test(logTxt(W)), 'resultado do topo fora do Log: ' + logTxt(W).split('\n').slice(-3).join(' | '));
+    assert(!W.H.TR.agindo && !W.H.TR.topo.lendo, 'a ação ficou presa');
+    assert(botao(W.html(), 'tr-topo') && !botao(W.html(), 'tr-topo').disabled, 'o botão do topo não voltou');
 });
 
-t('Analisador: "copiar JSON" com a área de transferência bloqueada — a caixa fica no repinte', async () => {
-    const W = criarMundo({ ls: comAba('analise') });
+t('Progresso (rodapé das sessões): "copiar JSON" com a área de transferência bloqueada — a caixa fica no repinte', async () => {
+    const W = criarMundo({ ls: comAba('treinador') });
     await W.avancar(0);
     W.el('tb-exportar').click();
     await W.avancar(0);
@@ -548,7 +565,7 @@ t('Analisador: "copiar JSON" com a área de transferência bloqueada — a caixa
     assert(/área de transferência bloqueada/.test(logTxt(W)), 'resultado não registrado');
     W.doc.activeElement = W.doc.body;
     const ws = new W.window.WebSocket('wss://jogo');
-    ws.emitir({ type: 'welcome', data: {} });                // frames mudam o HTML do Analisador
+    ws.emitir({ type: 'welcome', data: {} });                // repinte com a caixa aberta
     await W.avancar(4000);
     cx = W.el('tb-exportar-caixa');
     assert(cx && /"sessoes"/.test(cx.value), 'a caixa sumiu (ou ficou vazia) no repinte');
@@ -622,7 +639,7 @@ t('Magia acha a caçada de agora pelo socket (hunt_started + frame), sem escolha
     assert.strictEqual(W.H.estadoWS().huntId, null, 'ended zera a caçada do socket');
 });
 t('sobe sem exceção e sem erro de timer em nenhuma aba', async () => {
-    for (const aba of ['estado', 'magia', 'equip', 'analise', 'sobreviver', 'log']) { // 2.34.2: Sobreviver também (o Evento saiu na 2.42.0)
+    for (const aba of ['estado', 'magia', 'equip', 'treinador', 'sobreviver', 'log']) { // 2.34.2: Sobreviver também (o Evento saiu na 2.42.0)
         const W = criarMundo({ ls: comAba(aba, { tb_helper_hunt_id: '34', tb_helper_sb_alvo: '"hunt:34"' }) });
         await W.avancar(0); await W.avancar(5000);
         assert(!W.errosTimer.length, aba + ': timer estourou: ' + W.errosTimer.join(' | '));
