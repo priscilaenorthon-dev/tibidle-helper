@@ -885,10 +885,11 @@ t('bestiário: marco do mapa atual a ≤ 10 h → ok "Já fechando ML +1 aqui (~
     assert.deepStrictEqual(cs.map(c => [c.estado, c.titulo]), [['ok', 'Já fechando ML +1 aqui (~8 h)']]);
     assert.strictEqual(cs[0].acao, null);
 });
-t('bestiário: mapa atual a mais de 10 h → conselho sem ação (já está lá)', () => {
+t('bestiário: mapa atual a mais de 10 h → aviso de impacto 0, sem ação ("é só continuar")', () => {
     const cs = best(fBest({ bestiario: [lb('1', 'Shadow Nexus', 'magicLevel', 20, 540000)] }));
     assert.strictEqual(cs.length, 1); assert.strictEqual(cs[0].estado, 'aviso'); assert.strictEqual(cs[0].acao, null);
-    assert.strictEqual(cs[0].impacto, 3 / 2); assert.strictEqual(cs[0].titulo, 'Fechar ML +1 em Shadow Nexus (~20 h)');
+    assert.strictEqual(cs[0].impacto, 0); assert.strictEqual(cs[0].titulo, 'Fechar ML +1 em Shadow Nexus (~20 h)');
+    assert(/é só continuar/.test(cs[0].porque));
 });
 t('bestiário: outro mapa com XP/h a 50 % da atual → ignorado', () => {
     const cs = best(fBest({ bestiario: [lb(5, 'Ice Portal', 'magicLevel', 2, 270000)] }));
@@ -906,6 +907,14 @@ t('bestiário: regen. de mana +3 a 30 h → impacto 1/3; armadura → 0,5', () =
     assert(Math.abs(c.impacto - 1 / 3) < 1e-12, String(c.impacto)); assert.strictEqual(c.titulo, 'Fechar regen. de mana +3 em Warzone I - Fungus (~30 h)');
     c = best(fBest({ bestiario: [lb(9, 'Ice Portal', 'armor', 4, 500000)] }))[0];
     assert.strictEqual(c.impacto, 0.5);
+});
+t('bestiário: bônus de dano passa pelo teto de spawn — limitada por spawn → ML some; ganho 2 → dobra; regen +3 = 1', () => {
+    const r = [lb(7, 'Otherworld Zao', 'magicLevel', 6, 500000)];
+    assert.deepStrictEqual(best(fBest({ bestiario: r, medidoAtual: { xpH: 540000, min: 10, abatesH: 1300 } })).map(c => c.id), ['best:ok']); // 1300 ≥ 0,85 × 1360
+    assert.strictEqual(best(fBest({ bestiario: [lb(7, 'Otherworld Zao', 'magicLevel', 6, 500000, { ganho: 2 })] }))[0].impacto, 6);
+    assert.strictEqual(best(fBest({ bestiario: [lb(8, 'Warzone I - Fungus', 'manaRegen', 5, 500000, { ganho: 3 })] }))[0].impacto, 1);
+    // sem medida da limitação: 3 × 0,7
+    assert(Math.abs(best(fBest({ bestiario: r, medidoAtual: { xpH: 540000, min: 2 } }))[0].impacto - 2.1) < 1e-12);
 });
 t('bestiário: horas desconhecidas ou bônus fora da prioridade → ignorado', () => {
     for (const r of [lb(7, 'Otherworld Zao', 'magicLevel', null, 500000), lb(7, 'Otherworld Zao', 'capacity', 2, 500000)]) {

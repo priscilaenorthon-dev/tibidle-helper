@@ -12608,11 +12608,20 @@
 
     // ── Especialista 7: Bestiário (☰). foto.bestiario = o próximo marco de cada caçada (pgLinhasBestiario): { huntId, title, bonus, ganho, falta, horas, xpH }.
     //    Só bônus de base.bestiarioPrioridade, com horas conhecidas (abates/h medidos) e num mapa que rende ≥ 80 % da XP/h de agora.
-    //    impacto ESTIMADO por classe de bônus (ML/ataque/skill 3 · regen de mana/vida 1 · resto 0,5) ÷ max(1, horas ÷ 10): o que fecha logo vale mais.
+    //    impacto ESTIMADO por bônus, ÷ max(1, horas ÷ 10) (o que fecha logo vale mais):
+    //      dano (ML/ataque/corpo a corpo/distância): cada +1 ≈ +3 % de dano do GRUPO (estimado; o bônus do bestiário vale para a party) × ganho,
+    //        convertido por trDanoParaXp (limitada por spawn → 0);
+    //      regen. de mana: +3 vale 1 (o marco típico é +3; impacto = ganho ÷ 3) · vida máx. 1 · armadura/escudo 0,5 (fixos).
     //    XP/h do mapa (ou a de agora) desconhecida → entra como 'estimado' e com metade do impacto. Até 2 conselhos.
+    //    Mapa atual: ≤ 10 h → ok "já fechando"; > 10 h → aviso de impacto 0 ("é só continuar": não é um passo).
     const TR_BONUS_PT = { magicLevel: 'ML', attack: 'ataque', melee: 'corpo a corpo', distance: 'distância', manaRegen: 'regen. de mana',
                           maxHealth: 'vida máx.', armor: 'armadura', shielding: 'escudo' };
-    const TR_BONUS_IMPACTO = { magicLevel: 3, attack: 3, melee: 3, distance: 3, manaRegen: 1, maxHealth: 1 }; // o resto: 0,5
+    const TR_BONUS_DANO = ['magicLevel', 'attack', 'melee', 'distance'], TR_BONUS_DANO_PCT = 3; // estimado: +1 do bestiário ≈ +3 % de dano do grupo
+    function trImpactoBonus(bonus, ganho, foto, base) {
+        const g = trNum(ganho) > 0 ? Number(ganho) : 1;
+        if (TR_BONUS_DANO.includes(bonus)) return trDanoParaXp(TR_BONUS_DANO_PCT * g, foto, base);
+        return bonus === 'manaRegen' ? g / 3 : bonus === 'maxHealth' ? 1 : 0.5;
+    }
     const trBonusPt = (k) => TR_BONUS_PT[k] || String(k || '?');
     const trHorasPt = (h) => (h < 10 ? trPct(h) : String(Math.round(h))); // 8 → '8' · 2,46 → '2,5' · 29,6 → '30'
     function trAgenteBestiario(foto, base) {
@@ -12630,8 +12639,9 @@
             }
             const compara = aqui || (xpH != null && xpAtual != null);
             if (compara && !aqui && xpH < 0.8 * xpAtual) continue; // trocar de mapa por bônus não pode custar mais de 20 % de XP/h
-            const imp = (TR_BONUS_IMPACTO[r.bonus] || 0.5) / Math.max(1, horas / 10) * (compara ? 1 : 0.5);
-            cand.push(trConselho('best', 'marco-' + (r.huntId ?? mapa), { titulo: trCortaSufixo(`Fechar ${marco} em ${mapa}`, ` (~${trHorasPt(horas)} h)`), impacto: imp,
+            const imp = aqui ? 0 : trImpactoBonus(r.bonus, r.ganho, foto, b) / Math.max(1, horas / 10) * (compara ? 1 : 0.5);
+            if (!aqui && !(imp > 0)) continue; // não vira XP agora (ex.: bônus de dano numa caçada limitada por spawn)
+            (aqui ? out : cand).push(trConselho('best', 'marco-' + (r.huntId ?? mapa), { titulo: trCortaSufixo(`Fechar ${marco} em ${mapa}`, ` (~${trHorasPt(horas)} h)`), impacto: imp,
                 confianca: compara ? 'wiki' : 'estimado', numeros,
                 porque: `Faltam ${trQtd(r.falta)} abates (~${trHorasPt(horas)} h no ritmo medido) para ${marco} permanente para a party. `
                     + (aqui ? 'Você já caça aqui: é só continuar.'
