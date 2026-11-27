@@ -5,7 +5,7 @@ const src = fs.readFileSync(path.join(__dirname, '..', 'tibidle-helper.user.js')
 const i = src.indexOf('/* @@TREINADOR-PURO-INICIO'), f = src.indexOf('/* @@TREINADOR-PURO-FIM');
 assert(i > 0 && f > i, 'trecho @@TREINADOR-PURO não encontrado');
 const T = new Function(src.slice(i, f) + '\nreturn { TR_BASE, TR_AGENTES, trConselho, trOrdenar, trRodar, trFotoVazia, trCacada, trAgenteUpar, trAgenteMult, trAgenteLegado, '
-    + 'trMesmoId, trQtd, trLimitadoPorDano, trDanoParaXp, trTipoPrey, trXpAtual, trRecDe, trMortesRecentes, trAgenteTopo, trAgenteErros, trXpPerdidaMorte };')();
+    + 'trMesmoId, trQtd, trLimitadoPorDano, trDanoParaXp, trTipoPrey, trXpAtual, trRecDe, trMortesRecentes, trAgenteTopo, trAgenteErros, trXpPerdidaMorte, trAgenteBoss };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 // agentes falsos: troca os de verdade pelos falsos, roda e devolve os de verdade sempre
@@ -691,6 +691,59 @@ t('erros: títulos ≤ 70 e registrado em TR_AGENTES', () => {
     const cs = T.trAgenteErros(fErros({ party: p, mortes, chaves: { usadas: 5, max: 5 } }), T.TR_BASE);
     assert(cs.every(c => c.titulo.length <= 70), cs.map(c => c.titulo).join(' | '));
     assert(T.TR_AGENTES.some(a => a.id === 'erros' && a.rodar === T.trAgenteErros && a.icone === '⚠'));
+});
+
+// ── Task 9: Boss e Elite
+const fBoss = (o) => foto(Object.assign({ nivel: 250 }, o || {}));
+const boss = (f) => T.trAgenteBoss(f, T.TR_BASE);
+t('boss: 12 chaves de Elite → "Usar 12 chaves de Viscous (sweep)" (abrir-elite com a elite); qtd 0 não conta', () => {
+    const e = acoes(boss(fBoss({ chaves: { usadas: 2, max: 10, elites: [{ nome: 'Viscous', qtd: 12 }, { nome: 'Jaws', qtd: 0 }] } })), 'abrir-elite');
+    assert.strictEqual(e.length, 1); assert.strictEqual(e[0].acao.elite, 'Viscous'); assert.strictEqual(e[0].impacto, 2);
+    assert.strictEqual(e[0].titulo, 'Usar 12 chaves de Viscous (sweep)'); assert.strictEqual(e[0].numeros.qtd, 12); assert.strictEqual(e[0].estado, 'aviso');
+});
+t('boss: chaves de várias Elites → no máximo 3, as de mais chaves primeiro', () => {
+    const elites = [['A', 1], ['B', 5], ['C', 3], ['D', 9]].map(([nome, qtd]) => ({ nome, qtd }));
+    assert.deepStrictEqual(acoes(boss(fBoss({ chaves: { usadas: 0, max: 30, elites } })), 'abrir-elite').map(c => c.acao.elite), ['D', 'B', 'C']);
+});
+t("boss: Timira (Rec 340) no 330 — 5 escamas = 1 luta; 10 = 2 (nomes sem maiúsculas, grafias somadas)", () => {
+    let c = acoes(boss(fBoss({ nivel: 330, deposito: { "timira's scale": 5 } })), 'boss-trocar');
+    assert.deepStrictEqual(c.map(x => [x.acao.boss, x.acao.qtd]), [['Timira', 1]]); assert.strictEqual(c[0].titulo, 'Pode lutar Timira 1 vez');
+    c = acoes(boss(fBoss({ nivel: 330, deposito: { "Timira's Scale": 7, "TIMIRA'S SCALE": 3 } })), 'boss-trocar');
+    assert.deepStrictEqual(c.map(x => [x.acao.boss, x.acao.qtd]), [['Timira', 2]]); assert.strictEqual(c[0].titulo, 'Pode lutar Timira 2 vezes');
+    assert.strictEqual(c[0].impacto, 2); assert.strictEqual(c[0].estado, 'aviso');
+});
+t('boss: Jaul pede os 2 troféus', () => {
+    assert.strictEqual(acoes(boss(fBoss({ deposito: { 'trophy of Tanjis': 10 } })), 'boss-trocar').length, 0);
+    const c = acoes(boss(fBoss({ deposito: { 'trophy of Tanjis': 10, 'trophy of Obujos': 5 } })), 'boss-trocar');
+    assert.deepStrictEqual(c.map(x => [x.acao.boss, x.acao.qtd]), [['Jaul', 1]]);
+});
+t('boss: Izcandar (Rec 350) no 250 não entra, mesmo com tentativa; no 330 entra', () => {
+    assert.strictEqual(acoes(boss(fBoss({ deposito: { "izcandar's shard": 10 } })), 'boss-trocar').length, 0);
+    assert.deepStrictEqual(acoes(boss(fBoss({ nivel: 330, deposito: { "izcandar's shard": 10 } })), 'boss-trocar').map(x => x.acao.boss), ['Izcandar']);
+});
+t('boss: ilha do boss fechada → não sugere lutar', () => {
+    assert.strictEqual(acoes(boss(fBoss({ nivel: 330, deposito: { "timira's scale": 5 }, ilhas: [{ id: 'marapur', aberta: false }] })), 'boss-trocar').length, 0);
+});
+t('boss: tentativa pela metade → 1 conselho "Juntar" (sem ação, impacto 1), o boss mais perto de fechar', () => {
+    const cs = boss(fBoss({ deposito: { 'trophy of Tanjis': 5, 'trophy of Obujos': 2, 'yalahari figurine': 4 } }));
+    const j = cs.filter(c => c.id.startsWith('boss:juntar'));
+    assert.strictEqual(j.length, 1); assert.strictEqual(j[0].acao, null); assert.strictEqual(j[0].impacto, 1);
+    assert.strictEqual(j[0].numeros.boss, 'Azerus'); // 4/5 > Jaul (o troféu de Obujos está em 2/5)
+    assert(/yalahari figurine/.test(j[0].titulo) && /Azerus/.test(j[0].titulo) && j[0].titulo.length <= 70, j[0].titulo);
+    assert(/Quara/.test(j[0].porque), j[0].porque);
+    assert.strictEqual(boss(fBoss({ deposito: {} })).filter(c => c.id.startsWith('boss:juntar')).length, 0, 'sem nenhum item: não sugere juntar');
+});
+t('boss: Invasão — inscrito false → aviso (invasao); inscrito true ou desconhecido → nada', () => {
+    const c = acoes(boss(fBoss({ invasao: { inscrito: false, proxima: 14 } })), 'invasao');
+    assert.strictEqual(c.length, 1); assert.strictEqual(c[0].impacto, 1); assert.strictEqual(c[0].titulo, 'Inscrever na Invasão (fragmento T2 grátis)');
+    assert.strictEqual(acoes(boss(fBoss({ invasao: { inscrito: true } })), 'invasao').length, 0);
+    assert.strictEqual(acoes(boss(fBoss({ invasao: {} })), 'invasao').length, 0);
+});
+t('boss: nada a fazer → ok; foto vazia → ok; registrado', () => {
+    for (const f of [fBoss({ invasao: { inscrito: true }, chaves: { usadas: 0, max: 5, elites: [] } }), T.trFotoVazia()]) {
+        assert.deepStrictEqual(boss(f).map(c => [c.id, c.estado]), [['boss:ok', 'ok']]);
+    }
+    assert(T.TR_AGENTES.some(a => a.id === 'boss' && a.rodar === T.trAgenteBoss && a.icone === '☗'));
 });
 
 process.on('exit', () => { if (!process.exitCode) console.log(`\n${n} testes ok`); });

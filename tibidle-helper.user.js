@@ -12452,6 +12452,62 @@
         return out;
     }
     TR_AGENTES.push({ id: 'erros', nome: 'Onde estou errando', icone: '⚠', rodar: trAgenteErros });
+
+    // ── Especialista 6: Boss e Elite (☗). Chaves de Elite paradas, tentativas de boss já no depósito e a Invasão do dia.
+    //    Impactos ESTIMADOS (o ganho é base de forja/fragmento, não XP direta): sweep e luta 2, juntar e Invasão 1.
+    function trAgenteBoss(foto, base) {
+        const b = base || TR_BASE, out = [], nivel = trNum(foto.nivel);
+        // 1) Chaves de Elite: cada uma abre um Elite (caixa + base de forja da faixa de Elite). Até 3, as de mais chaves primeiro.
+        const ch = foto.chaves && typeof foto.chaves === 'object' ? foto.chaves : null;
+        const elites = (ch && Array.isArray(ch.elites) ? ch.elites : []).filter(e => e && e.nome && trNum(e.qtd) > 0)
+            .sort((x, y) => Number(y.qtd) - Number(x.qtd)).slice(0, 3);
+        const [bMin, bMax] = b.purificacao.elite.base;
+        for (const e of elites) {
+            const q = Number(e.qtd);
+            out.push(trConselho('boss', 'elite-' + e.nome, { titulo: trCorta(`Usar ${q} ${q > 1 ? 'chaves' : 'chave'} de ${e.nome} (sweep)`), impacto: 2,
+                porque: `Cada chave abre um Elite: caixa + peça de base ${bMin}–${bMax} de potência para a forja. O sweep gasta várias de uma vez (até ${b.chaves.sweepMax}).`,
+                numeros: { elite: e.nome, qtd: q },
+                acao: { tipo: 'abrir-elite', elite: e.nome, rotulo: 'Elites' } }));
+        }
+        // 2) Bosses do nível (Rec ≤ nível + 20, ou sem Rec), com a ilha aberta: tentativas = min(⌊depósito ÷ qtd⌋) entre os itens pedidos.
+        //    Sem tentativa: 1 só "Juntar" para o boss mais perto de fechar (só se já tem algum item; o "onde" vai no porquê).
+        let juntar = null;
+        for (const bo of b.bosses || []) {
+            if (!(bo.rec == null || bo.rec <= nivel + 20) || trIlhaFechada(foto, b, bo.ilha)) continue;
+            const itens = (bo.tentativa || []).map(x => ({ item: x.item, qtd: x.qtd, tem: trPorNome(foto.deposito, x.item) || 0 }));
+            if (!itens.length) continue;
+            const k = Math.min(...itens.map(x => Math.floor(x.tem / x.qtd)));
+            if (k >= 1) {
+                out.push(trConselho('boss', 'lutar-' + bo.nome, { titulo: `Pode lutar ${bo.nome} ${k} ${k > 1 ? 'vezes' : 'vez'}`, impacto: 2,
+                    porque: `Por luta: ${itens.map(x => `${x.qtd} ${x.item}`).join(' + ')} (troca no Silas, na cidade). Cai: ${bo.drops}.` + (b.bossDicas[2] ? ` Dica: ${b.bossDicas[2]}.` : ''),
+                    numeros: { boss: bo.nome, qtd: k, rec: bo.rec ?? null, vida: bo.vida },
+                    acao: { tipo: 'boss-trocar', boss: bo.nome, qtd: k, rotulo: 'Trocar tentativa' } }));
+                continue;
+            }
+            const perto = Math.min(...itens.map(x => Math.min(1, x.tem / x.qtd)));
+            if (bo.vale && itens.some(x => x.tem > 0) && (!juntar || perto > juntar.perto)) juntar = { bo, itens, perto };
+        }
+        if (juntar) {
+            const { bo, itens } = juntar, falta = itens.filter(x => x.tem < x.qtd);
+            out.push(trConselho('boss', 'juntar-' + bo.nome, { titulo: trCorta(`Juntar ${trLista(falta.map(x => `${x.item} (${x.tem}/${x.qtd})`))} para ${bo.nome}`), impacto: 1,
+                porque: `Onde cai: ${bo.onde}. Vale por: ${bo.vale}.`,
+                numeros: { boss: bo.nome, itens, onde: bo.onde } }));
+        }
+        // 3) Invasão: diária e grátis; o dano no boss vira tokens (Ravena troca por refine T2).
+        if (foto.invasao && foto.invasao.inscrito === false) {
+            const r = b.invasao.ravena.refineT2;
+            out.push(trConselho('boss', 'invasao', { titulo: 'Inscrever na Invasão (fragmento T2 grátis)', impacto: 1, confianca: 'wiki',
+                porque: `Grátis: ${b.invasao.dica}. A posição no dano dá tokens; ${r.tokens} tokens = ${r.qtd} refine T2 na Ravena.`,
+                numeros: { proxima: foto.invasao.proxima ?? null },
+                acao: { tipo: 'invasao', rotulo: 'Inscrever' } }));
+        }
+        if (!out.length) {
+            out.push(trConselho('boss', 'ok', { titulo: 'Nada parado em Elite, boss ou Invasão', estado: 'ok',
+                porque: 'Sem chave de Elite guardada, sem tentativa de boss completa no depósito e a Invasão do dia em dia.' }));
+        }
+        return out;
+    }
+    TR_AGENTES.push({ id: 'boss', nome: 'Boss e Elite', icone: '☗', rodar: trAgenteBoss });
     /* @@TREINADOR-PURO-FIM */
     /* @@ARENA-PURO-INICIO — Sobrevivência (2.57.0): decisões do robô, puras (o tempo é st.tempoMs, sem DOM).
      * st = estado da simulação do cliente (ref.current.st do componente da partida). O mesmo código rodou no simulador
