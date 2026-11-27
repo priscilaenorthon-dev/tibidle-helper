@@ -7820,3 +7820,9 @@ no lugar do Haste).
   A 2.66.0 anotou a partida e desligou o robô sozinha na morte. Sem escudo na partida (flail de 2 mãos): não se sabe se pesou — o motor
   (agente, 26/11) não lista defesa do escudo entre o que conta. Teste possível: corpo com a flail (forca 187) e PINO de stonecutter +
   great shield no "Equipamento da partida" (pino não muda a forca).
+- **Pino conta na forca (27/11, 17:55)**: corpo com a jungle flail (sozinha dava 187/75) + PINO de stonecutter axe e great shield no
+  "Equipamento da partida" → retrato com stonecutter/great shield, **forca 183, degrauInicial 70** (partida grátis, encerrada). O servidor
+  calcula a forca com o equipamento DA PARTIDA (espelho do corpo + pinos). Correção: o teste com pinos de 26/11 VALIA (armadura e
+  escudo pinados não mudaram nada; a arma é que conta). Consequências: (1) não dá para começar no 75 com escudo — a flail é de 2 mãos;
+  (2) não precisa trocar o corpo: basta pinar a flail na arma da partida (o jogo lista as cópias do depósito) e o Knight segue caçando
+  com stonecutter + escudo. A partida paga não foi feita. Slots devolvidos ao espelho.
