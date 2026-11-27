@@ -11641,7 +11641,8 @@
         legado: { skillInicio: 60, mlInicio: 40, passo: 5, // wiki/legado (skillInicio = corpo a corpo e distância; mlInicio = nível mágico)
                   bonus: [2, 5, 9, 14, 20, 27, 35, 44, 54, 65, 77, 90, 104], // % total no marco I..XIII; sem teto: cada marco soma 1 ponto a mais (XIV = +119)
                   skill: { KNIGHT: 'melee', PALADIN: 'dist', SORCERER: 'ml', DRUID: 'ml' }, // chaves de skill do helper/foto
-                  semCritico: true }, // wiki/legado: entra sobre o golpe sem crítico; não mexe em roubo de vida/mana
+                  semCritico: true, // wiki/legado: entra sobre o golpe sem crítico; não mexe em roubo de vida/mana
+                  xpPorDanoFrac: 0.7 }, // estimado: XP ~ dano quando a caçada é limitada por dano (fração da alta de dano que vira XP/h)
         // ── Treino: skill quase não sobe caçando; ampulheta = treino normal DURANTE a caçada (sem arma de treino)
         ampulheta: { horasDia: 8, fator: 8, // horasDia: wiki/ampulhetas-de-treino (por vocação); fator: arma de treino ×8 na Sala de Treino (wiki/skills-e-treino)
                      preco1h: 525000, preco4h: 2100000, preco8h: 4200000, // protocolo (meta.rules.cash, ouro)
@@ -12109,6 +12110,39 @@
         return out;
     }
     TR_AGENTES.push({ id: 'mult', nome: 'Multiplicadores', icone: '✕', rodar: trAgenteMult });
+
+    // ── Especialista 3: Treino e Legado (⚔). Ampulheta = treino durante a caçada; o Legado vira dano permanente do personagem.
+    //    impacto = pontos de dano do próximo marco × xpPorDanoFrac ÷ 4 (o marco é de UM personagem; a party tem 4).
+    function trAgenteLegado(foto, base) {
+        const b = base || TR_BASE, lg = foto.legado && typeof foto.legado === 'object' ? foto.legado : null;
+        const vocs = lg ? Object.keys(lg).filter(v => lg[v] && trNum(lg[v].falta) > 0 && Number.isFinite(trNum(lg[v].bonusProx))) : [];
+        if (!vocs.length) {
+            return [trConselho('legado', 'sem-dado', { titulo: 'Legado não lido ainda', impacto: 0,
+                porque: 'Abra o Legado (UTILIDADES ▸ LEGADO) ou o painel de skills para eu ver quanto falta ao próximo marco de cada vocação.' })];
+        }
+        const passo = b.legado.passo || 5, fator = b.legado.xpPorDanoFrac, amp = b.ampulheta;
+        const ord = vocs.slice().sort((x, y) => (trNum(lg[x].falta) / passo) - (trNum(lg[y].falta) / passo));
+        return ord.map(voc => {
+            const l = lg[voc], falta = Number(l.falta), ganho = Number(l.bonusProx) - (Number(l.bonusAtual) || 0), nome = trVocPt(voc);
+            const usadas = foto.ampulhetas && foto.ampulhetas[voc] ? trNum(foto.ampulhetas[voc].usadasH) : NaN;
+            const livres = Number.isFinite(usadas) ? Math.max(0, amp.horasDia - usadas) : null;
+            const feito = livres === 0;
+            // a menor ampulheta que cobre as horas livres de hoje (sem dado = a de 8 h)
+            const custo = livres != null && livres <= 1 ? amp.preco1h : livres != null && livres <= 4 ? amp.preco4h : amp.preco8h;
+            const skillTxt = b.legado.skill[voc] === 'ml' ? 'nível mágico' : 'skill';
+            return trConselho('legado', 'amp-' + voc, {
+                titulo: feito ? `${nome}: treino do dia feito (${falta === 1 ? 'falta' : 'faltam'} ${falta} para +${ganho} %)`
+                    : `Ampulheta no ${nome}: ${falta === 1 ? 'falta' : 'faltam'} ${falta} de skill para +${ganho} % de dano`,
+                estado: feito ? 'ok' : 'aviso', confianca: 'wiki', custo: feito ? 0 : custo, impacto: ganho * fator / 4,
+                porque: `${nome} com ${skillTxt} ${l.skill} treinada; ao chegar a ${l.proxMarco}, o Legado vai de +${l.bonusAtual || 0} % para +${l.bonusProx} % de dano dele, para sempre. `
+                    + (feito ? `Já usou as ${amp.horasDia} h de ampulheta de hoje.`
+                        : (livres != null ? `${trPct(livres)} h de ampulheta livres hoje (teto ${amp.horasDia} h por vocação). ` : '')
+                            + `Ampulheta de ${custo === amp.preco1h ? 1 : custo === amp.preco4h ? 4 : 8} h: ${trOuroTxt(custo)} de ouro.`),
+                numeros: { voc, skill: l.skill, falta, proxMarco: l.proxMarco, bonusAtual: l.bonusAtual, bonusProx: l.bonusProx, livres },
+                acao: feito ? null : { tipo: 'ampulheta', voc, rotulo: 'Ampulheta' } });
+        });
+    }
+    TR_AGENTES.push({ id: 'legado', nome: 'Treino e Legado', icone: '⚔', rodar: trAgenteLegado });
     /* @@TREINADOR-PURO-FIM */
     /* @@ARENA-PURO-INICIO — Sobrevivência (2.57.0): decisões do robô, puras (o tempo é st.tempoMs, sem DOM).
      * st = estado da simulação do cliente (ref.current.st do componente da partida). O mesmo código rodou no simulador

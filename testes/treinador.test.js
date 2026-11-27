@@ -4,7 +4,7 @@ const fs = require('fs'), path = require('path'), assert = require('assert');
 const src = fs.readFileSync(path.join(__dirname, '..', 'tibidle-helper.user.js'), 'utf8');
 const i = src.indexOf('/* @@TREINADOR-PURO-INICIO'), f = src.indexOf('/* @@TREINADOR-PURO-FIM');
 assert(i > 0 && f > i, 'trecho @@TREINADOR-PURO não encontrado');
-const T = new Function(src.slice(i, f) + '\nreturn { TR_BASE, TR_AGENTES, trConselho, trOrdenar, trRodar, trFotoVazia, trCacada, trAgenteUpar, trAgenteMult };')();
+const T = new Function(src.slice(i, f) + '\nreturn { TR_BASE, TR_AGENTES, trConselho, trOrdenar, trRodar, trFotoVazia, trCacada, trAgenteUpar, trAgenteMult, trAgenteLegado };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 // agentes falsos: troca os de verdade pelos falsos, roda e devolve os de verdade sempre
@@ -313,6 +313,39 @@ t('mult: Selo desligado em caçada de XP → custo/h no título, ação selo, wi
 t('mult: foto vazia → nenhum conselho; registrado em TR_AGENTES', () => {
     assert.deepStrictEqual(T.trAgenteMult(T.trFotoVazia(), T.TR_BASE), []);
     assert(T.TR_AGENTES.some(a => a.id === 'mult' && a.rodar === T.trAgenteMult && a.icone === '✕'));
+});
+
+// ── Task 6: Treino e Legado
+const leg = (o) => Object.assign({ skill: 64, marcoAtual: 1, proxMarco: 65, falta: 1, bonusAtual: 2, bonusProx: 5 }, o || {});
+t('legado: Cavaleiro melee 64 → marco 65 (+2 → +5): impacto = 3 × xpPorDanoFrac ÷ 4, ação ampulheta, horas livres no porquê', () => {
+    const f = foto({ nivel: 238, legado: { KNIGHT: leg() }, ampulhetas: { KNIGHT: { usadasH: 2 } } });
+    const cs = T.trAgenteLegado(f, T.TR_BASE); assert.strictEqual(cs.length, 1); const c = cs[0];
+    assert.strictEqual(T.TR_BASE.legado.xpPorDanoFrac, 0.7);
+    assert(Math.abs(c.impacto - 3 * T.TR_BASE.legado.xpPorDanoFrac / 4) < 1e-9, String(c.impacto));
+    assert.strictEqual(c.estado, 'aviso'); assert.strictEqual(c.confianca, 'wiki');
+    assert.deepStrictEqual(c.acao && { tipo: c.acao.tipo, voc: c.acao.voc }, { tipo: 'ampulheta', voc: 'KNIGHT' });
+    assert.strictEqual(c.custo, T.TR_BASE.ampulheta.preco8h);
+    assert(/Cavaleiro/.test(c.titulo) && /falta 1 de skill/.test(c.titulo) && /\+3 % de dano/.test(c.titulo) && c.titulo.length <= 70, c.titulo);
+    assert(/6 h de ampulheta livres hoje/.test(c.porque), c.porque);
+});
+t('legado: ampulheta do dia usada (8 h) → estado ok "treino do dia feito"', () => {
+    const c = T.trAgenteLegado(foto({ legado: { KNIGHT: leg() }, ampulhetas: { KNIGHT: { usadasH: 8 } } }), T.TR_BASE)[0];
+    assert.strictEqual(c.estado, 'ok'); assert(/treino do dia feito/.test(c.titulo), c.titulo); assert(!/livres/.test(c.porque));
+});
+t('legado: poucas horas livres pedem a ampulheta menor', () => {
+    const c = T.trAgenteLegado(foto({ legado: { KNIGHT: leg() }, ampulhetas: { KNIGHT: { usadasH: 7 } } }), T.TR_BASE)[0];
+    assert.strictEqual(c.custo, T.TR_BASE.ampulheta.preco1h); assert(/1 h de ampulheta livres hoje/.test(c.porque));
+});
+t('legado: ordena pela menor falta relativa (falta ÷ passo)', () => {
+    const f = foto({ legado: { KNIGHT: leg({ skill: 61, falta: 4 }), SORCERER: leg({ skill: 54, proxMarco: 55, falta: 1, bonusAtual: 9, bonusProx: 14 }),
+        PALADIN: leg({ skill: 62, falta: 3 }) } });
+    assert.deepStrictEqual(T.trAgenteLegado(f, T.TR_BASE).map(c => c.acao.voc), ['SORCERER', 'PALADIN', 'KNIGHT']);
+});
+t('legado: sem legado → aviso "Legado não lido ainda", sem ação e sem impacto; registrado', () => {
+    const cs = T.trAgenteLegado(T.trFotoVazia(), T.TR_BASE);
+    assert.strictEqual(cs.length, 1); assert.strictEqual(cs[0].estado, 'aviso'); assert.strictEqual(cs[0].impacto, 0); assert.strictEqual(cs[0].acao, null);
+    assert(/Legado não lido/.test(cs[0].titulo));
+    assert(T.TR_AGENTES.some(a => a.id === 'legado' && a.rodar === T.trAgenteLegado && a.icone === '⚔'));
 });
 
 process.on('exit', () => { if (!process.exitCode) console.log(`\n${n} testes ok`); });
