@@ -11615,16 +11615,18 @@
     const TR_PESO_CONF = { medido: 1, comunidade: 0.8, wiki: 0.6, estimado: 0.4 };
     /* TR_BASE — o que um jogador profissional sabe (27/11/2026). Fontes: data/treinador-pesquisa-27-11.md e data/wiki-27-11/*.txt.
      * Convenção dos comentários: wiki/<página> · comunidade <quem/preset> · medido dd/mm (conta do dono) · protocolo (docs/protocolo-treinador.md).
-     * Só dados; as poucas funções são contas puras de tabela da wiki. Porcentagens em pontos (+10 = +10 %), exceto onde diz "fração". */
+     * Só dados; as poucas funções são contas puras de tabela da wiki.
+     * Unidades: número sem sufixo = PONTOS de % (+10 = +10 %); sufixo Frac = fração (0,56 = 56 %); H = horas, S = segundos, Min = minutos.
+     * Skills: o vocabulário é o do helper e da foto — melee, dist, ml, escudo. Os nomes do bestiário (magicLevel, attack…) são de BÔNUS. */
     const TR_BASE = {
         versao: '2026-11-27',
         // ── XP: os bônus SOMAM (não multiplicam); party 4 vocações +100, premium +10, boost +50, prey de +10 → ×2,70 da base
         xp: { party: 100, premium: 10, boost: 50, preyColunaMax: 10, preyColunas: 4, // wiki/premium-o-que-muda, loja, prey
-              seloAbundante: [4, 7, 10, 14, 20], seloPerigoMult: 0.1, // wiki/selo-da-cacada (× (1 + 0,1 × Perigo))
+              seloAbundante: [4, 7, 10, 14, 20], seloPerigoFrac: 0.1, // wiki/selo-da-cacada (buff × (1 + 0,1 × Perigo))
               tetoBonus: 100, // wiki/selo-da-cacada: Selo + Prey + Boost "para em +100 %" (não diz se conta party/premium)
               sessaoH: 12, sessao24hH: 24 }, // wiki/skills-e-treino (offline rende igual)
-        // ── teto de spawn × dano: xp/h = min(porLure × lure, fatorDano × DPS × 3600 ÷ HP) × xp por abate — erro < 2 % (medido 27/09)
-        spawn: { porLure: 340, fatorDano: 0.707, limitadoPorSpawn: 0.85, // medido 27/09; 0,85 = corte do plano (abates < 85 % do teto → dano)
+        // ── teto de spawn × dano: xp/h = min(porLure × lure, fatorDanoFrac × DPS × 3600 ÷ HP) × xp por abate — erro < 2 % (medido 27/09)
+        spawn: { porLure: 340, fatorDanoFrac: 0.707, limitadoPorSpawnFrac: 0.85, // medido 27/09; 0,85 = corte do plano (abates < 85 % do teto → dano)
                  xpPorHp: { 'Shadow Nexus': 0.061, 'Otherworld Zao': 0.094, ilhasNovas: [0.04, 0.07] } }, // comunidade (xp ÷ vida da 1ª criatura; ninguém mediu)
         lure: { maxCriaturas: 8, niveis: [1, 4], portalS: 10 }, // wiki/cacadas
         dinamica: { corteS: 0.25, portalDeS: 10, portalAteS: 8.5 }, // wiki/cacadas (turno abaixo da referência)
@@ -11632,13 +11634,13 @@
         // ── Prey: 2 h de caçada, só na caçada da prey; tier sobe só sorteando com bônus ativo; expira sem trava → zera
         prey: { duracaoH: 2, wildcardCoins: 10, escolherWildcards: 5, trocaOuroPorNivel: 200, trocaGratisDia: 1, // wiki/prey; protocolo: rules.listGold 50.000 no nível 250 = 200 × nível
                 travaWildcards: 1, danoPorTier: 4, defesaPorTier: 4, tierMax: 10, tiposBuff: ['xp', 'loot', 'damage', 'defense'] }, // wiki/prey, protocolo (preyBuffs)
-        premium: { coins: 290, dias: 30, xp: 10, autoSell: 0.9, autoSellFree: 0.8 }, // wiki/premium-o-que-muda
+        premium: { coins: 290, dias: 30, xp: 10, autoSellFrac: 0.9, autoSellFreeFrac: 0.8 }, // wiki/premium-o-que-muda
         boost: { pct: 50, min: 90, coins: [45, 90, 180, 360], porDia: 4, soCacadaComum: true }, // wiki/loja (não corre em Elite/Boss/Torre/treino)
         loja: { sessao24hCoins: 190, deathRedemptionCoins: 30, coinOuro: 52000 }, // wiki/loja, bencaos; comunidade: coin ≈ 50–54 mil de ouro
         // ── Legado: dano permanente pela skill TREINADA (item/bestiário/loyalty não contam). Knight melee, Paladin distância, magos ML (Druid: cura também)
-        legado: { meleeInicio: 60, mlInicio: 40, passo: 5, // wiki/legado
+        legado: { skillInicio: 60, mlInicio: 40, passo: 5, // wiki/legado (skillInicio = corpo a corpo e distância; mlInicio = nível mágico)
                   bonus: [2, 5, 9, 14, 20, 27, 35, 44, 54, 65, 77, 90, 104], // % total no marco I..XIII; sem teto: cada marco soma 1 ponto a mais (XIV = +119)
-                  skill: { KNIGHT: 'melee', PALADIN: 'distance', SORCERER: 'magicLevel', DRUID: 'magicLevel' },
+                  skill: { KNIGHT: 'melee', PALADIN: 'dist', SORCERER: 'ml', DRUID: 'ml' }, // chaves de skill do helper/foto
                   semCritico: true }, // wiki/legado: entra sobre o golpe sem crítico; não mexe em roubo de vida/mana
         // ── Treino: skill quase não sobe caçando; ampulheta = treino normal DURANTE a caçada (sem arma de treino)
         ampulheta: { horasDia: 8, fator: 8, // horasDia: wiki/ampulhetas-de-treino (por vocação); fator: arma de treino ×8 na Sala de Treino (wiki/skills-e-treino)
@@ -11647,11 +11649,11 @@
                      lasting8hCoins: 490, // comunidade (guardar para evento de +50 % de skill)
                      foraDoConsumo: ['Torre', 'Elites', 'Bosses', 'Invasão', 'Sobrevivência', 'Sala de Treino'] }, // wiki/ampulhetas-de-treino
         // ── Morte e bênçãos: morte de qualquer um encerra a caçada; 7 bênçãos cortam 56 % da perda e somem na morte
-        bencaos: { n: 7, comuns: 5, enhanced: 2, corte: 0.56, cortePor: 0.08, // wiki/bencaos
+        bencaos: { n: 7, comuns: 5, enhanced: 2, corteFrac: 0.56, cortePorFrac: 0.08, // wiki/bencaos
                    preco: (nv) => nv <= 30 ? 2000 : nv < 120 ? 200 * (nv - 20) : 20000 + 75 * (nv - 120), // comum (ids 2–6)
                    precoEnh: (nv) => nv <= 30 ? 2000 : nv < 120 ? 260 * (nv - 20) : 26000 + 100 * (nv - 120), // enhanced (ids 7–8)
-                   total: (nv) => 5 * TR_BASE.bencaos.preco(nv) + 2 * TR_BASE.bencaos.precoEnh(nv) }, // as 7 juntas (nível 200 = 198.000, wiki)
-        morte: { perdaPctSemBencao: 0.0227, perdaPorNivel: { 24: 0.0478, 50: 0.0306, 100: 0.0227 } }, // wiki/durante-a-cacada (fração da XP total; usar como ordem de grandeza)
+                   total(nv) { return 5 * this.preco(nv) + 2 * this.precoEnh(nv); } }, // as 7 juntas (nível 200 = 198.000, wiki)
+        morte: { perdaFracSemBencao: 0.0227, perdaFracPorNivel: { 24: 0.0478, 50: 0.0306, 100: 0.0227 } }, // wiki/durante-a-cacada (fração da XP total; usar como ordem de grandeza)
         // ── Faixas de nível → caçadas pelo Rec da wiki (faixa = [de, ate): Rec ≥ de e < ate). Abaixo de 80 o Radar já cobre (Tibidle Island, nível mínimo)
         faixas: [ // wiki/cacadas (coluna Rec)
             { de: 1, ate: 80, hunts: [] },
@@ -11669,13 +11671,25 @@
             { de: 250, ate: 300, hunts: ['Summer Court', 'Otherworld Zao', 'Shadow Nexus', 'Warzone III - Crystal Caves', 'Salt Caves', 'Seacrest Grounds'] },
             { de: 300, ate: 350, hunts: ['Buried Cathedral', 'Ruins of Nuur', 'Emerald Gardens'] },
             { de: 350, ate: 999, hunts: ['Dream Talisman'] } ],
-        // Rec e ilha (id do Silas) das caçadas de Rec ≥ 200 — wiki/cacadas; 'marapur' e 'dream_courts' são ids prováveis (não vistos no unlockedIslands)
-        cacadasTopo: { 'Winter Court': [200, 'dream_courts'], 'Ice Portal': [200, 'forgotten_knowledge'], 'Hellgorak Seal': [200, 'the_inquisition'],
-            'Warzone II - Magma Dungeon': [200, 'warzone'], 'Warzone II - Parasite Nest': [220, 'warzone'], 'Kilmaresh Catacombs': [230, 'issavi'],
-            'Temple of the Moon Goddess': [240, 'marapur'], 'Summer Court': [250, 'dream_courts'], 'Otherworld Zao': [250, 'otherworld'],
-            'Shadow Nexus': [250, 'the_inquisition'], 'Warzone III - Crystal Caves': [250, 'warzone'], 'Salt Caves': [280, 'issavi'],
-            'Seacrest Grounds': [290, 'marapur'], 'Buried Cathedral': [300, 'dream_courts'], 'Ruins of Nuur': [330, 'issavi'],
-            'Emerald Gardens': [340, 'marapur'], 'Dream Talisman': [350, 'dream_courts'] },
+        // Rec e ilha (id do Silas) das caçadas de Rec ≥ 200 — wiki/cacadas. Use trCacada(titulo) para ler.
+        cacadasTopo: {
+            'Winter Court': { rec: 200, ilha: 'dream_courts' }, // TODO confirmar id
+            'Ice Portal': { rec: 200, ilha: 'forgotten_knowledge' },
+            'Hellgorak Seal': { rec: 200, ilha: 'the_inquisition' },
+            'Warzone II - Magma Dungeon': { rec: 200, ilha: 'warzone' },
+            'Warzone II - Parasite Nest': { rec: 220, ilha: 'warzone' },
+            'Kilmaresh Catacombs': { rec: 230, ilha: 'issavi' },
+            'Temple of the Moon Goddess': { rec: 240, ilha: 'marapur' }, // TODO confirmar id
+            'Summer Court': { rec: 250, ilha: 'dream_courts' }, // TODO confirmar id
+            'Otherworld Zao': { rec: 250, ilha: 'otherworld' },
+            'Shadow Nexus': { rec: 250, ilha: 'the_inquisition' },
+            'Warzone III - Crystal Caves': { rec: 250, ilha: 'warzone' },
+            'Salt Caves': { rec: 280, ilha: 'issavi' },
+            'Seacrest Grounds': { rec: 290, ilha: 'marapur' }, // TODO confirmar id
+            'Buried Cathedral': { rec: 300, ilha: 'dream_courts' }, // TODO confirmar id
+            'Ruins of Nuur': { rec: 330, ilha: 'issavi' },
+            'Emerald Gardens': { rec: 340, ilha: 'marapur' }, // TODO confirmar id
+            'Dream Talisman': { rec: 350, ilha: 'dream_courts' } }, // TODO confirmar id
         // XP/h e saldo/h já vistos (raw = sem prey/boost); faixas [mín, máx] onde a fonte deu intervalo; nivel = da party na medida
         medidos: [
             { hunt: 'Shadow Nexus', xpH: 950000, saldoH: [400000, 600000], nivel: [217, 246], fonte: 'comunidade preset 57 (com imbuements; sem imbuement ~zero a zero)' },
@@ -11692,8 +11706,8 @@
         // ── Ilhas (entrega única no Silas, só na cidade; o jogo conta mochila + depósito)
         ilhas: [ // wiki/acesso-as-ilhas, dream-courts, marapur
             { nome: 'Issavi', id: 'issavi', ouro: 10e6, materiais: [] },
-            { nome: 'Marapur', id: 'marapur', ouro: 10e6, materiais: [{ nome: 'Spectral Conch', qtd: 10, onde: 'Elite Entombed Wraithlord (Haunted Nexus Tomb, Rec 150): 20,83 % ×2' }] },
-            { nome: 'Dream Courts', id: 'dream_courts', ouro: 15e6, materiais: [{ nome: 'Haunted Sigil', qtd: 10, onde: 'Hollow High Priest (Haunted Nexus Temple, Rec 170) 10,42 % ×2; Wailing Matron (Haunted Nexus Cellar, Rec 190) 20,83 % ×2' }] },
+            { nome: 'Marapur', id: 'marapur', ouro: 10e6, materiais: [{ nome: 'Spectral Conch', qtd: 10, onde: 'Elite Entombed Wraithlord (Haunted Nexus Tomb, Rec 150): 20,83 % ×2' }] }, // TODO confirmar id
+            { nome: 'Dream Courts', id: 'dream_courts', ouro: 15e6, materiais: [{ nome: 'Haunted Sigil', qtd: 10, onde: 'Hollow High Priest (Haunted Nexus Temple, Rec 170) 10,42 % ×2; Wailing Matron (Haunted Nexus Cellar, Rec 190) 20,83 % ×2' }] }, // TODO confirmar id
             { nome: 'Otherworld', id: 'otherworld', ouro: 3e6, materiais: [{ nome: 'Thunderscar Spark', qtd: 20, onde: 'Elite Balerion (Thunderscar Peak, Rec 100): 23 % ×4' }] },
             { nome: 'Warzone', id: 'warzone', ouro: 3e6, materiais: [{ nome: 'Warzone Voucher', qtd: 40, onde: 'Upper Spikes Box 10,8 %, Middle Spikes Box 15,2 %, Lower Spikes Box 22,5 % (×3)' }] },
             { nome: 'Forgotten Knowledge', id: 'forgotten_knowledge', ouro: 3e6, materiais: [] },
@@ -11703,32 +11717,34 @@
             { nome: 'Gray Island', id: 'gray_island', ouro: 0, materiais: [{ nome: 'Yalahar Soul Fragment', qtd: 100, onde: 'toda vitória nos 13 Elites de Yalahar' }, { nome: 'Yalahar gear wheel', qtd: 70, onde: 'caixas dos Elites de Yalahar 25–35 %' }] },
             { nome: 'Pits of Inferno', id: 'pits_of_inferno', ouro: 0, materiais: [{ nome: 'unholy book', qtd: 1, onde: 'Giant Spider 0,05 % (Giant Spiders POH / Mushroom Gardens)' }] },
             { nome: 'Yalahar', id: 'yalahar', ouro: 0, materiais: [{ nome: 'dwarven pickaxe', qtd: 1, onde: 'Dwarf 0,03 % / Dwarf Soldier 0,08 %' }] } ],
-        // ── Bosses: 1 tentativa por luta (trocada no Silas, só na cidade); sem cooldown; morte de qualquer um = derrota e tentativa perdida
+        // ── Bosses: tentativa = lista de { item, qtd } pedidos por 1 tentativa. 1 tentativa por luta (trocada no Silas, só na cidade); sem cooldown; morte de qualquer um = derrota e tentativa perdida
         bosses: [ // wiki/bosses, acesso-aos-bosses, database/criaturas
             // vida: a página Bosses diz 360.000 ("o maior dos cinco"); database/criaturas diz 250.000 e a pesquisa trazia 250–360k — fico com 360k (pior caso)
-            { nome: 'The Inquisitor', ilha: 'the_inquisition', rec: 250, vida: 360000, tentativa: { item: "The inquisitor's circlet", qtd: 10 },
+            { nome: 'The Inquisitor', ilha: 'the_inquisition', rec: 250, vida: 360000, tentativa: [{ item: "The inquisitor's circlet", qtd: 10 }],
               onde: 'caixas dos 7 Elites dos selos 0,93–2,49 % (beelzebub/Shadow Nexus Box 2,49 %)',
               drops: "Inquisition Box: avenger, emerald sword, master archer's armor, fireborn giant armor, arbalest, warsinger bow 9 %; soft boots, spellbook of dark mysteries 5 %; Gem Box 130 refine fragment t2 (40 %)",
               vale: 'o maior pacote de fragmentos (130 refine t2); base de boss 250–500' },
             // vida: Bosses 250.000; database/criaturas 100.000 (pesquisa 100–250k) — fico com 250k
-            { nome: 'The Last Lore Keeper', ilha: 'forgotten_knowledge', rec: 250, vida: 250000, tentativa: { item: 'Necronomicon', qtd: 10 },
+            { nome: 'The Last Lore Keeper', ilha: 'forgotten_knowledge', rec: 250, vida: 250000, tentativa: [{ item: 'Necronomicon', qtd: 10 }],
               onde: 'caixas dos 6 Elites dos portais 10,5–17,5 % (Holy Portal Box 17,5 %)',
               drops: '9 armas crude umbral (4 % cada, direto); sem caixa nem pacote de fragmentos', vale: 'só pelas armas umbral' },
-            { nome: 'Eradicator', ilha: 'otherworld', rec: 250, vida: 145000, tentativa: { item: 'Breach Shard', qtd: 5 }, // vida: wiki/database/criaturas
+            { nome: 'Eradicator', ilha: 'otherworld', rec: 250, vida: 145000, tentativa: [{ item: 'Breach Shard', qtd: 5 }], // vida: wiki/database/criaturas
               onde: 'loja do Otherworld (15 tokens)', drops: 'jungle wand, jungle bow, Zaoan legs 6,3 %', vale: 'jungle wand/bow para os magos/Paladin' },
-            { nome: 'Urmahlullu', nomeJogo: 'Urmahlullu the Weakened', ilha: 'issavi', rec: 330, vida: 300000, tentativa: { item: 'Sphinx Dust', qtd: 5 },
+            { nome: 'Urmahlullu', nomeJogo: 'Urmahlullu the Weakened', ilha: 'issavi', rec: 330, vida: 300000, tentativa: [{ item: 'Sphinx Dust', qtd: 5 }],
               onde: 'Salt Caves / Ruins of Nuur, ou 2 tokens na loja de Issavi', drops: 'jungle rod/wand/bow ~10,7 % (ML +1); rainbow necklace 20 %', vale: 'arma de mago com ML +1' },
-            { nome: 'Timira', nomeJogo: 'Timira the Many-Headed', ilha: 'marapur', rec: 340, vida: 360000, tentativa: { item: "Timira's Scale", qtd: 5 },
+            { nome: 'Timira', nomeJogo: 'Timira the Many-Headed', ilha: 'marapur', rec: 340, // TODO confirmar id
+              vida: 360000, tentativa: [{ item: "Timira's Scale", qtd: 5 }],
               onde: 'Seacrest Grounds / Emerald Gardens, ou 2 tokens na loja de Marapur', drops: 'naga wand/rod (ML +2), naga axe/club (atk 52) 8 %; guardian boots 18 %',
               vale: 'naga wand/rod ML +2 e naga axe/club para o Knight' },
-            { nome: 'Izcandar', nomeJogo: 'Izcandar the Banished', ilha: 'dream_courts', rec: 350, vida: 415000, tentativa: { item: "Izcandar's Shard", qtd: 5 },
+            { nome: 'Izcandar', nomeJogo: 'Izcandar the Banished', ilha: 'dream_courts', rec: 350, // TODO confirmar id
+              vida: 415000, tentativa: [{ item: "Izcandar's Shard", qtd: 5 }],
               onde: 'Buried Cathedral Box 4,17 % / Dream Talisman Box 6,94 %, ou 2 tokens na loja de Dream Courts',
               drops: 'Blade of Summers/Winters, Wardstrider Boots 8 %; nightmare boots 18 %; dwarven armor 21 %', vale: 'o boss mais forte (415k)' },
-            { nome: 'Shen-long', ilha: 'zao', rec: null, vida: 160180, tentativa: { item: 'the orb of Light Undying', qtd: 7 },
+            { nome: 'Shen-long', ilha: 'zao', rec: null, vida: 160180, tentativa: [{ item: 'the orb of Light Undying', qtd: 7 }],
               onde: 'Draken Walls Box (The emperor) 5 %', drops: 'Zao Island Box: Zaoan armor/helmet/legs, crystal ring, wood cape, mycological bow 6–8 %; Zao Gem Pack 52 refine t2', vale: 'Zaoan helmet/legs e crystal ring do topo' },
-            { nome: 'Azerus', ilha: 'yalahar', rec: null, vida: 130000, xp: 6000, tentativa: { item: 'yalahari figurine', qtd: 5 },
+            { nome: 'Azerus', ilha: 'yalahar', rec: null, vida: 130000, xp: 6000, tentativa: [{ item: 'yalahari figurine', qtd: 5 }],
               onde: "Quara's Domain Yalahar Box (Jaws) 3,6 %", drops: 'Yalahar Island Box: wand of cosmic energy, tower shield 15 %; onyx pendant, paladin armor 10 %; Yalahar Gem Pack 40 refine t2', vale: 'único boss que dá XP (6.000)' },
-            { nome: 'Jaul', ilha: 'gray_island', rec: null, vida: 70000, tentativa: { item: 'trophy of Tanjis + trophy of Obujos', qtd: 5 },
+            { nome: 'Jaul', ilha: 'gray_island', rec: null, vida: 70000, tentativa: [{ item: 'trophy of Tanjis', qtd: 5 }, { item: 'trophy of Obujos', qtd: 5 }],
               onde: 'Bottom of the Ocean Box (Tanjis) / Deepling Library Box (Obujos) 5 %', drops: 'Gray Island Box: depth/ornate 4–8 %; Gray Island Gem Pack 68 refine t2', vale: 'boss mais fraco (70k)' } ],
         bossDicas: ['encher a mana numa caçada antes e ir sem poção (magos); nunca de frente', // comunidade (vídeos 22/10)
                     'XP Boost ativo é gasto à toa no boss (só corre em caçada comum)', // wiki/loja
@@ -11758,11 +11774,12 @@
         // ── Chaves de Elite
         chaves: { minLureMax: 60, minOutros: 240, mochilaMin: 1, energizarMin: 1.5, chavesDiaTudo: 28, sweepMax: 100 }, // wiki/chaves-e-caixas, elites; comunidade (≈28/dia com tudo)
         // ── Invasão: diária, grátis, 3 janelas (14/18/22h); tokens pela posição no dano do boss
-        invasao: { janelas: [14, 18, 22], tokens: [[1, 500], [2, 350], [3, 250], [10, 190], [50, 150], [200, 120], [500, 100], [Infinity, 30]], // wiki/invasao ([até a posição, tokens])
+        invasao: { janelas: [14, 18, 22], tokens: [[1, 500], [2, 350], [3, 250], [10, 190], [50, 150], [200, 120], [500, 100], [9999, 30]], // wiki/invasao ([até a posição, tokens]; 9999 = demais)
                    ravena: { refineT2: { qtd: 100, tokens: 120 }, caixaEliteAleatoria: { tokens: 150 } },
                    dica: 'inscrever antes das 14h (soma as 3 janelas)' }, // comunidade
-        mercado: { taxaCriacao: 0.05, ordemDias: 3, leilaoCoins: 20, leilaoTaxa: 0.10, gemaOuro: 390000 }, // wiki/mercado, leilao; comunidade (gema ≈ 390k)
-        // ── Bestiário: 3 marcos (vale o maior), caçadas diferentes somam, só o marco III dá skill/ataque/armadura
+        mercado: { taxaCriacaoFrac: 0.05, ordemDias: 3, leilaoCoins: 20, leilaoTaxaFrac: 0.10, gemaOuro: 390000 }, // wiki/mercado, leilao; comunidade (gema ≈ 390k)
+        // ── Bestiário: 3 marcos (vale o maior), caçadas diferentes somam, só o marco III dá skill/ataque/armadura.
+        //    Atenção: as chaves abaixo são nomes de BÔNUS do bestiário (PG_BONUS: magicLevel, attack, melee, distance…), não as chaves de skill (melee/dist/ml/escudo).
         bestiarioPrioridade: ['magicLevel', 'attack', 'melee', 'distance', 'manaRegen', 'maxHealth', 'armor', 'shielding'], // comunidade (regen de mana, ML, ataque, skill) + wiki/bestiario
         bestiarioMarcos: { // wiki/bestiario: [caçada, abates do marco III, bônus]
             magicLevel: [['Vampire hell', 10000, 1], ['Pits of Inferno Entrance', 12000, 1], ['Otherworld Zao', 50000, 1], ['Shadow Nexus', 50000, 1], ['Warzone III - Crystal Caves', 50000, 1], ['Dream Talisman', 50000, 1]],
@@ -11789,13 +11806,13 @@
             'Breach Shard': 'loja do Otherworld, 15 tokens',
             "The inquisitor's circlet": 'caixas dos 7 Elites dos selos da Inquisition 0,93–2,49 %',
             'Necronomicon': 'caixas dos 6 Elites dos portais 10,5–17,5 % (Holy Portal 17,5 %)' },
-        tokensIlha: { issavi: { fragmentos: 10, ouro: 20000, coins: 49 }, marapur: { fragmentos: 10, ouro: 20000, coins: 49 }, // wiki/lojas-das-ilhas (preço de 1 token)
+        tokensIlha: { issavi: { fragmentos: 10, ouro: 20000, coins: 49 }, marapur: { fragmentos: 10, ouro: 20000, coins: 49 }, // wiki/lojas-das-ilhas (preço de 1 token); TODO confirmar id marapur/dream_courts
                       dream_courts: { fragmentos: 10, ouro: 20000, coins: 49 }, otherworld: { fragmentos: 10, ouro: 20000, coins: 9 } },
         // ── Equipamento do topo (nível 297–386 visível em 27/11) e réguas da comunidade
         topoVisto: { KNIGHT: ['Zaoan helmet', 'exotic legs', 'Zaoan legs', 'guardian boots', 'crystal ring', 'Royal Signet', 'stonecutter axe', 'axe of destruction', 'avenger', 'onyx pendant'],
                      PALADIN: ['paladin armor', 'wood cape', 'living vine bow', 'mycological bow'],
-                     MAGOS: ['magma legs', 'magma boots', 'magma coat', 'firemind raiment', 'spellbook of mind control', 'spellbook of enlightenment', 'jade hat', 'batwing hat'],
-                     meleeTopo: [66, 79] }, // jogo ao vivo 27/11 (u2tag 64)
+                     MAGOS: ['magma legs', 'magma boots', 'magma coat', 'firemind raiment', 'spellbook of mind control', 'spellbook of enlightenment', 'jade hat', 'batwing hat'] }, // jogo ao vivo 27/11
+        topoMelee: [66, 79], // jogo ao vivo 27/11: melee do Knight no topo visível (u2tag 64)
         reguas: { protFisicaKnight: 16, vidaMagos: [1100, 1400], potMin: 350, // comunidade (guia Shadow Nexus 24/11, Melhorias 2.52)
                   magiaCriaturaIgnoraArmadura: true }, // wiki/como-o-dano-e-calculado: só resist. ao elemento, proteção mágica e Magic Shield
         // ── Erros comuns (o agente "Onde estou errando" usa como texto de apoio)
@@ -11815,28 +11832,66 @@
             'XP Boost ligado em Elite/Boss/Torre não corre (wiki/loja)' ],
         topoSkills: null, // preenchido em tempo de execução pelo /leaderboard
     };
+    // Caçada pelo título (sem diferença de maiúsculas): { rec, ilha, faixa } — rec/ilha só das de Rec ≥ 200 (cacadasTopo); null se a base não conhece.
+    function trCacada(titulo, base) {
+        const b = base || TR_BASE, chave = String(titulo || '').trim().toLowerCase();
+        if (!chave) return null;
+        const nome = Object.keys(b.cacadasTopo || {}).find(k => k.toLowerCase() === chave);
+        const topo = nome ? b.cacadasTopo[nome] : null;
+        const faixa = (b.faixas || []).find(x => x.hunts.some(h => h.toLowerCase() === chave))
+            || (topo ? (b.faixas || []).find(x => topo.rec >= x.de && topo.rec < x.ate) : null) || null;
+        if (!topo && !faixa) return null;
+        return { rec: topo ? topo.rec : null, ilha: topo ? topo.ilha : null, faixa };
+    }
+    // id e agente vêm por último: o objeto `o` não pode trocar a identidade do conselho.
     function trConselho(agente, id, o) {
-        return Object.assign({ id: agente + ':' + id, agente, titulo: '', porque: '', numeros: null, impacto: 0, confianca: 'estimado', custo: 0, acao: null, estado: 'aviso' }, o || {});
+        return Object.assign({ titulo: '', porque: '', numeros: null, impacto: 0, confianca: 'estimado', custo: 0, acao: null, estado: 'aviso' }, o || {},
+                             { id: agente + ':' + id, agente });
     }
+    // Formato canônico da foto (Task 14 preenche). ouroLivre = ouro − reserva da caçada, calculado pela foto (não pelo agente Dinheiro).
     function trFotoVazia() {
-        return { t: 0, nivel: null, xpTotal: null, ouro: null, premium: null, emHunt: false, naCidade: false, hunt: null, medidoAtual: null,
-                 mapas: [], party: [], legado: null, prey: null, mortes: [], sessoes: [], checklist: null, bestiario: [], chaves: null,
-                 deposito: {}, invasao: null, forja: null, topo: null, precos: {}, ilhas: [], skillsTreino: null };
+        return { t: 0, nivel: null, xpTotal: null, ouro: null, ouroLivre: null, premium: null, emHunt: false, naCidade: false, hunt: null, medidoAtual: null,
+                 mapas: [], party: [], legado: null, prey: null, bencaos: null, ampulhetas: null, selo: null, mortes: [], sessoes: [], checklist: null,
+                 bestiario: [], chaves: null, deposito: {}, invasao: null, forja: null, topo: null, precos: {}, ilhas: [] };
     }
-    const TR_AGENTES = []; // [{ id, nome, icone, rodar(foto, base) → conselhos[] }] — Tasks 4–13
+    // [{ id, nome, icone, fase?: 2, rodar(foto, base, todos) → conselho | conselhos[] }] — Tasks 4–13.
+    // Fase 2 roda depois de todos e recebe em `todos` os conselhos da fase 1; os da fase 1 recebem [].
+    const TR_AGENTES = [];
+    const TR_GRAVIDADE = { erro: 0, aviso: 1, ok: 2 };
     function trOrdenar(conselhos, foto) {
-        const livre = foto && foto.ouroLivre != null ? foto.ouroLivre : Infinity;
-        return conselhos.filter(c => c.impacto > 0 && c.estado !== 'ok')
-            .map(c => Object.assign({}, c, { nota: c.impacto * (TR_PESO_CONF[c.confianca] || 0.4) * (c.custo > livre ? 0.3 : 1), semOuro: c.custo > livre }))
-            .sort((a, b) => b.nota - a.nota);
+        const livre = foto && Number.isFinite(foto.ouroLivre) ? foto.ouroLivre : Infinity;
+        const out = [];
+        for (const c of conselhos || []) {
+            if (!c || typeof c !== 'object' || c.estado === 'ok') continue;
+            const imp = Number(c.impacto);
+            if (!Number.isFinite(imp) || imp <= 0) continue;
+            const custo = Number(c.custo) || 0, semOuro = custo > livre;
+            const peso = TR_PESO_CONF[String(c.confianca || '').toLowerCase()] || 0.4;
+            out.push(Object.assign({}, c, { nota: imp * peso * (semOuro ? 0.3 : 1), semOuro }));
+        }
+        return out.sort((a, b) => b.nota - a.nota);
     }
     function trRodar(foto, base) {
+        const porAgente = new Map(), fase1 = [];
+        const rodar = (a, todosAntes) => {
+            let lista;
+            try {
+                const r = a.rodar(foto, base, todosAntes);
+                lista = (Array.isArray(r) ? r : r ? [r] : []).filter(c => c && typeof c === 'object');
+            } catch (e) {
+                lista = [trConselho(a.id, 'erro', { titulo: 'não consegui analisar', porque: String(e && e.message || e), estado: 'erro' })];
+            }
+            porAgente.set(a, lista);
+            return lista;
+        };
+        for (const a of TR_AGENTES) if (a.fase !== 2) fase1.push(...rodar(a, []));
+        for (const a of TR_AGENTES) if (a.fase === 2) rodar(a, fase1.slice());
         const cartoes = [], todos = [];
-        for (const a of TR_AGENTES) {
-            let lista = [];
-            try { lista = a.rodar(foto, base) || []; } catch (e) { lista = [trConselho(a.id, 'erro', { titulo: 'não consegui analisar', porque: String(e && e.message || e), estado: 'erro' })]; }
+        for (const a of TR_AGENTES) { // cartões na ordem de TR_AGENTES
+            const lista = porAgente.get(a) || [];
+            const ord = lista.slice().sort((x, y) => ((TR_GRAVIDADE[x.estado] ?? 1) - (TR_GRAVIDADE[y.estado] ?? 1)) || ((Number(y.impacto) || 0) - (Number(x.impacto) || 0)));
             const pior = lista.some(c => c.estado === 'erro') ? 'erro' : lista.some(c => c.estado === 'aviso') ? 'aviso' : 'ok';
-            cartoes.push({ id: a.id, nome: a.nome, icone: a.icone, estado: pior, conselhos: lista.slice(0, 3) });
+            cartoes.push({ id: a.id, nome: a.nome, icone: a.icone, estado: pior, conselhos: ord.slice(0, 3) });
             todos.push(...lista);
         }
         return { cartoes, passos: trOrdenar(todos, foto).slice(0, 3), todos };
