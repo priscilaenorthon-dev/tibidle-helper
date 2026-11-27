@@ -6,7 +6,7 @@ const i = src.indexOf('/* @@TREINADOR-PURO-INICIO'), f = src.indexOf('/* @@TREIN
 assert(i > 0 && f > i, 'trecho @@TREINADOR-PURO não encontrado');
 const T = new Function(src.slice(i, f) + '\nreturn { TR_BASE, TR_AGENTES, trConselho, trOrdenar, trRodar, trFotoVazia, trCacada, trAgenteUpar, trAgenteMult, trAgenteLegado, '
     + 'trMesmoId, trQtd, trLimitadoPorDano, trDanoParaXp, trTipoPrey, trXpAtual, trRecDe, trMortesRecentes, trAgenteTopo, trAgenteErros, trXpPerdidaMorte, trAgenteBoss, trEventosMorte, trImpactoMorte, '
-    + 'trAgenteBestiario, trAgenteItens };')();
+    + 'trAgenteBestiario, trAgenteItens, trAgenteForja };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 // agentes falsos: troca os de verdade pelos falsos, roda e devolve os de verdade sempre
@@ -963,6 +963,66 @@ t('itens: tudo aberto → ok; foto vazia → ok sem afirmar; registrado', () => 
     assert.deepStrictEqual(itens(fItens({ ilhas: [{ id: 'marapur', aberta: true }] })).map(c => c.estado), ['ok']);
     assert.deepStrictEqual(itens(T.trFotoVazia()).map(c => [c.estado, c.titulo]), [['ok', 'Nada a apontar com os dados lidos']]);
     assert(T.TR_AGENTES.some(a => a.id === 'itens' && a.rodar === T.trAgenteItens && a.icone === '⌕'));
+});
+
+// ── Forja e refino (⚒)
+const pc = (nome, refino, extra) => Object.assign({ nome, refino, potencia: 300 + 50 * refino, atributos: [] }, extra || {});
+const partyForja = () => [
+    { voc: 'KNIGHT', eq: { weapon: pc('stonecutter axe', 0, { ataque: 50 }), armor: pc('magic plate armor', 4), legs: pc('Zaoan legs', 4) } },
+    { voc: 'SORCERER', eq: { weapon: pc('wand of cosmic energy', 0), armor: pc('magma coat', 4) } }];
+const fForja = (o) => foto(Object.assign({ nivel: 250, party: partyForja(), forja: { abaixo4: [
+    { voc: 'KNIGHT', slot: 'weapon', nome: 'stonecutter axe', refino: 0, custo: 1200000 },
+    { voc: 'SORCERER', slot: 'weapon', nome: 'wand of cosmic energy', refino: 0, custo: 900000 }], idadeH: 2, basesParadas: [] } }, o || {}));
+const forja = (f) => T.trAgenteForja(f, T.TR_BASE);
+const refinos = (cs) => cs.filter(c => c.id.startsWith('forja:refino-'));
+t('forja: stonecutter axe +0 (ataque 50) → refinar com custo, impacto = (4/50 × 100 ÷ 4) × 0,7, abrir-forja', () => {
+    const r = refinos(forja(fForja()));
+    assert.strictEqual(r.length, 1, 'a wand do Feiticeiro fica de fora'); const c = r[0];
+    assert.strictEqual(c.custo, 1200000); assert.strictEqual(c.confianca, 'wiki'); assert(Math.abs(c.impacto - 1.4) < 1e-12, String(c.impacto));
+    assert.strictEqual(c.titulo, 'Refinar stonecutter axe +0 → +4 (~1,2 M, sem risco)');
+    assert.deepStrictEqual([c.acao.tipo, c.acao.voc, c.acao.slot], ['abrir-forja', 'KNIGHT', 'weapon']);
+});
+t('forja: ataque ausente → 50; ataque 100 → metade do ganho', () => {
+    const p = partyForja(); p[0].eq.weapon.ataque = 100;
+    assert(Math.abs(refinos(forja(fForja({ party: p })))[0].impacto - 0.7) < 1e-12);
+    delete p[0].eq.weapon.ataque;
+    assert(Math.abs(refinos(forja(fForja({ party: p })))[0].impacto - 1.4) < 1e-12);
+});
+t('forja: sem forja.abaixo4 → deriva do equipamento (custo não calculado); +4 não entra; wand +0 pulada', () => {
+    const p = partyForja(); p[0].eq.armor = pc('magic plate armor', 2);
+    const cs = forja(fForja({ party: p, forja: null }));
+    const r = refinos(cs);
+    assert.deepStrictEqual(r.map(c => c.numeros.nome), ['stonecutter axe', 'magic plate armor']); // 1,4 × 0,5 (sem custo: pelo impacto)
+    assert(r.every(c => c.custo === 0 && /custo não calculado/.test(c.porque)), r[1].porque);
+    assert.strictEqual(r[1].impacto, 0.5); assert.strictEqual(r[1].titulo, 'Refinar magic plate armor +2 → +4 (sem risco)');
+    assert(!r.some(c => /wand|Zaoan/.test(c.numeros.nome)));
+});
+t('forja: no máximo 3, por impacto ÷ custo', () => {
+    const abaixo4 = [['armor', 3e6], ['legs', 1e6], ['boots', 2e6], ['head', 4e6]].map(([slot, custo]) => ({ voc: 'KNIGHT', slot, nome: 'peça ' + slot, refino: 1, custo }));
+    const r = refinos(forja(fForja({ forja: { abaixo4, idadeH: 1 } })));
+    assert.deepStrictEqual(r.map(c => c.acao.slot), ['legs', 'boots', 'armor']);
+});
+t('forja: cálculo velho (> 24 h) ou ausente → "Recalcular a Forja" (forja-ler, 0,5); fresco → nada', () => {
+    for (const fj of [{ abaixo4: [], idadeH: 30 }, null, { abaixo4: [] }]) {
+        const c = forja(fForja({ forja: fj })).find(x => x.id === 'forja:ler');
+        assert(c, JSON.stringify(fj)); assert.strictEqual(c.impacto, 0.5); assert.strictEqual(c.acao.tipo, 'forja-ler'); assert.strictEqual(c.titulo, 'Recalcular a Forja');
+    }
+    assert(!forja(fForja()).some(x => x.id === 'forja:ler'));
+});
+t('forja: base de potência ≥ 400 parada → 1 aviso "Base boa parada" (a maior); 380 → nada', () => {
+    const fj = { abaixo4: [], idadeH: 1, basesParadas: [{ nome: 'avenger', potencia: 450 }, { nome: 'arbalest', potencia: 420 }, { nome: 'soft boots', potencia: 380 }] };
+    const b = forja(fForja({ forja: fj })).filter(c => c.id === 'forja:base');
+    assert.strictEqual(b.length, 1); assert.strictEqual(b[0].titulo, 'Base boa parada: avenger (pot. 450)'); assert.strictEqual(b[0].impacto, 1);
+    assert.strictEqual(b[0].acao.tipo, 'abrir-forja');
+    fj.basesParadas = [{ nome: 'soft boots', potencia: 380 }];
+    assert(!forja(fForja({ forja: fj })).some(c => c.id === 'forja:base'));
+});
+t('forja: tudo em +4 e cálculo fresco → só ok; foto vazia → sem passo; registrado', () => {
+    const p = partyForja(); p[0].eq.weapon.refino = 4;
+    assert.deepStrictEqual(forja(fForja({ party: p, forja: { abaixo4: [{ voc: 'SORCERER', slot: 'weapon', nome: 'wand of cosmic energy', refino: 0, custo: 1 }], idadeH: 1 } }))
+        .map(c => [c.id, c.estado]), [['forja:ok', 'ok']]);
+    assert(forja(T.trFotoVazia()).every(c => !(c.impacto > 0)));
+    assert(T.TR_AGENTES.some(a => a.id === 'forja' && a.rodar === T.trAgenteForja && a.icone === '⚒'));
 });
 
 process.on('exit', () => { if (!process.exitCode) console.log(`\n${n} testes ok`); });

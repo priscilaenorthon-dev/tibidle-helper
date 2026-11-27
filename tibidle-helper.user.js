@@ -12662,6 +12662,83 @@
                 : mats.every(m => m.preco) ? { tipo: 'comprar-mercado', itens: mats.map(m => ({ nome: m.nome, qtd: m.falta, preco: m.preco })), rotulo: 'Mercado' } : null })];
     }
     TR_AGENTES.push({ id: 'itens', nome: 'Caçar itens', icone: '⌕', rodar: trAgenteItens });
+
+    // ── Especialista 9: Forja e refino (⚒). foto.forja = { abaixo4: [{ voc, slot, nome, refino, custo }], idadeH, basesParadas: [{ nome, potencia }] } | null.
+    //    Refino até forja.refinoSeguroAte (+4) não tem risco (wiki/forja). Sem abaixo4, as peças vêm de party[].eq (custo não calculado).
+    //    impacto: arma de Cavaleiro/Paladino = trDanoParaXp((4 − r) ÷ ataque × 100 ÷ preyColunas) (+1 de ataque por refino; ataque
+    //    ausente = 50); elmo/armadura/escudo/calça/bota 0,5 (estimado); arma de mago fica de fora (o refino dela só dá potência).
+    //    Até 3, por impacto ÷ custo (sem custo, depois, pelo impacto). Cálculo velho (> 24 h ou sem data) → "Recalcular a Forja".
+    const TR_REFINO_IMPACTO = { head: 0.5, armor: 0.5, shield: 0.5, legs: 0.5, boots: 0.5 };
+    function trAgenteForja(foto, base) {
+        const b = base || TR_BASE, ate = b.forja.refinoSeguroAte, out = [];
+        const fj = foto.forja && typeof foto.forja === 'object' ? foto.forja : null;
+        const party = (Array.isArray(foto.party) ? foto.party : []).filter(m => m && m.voc);
+        const eqDe = (voc, slot) => { const m = party.find(x => x.voc === voc); return m ? trPeca(m.eq, slot) : null; };
+        const mago = (voc) => b.legado.skill[voc] === 'ml';
+        let pecas = [], leu = false, magoPulado = false;
+        if (fj && Array.isArray(fj.abaixo4)) {
+            leu = true;
+            pecas = fj.abaixo4.filter(p => p && p.voc && p.slot && trNum(p.refino) < ate)
+                .map(p => ({ voc: p.voc, slot: p.slot, nome: p.nome || (eqDe(p.voc, p.slot) || {}).nome || trSlotPt(p.slot), refino: Number(p.refino), custo: trNum(p.custo) > 0 ? Number(p.custo) : null }));
+        } else {
+            for (const m of party) {
+                for (const slot of TR_SLOTS) {
+                    const p = trPeca(m.eq, slot);
+                    if (!p || !Number.isFinite(trNum(p.refino))) continue;
+                    leu = true;
+                    if (Number(p.refino) < ate) pecas.push({ voc: m.voc, slot, nome: p.nome, refino: Number(p.refino), custo: null });
+                }
+            }
+        }
+        const cand = [];
+        for (const p of pecas) {
+            if (p.slot === 'weapon' && mago(p.voc)) { magoPulado = true; continue; }
+            if (p.slot !== 'weapon') {
+                if (TR_REFINO_IMPACTO[p.slot]) cand.push(Object.assign({}, p, { imp: TR_REFINO_IMPACTO[p.slot] })); // anel/colar/munição: fora
+                continue;
+            }
+            const w = eqDe(p.voc, 'weapon'), atk = trNum(w && w.ataque) > 0 ? Number(w.ataque) : 50, danoPct = (ate - p.refino) / atk * 100;
+            cand.push(Object.assign({}, p, { atk, danoPct, imp: trDanoParaXp(danoPct / b.xp.preyColunas, foto, b) }));
+        }
+        cand.sort((x, y) => ((y.custo > 0) - (x.custo > 0)) || (x.custo > 0 ? y.imp / y.custo - x.imp / x.custo : y.imp - x.imp));
+        for (const p of cand.slice(0, 3)) {
+            const nome = trVocPt(p.voc), arma = p.slot === 'weapon';
+            out.push(trConselho('forja', `refino-${p.voc}-${p.slot}`, { confianca: 'wiki', custo: p.custo || 0, impacto: p.imp,
+                titulo: trCorta(`Refinar ${p.nome} +${p.refino} → +${ate} (${p.custo ? '~' + trQtd(p.custo) + ', ' : ''}sem risco)`),
+                porque: `${p.nome} (${trSlotPt(p.slot)} do ${nome}): até +${ate} o refino não falha. `
+                    + (arma ? `Cada refino soma 1 de ataque: +${ate - p.refino} sobre ${p.atk} ≈ +${trPct(p.danoPct)} % de dano do ${nome}`
+                        + (p.imp > 0 ? '. ' : ', mas a caçada está limitada por spawn: não vira XP agora. ')
+                        : `Refino em ${trSlotPt(p.slot)} soma defesa e +${b.forja.potPorRefino} de potência por nível. `)
+                    + (p.custo ? `Custo ≈ ${trQtd(p.custo)}.` : 'Sem preço: custo não calculado (a aba Forja calcula).'),
+                numeros: { voc: p.voc, slot: p.slot, nome: p.nome, refino: p.refino, ate, custo: p.custo },
+                acao: { tipo: 'abrir-forja', voc: p.voc, slot: p.slot, rotulo: 'Forja' } }));
+        }
+        if (leu && !cand.length) {
+            out.push(trConselho('forja', 'ok', { titulo: `Peças vestidas já em +${ate}`, estado: 'ok', confianca: 'medido',
+                porque: `Nenhuma peça vestida abaixo de +${ate}` + (magoPulado ? ' (arma de mago fica de fora: o refino dela só dá potência).' : '.') }));
+        }
+        // cálculo velho: idadeH ausente = sem data = velho (mesma regra do topo)
+        if (!fj || !(trNum(fj.idadeH) <= 24)) {
+            const temConta = party.length > 0 || Number.isFinite(trNum(foto.nivel));
+            out.push(trConselho('forja', 'ler', { titulo: 'Recalcular a Forja', impacto: temConta ? 0.5 : 0,
+                porque: (!fj ? 'A Forja ainda não foi calculada. ' : Number.isFinite(trNum(fj.idadeH)) ? `O cálculo da Forja tem ${Math.round(Number(fj.idadeH))} h. ` : 'O cálculo da Forja não tem data. ')
+                    + 'Recalcular lê o custo de cada refino e as bases boas do depósito.',
+                acao: { tipo: 'forja-ler', rotulo: 'Recalcular' } }));
+        }
+        // base boa parada no depósito: só a de maior potência vira aviso
+        const bases = (fj && Array.isArray(fj.basesParadas) ? fj.basesParadas : []).filter(x => x && x.nome && trNum(x.potencia) >= b.forja.potBase)
+            .sort((x, y) => Number(y.potencia) - Number(x.potencia));
+        if (bases.length) {
+            const x = bases[0], pot = Number(x.potencia);
+            out.push(trConselho('forja', 'base', { titulo: trCorta(`Base boa parada: ${x.nome} (pot. ${pot})`), impacto: 1, confianca: 'comunidade',
+                porque: `Potência ${pot} ≥ ${b.forja.potBase} (base boa; meta ${b.forja.potMeta}). Regra: ${b.forja.regra}.`
+                    + (bases.length > 1 ? ` Há mais ${bases.length - 1}: ${bases.slice(1, 4).map(y => `${y.nome} (${y.potencia})`).join(', ')}.` : ''),
+                numeros: { nome: x.nome, potencia: pot, n: bases.length },
+                acao: { tipo: 'abrir-forja', item: x.nome, rotulo: 'Forja' } }));
+        }
+        return out;
+    }
+    TR_AGENTES.push({ id: 'forja', nome: 'Forja e refino', icone: '⚒', rodar: trAgenteForja });
     /* @@TREINADOR-PURO-FIM */
     /* @@ARENA-PURO-INICIO — Sobrevivência (2.57.0): decisões do robô, puras (o tempo é st.tempoMs, sem DOM).
      * st = estado da simulação do cliente (ref.current.st do componente da partida). O mesmo código rodou no simulador
