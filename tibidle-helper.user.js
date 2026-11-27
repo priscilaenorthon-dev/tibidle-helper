@@ -12104,8 +12104,9 @@
     // ── Especialista 1: Onde upar (⤴). Só compara mapas com XP/h conhecida, sem morte, abertos e do nível.
     //    Régua: xpH × peso da fonte (medido 1 · comunidade 0,8 · wiki 0,6 · estimado 0,4); trocar só com ≥ 10 % de vantagem.
     //    Lure: sobe 1 degrau por vez, com evidência, e NUNCA sugere baixar (regra do dono).
-    function trAgenteUpar(foto, base) {
-        const b = base || TR_BASE, out = [];
+    // Mapas da foto na régua do "Onde upar" (xpH × peso da fonte; usável = XP/h conhecida, sem morte, do nível). Usado pelo Upar e por trIlhaAlvo.
+    function trMapasUpar(foto, base) {
+        const b = base || TR_BASE;
         const nivel = Number.isFinite(trNum(foto.nivel)) ? Number(foto.nivel) : null, hunt = foto.hunt || null, ma = foto.medidoAtual || null;
         const mapas = (Array.isArray(foto.mapas) ? foto.mapas : []).filter(m => m && typeof m === 'object')
             .map(m => Object.assign({}, m, { xpH: trNum(m.xpH), levelMin: trNum(m.levelMin) }));
@@ -12116,11 +12117,47 @@
         const nota = (m) => m.xpH * trPeso(m.fonte);
         const melhorDe = (lista) => lista.reduce((a, m) => (!a || nota(m) > nota(a) ? m : a), null);
         const cand = mapas.filter(m => usavel(m) && !fechado(m)), fechados = mapas.filter(m => usavel(m) && fechado(m));
-        const melhor = melhorDe(cand), melhorFechado = melhorDe(fechados);
         const daCacada = hunt ? mapas.find(m => trMesmoId(m.id, hunt.id)) || null : null;
         const xpAtual = trXpAtual(foto);
         // nota de agora na mesma régua: o analisador vale como medido; a medida do mapa, pelo peso da fonte dela
         const notaAtual = xpAtual == null ? null : ma && trNum(ma.xpH) > 0 ? xpAtual : xpAtual * trPeso(daCacada && daCacada.fonte);
+        return { nivel, hunt, ma, mapas, ilhaDe, nota, melhorDe, cand, fechados, melhor: melhorDe(cand), melhorFechado: melhorDe(fechados), daCacada, xpAtual, notaAtual };
+    }
+    // O que falta para abrir uma ilha de base.ilhas: materiais (falta = qtd − depósito, preço do Mercado) e custo (ouro + a parte com preço).
+    function trCustoIlha(foto, base, il) {
+        const mats = (il.materiais || []).map(m => {
+            const tem = trPorNome(foto.deposito, m.nome) || 0, preco = trPorNome(foto.precos, m.nome, true);
+            return { nome: m.nome, falta: Math.max(0, m.qtd - tem), preco: preco > 0 ? preco : null, onde: m.onde };
+        }).filter(m => m.falta > 0);
+        return { mats, custo: (il.ouro || 0) + mats.reduce((s, m) => s + (m.preco ? m.falta * m.preco : 0), 0), semPreco: mats.filter(m => !m.preco).length };
+    }
+    // [contrato] Ilha ALVO única (Upar e Caçar itens apontam a mesma):
+    //   1) o melhor mapa MEDIDO de ilha fechada (régua xpH × peso), se passa 10 % do melhor aberto e da XP/h de agora (a mesma folga do ir-mapa);
+    //   2) sem isso, entre as ilhas fechadas com caçada de Rec acima da de agora e ≤ nível + 20, a de menos materiais sem preço e, depois, menor custo.
+    //   → { ilha, nome, title (a caçada), rec, xpH, fonte, medido, abre: [títulos], mats, custo, semPreco } | null
+    function trIlhaAlvo(foto, base) {
+        const b = base || TR_BASE, u = trMapasUpar(foto, b), mf = u.melhorFechado;
+        const ref = Math.max(u.melhor ? u.nota(u.melhor) : 0, u.notaAtual || 0);
+        const ilhaDaBase = (id) => (b.ilhas || []).find(x => x.id === id) || null;
+        if (mf && u.ilhaDe(mf) && u.nota(mf) >= 1.1 * ref) {
+            const id = u.ilhaDe(mf), il = ilhaDaBase(id);
+            return Object.assign({ ilha: id, nome: trNomeIlha(b, id), title: mf.title, rec: trRecDe(mf, b), xpH: mf.xpH, fonte: trConf(mf.fonte), medido: true, abre: [mf.title] },
+                                 il ? trCustoIlha(foto, b, il) : { mats: [], custo: null, semPreco: 0 });
+        }
+        if (u.nivel == null) return null;
+        const recAtual = trRecDe(u.hunt, b) || 0, cacadas = Object.entries(b.cacadasTopo || {}), ops = [];
+        for (const il of b.ilhas || []) {
+            if (!trIlhaFechada(foto, b, il.id)) continue;
+            const abre = cacadas.filter(([, c]) => c.ilha === il.id && c.rec <= u.nivel + 20 && c.rec > recAtual).sort((x, y) => x[1].rec - y[1].rec);
+            if (!abre.length) continue;
+            const [title, c] = abre[abre.length - 1];
+            ops.push(Object.assign({ ilha: il.id, nome: il.nome, title, rec: c.rec, xpH: null, fonte: 'estimado', medido: false, abre: abre.map(([t]) => t) }, trCustoIlha(foto, b, il)));
+        }
+        return ops.sort((x, y) => (x.semPreco - y.semPreco) || (x.custo - y.custo))[0] || null;
+    }
+    function trAgenteUpar(foto, base) {
+        const b = base || TR_BASE, out = [], u = trMapasUpar(foto, b);
+        const { nivel, hunt, ma, mapas, nota, melhorDe, cand, fechados, melhor, daCacada, xpAtual, notaAtual } = u;
         const nomeAtual = hunt ? hunt.title || (daCacada && daCacada.title) || 'a caçada atual' : null;
         const outros = cand.filter(m => !hunt || !trMesmoId(m.id, hunt.id)), melhorDosOutros = melhorDe(outros);
         const melhorOutro = notaAtual != null ? outros.some(m => nota(m) >= 1.1 * notaAtual) : outros.length > 0; // há mapa aberto medido melhor
@@ -12143,22 +12180,16 @@
                 out.push(irPara(melhor, 5, `${melhor.title} é o mapa medido que mais rende no seu nível (${trQtd(melhor.xpH)} XP/h). Sem a XP/h de agora para comparar.`));
             }
         }
-        // Ilha fechada: 1º o melhor medido de ilha fechada que passa o melhor aberto; sem medida (e sem mapa aberto melhor),
-        // a caçada de maior Rec ≤ nível da faixa — só se o Rec dela passa o da caçada de agora.
-        let abrir = null;
-        if (melhorFechado && (!melhor || nota(melhorFechado) > nota(melhor))) {
-            abrir = { title: melhorFechado.title, ilha: ilhaDe(melhorFechado), xpH: melhorFechado.xpH };
-        } else if (!melhorFechado && !melhorOutro && nivel != null) {
-            const fx = trFaixaDoNivel(nivel, b), recAtual = trRecDe(hunt, b) || 0;
-            const topo = fx ? fx.hunts.map(h => Object.assign({ title: h }, trCacada(h, b))).filter(c => c.rec != null && c.rec <= nivel).sort((x, y) => y.rec - x.rec)[0] : null;
-            if (topo && topo.rec > recAtual && trIlhaFechada(foto, b, topo.ilha)) abrir = { title: topo.title, ilha: topo.ilha, xpH: null };
-        }
-        if (abrir && abrir.ilha) {
-            const ilha = trNomeIlha(b, abrir.ilha);
-            out.push(trConselho('upar', 'abrir-ilha', { titulo: `Abrir ${ilha} para ${abrir.title}`, impacto: 5,
-                porque: (abrir.xpH ? `${abrir.title} rende ${trQtd(abrir.xpH)} XP/h, mais que os mapas abertos. ` : `${abrir.title} é a caçada de maior Rec da sua faixa. `)
-                    + `O especialista "Caçar itens" diz o que falta para abrir ${ilha}.`,
-                numeros: { ilha: abrir.ilha, mapa: abrir.title, xpH: abrir.xpH } }));
+        // Ilha fechada: a ilha ALVO (trIlhaAlvo, a mesma do "Caçar itens"). Medida → impacto real (xpH ÷ agora − 1) × 100;
+        // sem medida, só quando nenhum mapa aberto medido passa o de agora, impacto 5 (estimado). dedupe 'ilha:<id>' junta com o "Caçar itens".
+        const alvo = trIlhaAlvo(foto, b);
+        if (alvo && (alvo.medido || !melhorOutro)) {
+            const imp = alvo.medido && xpAtual > 0 ? (alvo.xpH / xpAtual - 1) * 100 : 5;
+            out.push(trConselho('upar', 'abrir-ilha', { titulo: trCorta(`Abrir ${alvo.nome} para ${alvo.title}`), impacto: imp, confianca: alvo.medido ? alvo.fonte : 'estimado',
+                porque: (alvo.medido ? `${alvo.title} rende ${trQtd(alvo.xpH)} XP/h (${alvo.fonte})` + (xpAtual ? ` contra ${trQtd(xpAtual)} agora` : '') + ', mais que os mapas abertos. '
+                    : `${alvo.title} (Rec ${alvo.rec}) passa a caçada de agora e cabe no seu nível. `)
+                    + `O especialista "Caçar itens" diz o que falta para abrir ${alvo.nome}.`,
+                numeros: { ilha: alvo.ilha, mapa: alvo.title, xpH: alvo.xpH, dedupe: 'ilha:' + alvo.ilha } }));
         }
         // Lure: só com evidência (≥ 1 sessão aqui ou ≥ 5 min medidos), sem morte nas 2 últimas sessões daqui (em ordem de tempo,
         // a última no fim) e sem morte nesta caçada em 7 dias. Modelo (teto de spawn = porLure × lure):
@@ -12658,31 +12689,20 @@
     }
     TR_AGENTES.push({ id: 'best', nome: 'Bestiário', icone: '☰', rodar: trAgenteBestiario });
 
-    // ── Especialista 8: Caçar itens (⌕). A PRÓXIMA ilha a abrir: fechada na foto (trIlhaFechada) e com caçada (base.cacadasTopo) de
-    //    Rec ≤ nível + 20 e acima do Rec da caçada de agora; entre as que servem, a de menor custo (ouro + material com preço).
+    // ── Especialista 8: Caçar itens (⌕). A ilha a abrir é a ALVO (trIlhaAlvo — a mesma do "Onde upar"): mapa medido de ilha fechada
+    //    que rende mais, ou a de caçada acima da de agora (Rec ≤ nível + 20) com menos materiais sem preço e menor custo.
     //    Material: falta = qtd − depósito; com preço → comprar; sem preço → caçar (o "onde" vem de base.ilhas[].materiais).
-    //    impacto 5 ESTIMADO (o "Onde upar" diz quanto a caçada da ilha rende); custo = ouro da ilha + só a parte com preço.
+    //    impacto 5 ESTIMADO (o "Onde upar" diz quanto a caçada da ilha rende; o chefe junta os dois por numeros.dedupe 'ilha:<id>').
+    //    custo = ouro da ilha + só a parte com preço.
     function trAgenteItens(foto, base) {
         const b = base || TR_BASE, nivel = trNum(foto.nivel), recAtual = trRecDe(foto.hunt, b) || 0;
-        const cacadas = Object.entries(b.cacadasTopo || {}), opcoes = [];
-        for (const il of Number.isFinite(nivel) ? b.ilhas || [] : []) {
-            if (!trIlhaFechada(foto, b, il.id)) continue;
-            const abre = cacadas.filter(([, c]) => c.ilha === il.id && c.rec <= nivel + 20 && c.rec > recAtual).sort((x, y) => x[1].rec - y[1].rec);
-            if (!abre.length) continue;
-            const mats = (il.materiais || []).map(m => {
-                const tem = trPorNome(foto.deposito, m.nome) || 0, preco = trPorNome(foto.precos, m.nome, true);
-                return { nome: m.nome, falta: Math.max(0, m.qtd - tem), preco: preco > 0 ? preco : null, onde: m.onde };
-            }).filter(m => m.falta > 0);
-            const custo = (il.ouro || 0) + mats.reduce((s, m) => s + (m.preco ? m.falta * m.preco : 0), 0);
-            opcoes.push({ il, abre, mats, custo, semPreco: mats.filter(m => !m.preco).length });
-        }
-        const o = opcoes.sort((x, y) => (x.custo - y.custo) || (x.semPreco - y.semPreco))[0];
-        if (!o) {
+        const alvo = trIlhaAlvo(foto, b), il = alvo ? (b.ilhas || []).find(x => x.id === alvo.ilha) || null : null;
+        if (!il) {
             const leu = Number.isFinite(nivel) && Array.isArray(foto.ilhas) && foto.ilhas.length > 0;
             return [trConselho('itens', 'ok', { titulo: leu ? 'Nenhuma ilha a abrir no seu nível agora' : 'Nada a apontar com os dados lidos', estado: 'ok',
                 porque: leu ? `Nenhuma ilha fechada tem caçada até o nível ${nivel + 20} acima da de agora.` : 'Sem o nível ou a lista de ilhas abertas para conferir.' })];
         }
-        const { il, abre, mats, custo } = o, ouro = il.ouro || 0, ouroTxt = ouro ? `${trQtd(ouro)} de ouro` : null;
+        const { mats, custo } = alvo, abre = alvo.abre.map(t => [t, { rec: trRecDe({ title: t }, b) }]), ouro = il.ouro || 0, ouroTxt = ouro ? `${trQtd(ouro)} de ouro` : null;
         // título: o ouro sempre visível; materiais por extenso enquanto cabem, o resto vira "+ N itens"
         let titulo = `Abrir ${il.nome}: ${ouroTxt || 'entrega'} no Silas`;
         for (let k = mats.length; mats.length && k >= 0; k--) {
@@ -12693,10 +12713,11 @@
         const passos = mats.map(m => (m.preco ? `Comprar ${m.falta} ${m.nome} (~${trQtd(m.falta * m.preco)})` : `Caçar ${m.nome}: ${m.onde}`));
         return [trConselho('itens', 'ilha-' + il.id, { impacto: 5, custo, curto: 'abrir ' + il.nome,
             titulo: trCorta(titulo),
-            porque: `${il.nome} abre ${trLista(abre.map(([t, c]) => `${t} (Rec ${c.rec})`))}` + (recAtual ? `, acima do Rec ${recAtual} de agora` : '') + '. '
+            porque: `${il.nome} abre ${trLista(abre.map(([t, c]) => (c.rec ? `${t} (Rec ${c.rec})` : t)))}`
+                + (alvo.medido ? `, que rende ${trQtd(alvo.xpH)} XP/h` : recAtual ? `, acima do Rec ${recAtual} de agora` : '') + '. '
                 + (passos.length ? passos.join('; ') + '. ' : 'Os materiais já estão com você. ')
                 + 'A entrega é no Silas, na cidade (conta mochila + depósito). O "Onde upar" diz quanto a caçada rende.',
-            numeros: { ilha: il.id, ouro, materiais: mats, abre: abre.map(([t]) => t) },
+            numeros: { ilha: il.id, ouro, materiais: mats, abre: abre.map(([t]) => t), dedupe: 'ilha:' + il.id },
             acao: !mats.length ? { tipo: 'abrir-silas', ilha: il.id, rotulo: 'Silas' }
                 : mats.every(m => m.preco) ? { tipo: 'comprar-mercado', itens: mats.map(m => ({ nome: m.nome, qtd: m.falta, preco: m.preco })), rotulo: 'Mercado' } : null })];
     }

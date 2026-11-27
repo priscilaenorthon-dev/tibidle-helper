@@ -308,7 +308,8 @@ t('upar: mapa de ilha fechada não vira ir-mapa; vira "Abrir <ilha>" sem ação'
         assert.strictEqual(acoes(cs, 'ir-mapa').length, 0);
         const ab = cs.find(c => c.id === 'upar:abrir-ilha');
         assert(ab, cs.map(c => c.titulo).join(' | ')); assert.strictEqual(ab.numeros.ilha, 'dream_courts'); assert.strictEqual(ab.acao, null);
-        assert(ab.impacto > 0 && ab.impacto <= 5);
+        assert(Math.abs(ab.impacto - (650 / 540 - 1) * 100) < 1e-9, String(ab.impacto)); // medido: o ganho real
+        assert.strictEqual(ab.numeros.dedupe, 'ilha:dream_courts');
     }
 });
 t('upar: foto.ilhas que não é lista não quebra', () => {
@@ -1183,6 +1184,33 @@ t('trOrdenar: com ouro:plano, quem tem custo e ficou fora dos escolhidos ganha s
         T.trConselho('ouro', 'plano', { impacto: 0.5, numeros: { escolhidos: ['a:dentro'] } })];
     const r = T.trOrdenar(cs, { ouroLivre: 250 });
     assert.deepStrictEqual(r.map(c => [c.id, c.semOuro]), [['a:dentro', false], ['a:fora', true], ['ouro:plano', false]]);
+});
+
+// ── Ilha alvo única (Upar × Caçar itens) e o dedupe do chefe
+const fIlha = (o) => foto(Object.assign({ nivel: 275, hunt: huntSN(), medidoAtual: { xpH: 540000, min: 10 }, ouroLivre: 20e6, ilhas: [{ id: 'issavi', aberta: false }, { id: 'marapur', aberta: false }],
+    mapas: [mapa(1, 'Shadow Nexus', 540000), mapa(14, 'Salt Caves', 700000, { rec: 280, aberta: false, ilha: 'issavi' })] }, o || {}));
+t('ilha alvo: Upar e Itens apontam a mesma ilha (a do mapa medido), não a mais barata', () => {
+    const f = fIlha({ mapas: [mapa(1, 'Shadow Nexus', 540000), mapa(15, 'Seacrest Grounds', 900000, { rec: 290, aberta: false, ilha: 'marapur', fonte: 'comunidade' })] });
+    const up = T.trAgenteUpar(f, T.TR_BASE).find(c => c.id === 'upar:abrir-ilha'), it = T.trAgenteItens(f, T.TR_BASE)[0];
+    assert.strictEqual(up.numeros.ilha, 'marapur'); assert.strictEqual(it.id, 'itens:ilha-marapur'); assert.strictEqual(it.numeros.dedupe, up.numeros.dedupe);
+    assert.strictEqual(up.confianca, 'comunidade');
+});
+t('ilha alvo: mapa medido de ilha fechada abaixo de 110 % do de agora não vira alvo medido', () => {
+    const f = fIlha({ mapas: [mapa(1, 'Shadow Nexus', 540000), mapa(14, 'Salt Caves', 580000, { rec: 280, aberta: false, ilha: 'issavi' })] });
+    const up = T.trAgenteUpar(f, T.TR_BASE).find(c => c.id === 'upar:abrir-ilha');
+    assert(up && up.impacto === 5 && up.confianca === 'estimado', up && up.porque); // cai na régua do Rec (Salt Caves 280 ≤ 295)
+});
+t('chefe: Upar e Itens na mesma ilha → um passo só, com o impacto do Upar e a ação/custo do Itens', () => {
+    const r = T.trRodar(fIlha(), T.TR_BASE);
+    const ilha = r.passos.filter(p => p.numeros && p.numeros.dedupe === 'ilha:issavi');
+    assert.strictEqual(ilha.length, 1, r.passos.map(p => p.id).join(' | '));
+    assert.strictEqual(ilha[0].id, 'upar:abrir-ilha'); assert(Math.abs(ilha[0].impacto - (700 / 540 - 1) * 100) < 1e-9);
+    assert.strictEqual(ilha[0].acao.tipo, 'abrir-silas'); assert.strictEqual(ilha[0].custo, 10e6);
+    assert.deepStrictEqual(ilha[0].ids, ['upar:abrir-ilha', 'itens:ilha-issavi']);
+});
+t('itens: Inquisition (8 materiais sem preço) × Issavi pronta → Issavi, mesmo mais cara', () => {
+    const c = itens(foto({ nivel: 240, hunt: { id: 3, title: 'Fire Portal', rec: 175 }, ilhas: [{ id: 'the_inquisition', aberta: false }, { id: 'issavi', aberta: false }] }))[0];
+    assert.strictEqual(c.id, 'itens:ilha-issavi'); assert.strictEqual(c.acao.tipo, 'abrir-silas');
 });
 
 process.on('exit', () => { if (!process.exitCode) console.log(`\n${n} testes ok`); });
