@@ -13155,6 +13155,28 @@
         }
         return info;
     }
+    // Clique (revisão da Task 16): os 2 toques valem pela foto de AGORA. A tela liga o botão pela foto do cache (até 60 s); se a foto
+    // nova pede 2 toques e o clique não veio do 2º toque (confirmado), não executa: a tela redesenha com o botão de 2 toques.
+    // → { info, executa, aviso }
+    function trDecidirClique(acao, fotoNova, confirmado) {
+        const info = trAcaoInfo(acao, fotoNova);
+        if (!info) return { info: null, executa: false, aviso: 'ação desconhecida' };
+        if (info.motivo) return { info, executa: false, aviso: info.motivo };
+        if (info.dois && confirmado !== true) return { info, executa: false, aviso: 'mudou desde a tela: confirme de novo (2 toques)' };
+        return { info, executa: true, aviso: null };
+    }
+    // A resposta CONFIRMA a ação? (revisão) selo_ligar: o selo_state mostra o Selo DESTA caçada ligado; invasion_join: inscrito === true
+    // no invasion_update (data.invasao) ou no meta_result (data.meta.invasao). true = confirmou · false = respondeu sem confirmar ·
+    // null = ação sem conferência extra (vale o tipo da resposta).
+    function trRespostaConfirma(tipo, data, alvo) {
+        const d = data && typeof data === 'object' ? data : {};
+        if (tipo === 'selo_ligar') return Array.isArray(d.selos) && d.selos.some(z => z && trMesmoId(z.huntId, alvo && alvo.huntId) && z.ligado === true);
+        if (tipo === 'invasion_join') {
+            const inv = d.invasao && typeof d.invasao === 'object' ? d.invasao : d.meta && typeof d.meta === 'object' && d.meta.invasao && typeof d.meta.invasao === 'object' ? d.meta.invasao : null;
+            return !!inv && inv.inscrito === true;
+        }
+        return null;
+    }
     // Resposta do jogo para UMA ação pendente p = { tipo, rid (null = mensagem sem requestId), espera: [types] }.
     //   'res' = é a resposta · 'erro' = `error` com o requestId dela (ou sem requestId: o DOM espera 1,2 s pela resposta de verdade) · null = outra.
     //   meta_result casa também por `action` (= o type enviado), quando vem.
@@ -13205,7 +13227,7 @@
                          selo_indisponivel: 'Selo indisponível aqui', selo_cheio: 'Selo cheio', selo_incompleto: 'Selo sem pacto', selo_vazio: 'Selo vazio',
                          selo_perigo: 'Perigo alto: aceite na tela do jogo', feature_disabled: 'recurso desligado no servidor', already_hunting: 'já está caçando',
                          level_too_low: 'nível baixo', sem_socket: 'socket do jogo fechado', sem_resposta: 'o jogo não respondeu em 8 s (confira antes de repetir)',
-                         nao_aplicado: 'o jogo não aplicou' };
+                         nao_aplicado: 'o jogo não aplicou', nao_confirmou: 'não confirmou — confira no jogo' };
     /* @@TREINADOR-PURO-FIM */
     /* @@ARENA-PURO-INICIO — Sobrevivência (2.57.0): decisões do robô, puras (o tempo é st.tempoMs, sem DOM).
      * st = estado da simulação do cliente (ref.current.st do componente da partida). O mesmo código rodou no simulador
@@ -21012,8 +21034,8 @@
         for (const [id, { acao, chave }] of TR.acoes) {
             const btn = $('#' + id), info = btn ? trAcaoInfo(acao, foto) : null;
             if (!info) continue;
-            if (info.dois) ligarDoisToques(btn, 'tr:' + chave, 'confirmar?', () => trFazer(acao));
-            else btn.onclick = () => trFazer(acao);
+            if (info.dois) ligarDoisToques(btn, 'tr:' + chave, 'confirmar?', () => trFazer(acao, true)); // só o 2º toque confirma
+            else btn.onclick = () => trFazer(acao, false);
         }
         const at = $('#tr-atualizar'); if (at) at.onclick = () => { TR.ultimo = null; renderizar(); };
         const tp = $('#tr-topo'); if (tp) tp.onclick = () => trFazer({ tipo: 'ler-topo' });
@@ -21051,16 +21073,18 @@
         try { enviarWS({ type: tipo, data: semRid ? data : Object.assign({}, data, { requestId: rid }) }); } catch { TR.pend = null; return { erro: 'sem_socket' }; }
         await esperarQue(() => p.res || (p.erro && (p.erro.meu || Date.now() - p.erro.t >= MK_GRACA_ERRO_MS)), MK_PRAZO_MS, 100);
         if (TR.pend === p) TR.pend = null;
-        if (p.res) return { ok: true, type: p.res.type, data: p.res.data };
+        if (p.res) return { ok: true, type: p.res.type, data: p.res.data, enviado: tipo };
         if (p.erro) return { erro: p.erro.code };
         return { erro: 'sem_resposta' };
     }
     const trErroTxt = (code) => TR_ERRO_PT[code] || mkErroTexto(code);
     // resposta → resultado da tela; meta_result com applied:false = o jogo recusou (o notice diz por quê)
-    function trResposta(r, nome, okMsg) {
+    // alvo = o que a ação pediu ({ huntId } do Selo) para o trRespostaConfirma
+    function trResposta(r, nome, okMsg, alvo) {
         if (r.erro) return { erro: true, code: r.erro, msg: `${nome}: ${trErroTxt(r.erro)}` };
         const d = r.data || {};
         if (r.type === 'meta_result' && d.applied === false) return { erro: true, code: 'nao_aplicado', msg: `${nome}: ${trErroTxt('nao_aplicado')}` + (d.notice && d.notice.key ? ` (${d.notice.key})` : '') };
+        if (trRespostaConfirma(r.enviado, d, alvo) === false) return { erro: true, code: 'nao_confirmou', msg: `${nome}: ${trErroTxt('nao_confirmou')}` };
         return { msg: okMsg };
     }
     /* Telas do jogo (só clica no botão do próprio jogo; nada vai pelo socket). data-testid do bundle de 27/11 (docs/protocolo-treinador.md). */
@@ -21068,7 +21092,7 @@
     async function trAbrirTela(tela) {
         const clicar = (el) => { if (!el) return false; try { el.click(); return true; } catch { return false; } };
         switch (tela) {
-        case 'loja': return clicar(tid('hud-store') || tid('premium-cta'));
+        case 'loja': return clicar(tid('hud-store') || tid('premium-cta')); // hud-store = botão da Loja na barra de cima (bundle 27/11, docs/protocolo-treinador.md)
         case 'ampulheta': return clicar(tid('ampulheta-placa'));
         case 'selo': return clicar(tid('hunt-aba-selo') || tid('selo-aba'));
         case 'invasao': return clicar(tid('invasao-icone'));
@@ -21084,14 +21108,18 @@
         default: return false;
         }
     }
-    async function trFazer(acao) {
+    // confirmado = true só quando o clique veio do 2º toque (ligarDoisToques)
+    async function trFazer(acao, confirmado) {
         if (!acao) return;
         if (TR.agindo) { avisar('treinador', 'treinador: espere — ' + TR.agindo, 'erro'); return; }
         let foto = null;
         try { foto = trFoto(); } catch { foto = TR.ultimo ? TR.ultimo.foto : null; } // confere com o estado de AGORA, não o do cache
-        const info = trAcaoInfo(acao, foto);
-        if (!info) { avisar('treinador', 'treinador: ação desconhecida (' + acao.tipo + ')', 'erro'); return; }
-        if (info.motivo) { avisar('treinador', `treinador: ${info.rotulo} — ${info.motivo}`, 'erro'); renderizar(); return; }
+        const dec = trDecidirClique(acao, foto, confirmado), info = dec.info;
+        if (!dec.executa) {
+            avisar('treinador', `treinador: ${info ? info.rotulo : acao.tipo} — ${dec.aviso}`, 'erro');
+            TR.ultimo = null; renderizar(); // a tela redesenha pela foto nova (com 2 toques, se for o caso)
+            return;
+        }
         if (info.modo === 'aba') {
             log('treinador: abrir a aba ' + ((ICONES.find(x => x[0] === info.aba) || [])[2] || info.aba), 'info');
             ABA = info.aba; guardarUI({ aba: info.aba, aberta: true }); renderizar();
@@ -21136,7 +21164,7 @@
             const ocup = travaJogo(); if (ocup) return { erro: true, msg: ocup + ' em andamento' };
             ESTADO_WS.ultimoErro = null;
             enviarWS({ type: 'set_lure', data: { tier: lure } }); // tier = índice do degrau (o mesmo do Scan)
-            const ok = await esperarQue(() => frameFresco() && Number(ESTADO_WS.frame.lureTier) === lure, 6000, 250);
+            const ok = await esperarQue(() => frameFresco() && Number(ESTADO_WS.frame.lureTier) === lure, MK_PRAZO_MS, 250); // 8 s, como as outras ações
             return ok ? { msg: 'lure ' + lure } : { erro: true, msg: `enviei a lure ${lure} e o jogo não confirmou` + (ESTADO_WS.ultimoErro ? ` (${trErroTxt(ESTADO_WS.ultimoErro)})` : '') };
         }
         case 'medir': { // Scan de 5 min em cada mapa (memória: rodada de medição = 5 min); o huntId null vem pelo título do catálogo
@@ -21158,7 +21186,8 @@
         case 'bencaos': // o servidor pode pedir a cidade (não confirmado ao vivo): o not_in_city volta como "só na cidade"
             return trResposta(await trPedir('buy_all_blessings', {}, ['meta_result']), 'bênçãos', 'bênçãos compradas');
         case 'selo': { // só chega aqui com Abundante no Selo desta caçada (trAcaoInfo); selo_ligar não leva requestId (protocolo)
-            const r = trResposta(await trPedir('selo_ligar', { huntId: n(acao.huntId) }, ['selo_state'], { semRid: true }), 'Selo', 'Selo ligado');
+            // "ligado" só com o selo_state mostrando o Selo DESTA caçada ligado (trRespostaConfirma)
+            const r = trResposta(await trPedir('selo_ligar', { huntId: n(acao.huntId) }, ['selo_state'], { semRid: true }), 'Selo', 'Selo ligado', { huntId: acao.huntId });
             if (r.code === 'selo_perigo') await trAbrirTela('selo'); // perigo > 5 pede o "aceitar" do dono na tela do jogo
             return r;
         }
@@ -21170,11 +21199,14 @@
             return r;
         }
         case 'invasao': {
-            // a resposta exata do invasion_join está "a confirmar" no protocolo: sem resposta, vale o estado guardado (invasion_update)
+            // a resposta exata do invasion_join está "a confirmar" no protocolo: "inscrito" só com inscrito === true no invasion_update/meta
+            // (trRespostaConfirma); sem resposta, vale o estado guardado se ele diz inscrito === true (veio de um invasion_update/meta)
             const r = await trPedir('invasion_join', {}, ['invasion_update', 'meta_result']);
-            const inscrito = !!(ESTADO_WS.tr && ESTADO_WS.tr.invasao && ESTADO_WS.tr.invasao.inscrito);
-            if (r.erro === 'sem_resposta') { if (inscrito) return { msg: 'inscrito na Invasão' }; await trAbrirTela('invasao'); return { erro: true, msg: 'Invasão: o jogo não confirmou — abri o ícone da Invasão para conferir' }; }
-            return trResposta(r, 'Invasão', 'inscrito na Invasão');
+            const guardado = ESTADO_WS.tr && ESTADO_WS.tr.invasao && ESTADO_WS.tr.invasao.inscrito === true;
+            const res = r.erro === 'sem_resposta' ? (guardado ? { msg: 'inscrito na Invasão' } : { erro: true, code: 'nao_confirmou', msg: 'Invasão: ' + trErroTxt('nao_confirmou') })
+                : trResposta(r, 'Invasão', 'inscrito na Invasão');
+            if (res.code === 'nao_confirmou') { if (await trAbrirTela('invasao')) res.msg += ' (abri o ícone da Invasão)'; }
+            return res;
         }
         case 'abrir-silas': {
             if (emHunt()) return { erro: true, msg: 'abrir ilha só na cidade (Silas)' };
@@ -21202,7 +21234,14 @@
                 if (r.erro) return { erro: true, msg: `livro de ${it.nome}: ${mkErroTexto(r.erro)} — nada comprado` };
                 livros[trNome(it.nome)] = (r.data && r.data.orders) || [];
             }
-            const plano = trPlanoCompra(lista, livros, mlOuroNormal(), new Set((MK.minhas || []).map(o => o && o.id)));
+            // ouro normal desconhecido = não compra (o plano sem ouro não teria limite); minhas ordens nunca lidas = lê antes (pela fila)
+            const ouro = mlOuroNormal();
+            if (ouro == null) return { erro: true, msg: 'ouro desconhecido: abra o Mercado no jogo e tente de novo — nada comprado' };
+            if (!Array.isArray(MK.minhas)) {
+                const rm = await mkLerMinhas();
+                if ((rm && rm.erro) || !Array.isArray(MK.minhas)) return { erro: true, msg: 'não li as suas ordens do Mercado' + (rm && rm.erro ? ' (' + mkErroTexto(rm.erro) + ')' : '') + ' — nada comprado' };
+            }
+            const plano = trPlanoCompra(lista, livros, ouro, new Set(MK.minhas.map(o => o && o.id)));
             if (!plano.compras.length) return { erro: true, msg: 'nenhum anúncio até o preço do conselho + 10 % — nada comprado' };
             const feitas = [];
             let parou = null;

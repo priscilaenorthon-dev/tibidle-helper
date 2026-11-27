@@ -68,6 +68,8 @@ Todas as ações acima têm formato limpo no esquema; nenhuma ficou como "abrir 
 | Invasão | `invasao-icone` | `invasao-inscrever`, `invasao-preset-inscrever`, `invasao-cancelar`, `invasao-confirmar-saida`, `invasao-buff-<id>` |
 | Selo da Caçada | `hunt-aba-selo` / `selo-aba` (tela da caçada) | `selo-adicionar`, `selo-rolar`, `selo-limpar`, `selo-ligar`, `selo-confirmar-aceitar` |
 | Premium | `premium-panel`, `premium-cta` | — |
+| Loja (coins) | `hud-store` (botão dourado da barra de cima; `onClick` abre a loja — conferido no bundle de 27/11, chunk do shell) | `store-card-<id>`, `store-buy-<id>` |
+| Elites | `actionbar-explore` (CAÇADAS, na caçada) ou `actionbar-hunt` (JOGAR, na cidade) → aba `explore-tab-minibosses` (abas `explore-tab-<hunts\|minibosses\|bosses\|tower\|tokens>`, bundle 27/11) | `explore-elite-main` |
 
 ### O que falta confirmar ao vivo
 1. Se `buy_blessing`, as ações de prey e `selo_*` respondem `not_in_city` durante a caçada (o cliente não bloqueia).

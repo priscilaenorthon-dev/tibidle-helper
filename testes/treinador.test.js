@@ -6,7 +6,7 @@ const i = src.indexOf('/* @@TREINADOR-PURO-INICIO'), f = src.indexOf('/* @@TREIN
 assert(i > 0 && f > i, 'trecho @@TREINADOR-PURO não encontrado');
 const T = new Function(src.slice(i, f) + '\nreturn { TR_BASE, TR_AGENTES, trConselho, trOrdenar, trRodar, trFotoVazia, trCacada, trAgenteUpar, trAgenteMult, trAgenteLegado, '
     + 'trMesmoId, trQtd, trLimitadoPorDano, trDanoParaXp, trTipoPrey, trXpAtual, trRecDe, trMortesRecentes, trAgenteTopo, trAgenteErros, trXpPerdidaMorte, trAgenteBoss, trEventosMorte, trImpactoMorte, '
-    + 'trAgenteBestiario, trAgenteItens, trAgenteForja, trAgenteDinheiro, trCortaSufixo, trParty, trVelho, trEhMago, trDanoDeUm, trCustoEfetivo, trResumirTopo, trOuroLivre, trMesclarMapas, trAnotar, trFreioTopo, trPerfisDepois, trAcaoInfo, trCasaResposta, trPlanoCompra, trIdadePt, TR_ACAO_ROTULO, TR_ERRO_PT };')();
+    + 'trAgenteBestiario, trAgenteItens, trAgenteForja, trAgenteDinheiro, trCortaSufixo, trParty, trVelho, trEhMago, trDanoDeUm, trCustoEfetivo, trResumirTopo, trOuroLivre, trMesclarMapas, trAnotar, trFreioTopo, trPerfisDepois, trAcaoInfo, trCasaResposta, trPlanoCompra, trIdadePt, TR_ACAO_ROTULO, TR_ERRO_PT, trDecidirClique, trRespostaConfirma };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 // agentes falsos: troca os de verdade pelos falsos, roda e devolve os de verdade sempre
@@ -1632,5 +1632,37 @@ t('trPlanoCompra: das mais baratas, teto = preço do conselho + 10 %, sem as min
 t('trIdadePt e TR_ERRO_PT', () => {
     assert.deepStrictEqual([null, NaN, -1, 0.4, 5.4, 47, 72].map(T.trIdadePt), ['—', '—', '—', '<1 h', '5 h', '47 h', '3 d']);
     for (const c of ['not_in_city', 'too_far', 'insufficient_gold', 'selo_perigo', 'sem_resposta']) assert(T.TR_ERRO_PT[c], c);
+});
+t('trDecidirClique: o cache dizia 1 toque (Selo sem Abundante → tela), a foto nova pede 2 (selo_ligar cobra/h) → o 1º toque NÃO executa', () => {
+    const acao = { tipo: 'selo', huntId: 1 };
+    const cache = foto({ emHunt: true, hunt: huntSN(), selo: { ativo: false, abundante: null } });
+    const nova = foto({ emHunt: true, hunt: huntSN(), selo: { ativo: false, abundante: 3 } });
+    assert.deepStrictEqual([T.trAcaoInfo(acao, cache).modo, T.trAcaoInfo(acao, cache).dois], ['tela', false], 'a tela ligou o botão com 1 toque');
+    const d1 = T.trDecidirClique(acao, nova, false);
+    assert.strictEqual(d1.executa, false); assert(/confirme de novo/.test(d1.aviso), d1.aviso);
+    assert.strictEqual(T.trDecidirClique(acao, nova, undefined).executa, false, 'sem o flag = não confirmado');
+    const d2 = T.trDecidirClique(acao, nova, true);
+    assert.deepStrictEqual([d2.executa, d2.info.modo, d2.info.dois], [true, 'jogo', true], 'o 2º toque executa');
+    // 1 toque de verdade (grátis/tela/aba) não pede confirmação; motivo da foto nova sempre barra; tipo desconhecido não executa
+    assert.strictEqual(T.trDecidirClique({ tipo: 'invasao' }, foto({}), false).executa, true);
+    assert.strictEqual(T.trDecidirClique({ tipo: 'abrir-equip' }, foto({}), false).executa, true);
+    const sem = T.trDecidirClique({ tipo: 'bencaos' }, foto({ ouro: 100, bencaos: { custoFaltam: 5e5 } }), true);
+    assert.deepStrictEqual([sem.executa, sem.aviso], [false, 'falta ouro']);
+    assert.strictEqual(T.trDecidirClique({ tipo: 'xyz' }, foto({}), true).executa, false);
+});
+t('trRespostaConfirma: Selo só ligado com o selo DESTA caçada ligado; Invasão só com inscrito === true', () => {
+    const selo = (huntId, ligado) => ({ ativo: true, selos: [{ huntId, ligado, pactos: [] }] });
+    assert.strictEqual(T.trRespostaConfirma('selo_ligar', selo(222, true), { huntId: 222 }), true);
+    assert.strictEqual(T.trRespostaConfirma('selo_ligar', selo('222', true), { huntId: 222 }), true, 'id texto × número');
+    assert.strictEqual(T.trRespostaConfirma('selo_ligar', selo(222, false), { huntId: 222 }), false, 'pausado/desligado');
+    assert.strictEqual(T.trRespostaConfirma('selo_ligar', selo(176, true), { huntId: 222 }), false, 'o selo ligado é de outra caçada');
+    assert.strictEqual(T.trRespostaConfirma('selo_ligar', { ativo: true }, { huntId: 222 }), false);
+    assert.strictEqual(T.trRespostaConfirma('invasion_join', { invasao: { inscrito: true } }), true, 'invasion_update');
+    assert.strictEqual(T.trRespostaConfirma('invasion_join', { action: 'invasion_join', meta: { invasao: { inscrito: true } } }), true, 'meta_result');
+    assert.strictEqual(T.trRespostaConfirma('invasion_join', { invasao: { inscrito: 'sim' } }), false);
+    assert.strictEqual(T.trRespostaConfirma('invasion_join', { invasao: { inscrito: false } }), false);
+    assert.strictEqual(T.trRespostaConfirma('invasion_join', { action: 'invasion_join', applied: true }), false, 'meta_result sem a Invasão não confirma');
+    assert.strictEqual(T.trRespostaConfirma('buy_all_blessings', {}), null, 'sem conferência extra');
+    assert(T.TR_ERRO_PT.nao_confirmou);
 });
 process.on('exit', () => { if (!process.exitCode) console.log(`\n${n} testes ok`); });
