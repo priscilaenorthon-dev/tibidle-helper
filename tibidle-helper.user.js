@@ -12900,7 +12900,51 @@
         return out;
     }
     TR_AGENTES.push({ id: 'ouro', nome: 'Dinheiro', icone: '$', fase: 2, rodar: trAgenteDinheiro });
+    // ── Topo do rank (Task 15): /leaderboard + perfis visíveis (player_profile_result) → foto.topo. Puro: o `t` vem de fora.
+    //    leaderboard = { players: [{ name, level, skills: { melee, distance, magicSorcerer, magicDruid } }] } ou a lista (na ordem do jogo:
+    //    a posição é o índice + 1). perfis = respostas do player_profile ({ name, level, equipmentVisible, characters: [{ vocation,
+    //    equipment: { SLOT: { name, id } } }] }) ou já resumidos ({ nivel, voc }); perfil com o equipamento escondido fica de fora.
+    //    Faixa = [nivel, nivel + TR_TOPO_FAIXA] (sem nível: todos). pos = posição do `nome` (sem diferença de maiúsculas); null fora da lista.
+    //    → { pos, total, top1: { nivel } | null, perto: [{ nome, nivel, skills: { melee, dist, ml: { SORCERER, DRUID } } }],
+    //        perfis: [{ nivel, voc: { VOC: { SLOT: nomeItem } } }], t } — o formato que trAgenteTopo lê (ml do topo é por vocação).
+    const TR_TOPO_FAIXA = 150;
     const TR_SLOT_JOGO = { feet: 'boots', hand: 'weapon', helmet: 'head', amulet: 'necklace', quiver: 'ammo' }; // nomes do jogo → TR_SLOTS
+    function trResumirTopo(leaderboard, perfis, nivel, t, nome) {
+        const lista = (Array.isArray(leaderboard) ? leaderboard : leaderboard && Array.isArray(leaderboard.players) ? leaderboard.players : [])
+            .filter(p => p && typeof p === 'object' && Number.isFinite(trNum(p.level)));
+        const nv = trNum(nivel), comNivel = Number.isFinite(nv);
+        const naFaixa = (lv) => !comNivel || (trNum(lv) >= nv && trNum(lv) <= nv + TR_TOPO_FAIXA);
+        const eu = trNome(nome), i = eu ? lista.findIndex(p => trNome(p.name) === eu) : -1;
+        const perto = lista.filter(p => naFaixa(p.level) && !(eu && trNome(p.name) === eu)).map(p => {
+            const s = p.skills && typeof p.skills === 'object' ? p.skills : {};
+            const v = (k) => (Number.isFinite(trNum(s[k])) ? Number(s[k]) : null);
+            return { nome: p.name == null ? null : String(p.name), nivel: Number(p.level),
+                     skills: { melee: v('melee'), dist: v('distance'), ml: { SORCERER: v('magicSorcerer'), DRUID: v('magicDruid') } } };
+        });
+        const nivelDe = (p) => { const n = trNum(p.nivel != null ? p.nivel : p.level); if (Number.isFinite(n)) return n; const l = lista.find(x => trNome(x.name) === trNome(p.name)); return l ? Number(l.level) : NaN; };
+        const resumo = [];
+        for (const p of Array.isArray(perfis) ? perfis : []) {
+            if (!p || typeof p !== 'object' || p.equipmentVisible === false) continue;
+            const lv = nivelDe(p);
+            if (!Number.isFinite(lv) || !naFaixa(lv)) continue;
+            let voc = null;
+            if (p.voc && typeof p.voc === 'object') voc = p.voc; // já resumido
+            else if (Array.isArray(p.characters)) {
+                voc = {};
+                for (const c of p.characters) {
+                    if (!c || !c.vocation || !c.equipment || typeof c.equipment !== 'object') continue;
+                    const eq = {};
+                    for (const [slot, it] of Object.entries(c.equipment)) {
+                        const k = TR_SLOT_JOGO[slot] || slot, n = it && typeof it === 'object' ? it.name : it;
+                        if (TR_SLOTS.includes(k) && n) eq[k] = String(n);
+                    }
+                    if (Object.keys(eq).length) voc[c.vocation] = eq;
+                }
+            }
+            if (voc && Object.keys(voc).length) resumo.push({ nivel: lv, voc });
+        }
+        return { pos: i >= 0 ? i + 1 : null, total: lista.length, top1: lista.length ? { nivel: Number(lista[0].level) } : null, perto, perfis: resumo, t: trNum(t) > 0 ? Number(t) : 0 };
+    }
     /* @@TREINADOR-PURO-FIM */
     /* @@ARENA-PURO-INICIO — Sobrevivência (2.57.0): decisões do robô, puras (o tempo é st.tempoMs, sem DOM).
      * st = estado da simulação do cliente (ref.current.st do componente da partida). O mesmo código rodou no simulador
@@ -20266,6 +20310,14 @@
         const d = o.data && typeof o.data === 'object' ? o.data : null;
         if (!d) return;
         const tipo = o.type, agora = Date.now(), x = ESTADO_WS.tr || (ESTADO_WS.tr = {});
+        // respostas que o trLerTopo espera: player_profile_result casa pelo nome; um `error` derruba a espera mais antiga
+        if (TR.esperas.length && (tipo === 'player_profile_result' || tipo === 'error')) {
+            const e = tipo === 'error' ? TR.esperas[0] : TR.esperas.find(z => z.nome === trNome(d.name));
+            if (e) {
+                clearTimeout(e.timer); TR.esperas = TR.esperas.filter(z => z !== e);
+                if (tipo === 'error') e.rej(new Error('o jogo respondeu erro: ' + (d.code || d.key || '?'))); else e.res(clonar(d));
+            }
+        }
         if (tipo === 'frame') { // a cada frame: só dois números, barato
             const st = d.state && typeof d.state === 'object' ? d.state : null, ch = st && st.character;
             if (ch && ch.xp != null && Number.isFinite(Number(ch.xp))) (x.conta || (x.conta = {})).xp = Number(ch.xp);
@@ -20606,6 +20658,70 @@
             f.ouroLivre = Number.isFinite(v) ? Math.round(v) : null;
         });
         return f;
+    }
+    /* ── Topo do rank (Task 15): rede com freio. Só pelo botão do treinador (ação ler-topo), nunca no carregamento da página.
+     *   1) GET /leaderboard (público) → posição, top 1 e as skills da faixa [nível, nível + 150];
+     *   2) player_profile {name} pelo socket (consulta: external_query no próprio cliente) de até 25 nomes da faixa, 1 por segundo,
+     *      parando no 1º erro ou sem resposta em 5 s; só os perfis com equipamento à mostra entram.
+     *   Freio: < 6 h não relê nada; 6–24 h relê só o leaderboard (os perfis ficam); > 24 h (ou outra conta/faixa) relê tudo.
+     *   Guarda o resumo (trResumirTopo) em guardarComum('tr_topo') com t, conta, nivel e tPerfis. Devolve um texto curto para a tela. */
+    const TR_TOPO_MAX = 25, TR_TOPO_ESPERA_MS = 5000, TR_TOPO_PASSO_MS = 1000, TR_TOPO_LB_H = 6, TR_TOPO_TUDO_H = 24;
+    function trEsperarPerfil(nome) {
+        let e = null;
+        const p = new Promise((res, rej) => {
+            e = { nome: trNome(nome), res, rej, timer: setTimeout(() => { TR.esperas = TR.esperas.filter(z => z !== e); rej(new Error('player_profile sem resposta em 5 s')); }, TR_TOPO_ESPERA_MS) };
+        });
+        TR.esperas.push(e);
+        return { p, cancelar: () => { clearTimeout(e.timer); TR.esperas = TR.esperas.filter(z => z !== e); } };
+    }
+    async function trLerTopo(opc) {
+        opc = opc || {};
+        if (TR.topo.lendo) return 'já estou lendo o topo';
+        const agora = Date.now(), x = ESTADO_WS.tr || {};
+        const nome = (x.conta && x.conta.nome) || (ESTADO_WS.conta && ESTADO_WS.conta.nome) || null;
+        let nivel = null;
+        try { nivel = trFoto().nivel; } catch { nivel = null; }
+        if (!(nivel > 0)) return 'sem o nível da conta: entre no jogo e tente de novo';
+        const salvo = lerComum('tr_topo', null);
+        const mesma = !!(salvo && salvo.conta && nome && trNome(salvo.conta) === trNome(nome) && Math.abs((trNum(salvo.nivel) || 0) - nivel) <= 30);
+        const idade = mesma && salvo.t > 0 ? (agora - salvo.t) / TR_H : Infinity;
+        const idadePerfis = mesma && salvo.tPerfis > 0 ? (agora - salvo.tPerfis) / TR_H : Infinity;
+        if (!opc.forcar && idade < TR_TOPO_LB_H) return `topo lido há ${trHorasPt(idade)} h: leio de novo em ${trHorasPt(TR_TOPO_LB_H - idade)} h`;
+        const soLb = !opc.forcar && idadePerfis < TR_TOPO_TUDO_H;
+        TR.topo.lendo = true;
+        try {
+            const lb = await buscarJSON('/leaderboard');
+            const lista = Array.isArray(lb) ? lb : lb && Array.isArray(lb.players) ? lb.players : null;
+            if (!lista || !lista.length) throw new Error('o /leaderboard veio vazio');
+            const perfis = soLb ? (Array.isArray(salvo.perfis) ? salvo.perfis.slice() : []) : [];
+            let lidos = 0, visiveis = 0, parou = null, banda = [];
+            if (!soLb) {
+                banda = lista.filter(p => p && p.name && trNome(p.name) !== trNome(nome) && Number(p.level) >= nivel && Number(p.level) <= nivel + TR_TOPO_FAIXA)
+                    .sort((p, q) => Number(q.level) - Number(p.level)).slice(0, TR_TOPO_MAX);
+                for (const p of banda) {
+                    if (!socketAberto()) { parou = 'socket do jogo fechado'; break; }
+                    const w = trEsperarPerfil(p.name);
+                    try { enviarWS({ type: 'player_profile', data: { name: String(p.name) } }); } catch (e) { w.cancelar(); parou = e.message; break; }
+                    try {
+                        const r = await w.p;
+                        lidos++;
+                        if (r && r.equipmentVisible !== false) { visiveis++; perfis.push(Object.assign({ level: Number(p.level) }, r)); }
+                    } catch (e) { parou = e.message; break; }
+                    await dorme(TR_TOPO_PASSO_MS);
+                }
+            }
+            const resumo = Object.assign(trResumirTopo(lista, perfis, nivel, agora, nome), { conta: nome, nivel, tPerfis: soLb ? salvo.tPerfis : agora });
+            guardarComum('tr_topo', resumo);
+            const pos = resumo.pos ? `você é o ${resumo.pos}º de ${resumo.total}` : `fora dos ${resumo.total} do ranking`;
+            const txt = soLb ? `topo relido (${pos}); perfis de ${trHorasPt(idadePerfis)} h atrás`
+                : `topo lido: ${pos}; ${visiveis} de ${lidos} perfis com equipamento à mostra` + (parou ? ` (parei: ${parou})` : '');
+            TR.topo.status = txt;
+            log('treinador: ' + txt, parou ? 'aviso' : 'ok');
+            return txt;
+        } catch (e) {
+            falhou('treinador (topo)', e);
+            return (TR.topo.status = 'não consegui ler o topo: ' + e.message);
+        } finally { TR.topo.lendo = false; }
     }
     /* @@TREINADOR-FIM */
     /* @@ARENA-INICIO — aba Sobrevivência ☠ (2.57.0, dono 26/11: "colocar na nossa automação para fazer automaticamente").
@@ -21487,8 +21603,8 @@
         pchItensVigiaveis, pchVigiados, pchCandidato, pchLivro, pchAvaliar, get PCH() { return PCH; },
         // v2.17.0 — Invasão (leituras e o plano; o salvar só pelo botão)
         invPlanoHoje, invPosicoes, invMontarPreset, invResumoReplay, invTemplateDoReplay, invAplicarTemplate, invModelos, get INV() { return INV; },
-        // 2.67.0 — treinador (foto e especialistas: só leitura)
-        trFoto, trRodar, TR_BASE, get TR() { return TR; }
+        // 2.67.0 — treinador (foto e especialistas: só leitura). trLerTopo manda só player_profile (consulta) com freio de 6/24 h.
+        trFoto, trRodar, trResumirTopo, trLerTopo, TR_BASE, get TR() { return TR; }
     }; }
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar);

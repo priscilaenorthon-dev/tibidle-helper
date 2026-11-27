@@ -6,7 +6,7 @@ const i = src.indexOf('/* @@TREINADOR-PURO-INICIO'), f = src.indexOf('/* @@TREIN
 assert(i > 0 && f > i, 'trecho @@TREINADOR-PURO não encontrado');
 const T = new Function(src.slice(i, f) + '\nreturn { TR_BASE, TR_AGENTES, trConselho, trOrdenar, trRodar, trFotoVazia, trCacada, trAgenteUpar, trAgenteMult, trAgenteLegado, '
     + 'trMesmoId, trQtd, trLimitadoPorDano, trDanoParaXp, trTipoPrey, trXpAtual, trRecDe, trMortesRecentes, trAgenteTopo, trAgenteErros, trXpPerdidaMorte, trAgenteBoss, trEventosMorte, trImpactoMorte, '
-    + 'trAgenteBestiario, trAgenteItens, trAgenteForja, trAgenteDinheiro, trCortaSufixo, trParty, trVelho, trEhMago, trDanoDeUm, trCustoEfetivo };')();
+    + 'trAgenteBestiario, trAgenteItens, trAgenteForja, trAgenteDinheiro, trCortaSufixo, trParty, trVelho, trEhMago, trDanoDeUm, trCustoEfetivo, trResumirTopo };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 // agentes falsos: troca os de verdade pelos falsos, roda e devolve os de verdade sempre
@@ -1309,6 +1309,46 @@ t('integração G (lucro +117 mil/h, ouro livre −200 mil): nada de "Não gaste
     assert(!r.todos.some(c => c.id === 'ouro:nao-gaste')); assert(r.todos.some(c => c.id === 'ouro:baixo' && c.estado === 'aviso'));
     assert(r.passos.length === 3 && r.passos.every(p => !p.semOuro || trCustoZero(p) === false), r.passos.map(p => p.id).join(' | '));
     assert.strictEqual(r.passos[0].id, 'mult:prey-mapa'); assert.strictEqual(r.passos[0].semOuro, false);
+});
+// ── Task 15: topo do rank (trResumirTopo, puro)
+// leaderboard sintético de 200 contas em ordem de XP (nível caindo); 'Eu' (250) na posição 178, como na leitura de 27/11
+function lbSintetico() {
+    const players = [];
+    for (let k = 0; k < 200; k++) {
+        const level = k < 177 ? 484 - k : 250 - (k - 177);
+        players.push({ name: k === 177 ? 'Eu' : 'P' + (k + 1), level, skills: { melee: 60 + (k % 20), distance: 62 + (k % 20), magicSorcerer: 50 + (k % 15), magicDruid: 52 + (k % 15) } });
+    }
+    return { players, me: null };
+}
+// os perfis resumidos da fixture no formato cru do player_profile_result (equipment {slot: {name, id}}; bota como 'feet' = nome do jogo)
+const perfilCru = (p, k) => ({ name: 'Perfil' + k, level: p.nivel, equipmentVisible: true,
+    characters: Object.entries(p.voc).map(([vocation, eq]) => ({ vocation, equipment: Object.fromEntries(Object.entries(eq).map(([sl, nome]) => [sl === 'boots' ? 'feet' : sl, { name: nome, id: 1 }])) })) });
+t('trResumirTopo: posição 178 de 200, top 1 e a faixa [nível, nível + 150]', () => {
+    const lb = lbSintetico(), r = T.trResumirTopo(lb, [], 250, 1.8e12, 'eu');
+    assert.strictEqual(r.pos, 178); assert.strictEqual(r.total, 200); assert.deepStrictEqual(r.top1, { nivel: 484 }); assert.strictEqual(r.t, 1.8e12);
+    const naFaixa = lb.players.filter(p => p.name !== 'Eu' && p.level >= 250 && p.level <= 400);
+    assert.strictEqual(r.perto.length, naFaixa.length);
+    assert(r.perto.every(p => p.nivel >= 250 && p.nivel <= 400) && !r.perto.some(p => p.nome === 'Eu'));
+    const p0 = r.perto[0];
+    assert(typeof p0.skills.melee === 'number' && typeof p0.skills.dist === 'number' && typeof p0.skills.ml.SORCERER === 'number' && typeof p0.skills.ml.DRUID === 'number');
+});
+t('trResumirTopo: perfis crus viram { nivel, voc } (feet → boots); escondidos e fora da faixa saem', () => {
+    const crus = TOPO.perfis.map(perfilCru);
+    crus.push({ name: 'Escondido', level: 300, equipmentVisible: false, characters: [{ vocation: 'KNIGHT', equipment: { head: { name: 'x' } } }] });
+    crus.push({ name: 'Alto', level: 480, equipmentVisible: true, characters: [{ vocation: 'KNIGHT', equipment: { head: { name: 'y' } } }] });
+    const r = T.trResumirTopo(lbSintetico(), crus, 250, 1, 'Eu');
+    assert.deepStrictEqual(r.perfis, TOPO.perfis.filter(p => p.nivel >= 250 && p.nivel <= 400));
+});
+t('trResumirTopo: o resumo alimenta o especialista do topo (com idadeH) sem pedir leitura', () => {
+    const tp = Object.assign(T.trResumirTopo(lbSintetico(), TOPO.perfis.map(perfilCru), 250, 1.8e12, 'Eu'), { idadeH: 1 });
+    const cs = T.trAgenteTopo(foto({ nivel: 250, topo: tp, party: [{ voc: 'KNIGHT', skills: { melee: 64 }, eq: { head: { nome: 'steel helmet' } } }] }), T.TR_BASE);
+    assert(!cs.some(c => c.id === 'topo:ler'), cs.map(c => c.id).join());
+});
+t('trResumirTopo: nome fora da lista → pos null; lista crua, vazia ou nula não quebram', () => {
+    assert.strictEqual(T.trResumirTopo(lbSintetico(), [], 250, 1, 'Ninguém').pos, null);
+    assert.strictEqual(T.trResumirTopo(lbSintetico().players, [], 250, 1).pos, null);
+    const v = T.trResumirTopo(null, null, null, null, null);
+    assert.deepStrictEqual([v.pos, v.total, v.top1, v.perto.length, v.perfis.length], [null, 0, null, 0, 0]);
 });
 // ── Task 14: fotos das 3 contas (u2tag = trFoto() ao vivo em 27/11; ShamanBr e XundaBr montadas no mesmo formato)
 const fx = (nome) => JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', nome), 'utf8'));
