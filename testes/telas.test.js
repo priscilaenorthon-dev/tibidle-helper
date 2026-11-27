@@ -527,6 +527,9 @@ t('Progresso (treinador): "analise" salva abre aqui; 10 cartões, passo com bot�
     ws.emitir({ type: 'hunt_started', data: { huntId: 32, state: { party: party4() } } });
     ws.emitir(frame({ lureTier: 3 }, { elapsedMs: 600000, xpRaw: 50000 }));
     await W.avancar(0);
+    await W.avancar(5000); // freio de 5 s do "Atualizar"
+    ws.emitir(frame({ lureTier: 3 }, { elapsedMs: 605000, xpRaw: 50500 }));
+    await W.avancar(0);
     W.el('tr-atualizar').click(); // a foto do 1º desenho é de antes do frame: "Atualizar" recalcula
     await W.avancar(0);
     const h = W.html();
@@ -535,11 +538,11 @@ t('Progresso (treinador): "analise" salva abre aqui; 10 cartões, passo com bot�
     assert.strictEqual((h.match(/<details class="tr-card"/g) || []).length, 10, '10 cartões');
     assert(/Próximos passos/.test(h) && /id="tr-atualizar"/.test(h) && /id="tr-topo"/.test(h) && /id="tb-exportar"/.test(h), 'passos e rodapé');
     assert(/Upar em Orc &lt;img/.test(h), 'o passo do mapa com nome do jogo (escapado) não apareceu: ' + (h.match(/Próximos passos.{0,600}/) || [''])[0]);
-    const m = /<button[^>]*data-tr="p:upar:mapa"[^>]*>([^<]*)</.exec(h);
+    const m = /<button[^>]*data-tr="p:upar_3Amapa"[^>]*>([^<]*)</.exec(h);
     assert(m && m[1] === 'Ir', 'botão curto "Ir" no passo: ' + (m ? m[0] : 'sem botão'));
     assert(!/start_hunt|prey_|buy_|selo_|island_|boss_deliver|invasion_join|market_execute|set_lure/.test(ws.saida.join('\n')), 'o Progresso mandou ação ao jogo sozinho: ' + ws.saida.join(' | '));
     /* "Ir" tira a party da caçada: o 1º toque só vira "confirmar?" (nada enviado) */
-    const idIr = (/<button[^>]*id="(tr-b-\d+)" data-tr="p:upar:mapa"/.exec(W.html()) || [])[1], ir = idIr && W.el(idIr);
+    const idIr = (/<button[^>]*id="(tr-b-\d+)" data-tr="p:upar_3Amapa"/.exec(W.html()) || [])[1], ir = idIr && W.el(idIr);
     assert(ir, 'o botão Ir não foi ligado');
     ir.click(); await W.avancar(0);
     assert(/confirmar\?/.test(ir.textContent), '1º toque: ' + ir.textContent);
@@ -552,6 +555,44 @@ t('Progresso (treinador): "analise" salva abre aqui; 10 cartões, passo com bot�
     assert(botao(W.html(), 'tr-topo') && !botao(W.html(), 'tr-topo').disabled, 'o botão do topo não voltou');
 });
 
+t('Progresso: Selo — o 2º toque manda exatamente 1 mensagem; sem resposta em 8 s libera a tela; selo_state empurrado de outro Selo não encerra a espera', async () => {
+    const W = criarMundo({ ls: comAba('treinador', { tb_helper_hunt_id: '32' }) });
+    await W.avancar(0);
+    const ws = new W.window.WebSocket('wss://jogo');
+    ws.emitir({ type: 'welcome', data: {} });
+    ws.emitir({ type: 'hunt_started', data: { huntId: 32, state: { party: party4() } } });
+    const pactos = [{ tier: 3, buff: 'abundante', debuff: 'fragil' }];
+    ws.emitir({ type: 'selo_state', data: { ativo: true, selos: [{ huntId: 32, ligado: false, pausa: null, pactos }] } });
+    const fresco = async () => { ws.emitir(frame({ lureTier: 1 }, { elapsedMs: 600000, xpRaw: 50000 })); await W.avancar(0); };
+    const idSelo = () => (/<button[^>]*id="(tr-b-\d+)" data-tr="[pc]:mult_3Aselo"/.exec(W.html()) || [])[1];
+    const recalcular = async () => { await fresco(); W.el('tr-atualizar').click(); await W.avancar(0); };
+    await W.avancar(5000); await recalcular();
+    let id = idSelo();
+    assert(id, 'sem o botão do Selo: ' + (W.html().match(/Multiplicadores.{0,500}/) || [''])[0]);
+    const n0 = ws.saida.length;
+    W.el(id).click(); await W.avancar(0);
+    assert.strictEqual(ws.saida.length, n0, 'o 1º toque não pode enviar nada');
+    W.el(idSelo()).click(); await W.avancar(0);
+    const novos = ws.saida.slice(n0).map(x => JSON.parse(x));
+    assert.deepStrictEqual(novos.map(m => [m.type, m.data]), [['selo_ligar', { huntId: 32 }]], 'o 2º toque manda só o selo_ligar');
+    assert(W.H.TR.agindo && W.H.TR.pend, 'esperando a resposta');
+    await W.avancar(14000); // prazo de 8 s (e a tela já pode recalcular: freio de 5 s do Atualizar)
+    assert(!W.H.TR.agindo && !W.H.TR.pend, 'o prazo não liberou TR.agindo/TR.pend');
+    assert(/treinador: Selo: não confirmou/.test(logTxt(W)), 'sem resposta não avisou: ' + logTxt(W).split('\n').slice(-3).join(' | '));
+    // de novo: antes do selo_state certo chegam um de outra caçada (ligado) e o desta pausado — os dois ignorados
+    await recalcular();
+    id = idSelo(); assert(id, 'o botão do Selo sumiu');
+    W.el(id).click(); await W.avancar(0);
+    W.el(idSelo()).click(); await W.avancar(0);
+    ws.emitir({ type: 'selo_state', data: { ativo: true, selos: [{ huntId: 176, ligado: true, pactos }] } });
+    ws.emitir({ type: 'selo_state', data: { ativo: true, selos: [{ huntId: 32, ligado: false, pausa: 'gold', pactos }] } });
+    await W.avancar(500);
+    assert(W.H.TR.pend, 'mensagem empurrada encerrou a espera');
+    ws.emitir({ type: 'selo_state', data: { ativo: true, selos: [{ huntId: 32, ligado: true, pausa: null, pactos }] } });
+    await W.avancar(500);
+    assert(!W.H.TR.pend && !W.H.TR.agindo, 'a resposta certa não encerrou');
+    assert(/treinador: Selo ligado/.test(logTxt(W)), 'resultado: ' + logTxt(W).split('\n').slice(-2).join(' | '));
+});
 t('Progresso (rodapé das sessões): "copiar JSON" com a área de transferência bloqueada — a caixa fica no repinte', async () => {
     const W = criarMundo({ ls: comAba('treinador') });
     await W.avancar(0);

@@ -6,7 +6,7 @@ const i = src.indexOf('/* @@TREINADOR-PURO-INICIO'), f = src.indexOf('/* @@TREIN
 assert(i > 0 && f > i, 'trecho @@TREINADOR-PURO não encontrado');
 const T = new Function(src.slice(i, f) + '\nreturn { TR_BASE, TR_AGENTES, trConselho, trOrdenar, trRodar, trFotoVazia, trCacada, trAgenteUpar, trAgenteMult, trAgenteLegado, '
     + 'trMesmoId, trQtd, trLimitadoPorDano, trDanoParaXp, trTipoPrey, trXpAtual, trRecDe, trMortesRecentes, trAgenteTopo, trAgenteErros, trXpPerdidaMorte, trAgenteBoss, trEventosMorte, trImpactoMorte, '
-    + 'trAgenteBestiario, trAgenteItens, trAgenteForja, trAgenteDinheiro, trCortaSufixo, trParty, trVelho, trEhMago, trDanoDeUm, trCustoEfetivo, trResumirTopo, trOuroLivre, trMesclarMapas, trAnotar, trFreioTopo, trPerfisDepois, trAcaoInfo, trCasaResposta, trPlanoCompra, trIdadePt, TR_ACAO_ROTULO, TR_ERRO_PT, trDecidirClique, trRespostaConfirma };')();
+    + 'trAgenteBestiario, trAgenteItens, trAgenteForja, trAgenteDinheiro, trCortaSufixo, trParty, trVelho, trEhMago, trDanoDeUm, trCustoEfetivo, trResumirTopo, trOuroLivre, trMesclarMapas, trAnotar, trFreioTopo, trPerfisDepois, trAcaoInfo, trCasaResposta, trPlanoCompra, trIdadePt, TR_ACAO_ROTULO, TR_ERRO_PT, trDecidirClique, trRespostaConfirma, trK, trInscreveuDepois, trExecutarCompra };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 // agentes falsos: troca os de verdade pelos falsos, roda e devolve os de verdade sempre
@@ -1611,8 +1611,8 @@ t('trCasaResposta: requestId, action do meta_result, erro com/sem requestId e me
     assert.strictEqual(T.trCasaResposta(p, { type: 'error', data: { code: 'not_in_city', requestId: 'r1' } }), 'erro');
     assert.strictEqual(T.trCasaResposta(p, { type: 'error', data: { code: 'rate_limited', requestId: 'zz' } }), null, 'erro de outro pedido');
     assert.strictEqual(T.trCasaResposta(p, { type: 'error', data: { code: 'insufficient_gold' } }), 'erro', 'erro sem requestId: candidato (o DOM espera 1,2 s)');
-    const s = { tipo: 'selo_ligar', rid: null, espera: ['selo_state'] };
-    assert.strictEqual(T.trCasaResposta(s, { type: 'selo_state', data: { ativo: true, selos: [] } }), 'res');
+    const s = { tipo: 'selo_ligar', rid: null, espera: ['selo_state'], alvo: { huntId: 5 } };
+    assert.strictEqual(T.trCasaResposta(s, { type: 'selo_state', data: { ativo: true, selos: [{ huntId: 5, ligado: true }] } }), 'res');
     assert.strictEqual(T.trCasaResposta(s, { type: 'error', data: { code: 'selo_perigo', requestId: 'outro' } }), null);
     assert.strictEqual(T.trCasaResposta(null, { type: 'error', data: {} }), null);
 });
@@ -1664,5 +1664,92 @@ t('trRespostaConfirma: Selo só ligado com o selo DESTA caçada ligado; Invasão
     assert.strictEqual(T.trRespostaConfirma('invasion_join', { action: 'invasion_join', applied: true }), false, 'meta_result sem a Invasão não confirma');
     assert.strictEqual(T.trRespostaConfirma('buy_all_blessings', {}), null, 'sem conferência extra');
     assert(T.TR_ERRO_PT.nao_confirmou);
+});
+// ── revisão de qualidade da Task 16: respostas empurradas, chave reversível, Invasão "depois do envio" e a compra com Mercado falso
+t('trCasaResposta: mensagem empurrada que não confirma é ignorada (outro Selo, Selo pausado, Invasão sem inscrito)', () => {
+    const pactos = [{ tier: 3, buff: 'abundante' }];
+    const s = { tipo: 'selo_ligar', rid: null, espera: ['selo_state'], alvo: { huntId: 32 } };
+    assert.strictEqual(T.trCasaResposta(s, { type: 'selo_state', data: { ativo: true, selos: [{ huntId: 176, ligado: true, pactos }] } }), null, 'outro Selo');
+    assert.strictEqual(T.trCasaResposta(s, { type: 'selo_state', data: { ativo: true, selos: [{ huntId: 32, ligado: false, pausa: 'gold', pactos }] } }), null, 'pausado');
+    assert.strictEqual(T.trCasaResposta(s, { type: 'selo_state', data: { ativo: true, selos: [{ huntId: 32, ligado: true, pactos }] } }), 'res');
+    const i = { tipo: 'invasion_join', rid: 'r9', espera: ['invasion_update', 'meta_result'] };
+    assert.strictEqual(T.trCasaResposta(i, { type: 'meta_result', data: { action: 'invasion_join', applied: true } }), null, 'meta_result sem a Invasão');
+    assert.strictEqual(T.trCasaResposta(i, { type: 'invasion_update', data: { invasao: { inscrito: false } } }), null);
+    assert.strictEqual(T.trCasaResposta(i, { type: 'invasion_update', data: { invasao: { inscrito: true } } }), 'res');
+    assert.strictEqual(T.trCasaResposta(i, { type: 'meta_result', data: { requestId: 'r9', action: 'invasion_join', meta: { invasao: { inscrito: true } } } }), 'res');
+    assert.strictEqual(T.trCasaResposta(i, { type: 'error', data: { code: 'invasion_unavailable', requestId: 'r9' } }), 'erro', 'erro continua valendo');
+});
+t('trK: reversível, sem colisão e só com [A-Za-z0-9._-]', () => {
+    const ids = ['upar:mapa', 'boss:elite-Viscous Mire', 'boss:elite-Viscous_Mire', "boss:elite-Rat's (x)*!~", 'a%20', 'a ', 'a_20', 'ç/á"<>', ''];
+    const ks = ids.map(T.trK);
+    assert.strictEqual(new Set(ks).size, ids.length, 'colisão: ' + ks.join(' | '));
+    for (let k = 0; k < ids.length; k++) { assert(/^[A-Za-z0-9._-]*$/.test(ks[k]), ks[k]); assert.strictEqual(decodeURIComponent(ks[k].replace(/_/g, '%')), ids[k]); }
+    assert.strictEqual(T.trK('mult:selo'), 'mult_3Aselo');
+});
+t('trInscreveuDepois: só conta a mudança de não-inscrito para inscrito depois do envio', () => {
+    assert.strictEqual(T.trInscreveuDepois({ inscrito: false, t: 1 }, { inscrito: true, t: 10 }, 5), true);
+    assert.strictEqual(T.trInscreveuDepois({ inscrito: true, t: 1 }, { inscrito: true, t: 10 }, 5), false, 'já estava inscrito');
+    assert.strictEqual(T.trInscreveuDepois({ inscrito: false, t: 1 }, { inscrito: true, t: 4 }, 5), false, 'mudou antes do envio');
+    assert.strictEqual(T.trInscreveuDepois(null, { inscrito: true, t: 10 }, 5), true);
+    assert.strictEqual(T.trInscreveuDepois(null, { inscrito: null, t: 10 }, 5), false);
+    assert.strictEqual(T.trInscreveuDepois(null, null, 5), false);
+});
+// trExecutarCompra é assíncrona: estes testes rodam numa fila e contam no mesmo total (o 'exit' imprime depois deles)
+const ta = (nome, fn) => Promise.resolve().then(fn).then(() => { n++; console.log('ok  ', nome); }, e => { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; });
+const ordem = (id, preco, q, side) => ({ id, unitPrice: preco, quantityRemaining: q, side: side || 'SELL' });
+function mercadoFalso(livro, o) {
+    o = o || {};
+    let ouro = o.ouro === undefined ? 5e6 : o.ouro, parar = false, listas = 0;
+    const enviados = [];
+    return { enviados, minhas: new Set(o.minhas || []), rid: () => 'r' + enviados.length, erroTxt: (c) => 'E:' + c, ouro: () => ouro, parar: () => parar,
+        pedir: async (tipo, data) => {
+            enviados.push([tipo, data]);
+            if (tipo === 'market_list') {
+                listas++;
+                if (o.precoMuda && listas > 1) { const x = livro.find(y => y.id === o.precoMuda); if (x) x.unitPrice += 1000; }
+                return { data: { orders: livro.map(x => Object.assign({}, x)) } };
+            }
+            if (tipo === 'market_execute') {
+                if (o.falhaEm === data.orderId) return { erro: 'order_unavailable' };
+                const x = livro.find(y => y.id === data.orderId);
+                const q = o.parcial ? 1 : data.quantity;
+                x.quantityRemaining -= q; ouro -= q * x.unitPrice;
+                if (o.pararDepois) parar = true;
+                return { data: { trade: { quantity: q } } };
+            }
+            return { erro: 'tipo inesperado' };
+        } };
+}
+const livroConch = () => [ordem('m', 100000, 9), ordem('b', 280000, 3), ordem('c', 320000, 5), ordem('a', 340000, 2), ordem('buy', 50000, 9, 'BUY')];
+const conch = [{ nome: 'Spectral Conch', qtd: 6, preco: 300000 }];
+ta('trExecutarCompra: teto + 10 %, sem as minhas, relê o livro antes de CADA compra', async () => {
+    const d = mercadoFalso(livroConch(), { minhas: ['m'] });
+    const r = await T.trExecutarCompra(conch, d);
+    assert.deepStrictEqual(r.feitas.map(c => [c.orderId, c.quantity, c.unitPrice]), [['b', 3, 280000], ['c', 3, 320000]]);
+    assert.deepStrictEqual(d.enviados.map(e => e[0]), ['market_list', 'market_list', 'market_execute', 'market_list', 'market_execute']);
+    assert.deepStrictEqual([r.parou, r.faltam, r.total], [null, [], 3 * 280000 + 3 * 320000]);
+});
+ta('trExecutarCompra: erro do jogo para tudo (nunca repete a ordem)', async () => {
+    const d = mercadoFalso(livroConch(), { minhas: ['m'], falhaEm: 'b' });
+    const r = await T.trExecutarCompra(conch, d);
+    assert.deepStrictEqual([r.feitas.length, d.enviados.filter(e => e[0] === 'market_execute').length], [0, 1]);
+    assert(/E:order_unavailable/.test(r.parou), r.parou); assert.deepStrictEqual(r.faltam, [{ nome: 'Spectral Conch', falta: 6 }]);
+});
+ta('trExecutarCompra: MK.parar (parar()) antes da próxima compra', async () => {
+    const d = mercadoFalso(livroConch(), { minhas: ['m'], pararDepois: true });
+    const r = await T.trExecutarCompra(conch, d);
+    assert.deepStrictEqual([r.feitas.map(c => c.orderId), r.parou], [['b'], 'parado por você']);
+    assert.strictEqual(d.enviados.filter(e => e[0] === 'market_execute').length, 1);
+});
+ta('trExecutarCompra: preço mudou na releitura → não compra aquela; quantidade real do trade; ouro desconhecido → nada', async () => {
+    let d = mercadoFalso(livroConch(), { minhas: ['m'], precoMuda: 'b' });
+    let r = await T.trExecutarCompra(conch, d);
+    assert.deepStrictEqual(r.feitas.map(c => [c.orderId, c.quantity]), [['c', 3]]); assert.deepStrictEqual(r.faltam, [{ nome: 'Spectral Conch', falta: 3 }]);
+    d = mercadoFalso(livroConch(), { minhas: ['m'], parcial: true });
+    r = await T.trExecutarCompra(conch, d);
+    assert.deepStrictEqual(r.feitas.map(c => [c.orderId, c.quantity, c.total]), [['b', 1, 280000], ['c', 1, 320000]], 'quantidade do trade, não a pedida');
+    d = mercadoFalso(livroConch(), { minhas: ['m'], ouro: null });
+    r = await T.trExecutarCompra(conch, d);
+    assert.deepStrictEqual([r.feitas.length, r.parou, d.enviados.filter(e => e[0] === 'market_execute').length], [0, 'ouro desconhecido', 0]);
 });
 process.on('exit', () => { if (!process.exitCode) console.log(`\n${n} testes ok`); });

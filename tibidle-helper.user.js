@@ -13177,7 +13177,7 @@
         }
         return null;
     }
-    // Resposta do jogo para UMA ação pendente p = { tipo, rid (null = mensagem sem requestId), espera: [types] }.
+    // Resposta do jogo para UMA ação pendente p = { tipo, rid (null = mensagem sem requestId), espera: [types], alvo? (trRespostaConfirma) }.
     //   'res' = é a resposta · 'erro' = `error` com o requestId dela (ou sem requestId: o DOM espera 1,2 s pela resposta de verdade) · null = outra.
     //   meta_result casa também por `action` (= o type enviado), quando vem.
     function trCasaResposta(p, o) {
@@ -13187,6 +13187,7 @@
         if (!Array.isArray(p.espera) || !p.espera.includes(o.type)) return null;
         if (rid != null && p.rid != null && rid !== p.rid) return null;
         if (o.type === 'meta_result' && d.action != null && d.action !== p.tipo) return null;
+        if (trRespostaConfirma(p.tipo, d, p.alvo) === false) return null; // empurrada e não confirma (outro Selo, Invasão sem inscrito): segue esperando
         return 'res';
     }
     // Compra do "Caçar itens" (comprar-mercado): só ordens de VENDA de outros, das mais baratas, nunca acima do preço do conselho + 10 %,
@@ -13228,6 +13229,57 @@
                          selo_perigo: 'Perigo alto: aceite na tela do jogo', feature_disabled: 'recurso desligado no servidor', already_hunting: 'já está caçando',
                          level_too_low: 'nível baixo', sem_socket: 'socket do jogo fechado', sem_resposta: 'o jogo não respondeu em 8 s (confira antes de repetir)',
                          nao_aplicado: 'o jogo não aplicou', nao_confirmou: 'não confirmou — confira no jogo' };
+    // Chave de conselho → texto seguro para data-k/data-tr e seletor CSS, REVERSÍVEL (não colide): encodeURIComponent com o '_' e
+    // os sinais que ele deixa passar (!'()*~) também codificados, e o '%' trocado por '_'. Sobram só [A-Za-z0-9._-].
+    // Desfaz com decodeURIComponent(k.replace(/_/g, '%')) (o teste confere).
+    const trK = (s) => encodeURIComponent(String(s == null ? '' : s)).replace(/[_!'()*~]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase()).replace(/%/g, '_');
+    // Invasão sem resposta ao invasion_join (revisão): só conta "inscrito" se o estado guardado MUDOU de não-inscrito para inscrito
+    // depois do envio (antes = cópia de antes de enviar; depois = o de agora, com o t do trLerInvasao).
+    function trInscreveuDepois(antes, depois, tEnvio) {
+        return !!depois && typeof depois === 'object' && depois.inscrito === true && trNum(depois.t) >= trNum(tEnvio) && !(antes && antes.inscrito === true);
+    }
+    // Compra do comprar-mercado com o Mercado INJETADO (o DOM passa mkPedir/mlOuroNormal/MK; o teste passa um Mercado falso).
+    //   d = { pedir(tipo, data) → Promise<{ data } | { erro }>, ouro() → número | null, minhas: Set de ids, parar() → bool, rid() → texto,
+    //         erroTxt(code) → texto, log(msg), pausa() → Promise }
+    //   1) lê o livro de cada item e monta o plano (trPlanoCompra: mais baratas de outros, teto = conselho + 10 %, dentro do ouro);
+    //   2) para cada compra: confere parar(); RELÊ o livro do item (como o pchComprar) e só compra se a ordem ainda está lá pelo MESMO
+    //      preço; a quantidade sai do que resta na ordem e do ouro de agora; a quantidade comprada é a do trade do resultado, quando vem.
+    //      Erro (inclusive sem resposta) para tudo: nunca repete uma ordem.
+    // → { feitas: [{ nome, orderId, quantity, unitPrice, total }], faltam: [{ nome, falta }], parou: texto | null, total }
+    async function trExecutarCompra(itens, d) {
+        const txt = (c) => (d.erroTxt ? d.erroTxt(c) : String(c));
+        const lista = (Array.isArray(itens) ? itens : []).filter(x => x && x.nome && trNum(x.qtd) > 0), livros = {}, feitas = [];
+        const resumo = (parou) => {
+            const faltam = lista.map(it => ({ nome: it.nome, falta: Math.floor(Number(it.qtd)) - feitas.filter(c => c.nome === it.nome).reduce((s, c) => s + c.quantity, 0) })).filter(x => x.falta > 0);
+            return { feitas, faltam, parou, total: feitas.reduce((s, c) => s + c.total, 0) };
+        };
+        for (const it of lista) {
+            const r = await d.pedir('market_list', { asset: 'ITEM', itemName: it.nome });
+            if (r.erro) return resumo(`livro de ${it.nome}: ${txt(r.erro)}`);
+            livros[trNome(it.nome)] = (r.data && r.data.orders) || [];
+        }
+        const ouro0 = d.ouro();
+        if (!Number.isFinite(trNum(ouro0))) return resumo('ouro desconhecido');
+        const plano = trPlanoCompra(lista, livros, ouro0, d.minhas);
+        if (!plano.compras.length) return resumo('nenhum anúncio até o preço do conselho + 10 %');
+        for (const c of plano.compras) {
+            if (d.parar && d.parar()) return resumo('parado por você');
+            const lr = await d.pedir('market_list', { asset: 'ITEM', itemName: c.nome });
+            if (lr.erro) return resumo(`livro de ${c.nome}: ${txt(lr.erro)}`);
+            const ord = ((lr.data && lr.data.orders) || []).find(x => x && x.id === c.orderId);
+            if (!ord || !(Number(ord.quantityRemaining) >= 1) || Number(ord.unitPrice) !== c.unitPrice) continue; // vendida ou preço mudou: não compra
+            const ouro = trNum(d.ouro());
+            const q = Math.min(c.quantity, Number(ord.quantityRemaining), Number.isFinite(ouro) ? Math.floor(ouro / c.unitPrice) : 0);
+            if (q < 1) return resumo('o ouro acabou');
+            const r = await d.pedir('market_execute', { orderId: c.orderId, quantity: q, requestId: d.rid() });
+            if (r.erro) return resumo(`${q} ${c.nome}: ${txt(r.erro)}`);
+            const tq = trNum(r.data && r.data.trade && r.data.trade.quantity), qReal = tq > 0 ? tq : q;
+            feitas.push({ nome: c.nome, orderId: c.orderId, quantity: qReal, unitPrice: c.unitPrice, total: qReal * c.unitPrice });
+            if (d.log) d.log(`comprado ${qReal} ${c.nome} a ${trQtd(c.unitPrice)}`);
+            if (d.pausa) await d.pausa();
+        }
+        return resumo(null);
+    }
     /* @@TREINADOR-PURO-FIM */
     /* @@ARENA-PURO-INICIO — Sobrevivência (2.57.0): decisões do robô, puras (o tempo é st.tempoMs, sem DOM).
      * st = estado da simulação do cliente (ref.current.st do componente da partida). O mesmo código rodou no simulador
@@ -20954,18 +21006,22 @@
      * Botões: trAcaoInfo (puro) diz o modo de cada ação; trFazer confere de novo NA HORA do clique (foto nova: socket, cidade/caçada,
      * ouro) e executa. Nada dispara sozinho; nada encadeia: cada "Fazer" é uma ação, e depois a tela recalcula (TR.ultimo = null).
      * Log: o resultado de cada ação sai como "treinador: …" (avisar = Log + faixa da aba). */
-    const TR_CACHE_MS = 60000;
-    const trK = (s) => String(s == null ? '' : s).replace(/[^\w:.-]/g, '_'); // id de conselho → chave segura (data-k, data-tr)
-    function trResultado(forcar) {
+    const TR_CACHE_MS = 60000, TR_ATUALIZAR_MS = 5000; // a tela recalcula 1× por minuto; o "Atualizar" no máximo a cada 5 s
+    const TR_TRAVA_MAPA = 'Treinador (troca de mapa)', TR_TRAVA_MERCADO = 'Treinador (Mercado)'; // _travaJogo enquanto o treinador mexe
+    // ações que vão pelo socket: recusam com a trava do jogo ocupada (ciclo, Scan, Equip, Forja, Mercado…) ou com boss em andamento
+    const TR_TIPOS_SOCKET = new Set(['lure', 'prey-escolher', 'prey-trocar', 'prey-trancar', 'bencaos', 'selo', 'boss-trocar', 'invasao', 'abrir-silas']);
+    const trOcupado = () => travaJogo() || (ESTADO_WS.boss ? 'boss' : null);
+    // foto → resultado da tela (TR.ultimo); as idades do rodapé são lidas aqui, não no template (o radar_rank guardado é grande)
+    function trCalcular(foto) {
         const agora = Date.now();
-        if (forcar || !TR.ultimo || agora - TR.ultimo.t > TR_CACHE_MS) {
-            const foto = trFoto(), r = trRodar(foto, TR_BASE);
-            // idades do rodapé lidas aqui (1× por minuto), não no template: o radar_rank guardado é grande
-            let radarH = null, nSessoes = 0;
-            try { const rk = ler('radar_rank', null); radarH = rk && rk.t > 0 ? (agora - rk.t) / TR_H : null; } catch { radarH = null; }
-            try { nSessoes = (sessoes() || []).length; } catch { nSessoes = 0; }
-            TR.ultimo = { t: agora, foto, r, radarH, nSessoes };
-        }
+        let radarH = null, nSessoes = 0;
+        try { const rk = ler('radar_rank', null); radarH = rk && rk.t > 0 ? (agora - rk.t) / TR_H : null; } catch { radarH = null; }
+        try { nSessoes = (sessoes() || []).length; } catch { nSessoes = 0; }
+        TR.ultimo = { t: agora, foto, r: trRodar(foto, TR_BASE), radarH, nSessoes };
+        return TR.ultimo;
+    }
+    function trResultado(forcar) {
+        if (forcar || !TR.ultimo || Date.now() - TR.ultimo.t > TR_CACHE_MS) trCalcular(trFoto());
         return TR.ultimo;
     }
     function trMetaHtml(c) {
@@ -20975,15 +21031,20 @@
         const cst = custo || ch ? `<span class="tr-custo ${c.semOuro ? 'tb-ruim' : 'tb-mut'}"${c.semOuro ? ' title="falta ouro livre"' : ''}>${escHtml([custo, ch].filter(Boolean).join(' + '))}</span>` : '';
         return imp + cst + `<span class="tb-tag">${escHtml(c.confianca || 'estimado')}</span>`;
     }
-    function trBotaoHtml(chave, acao, foto, comMotivo) {
+    // botão "Fazer": id em ordem fixa (o mesmo HTML repinta igual); TR.acoes guarda a ação desta geração pela chave (o clique busca lá)
+    function trBotaoHtml(chave, acao, foto, titulo) {
         const info = acao ? trAcaoInfo(acao, foto) : null;
         if (!info) return '';
-        const id = 'tr-b-' + TR.acoes.size; // id em ordem fixa: o mesmo HTML repinta igual (e o ligarTreinador acha por #id)
-        TR.acoes.set(id, { acao, chave });
+        const id = 'tr-b-' + TR.acoes.size;
+        TR.acoes.set(id, { acao, chave, dois: info.dois });
         const motivo = info.motivo || (TR.agindo ? 'espere: ' + TR.agindo : null);
-        const dica = info.dois ? 'gasta ou troca de mapa: 2 toques' : info.modo === 'tela' ? 'abre a tela do jogo' : info.modo === 'aba' ? 'abre a aba do helper' : '';
-        return `<button type="button" class="tb-bt mini tr-fazer" id="${id}" data-tr="${escHtml(chave)}"${motivo ? ' disabled' : ''} title="${escHtml(motivo || dica)}">${escHtml(info.rotulo)}</button>`
-            + (comMotivo && info.motivo ? `<span class="tb-mut tr-motivo">${escHtml(info.motivo)}</span>` : '');
+        let dica = info.modo === 'tela' ? 'abre a tela do jogo' : info.modo === 'aba' ? 'abre a aba do helper' : info.dois ? 'gasta: 2 toques' : '';
+        if (info.tipo === 'ir-mapa') { // decisão do controlador: o "Ir" não mexe na barra nem no kit
+            const h = (CAT.hunts || []).find(x => x && trMesmoId(x.id, acao.huntId));
+            dica = `vai para ${h ? h.title : 'o mapa'} com a lure salva; a barra fica como está` + (info.dois ? ' (2 toques: sai da caçada de agora)' : '');
+        }
+        return `<button type="button" class="tb-bt mini tr-fazer" id="${id}" data-tr="${escHtml(chave)}"${motivo ? ' disabled' : ''} title="${escHtml(motivo || dica)}" aria-label="${escHtml(info.rotulo + ': ' + (titulo || ''))}">${escHtml(info.rotulo)}</button>`
+            + (info.motivo ? `<span class="tb-mut tr-motivo">${escHtml(info.motivo)}</span>` : ''); // o motivo em texto também (no celular não há title)
     }
     function telaTreinador() {
         garantirCssTelas();
@@ -20999,16 +21060,18 @@
         let h = `<div class="tr-sit tb-mut">${escHtml(sit.join(' · ') || 'entre no jogo para eu ler a conta')}</div>`;
         if (TR.agindo) h += `<div class="tb-av tr-sit">fazendo: ${escHtml(TR.agindo)}…</div>`;
         const passos = r.passos.map((c, i) => `<div class="tr-c tr-passo"><span class="tr-t"><b>${i + 1}.</b> ${escHtml(c.titulo)}</span>${trMetaHtml(c)}`
-            + aj('tr-p-' + trK(c.id), escHtml(c.porque || '—')) + trBotaoHtml('p:' + trK(c.id), c.acao, foto, true) + '</div>').join('');
+            + aj('tr-p-' + trK(c.id), escHtml(c.porque || '—')) + trBotaoHtml('p:' + trK(c.id), c.acao, foto, c.titulo) + '</div>').join('');
         h += `<div class="tb-cx"><b>Próximos passos</b>${passos || '<div class="tb-mut tr-sit">nada urgente: veja os especialistas abaixo</div>'}</div>`;
-        const est = { erro: '<span class="tr-est tb-ruim">✗</span>', aviso: '<span class="tr-est tb-av">⚠</span>', ok: '<span class="tr-est tb-ok">✓</span>' };
+        // glifos com texto para leitor de tela
+        const est = { erro: '<span class="tr-est tb-ruim" role="img" aria-label="erro">✗</span>', aviso: '<span class="tr-est tb-av" role="img" aria-label="aviso">⚠</span>',
+                      ok: '<span class="tr-est tb-ok" role="img" aria-label="tudo certo">✓</span>' };
         h += r.cartoes.map(cd => {
             const linhas = cd.conselhos.map(c => `<div class="tr-c tr-linha"><span class="tr-t" title="${escHtml(c.titulo)}">${escHtml(c.titulo)}</span>`
-                + aj('tr-c-' + trK(c.id), `<div class="tr-meta">${trMetaHtml(c)}</div>${escHtml(c.porque || '—')}`) + trBotaoHtml('c:' + trK(c.id), c.acao, foto, false) + '</div>').join('');
-            return `<details class="tr-card" data-k="tr-card-${trK(cd.id)}"><summary><span class="tr-ic">${escHtml(cd.icone)}</span>${escHtml(cd.nome)}${est[cd.estado] || est.aviso}`
+                + aj('tr-c-' + trK(c.id), `<div class="tr-meta">${trMetaHtml(c)}</div>${escHtml(c.porque || '—')}`) + trBotaoHtml('c:' + trK(c.id), c.acao, foto, c.titulo) + '</div>').join('');
+            return `<details class="tr-card" data-k="tr-card-${trK(cd.id)}"><summary><span class="tr-ic" aria-hidden="true">${escHtml(cd.icone)}</span>${escHtml(cd.nome)}${est[cd.estado] || est.aviso}`
                 + `<span class="tb-mut tr-n">${cd.conselhos.length}</span></summary>${linhas || '<div class="tb-mut tr-sit">—</div>'}</details>`;
         }).join('');
-        // rodapé: idade dos dados, Atualizar, Comparar com o topo (com progresso e Cancelar) e as sessões do Analisador
+        // rodapé: idade dos dados, Atualizar, Comparar com o topo (com progresso e Cancelar) e as sessões medidas
         const medidos = foto.mapas.filter(m => m.fonte === 'medido').length, fj = foto.forja;
         const idades = [`Radar ${trIdadePt(u.radarH)}`, `Forja ${trIdadePt(fj && fj.idadeH)}`, `Topo ${trIdadePt(tp && tp.idadeH)}`, `${medidos} ${medidos === 1 ? 'mapa medido' : 'mapas medidos'}`];
         h += `<div class="tr-rod tb-mut">${escHtml(idades.join(' · '))} · calculado ${trIdadeMin(Date.now() - u.t)}</div>`;
@@ -21030,15 +21093,15 @@
     const trIdadeMin = (ms) => (ms < 60000 ? 'agora' : `há ${Math.round(ms / 60000)} min`);
     function ligarTreinador() {
         const c = $('#tb-corpo'); if (!c) return;
-        const foto = TR.ultimo ? TR.ultimo.foto : null;
-        for (const [id, { acao, chave }] of TR.acoes) {
-            const btn = $('#' + id), info = btn ? trAcaoInfo(acao, foto) : null;
-            if (!info) continue;
-            if (info.dois) ligarDoisToques(btn, 'tr:' + chave, 'confirmar?', () => trFazer(acao, true)); // só o 2º toque confirma
-            else btn.onclick = () => trFazer(acao, false);
+        for (const [id, { chave, dois }] of TR.acoes) {
+            const btn = $('#' + id);
+            if (!btn) continue;
+            if (dois) ligarDoisToques(btn, 'tr:' + chave, 'confirmar?', () => trClique(chave, true)); // só o 2º toque confirma
+            else btn.onclick = () => trClique(chave, false);
         }
-        const at = $('#tr-atualizar'); if (at) at.onclick = () => { TR.ultimo = null; renderizar(); };
-        const tp = $('#tr-topo'); if (tp) tp.onclick = () => trFazer({ tipo: 'ler-topo' });
+        const at = $('#tr-atualizar');
+        if (at) at.onclick = () => { if (TR.ultimo && Date.now() - TR.ultimo.t < TR_ATUALIZAR_MS) return; TR.ultimo = null; renderizar(); }; // freio de 5 s
+        const tp = $('#tr-topo'); if (tp) tp.onclick = () => trFazer({ tipo: 'ler-topo' }, false);
         const cn = $('#tr-cancelar'); if (cn) cn.onclick = () => { TR.topo.cancelar = true; renderizar(); };
         const exp = $('#tb-exportar');
         if (exp) {
@@ -21063,23 +21126,25 @@
         const lim = $('#tb-limpar-sessoes');
         if (lim) ligarDoisToques(lim, 'limpar-sessoes', 'apagar?', () => { guardar('sessoes', []); TR.ultimo = null; avisar('treinador', 'histórico de sessões apagado', 'ok'); renderizar(); });
     }
-    /* Uma ação do jogo pelo socket, esperando a resposta (8 s): { ok, type, data } | { erro: code }. Uma de cada vez (TR.pend);
-     * o casamento da resposta é o trCasaResposta (puro), chamado pelo trObservar. Erro sem requestId: espera 1,2 s pela resposta de verdade. */
+    /* Uma ação do jogo pelo socket, esperando a resposta (8 s): { ok, type, data, enviado } | { erro: code }. Uma de cada vez (TR.pend);
+     * o casamento é o trCasaResposta (puro), chamado pelo trObservar: mensagem que não confirma (selo_state de outro Selo, Invasão sem
+     * inscrito === true) é ignorada e a espera segue (opc.alvo = o que a ação pediu). Erro sem requestId: espera 1,2 s pela resposta certa.
+     * Limite aceito (revisão, item 8): um `error` sem requestId de OUTRO fluxo (Mercado, Scan) nessa janela é tomado como desta ação. */
     async function trPedir(tipo, data, espera, opc) {
         if (!socketAberto()) return { erro: 'sem_socket' };
         if (TR.pend) return { erro: 'ocupado' };
         const semRid = !!(opc && opc.semRid), rid = semRid ? null : mkRid();
-        const p = TR.pend = { tipo, rid, espera, res: null, erro: null };
+        const p = TR.pend = { tipo, rid, espera, alvo: (opc && opc.alvo) || null, res: null, erro: null };
         try { enviarWS({ type: tipo, data: semRid ? data : Object.assign({}, data, { requestId: rid }) }); } catch { TR.pend = null; return { erro: 'sem_socket' }; }
-        await esperarQue(() => p.res || (p.erro && (p.erro.meu || Date.now() - p.erro.t >= MK_GRACA_ERRO_MS)), MK_PRAZO_MS, 100);
-        if (TR.pend === p) TR.pend = null;
+        try { await esperarQue(() => p.res || (p.erro && (p.erro.meu || Date.now() - p.erro.t >= MK_GRACA_ERRO_MS)), MK_PRAZO_MS, 100); }
+        finally { if (TR.pend === p) TR.pend = null; }
         if (p.res) return { ok: true, type: p.res.type, data: p.res.data, enviado: tipo };
         if (p.erro) return { erro: p.erro.code };
         return { erro: 'sem_resposta' };
     }
     const trErroTxt = (code) => TR_ERRO_PT[code] || mkErroTexto(code);
     // resposta → resultado da tela; meta_result com applied:false = o jogo recusou (o notice diz por quê)
-    // alvo = o que a ação pediu ({ huntId } do Selo) para o trRespostaConfirma
+    // alvo = o que a ação pediu ({ huntId } do Selo) para o trRespostaConfirma (defesa a mais: o trCasaResposta já filtra)
     function trResposta(r, nome, okMsg, alvo) {
         if (r.erro) return { erro: true, code: r.erro, msg: `${nome}: ${trErroTxt(r.erro)}` };
         const d = r.data || {};
@@ -21108,6 +21173,13 @@
         default: return false;
         }
     }
+    // clique de um botão da tela: a ação vem de TR.acoes pela chave (a geração ATUAL da tela, não a do momento em que o botão foi ligado)
+    function trClique(chave, confirmado) {
+        let acao = null;
+        for (const v of TR.acoes.values()) if (v.chave === chave) { acao = v.acao; break; }
+        if (!acao) { avisar('treinador', 'treinador: a tela mudou — toque de novo', 'erro'); renderizar(); return null; }
+        return trFazer(acao, confirmado);
+    }
     // confirmado = true só quando o clique veio do 2º toque (ligarDoisToques)
     async function trFazer(acao, confirmado) {
         if (!acao) return;
@@ -21117,7 +21189,8 @@
         const dec = trDecidirClique(acao, foto, confirmado), info = dec.info;
         if (!dec.executa) {
             avisar('treinador', `treinador: ${info ? info.rotulo : acao.tipo} — ${dec.aviso}`, 'erro');
-            TR.ultimo = null; renderizar(); // a tela redesenha pela foto nova (com 2 toques, se for o caso)
+            try { if (foto) trCalcular(foto); else TR.ultimo = null; } catch { TR.ultimo = null; } // redesenha com a foto nova (2 toques, se for o caso)
+            renderizar();
             return;
         }
         if (info.modo === 'aba') {
@@ -21125,12 +21198,14 @@
             ABA = info.aba; guardarUI({ aba: info.aba, aberta: true }); renderizar();
             return;
         }
+        TR.agindo = info.rotulo; renderizar();
         if (info.modo === 'tela') {
-            const ok = await trAbrirTela(info.tela);
+            let ok = false;
+            try { ok = await trAbrirTela(info.tela); } finally { TR.agindo = null; }
             avisar('treinador', ok ? `treinador: abri ${TR_TELA_PT[info.tela]} no jogo` : `treinador: não achei ${TR_TELA_PT[info.tela]} na tela — abra no jogo`, ok ? 'ok' : 'erro');
+            renderizar();
             return;
         }
-        TR.agindo = info.rotulo; renderizar();
         let r = null;
         try { r = await trExecutar(acao); } catch (e) { r = { erro: true, msg: info.rotulo + ': ' + e.message }; falhou('treinador (' + acao.tipo + ')', e); }
         finally { TR.agindo = null; TR.ultimo = null; }
@@ -21142,6 +21217,10 @@
     }
     async function trExecutar(acao) {
         const n = (v) => Number(v), vazio = { erro: true, msg: 'socket do jogo fechado: dê F5 com o helper instalado' };
+        if (TR_TIPOS_SOCKET.has(acao.tipo)) {
+            if (!socketAberto()) return vazio;
+            const ocup = trOcupado(); if (ocup) return { erro: true, msg: `espere o ${ocup} terminar` };
+        }
         switch (acao.tipo) {
         case 'ler-topo': {
             const t = await trLerTopo();
@@ -21151,17 +21230,24 @@
             await fjLer();
             return FJ.erro ? { erro: true, msg: 'Forja: ' + FJ.erro } : { msg: 'Forja recalculada' };
         case 'ir-mapa': {
+            // decisão do controlador: só ENTRA no mapa, com a lure salva daquela caçada (lureTierByHunt), sem aplicar kit nem mexer na barra.
+            // scanEntrar encerra a caçada de agora como o helper já faz (stop → ended → start_hunt) e confere a entrada; trava o jogo no meio.
             const h = (CAT.hunts || []).find(x => x && trMesmoId(x.id, acao.huntId));
             if (!h) return { erro: true, msg: 'mapa ' + acao.huntId + ' fora do catálogo' };
-            log('treinador: ir para ' + h.title, 'info');
-            await scanIrPara(h.id); // trava do jogo, boss e socket conferidos lá; o resultado detalhado vai para o Log
-            return trMesmoId(ESTADO_WS.huntId, h.id) ? { msg: 'em ' + h.title } : { erro: true, msg: 'não entrei em ' + h.title + ' (veja o Log)' };
+            if (!socketAberto()) return vazio;
+            if (trMesmoId(ESTADO_WS.huntId, h.id) && frameFresco()) return { msg: 'já está em ' + h.title };
+            const ocup = trOcupado(); if (ocup) return { erro: true, msg: `espere o ${ocup} terminar` };
+            const salvo = trNum((ESTADO_WS.lureTierByHunt || {})[h.id]), lure = salvo >= 1 ? salvo : 1;
+            log(`treinador: ir para ${h.title} (lure ${lure}; a barra fica como está)`, 'info');
+            _travaJogo = TR_TRAVA_MAPA; renderizar();
+            let r;
+            try { r = await scanEntrar(h, { lure }); } finally { if (_travaJogo === TR_TRAVA_MAPA) _travaJogo = null; }
+            if (r && r.erro) return { erro: true, msg: `não entrei em ${h.title}: ${r.erro}` };
+            return trMesmoId(ESTADO_WS.huntId, h.id) ? { msg: `em ${h.title} (lure ${lure})` } : { erro: true, msg: 'não entrei em ' + h.title + ' (veja o Log)' };
         }
         case 'lure': {
             const lure = n(acao.lure);
-            if (!socketAberto()) return vazio;
             if (!frameFresco() || !trMesmoId(ESTADO_WS.huntId, acao.huntId)) return { erro: true, msg: 'a lure muda só dentro da caçada' };
-            const ocup = travaJogo(); if (ocup) return { erro: true, msg: ocup + ' em andamento' };
             ESTADO_WS.ultimoErro = null;
             enviarWS({ type: 'set_lure', data: { tier: lure } }); // tier = índice do degrau (o mesmo do Scan)
             const ok = await esperarQue(() => frameFresco() && Number(ESTADO_WS.frame.lureTier) === lure, MK_PRAZO_MS, 250); // 8 s, como as outras ações
@@ -21186,9 +21272,10 @@
         case 'bencaos': // o servidor pode pedir a cidade (não confirmado ao vivo): o not_in_city volta como "só na cidade"
             return trResposta(await trPedir('buy_all_blessings', {}, ['meta_result']), 'bênçãos', 'bênçãos compradas');
         case 'selo': { // só chega aqui com Abundante no Selo desta caçada (trAcaoInfo); selo_ligar não leva requestId (protocolo)
-            // "ligado" só com o selo_state mostrando o Selo DESTA caçada ligado (trRespostaConfirma)
-            const r = trResposta(await trPedir('selo_ligar', { huntId: n(acao.huntId) }, ['selo_state'], { semRid: true }), 'Selo', 'Selo ligado', { huntId: acao.huntId });
-            if (r.code === 'selo_perigo') await trAbrirTela('selo'); // perigo > 5 pede o "aceitar" do dono na tela do jogo
+            // só vale o selo_state com o Selo DESTA caçada ligado (os outros são ignorados no trCasaResposta); sem ele em 8 s = não confirmou
+            const alvo = { huntId: acao.huntId }, rr = await trPedir('selo_ligar', { huntId: n(acao.huntId) }, ['selo_state'], { semRid: true, alvo });
+            const r = rr.erro === 'sem_resposta' ? { erro: true, code: 'nao_confirmou', msg: 'Selo: ' + trErroTxt('nao_confirmou') } : trResposta(rr, 'Selo', 'Selo ligado', alvo);
+            if (r.code === 'selo_perigo' || r.code === 'nao_confirmou') await trAbrirTela('selo'); // perigo > 5 pede o "aceitar" do dono na tela do jogo
             return r;
         }
         case 'boss-trocar': {
@@ -21199,12 +21286,13 @@
             return r;
         }
         case 'invasao': {
-            // a resposta exata do invasion_join está "a confirmar" no protocolo: "inscrito" só com inscrito === true no invasion_update/meta
-            // (trRespostaConfirma); sem resposta, vale o estado guardado se ele diz inscrito === true (veio de um invasion_update/meta)
-            const r = await trPedir('invasion_join', {}, ['invasion_update', 'meta_result']);
-            const guardado = ESTADO_WS.tr && ESTADO_WS.tr.invasao && ESTADO_WS.tr.invasao.inscrito === true;
-            const res = r.erro === 'sem_resposta' ? (guardado ? { msg: 'inscrito na Invasão' } : { erro: true, code: 'nao_confirmou', msg: 'Invasão: ' + trErroTxt('nao_confirmou') })
-                : trResposta(r, 'Invasão', 'inscrito na Invasão');
+            // a resposta exata do invasion_join está "a confirmar" no protocolo: só vale inscrito === true no invasion_update/meta (o
+            // trCasaResposta ignora o resto); sem resposta, só se o estado guardado passou de não-inscrito a inscrito DEPOIS do envio
+            const inv0 = ESTADO_WS.tr && ESTADO_WS.tr.invasao ? Object.assign({}, ESTADO_WS.tr.invasao) : null, tEnvio = Date.now();
+            const rr = await trPedir('invasion_join', {}, ['invasion_update', 'meta_result']);
+            const res = rr.erro === 'sem_resposta'
+                ? (trInscreveuDepois(inv0, ESTADO_WS.tr && ESTADO_WS.tr.invasao, tEnvio) ? { msg: 'inscrito na Invasão' } : { erro: true, code: 'nao_confirmou', msg: 'Invasão: ' + trErroTxt('nao_confirmou') })
+                : trResposta(rr, 'Invasão', 'inscrito na Invasão');
             if (res.code === 'nao_confirmou') { if (await trAbrirTela('invasao')) res.msg += ' (abri o ícone da Invasão)'; }
             return res;
         }
@@ -21221,42 +21309,31 @@
             return { erro: true, msg: 'ação sem execução: ' + acao.tipo };
         }
     }
-    /* comprar-mercado: relê o livro de cada item AGORA e compra das ordens de venda mais baratas de outros, nunca acima do preço do
-     * conselho + 10 % (trPlanoCompra), dentro do ouro normal. A fila do Mercado (mkPedir) dá o ritmo; sem resposta = para (não repete). */
+    /* comprar-mercado: trExecutarCompra (puro, Mercado injetado) com a fila do Mercado (mkPedir dá o ritmo). Segura a trava do jogo
+     * e o MK.ocupado como o anunciar do Mercado; MK.parar (o "parar" do Mercado) é conferido antes de cada compra e zerado no fim.
+     * Ouro normal desconhecido = não compra; as suas ordens nunca lidas = lê antes (pela fila), para não comprar de você mesmo. */
     async function trComprarMercado(itens) {
-        const imp = mkImpedimento(); if (imp) return { erro: true, msg: 'Mercado: ' + imp };
+        const imp = mkImpedimento(); if (imp) return { erro: true, msg: 'Mercado: ' + imp }; // socket, Premium e travaJogo() ocupada
         if (MK.ocupado) return { erro: true, msg: 'o Mercado está ocupado (' + MK.ocupado + ')' };
-        MK.ocupado = 'treinador';
+        if (mlOuroNormal() == null) return { erro: true, msg: 'ouro desconhecido: abra o Mercado no jogo e tente de novo — nada comprado' };
+        MK.ocupado = 'treinador'; MK.parar = false; _travaJogo = TR_TRAVA_MERCADO;
         try {
-            const lista = (Array.isArray(itens) ? itens : []).filter(x => x && x.nome && trNum(x.qtd) > 0), livros = {};
-            for (const it of lista) {
-                const r = await mkPedir('market_list', { asset: 'ITEM', itemName: it.nome });
-                if (r.erro) return { erro: true, msg: `livro de ${it.nome}: ${mkErroTexto(r.erro)} — nada comprado` };
-                livros[trNome(it.nome)] = (r.data && r.data.orders) || [];
-            }
-            // ouro normal desconhecido = não compra (o plano sem ouro não teria limite); minhas ordens nunca lidas = lê antes (pela fila)
-            const ouro = mlOuroNormal();
-            if (ouro == null) return { erro: true, msg: 'ouro desconhecido: abra o Mercado no jogo e tente de novo — nada comprado' };
             if (!Array.isArray(MK.minhas)) {
                 const rm = await mkLerMinhas();
                 if ((rm && rm.erro) || !Array.isArray(MK.minhas)) return { erro: true, msg: 'não li as suas ordens do Mercado' + (rm && rm.erro ? ' (' + mkErroTexto(rm.erro) + ')' : '') + ' — nada comprado' };
             }
-            const plano = trPlanoCompra(lista, livros, ouro, new Set(MK.minhas.map(o => o && o.id)));
-            if (!plano.compras.length) return { erro: true, msg: 'nenhum anúncio até o preço do conselho + 10 % — nada comprado' };
-            const feitas = [];
-            let parou = null;
-            for (const c of plano.compras) {
-                const r = await mkPedir('market_execute', { orderId: c.orderId, quantity: c.quantity, requestId: mkRid() });
-                if (r.erro) { parou = `parei em ${c.quantity} ${c.nome}: ${r.erro === 'sem_resposta' ? 'sem resposta, confira a mochila antes de repetir' : mkErroTexto(r.erro)}`; break; }
-                feitas.push(c);
-                log(`treinador: comprado ${c.quantity} ${c.nome} a ${mkFmt(c.unitPrice)} (${mkFmt(c.total)})`, 'ok');
-                await dorme(400);
-            }
-            const gasto = feitas.reduce((s, c) => s + c.total, 0), qtd = feitas.reduce((s, c) => s + c.quantity, 0);
-            const falta = plano.faltam.map(x => `${x.falta} ${x.nome}`);
-            return { erro: !feitas.length || !!parou, msg: (feitas.length ? `comprei ${qtd} ${qtd > 1 ? 'itens' : 'item'} por ${mkFmt(gasto)}` : 'nada comprado')
-                + (falta.length ? `; sem anúncio até o teto: ${falta.join(', ')}` : '') + (parou ? '; ' + parou : '') };
-        } finally { if (MK.ocupado === 'treinador') MK.ocupado = null; }
+            const r = await trExecutarCompra(itens, {
+                pedir: mkPedir, ouro: mlOuroNormal, minhas: new Set(MK.minhas.map(o => o && o.id)), parar: () => !!MK.parar, rid: mkRid,
+                erroTxt: (c) => (c === 'sem_resposta' ? 'sem resposta, confira a mochila antes de repetir' : mkErroTexto(c)),
+                log: (m) => log('treinador: ' + m, 'ok'), pausa: () => dorme(400) });
+            const qtd = r.feitas.reduce((s, c) => s + c.quantity, 0), falta = r.faltam.map(x => `${x.falta} ${x.nome}`);
+            return { erro: !r.feitas.length || !!r.parou, msg: (r.feitas.length ? `comprei ${qtd} ${qtd > 1 ? 'itens' : 'item'} por ${mkFmt(r.total)}` : 'nada comprado')
+                + (falta.length ? `; faltam ${falta.join(', ')}` : '') + (r.parou ? '; ' + r.parou : '') };
+        } finally {
+            if (MK.ocupado === 'treinador') MK.ocupado = null;
+            MK.parar = false;
+            if (_travaJogo === TR_TRAVA_MERCADO) _travaJogo = null;
+        }
     }
     /* @@TREINADOR-FIM */
     /* @@ARENA-INICIO — aba Sobrevivência ☠ (2.57.0, dono 26/11: "colocar na nossa automação para fazer automaticamente").
