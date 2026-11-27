@@ -174,4 +174,11 @@ t('2.63.0: abertura estrita — magia fora da build troca a oferta enquanto sobr
     const haste = { especie: 'passiva-nova', passiva: 'Haste' };
     assert.strictEqual(A.svNotaCarta(st, haste, C3), 200, 'par de magia da build que ainda não veio reserva a vaga');
 });
+t('2.65.0 — começo (até 4:00) mói com peso 3: fica perto do bicho em vez de ir à fogueira; depois vai', () => {
+    const st = (T) => estado({ tempoMs: T, bichos: [bicho(1, -3, -1)], fogueiras: [{ id: 5, x: 5, y: 0 }] });
+    assert.strictEqual(A.SV_CFG.pesoMoerCedo, 3); assert.strictEqual(A.SV_CFG.moerCedoMs, 240000);
+    assert.deepStrictEqual(A.svDecidir(st(60000), {}, A.SV_CFG), [0, 0], 'aos 1:00 segura a moagem');
+    assert.deepStrictEqual(A.svDecidir(st(300000), {}, A.SV_CFG), [1, 0], 'aos 5:00 vai à fogueira');
+});
+
 console.log(`\n${n} testes ok`);

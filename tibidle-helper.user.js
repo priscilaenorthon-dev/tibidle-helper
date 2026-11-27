@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.64.3
+// @version      2.65.0
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.64.3';
+    const VERSAO = '2.65.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -11634,7 +11634,11 @@
         /* 2.61.0 — baú do boss sempre (puxão próprio, sem a moagem); boss só enquanto falta ultimate, depois distância dele */
         bauSempre: true, pesoBau: 4, cacarSemUlt: false, pesoFogeBoss: 5, distFogeBoss: 4,
         /* 2.63.0 — fuga do aviso sem vai-e-volta e sem entrar na horda (simulador, 48 partidas, 5 buffs, 3 trocas: 135,5 → 136,2) */
-        fugaFica: 1, fugaHorda: 1, fugaLivres: 3
+        fugaFica: 1, fugaHorda: 1, fugaLivres: 3,
+        /* 2.65.0 — ao vivo 26/11 (139 aos 15:12, vida 100 % no fim): ~6 de ameaça perdidos até 3:30 porque a cota não enchia.
+         * Moer com peso 3 até 4:00 (simulador, 36 partidas novas, 5 buffs, 3 trocas): perda do começo 4,7 → 2,8; quem chega aos 15:00
+         * fecha em 142,5 de média contra 141,0 (máx. 144). */
+        moerCedoMs: 240000, pesoMoerCedo: 3
     };
     const SV_DIRS = []; for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) if (dx || dy) SV_DIRS.push([dx, dy]);
     /* 2.59.0 — árvores e pedras do chão bloqueiam o Knight (motor: nl/nc/nd + cfg.paletaDoChao, lido em 26/11). O robô não sabia:
@@ -11868,7 +11872,9 @@
             if (C.pesoMoer && hp >= C.vidaMoer && !st.reaper && !reta && !(B.alvo && B.alvo.tipo === 'bau') && !(C.moerAte && agora >= C.moerAte) && !(C.moerAvisos && (st.avisos || []).length >= C.moerAvisos)) {
                 let dens = 0; const r = C.raioMoer;
                 for (const b of st.bichos) if (!b.ehBoss && Math.abs(b.x - x1) <= r && Math.abs(b.y - y1) <= r) dens++;
-                nota += C.pesoMoer * Math.min(dens, C.densMax) * (hp - C.vidaMoer) / (1 - C.vidaMoer);
+                /* 2.65.0 — começo: poucos bichos no mapa e a cota (50 vidas de bicho) leva 47, 26, 18 s por degrau → moer mais forte */
+                const pm = agora < (C.moerCedoMs || 0) ? (C.pesoMoerCedo || C.pesoMoer) : C.pesoMoer;
+                nota += pm * Math.min(dens, C.densMax) * (hp - C.vidaMoer) / (1 - C.vidaMoer);
             }
             if (B.alvo && B.alvo.tipo === 'boss') {
                 /* fica no anel de distância distBoss do boss (as áreas em volta do Knight pegam, o golpe dele nem sempre) */

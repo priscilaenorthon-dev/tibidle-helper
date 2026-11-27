@@ -7742,3 +7742,20 @@ no lugar do Haste).
   raridade, manda o preço MEDIDO (2.64.0) — limitado pela comparação antiga (acima da inferior +1, abaixo da melhor −1; nota "acima da
   inferior a…"/"abaixo da melhor a…"). Com os dados ao vivo (68 peças): 9 preços mudaram (trousers 385 mil → 27 mil, royal helmet 364 mil →
   69 mil, guardian shield 440 → 221 mil, chain helmet Épico 62 → 34 mil, crystal sword 3,7 → 20–50 mil). 2 testes novos (54).
+
+## 2.65.0 (26/11, noite) — Sobrevivência: moer forte no começo; equipamento não muda a ameaça inicial
+- Dono: "tem equipamento para melhorar o set do Cavaleiro antes de entrar?" e "no final, com a vida cheia, você aumenta meu dano ou a cura?".
+- **Ao vivo (u2tag, 2.64.3, 5 buffs, 3 trocas)**: 139 aos 15:12, sobreviveu ao Reaper (iguala o melhor, 140). Vida 100 % quase a
+  partida inteira (mínimo 62 % aos 11:53), as 4 magias com ultimate aos 9:21. Gravador 2×/s: dos ~3:45 ao fim a ameaça sobe a cada
+  12 s cravados com a cota cheia (50/50) — **não falta dano no fim**. Com vida > 80 % o robô pega `limite` (+8 % de dano), nunca poção.
+  Os pontos se perdem no começo: 20 bichos no mapa (+5 por degrau) e os primeiros degraus levam 47, 12, 26, 18, 17, 13, 15 s (~6 de ameaça).
+- **Ameaça inicial**: vem do servidor no `run_welcome` (`retrato.degrauInicial`, com `forca`). Teste com pinos (partida sem buff, encerrada
+  em seguida): War axe (ataque 48) → forca 177 / degrau 70; War axe + Golden armor + Steel shield/helmet + Leather boots + Trousers
+  (armadura 44→26, defesa 38→21) → forca 177 / degrau 70. **O equipamento não mexe na ameaça inicial**; forca acompanha o level
+  (173 no 244, 177 no 247). Teto da u2tag = 70 + 75 ≈ 145. O 1º (SDNunoh, nível 478) faz 188.
+- Agente (motor): na partida contam ataque da arma, skill, `dano_fisico`/`dano_magico`, crítico, vida máxima, absorção física,
+  `regen_vida`; regen de mana, potência, `max_mana`, `cura_propria`, imbuement não. Simulador: +20 % de ataque/vida ≈ +2 (ruído) →
+  não vale comprar peça só para o modo. Tela "Equipamento da partida" pina por slot (também peças vestidas pelos outros 3).
+- **Mudança**: `SV_CFG.moerCedoMs 240000, pesoMoerCedo 3` — até 4:00 a moagem pesa 3 (0,8 depois). Simulador, 36 sementes novas:
+  perda do começo 4,7 → 2,8; quem chega aos 15:00 fecha em 142,5 contra 141,0 (máx. 144). Testados: peso 2 até 3:30 (perda 3,6) e
+  peso 5 + densMax 20 (sem ganho a mais, menos partidas chegam ao fim). Teste novo em `testes/arena.test.js`.
