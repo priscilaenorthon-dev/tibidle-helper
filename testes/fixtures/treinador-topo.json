@@ -6,17 +6,6 @@
     "nivel": 484
   },
   "idadeH": 1,
-  "eu": {
-    "nivel": 250,
-    "skills": {
-      "melee": 64,
-      "dist": 68,
-      "ml": {
-        "SORCERER": 56,
-        "DRUID": 62
-      }
-    }
-  },
   "perto": [
     {"nome":"P1","nivel":484,"skills":{"melee":82,"dist":85,"ml":{"SORCERER":69,"DRUID":71}}},
     {"nome":"P2","nivel":473,"skills":{"melee":81,"dist":84,"ml":{"SORCERER":67,"DRUID":70}}},

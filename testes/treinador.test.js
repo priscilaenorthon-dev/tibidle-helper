@@ -506,6 +506,9 @@ t('upar: lure com lureTiers (Shadow Nexus 3/5/7/8) limitada por spawn → 2 → 
     // degrau que mais que dobra as criaturas (bruto 300) fica no teto de 40, e o porquê diz que cortou
     l = acoes(T.trAgenteUpar(foto(Object.assign({ hunt: huntSN({ lure: 1, lureTiers: [{ min: 1, max: 2 }, { min: 4, max: 5 }] }), medidoAtual: { xpH: 540000, min: 10, abatesH: 330 } }, base)), T.TR_BASE), 'lure');
     assert.strictEqual(l[0].impacto, 40); assert(/teto do modelo/.test(l[0].porque), l[0].porque);
+    // degrau com faixa [min, max] → usa a média: [4–6] → [5–7] = 5 → 6 criaturas = +20 %
+    l = acoes(T.trAgenteUpar(foto(Object.assign({ hunt: huntSN({ lure: 1, lureTiers: [{ min: 4, max: 6 }, { min: 5, max: 7 }] }), medidoAtual: { xpH: 540000, min: 10, abatesH: 330 } }, base)), T.TR_BASE), 'lure');
+    assert(Math.abs(l[0].impacto - 20) < 1e-9, String(l[0].impacto)); assert(/5 → 6/.test(l[0].porque), l[0].porque);
     // lureTiers incompleto → volta ao modelo antigo (min(100/lure, 25))
     l = acoes(T.trAgenteUpar(foto(Object.assign({ hunt: huntSN({ lure: 2, lureTiers: [{ min: 3 }] }), medidoAtual: { xpH: 540000, min: 10, abatesH: 650 } }, base)), T.TR_BASE), 'lure');
     assert.strictEqual(l[0].impacto, 25);
@@ -531,6 +534,7 @@ const partyTopo = (o) => {
 t('topo: fixture anônima (9 perfis visíveis, 80 no "perto", sem nome de jogador)', () => {
     assert.strictEqual(TOPO.perfis.length, 9); assert.strictEqual(TOPO.perto.length, 80);
     assert(TOPO.perto.every(p => /^P\d+$/.test(p.nome))); assert(TOPO.perfis.every(p => !('nome' in p)));
+    assert(!('eu' in TOPO), 'sem o bloco "eu" (dado da conta)');
 });
 t('topo: magos sem magma legs (7 de 9 no topo) → sugere, comunidade, impacto 3, preço do Mercado (sem maiúsculas)', () => {
     const f = foto({ nivel: 250, topo: topoDe(), precos: { 'Magma Legs': 900000 },
@@ -590,7 +594,7 @@ t('topo: ml do topo por vocação (Feiticeiro 57 × 60 não avisa; 56 avisa)', (
     assert.deepStrictEqual(sk(), ['SORCERER']);
 });
 t('topo: sem topo ou topo velho (idadeH 30) → só "Comparar com o topo do rank" (ler-topo, impacto 1)', () => {
-    for (const topo of [null, topoDe({ idadeH: 30 })]) {
+    for (const topo of [null, topoDe({ idadeH: 30 }), topoDe({ idadeH: undefined })]) { // sem idadeH = não sei a idade = velho
         const cs = T.trAgenteTopo(foto({ nivel: 250, topo, party: partyTopo({ SORCERER: { legs: 'blue legs' } }) }), T.TR_BASE);
         assert.strictEqual(cs.length, 1); assert.strictEqual(cs[0].acao && cs[0].acao.tipo, 'ler-topo');
         assert.strictEqual(cs[0].impacto, 1); assert.strictEqual(cs[0].confianca, 'estimado');
@@ -607,6 +611,13 @@ t('topo: < 3 perfis na faixa (nível..nível+150) → "Poucos perfis visíveis",
 t('topo: foto vazia → ler-topo; registrado em TR_AGENTES', () => {
     assert.deepStrictEqual(T.trAgenteTopo(T.trFotoVazia(), T.TR_BASE).map(c => c.acao && c.acao.tipo), ['ler-topo']);
     assert(T.TR_AGENTES.some(a => a.id === 'topo' && a.rodar === T.trAgenteTopo && a.icone === '♛'));
+});
+t('topo: sem skills comparadas, o "ok" não fala de skill', () => {
+    const party = partyTopo().map(m => Object.assign({}, m, { skills: {} }));
+    const cs = T.trAgenteTopo(foto({ nivel: 250, topo: topoDe(), party }), T.TR_BASE);
+    assert.deepStrictEqual(cs.map(c => c.estado), ['ok']); assert(!/skill/i.test(cs[0].porque), cs[0].porque);
+    const comSkill = T.trAgenteTopo(foto({ nivel: 250, topo: topoDe(), party: partyTopo() }), T.TR_BASE)[0];
+    assert(/skill/i.test(comSkill.porque), comSkill.porque);
 });
 
 // ── Task 8: Onde estou errando

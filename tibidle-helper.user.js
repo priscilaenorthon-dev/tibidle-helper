@@ -12139,7 +12139,7 @@
         // Lure: só com evidência (≥ 1 sessão aqui ou ≥ 5 min medidos), sem morte nas 2 últimas sessões daqui (em ordem de tempo,
         // a última no fim) e sem morte nesta caçada em 7 dias. Modelo (teto de spawn = porLure × lure):
         //   limitada por DANO → mais criatura não vira abate: não sugere;
-        //   limitada por SPAWN → com hunt.lureTiers (criaturas por degrau, lure 1 = [0]): min((criaturas do próximo ÷ de agora − 1) × 100, 40);
+        //   limitada por SPAWN → com hunt.lureTiers (criaturas por degrau, lure 1 = [0]; média (min+max)/2 do degrau): min((próximo ÷ agora − 1) × 100, 40);
         //     sem lureTiers, o teto sobe 1/lure: min(100/lure, 25);
         //   sem saber → 8 por degrau (estimado, como antes).
         const lure = hunt ? trNum(hunt.lure) : NaN, maxLure = hunt ? trNum(hunt.maxLure) : NaN;
@@ -12150,13 +12150,14 @@
             const lim = trLimitadoPorDano(foto, b);
             if (evidencia && semMorte && lim !== true) {
                 const tiers = Array.isArray(hunt.lureTiers) ? hunt.lureTiers : [];
-                const cAgora = trNum((tiers[lure - 1] || {}).min), cProx = trNum((tiers[lure] || {}).min);
+                const media = (d) => { const mn = trNum(d && d.min), mx = trNum(d && d.max); return Number.isFinite(mx) ? (mn + mx) / 2 : mn; };
+                const cAgora = media(tiers[lure - 1]), cProx = media(tiers[lure]);
                 const porCriatura = lim === false && cAgora > 0 && cProx > 0; // número real de criaturas por degrau
                 const bruto = porCriatura ? (cProx - cAgora) / cAgora * 100 : null;
                 const n = lure + 1, imp = porCriatura ? Math.min(bruto, 40) : lim === false ? Math.min(100 / Math.max(1, lure), 25) : 8;
                 out.push(trConselho('upar', 'lure', { titulo: `Subir a lure para ${n}`, impacto: imp,
                     porque: `Lure ${lure} de ${maxLure} e nenhuma morte aqui nas últimas sessões. `
-                        + (porCriatura ? `A caçada está limitada por spawn: a lure ${n} leva de ${cAgora} → ${cProx} criaturas por onda (≈ +${Math.round(imp)} % de XP/h${bruto > 40 ? ', teto do modelo' : ''}).`
+                        + (porCriatura ? `A caçada está limitada por spawn: a lure ${n} leva de ${trPct(cAgora)} → ${trPct(cProx)} criaturas por onda (≈ +${Math.round(imp)} % de XP/h${bruto > 40 ? ', teto do modelo' : ''}).`
                             : lim === false ? `A caçada está limitada por spawn: a lure ${n} sobe o teto de criaturas (≈ +${Math.round(imp)} % de XP/h).`
                                 : 'Mais lure = mais criaturas por onda (≈ +8 % de XP/h por degrau, estimado).') + ' Se morrer, o "Aguentar" mostra por quê.',
                     numeros: { lure, maxLure, limite: lim === false ? 'spawn' : null, criaturas: porCriatura ? [cAgora, cProx] : null },
@@ -12334,18 +12335,17 @@
     //    impacto 3 ESTIMADO (o especialista Melhorias/Equip dá o ganho exato). Skill principal < mediana do topo − 3 → só aviso (impacto 0).
     function trAgenteTopo(foto, base) {
         const b = base || TR_BASE, tp = foto.topo && typeof foto.topo === 'object' ? foto.topo : null;
-        if (!tp || trNum(tp.idadeH) > 24) {
+        if (!tp || !(trNum(tp.idadeH) <= 24)) { // idadeH ausente = não sei a idade = velho
             // sem party nem nível (foto vazia) não há o que comparar: impacto 0
             const temConta = (Array.isArray(foto.party) && foto.party.length > 0) || Number.isFinite(trNum(foto.nivel));
             return [trConselho('topo', 'ler', { titulo: 'Comparar com o topo do rank', impacto: temConta ? 1 : 0,
-                porque: (tp ? `A leitura do topo tem ${Math.round(Number(tp.idadeH))} h. ` : 'Ainda não li os perfis do topo do rank. ')
+                porque: (!tp ? 'Ainda não li os perfis do topo do rank. ' : Number.isFinite(trNum(tp.idadeH)) ? `A leitura do topo tem ${Math.round(Number(tp.idadeH))} h. ` : 'A leitura do topo não tem data. ')
                     + 'Ler de novo compara o seu set e as skills com quem está até 150 níveis acima.',
                 acao: { tipo: 'ler-topo', rotulo: 'Ler o topo' } })];
         }
         const out = [], nivel = trNum(foto.nivel), comNivel = Number.isFinite(nivel);
         const de = comNivel ? nivel : -Infinity, ate = comNivel ? nivel + 150 : Infinity, faixa = comNivel ? `nível ${nivel}–${ate}` : 'todos os níveis';
         const naFaixa = (x) => x && trNum(x.nivel) >= de && trNum(x.nivel) <= ate;
-        const minusc = (s) => String(s || '').trim().toLowerCase();
         const party = (Array.isArray(foto.party) ? foto.party : []).filter(m => m && m.voc);
         const perfis = (Array.isArray(tp.perfis) ? tp.perfis : []).filter(p => naFaixa(p) && p.voc && typeof p.voc === 'object');
         let itens = 0, comparados = 0;
@@ -12357,16 +12357,16 @@
                 const eq = m.eq && typeof m.eq === 'object' ? m.eq : null;
                 const deles = perfis.map(p => p.voc[m.voc]).filter(x => x && typeof x === 'object' && Object.keys(x).length);
                 // eq não lido (ausente ou sem nenhum slot com nome) não é "veste nada": não compara
-                if (!eq || !TR_SLOTS.some(sl => eq[sl] && String(eq[sl].nome || '').trim()) || deles.length < 3) continue;
+                if (!TR_SLOTS.some(sl => trPeca(eq, sl)) || deles.length < 3) continue;
                 comparados++;
                 let melhor = null;
                 for (const slot of TR_SLOTS) {
-                    const meu = minusc(eq[slot] && eq[slot].nome), cont = new Map();
+                    const peca = trPeca(eq, slot), meu = trNome(peca && peca.nome), cont = new Map();
                     for (const d of deles) {
-                        const k = minusc(d[slot]);
+                        const k = trNome(d[slot]);
                         if (k) cont.set(k, { nome: (cont.get(k) || {}).nome || String(d[slot]).trim(), k: ((cont.get(k) || {}).k || 0) + 1 });
                     }
-                    for (const [k, x] of cont) if (k !== meu && x.k / deles.length >= 0.5 && (!melhor || x.k > melhor.k)) melhor = { slot, item: x.nome, k: x.k, meu: eq[slot] && eq[slot].nome };
+                    for (const [k, x] of cont) if (k !== meu && x.k / deles.length >= 0.5 && (!melhor || x.k > melhor.k)) melhor = { slot, item: x.nome, k: x.k, meu: peca && peca.nome };
                 }
                 if (!melhor) continue;
                 itens++;
@@ -12382,12 +12382,13 @@
         // skill principal (a do Legado) × mediana do topo na mesma faixa; ml do topo pode vir por vocação
         const perto = (Array.isArray(tp.perto) ? tp.perto : []).filter(naFaixa);
         const SKILL_PT = { melee: 'melee', dist: 'distância', ml: 'ML' };
-        let skills = 0;
+        let skills = 0, skillsVistas = 0;
         for (const m of party) {
             const chave = b.legado.skill[m.voc], minha = trNum(m.skills && chave ? m.skills[chave] : null);
             if (!chave || !Number.isFinite(minha)) continue;
             const vals = perto.map(p => { const v = p.skills ? p.skills[chave] : null; return v && typeof v === 'object' ? v[m.voc] : v; });
             const med = trMediana(vals), n = vals.map(trNum).filter(Number.isFinite).length;
+            if (n >= 3) skillsVistas++;
             if (n < 3 || !(minha < med - 3)) continue;
             skills++;
             out.push(trConselho('topo', 'skill-' + m.voc, { titulo: `${trVocPt(m.voc)}: ${SKILL_PT[chave]} ${minha} × ${trPct(med)} no topo`, impacto: 0, confianca: 'comunidade',
@@ -12396,7 +12397,8 @@
         }
         if (comparados > 0 && !itens && !skills) { // "bate" só com pelo menos 1 set de verdade comparado
             out.push(trConselho('topo', 'ok', { titulo: 'Seu set bate com o do topo', estado: 'ok', confianca: 'comunidade',
-                porque: `Nenhum item que ≥ 50 % dos ${perfis.length} perfis do topo (${faixa}) vestem falta no seu set, e as skills estão perto da mediana.` }));
+                porque: `Nenhum item que ≥ 50 % dos ${perfis.length} perfis do topo (${faixa}) vestem falta no seu set`
+                    + (skillsVistas ? ', e as skills principais estão perto da mediana.' : '.') }));
         }
         return out;
     }

@@ -47,6 +47,24 @@ sem dependências), eslint 10, Playwright para o teste ao vivo.
 > - Ajudantes puros para reusar (não copiar): `trNum`, `trMesmoId`, `trQtd`, `trPct`, `trVocPt`, `trPeso`, `trConf`, `trXpAtual`, `trRecDe`,
 >   `trMortesRecentes`, `trLimitadoPorDano` (exige `medidoAtual.min ≥ 5` e abates > 0), `trDanoParaXp` (teto de spawn; `TR_BASE.xp.xpPorDanoFrac`).
 
+> **Atualização 27/11 (após a revisão do lote B, Tasks 7–9) — escala do chefe e mortes; vale para as Tasks 10–17:**
+> - [contrato] **Escala/chefe**: `nota = impacto × peso da confiança × (0,3 se falta ouro)`; conselho com `estado: 'erro'` tem nota MÍNIMA 4
+>   (`TR_PISO_ERRO`, em `trOrdenar`). Fato lido da foto (slot vazio, ouro acabando, mochila de chaves cheia) usa confiança `'medido'`.
+>   Referência de impacto: ouro acabando 10 · slot vazio 5 · item do topo 3 (comunidade) · item da régua "ficar forte" 2 (comunidade).
+> - [contrato] **Mortes = EVENTOS**: `foto.mortes` tem 1 entrada por vocação; mesma caçada (`trMesmoId(huntId)`; sem os dois ids, o título) e
+>   |Δt| ≤ 60 s (`TR_BASE.morte.eventoS`) = 1 evento → `trEventosMorte(foto, base, dias)`. Nunca contar entradas cruas.
+> - [contrato] **Impacto de morte**: régua única `trImpactoMorte(foto, base, bencaosTem)` → `{ impacto, bruto, ritmo, perda }`;
+>   ritmo = eventos em 7 dias ÷ 7; bruto = ritmo × `trXpPerdidaMorte` ÷ (XP/h × 24) × 100; impacto = min(bruto, 50) (`TR_BASE.morte.tetoImpacto`).
+>   Erros usa as bênçãos que tem; bênçãos = bruto(tem) − bruto(7). O porquê mostra o bruto e "(teto 50 no ranking)" quando cortou.
+>   A perda sem bênção depende do nível (`trPerdaFracMorte`, interpola `morte.perdaFracPorNivel`).
+> - [contrato] **Foto**: `topo.idadeH` ausente = velho (pede `ler-topo`); `hunt.lureTiers[k]` = `{ min, max }`, o agente usa a média;
+>   `eq.weapon.duasMaos` vem de `attrs.slotType === 'two-handed'`; munição só é exigida com arma de `TR_BASE.equip.municaoNomes` (arco/besta).
+>   `topo.perto[].skills.ml` pode ser número ou `{ SORCERER, DRUID }`.
+> - Mensagens "ok" só afirmam o que foi conferido (sem dado nenhum: "Nada a apontar com os dados lidos"). Títulos dinâmicos passam por `trCorta` (≤ 70).
+> - Mais ajudantes para reusar: `trNome` (normalizador de nome), `trPorNome` (objeto por nome; depósito soma, preço pega o 1º), `trPeca(eq, slot)`,
+>   `TR_SLOTS`/`trSlotPt`, `trMediana`, `trXpPerdidaMorte`, `trPerdaFracMorte`, `trEventosMorte`, `trImpactoMorte`, `trDuasMaos`, `trUsaMunicao`,
+>   `trCorta`, `trLista`.
+
 ---
 
 ## Task 1: Descobrir o protocolo e os campos que faltam (pesquisa, sem código)
