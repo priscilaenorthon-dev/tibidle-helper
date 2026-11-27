@@ -1057,9 +1057,15 @@ t('dinheiro: nada cabe → só "Juntar para" o melhor', () => {
     assert.strictEqual(cs[0].numeros.id, 'a:c400'); assert.strictEqual(cs[0].numeros.falta, 100000); // 400 mil − 300 mil
     assert(/o ouro livre é 300 mil/.test(cs[0].porque), cs[0].porque);
 });
-t('dinheiro: ouroLivre ≤ 0 → erro "Não gaste" (medido, 3, sem ação); desconhecido → aviso impacto 0', () => {
-    const c = din(foto({ ouroLivre: -50000 }), comCusto());
+t('dinheiro: ouroLivre ≤ 0 com prejuízo medido → erro "Não gaste"; sem prejuízo → aviso 0; erros:ouro presente → nada; desconhecido → aviso 0', () => {
+    const prej = { xpH: 540000, ouroH: -20000, min: 10 };
+    const c = din(foto({ ouroLivre: -50000, medidoAtual: prej }), comCusto());
     assert.deepStrictEqual(c.map(x => [x.id, x.estado, x.titulo, x.impacto, x.confianca, x.acao]), [['ouro:nao-gaste', 'erro', 'Não gaste: o ouro mal paga a caçada', 3, 'medido', null]]);
+    for (const ma of [null, { xpH: 540000, ouroH: 117000, min: 30 }, { ouroH: -20000, min: 3 }]) {
+        const b = din(foto({ ouroLivre: -50000, medidoAtual: ma }), comCusto());
+        assert.deepStrictEqual(b.map(x => [x.id, x.estado, x.titulo, x.impacto]), [['ouro:baixo', 'aviso', 'Ouro baixo para comprar agora', 0]], JSON.stringify(ma));
+    }
+    assert.deepStrictEqual(din(foto({ ouroLivre: -50000, medidoAtual: prej }), comCusto().concat(T.trConselho('erros', 'ouro', { impacto: 10, estado: 'erro' }))), []);
     const d = din(foto({ ouroLivre: null }), comCusto());
     assert.deepStrictEqual(d.map(x => [x.id, x.titulo, x.impacto]), [['ouro:livre', 'Ouro livre desconhecido', 0]]);
 });
@@ -1071,6 +1077,20 @@ t('dinheiro: fase 2 recebe os conselhos da fase 1 pelo trRodar e não passa à f
     // o de 900 mil ficou fora do plano: semOuro (nota × 0,3) e cai para o fim
     assert.deepStrictEqual(r.passos.map(c => [c.id, c.semOuro]), [['a:c400', false], ['a:c500', false], ['a:c900', true]]);
 }));
+t('dinheiro: custo efetivo (custo + 3 × custoH); com prejuízo, custo por hora fica fora; custo Infinity/NaN fora', () => {
+    const selo = T.trConselho('mult', 'selo', { titulo: 'Ligar o Selo', curto: 'Selo', custo: 10000, impacto: 9, confianca: 'wiki', numeros: { custoH: 100000 } });
+    let p = din(foto({ ouroLivre: 1e6 }), [selo]).find(c => c.id === 'ouro:plano');
+    assert.strictEqual(p.numeros.total, 310000); assert.strictEqual(p.titulo, 'Com 1 M livres: Selo');
+    const lista = [selo, T.trConselho('a', 'inf', { custo: Infinity, impacto: 5 }), T.trConselho('a', 'nan', { custo: NaN, impacto: 5 })];
+    const r = din(foto({ ouroLivre: 1e6, medidoAtual: { xpH: 1, ouroH: -300000, min: 30 } }), lista);
+    assert.deepStrictEqual(r.map(c => [c.id, c.estado]), [['ouro:ok', 'ok']]);
+    assert.deepStrictEqual(din(foto({ ouroLivre: 1e6 }), lista.slice(1)).map(c => c.id), ['ouro:ok']);
+});
+t('dinheiro: título do plano usa o rótulo curto dos conselhos', () => {
+    const p = din(foto({ ouroLivre: 5e6 }), [T.trConselho('forja', 'r', { titulo: 'Refinar stonecutter axe +0 → +4 (~1,5 M, sem risco)', curto: 'refino stonecutter axe', custo: 1.5e6, impacto: 1, confianca: 'wiki' }),
+        T.trConselho('mult', 'bencaos', { titulo: 'Comprar as bênçãos (≈ 200 mil de ouro)', curto: 'bênçãos', custo: 2e5, impacto: 3, confianca: 'wiki' })]).find(c => c.id === 'ouro:plano');
+    assert.strictEqual(p.titulo, 'Com 5 M livres: bênçãos, refino stonecutter axe');
+});
 t('dinheiro: registrado como fase 2', () => {
     assert(T.TR_AGENTES.some(a => a.id === 'ouro' && a.rodar === T.trAgenteDinheiro && a.icone === '$' && a.fase === 2));
 });

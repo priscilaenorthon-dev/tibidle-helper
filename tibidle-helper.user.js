@@ -12292,7 +12292,7 @@
             const com = trImpactoMorte(foto, b, tem, nMortes), todas = trImpactoMorte(foto, b, b.bencaos.n, nMortes);
             const salvo = com.perda == null ? null : com.perda - todas.perda;
             const impacto = com.bruto != null ? Math.min(b.morte.tetoImpacto, com.bruto - todas.bruto) : 1;
-            out.push(trConselho('mult', 'bencaos', { titulo: `Comprar as bênçãos (≈ ${trQtd(custo)} de ouro)`, confianca: 'wiki', custo, impacto,
+            out.push(trConselho('mult', 'bencaos', { titulo: `Comprar as bênçãos (≈ ${trQtd(custo)} de ouro)`, curto: 'bênçãos', confianca: 'wiki', custo, impacto,
                 porque: `${nMortes} ${nMortes > 1 ? 'mortes' : 'morte'} na última semana. Sem bênção a morte leva ≈ ${trPct(trPerdaFracMorte(nivel, b) * 100)} % da XP total; `
                     + `as ${faltam} que faltam cortam ${Math.round(faltam * b.bencaos.cortePorFrac * 100)} % disso`
                     + (salvo != null ? ` (≈ ${trQtd(salvo)} de XP na próxima morte)` : '') + '. Somem na morte: recompre depois de cada uma.',
@@ -12307,7 +12307,7 @@
             const tierSabido = trNum(selo.abundante) >= 1 && trNum(selo.abundante) <= 5;
             const tier = tierSabido ? Math.round(Number(selo.abundante)) : 1, pct = b.xp.seloAbundante[tier - 1];
             const custo = b.selo.rolar(rec), custoH = 100 * Math.round(custo * Math.round(10 * b.selo.pesoHora[tier - 1]) / 1000);
-            out.push(trConselho('mult', 'selo', { titulo: `Ligar o Selo: +${pct} % de XP por ≈ ${trQtd(custoH)}/h`, confianca: tierSabido ? 'wiki' : 'estimado', custo,
+            out.push(trConselho('mult', 'selo', { titulo: `Ligar o Selo: +${pct} % de XP por ≈ ${trQtd(custoH)}/h`, curto: 'Selo', confianca: tierSabido ? 'wiki' : 'estimado', custo,
                 impacto: pct / den * 100 * (tierSabido ? 1 : 0.25),
                 porque: (tierSabido ? `Seu Selo aqui tem Abundante T${tier} (+${pct} de XP, × o Perigo). ` : `Abundante T1 dá +${pct} de XP, mas o buff é sorteado (≈ 1 pacto em 4). `)
                     + `Cada hora ligada custa ≈ ${trQtd(custoH)} de ouro (faixa ${10 * Math.floor(rec / 10)}; 1º pacto ${trQtd(custo)}); os debuffs podem matar.`,
@@ -12337,7 +12337,7 @@
             const horas = livres != null ? Math.ceil(livres) : amp.horasDia, custo = livres != null ? horas * amp.preco1h : amp.preco8h;
             const ml = trEhMago(voc, b), unidade = ml ? 'ML' : 'skill';
             const impacto = trDanoDeUm(ganho, foto, b);
-            const c = trConselho('legado', 'amp-' + voc, {
+            const c = trConselho('legado', 'amp-' + voc, { curto: 'ampulheta do ' + nome,
                 titulo: feito ? `${nome}: treino do dia feito (${falta === 1 ? 'falta' : 'faltam'} ${falta} de ${unidade})`
                     : `Ampulheta no ${nome}: ${falta === 1 ? 'falta' : 'faltam'} ${falta} de ${unidade} para +${ganho} % de dano`,
                 estado: feito ? 'ok' : 'aviso', confianca: 'wiki', custo: feito ? 0 : custo, impacto,
@@ -12395,7 +12395,7 @@
                 if (!melhor) continue;
                 itens++;
                 const preco = trPorNome(foto.precos, melhor.item, true), n = deles.length, nome = trVocPt(m.voc);
-                out.push(trConselho('topo', 'item-' + m.voc, { titulo: trCorta(`${nome}: o topo usa ${melhor.item} (${trSlotPt(melhor.slot)})`),
+                out.push(trConselho('topo', 'item-' + m.voc, { titulo: trCorta(`${nome}: o topo usa ${melhor.item} (${trSlotPt(melhor.slot)})`), curto: melhor.item,
                     confianca: 'comunidade', impacto: 3, custo: preco > 0 ? preco : 0,
                     porque: `${melhor.k} de ${n} perfis do topo (${faixa}) vestem ${melhor.item} como ${trSlotPt(melhor.slot)}; o ${nome} usa ${melhor.meu || 'nada'}. `
                         + (preco > 0 ? `No Mercado ≈ ${trQtd(preco)}. ` : '') + 'A aba Melhorias diz quanto a troca rende de verdade.',
@@ -12681,7 +12681,7 @@
             if (titulo.length <= 70) break;
         }
         const passos = mats.map(m => (m.preco ? `Comprar ${m.falta} ${m.nome} (~${trQtd(m.falta * m.preco)})` : `Caçar ${m.nome}: ${m.onde}`));
-        return [trConselho('itens', 'ilha-' + il.id, { impacto: 5, custo,
+        return [trConselho('itens', 'ilha-' + il.id, { impacto: 5, custo, curto: 'abrir ' + il.nome,
             titulo: trCorta(titulo),
             porque: `${il.nome} abre ${trLista(abre.map(([t, c]) => `${t} (Rec ${c.rec})`))}` + (recAtual ? `, acima do Rec ${recAtual} de agora` : '') + '. '
                 + (passos.length ? passos.join('; ') + '. ' : 'Os materiais já estão com você. ')
@@ -12733,7 +12733,7 @@
         cand.sort((x, y) => ((y.custo > 0) - (x.custo > 0)) || (x.custo > 0 ? y.imp / y.custo - x.imp / x.custo : y.imp - x.imp));
         for (const p of cand.slice(0, 3)) {
             const nome = trVocPt(p.voc), arma = p.slot === 'weapon';
-            out.push(trConselho('forja', `refino-${p.voc}-${p.slot}`, { confianca: 'wiki', custo: p.custo || 0, impacto: p.imp,
+            out.push(trConselho('forja', `refino-${p.voc}-${p.slot}`, { confianca: 'wiki', custo: p.custo || 0, impacto: p.imp, curto: 'refino ' + p.nome,
                 titulo: trCortaSufixo(`Refinar ${p.nome} +${p.refino} → +${ate}`, ` (${p.custo ? '~' + trQtd(p.custo) + ', ' : ''}sem risco)`),
                 porque: `${p.nome} (${trSlotPt(p.slot)} do ${nome}): até +${ate} o refino não falha. `
                     + (arma ? `Cada refino soma 1 de ataque: +${ate - p.refino} sobre ${p.atk} ≈ +${trPct(p.danoPct)} % de dano do ${nome}`
@@ -12774,44 +12774,55 @@
 
     // ── Especialista 10: Dinheiro ($) — FASE 2: recebe em `todos` os conselhos da fase 1. foto.ouroLivre vem da FOTO
     //    (ouro − 3 × gasto/h da caçada − bênçãos que faltam). Escolhe guloso, dentro do ouro livre, os passos com custo > 0,
-    //    pela ordem (impacto × peso da confiança) ÷ custo. O resumo vale 0,1 × a soma dos impactos escolhidos: é um lembrete,
-    //    não pode passar à frente dos próprios passos. O melhor que não coube → "Juntar para" (impacto 0; falta = custo − o que sobra).
+    //    pela ordem (impacto × peso da confiança) ÷ custo EFETIVO (trCustoEfetivo: custo + 3 × custoH). Com a caçada dando prejuízo
+    //    (medidoAtual.ouroH < 0), nada que tem custo por hora entra. O resumo vale 0,1 × a soma dos impactos escolhidos: é um lembrete,
+    //    não pode passar à frente dos próprios passos; no título vai o rótulo curto (conselho.curto, senão o título).
+    //    O melhor que não coube → "Juntar para" (impacto 0; falta = custo − o que sobra). Ouro livre ≤ 0: se o Erros já avisou que o ouro
+    //    acaba (erros:ouro), não repete; erro só com a caçada no prejuízo medido (≥ 5 min); senão é aviso (impacto 0).
     function trAgenteDinheiro(foto, base, todos) {
-        const livre = trNum(foto.ouroLivre);
+        const livre = trNum(foto.ouroLivre), lista = Array.isArray(todos) ? todos : [], ma = foto.medidoAtual || null;
+        const prejuizo = !!ma && trNum(ma.min) >= 5 && trNum(ma.ouroH) < 0;
         if (!Number.isFinite(livre)) {
             return [trConselho('ouro', 'livre', { titulo: 'Ouro livre desconhecido', impacto: 0,
                 porque: 'Sem o ouro e o gasto/h da caçada não dá para planejar compras.' })];
         }
         if (livre <= 0) {
-            return [trConselho('ouro', 'nao-gaste', { titulo: 'Não gaste: o ouro mal paga a caçada', estado: 'erro', impacto: 3, confianca: 'medido',
-                porque: `Ouro livre ${trQtd(livre)}: o ouro de agora mal cobre 3 h de gasto da caçada (e as bênçãos). Junte antes de comprar qualquer coisa.`,
-                numeros: { ouroLivre: livre } })];
+            if (lista.some(c => c && c.id === 'erros:ouro')) return [];
+            return [prejuizo
+                ? trConselho('ouro', 'nao-gaste', { titulo: 'Não gaste: o ouro mal paga a caçada', estado: 'erro', impacto: 3, confianca: 'medido',
+                    porque: `Ouro livre ${trQtd(livre)} e a caçada dá ${trQtd(ma.ouroH)}/h: o ouro não cobre 3 h de gasto (e as bênçãos). Junte antes de comprar qualquer coisa.`,
+                    numeros: { ouroLivre: livre, ouroH: Number(ma.ouroH) } })
+                : trConselho('ouro', 'baixo', { titulo: 'Ouro baixo para comprar agora', impacto: 0,
+                    porque: `Ouro livre ${trQtd(livre)}: o ouro de agora fica de reserva para 3 h de caçada (e as bênçãos). A caçada não dá prejuízo medido; é só esperar juntar.`,
+                    numeros: { ouroLivre: livre } })];
         }
-        const nota = (c) => Number(c.impacto) * trPeso(c.confianca) / Number(c.custo);
-        const cand = (Array.isArray(todos) ? todos : []).filter(c => c && c.estado !== 'ok' && trNum(c.custo) > 0 && trNum(c.impacto) > 0)
-            .sort((x, y) => nota(y) - nota(x));
+        const nota = (c) => Number(c.impacto) * trPeso(c.confianca) / trCustoEfetivo(c);
+        const cand = lista.filter(c => c && c.estado !== 'ok' && trNum(c.impacto) > 0 && Number.isFinite(trCustoEfetivo(c)) && trCustoEfetivo(c) > 0
+            && !(prejuizo && c.numeros && Number(c.numeros.custoH) > 0)).sort((x, y) => nota(y) - nota(x));
         if (!cand.length) {
             return [trConselho('ouro', 'ok', { titulo: 'Nada com custo para planejar', estado: 'ok',
-                porque: `Nenhum passo dos outros especialistas custa ouro agora (ouro livre ${trQtd(livre)}).` })];
+                porque: `Nenhum passo dos outros especialistas custa ouro agora (ouro livre ${trQtd(livre)})` + (prejuizo ? '; com a caçada no prejuízo, nada de custo por hora.' : '.') })];
         }
-        const escolhidos = [];
+        const escolhidos = [], rotulo = (c) => c.curto || c.titulo;
         let sobra = livre, fora = null;
         for (const c of cand) {
-            if (Number(c.custo) <= sobra) { escolhidos.push(c); sobra -= Number(c.custo); } else if (!fora) fora = c;
+            const ce = trCustoEfetivo(c);
+            if (ce <= sobra) { escolhidos.push(c); sobra -= ce; } else if (!fora) fora = c;
         }
         const out = [], total = livre - sobra;
         if (escolhidos.length) {
             out.push(trConselho('ouro', 'plano', { impacto: 0.1 * escolhidos.reduce((s, c) => s + Number(c.impacto), 0),
-                titulo: trCorta(`Com ${trQtd(livre)} livres: ${escolhidos.map(c => c.titulo).join(', ')}`),
-                porque: `Pelo ganho por ouro: ${escolhidos.map(c => `${c.titulo} (${trQtd(c.custo)})`).join('; ')}. Total ${trQtd(total)}; sobram ${trQtd(sobra)}.`,
+                titulo: trCorta(`Com ${trQtd(livre)} livres: ${escolhidos.map(rotulo).join(', ')}`),
+                porque: `Pelo ganho por ouro: ${escolhidos.map(c => `${c.titulo} (${trQtd(trCustoEfetivo(c))})`).join('; ')}. Total ${trQtd(total)}; sobram ${trQtd(sobra)}.`
+                    + (escolhidos.some(c => c.numeros && Number(c.numeros.custoH) > 0) ? ' Custo por hora conta 3 h.' : ''),
                 numeros: { escolhidos: escolhidos.map(c => c.id), total, sobra } }));
         }
         if (fora) {
-            const falta = Number(fora.custo) - sobra, fim = ` (falta ${trQtd(falta)})`;
+            const ce = trCustoEfetivo(fora), falta = ce - sobra, fim = ` (falta ${trQtd(falta)})`;
             out.push(trConselho('ouro', 'juntar', { impacto: 0,
-                titulo: trCortaSufixo(`Juntar para: ${fora.titulo}`, fim),
-                porque: `${fora.titulo} custa ${trQtd(fora.custo)}` + (escolhidos.length ? `; depois dos passos acima sobram ${trQtd(sobra)}.` : `; o ouro livre é ${trQtd(livre)}.`),
-                numeros: { id: fora.id, custo: Number(fora.custo), sobra, falta } }));
+                titulo: trCortaSufixo(`Juntar para: ${rotulo(fora)}`, fim),
+                porque: `${fora.titulo} custa ${trQtd(ce)}` + (escolhidos.length ? `; depois dos passos acima sobram ${trQtd(sobra)}.` : `; o ouro livre é ${trQtd(livre)}.`),
+                numeros: { id: fora.id, custo: ce, sobra, falta } }));
         }
         return out;
     }
