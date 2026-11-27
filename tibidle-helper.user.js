@@ -11613,7 +11613,208 @@
      * Conselho = { id, agente, titulo, porque, numeros, impacto (% de XP/h, ou equivalente), confianca, custo (ouro), acao }.
      * confianca: medido (da conta) > comunidade (post com número) > wiki > estimado. Sem DOM, sem rede, sem Date.now (foto.t). */
     const TR_PESO_CONF = { medido: 1, comunidade: 0.8, wiki: 0.6, estimado: 0.4 };
-    const TR_BASE = { versao: '2026-11-27' }; // preenchido na Task 3
+    /* TR_BASE — o que um jogador profissional sabe (27/11/2026). Fontes: data/treinador-pesquisa-27-11.md e data/wiki-27-11/*.txt.
+     * Convenção dos comentários: wiki/<página> · comunidade <quem/preset> · medido dd/mm (conta do dono) · protocolo (docs/protocolo-treinador.md).
+     * Só dados; as poucas funções são contas puras de tabela da wiki. Porcentagens em pontos (+10 = +10 %), exceto onde diz "fração". */
+    const TR_BASE = {
+        versao: '2026-11-27',
+        // ── XP: os bônus SOMAM (não multiplicam); party 4 vocações +100, premium +10, boost +50, prey de +10 → ×2,70 da base
+        xp: { party: 100, premium: 10, boost: 50, preyColunaMax: 10, preyColunas: 4, // wiki/premium-o-que-muda, loja, prey
+              seloAbundante: [4, 7, 10, 14, 20], seloPerigoMult: 0.1, // wiki/selo-da-cacada (× (1 + 0,1 × Perigo))
+              tetoBonus: 100, // wiki/selo-da-cacada: Selo + Prey + Boost "para em +100 %" (não diz se conta party/premium)
+              sessaoH: 12, sessao24hH: 24 }, // wiki/skills-e-treino (offline rende igual)
+        // ── teto de spawn × dano: xp/h = min(porLure × lure, fatorDano × DPS × 3600 ÷ HP) × xp por abate — erro < 2 % (medido 27/09)
+        spawn: { porLure: 340, fatorDano: 0.707, limitadoPorSpawn: 0.85, // medido 27/09; 0,85 = corte do plano (abates < 85 % do teto → dano)
+                 xpPorHp: { 'Shadow Nexus': 0.061, 'Otherworld Zao': 0.094, ilhasNovas: [0.04, 0.07] } }, // comunidade (xp ÷ vida da 1ª criatura; ninguém mediu)
+        lure: { maxCriaturas: 8, niveis: [1, 4], portalS: 10 }, // wiki/cacadas
+        dinamica: { corteS: 0.25, portalDeS: 10, portalAteS: 8.5 }, // wiki/cacadas (turno abaixo da referência)
+        dinamicas: ['Salt Caves', 'Ruins of Nuur', 'Seacrest Grounds', 'Emerald Gardens', 'Buried Cathedral', 'Dream Talisman'], // wiki/cacadas
+        // ── Prey: 2 h de caçada, só na caçada da prey; tier sobe só sorteando com bônus ativo; expira sem trava → zera
+        prey: { duracaoH: 2, wildcardCoins: 10, escolherWildcards: 5, trocaOuroPorNivel: 200, trocaGratisDia: 1, // wiki/prey; protocolo: rules.listGold 50.000 no nível 250 = 200 × nível
+                travaWildcards: 1, danoPorTier: 4, defesaPorTier: 4, tierMax: 10, tiposBuff: ['xp', 'loot', 'damage', 'defense'] }, // wiki/prey, protocolo (preyBuffs)
+        premium: { coins: 290, dias: 30, xp: 10, autoSell: 0.9, autoSellFree: 0.8 }, // wiki/premium-o-que-muda
+        boost: { pct: 50, min: 90, coins: [45, 90, 180, 360], porDia: 4, soCacadaComum: true }, // wiki/loja (não corre em Elite/Boss/Torre/treino)
+        loja: { sessao24hCoins: 190, deathRedemptionCoins: 30, coinOuro: 52000 }, // wiki/loja, bencaos; comunidade: coin ≈ 50–54 mil de ouro
+        // ── Legado: dano permanente pela skill TREINADA (item/bestiário/loyalty não contam). Knight melee, Paladin distância, magos ML (Druid: cura também)
+        legado: { meleeInicio: 60, mlInicio: 40, passo: 5, // wiki/legado
+                  bonus: [2, 5, 9, 14, 20, 27, 35, 44, 54, 65, 77, 90, 104], // % total no marco I..XIII; sem teto: cada marco soma 1 ponto a mais (XIV = +119)
+                  skill: { KNIGHT: 'melee', PALADIN: 'distance', SORCERER: 'magicLevel', DRUID: 'magicLevel' },
+                  semCritico: true }, // wiki/legado: entra sobre o golpe sem crítico; não mexe em roubo de vida/mana
+        // ── Treino: skill quase não sobe caçando; ampulheta = treino normal DURANTE a caçada (sem arma de treino)
+        ampulheta: { horasDia: 8, fator: 8, // horasDia: wiki/ampulhetas-de-treino (por vocação); fator: arma de treino ×8 na Sala de Treino (wiki/skills-e-treino)
+                     preco1h: 525000, preco4h: 2100000, preco8h: 4200000, // protocolo (meta.rules.cash, ouro)
+                     itens: { KNIGHT: [100784, 100785, 100786], PALADIN: [100787, 100788, 100789], DRUID: [100790, 100791, 100792], SORCERER: [100793, 100794, 100795] }, // protocolo (1 h / 4 h / 8 h)
+                     lasting8hCoins: 490, // comunidade (guardar para evento de +50 % de skill)
+                     foraDoConsumo: ['Torre', 'Elites', 'Bosses', 'Invasão', 'Sobrevivência', 'Sala de Treino'] }, // wiki/ampulhetas-de-treino
+        // ── Morte e bênçãos: morte de qualquer um encerra a caçada; 7 bênçãos cortam 56 % da perda e somem na morte
+        bencaos: { n: 7, comuns: 5, enhanced: 2, corte: 0.56, cortePor: 0.08, // wiki/bencaos
+                   preco: (nv) => nv <= 30 ? 2000 : nv < 120 ? 200 * (nv - 20) : 20000 + 75 * (nv - 120), // comum (ids 2–6)
+                   precoEnh: (nv) => nv <= 30 ? 2000 : nv < 120 ? 260 * (nv - 20) : 26000 + 100 * (nv - 120), // enhanced (ids 7–8)
+                   total: (nv) => 5 * TR_BASE.bencaos.preco(nv) + 2 * TR_BASE.bencaos.precoEnh(nv) }, // as 7 juntas (nível 200 = 198.000, wiki)
+        morte: { perdaPctSemBencao: 0.0227, perdaPorNivel: { 24: 0.0478, 50: 0.0306, 100: 0.0227 } }, // wiki/durante-a-cacada (fração da XP total; usar como ordem de grandeza)
+        // ── Faixas de nível → caçadas pelo Rec da wiki (faixa = [de, ate): Rec ≥ de e < ate). Abaixo de 80 o Radar já cobre (Tibidle Island, nível mínimo)
+        faixas: [ // wiki/cacadas (coluna Rec)
+            { de: 1, ate: 80, hunts: [] },
+            { de: 80, ate: 130, hunts: ['Giant Spiders POH', 'Hero Fortress Entrance', 'The Behemoth Quest', 'Upper Spikes', 'Werebeasts', 'Fiehonja Stairway',
+                'The Hive Entrance', 'Killer Caiman Caverns', 'Zao Entrance', 'Middle Spikes', 'Petrified Hollow', 'Thunderscar Peak', 'Putrid Mummies',
+                'Death Portal', 'Hive Tower', 'Pits of Inferno Entrance', 'Frozen Hell', "Souleater's Canyon", "Lizard Chosen's Dojo", 'Hero Fortress Underground'] },
+            { de: 130, ate: 170, hunts: ['Inquisition Warlocks', 'Lower Spikes', 'Earth Portal', 'Energy Portal', 'Bottom of the Ocean', 'Deepling Library',
+                'Hive Queen Chamber', 'Otherworld Kazordoon', 'Throne of Bazir', 'Zugurosh Seal', 'Crystal Keeper', 'Mushroom Gardens', "Quara's Domain Yalahar",
+                'Lizard City', 'Zao Caverns', 'Inquisition Entrance', 'Haunted Nexus Tomb', 'Holy Portal', 'Exotic Cave', 'Otherworld Svargrond', 'Throne of Ashfalor',
+                'Throne of Pumin', 'Throne of Verminor', 'Lava Hot Spot', 'Grim Reapers Yalahar', 'Draken Walls', 'Great Pearl Fan Reef', 'Warzone I - Fungus'] },
+            { de: 170, ate: 200, hunts: ['Haunted Nexus Temple', "Carnivora's Rocks", 'Otherworld Ankrahmun', 'Throne of Apocalypse', 'Throne of Tafariel', 'Fire Portal',
+                'Green Belt', 'Throne of Infernatil', 'Annihilon Seal', 'Latrivan & Golgordan Seal', 'Madareth Seal', 'Ushuriel Seal', 'Warzone - Lava Lurkers',
+                'Warzone I - Rocky Mountain', 'Haunted Nexus Cellar', 'Sea Serpent Depths', 'Otherworld Edron'] },
+            { de: 200, ate: 250, hunts: ['Winter Court', 'Ice Portal', 'Hellgorak Seal', 'Warzone II - Magma Dungeon', 'Warzone II - Parasite Nest', 'Kilmaresh Catacombs', 'Temple of the Moon Goddess'] },
+            { de: 250, ate: 300, hunts: ['Summer Court', 'Otherworld Zao', 'Shadow Nexus', 'Warzone III - Crystal Caves', 'Salt Caves', 'Seacrest Grounds'] },
+            { de: 300, ate: 350, hunts: ['Buried Cathedral', 'Ruins of Nuur', 'Emerald Gardens'] },
+            { de: 350, ate: 999, hunts: ['Dream Talisman'] } ],
+        // Rec e ilha (id do Silas) das caçadas de Rec ≥ 200 — wiki/cacadas; 'marapur' e 'dream_courts' são ids prováveis (não vistos no unlockedIslands)
+        cacadasTopo: { 'Winter Court': [200, 'dream_courts'], 'Ice Portal': [200, 'forgotten_knowledge'], 'Hellgorak Seal': [200, 'the_inquisition'],
+            'Warzone II - Magma Dungeon': [200, 'warzone'], 'Warzone II - Parasite Nest': [220, 'warzone'], 'Kilmaresh Catacombs': [230, 'issavi'],
+            'Temple of the Moon Goddess': [240, 'marapur'], 'Summer Court': [250, 'dream_courts'], 'Otherworld Zao': [250, 'otherworld'],
+            'Shadow Nexus': [250, 'the_inquisition'], 'Warzone III - Crystal Caves': [250, 'warzone'], 'Salt Caves': [280, 'issavi'],
+            'Seacrest Grounds': [290, 'marapur'], 'Buried Cathedral': [300, 'dream_courts'], 'Ruins of Nuur': [330, 'issavi'],
+            'Emerald Gardens': [340, 'marapur'], 'Dream Talisman': [350, 'dream_courts'] },
+        // XP/h e saldo/h já vistos (raw = sem prey/boost); faixas [mín, máx] onde a fonte deu intervalo; nivel = da party na medida
+        medidos: [
+            { hunt: 'Shadow Nexus', xpH: 950000, saldoH: [400000, 600000], nivel: [217, 246], fonte: 'comunidade preset 57 (com imbuements; sem imbuement ~zero a zero)' },
+            { hunt: 'Shadow Nexus', xpH: 540000, saldoH: 117000, nivel: 238, fonte: 'medido (u2tag)' },
+            { hunt: 'Shadow Nexus', xpH: 590000, saldoH: -80000, nivel: 207, fonte: 'medido 15/11 (ShamanBr, Extremo)' },
+            { hunt: 'Shadow Nexus', xpH: 950000, saldoH: null, nivel: null, fonte: 'comunidade Specter (legados 3/3/4/5; skills EK 71, RP 71, MS 58, ED 60)' },
+            { hunt: 'Fire Portal', xpH: [275000, 290000], saldoH: null, nivel: 161, fonte: 'comunidade' },
+            { hunt: 'Throne of Tafariel', xpH: 270000, saldoH: null, nivel: 200, fonte: 'comunidade' },
+            { hunt: 'Throne of Infernatil', xpH: [200000, 214000], saldoH: [190000, 245000], nivel: null, fonte: 'comunidade' },
+            { hunt: 'Draken Walls', xpH: [235000, 250000], saldoH: [180000, 270000], nivel: null, fonte: 'comunidade' },
+            { hunt: 'Throne of Apocalypse', xpH: [230000, 244000], saldoH: null, nivel: null, fonte: 'comunidade' },
+            { hunt: 'Lizard City', xpH: [199000, 230000], saldoH: null, nivel: [120, 130], fonte: 'comunidade' } ],
+        preyDanoXp: { com: 780000, sem: [400000, 500000], fonte: 'comunidade Lucasdela (prey de ataque)' },
+        // ── Ilhas (entrega única no Silas, só na cidade; o jogo conta mochila + depósito)
+        ilhas: [ // wiki/acesso-as-ilhas, dream-courts, marapur
+            { nome: 'Issavi', id: 'issavi', ouro: 10e6, materiais: [] },
+            { nome: 'Marapur', id: 'marapur', ouro: 10e6, materiais: [{ nome: 'Spectral Conch', qtd: 10, onde: 'Elite Entombed Wraithlord (Haunted Nexus Tomb, Rec 150): 20,83 % ×2' }] },
+            { nome: 'Dream Courts', id: 'dream_courts', ouro: 15e6, materiais: [{ nome: 'Haunted Sigil', qtd: 10, onde: 'Hollow High Priest (Haunted Nexus Temple, Rec 170) 10,42 % ×2; Wailing Matron (Haunted Nexus Cellar, Rec 190) 20,83 % ×2' }] },
+            { nome: 'Otherworld', id: 'otherworld', ouro: 3e6, materiais: [{ nome: 'Thunderscar Spark', qtd: 20, onde: 'Elite Balerion (Thunderscar Peak, Rec 100): 23 % ×4' }] },
+            { nome: 'Warzone', id: 'warzone', ouro: 3e6, materiais: [{ nome: 'Warzone Voucher', qtd: 40, onde: 'Upper Spikes Box 10,8 %, Middle Spikes Box 15,2 %, Lower Spikes Box 22,5 % (×3)' }] },
+            { nome: 'Forgotten Knowledge', id: 'forgotten_knowledge', ouro: 3e6, materiais: [] },
+            { nome: 'The Inquisition', id: 'the_inquisition', ouro: 5e6, materiais: [{ nome: 'Inquisition Badge', qtd: 20, onde: 'Merlin (Inquisition Warlocks) 23 %, Magma Wolf (Inquisition Entrance) 28 % (×4)' },
+                { nome: 'relíquias dos 7 tronos', qtd: 56, onde: "8 de cada: Bazir's, Infernatil's, Tafariel's, Apocalypse's, Ashfalor's, Pumin's, Verminor's Relic (Elites dos tronos, ×2)" }] },
+            { nome: 'Zao', id: 'zao', ouro: 0, materiais: [{ nome: 'Yalahar Soul Fragment', qtd: 100, onde: 'toda vitória nos 13 Elites de Yalahar' }, { nome: 'Yalahar gear wheel', qtd: 70, onde: 'caixas dos Elites de Yalahar 25–35 %' }] },
+            { nome: 'Gray Island', id: 'gray_island', ouro: 0, materiais: [{ nome: 'Yalahar Soul Fragment', qtd: 100, onde: 'toda vitória nos 13 Elites de Yalahar' }, { nome: 'Yalahar gear wheel', qtd: 70, onde: 'caixas dos Elites de Yalahar 25–35 %' }] },
+            { nome: 'Pits of Inferno', id: 'pits_of_inferno', ouro: 0, materiais: [{ nome: 'unholy book', qtd: 1, onde: 'Giant Spider 0,05 % (Giant Spiders POH / Mushroom Gardens)' }] },
+            { nome: 'Yalahar', id: 'yalahar', ouro: 0, materiais: [{ nome: 'dwarven pickaxe', qtd: 1, onde: 'Dwarf 0,03 % / Dwarf Soldier 0,08 %' }] } ],
+        // ── Bosses: 1 tentativa por luta (trocada no Silas, só na cidade); sem cooldown; morte de qualquer um = derrota e tentativa perdida
+        bosses: [ // wiki/bosses, acesso-aos-bosses, database/criaturas
+            // vida: a página Bosses diz 360.000 ("o maior dos cinco"); database/criaturas diz 250.000 e a pesquisa trazia 250–360k — fico com 360k (pior caso)
+            { nome: 'The Inquisitor', ilha: 'the_inquisition', rec: 250, vida: 360000, tentativa: { item: "The inquisitor's circlet", qtd: 10 },
+              onde: 'caixas dos 7 Elites dos selos 0,93–2,49 % (beelzebub/Shadow Nexus Box 2,49 %)',
+              drops: "Inquisition Box: avenger, emerald sword, master archer's armor, fireborn giant armor, arbalest, warsinger bow 9 %; soft boots, spellbook of dark mysteries 5 %; Gem Box 130 refine fragment t2 (40 %)",
+              vale: 'o maior pacote de fragmentos (130 refine t2); base de boss 250–500' },
+            // vida: Bosses 250.000; database/criaturas 100.000 (pesquisa 100–250k) — fico com 250k
+            { nome: 'The Last Lore Keeper', ilha: 'forgotten_knowledge', rec: 250, vida: 250000, tentativa: { item: 'Necronomicon', qtd: 10 },
+              onde: 'caixas dos 6 Elites dos portais 10,5–17,5 % (Holy Portal Box 17,5 %)',
+              drops: '9 armas crude umbral (4 % cada, direto); sem caixa nem pacote de fragmentos', vale: 'só pelas armas umbral' },
+            { nome: 'Eradicator', ilha: 'otherworld', rec: 250, vida: 145000, tentativa: { item: 'Breach Shard', qtd: 5 }, // vida: wiki/database/criaturas
+              onde: 'loja do Otherworld (15 tokens)', drops: 'jungle wand, jungle bow, Zaoan legs 6,3 %', vale: 'jungle wand/bow para os magos/Paladin' },
+            { nome: 'Urmahlullu', nomeJogo: 'Urmahlullu the Weakened', ilha: 'issavi', rec: 330, vida: 300000, tentativa: { item: 'Sphinx Dust', qtd: 5 },
+              onde: 'Salt Caves / Ruins of Nuur, ou 2 tokens na loja de Issavi', drops: 'jungle rod/wand/bow ~10,7 % (ML +1); rainbow necklace 20 %', vale: 'arma de mago com ML +1' },
+            { nome: 'Timira', nomeJogo: 'Timira the Many-Headed', ilha: 'marapur', rec: 340, vida: 360000, tentativa: { item: "Timira's Scale", qtd: 5 },
+              onde: 'Seacrest Grounds / Emerald Gardens, ou 2 tokens na loja de Marapur', drops: 'naga wand/rod (ML +2), naga axe/club (atk 52) 8 %; guardian boots 18 %',
+              vale: 'naga wand/rod ML +2 e naga axe/club para o Knight' },
+            { nome: 'Izcandar', nomeJogo: 'Izcandar the Banished', ilha: 'dream_courts', rec: 350, vida: 415000, tentativa: { item: "Izcandar's Shard", qtd: 5 },
+              onde: 'Buried Cathedral Box 4,17 % / Dream Talisman Box 6,94 %, ou 2 tokens na loja de Dream Courts',
+              drops: 'Blade of Summers/Winters, Wardstrider Boots 8 %; nightmare boots 18 %; dwarven armor 21 %', vale: 'o boss mais forte (415k)' },
+            { nome: 'Shen-long', ilha: 'zao', rec: null, vida: 160180, tentativa: { item: 'the orb of Light Undying', qtd: 7 },
+              onde: 'Draken Walls Box (The emperor) 5 %', drops: 'Zao Island Box: Zaoan armor/helmet/legs, crystal ring, wood cape, mycological bow 6–8 %; Zao Gem Pack 52 refine t2', vale: 'Zaoan helmet/legs e crystal ring do topo' },
+            { nome: 'Azerus', ilha: 'yalahar', rec: null, vida: 130000, xp: 6000, tentativa: { item: 'yalahari figurine', qtd: 5 },
+              onde: "Quara's Domain Yalahar Box (Jaws) 3,6 %", drops: 'Yalahar Island Box: wand of cosmic energy, tower shield 15 %; onyx pendant, paladin armor 10 %; Yalahar Gem Pack 40 refine t2', vale: 'único boss que dá XP (6.000)' },
+            { nome: 'Jaul', ilha: 'gray_island', rec: null, vida: 70000, tentativa: { item: 'trophy of Tanjis + trophy of Obujos', qtd: 5 },
+              onde: 'Bottom of the Ocean Box (Tanjis) / Deepling Library Box (Obujos) 5 %', drops: 'Gray Island Box: depth/ornate 4–8 %; Gray Island Gem Pack 68 refine t2', vale: 'boss mais fraco (70k)' } ],
+        bossDicas: ['encher a mana numa caçada antes e ir sem poção (magos); nunca de frente', // comunidade (vídeos 22/10)
+                    'XP Boost ativo é gasto à toa no boss (só corre em caçada comum)', // wiki/loja
+                    'testar 1 tentativa antes do Auto-boss: com o jogo fechado ele gasta todas'], // wiki/bosses
+        // ── Forja (Uzgod) e tier (Thorgal)
+        purificacao: { hunt: { comum: 86, incomum: 11, raro: 2.5, epico: 0.45, lendario: 0.05, base: [0, 350] }, // wiki/forja (% por raridade; base = potência)
+                       elite: { comum: 76, incomum: 18, raro: 5, epico: 0.85, lendario: 0.15, base: [50, 420] },
+                       boss: { comum: 54, incomum: 30, raro: 13, epico: 2.6, lendario: 0.4, base: [250, 500] } },
+        forja: { refinoSeguroAte: 4, chT1: [80, 70, 60, 50], chT2: [35, 25, 20, 15, 10, 5], // wiki/forja: T1 falha não cai; T2 falha cai 1 (Garantia T1 evita)
+                 potPorRefino: 50, potPorTier: 5, potTeto: 1000, faixaPot: 200, // wiki/forja (potência = base + 50/refino + 5/tier)
+                 potMin: 350, potBase: 400, potMeta: 600, // comunidade + Forja 2.43 (base 400+, mínimo 350, meta 600)
+                 raridadeCh: [55, 35, 20, 10], miticoCh: 3, // wiki/forja (Comum→Incomum … Épico→Lendário; Lendário→Mítico)
+                 tierOuro: [250000, 500000, 1000000, 2000000, 4000000], tierCh: [75, 100], // wiki/tiers (1 cópia 75 %, 2 cópias 100 %)
+                 custoMedido: { magicPlate0a4: 1450000, de4a5Tentativa: 440000, guardianBoots4IncomumLinha: 2270000, atributoT1: 500000 }, // medido 19/10 e projeto
+                 ordem: ['arma + amuleto do Knight', 'magos', 'armadura do Knight'], // comunidade
+                 regra: 'refinar até +4 ANTES de sortear linhas; só trabalhar peça com 2 das 3 linhas certas', // wiki/forja + comunidade
+                 desmancheDobro: ['10–11h', '21–22h'] }, // comunidade (fragmento em dobro)
+        // ── Imbuements: 20 h de caçada por carga, até 10 cargas no encaixe
+        imbuements: { horasCarga: 20, cargasMax: 10, powerful: 200000, protecaoPowerful: 50000, chPowerful: 50, // wiki/imbuements
+                      vampirism: 25, void: 8, strikeCrit: 10, strikeDano: 50, protElem: 15, // Powerful (%)
+                      inuteis: ['Swiftness', 'Time Ring', 'Stealth Ring', 'Dwarven Ring', 'Bronze Amulet'] }, // wiki/imbuements + comunidade
+        // ── Selo da Caçada: preço do Rolar por faixa de Rec e custo por hora ligado
+        selo: { tierCh: [30, 25, 22, 17, 6], perigoPeso: [1, 1, 2, 2, 3], pesoHora: [4.3, 5.8, 7.6, 11.9, 27.5], // wiki/selo-da-cacada, protocolo
+                adicionarMult: [1, 3, 5], perigoConfirma: 6,
+                // Rolar da faixa (faixa = 10 × ⌊Rec/10⌋, mín. 20) — protocolo; faixa 70 → 4.300 (exemplo da wiki)
+                rolar: (rec) => { const fx = Math.max(20, 10 * Math.floor((rec || 0) / 10)); const v = 600 * Math.pow((fx + 5) / 25, 1.8); const q = v >= 10000 ? 1000 : 100; return Math.round(v / q) * q; } },
+        // ── Chaves de Elite
+        chaves: { minLureMax: 60, minOutros: 240, mochilaMin: 1, energizarMin: 1.5, chavesDiaTudo: 28, sweepMax: 100 }, // wiki/chaves-e-caixas, elites; comunidade (≈28/dia com tudo)
+        // ── Invasão: diária, grátis, 3 janelas (14/18/22h); tokens pela posição no dano do boss
+        invasao: { janelas: [14, 18, 22], tokens: [[1, 500], [2, 350], [3, 250], [10, 190], [50, 150], [200, 120], [500, 100], [Infinity, 30]], // wiki/invasao ([até a posição, tokens])
+                   ravena: { refineT2: { qtd: 100, tokens: 120 }, caixaEliteAleatoria: { tokens: 150 } },
+                   dica: 'inscrever antes das 14h (soma as 3 janelas)' }, // comunidade
+        mercado: { taxaCriacao: 0.05, ordemDias: 3, leilaoCoins: 20, leilaoTaxa: 0.10, gemaOuro: 390000 }, // wiki/mercado, leilao; comunidade (gema ≈ 390k)
+        // ── Bestiário: 3 marcos (vale o maior), caçadas diferentes somam, só o marco III dá skill/ataque/armadura
+        bestiarioPrioridade: ['magicLevel', 'attack', 'melee', 'distance', 'manaRegen', 'maxHealth', 'armor', 'shielding'], // comunidade (regen de mana, ML, ataque, skill) + wiki/bestiario
+        bestiarioMarcos: { // wiki/bestiario: [caçada, abates do marco III, bônus]
+            magicLevel: [['Vampire hell', 10000, 1], ['Pits of Inferno Entrance', 12000, 1], ['Otherworld Zao', 50000, 1], ['Shadow Nexus', 50000, 1], ['Warzone III - Crystal Caves', 50000, 1], ['Dream Talisman', 50000, 1]],
+            attack: [['Barbarian Camp', 10000, 1], ['Giant Spiders POH', 12000, 1], ["Souleater's Canyon", 12000, 1], ['Thunderscar Peak', 12000, 1], ['Fire Portal', 12000, 1],
+                     ['Throne of Apocalypse', 50000, 1], ['Hellgorak Seal', 50000, 1], ['Winter Court', 50000, 1], ['Salt Caves', 50000, 1]],
+            melee: [['Mutated Humans', 10000, 1], ['Death Portal', 12000, 1], ['Warzone II - Parasite Nest', 50000, 1]],
+            distance: [['Cults Goroma', 10000, 1], ['Holy Portal', 50000, 1], ['Madareth Seal', 50000, 1], ['Sea Serpent Depths', 50000, 1]],
+            manaRegen: [['Wasps Dungeons', 4000, 3], ['Goblins Femor Hills', 4000, 3], ['Dworcs Port Hope', 10000, 3], ['Warzone I - Fungus', 50000, 3]],
+            armor: [['Rotworms Darashia', 10000, 1], ['Water Elementals Cavern', 10000, 1], ['Bog Raiders Yalahar', 10000, 1], ['Hero Fortress Entrance', 12000, 1],
+                    ['Hive Queen Chamber', 12000, 1], ['Putrid Mummies', 12000, 1], ['Ice Portal', 50000, 1], ['Warzone I - Rocky Mountain', 50000, 1], ['Seacrest Grounds', 50000, 1]],
+            shielding: [['Gladiators Arena Yalahar', 10000, 1], ['Gargoyles Meriana', 10000, 1], ['Throne of Tafariel', 50000, 1], ['Annihilon Seal', 50000, 1], ['Kilmaresh Catacombs', 50000, 1]] },
+        // ── De onde vêm os materiais (ilhas e tentativas de boss)
+        materiais: { // wiki/acesso-as-ilhas, acesso-aos-bosses, lojas-das-ilhas
+            'Spectral Conch': 'Haunted Nexus Tomb Box (Elite Entombed Wraithlord) 20,83 %, 2 por vez',
+            'Haunted Sigil': 'Haunted Nexus Temple Box 10,42 % / Haunted Nexus Cellar Box 20,83 %, 2 por vez',
+            'Thunderscar Spark': 'Thunderscar Peak Box (Elite Balerion) 23 %, 4 por vez',
+            'Warzone Voucher': 'Upper/Middle/Lower Spikes Box 10,8/15,2/22,5 %, 3 por vez',
+            'Inquisition Badge': 'Inquisition Warlocks Box 23 % / Inquisition Entrance Box 28 %, 4 por vez',
+            'Yalahar gear wheel': 'caixas dos 13 Elites de Yalahar 25 % (Viscous/Flameborn/Olhao 30 %, Jaws 35 %)',
+            'Yalahar Soul Fragment': 'toda vitória nos 13 Elites de Yalahar',
+            'Sphinx Dust': 'Salt Caves / Ruins of Nuur, ou 2 tokens na loja de Issavi',
+            "Timira's Scale": 'Seacrest Grounds / Emerald Gardens, ou 2 tokens na loja de Marapur',
+            "Izcandar's Shard": 'Buried Cathedral Box 4,17 % / Dream Talisman Box 6,94 %, ou 2 tokens na loja de Dream Courts',
+            'Breach Shard': 'loja do Otherworld, 15 tokens',
+            "The inquisitor's circlet": 'caixas dos 7 Elites dos selos da Inquisition 0,93–2,49 %',
+            'Necronomicon': 'caixas dos 6 Elites dos portais 10,5–17,5 % (Holy Portal 17,5 %)' },
+        tokensIlha: { issavi: { fragmentos: 10, ouro: 20000, coins: 49 }, marapur: { fragmentos: 10, ouro: 20000, coins: 49 }, // wiki/lojas-das-ilhas (preço de 1 token)
+                      dream_courts: { fragmentos: 10, ouro: 20000, coins: 49 }, otherworld: { fragmentos: 10, ouro: 20000, coins: 9 } },
+        // ── Equipamento do topo (nível 297–386 visível em 27/11) e réguas da comunidade
+        topoVisto: { KNIGHT: ['Zaoan helmet', 'exotic legs', 'Zaoan legs', 'guardian boots', 'crystal ring', 'Royal Signet', 'stonecutter axe', 'axe of destruction', 'avenger', 'onyx pendant'],
+                     PALADIN: ['paladin armor', 'wood cape', 'living vine bow', 'mycological bow'],
+                     MAGOS: ['magma legs', 'magma boots', 'magma coat', 'firemind raiment', 'spellbook of mind control', 'spellbook of enlightenment', 'jade hat', 'batwing hat'],
+                     meleeTopo: [66, 79] }, // jogo ao vivo 27/11 (u2tag 64)
+        reguas: { protFisicaKnight: 16, vidaMagos: [1100, 1400], potMin: 350, // comunidade (guia Shadow Nexus 24/11, Melhorias 2.52)
+                  magiaCriaturaIgnoraArmadura: true }, // wiki/como-o-dano-e-calculado: só resist. ao elemento, proteção mágica e Magic Shield
+        // ── Erros comuns (o agente "Onde estou errando" usa como texto de apoio)
+        erros: [
+            'subir de mapa por over-level sem resistência ao elemento e potência (comunidade)',
+            'Knight tomando poção de mana (comunidade)',
+            'morrer cedo no offline e achar que caçou 12 h: a morte encerra a caçada (wiki/durante-a-cacada)',
+            'economizar poção na Shadow Nexus (comunidade)',
+            'forjar peça ruim cedo: só trabalhar base 350–400+ com 2 das 3 linhas certas (comunidade)',
+            'prey em mapa errado: o bônus só vale na caçada da prey (wiki/prey)',
+            'slots de equipamento e encaixes de imbuement vazios (comunidade)',
+            'Druid morrendo por fila de cura (medido 26/10, Draken Walls)',
+            'anúncio a preço errado e taxa de 5 % afundada no Mercado (projeto)',
+            'munição cara: diamond arrow custou 258k/h (medido)',
+            'Great Mana Potion no Druid: 195k/h (medido)',
+            'mana leech pode dar prejuízo: medir ≥ 1 h antes de decidir (comunidade TV de Souza)',
+            'XP Boost ligado em Elite/Boss/Torre não corre (wiki/loja)' ],
+        topoSkills: null, // preenchido em tempo de execução pelo /leaderboard
+    };
     function trConselho(agente, id, o) {
         return Object.assign({ id: agente + ':' + id, agente, titulo: '', porque: '', numeros: null, impacto: 0, confianca: 'estimado', custo: 0, acao: null, estado: 'aviso' }, o || {});
     }
