@@ -11635,7 +11635,7 @@
         prey: { duracaoH: 2, wildcardCoins: 10, escolherWildcards: 5, trocaOuroPorNivel: 200, trocaGratisDia: 1, // wiki/prey; protocolo: rules.listGold 50.000 no nível 250 = 200 × nível
                 travaWildcards: 1, danoPorTier: 4, defesaPorTier: 4, tierMax: 10, tiposBuff: ['xp', 'loot', 'damage', 'defense'] }, // wiki/prey, protocolo (preyBuffs)
         premium: { coins: 290, dias: 30, xp: 10, autoSellFrac: 0.9, autoSellFreeFrac: 0.8 }, // wiki/premium-o-que-muda
-        boost: { pct: 50, min: 90, coins: [45, 90, 180, 360], porDia: 4, soCacadaComum: true }, // wiki/loja (não corre em Elite/Boss/Torre/treino)
+        boost: { min: 90, coins: [45, 90, 180, 360], porDia: 4, soCacadaComum: true }, // wiki/loja (não corre em Elite/Boss/Torre/treino)
         loja: { sessao24hCoins: 190, deathRedemptionCoins: 30, coinOuro: 52000 }, // wiki/loja, bencaos; comunidade: coin ≈ 50–54 mil de ouro
         // ── Legado: dano permanente pela skill TREINADA (item/bestiário/loyalty não contam). Knight melee, Paladin distância, magos ML (Druid: cura também)
         legado: { skillInicio: 60, mlInicio: 40, passo: 5, // wiki/legado (skillInicio = corpo a corpo e distância; mlInicio = nível mágico)
@@ -11890,12 +11890,121 @@
         for (const a of TR_AGENTES) { // cartões na ordem de TR_AGENTES
             const lista = porAgente.get(a) || [];
             const ord = lista.slice().sort((x, y) => ((TR_GRAVIDADE[x.estado] ?? 1) - (TR_GRAVIDADE[y.estado] ?? 1)) || ((Number(y.impacto) || 0) - (Number(x.impacto) || 0)));
-            const pior = lista.some(c => c.estado === 'erro') ? 'erro' : lista.some(c => c.estado === 'aviso') ? 'aviso' : 'ok';
+            // pior estado com a mesma régua da ordenação: sem estado (ou estado estranho) conta como aviso
+            const pior = ['erro', 'aviso', 'ok'][lista.reduce((p, c) => Math.min(p, TR_GRAVIDADE[c.estado] ?? 1), 2)];
             cartoes.push({ id: a.id, nome: a.nome, icone: a.icone, estado: pior, conselhos: ord.slice(0, 3) });
             todos.push(...lista);
         }
         return { cartoes, passos: trOrdenar(todos, foto).slice(0, 3), todos };
     }
+    // ── Ajudantes dos especialistas (puros)
+    const trPeso = (fonte) => TR_PESO_CONF[String(fonte || '').toLowerCase()] || 0.4;
+    const trConf = (fonte) => { const f = String(fonte || '').toLowerCase(); return f in TR_PESO_CONF ? f : 'estimado'; };
+    const trK = (v) => Math.round(v / 1000) + 'k'; // 540000 → 540k
+    const trNum = (v) => (v == null || v === '' ? NaN : Number(v)); // null/'' não viram 0
+    // Faixa de base.faixas onde o nível cai ([de, ate)); null sem nível.
+    function trFaixaDoNivel(nivel, base) {
+        return Number.isFinite(nivel) ? ((base || TR_BASE).faixas || []).find(x => nivel >= x.de && nivel < x.ate) || null : null;
+    }
+    const trNomeIlha = (base, ilha) => { const i = ((base || TR_BASE).ilhas || []).find(x => x.id === ilha); return i ? i.nome : String(ilha); };
+    // Ilha fechada? foto.ilhas = [{ id|nome, aberta }]; aceita o id do Silas ou o nome. Sem notícia = aberta (não inventa bloqueio).
+    function trIlhaFechada(foto, base, ilha) {
+        if (!ilha) return false;
+        const info = ((base || TR_BASE).ilhas || []).find(x => x.id === ilha);
+        const nomes = [ilha, info && info.nome].filter(Boolean).map(s => String(s).toLowerCase());
+        const st = (foto.ilhas || []).find(x => x && [x.id, x.nome].some(v => v != null && nomes.includes(String(v).toLowerCase())));
+        return !!(st && st.aberta === false);
+    }
+    // Caçada limitada por dano? abates/h < limitadoPorSpawnFrac × (porLure × lure) — teto de spawn medido 27/09. null = sem dado.
+    function trLimitadoPorDano(foto, base) {
+        const b = base || TR_BASE, ma = foto.medidoAtual, h = foto.hunt;
+        const abates = ma ? trNum(ma.abatesH) : NaN, lure = h ? trNum(h.lure) : NaN;
+        if (!Number.isFinite(abates) || !(lure > 0)) return null;
+        return abates < b.spawn.limitadoPorSpawnFrac * b.spawn.porLure * lure;
+    }
+
+    // ── Especialista 1: Onde upar (⤴). Só compara mapas com XP/h conhecida, sem morte, abertos e do nível.
+    //    Lure: sobe 1 degrau por vez e NUNCA sugere baixar (regra do dono).
+    function trAgenteUpar(foto, base) {
+        const b = base || TR_BASE, out = [];
+        const nivel = Number.isFinite(foto.nivel) ? foto.nivel : null, hunt = foto.hunt || null, ma = foto.medidoAtual || null;
+        const mapas = (Array.isArray(foto.mapas) ? foto.mapas : []).filter(m => m && typeof m === 'object');
+        const ilhaDe = (m) => m.ilha || (trCacada(m.title, b) || {}).ilha || null;
+        // aberta: true do jogo vence; sem ela, vale a lista de ilhas da foto
+        const fechado = (m) => m.aberta === false || (m.aberta !== true && trIlhaFechada(foto, b, ilhaDe(m)));
+        const usavel = (m) => nivel != null && trNum(m.xpH) > 0 && !m.mortes && (Number(m.levelMin) || 0) <= nivel;
+        const melhorDe = (lista) => lista.reduce((a, m) => (!a || m.xpH * trPeso(m.fonte) > a.xpH * trPeso(a.fonte) ? m : a), null);
+        const cand = mapas.filter(m => usavel(m) && !fechado(m)), fechados = mapas.filter(m => usavel(m) && fechado(m));
+        const melhor = melhorDe(cand), melhorFechado = melhorDe(fechados);
+        const daCacada = hunt ? mapas.find(m => m.id === hunt.id) || null : null;
+        const xpAtual = ma && trNum(ma.xpH) > 0 ? Number(ma.xpH) : daCacada && trNum(daCacada.xpH) > 0 ? Number(daCacada.xpH) : null;
+        const nomeAtual = hunt ? hunt.title || (daCacada && daCacada.title) || 'a caçada atual' : null;
+        const outros = cand.filter(m => !hunt || m.id !== hunt.id);
+        const irPara = (m, imp, porque) => trConselho('upar', 'mapa', {
+            titulo: xpAtual ? `Upar em ${m.title}: +${Math.round(imp)} % de XP/h` : `Upar em ${m.title}: ${trK(m.xpH)} XP/h`,
+            porque, numeros: { xpH: m.xpH, xpAtual, fonte: m.fonte || null }, impacto: imp, confianca: trConf(m.fonte),
+            acao: { tipo: 'ir-mapa', huntId: m.id, rotulo: 'Ir para ' + m.title } });
+        if (melhor && outros.length) {
+            if (hunt && melhor.id === hunt.id) {
+                out.push(trConselho('upar', 'mapa', { titulo: 'Você já está no melhor mapa medido', estado: 'ok', confianca: trConf(melhor.fonte),
+                    porque: `${nomeAtual} rende ${trK(xpAtual || melhor.xpH)} XP/h; nenhum outro mapa medido do seu nível passa disso.` }));
+            } else if (xpAtual && melhor.xpH >= 1.1 * xpAtual) {
+                out.push(irPara(melhor, (melhor.xpH / xpAtual - 1) * 100,
+                    `${melhor.title} rende ${trK(melhor.xpH)} XP/h (${trConf(melhor.fonte)}${melhor.idadeH != null ? ', há ' + Math.round(melhor.idadeH) + ' h' : ''}) `
+                        + `contra ${trK(xpAtual)} XP/h em ${nomeAtual}. Sem morte na medida.`));
+            } else if (xpAtual) {
+                out.push(trConselho('upar', 'mapa', { titulo: 'Você já está no melhor mapa medido', estado: 'ok', confianca: trConf(melhor.fonte),
+                    porque: `O melhor outro mapa (${melhor.title}, ${trK(melhor.xpH)} XP/h) não passa 10 % dos ${trK(xpAtual)} XP/h de agora: não vale a viagem.` }));
+            } else {
+                // sem XP/h da caçada atual (ou fora de caçada): aponta o melhor medido, com impacto pequeno por não ter com o que comparar
+                out.push(irPara(melhor, 5, `${melhor.title} é o mapa medido que mais rende no seu nível (${trK(melhor.xpH)} XP/h). Sem a XP/h de agora para comparar.`));
+            }
+        }
+        // Ilha fechada: 1º o melhor medido de ilha fechada que passa o melhor aberto; sem medida, o mapa de maior Rec ≤ nível da faixa.
+        let abrir = null;
+        if (melhorFechado && (!melhor || melhorFechado.xpH * trPeso(melhorFechado.fonte) > melhor.xpH * trPeso(melhor.fonte))) {
+            abrir = { title: melhorFechado.title, ilha: ilhaDe(melhorFechado), xpH: melhorFechado.xpH };
+        } else if (!melhorFechado && nivel != null) {
+            const fx = trFaixaDoNivel(nivel, b);
+            const topo = fx ? fx.hunts.map(h => Object.assign({ title: h }, trCacada(h, b))).filter(c => c.rec != null && c.rec <= nivel).sort((x, y) => y.rec - x.rec)[0] : null;
+            if (topo && trIlhaFechada(foto, b, topo.ilha)) abrir = { title: topo.title, ilha: topo.ilha, xpH: null };
+        }
+        if (abrir && abrir.ilha) {
+            const ilha = trNomeIlha(b, abrir.ilha);
+            out.push(trConselho('upar', 'abrir-ilha', { titulo: `Abrir ${ilha} para ${abrir.title}`, impacto: 5,
+                porque: (abrir.xpH ? `${abrir.title} rende ${trK(abrir.xpH)} XP/h, mais que os mapas abertos. ` : `${abrir.title} é a caçada de maior Rec da sua faixa. `)
+                    + `O especialista "Caçar itens" diz o que falta para abrir ${ilha}.`,
+                numeros: { ilha: abrir.ilha, xpH: abrir.xpH } }));
+        }
+        // Lure: sobe 1 degrau se as 2 últimas sessões desta caçada não tiveram morte (sessões em ordem de tempo, a última no fim).
+        if (hunt && Number.isFinite(trNum(hunt.lure)) && Number.isFinite(trNum(hunt.maxLure)) && Number(hunt.lure) < Number(hunt.maxLure)) {
+            const ult = (Array.isArray(foto.sessoes) ? foto.sessoes : []).filter(s => s && s.huntId === hunt.id).slice(-2);
+            if (!ult.some(s => s.morte) && !(daCacada && daCacada.mortes)) {
+                const n = Number(hunt.lure) + 1, porDano = trLimitadoPorDano(foto, b) === true;
+                out.push(trConselho('upar', 'lure', { titulo: `Subir a lure para ${n}`, impacto: porDano ? 4 : 8,
+                    porque: `Lure ${hunt.lure} de ${hunt.maxLure} e nenhuma morte nas últimas sessões aqui. Mais lure = mais criaturas por onda (≈ +8 % de XP/h por degrau, estimado).`
+                        + (porDano ? ' A caçada já está limitada por dano (abates abaixo do teto de spawn): conto só metade.' : '') + ' Se morrer, o "Aguentar" mostra por quê.',
+                    numeros: { lure: Number(hunt.lure), maxLure: Number(hunt.maxLure), porDano },
+                    acao: { tipo: 'lure', huntId: hunt.id, lure: n, rotulo: 'Lure ' + n } }));
+            }
+        }
+        // Sem nenhum outro mapa medido: pedir medida de até 3 caçadas da faixa (as de maior Rec ≤ nível, fora de ilha fechada).
+        if (!outros.length && !fechados.length) {
+            const fx = trFaixaDoNivel(nivel, b), atual = hunt && hunt.title ? String(hunt.title).toLowerCase() : null;
+            const titulos = fx ? fx.hunts.filter(h => {
+                const c = trCacada(h, b) || {};
+                return h.toLowerCase() !== atual && (c.rec == null || c.rec <= nivel) && !trIlhaFechada(foto, b, c.ilha);
+            }).slice(-3) : [];
+            const huntIds = titulos.map(h => (mapas.find(m => String(m.title || '').toLowerCase() === h.toLowerCase()) || {}).id).filter(x => x != null);
+            out.push(trConselho('upar', 'medir', { titulo: 'Medir mapas da sua faixa', impacto: titulos.length ? 3 : 0,
+                porque: titulos.length ? `Não tenho XP/h medida de outro mapa para comparar. Meça 5 min em: ${titulos.join(', ')}.`
+                    : 'Não tenho XP/h medida de outro mapa nem caçadas da sua faixa na base.',
+                numeros: { titulos },
+                acao: titulos.length ? { tipo: 'medir', huntIds, titulos, rotulo: 'Medir' } : null }));
+        }
+        return out;
+    }
+    TR_AGENTES.push({ id: 'upar', nome: 'Onde upar', icone: '⤴', rodar: trAgenteUpar });
     /* @@TREINADOR-PURO-FIM */
     /* @@ARENA-PURO-INICIO — Sobrevivência (2.57.0): decisões do robô, puras (o tempo é st.tempoMs, sem DOM).
      * st = estado da simulação do cliente (ref.current.st do componente da partida). O mesmo código rodou no simulador

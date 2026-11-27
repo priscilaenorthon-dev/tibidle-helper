@@ -4,12 +4,20 @@ const fs = require('fs'), path = require('path'), assert = require('assert');
 const src = fs.readFileSync(path.join(__dirname, '..', 'tibidle-helper.user.js'), 'utf8');
 const i = src.indexOf('/* @@TREINADOR-PURO-INICIO'), f = src.indexOf('/* @@TREINADOR-PURO-FIM');
 assert(i > 0 && f > i, 'trecho @@TREINADOR-PURO não encontrado');
-const T = new Function(src.slice(i, f) + '\nreturn { TR_BASE, TR_AGENTES, trConselho, trOrdenar, trRodar, trFotoVazia, trCacada };')();
+const T = new Function(src.slice(i, f) + '\nreturn { TR_BASE, TR_AGENTES, trConselho, trOrdenar, trRodar, trFotoVazia, trCacada, trAgenteUpar };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
-// agentes falsos: empurra em TR_AGENTES, roda e limpa sempre
-const comAgentes = (agentes, fn) => { T.TR_AGENTES.push(...agentes); try { return fn(); } finally { T.TR_AGENTES.length = 0; } };
+// agentes falsos: troca os de verdade pelos falsos, roda e devolve os de verdade sempre
+const comAgentes = (agentes, fn) => {
+    const reais = T.TR_AGENTES.splice(0); T.TR_AGENTES.push(...agentes);
+    try { return fn(); } finally { T.TR_AGENTES.length = 0; T.TR_AGENTES.push(...reais); }
+};
 const ag = (id, rodar, extra) => Object.assign({ id, nome: id, icone: '·', rodar }, extra || {});
+// fotos sintéticas para os especialistas
+const foto = (o) => Object.assign(T.trFotoVazia(), { t: 1.8e12 }, o || {});
+const mapa = (id, title, xpH, extra) => Object.assign({ id, title, rec: 250, levelMin: 200, ilha: null, aberta: true, xpH, ouroH: 0, fonte: 'medido', mortes: 0, idadeH: 1 }, extra || {});
+const huntSN = (extra) => Object.assign({ id: 1, title: 'Shadow Nexus', lure: 4, maxLure: 4, rec: 250, levelMin: 200, ilha: 'the_inquisition' }, extra || {});
+const acoes = (cs, tipo) => cs.filter(c => c.acao && c.acao.tipo === tipo);
 
 t('foto vazia não quebra nenhum especialista e não gera passo', () => {
     const r = T.trRodar(T.trFotoVazia(), T.TR_BASE);
@@ -135,4 +143,98 @@ t('trCacada: Shadow Nexus → Rec 250 na Inquisition; caçada de Rec < 200 só t
     assert.strictEqual(dw.rec, null); assert.strictEqual(dw.faixa.de, 130);
     assert.strictEqual(T.trCacada('Não Existe'), null); assert.strictEqual(T.trCacada(''), null);
 });
+t('trRodar: conselho sem estado conta como aviso no cartão', () => comAgentes([
+    ag('cru', () => [{ id: 'cru:x', impacto: 1 }]), ag('estranho', () => [{ id: 'estranho:x', impacto: 1, estado: 'xyz' }])], () => {
+    const r = T.trRodar(T.trFotoVazia(), T.TR_BASE);
+    assert.deepStrictEqual(r.cartoes.map(c => c.estado), ['aviso', 'aviso']);
+}));
+t('TR_BASE: boost sem o pct duplicado (o +50 fica só em xp.boost)', () => {
+    assert(!('pct' in T.TR_BASE.boost)); assert.strictEqual(T.TR_BASE.xp.boost, 50);
+});
+
+// ── Task 4: Onde upar
+t('upar: atual 540k × Summer Court medido 650k → ir-mapa com +20,4 %', () => {
+    const f = foto({ nivel: 238, hunt: huntSN(), medidoAtual: { xpH: 540000 },
+        mapas: [mapa(1, 'Shadow Nexus', 540000), mapa(2, 'Summer Court', 650000), mapa(3, 'Ice Portal', 300000)] });
+    const ir = acoes(T.trAgenteUpar(f, T.TR_BASE), 'ir-mapa');
+    assert.strictEqual(ir.length, 1); const c = ir[0];
+    assert(Math.abs(c.impacto - 20.37) < 0.1, String(c.impacto));
+    assert.strictEqual(c.acao.huntId, 2); assert(c.acao.rotulo); assert.strictEqual(c.confianca, 'medido'); assert.strictEqual(c.estado, 'aviso');
+    assert(/Summer Court/.test(c.titulo) && /\+20 %/.test(c.titulo) && c.titulo.length <= 70, c.titulo);
+});
+t('upar: sem medidoAtual, o atual é o xpH do mapa da caçada; confiança segue a fonte', () => {
+    const f = foto({ nivel: 238, hunt: huntSN(), mapas: [mapa(1, 'Shadow Nexus', 500000), mapa(2, 'Summer Court', 700000, { fonte: 'comunidade' })] });
+    const c = acoes(T.trAgenteUpar(f, T.TR_BASE), 'ir-mapa')[0];
+    assert(Math.abs(c.impacto - 40) < 1e-9); assert.strictEqual(c.confianca, 'comunidade');
+});
+t('upar: comunidade 600k × medido 500k: o peso da confiança decide (fica no medido)', () => {
+    const f = foto({ nivel: 238, hunt: huntSN(), mapas: [mapa(1, 'Shadow Nexus', 500000), mapa(2, 'Summer Court', 600000, { fonte: 'comunidade' })] });
+    const cs = T.trAgenteUpar(f, T.TR_BASE);
+    assert.strictEqual(acoes(cs, 'ir-mapa').length, 0); assert(cs.some(c => c.estado === 'ok'));
+});
+t('upar: o melhor com morte é ignorado (vai no 2º sem morte)', () => {
+    const f = foto({ nivel: 238, hunt: huntSN(), medidoAtual: { xpH: 540000 },
+        mapas: [mapa(1, 'Shadow Nexus', 540000), mapa(2, 'Summer Court', 650000, { mortes: 2 }), mapa(4, 'Otherworld Zao', 600000)] });
+    const ir = acoes(T.trAgenteUpar(f, T.TR_BASE), 'ir-mapa');
+    assert.deepStrictEqual(ir.map(c => c.acao.huntId), [4]);
+});
+t('upar: mapa acima do nível não entra', () => {
+    const f = foto({ nivel: 238, hunt: huntSN(), medidoAtual: { xpH: 540000 },
+        mapas: [mapa(1, 'Shadow Nexus', 540000), mapa(5, 'Ruins of Nuur', 900000, { levelMin: 300 })] });
+    assert.strictEqual(acoes(T.trAgenteUpar(f, T.TR_BASE), 'ir-mapa').length, 0);
+});
+t('upar: lure abaixo do máximo sem morte nas 2 últimas sessões → subir 1 degrau', () => {
+    const s = (morte) => ({ hunt: 'Shadow Nexus', huntId: 1, dur: 60, xpH: 500000, ouroH: 0, morte });
+    const base = { nivel: 238, hunt: huntSN({ lure: 2 }), mapas: [mapa(1, 'Shadow Nexus', 540000)] };
+    let l = acoes(T.trAgenteUpar(foto(Object.assign({ sessoes: [s(true), s(false), s(false)] }, base)), T.TR_BASE), 'lure');
+    assert.strictEqual(l.length, 1); assert.strictEqual(l[0].acao.lure, 3); assert.strictEqual(l[0].acao.huntId, 1);
+    assert.strictEqual(l[0].impacto, 8); assert(/Subir a lure para 3/.test(l[0].titulo));
+    l = acoes(T.trAgenteUpar(foto(Object.assign({ sessoes: [s(false), s(true), s(false)] }, base)), T.TR_BASE), 'lure');
+    assert.strictEqual(l.length, 0, 'morte numa das 2 últimas');
+    l = acoes(T.trAgenteUpar(foto(Object.assign({}, base, { hunt: huntSN({ lure: 4 }) })), T.TR_BASE), 'lure');
+    assert.strictEqual(l.length, 0, 'já no máximo: nunca baixar');
+});
+t('upar: lure numa caçada limitada por dano rende metade', () => {
+    const f = foto({ nivel: 238, hunt: huntSN({ lure: 2 }), medidoAtual: { xpH: 540000, abatesH: 300 }, mapas: [mapa(1, 'Shadow Nexus', 540000)] });
+    assert.strictEqual(acoes(T.trAgenteUpar(f, T.TR_BASE), 'lure')[0].impacto, 4);
+});
+t('upar: mapa de ilha fechada não vira ir-mapa; vira "Abrir <ilha>" sem ação', () => {
+    for (const extra of [{ ilhas: [] , fechado: { aberta: false } }, { ilhas: [{ nome: 'Dream Courts', aberta: false }], fechado: { aberta: undefined } }]) {
+        const f = foto({ nivel: 238, hunt: huntSN(), medidoAtual: { xpH: 540000 }, ilhas: extra.ilhas,
+            mapas: [mapa(1, 'Shadow Nexus', 540000), mapa(2, 'Summer Court', 650000, extra.fechado)] });
+        const cs = T.trAgenteUpar(f, T.TR_BASE);
+        assert.strictEqual(acoes(cs, 'ir-mapa').length, 0);
+        const ab = cs.find(c => /^Abrir Dream Courts/.test(c.titulo));
+        assert(ab, cs.map(c => c.titulo).join(' | ')); assert.strictEqual(ab.acao, null); assert(ab.impacto > 0 && ab.impacto <= 5);
+    }
+});
+t('upar: sem medida, o melhor da faixa (maior Rec ≤ nível) em ilha fechada → "Abrir Issavi"', () => {
+    const f = foto({ nivel: 238, ilhas: [{ id: 'issavi', aberta: false }] });
+    const ab = T.trAgenteUpar(f, T.TR_BASE).find(c => /^Abrir/.test(c.titulo));
+    assert(ab && /Issavi/.test(ab.titulo) && /Kilmaresh Catacombs/.test(ab.titulo), ab && ab.titulo);
+});
+t('upar: já no melhor mapa medido → estado ok e sem ir-mapa', () => {
+    const f = foto({ nivel: 238, hunt: huntSN(), medidoAtual: { xpH: 650000 },
+        mapas: [mapa(1, 'Shadow Nexus', 650000), mapa(2, 'Summer Court', 600000)] });
+    const cs = T.trAgenteUpar(f, T.TR_BASE);
+    assert.strictEqual(acoes(cs, 'ir-mapa').length, 0);
+    assert(cs.some(c => c.estado === 'ok' && /melhor mapa/.test(c.titulo)));
+});
+t('upar: sem nenhum mapa medido → "Medir mapas da sua faixa" com até 3 caçadas da faixa', () => {
+    const cs = T.trAgenteUpar(foto({ nivel: 238, mapas: [{ id: 77, title: 'Kilmaresh Catacombs', levelMin: 200, aberta: true }] }), T.TR_BASE);
+    const m = acoes(cs, 'medir')[0];
+    assert(m, cs.map(c => c.titulo).join(' | '));
+    assert(m.acao.titulos.length >= 1 && m.acao.titulos.length <= 3);
+    assert(m.acao.titulos.includes('Kilmaresh Catacombs')); assert.deepStrictEqual(m.acao.huntIds, [77]);
+    for (const h of m.acao.titulos) { const c = T.trCacada(h); assert(!c.rec || c.rec <= 238, h); }
+    assert(m.impacto > 0);
+});
+t('upar: foto vazia → só o "Medir" sem impacto (nada de passo)', () => {
+    const cs = T.trAgenteUpar(T.trFotoVazia(), T.TR_BASE);
+    assert(cs.every(c => !(c.impacto > 0)));
+});
+t('upar: registrado em TR_AGENTES', () => {
+    assert(T.TR_AGENTES.some(a => a.id === 'upar' && a.rodar === T.trAgenteUpar && a.icone === '⤴'));
+});
+
 process.on('exit', () => { if (!process.exitCode) console.log(`\n${n} testes ok`); });
