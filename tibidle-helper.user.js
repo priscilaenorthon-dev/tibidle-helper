@@ -11835,7 +11835,8 @@
             'XP Boost ligado em Elite/Boss/Torre não corre (wiki/loja)' ],
         // ── Equipamento: slots que nunca ficam vazios (escudo só com arma de 1 mão; munição só no Paladino — regra no agente "Onde estou errando")
         equip: { obrigatorios: ['head', 'necklace', 'armor', 'weapon', 'ring', 'legs', 'boots'],
-                 duasMaosNomes: ['bow', 'crossbow', 'arbalest'] }, // jogo: arco/besta são de 2 mãos; o resto vem de attrs.slotType ('two-handed') em eq.weapon.duasMaos
+                 duasMaosNomes: ['bow', 'crossbow', 'arbalest'], // jogo: arco/besta são de 2 mãos; o resto vem de attrs.slotType ('two-handed') em eq.weapon.duasMaos
+                 municaoNomes: ['bow', 'crossbow', 'arbalest'] }, // jogo: só arco/besta gastam munição (lança/estrela não)
         topoSkills: null, // preenchido em tempo de execução pelo /leaderboard
     };
     // Caçada pelo título (sem diferença de maiúsculas): { rec, ilha, faixa } — rec/ilha só das de Rec ≥ 200 (cacadasTopo); null se a base não conhece.
@@ -11874,6 +11875,9 @@
     // Fase 2 roda depois de todos e recebe em `todos` os conselhos da fase 1; os da fase 1 recebem [].
     const TR_AGENTES = [];
     const TR_GRAVIDADE = { erro: 0, aviso: 1, ok: 2 };
+    // [contrato] Escala do chefe: nota = impacto × peso da confiança × (0,3 se falta ouro); conselho com estado 'erro' tem nota MÍNIMA 4 (piso),
+    // para um erro de fato (slot vazio, ouro acabando) não ficar atrás de palpite. Fatos da foto usam confiança 'medido'.
+    const TR_PISO_ERRO = 4;
     function trOrdenar(conselhos, foto) {
         const livre = foto && Number.isFinite(foto.ouroLivre) ? foto.ouroLivre : Infinity;
         const out = [];
@@ -11882,7 +11886,8 @@
             const imp = Number(c.impacto);
             if (!Number.isFinite(imp) || imp <= 0) continue;
             const custo = Number(c.custo) || 0, semOuro = custo > livre;
-            out.push(Object.assign({}, c, { nota: imp * trPeso(c.confianca) * (semOuro ? 0.3 : 1), semOuro }));
+            const nota = imp * trPeso(c.confianca) * (semOuro ? 0.3 : 1);
+            out.push(Object.assign({}, c, { nota: c.estado === 'erro' ? Math.max(TR_PISO_ERRO, nota) : nota, semOuro }));
         }
         return out.sort((a, b) => b.nota - a.nota);
     }
@@ -11991,12 +11996,15 @@
     const trSlotPt = (s) => TR_SLOT_PT[s] || String(s || '?');
     // Número de um item pelo NOME, sem diferença de maiúsculas ({ nome: n } da foto: deposito, precos).
     // Soma as grafias repetidas (depósito + mochila); `primeiro` = só a 1ª (preço). null = o item não está lá.
+    const trNome = (s) => String(s == null ? '' : s).trim().toLowerCase(); // normalizador comum de nome de item
+    // Peça vestida no slot (com nome) ou null: slot vazio = ausente/null/sem nome.
+    const trPeca = (eq, slot) => (eq && typeof eq === 'object' && eq[slot] && trNome(eq[slot].nome) ? eq[slot] : null);
     function trPorNome(obj, nome, primeiro) {
-        const k = String(nome || '').trim().toLowerCase();
+        const k = trNome(nome);
         if (!k || !obj || typeof obj !== 'object') return null;
         let soma = null;
         for (const [n, v] of Object.entries(obj)) {
-            if (n.trim().toLowerCase() !== k || !Number.isFinite(trNum(v))) continue;
+            if (trNome(n) !== k || !Number.isFinite(trNum(v))) continue;
             if (primeiro) return Number(v);
             soma = (soma || 0) + Number(v);
         }
@@ -12055,12 +12063,15 @@
         return { impacto: Math.min(b.morte.tetoImpacto, bruto), bruto, ritmo, perda };
     }
     // Arma de 2 mãos? A dica da foto (eq.weapon.duasMaos, do attrs.slotType) vence; sem ela, o nome (arco/besta).
+    // O nome da peça tem alguma das palavras da lista? (palavra inteira, sem maiúsculas)
+    const trNomeTem = (peca, lista) => !!peca && (lista || []).some(w => new RegExp('\\b' + w + '\\b').test(trNome(peca.nome)));
     function trDuasMaos(peca, base) {
         if (!peca) return false;
         if (typeof peca.duasMaos === 'boolean') return peca.duasMaos;
-        const nome = String(peca.nome || '').toLowerCase();
-        return ((base || TR_BASE).equip.duasMaosNomes || []).some(w => new RegExp('\\b' + w + '\\b').test(nome));
+        return trNomeTem(peca, (base || TR_BASE).equip.duasMaosNomes);
     }
+    // Arma que gasta munição (arco/besta, pelo nome): só então a munição vazia é erro.
+    const trUsaMunicao = (peca, base) => trNomeTem(peca, (base || TR_BASE).equip.municaoNomes);
     // Título no limite da tela (70); o resto vai no porquê.
     const trCorta = (s, n) => { const t = String(s), max = n || 70; return t.length <= max ? t : t.slice(0, max - 1).trimEnd() + '…'; };
     // ['elmo', 'anel', 'bota'] → 'elmo, anel e bota'
@@ -12423,24 +12434,26 @@
         const ouroH = ma ? trNum(ma.ouroH) : NaN, livre = trNum(foto.ouroLivre);
         if (ma && trNum(ma.min) >= 5 && ouroH < 0 && Number.isFinite(livre) && livre < 3 * -ouroH) {
             const horas = Math.max(0, livre) / -ouroH;
-            out.push(trConselho('erros', 'ouro', { titulo: `O ouro acaba em ${trPct(horas)} h nesta caçada`, estado: 'erro', impacto: 5,
+            out.push(trConselho('erros', 'ouro', { titulo: `O ouro acaba em ${trPct(horas)} h nesta caçada`, estado: 'erro', impacto: 10, confianca: 'medido',
                 porque: `A caçada gasta ${trQtd(-ouroH)} de ouro por hora e sobram ${trQtd(livre)} livres. Sem ouro as poções param e o grupo morre: baixe o gasto (magias/poções) ou troque de mapa.`,
                 numeros: { ouroH, ouroLivre: livre, horas },
                 acao: { tipo: 'abrir-magia', rotulo: 'Magia' } }));
         }
-        // 3) Slot vazio (escudo só com arma de 1 mão; munição no Paladino). Equipamento não lido (nenhum slot com nome) não opina.
+        // 3) Slot vazio (escudo só com arma de 1 mão; munição só com arma que gasta munição). Fato da foto: confiança medido, impacto 5.
+        //    Equipamento não lido (nenhum slot com nome) não opina.
         // 4) Encaixes de imbuement livres em peça vestida (somados num aviso só).
-        let livres = 0;
+        let livres = 0, comEq = 0;
         const ondeImbu = [];
         for (const m of party) {
-            const eq = m.eq && typeof m.eq === 'object' ? m.eq : null;
-            const tem = (s) => !!(eq && eq[s] && String(eq[s].nome || '').trim());
+            const eq = m.eq && typeof m.eq === 'object' ? m.eq : null, tem = (s) => !!trPeca(eq, s);
             if (!TR_SLOTS.some(tem)) continue;
+            comEq++;
+            const arma = trPeca(eq, 'weapon');
             const faltam = TR_SLOTS.filter(s => !tem(s) && (b.equip.obrigatorios.includes(s)
-                || (s === 'shield' && tem('weapon') && !trDuasMaos(eq.weapon, b)) || (s === 'ammo' && m.voc === 'PALADIN')));
+                || (s === 'shield' && arma && !trDuasMaos(arma, b)) || (s === 'ammo' && trUsaMunicao(arma, b))));
             if (faltam.length) {
                 const nome = trVocPt(m.voc);
-                out.push(trConselho('erros', 'slot-' + m.voc, { titulo: trCorta(`${nome} sem ${trLista(faltam.map(trSlotPt))}`), estado: 'erro', impacto: 3,
+                out.push(trConselho('erros', 'slot-' + m.voc, { titulo: trCorta(`${nome} sem ${trLista(faltam.map(trSlotPt))}`), estado: 'erro', impacto: 5, confianca: 'medido',
                     porque: `Slot vazio é atributo que não existe: qualquer peça do depósito ou do Mercado já rende mais que nada. A aba Equip escolhe a melhor para o ${nome}.`,
                     numeros: { voc: m.voc, slots: faltam },
                     acao: { tipo: 'abrir-equip', voc: m.voc, rotulo: 'Equip' } }));
@@ -12458,21 +12471,25 @@
                 acao: { tipo: 'abrir-aguentar', rotulo: 'Aguentar' } }));
         }
         // 5) Régua "ficar forte" da comunidade (mlChecklist): o 1º item falho de cada vocação, até 3.
+        //    O item 'imbu' é pulado quando o aviso de encaixe livre já saiu (mesmo conselho duas vezes).
         const ck = foto.checklist && typeof foto.checklist === 'object' ? foto.checklist : null;
         let nCheck = 0;
         for (const voc of ck ? Object.keys(ck) : []) {
-            const it = nCheck < 3 && Array.isArray(ck[voc]) ? ck[voc].find(x => x && x.ok === false) : null;
+            const it = nCheck < 3 && Array.isArray(ck[voc]) ? ck[voc].find(x => x && x.ok === false && !(livres > 0 && x.chave === 'imbu')) : null;
             if (!it) continue;
             nCheck++;
-            out.push(trConselho('erros', 'check-' + voc, { titulo: trCorta(`${trVocPt(voc)}: ${it.titulo || it.chave}`), impacto: 2, confianca: 'comunidade',
+            out.push(trConselho('erros', 'check-' + voc, { titulo: trCorta(`${trVocPt(voc)}: ${it.titulo || it.chave || 'item da régua da comunidade'}`), impacto: 2, confianca: 'comunidade',
                 porque: (it.texto ? it.texto + '. ' : '') + 'Régua "ficar forte" da comunidade (aba Melhorias).',
                 numeros: { voc, chave: it.chave || null },
                 acao: { tipo: 'abrir-melhorias', voc, rotulo: 'Melhorias' } }));
         }
-        // 6) XP/h de agora < 70 % da melhor sessão do MESMO mapa (≥ 2 sessões; medida de agora com ≥ 5 min, se houver). impacto = queda × 0,5 (estimado)
+        // 6) XP/h de agora < 70 % da melhor sessão do MESMO mapa (≥ 2 sessões de ≥ 5 min; medida de agora com ≥ 5 min, se houver).
+        //    impacto = queda × 0,5 (estimado). Sessão curta não vale como "melhor" (XP/h de 3 min é ruído).
         const curta = ma && trNum(ma.xpH) > 0 && trNum(ma.min) < 5;
+        let sessoesVistas = false;
         if (hunt && xpH > 0 && !curta) {
-            const daqui = (Array.isArray(foto.sessoes) ? foto.sessoes : []).filter(s => s && trMesmoId(s.huntId, hunt.id) && trNum(s.xpH) > 0);
+            const daqui = (Array.isArray(foto.sessoes) ? foto.sessoes : []).filter(s => s && trMesmoId(s.huntId, hunt.id) && trNum(s.xpH) > 0 && trNum(s.dur) >= 5);
+            sessoesVistas = daqui.length >= 2;
             const melhor = daqui.length >= 2 ? Math.max(...daqui.map(s => Number(s.xpH))) : 0;
             if (melhor > 0 && xpH < 0.7 * melhor) {
                 const queda = Math.round((1 - xpH / melhor) * 100);
@@ -12485,14 +12502,21 @@
         // 7) Mochila de chaves cheia: a próxima chave que cair na caçada some (wiki/chaves-e-caixas).
         const ch = foto.chaves && typeof foto.chaves === 'object' ? foto.chaves : null;
         if (ch && trNum(ch.max) > 0 && trNum(ch.usadas) >= Number(ch.max)) {
-            out.push(trConselho('erros', 'chaves', { titulo: 'Mochila de chaves cheia: a próxima chave se perde', estado: 'erro', impacto: 2, confianca: 'wiki',
+            out.push(trConselho('erros', 'chaves', { titulo: 'Mochila de chaves cheia: a próxima chave se perde', estado: 'erro', impacto: 2, confianca: 'medido',
                 porque: `${ch.usadas}/${ch.max} chaves. Use as chaves nos Elites (sweep) ou guarde as extras no depósito.`,
                 numeros: { usadas: Number(ch.usadas), max: Number(ch.max) },
                 acao: { tipo: 'abrir-elite', rotulo: 'Elites' } }));
         }
-        if (!out.length) {
-            out.push(trConselho('erros', 'ok', { titulo: 'Nenhum erro visível', estado: 'ok',
-                porque: 'Sem morte em 24 h, ouro sobrando, slots e encaixes cheios, régua da comunidade em dia e XP/h no nível das suas sessões.' }));
+        if (!out.length) { // o "ok" só afirma o que foi conferido de verdade
+            const conferi = [];
+            if (trNum(foto.t) > 0 && Array.isArray(foto.mortes)) conferi.push('nenhuma morte em 24 h');
+            if (ma && trNum(ma.min) >= 5 && Number.isFinite(ouroH) && Number.isFinite(livre)) conferi.push('o ouro dá para a caçada');
+            if (comEq) conferi.push('slots e encaixes de imbuement cheios');
+            if (ck) conferi.push('régua da comunidade em dia');
+            if (sessoesVistas) conferi.push('XP/h no nível das suas sessões');
+            if (ch && trNum(ch.max) > 0) conferi.push('mochila de chaves com vaga');
+            out.push(trConselho('erros', 'ok', { titulo: conferi.length ? 'Nenhum erro visível' : 'Nada a apontar com os dados lidos', estado: 'ok',
+                porque: conferi.length ? 'Conferi: ' + trLista(conferi) + '.' : 'Ainda faltam dados (mortes, caçada medida, equipamento) para conferir.' }));
         }
         return out;
     }
@@ -12519,7 +12543,8 @@
         let juntar = null;
         for (const bo of b.bosses || []) {
             if (!(bo.rec == null || bo.rec <= nivel + 20) || trIlhaFechada(foto, b, bo.ilha)) continue;
-            const itens = (bo.tentativa || []).map(x => ({ item: x.item, qtd: x.qtd, tem: trPorNome(foto.deposito, x.item) || 0 }));
+            const itens = (bo.tentativa || []).filter(x => x && x.item && trNum(x.qtd) > 0)
+                .map(x => ({ item: x.item, qtd: Number(x.qtd), tem: trPorNome(foto.deposito, x.item) || 0 }));
             if (!itens.length) continue;
             const k = Math.min(...itens.map(x => Math.floor(x.tem / x.qtd)));
             if (k >= 1) {

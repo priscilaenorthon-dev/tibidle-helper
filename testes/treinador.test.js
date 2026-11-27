@@ -51,6 +51,10 @@ t('trOrdenar pesa pela confiança (maiúsculas também; desconhecida = 0,4)', ()
     assert.deepStrictEqual(r.map(c => c.id), ['med', 'wik', 'est', 'xx']); // 5 · 4,8 · 4 · 3,6
     assert.strictEqual(r[0].nota, 5);
 });
+t('trOrdenar: estado erro tem nota mínima 4 (piso)', () => {
+    const r = T.trOrdenar([{ id: 'e', impacto: 0.5, estado: 'erro' }, { id: 'a', impacto: 4.5, confianca: 'medido' }, { id: 'e2', impacto: 20, estado: 'erro', confianca: 'medido' }], {});
+    assert.deepStrictEqual(r.map(c => [c.id, c.nota]), [['e2', 20], ['a', 4.5], ['e', 4]]);
+});
 t('trOrdenar: sem ouro → semOuro e nota × 0,3; ouroLivre não numérico = sem limite', () => {
     const cs = [{ id: 'caro', impacto: 10, confianca: 'medido', custo: 2e6 }, { id: 'barato', impacto: 5, confianca: 'medido', custo: '1000' }];
     const r = T.trOrdenar(cs, { ouroLivre: 1e6 });
@@ -82,7 +86,7 @@ t('passos: só os 3 melhores; cartão mostra o erro primeiro', () => comAgentes(
     ag('muitos', () => [1, 2, 3, 4, 5].map(k => T.trConselho('muitos', 'k' + k, { impacto: k, confianca: 'medido' }))
         .concat([T.trConselho('muitos', 'grave', { impacto: 0.1, estado: 'erro' })]))], () => {
     const r = T.trRodar(T.trFotoVazia(), T.TR_BASE);
-    assert.deepStrictEqual(r.passos.map(c => c.id), ['muitos:k5', 'muitos:k4', 'muitos:k3']);
+    assert.deepStrictEqual(r.passos.map(c => c.id), ['muitos:k5', 'muitos:k4', 'muitos:grave']); // erro com impacto 0,1 sobe para o piso 4
     assert.strictEqual(r.cartoes[0].estado, 'erro');
     assert.deepStrictEqual(r.cartoes[0].conselhos.map(c => c.id), ['muitos:grave', 'muitos:k5', 'muitos:k4']);
 }));
@@ -636,10 +640,13 @@ t('mortes: 1 evento → razão Erros ÷ Bênçãos ≈ 1 ÷ 0,56 (mesma régua)'
     const e = erro(f, 'mortes'), bc = acoes(T.trAgenteMult(f, T.TR_BASE), 'bencaos')[0];
     assert(e && bc); assert(Math.abs(e.impacto / bc.impacto - 1 / 0.56) < 0.1, e.impacto + ' / ' + bc.impacto);
 });
-t('erros: foto limpa → só "Nenhum erro visível" (ok); foto vazia também', () => {
-    for (const f of [fErros(), T.trFotoVazia()]) {
-        assert.deepStrictEqual(T.trAgenteErros(f, T.TR_BASE).map(c => [c.id, c.estado]), [['erros:ok', 'ok']]);
-    }
+t('erros: foto limpa → só "Nenhum erro visível" (ok); foto vazia → "Nada a apontar com os dados lidos"', () => {
+    const limpa = T.trAgenteErros(fErros(), T.TR_BASE);
+    assert.deepStrictEqual(limpa.map(c => [c.id, c.estado, c.titulo]), [['erros:ok', 'ok', 'Nenhum erro visível']]);
+    const vazia = T.trAgenteErros(T.trFotoVazia(), T.TR_BASE);
+    assert.deepStrictEqual(vazia.map(c => [c.id, c.estado, c.titulo]), [['erros:ok', 'ok', 'Nada a apontar com os dados lidos']]);
+    // o ok só afirma o que foi conferido: sem sessões nem checklist na foto limpa, não fala delas
+    assert(!/sessões|régua/.test(limpa[0].porque), limpa[0].porque);
 });
 t('erros: 2 mortes do Druida em 24 h → erro, abrir-aguentar, impacto = ritmo de 7 dias × XP perdida ÷ XP de um dia', () => {
     const mortes = [{ t: 1.8e12 - 2 * H, hunt: 'Shadow Nexus', huntId: 1, voc: 'DRUID' }, { t: 1.8e12 - 5 * H, hunt: 'Shadow Nexus', huntId: 1, voc: 'DRUID' },
@@ -677,15 +684,16 @@ t('erros: muitas mortes → teto de 50 no ranking; o porquê mostra o bruto e o 
 t('erros: ouro/h negativo e ouro livre < 3 h dele → "O ouro acaba em 2 h nesta caçada" (erro, abrir-magia)', () => {
     const ma = { xpH: 540000, min: 10, ouroH: -100000 };
     const c = erro(fErros({ medidoAtual: ma, ouroLivre: 200000 }), 'ouro');
-    assert(c); assert.strictEqual(c.estado, 'erro'); assert.strictEqual(c.impacto, 5); assert.strictEqual(c.acao.tipo, 'abrir-magia');
+    assert(c); assert.strictEqual(c.estado, 'erro'); assert.strictEqual(c.impacto, 10); assert.strictEqual(c.confianca, 'medido'); assert.strictEqual(c.acao.tipo, 'abrir-magia');
     assert.strictEqual(c.numeros.horas, 2); assert.strictEqual(c.titulo, 'O ouro acaba em 2 h nesta caçada');
     assert.strictEqual(erro(fErros({ medidoAtual: ma, ouroLivre: 300000 }), 'ouro'), undefined, '3 h ou mais');
     assert.strictEqual(erro(fErros({ medidoAtual: Object.assign({}, ma, { min: 3 }), ouroLivre: 200000 }), 'ouro'), undefined, '< 5 min');
     assert.strictEqual(erro(fErros({ medidoAtual: ma, ouroLivre: null }), 'ouro'), undefined, 'ouro livre desconhecido');
 });
-t('erros: slot vazio → "<Voc> sem <slot>" (erro, abrir-equip, impacto 3); vários slots num conselho só', () => {
+t('erros: slot vazio → "<Voc> sem <slot>" (erro, abrir-equip, impacto 5, medido); vários slots num conselho só', () => {
     let c = erro(fErros({ party: partyTopo({ KNIGHT: { boots: null } }) }), 'slot-KNIGHT');
-    assert(c); assert.strictEqual(c.titulo, 'Cavaleiro sem bota'); assert.strictEqual(c.estado, 'erro'); assert.strictEqual(c.impacto, 3);
+    assert(c); assert.strictEqual(c.titulo, 'Cavaleiro sem bota'); assert.strictEqual(c.estado, 'erro'); assert.strictEqual(c.impacto, 5);
+    assert.strictEqual(c.confianca, 'medido');
     assert.deepStrictEqual(c.acao && [c.acao.tipo, c.acao.voc], ['abrir-equip', 'KNIGHT']); assert.deepStrictEqual(c.numeros.slots, ['boots']);
     c = erro(fErros({ party: partyTopo({ KNIGHT: { boots: null, ring: null, head: null } }) }), 'slot-KNIGHT');
     assert.strictEqual(c.titulo, 'Cavaleiro sem elmo, anel e bota'); assert.deepStrictEqual(c.numeros.slots, ['head', 'ring', 'boots']);
@@ -702,6 +710,10 @@ t('erros: escudo vazio só é erro com arma de 1 mão (duasMaos da foto; sem a d
     const pa = partyTopo(); pa[1].eq.weapon.duasMaos = false; // Paladino de lança: escudo conta
     assert.deepStrictEqual(erro(fErros({ party: pa }), 'slot-PALADIN').numeros.slots, ['shield']);
     assert.strictEqual(erro(fErros({ party: partyTopo() }), 'slot-PALADIN'), undefined, 'arco sem escudo é normal');
+});
+t('erros: munição só é exigida se a arma usa munição (Paladino de lança sem munição → nada)', () => {
+    assert.strictEqual(erro(fErros({ party: partyTopo({ PALADIN: { weapon: 'royal spear', shield: 'great shield', ammo: null } }) }), 'slot-PALADIN'), undefined);
+    assert.deepStrictEqual(erro(fErros({ party: partyTopo({ PALADIN: { weapon: 'arbalest', ammo: null } }) }), 'slot-PALADIN').numeros.slots, ['ammo']);
 });
 t('erros: equipamento não lido (eq vazio ou ausente) não vira "sem slot"', () => {
     const p = partyTopo(); p[0].eq = {}; delete p[1].eq;
@@ -727,6 +739,15 @@ t('erros: checklist "ficar forte" → até 3 avisos, o 1º item falho de cada vo
     assert(cs.every(c => c.impacto === 2 && c.estado === 'aviso' && c.acao.tipo === 'abrir-melhorias'));
     assert.strictEqual(T.trAgenteErros(fErros({ checklist: { KNIGHT: [it('regen', true, 'ok')] } }), T.TR_BASE).filter(c => c.id.startsWith('erros:check-')).length, 0);
 });
+t('erros: checklist sem título nem chave → texto genérico; item "imbu" não repete o aviso de encaixe livre', () => {
+    let c = erro(fErros({ checklist: { DRUID: [{ ok: false }] } }), 'check-DRUID');
+    assert(c && !/undefined/.test(c.titulo + c.porque), c && c.titulo); assert.strictEqual(c.titulo, 'Druida: item da régua da comunidade');
+    const p = partyTopo(); p[0].eq.weapon.imbuSlots = 1;
+    const checklist = { KNIGHT: [{ chave: 'imbu', ok: false, titulo: 'Imbuement: falta Void', texto: 'x' }, { chave: 'regen', ok: false, titulo: 'Regen. de mana 5 de 18', texto: 'y' }] };
+    c = erro(fErros({ party: p, checklist }), 'check-KNIGHT');
+    assert.strictEqual(c.numeros.chave, 'regen', 'com encaixe livre já avisado, pula o item imbu');
+    assert.strictEqual(erro(fErros({ checklist }), 'check-KNIGHT').numeros.chave, 'imbu', 'sem o aviso de encaixe, o imbu conta');
+});
 t('erros: XP/h < 70 % da melhor sessão do mesmo mapa (≥ 2 sessões) → aviso, impacto = queda × 0,5', () => {
     const sessoes = [ses(false, { xpH: 800000 }), ses(false, { xpH: 600000, huntId: '1' }), ses(false, { huntId: 9, hunt: 'Ice Portal', xpH: 2e6 })];
     const c = erro(fErros({ sessoes, medidoAtual: { xpH: 400000, min: 10, ouroH: 0 } }), 'xp-caiu');
@@ -736,10 +757,15 @@ t('erros: XP/h < 70 % da melhor sessão do mesmo mapa (≥ 2 sessões) → aviso
     assert.strictEqual(erro(fErros({ sessoes: [sessoes[0], sessoes[2]], medidoAtual: { xpH: 400000, min: 10, ouroH: 0 } }), 'xp-caiu'), undefined, '1 sessão daqui');
     assert.strictEqual(erro(fErros({ sessoes, medidoAtual: { xpH: 400000, min: 3, ouroH: 0 } }), 'xp-caiu'), undefined, 'medida curta');
 });
+t('erros: sessão curta (< 5 min) não vale como "melhor" nem conta para as 2 sessões', () => {
+    const sessoes = [ses(false, { xpH: 2e6, dur: 3 }), ses(false, { xpH: 600000 }), ses(false, { xpH: 550000 })];
+    assert.strictEqual(erro(fErros({ sessoes, medidoAtual: { xpH: 500000, min: 10, ouroH: 0 } }), 'xp-caiu'), undefined);
+    assert.strictEqual(erro(fErros({ sessoes: sessoes.slice(0, 2), medidoAtual: { xpH: 100000, min: 10, ouroH: 0 } }), 'xp-caiu'), undefined, 'só 1 sessão longa');
+});
 t('erros: mochila de chaves cheia → erro abrir-elite; 4/5 ou sem limite → nada', () => {
     const c = erro(fErros({ chaves: { usadas: 5, max: 5, elites: [] } }), 'chaves');
     assert(c); assert.strictEqual(c.estado, 'erro'); assert.strictEqual(c.impacto, 2); assert.strictEqual(c.acao.tipo, 'abrir-elite');
-    assert.strictEqual(c.titulo, 'Mochila de chaves cheia: a próxima chave se perde');
+    assert.strictEqual(c.titulo, 'Mochila de chaves cheia: a próxima chave se perde'); assert.strictEqual(c.confianca, 'medido');
     for (const chaves of [{ usadas: 4, max: 5 }, { usadas: 9, max: 0 }, { usadas: 9 }]) assert.strictEqual(erro(fErros({ chaves }), 'chaves'), undefined, JSON.stringify(chaves));
 });
 t('erros: títulos ≤ 70 e registrado em TR_AGENTES', () => {
@@ -748,6 +774,14 @@ t('erros: títulos ≤ 70 e registrado em TR_AGENTES', () => {
     const cs = T.trAgenteErros(fErros({ party: p, mortes, chaves: { usadas: 5, max: 5 } }), T.TR_BASE);
     assert(cs.every(c => c.titulo.length <= 70), cs.map(c => c.titulo).join(' | '));
     assert(T.TR_AGENTES.some(a => a.id === 'erros' && a.rodar === T.trAgenteErros && a.icone === '⚠'));
+});
+t('escala: "Cavaleiro sem bota" e "ouro acaba" ficam acima de "o topo usa magma legs" e de um item da régua', () => {
+    const f = fErros({ party: partyTopo({ KNIGHT: { boots: null }, SORCERER: { legs: 'blue legs' } }), topo: topoDe(),
+        medidoAtual: { xpH: 540000, min: 10, ouroH: -100000 }, ouroLivre: 200000,
+        checklist: { DRUID: [{ chave: 'regen', ok: false, titulo: 'Regen. de mana 5 de 21', texto: 'x' }] } });
+    const ord = T.trOrdenar(T.trRodar(f, T.TR_BASE).todos, f).map(c => c.id);
+    const pos = (id) => { const k = ord.indexOf(id); assert(k >= 0, id + ' ausente: ' + ord.join(', ')); return k; };
+    for (const alto of ['erros:slot-KNIGHT', 'erros:ouro']) for (const baixo of ['topo:item-SORCERER', 'erros:check-DRUID']) assert(pos(alto) < pos(baixo), alto + ' × ' + baixo);
 });
 
 // ── Task 9: Boss e Elite
@@ -780,6 +814,10 @@ t('boss: "Pode lutar" com nome longo fica em ≤ 70', () => {
     const base = Object.assign({}, T.TR_BASE, { bosses: [{ nome, ilha: 'x', rec: null, vida: 1, tentativa: [{ item: 'coisa', qtd: 1 }], onde: 'aqui', drops: 'nada', vale: 'teste' }] });
     const c = acoes(T.trAgenteBoss(fBoss({ deposito: { coisa: 3 } }), base), 'boss-trocar')[0];
     assert(c); assert(c.titulo.length <= 70, c.titulo); assert.strictEqual(c.acao.boss, nome); assert.strictEqual(c.acao.qtd, 3);
+});
+t('boss: item de tentativa com qtd 0 é ignorado', () => {
+    const base = Object.assign({}, T.TR_BASE, { bosses: [{ nome: 'Teste', ilha: 'x', rec: null, vida: 1, tentativa: [{ item: 'a', qtd: 0 }, { item: 'b', qtd: 1 }], onde: 'aqui', drops: 'nada', vale: 'teste' }] });
+    assert.deepStrictEqual(acoes(T.trAgenteBoss(fBoss({ deposito: { b: 2 } }), base), 'boss-trocar').map(c => c.acao.qtd), [2]);
 });
 t('boss: Jaul pede os 2 troféus', () => {
     assert.strictEqual(acoes(boss(fBoss({ deposito: { 'trophy of Tanjis': 10 } })), 'boss-trocar').length, 0);
