@@ -12069,7 +12069,13 @@
     // Título no limite da tela (70); o resto vai no porquê.
     const trCorta = (s, n) => { const t = String(s), max = n || 70; return t.length <= max ? t : t.slice(0, max - 1).trimEnd() + '…'; };
     // Corta só a BASE para `base + sufixo` caber em n (70): o sufixo ("(~6 h)", "(~1,2 M, sem risco)", "(falta 800 mil)") fica inteiro.
-    const trCortaSufixo = (base, sufixo, n) => { const suf = String(sufixo || ''); return trCorta(base, (n || 70) - suf.length) + suf; };
+    const trCortaSufixo = (base, sufixo, n) => { const suf = String(sufixo || ''); return trCorta(base, Math.max(1, (n || 70) - suf.length)) + suf; };
+    // Party da foto (só quem tem vocação) · leitura velha (idadeH ausente/NaN = velho) · vocação maga (ML é a skill do Legado)
+    const trParty = (foto) => (Array.isArray(foto && foto.party) ? foto.party : []).filter(m => m && m.voc);
+    const trVelho = (idadeH, maxH) => !(trNum(idadeH) <= (maxH || 24));
+    const trEhMago = (voc, base) => (base || TR_BASE).legado.skill[voc] === 'ml';
+    // Pontos de dano de UM personagem → pontos do grupo (÷ preyColunas) → XP/h pelo teto de spawn (trDanoParaXp).
+    const trDanoDeUm = (pct, foto, base) => trDanoParaXp(trNum(pct) / (base || TR_BASE).xp.preyColunas, foto, base);
     // ['elmo', 'anel', 'bota'] → 'elmo, anel e bota'
     const trLista = (a) => (a.length > 1 ? a.slice(0, -1).join(', ') + ' e ' + a[a.length - 1] : a.join(''));
 
@@ -12202,7 +12208,7 @@
             const valor = (tipo, tier) => {
                 const tp = trTipoPrey(tipo);
                 if (tp === 'xp') return tier * xpPorTier / den * 100;
-                if (tp === 'damage') return trDanoParaXp(b.prey.danoPorTier * tier / b.xp.preyColunas, foto, b);
+                if (tp === 'damage') return trDanoDeUm(b.prey.danoPorTier * tier, foto, b);
                 return 0;
             };
             const buffs = prey.buffs && typeof prey.buffs === 'object' ? prey.buffs : {};
@@ -12291,7 +12297,7 @@
     TR_AGENTES.push({ id: 'mult', nome: 'Multiplicadores', icone: '✕', rodar: trAgenteMult });
 
     // ── Especialista 3: Treino e Legado (⚔). Ampulheta = treino durante a caçada; o Legado vira dano permanente do personagem.
-    //    impacto = trDanoParaXp(pontos do marco ÷ preyColunas) — o marco é de UM personagem; o teto de spawn manda.
+    //    impacto = trDanoDeUm(pontos do marco) — o marco é de UM personagem; o teto de spawn manda.
     function trAgenteLegado(foto, base) {
         const b = base || TR_BASE, lg = foto.legado && typeof foto.legado === 'object' ? foto.legado : null;
         const vocs = lg ? Object.keys(lg).filter(v => lg[v] && trNum(lg[v].falta) > 0 && Number.isFinite(trNum(lg[v].bonusProx))) : [];
@@ -12307,8 +12313,8 @@
             const feito = livres === 0;
             // horas livres de hoje arredondadas para cima × preço da hora (sem dado = a de 8 h)
             const horas = livres != null ? Math.ceil(livres) : amp.horasDia, custo = livres != null ? horas * amp.preco1h : amp.preco8h;
-            const ml = b.legado.skill[voc] === 'ml', unidade = ml ? 'ML' : 'skill';
-            const impacto = trDanoParaXp(ganho / b.xp.preyColunas, foto, b);
+            const ml = trEhMago(voc, b), unidade = ml ? 'ML' : 'skill';
+            const impacto = trDanoDeUm(ganho, foto, b);
             const c = trConselho('legado', 'amp-' + voc, {
                 titulo: feito ? `${nome}: treino do dia feito (${falta === 1 ? 'falta' : 'faltam'} ${falta} de ${unidade})`
                     : `Ampulheta no ${nome}: ${falta === 1 ? 'falta' : 'faltam'} ${falta} de ${unidade} para +${ganho} % de dano`,
@@ -12331,7 +12337,7 @@
     //    impacto 3 ESTIMADO (o especialista Melhorias/Equip dá o ganho exato). Skill principal < mediana do topo − 3 → só aviso (impacto 0).
     function trAgenteTopo(foto, base) {
         const b = base || TR_BASE, tp = foto.topo && typeof foto.topo === 'object' ? foto.topo : null;
-        if (!tp || !(trNum(tp.idadeH) <= 24)) { // idadeH ausente = não sei a idade = velho
+        if (!tp || trVelho(tp.idadeH)) { // idadeH ausente = não sei a idade = velho
             // sem party nem nível (foto vazia) não há o que comparar: impacto 0
             const temConta = (Array.isArray(foto.party) && foto.party.length > 0) || Number.isFinite(trNum(foto.nivel));
             return [trConselho('topo', 'ler', { titulo: 'Comparar com o topo do rank', impacto: temConta ? 1 : 0,
@@ -12342,7 +12348,7 @@
         const out = [], nivel = trNum(foto.nivel), comNivel = Number.isFinite(nivel);
         const de = comNivel ? nivel : -Infinity, ate = comNivel ? nivel + 150 : Infinity, faixa = comNivel ? `nível ${nivel}–${ate}` : 'todos os níveis';
         const naFaixa = (x) => x && trNum(x.nivel) >= de && trNum(x.nivel) <= ate;
-        const party = (Array.isArray(foto.party) ? foto.party : []).filter(m => m && m.voc);
+        const party = trParty(foto);
         const perfis = (Array.isArray(tp.perfis) ? tp.perfis : []).filter(p => naFaixa(p) && p.voc && typeof p.voc === 'object');
         let itens = 0, comparados = 0;
         if (perfis.length < 3) {
@@ -12404,7 +12410,7 @@
     //    Mortes 24 h · ouro acabando · slot vazio · encaixe de imbuement livre · régua "ficar forte" · XP caiu no mapa · mochila de chaves cheia.
     function trAgenteErros(foto, base) {
         const b = base || TR_BASE, out = [], hunt = foto.hunt || null, ma = foto.medidoAtual || null, xpH = trXpAtual(foto);
-        const party = (Array.isArray(foto.party) ? foto.party : []).filter(m => m && m.voc);
+        const party = trParty(foto);
         // 1) Mortes (EVENTOS) nas últimas 24 h: dispara a regra. O impacto é a régua única trImpactoMorte (ritmo de 7 dias, bênçãos de agora,
         //    teto 50); sem xpTotal ou XP/h → 3 (estimado).
         const eventos = trEventosMorte(foto, b, 1);
@@ -12429,7 +12435,7 @@
                 numeros: { n, vocs: quem, mapas: porMapa, perda: im.perda, xpH, bencaos: tem, ritmo: im.ritmo, impactoBruto: im.bruto },
                 acao: { tipo: 'abrir-aguentar', rotulo: 'Aguentar' } }));
         }
-        // 2) Ouro acabando: caçada com saldo/h negativo (≥ 5 min medidos) e ouro livre para menos de 3 h. Impacto 5 estimado.
+        // 2) Ouro acabando: caçada com saldo/h negativo (≥ 5 min medidos) e ouro livre para menos de 3 h. Fato medido, impacto 10.
         const ouroH = ma ? trNum(ma.ouroH) : NaN, livre = trNum(foto.ouroLivre);
         if (ma && trNum(ma.min) >= 5 && ouroH < 0 && Number.isFinite(livre) && livre < 3 * -ouroH) {
             const horas = Math.max(0, livre) / -ouroH;
@@ -12666,16 +12672,15 @@
 
     // ── Especialista 9: Forja e refino (⚒). foto.forja = { abaixo4: [{ voc, slot, nome, refino, custo }], idadeH, basesParadas: [{ nome, potencia }] } | null.
     //    Refino até forja.refinoSeguroAte (+4) não tem risco (wiki/forja). Sem abaixo4, as peças vêm de party[].eq (custo não calculado).
-    //    impacto: arma de Cavaleiro/Paladino = trDanoParaXp((4 − r) ÷ ataque × 100 ÷ preyColunas) (+1 de ataque por refino; ataque
+    //    impacto: arma de Cavaleiro/Paladino = trDanoDeUm((4 − r) ÷ ataque × 100) (+1 de ataque por refino; ataque
     //    ausente = 50); elmo/armadura/escudo/calça/bota 0,5 (estimado); arma de mago fica de fora (o refino dela só dá potência).
     //    Até 3, por impacto ÷ custo (sem custo, depois, pelo impacto). Cálculo velho (> 24 h ou sem data) → "Recalcular a Forja".
     const TR_REFINO_IMPACTO = { head: 0.5, armor: 0.5, shield: 0.5, legs: 0.5, boots: 0.5 };
     function trAgenteForja(foto, base) {
         const b = base || TR_BASE, ate = b.forja.refinoSeguroAte, out = [];
         const fj = foto.forja && typeof foto.forja === 'object' ? foto.forja : null;
-        const party = (Array.isArray(foto.party) ? foto.party : []).filter(m => m && m.voc);
+        const party = trParty(foto);
         const eqDe = (voc, slot) => { const m = party.find(x => x.voc === voc); return m ? trPeca(m.eq, slot) : null; };
-        const mago = (voc) => b.legado.skill[voc] === 'ml';
         let pecas = [], leu = false;
         const fora = []; // abaixo de +4 mas fora da conta (arma de mago; anel/colar/munição): o ok não pode dizer "tudo em +4"
         if (fj && Array.isArray(fj.abaixo4)) {
@@ -12694,14 +12699,14 @@
         }
         const cand = [];
         for (const p of pecas) {
-            if (p.slot === 'weapon' && mago(p.voc)) { fora.push(`arma de mago (${p.nome} +${p.refino}: o refino só dá potência)`); continue; }
+            if (p.slot === 'weapon' && trEhMago(p.voc, b)) { fora.push(`arma de mago (${p.nome} +${p.refino}: o refino só dá potência)`); continue; }
             if (p.slot !== 'weapon') {
                 if (TR_REFINO_IMPACTO[p.slot]) cand.push(Object.assign({}, p, { imp: TR_REFINO_IMPACTO[p.slot] }));
                 else fora.push(`${trSlotPt(p.slot)} (${p.nome} +${p.refino})`);
                 continue;
             }
             const w = eqDe(p.voc, 'weapon'), atk = trNum(w && w.ataque) > 0 ? Number(w.ataque) : 50, danoPct = (ate - p.refino) / atk * 100;
-            cand.push(Object.assign({}, p, { atk, danoPct, imp: trDanoParaXp(danoPct / b.xp.preyColunas, foto, b) }));
+            cand.push(Object.assign({}, p, { atk, danoPct, imp: trDanoDeUm(danoPct, foto, b) }));
         }
         cand.sort((x, y) => ((y.custo > 0) - (x.custo > 0)) || (x.custo > 0 ? y.imp / y.custo - x.imp / x.custo : y.imp - x.imp));
         for (const p of cand.slice(0, 3)) {
@@ -12723,7 +12728,7 @@
                     : `Nenhuma peça vestida abaixo de +${ate}.` }));
         }
         // cálculo velho: idadeH ausente = sem data = velho (mesma regra do topo)
-        if (!fj || !(trNum(fj.idadeH) <= 24)) {
+        if (!fj || trVelho(fj.idadeH)) {
             const temConta = party.length > 0 || Number.isFinite(trNum(foto.nivel));
             out.push(trConselho('forja', 'ler', { titulo: 'Recalcular a Forja', impacto: temConta ? 0.5 : 0,
                 porque: (!fj ? 'A Forja ainda não foi calculada. ' : Number.isFinite(trNum(fj.idadeH)) ? `O cálculo da Forja tem ${Math.round(Number(fj.idadeH))} h. ` : 'O cálculo da Forja não tem data. ')
