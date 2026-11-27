@@ -1310,4 +1310,40 @@ t('integração G (lucro +117 mil/h, ouro livre −200 mil): nada de "Não gaste
     assert(r.passos.length === 3 && r.passos.every(p => !p.semOuro || trCustoZero(p) === false), r.passos.map(p => p.id).join(' | '));
     assert.strictEqual(r.passos[0].id, 'mult:prey-mapa'); assert.strictEqual(r.passos[0].semOuro, false);
 });
+// ── Task 14: fotos das 3 contas (u2tag = trFoto() ao vivo em 27/11; ShamanBr e XundaBr montadas no mesmo formato)
+const fx = (nome) => JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', nome), 'utf8'));
+const FOTOS = { u2tag: fx('treinador-u2tag.json'), shamanbr: fx('treinador-shamanbr.json'), xundabr: fx('treinador-xundabr.json') };
+for (const [conta, ft] of Object.entries(FOTOS)) {
+    t(`foto ${conta}: 10 cartões, 1–3 passos, nenhum especialista quebrado, títulos ≤ 70, < 50 ms`, () => {
+        const t0 = process.hrtime.bigint();
+        const r = T.trRodar(ft, T.TR_BASE);
+        const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+        assert.strictEqual(r.cartoes.length, 10);
+        assert(r.passos.length >= 1 && r.passos.length <= 3, `${r.passos.length} passos`);
+        const quebrados = r.todos.filter(c => /não consegui analisar/.test(c.titulo));
+        assert(!quebrados.length, quebrados.map(c => c.agente + ': ' + c.porque).join(' | '));
+        const longos = r.todos.filter(c => String(c.titulo).length > 70);
+        assert(!longos.length, longos.map(c => c.titulo).join(' | '));
+        assert(ms < 50, `${ms.toFixed(1)} ms`);
+    });
+}
+t('foto u2tag (ao vivo): o formato que a trFoto entrega', () => {
+    const f = FOTOS.u2tag;
+    for (const k of Object.keys(T.trFotoVazia())) assert(k in f, k);
+    assert.strictEqual(f.hunt.id, 222); assert.strictEqual(f.hunt.lure, 3); assert.strictEqual(f.hunt.lureTiers.length, f.hunt.maxLure);
+    assert(f.medidoAtual.xpH > 0 && f.medidoAtual.xpH < f.medidoAtual.xpBonusH, 'XP raw abaixo da XP com bônus');
+    assert(Number.isFinite(f.ouroLivre)); assert.strictEqual(f.party.length, 4);
+    assert(f.mapas.every(m => typeof m.id === 'number' && m.xpH > 0 && m.fonte in { medido: 1, comunidade: 1, estimado: 1 }));
+    assert(f.sessoes.every(s => s.durMin > 0)); assert(f.party.find(m => m.voc === 'PALADIN').eq.ammo, 'munição do battle config');
+});
+t('foto ShamanBr: mortes do Druida e o prejuízo aparecem; o Druida sai como evento', () => {
+    const r = T.trRodar(FOTOS.shamanbr, T.TR_BASE), ids = r.todos.map(c => c.id);
+    assert(ids.includes('erros:mortes'), ids.join()); assert(ids.includes('mult:bencaos'), ids.join());
+    const m = r.todos.find(c => c.id === 'erros:mortes');
+    assert(/Druida/.test(m.titulo), m.titulo);
+});
+t('foto XundaBr: mochila de chaves cheia, Premium e ilha fechada medida', () => {
+    const r = T.trRodar(FOTOS.xundabr, T.TR_BASE), ids = r.todos.map(c => c.id);
+    for (const id of ['erros:chaves', 'mult:premium', 'upar:abrir-ilha']) assert(ids.includes(id), id + ' ∉ ' + ids.join());
+});
 process.on('exit', () => { if (!process.exitCode) console.log(`\n${n} testes ok`); });

@@ -1,0 +1,909 @@
+{
+ "t": 1795816113366,
+ "nivel": 121,
+ "xpTotal": 28096000,
+ "ouro": 400000,
+ "ouroTravado": 0,
+ "premium": {
+  "ativo": false,
+  "ate": null
+ },
+ "emHunt": true,
+ "naCidade": false,
+ "hunt": {
+  "id": 220,
+  "title": "Inquisition Warlocks",
+  "lure": 2,
+  "maxLure": 4,
+  "lureTiers": [
+   {
+    "min": 3,
+    "max": 3
+   },
+   {
+    "min": 5,
+    "max": 5
+   },
+   {
+    "min": 7,
+    "max": 7
+   },
+   {
+    "min": 8,
+    "max": 8
+   }
+  ],
+  "levelMin": 80,
+  "ilha": null,
+  "rec": 130
+ },
+ "medidoAtual": {
+  "xpH": 105000,
+  "ouroH": 30000,
+  "gastoH": 60000,
+  "lootH": 90000,
+  "abatesH": 1100,
+  "min": 25,
+  "xpBonusH": 210000
+ },
+ "mapas": [
+  {
+   "id": 220,
+   "title": "Inquisition Warlocks",
+   "xpH": 105000,
+   "fonte": "medido",
+   "origem": "agora",
+   "idadeH": 0,
+   "levelMin": 80,
+   "ilha": null,
+   "rec": 130,
+   "aberta": true,
+   "mortes": 0,
+   "ouroH": 30000,
+   "abatesH": 1100
+  },
+  {
+   "id": 228,
+   "title": "Holy Portal",
+   "xpH": 131499,
+   "fonte": "medido",
+   "origem": "scan",
+   "idadeH": 200,
+   "levelMin": 80,
+   "ilha": "forgotten_knowledge",
+   "rec": 150,
+   "aberta": false,
+   "mortes": 0,
+   "ouroH": -20000
+  },
+  {
+   "id": 235,
+   "title": "Upper Spikes",
+   "xpH": 106183,
+   "fonte": "medido",
+   "origem": "sessões",
+   "idadeH": 300,
+   "levelMin": 80,
+   "ilha": null,
+   "rec": 80,
+   "aberta": true,
+   "mortes": 0,
+   "ouroH": 40000
+  },
+  {
+   "id": 236,
+   "title": "Middle Spikes",
+   "xpH": 88328,
+   "fonte": "medido",
+   "origem": "sessões",
+   "idadeH": 320,
+   "levelMin": 80,
+   "ilha": null,
+   "rec": 100,
+   "aberta": true,
+   "mortes": 0,
+   "ouroH": 25000
+  },
+  {
+   "id": 234,
+   "title": "Lower Spikes",
+   "xpH": 115000,
+   "fonte": "estimado",
+   "origem": "radar",
+   "idadeH": 30,
+   "levelMin": 80,
+   "ilha": null,
+   "rec": 130,
+   "aberta": true,
+   "mortes": 0
+  }
+ ],
+ "party": [
+  {
+   "voc": "KNIGHT",
+   "nivel": 121,
+   "skills": {
+    "melee": 52,
+    "dist": 10,
+    "ml": 6,
+    "escudo": 55
+   },
+   "eq": {
+    "head": {
+     "nome": "steel helmet",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 120,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "armor": {
+     "nome": "knight armor",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 140,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "legs": {
+     "nome": "knight legs",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 130,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "boots": {
+     "nome": "steel boots",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 90,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "weapon": {
+     "nome": "war axe",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 110,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": [],
+     "ataque": 39,
+     "duasMaos": true
+    },
+    "necklace": {
+     "nome": "platinum amulet",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 80,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "ring": {
+     "nome": "dwarven ring",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 30,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    }
+   }
+  },
+  {
+   "voc": "PALADIN",
+   "nivel": 121,
+   "skills": {
+    "melee": 10,
+    "dist": 58,
+    "ml": 14,
+    "escudo": 40
+   },
+   "eq": {
+    "head": {
+     "nome": "soldier helmet",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 100,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "armor": {
+     "nome": "paladin armor",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 200,
+     "atributos": [],
+     "imbuSlots": 1,
+     "imbu": []
+    },
+    "legs": {
+     "nome": "plate legs",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 110,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "boots": {
+     "nome": "leather boots",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 40,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "weapon": {
+     "nome": "crossbow",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 90,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": [],
+     "duasMaos": true
+    },
+    "necklace": {
+     "nome": "scarf",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 60,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "ring": {
+     "nome": "crystal ring",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 50,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "ammo": {
+     "nome": "piercing bolt",
+     "refino": null,
+     "raridade": null,
+     "potencia": null,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": [],
+     "doConfig": true
+    }
+   }
+  },
+  {
+   "voc": "SORCERER",
+   "nivel": 121,
+   "skills": {
+    "melee": 10,
+    "dist": 10,
+    "ml": 38,
+    "escudo": 18
+   },
+   "eq": {
+    "head": {
+     "nome": "mage hat",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 100,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "armor": {
+     "nome": "blue robe",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 130,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "legs": {
+     "nome": "blue legs",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 110,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "boots": {
+     "nome": "leather boots",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 40,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "weapon": {
+     "nome": "wand of decay",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 150,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "shield": {
+     "nome": "spellbook of enlightenment",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 90,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "necklace": {
+     "nome": "scarf",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 60,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "ring": {
+     "nome": "crystal ring",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 50,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    }
+   }
+  },
+  {
+   "voc": "DRUID",
+   "nivel": 121,
+   "skills": {
+    "melee": 10,
+    "dist": 10,
+    "ml": 41,
+    "escudo": 19
+   },
+   "eq": {
+    "head": {
+     "nome": "mage hat",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 100,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "armor": {
+     "nome": "blue robe",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 130,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "legs": {
+     "nome": "blue legs",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 110,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "boots": {
+     "nome": "leather boots",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 40,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "weapon": {
+     "nome": "northwind rod",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 150,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "shield": {
+     "nome": "spellbook of enlightenment",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 90,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "necklace": {
+     "nome": "scarf",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 60,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "ring": {
+     "nome": "crystal ring",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 50,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    }
+   }
+  }
+ ],
+ "legado": {
+  "KNIGHT": {
+   "skill": 52,
+   "marcoAtual": 0,
+   "proxMarco": 60,
+   "falta": 8,
+   "bonusAtual": 0,
+   "bonusProx": 2,
+   "ativo": true
+  },
+  "PALADIN": {
+   "skill": 58,
+   "marcoAtual": 0,
+   "proxMarco": 60,
+   "falta": 2,
+   "bonusAtual": 0,
+   "bonusProx": 2,
+   "ativo": true
+  },
+  "SORCERER": {
+   "skill": 38,
+   "marcoAtual": 0,
+   "proxMarco": 40,
+   "falta": 2,
+   "bonusAtual": 0,
+   "bonusProx": 2,
+   "ativo": true
+  },
+  "DRUID": {
+   "skill": 41,
+   "marcoAtual": 1,
+   "proxMarco": 45,
+   "falta": 4,
+   "bonusAtual": 2,
+   "bonusProx": 5,
+   "ativo": true
+  }
+ },
+ "prey": {
+  "buffs": {
+   "KNIGHT": {
+    "tipo": "loot",
+    "tier": 2,
+    "locked": false,
+    "msLeft": 1800000,
+    "gratis": true
+   },
+   "PALADIN": {
+    "tipo": "xp",
+    "tier": 1,
+    "locked": false,
+    "msLeft": 1800000,
+    "gratis": true
+   },
+   "SORCERER": {
+    "tipo": null,
+    "tier": 0,
+    "locked": false,
+    "msLeft": 0,
+    "gratis": true
+   },
+   "DRUID": {
+    "tipo": null,
+    "tier": 0,
+    "locked": false,
+    "msLeft": 0,
+    "gratis": true
+   }
+  },
+  "wildcards": 3,
+  "huntId": 235,
+  "huntTitle": "Upper Spikes",
+  "huntLocked": false,
+  "huntMsLeft": 3000000
+ },
+ "bencaos": {
+  "tem": 0,
+  "total": 7,
+  "ids": [],
+  "custoFaltam": 152575
+ },
+ "ampulhetas": null,
+ "selo": null,
+ "mortes": [
+  {
+   "t": 1795556913366,
+   "hunt": "Inquisition Warlocks",
+   "huntId": 220,
+   "voc": "KNIGHT",
+   "fonte": "autópsia"
+  }
+ ],
+ "sessoes": [
+  {
+   "hunt": "Upper Spikes",
+   "huntId": 235,
+   "t": 1794736113366,
+   "durMin": 95,
+   "xpH": 106183,
+   "xpAprox": true,
+   "ouroH": 40000,
+   "abatesH": 1300,
+   "morte": false
+  },
+  {
+   "hunt": "Inquisition Warlocks",
+   "huntId": 220,
+   "t": 1795556913366,
+   "durMin": 40,
+   "xpH": 98000,
+   "xpAprox": false,
+   "ouroH": 20000,
+   "abatesH": 1050,
+   "morte": true
+  },
+  {
+   "hunt": "Inquisition Warlocks",
+   "huntId": 220,
+   "t": 1795744113366,
+   "durMin": 150,
+   "xpH": 108000,
+   "xpAprox": false,
+   "ouroH": 32000,
+   "abatesH": 1120,
+   "morte": false
+  }
+ ],
+ "checklist": null,
+ "bestiario": [
+  {
+   "huntId": 236,
+   "title": "Middle Spikes",
+   "bonus": "maxHealth",
+   "ganho": 4,
+   "falta": 1883,
+   "horas": 1.6,
+   "xpH": 88328,
+   "abatesH": 1185
+  },
+  {
+   "huntId": 235,
+   "title": "Upper Spikes",
+   "bonus": "manaRegen",
+   "ganho": 3,
+   "falta": 2500,
+   "horas": 1.9,
+   "xpH": 106183,
+   "abatesH": 1300
+  }
+ ],
+ "chaves": {
+  "usadas": 5,
+  "max": 5,
+  "elites": [
+   {
+    "nome": "Merlin",
+    "chave": "merlin key",
+    "qtd": 3
+   },
+   {
+    "nome": "Elite Balerion",
+    "chave": "balerion key",
+    "qtd": 2
+   }
+  ]
+ },
+ "deposito": {
+  "thunderscar spark": 6,
+  "warzone voucher": 10
+ },
+ "depositoLido": true,
+ "invasao": {
+  "inscrito": true,
+  "proxima": 1795826913366
+ },
+ "forja": {
+  "idadeH": null,
+  "basesParadas": [],
+  "abaixo4": [
+   {
+    "voc": "KNIGHT",
+    "slot": "head",
+    "nome": "steel helmet",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "KNIGHT",
+    "slot": "armor",
+    "nome": "knight armor",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "KNIGHT",
+    "slot": "legs",
+    "nome": "knight legs",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "KNIGHT",
+    "slot": "boots",
+    "nome": "steel boots",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "KNIGHT",
+    "slot": "weapon",
+    "nome": "war axe",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "KNIGHT",
+    "slot": "necklace",
+    "nome": "platinum amulet",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "KNIGHT",
+    "slot": "ring",
+    "nome": "dwarven ring",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "PALADIN",
+    "slot": "head",
+    "nome": "soldier helmet",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "PALADIN",
+    "slot": "armor",
+    "nome": "paladin armor",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "PALADIN",
+    "slot": "legs",
+    "nome": "plate legs",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "PALADIN",
+    "slot": "boots",
+    "nome": "leather boots",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "PALADIN",
+    "slot": "weapon",
+    "nome": "crossbow",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "PALADIN",
+    "slot": "necklace",
+    "nome": "scarf",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "PALADIN",
+    "slot": "ring",
+    "nome": "crystal ring",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "SORCERER",
+    "slot": "head",
+    "nome": "mage hat",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "SORCERER",
+    "slot": "armor",
+    "nome": "blue robe",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "SORCERER",
+    "slot": "legs",
+    "nome": "blue legs",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "SORCERER",
+    "slot": "boots",
+    "nome": "leather boots",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "SORCERER",
+    "slot": "weapon",
+    "nome": "wand of decay",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "SORCERER",
+    "slot": "shield",
+    "nome": "spellbook of enlightenment",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "SORCERER",
+    "slot": "necklace",
+    "nome": "scarf",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "SORCERER",
+    "slot": "ring",
+    "nome": "crystal ring",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "DRUID",
+    "slot": "head",
+    "nome": "mage hat",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "DRUID",
+    "slot": "armor",
+    "nome": "blue robe",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "DRUID",
+    "slot": "legs",
+    "nome": "blue legs",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "DRUID",
+    "slot": "boots",
+    "nome": "leather boots",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "DRUID",
+    "slot": "weapon",
+    "nome": "northwind rod",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "DRUID",
+    "slot": "shield",
+    "nome": "spellbook of enlightenment",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "DRUID",
+    "slot": "necklace",
+    "nome": "scarf",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "DRUID",
+    "slot": "ring",
+    "nome": "crystal ring",
+    "refino": 0,
+    "custo": 1332500
+   }
+  ]
+ },
+ "topo": null,
+ "precos": {
+  "thunderscar spark": 60000,
+  "warzone voucher": 25000
+ },
+ "ilhas": [
+  {
+   "id": "issavi",
+   "nome": "Issavi",
+   "aberta": false
+  },
+  {
+   "id": "marapur",
+   "nome": "Marapur",
+   "aberta": false
+  },
+  {
+   "id": "dream_courts",
+   "nome": "Dream Courts",
+   "aberta": false
+  },
+  {
+   "id": "otherworld",
+   "nome": "Otherworld",
+   "aberta": false
+  },
+  {
+   "id": "warzone",
+   "nome": "Warzone",
+   "aberta": false
+  },
+  {
+   "id": "forgotten_knowledge",
+   "nome": "Forgotten Knowledge",
+   "aberta": false
+  },
+  {
+   "id": "the_inquisition",
+   "nome": "The Inquisition",
+   "aberta": false
+  },
+  {
+   "id": "zao",
+   "nome": "Zao",
+   "aberta": false
+  },
+  {
+   "id": "gray_island",
+   "nome": "Gray Island",
+   "aberta": false
+  },
+  {
+   "id": "pits_of_inferno",
+   "nome": "Pits of Inferno",
+   "aberta": false
+  },
+  {
+   "id": "yalahar",
+   "nome": "Yalahar",
+   "aberta": true
+  }
+ ],
+ "ouroLivre": 67425,
+ "_nota": "montada a partir da foto real da u2tag (formato de trFoto) e dos fatos da XundaBr no TIBIDLE.md/memória (conta nova de nível baixo, 27/10); nível ~121, Inquisition Warlocks, só Yalahar aberta, sem Premium e sem bênçãos, mochila de chaves T1 cheia; valores plausíveis, sem dado real de ouro"
+}

@@ -1,0 +1,992 @@
+{
+ "t": 1795816113366,
+ "nivel": 216,
+ "xpTotal": 163400000,
+ "ouro": 2500000,
+ "ouroTravado": 0,
+ "premium": {
+  "ativo": true,
+  "ate": "2026-12-20T00:00:00.000Z"
+ },
+ "emHunt": true,
+ "naCidade": false,
+ "hunt": {
+  "id": 222,
+  "title": "Shadow Nexus",
+  "lure": 2,
+  "maxLure": 4,
+  "lureTiers": [
+   {
+    "min": 3,
+    "max": 3
+   },
+   {
+    "min": 5,
+    "max": 5
+   },
+   {
+    "min": 7,
+    "max": 7
+   },
+   {
+    "min": 8,
+    "max": 8
+   }
+  ],
+  "levelMin": 80,
+  "ilha": "the_inquisition",
+  "rec": 250
+ },
+ "medidoAtual": {
+  "xpH": 590000,
+  "ouroH": -80000,
+  "gastoH": 520000,
+  "lootH": 440000,
+  "abatesH": 690,
+  "min": 62,
+  "xpBonusH": 650000
+ },
+ "mapas": [
+  {
+   "id": 222,
+   "title": "Shadow Nexus",
+   "xpH": 590000,
+   "fonte": "medido",
+   "origem": "agora",
+   "idadeH": 0,
+   "levelMin": 80,
+   "ilha": "the_inquisition",
+   "rec": 250,
+   "aberta": true,
+   "mortes": 2,
+   "ouroH": -80000,
+   "abatesH": 690
+  },
+  {
+   "id": 249,
+   "title": "Kilmaresh Catacombs",
+   "xpH": 400000,
+   "fonte": "comunidade",
+   "origem": "discord",
+   "idadeH": 270.7,
+   "levelMin": 80,
+   "ilha": "issavi",
+   "rec": 230,
+   "aberta": false,
+   "mortes": 0
+  },
+  {
+   "id": 202,
+   "title": "Throne of Tafariel",
+   "xpH": 320000,
+   "fonte": "comunidade",
+   "origem": "discord",
+   "idadeH": 102.7,
+   "levelMin": 80,
+   "ilha": "pits_of_inferno",
+   "rec": 170,
+   "aberta": true,
+   "mortes": 0
+  },
+  {
+   "id": 228,
+   "title": "Holy Portal",
+   "xpH": 131499,
+   "fonte": "medido",
+   "origem": "sessões",
+   "idadeH": 600,
+   "levelMin": 80,
+   "ilha": "forgotten_knowledge",
+   "rec": 150,
+   "aberta": true,
+   "mortes": 0,
+   "ouroH": -20000
+  },
+  {
+   "id": 192,
+   "title": "Draken Walls",
+   "xpH": 230000,
+   "fonte": "comunidade",
+   "origem": "discord",
+   "idadeH": 582.7,
+   "levelMin": 80,
+   "ilha": "zao",
+   "rec": 80,
+   "aberta": true,
+   "mortes": 0
+  }
+ ],
+ "party": [
+  {
+   "voc": "KNIGHT",
+   "nivel": 216,
+   "skills": {
+    "melee": 60,
+    "dist": 10,
+    "ml": 10,
+    "escudo": 62
+   },
+   "eq": {
+    "head": {
+     "nome": "Zaoan helmet",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 150,
+     "atributos": [],
+     "imbuSlots": 1,
+     "imbu": []
+    },
+    "armor": {
+     "nome": "magic plate armor",
+     "refino": 2,
+     "raridade": 0,
+     "potencia": 380,
+     "atributos": [],
+     "imbuSlots": 2,
+     "imbu": [
+      "Void"
+     ]
+    },
+    "legs": {
+     "nome": "exotic legs",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 210,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "boots": {
+     "nome": "guardian boots",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 160,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "weapon": {
+     "nome": "stonecutter axe",
+     "refino": 1,
+     "raridade": 0,
+     "potencia": 260,
+     "atributos": [],
+     "imbuSlots": 1,
+     "imbu": [],
+     "ataque": 50,
+     "duasMaos": false
+    },
+    "shield": {
+     "nome": "great shield",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 300,
+     "atributos": [],
+     "imbuSlots": 1,
+     "imbu": []
+    },
+    "necklace": {
+     "nome": "gearwheel chain",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 220,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "ring": {
+     "nome": "crystal ring",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 250,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    }
+   }
+  },
+  {
+   "voc": "PALADIN",
+   "nivel": 216,
+   "skills": {
+    "melee": 10,
+    "dist": 64,
+    "ml": 18,
+    "escudo": 50
+   },
+   "eq": {
+    "head": {
+     "nome": "steel helmet",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 240,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "armor": {
+     "nome": "paladin armor",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 330,
+     "atributos": [],
+     "imbuSlots": 1,
+     "imbu": []
+    },
+    "legs": {
+     "nome": "trousers of the ancients",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 210,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "boots": {
+     "nome": "fur boots",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 200,
+     "atributos": [],
+     "imbuSlots": 1,
+     "imbu": []
+    },
+    "weapon": {
+     "nome": "hive bow",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 270,
+     "atributos": [],
+     "imbuSlots": 3,
+     "imbu": [],
+     "duasMaos": true
+    },
+    "necklace": {
+     "nome": "wolf tooth chain",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 300,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "ring": {
+     "nome": "crystal ring",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 230,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "ammo": {
+     "nome": "onyx arrow",
+     "refino": null,
+     "raridade": null,
+     "potencia": null,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": [],
+     "doConfig": true
+    }
+   }
+  },
+  {
+   "voc": "SORCERER",
+   "nivel": 216,
+   "skills": {
+    "melee": 10,
+    "dist": 10,
+    "ml": 52,
+    "escudo": 22
+   },
+   "eq": {
+    "head": {
+     "nome": "magma monocle",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 340,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "armor": {
+     "nome": "magma coat",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 300,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "legs": {
+     "nome": "magma legs",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 190,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "boots": {
+     "nome": "magma boots",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 300,
+     "atributos": [],
+     "imbuSlots": 1,
+     "imbu": []
+    },
+    "weapon": {
+     "nome": "wand of vortex",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 330,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "shield": {
+     "nome": "spellbook of mind control",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 120,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "necklace": {
+     "nome": "magma amulet",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 100,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "ring": {
+     "nome": "crystal ring",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 60,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    }
+   }
+  },
+  {
+   "voc": "DRUID",
+   "nivel": 216,
+   "skills": {
+    "melee": 10,
+    "dist": 10,
+    "ml": 55,
+    "escudo": 24
+   },
+   "eq": {
+    "head": {
+     "nome": "magma monocle",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 340,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "armor": {
+     "nome": "magma coat",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 300,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "legs": {
+     "nome": "magma legs",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 100,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "boots": {
+     "nome": "magma boots",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 90,
+     "atributos": [],
+     "imbuSlots": 1,
+     "imbu": []
+    },
+    "weapon": {
+     "nome": "snakebite rod",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 200,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "shield": {
+     "nome": "great shield",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 410,
+     "atributos": [
+      {
+       "id": "resist_fogo",
+       "valor": 3.1
+      }
+     ],
+     "imbuSlots": 1,
+     "imbu": []
+    },
+    "necklace": {
+     "nome": "magma amulet",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 230,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "ring": {
+     "nome": "crystal ring",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 250,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    }
+   }
+  }
+ ],
+ "legado": {
+  "KNIGHT": {
+   "skill": 60,
+   "marcoAtual": 1,
+   "proxMarco": 65,
+   "falta": 5,
+   "bonusAtual": 2,
+   "bonusProx": 5,
+   "ativo": true
+  },
+  "PALADIN": {
+   "skill": 64,
+   "marcoAtual": 1,
+   "proxMarco": 65,
+   "falta": 1,
+   "bonusAtual": 2,
+   "bonusProx": 5,
+   "ativo": true
+  },
+  "SORCERER": {
+   "skill": 52,
+   "marcoAtual": 3,
+   "proxMarco": 55,
+   "falta": 3,
+   "bonusAtual": 9,
+   "bonusProx": 14,
+   "ativo": true
+  },
+  "DRUID": {
+   "skill": 55,
+   "marcoAtual": 4,
+   "proxMarco": 60,
+   "falta": 5,
+   "bonusAtual": 14,
+   "bonusProx": 20,
+   "ativo": true
+  }
+ },
+ "prey": {
+  "buffs": {
+   "KNIGHT": {
+    "tipo": "xp",
+    "tier": 5,
+    "locked": false,
+    "msLeft": 3600000,
+    "gratis": false
+   },
+   "PALADIN": {
+    "tipo": "xp",
+    "tier": 4,
+    "locked": false,
+    "msLeft": 3600000,
+    "gratis": false
+   },
+   "SORCERER": {
+    "tipo": "damage",
+    "tier": 3,
+    "locked": false,
+    "msLeft": 2400000,
+    "gratis": true
+   },
+   "DRUID": {
+    "tipo": "defense",
+    "tier": 6,
+    "locked": true,
+    "msLeft": 5000000,
+    "gratis": false
+   }
+  },
+  "wildcards": 12,
+  "huntId": 222,
+  "huntTitle": "Shadow Nexus",
+  "huntLocked": false,
+  "huntMsLeft": 4000000
+ },
+ "bencaos": {
+  "tem": 5,
+  "total": 7,
+  "ids": [
+   2,
+   3,
+   4,
+   5,
+   6
+  ],
+  "custoFaltam": 71200
+ },
+ "ampulhetas": {
+  "KNIGHT": {
+   "usadasH": 8,
+   "treinando": false,
+   "temPersonagem": true
+  },
+  "PALADIN": {
+   "usadasH": 2,
+   "treinando": true,
+   "temPersonagem": true
+  },
+  "SORCERER": {
+   "usadasH": 0,
+   "treinando": false,
+   "temPersonagem": true
+  },
+  "DRUID": {
+   "usadasH": 0,
+   "treinando": false,
+   "temPersonagem": true
+  }
+ },
+ "selo": {
+  "ativo": false,
+  "pausa": null,
+  "abundante": null,
+  "huntId": 222
+ },
+ "mortes": [
+  {
+   "t": 1795384113366,
+   "hunt": "Shadow Nexus",
+   "huntId": 222,
+   "voc": "DRUID",
+   "fonte": "autópsia"
+  },
+  {
+   "t": 1795384125366,
+   "hunt": "Shadow Nexus",
+   "huntId": 222,
+   "voc": "PALADIN",
+   "fonte": "autópsia"
+  },
+  {
+   "t": 1795708113366,
+   "hunt": "Shadow Nexus",
+   "huntId": 222,
+   "voc": "DRUID",
+   "fonte": "autópsia"
+  },
+  {
+   "t": 1795805313366,
+   "hunt": "Shadow Nexus",
+   "huntId": 222,
+   "voc": "DRUID",
+   "fonte": "fim da caçada"
+  }
+ ],
+ "sessoes": [
+  {
+   "hunt": "Shadow Nexus",
+   "huntId": 222,
+   "t": 1795636113366,
+   "durMin": 120,
+   "xpH": 610000,
+   "xpAprox": false,
+   "ouroH": -60000,
+   "abatesH": 700,
+   "morte": false
+  },
+  {
+   "hunt": "Shadow Nexus",
+   "huntId": 222,
+   "t": 1795704513366,
+   "durMin": 64,
+   "xpH": 560000,
+   "xpAprox": false,
+   "ouroH": -110000,
+   "abatesH": 660,
+   "morte": true
+  },
+  {
+   "hunt": "Shadow Nexus",
+   "huntId": 222,
+   "t": 1795798113366,
+   "durMin": 118,
+   "xpH": 585000,
+   "xpAprox": false,
+   "ouroH": -75000,
+   "abatesH": 690,
+   "morte": true
+  }
+ ],
+ "checklist": null,
+ "bestiario": [
+  {
+   "huntId": 222,
+   "title": "Shadow Nexus",
+   "bonus": "magicLevel",
+   "ganho": 1,
+   "falta": 21000,
+   "horas": 30.4,
+   "xpH": 590000,
+   "abatesH": 690
+  },
+  {
+   "huntId": 228,
+   "title": "Holy Portal",
+   "bonus": "distance",
+   "ganho": 1,
+   "falta": 9000,
+   "horas": 7.5,
+   "xpH": 131499,
+   "abatesH": 1200
+  }
+ ],
+ "chaves": {
+  "usadas": 3,
+  "max": 22,
+  "elites": [
+   {
+    "nome": "beelzebub",
+    "chave": "beelzebub key",
+    "qtd": 2
+   },
+   {
+    "nome": "Merlin",
+    "chave": "merlin key",
+    "qtd": 1
+   }
+  ]
+ },
+ "deposito": {
+  "inquisition badge": 12,
+  "the inquisitor's circlet": 3,
+  "refine fragment t1": 300,
+  "spectral conch": 4
+ },
+ "depositoLido": true,
+ "invasao": {
+  "inscrito": false,
+  "proxima": 1795826913366
+ },
+ "forja": {
+  "idadeH": 30,
+  "basesParadas": [
+   {
+    "nome": "magma coat",
+    "potencia": 420
+   }
+  ],
+  "abaixo4": [
+   {
+    "voc": "KNIGHT",
+    "slot": "head",
+    "nome": "Zaoan helmet",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "KNIGHT",
+    "slot": "armor",
+    "nome": "magic plate armor",
+    "refino": 2,
+    "custo": 771000
+   },
+   {
+    "voc": "KNIGHT",
+    "slot": "legs",
+    "nome": "exotic legs",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "KNIGHT",
+    "slot": "boots",
+    "nome": "guardian boots",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "KNIGHT",
+    "slot": "weapon",
+    "nome": "stonecutter axe",
+    "refino": 1,
+    "custo": 1071000
+   },
+   {
+    "voc": "KNIGHT",
+    "slot": "shield",
+    "nome": "great shield",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "KNIGHT",
+    "slot": "necklace",
+    "nome": "gearwheel chain",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "KNIGHT",
+    "slot": "ring",
+    "nome": "crystal ring",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "PALADIN",
+    "slot": "head",
+    "nome": "steel helmet",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "PALADIN",
+    "slot": "armor",
+    "nome": "paladin armor",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "PALADIN",
+    "slot": "legs",
+    "nome": "trousers of the ancients",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "PALADIN",
+    "slot": "boots",
+    "nome": "fur boots",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "PALADIN",
+    "slot": "weapon",
+    "nome": "hive bow",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "PALADIN",
+    "slot": "necklace",
+    "nome": "wolf tooth chain",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "PALADIN",
+    "slot": "ring",
+    "nome": "crystal ring",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "SORCERER",
+    "slot": "head",
+    "nome": "magma monocle",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "SORCERER",
+    "slot": "armor",
+    "nome": "magma coat",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "SORCERER",
+    "slot": "legs",
+    "nome": "magma legs",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "SORCERER",
+    "slot": "boots",
+    "nome": "magma boots",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "SORCERER",
+    "slot": "weapon",
+    "nome": "wand of vortex",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "SORCERER",
+    "slot": "shield",
+    "nome": "spellbook of mind control",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "SORCERER",
+    "slot": "necklace",
+    "nome": "magma amulet",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "SORCERER",
+    "slot": "ring",
+    "nome": "crystal ring",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "DRUID",
+    "slot": "head",
+    "nome": "magma monocle",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "DRUID",
+    "slot": "armor",
+    "nome": "magma coat",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "DRUID",
+    "slot": "legs",
+    "nome": "magma legs",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "DRUID",
+    "slot": "boots",
+    "nome": "magma boots",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "DRUID",
+    "slot": "weapon",
+    "nome": "snakebite rod",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "DRUID",
+    "slot": "shield",
+    "nome": "great shield",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "DRUID",
+    "slot": "necklace",
+    "nome": "magma amulet",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "DRUID",
+    "slot": "ring",
+    "nome": "crystal ring",
+    "refino": 0,
+    "custo": 1332500
+   }
+  ]
+ },
+ "topo": null,
+ "precos": {
+  "spectral conch": 250000,
+  "haunted sigil": 300000,
+  "inquisition badge": 45000,
+  "refine fragment t1": 2100
+ },
+ "ilhas": [
+  {
+   "id": "issavi",
+   "nome": "Issavi",
+   "aberta": false
+  },
+  {
+   "id": "marapur",
+   "nome": "Marapur",
+   "aberta": false
+  },
+  {
+   "id": "dream_courts",
+   "nome": "Dream Courts",
+   "aberta": false
+  },
+  {
+   "id": "otherworld",
+   "nome": "Otherworld",
+   "aberta": false
+  },
+  {
+   "id": "warzone",
+   "nome": "Warzone",
+   "aberta": true
+  },
+  {
+   "id": "forgotten_knowledge",
+   "nome": "Forgotten Knowledge",
+   "aberta": true
+  },
+  {
+   "id": "the_inquisition",
+   "nome": "The Inquisition",
+   "aberta": true
+  },
+  {
+   "id": "zao",
+   "nome": "Zao",
+   "aberta": true
+  },
+  {
+   "id": "gray_island",
+   "nome": "Gray Island",
+   "aberta": true
+  },
+  {
+   "id": "pits_of_inferno",
+   "nome": "Pits of Inferno",
+   "aberta": true
+  },
+  {
+   "id": "yalahar",
+   "nome": "Yalahar",
+   "aberta": true
+  }
+ ],
+ "ouroLivre": 868800,
+ "_nota": "montada a partir da foto real da u2tag (formato de trFoto) e dos fatos da ShamanBr no TIBIDLE.md/memória: Shadow Nexus no Extremo 590k raw −80k/h (15/11), mortes do Druida (rajada física, 28/10–04/11), magma nos magos, escudo com resist. a fogo no Druida; ouro, skills e equipamento plausíveis, sem dado real de ouro"
+}

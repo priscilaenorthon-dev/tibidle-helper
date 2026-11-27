@@ -1,0 +1,4645 @@
+{
+ "t": 1795816113366,
+ "nivel": 251,
+ "xpTotal": 259068090,
+ "ouro": 3000000,
+ "ouroLivre": 2015235,
+ "premium": {
+  "ativo": true,
+  "ate": "2026-12-26T13:48:55.909Z"
+ },
+ "emHunt": true,
+ "naCidade": false,
+ "hunt": {
+  "id": 222,
+  "title": "Shadow Nexus",
+  "lure": 3,
+  "maxLure": 4,
+  "lureTiers": [
+   {
+    "min": 3,
+    "max": 3
+   },
+   {
+    "min": 5,
+    "max": 5
+   },
+   {
+    "min": 7,
+    "max": 7
+   },
+   {
+    "min": 8,
+    "max": 8
+   }
+  ],
+  "levelMin": 80,
+  "ilha": "the_inquisition",
+  "rec": 250
+ },
+ "medidoAtual": {
+  "xpH": 529888,
+  "ouroH": 84906,
+  "gastoH": 328255,
+  "lootH": 413161,
+  "abatesH": 788,
+  "min": 233.1,
+  "xpBonusH": 582779
+ },
+ "mapas": [
+  {
+   "id": 201,
+   "title": "Throne of Infernatil",
+   "xpH": 205000,
+   "fonte": "comunidade",
+   "origem": "discord",
+   "idadeH": 630.8,
+   "levelMin": 80,
+   "ilha": "pits_of_inferno",
+   "nivelMedida": 199,
+   "setup": "infernatil-specter",
+   "rec": 180,
+   "aberta": true,
+   "mortes": 0
+  },
+  {
+   "id": 205,
+   "title": "Throne of Ashfalor",
+   "xpH": 130000,
+   "fonte": "comunidade",
+   "origem": "discord",
+   "idadeH": 630.8,
+   "levelMin": 80,
+   "ilha": "pits_of_inferno",
+   "nivelMedida": 199,
+   "setup": "ashfalor-specter",
+   "rec": 150,
+   "aberta": true,
+   "mortes": 0
+  },
+  {
+   "id": 202,
+   "title": "Throne of Tafariel",
+   "xpH": 320000,
+   "fonte": "comunidade",
+   "origem": "discord",
+   "idadeH": 102.8,
+   "levelMin": 80,
+   "ilha": "pits_of_inferno",
+   "nivelMedida": 200,
+   "setup": "tafariel-matheustlm",
+   "rec": 170,
+   "aberta": true,
+   "mortes": 0
+  },
+  {
+   "id": 203,
+   "title": "Throne of Apocalypse",
+   "xpH": 250000,
+   "fonte": "comunidade",
+   "origem": "discord",
+   "idadeH": 102.8,
+   "levelMin": 80,
+   "ilha": "pits_of_inferno",
+   "nivelMedida": 200,
+   "setup": "apocalypse-matheustlm",
+   "rec": 170,
+   "aberta": true,
+   "mortes": 0
+  },
+  {
+   "id": 210,
+   "title": "Latrivan & Golgordan Seal",
+   "xpH": 145000,
+   "fonte": "comunidade",
+   "origem": "discord",
+   "idadeH": 366.8,
+   "levelMin": 80,
+   "ilha": "the_inquisition",
+   "nivelMedida": null,
+   "setup": "latrivan-specter",
+   "rec": 180,
+   "aberta": true,
+   "mortes": 0
+  },
+  {
+   "id": 207,
+   "title": "Ushuriel Seal",
+   "xpH": 200000,
+   "fonte": "comunidade",
+   "origem": "discord",
+   "idadeH": 366.8,
+   "levelMin": 80,
+   "ilha": "the_inquisition",
+   "nivelMedida": null,
+   "setup": "ushuriel-specter",
+   "rec": 180,
+   "aberta": true,
+   "mortes": 0
+  },
+  {
+   "id": 222,
+   "title": "Shadow Nexus",
+   "xpH": 529888,
+   "fonte": "medido",
+   "origem": "agora",
+   "idadeH": 0,
+   "levelMin": 80,
+   "ilha": "the_inquisition",
+   "ouroH": 84906,
+   "abatesH": 788,
+   "rec": 250,
+   "aberta": true,
+   "mortes": 0
+  },
+  {
+   "id": 248,
+   "title": "Green Belt",
+   "xpH": 245000,
+   "fonte": "comunidade",
+   "origem": "discord",
+   "idadeH": 366.8,
+   "levelMin": 80,
+   "ilha": "issavi",
+   "nivelMedida": 180,
+   "setup": "greenbelt-taina",
+   "rec": 180,
+   "aberta": true,
+   "mortes": 0
+  },
+  {
+   "id": 192,
+   "title": "Draken Walls",
+   "xpH": 230000,
+   "fonte": "comunidade",
+   "origem": "discord",
+   "idadeH": 582.8,
+   "levelMin": 80,
+   "ilha": "zao",
+   "nivelMedida": null,
+   "setup": "draken-palawar",
+   "rec": 80,
+   "aberta": true,
+   "mortes": 0
+  },
+  {
+   "id": 249,
+   "title": "Kilmaresh Catacombs",
+   "xpH": 400000,
+   "fonte": "comunidade",
+   "origem": "discord",
+   "idadeH": 270.8,
+   "levelMin": 80,
+   "ilha": "issavi",
+   "nivelMedida": null,
+   "setup": "kilmaresh-felipes",
+   "rec": 230,
+   "aberta": true,
+   "mortes": 0
+  },
+  {
+   "id": 46,
+   "title": "Dragon Lair",
+   "xpH": 58730,
+   "fonte": "medido",
+   "origem": "sessões",
+   "idadeH": 4,
+   "levelMin": 60,
+   "ilha": null,
+   "ouroH": -1204049,
+   "rec": 60,
+   "aberta": true,
+   "mortes": 0
+  },
+  {
+   "id": 50,
+   "title": "Vampire hell",
+   "xpH": 60616,
+   "fonte": "medido",
+   "origem": "sessões",
+   "idadeH": 1295.7,
+   "levelMin": 50,
+   "ilha": null,
+   "ouroH": 10664,
+   "rec": 50,
+   "aberta": true,
+   "mortes": 0
+  },
+  {
+   "id": 151,
+   "title": "Bog Raiders Yalahar",
+   "xpH": 47999,
+   "fonte": "medido",
+   "origem": "sessões",
+   "idadeH": 1362.2,
+   "levelMin": 70,
+   "ilha": "yalahar",
+   "ouroH": 11835,
+   "rec": 70,
+   "aberta": true,
+   "mortes": 0
+  },
+  {
+   "id": 161,
+   "title": "Yalahar Worker Golem",
+   "xpH": 108964,
+   "fonte": "medido",
+   "origem": "sessões",
+   "idadeH": 1027.2,
+   "levelMin": 70,
+   "ilha": "yalahar",
+   "ouroH": -8455,
+   "rec": 70,
+   "aberta": true,
+   "mortes": 0
+  },
+  {
+   "id": 184,
+   "title": "Petrified Hollow",
+   "xpH": 73965,
+   "fonte": "medido",
+   "origem": "sessões",
+   "idadeH": 1226.2,
+   "levelMin": 80,
+   "ilha": null,
+   "ouroH": 4030,
+   "rec": 100,
+   "aberta": true,
+   "mortes": 0
+  },
+  {
+   "id": 188,
+   "title": "The Behemoth Quest",
+   "xpH": 87626,
+   "fonte": "medido",
+   "origem": "sessões",
+   "idadeH": 1098.4,
+   "levelMin": 80,
+   "ilha": null,
+   "ouroH": 83846,
+   "rec": 80,
+   "aberta": true,
+   "mortes": 0
+  },
+  {
+   "id": 191,
+   "title": "Quara's Domain Yalahar",
+   "xpH": 61920,
+   "fonte": "medido",
+   "origem": "sessões",
+   "idadeH": 1226.1,
+   "levelMin": 80,
+   "ilha": "yalahar",
+   "ouroH": 2535,
+   "rec": 130,
+   "aberta": true,
+   "mortes": 0
+  },
+  {
+   "id": 200,
+   "title": "Throne of Verminor",
+   "xpH": 96152,
+   "fonte": "medido",
+   "origem": "sessões",
+   "idadeH": 953,
+   "levelMin": 80,
+   "ilha": "pits_of_inferno",
+   "ouroH": 99576,
+   "rec": 150,
+   "aberta": true,
+   "mortes": 0
+  },
+  {
+   "id": 204,
+   "title": "Throne of Pumin",
+   "xpH": 70003,
+   "fonte": "medido",
+   "origem": "sessões",
+   "idadeH": 980.2,
+   "levelMin": 80,
+   "ilha": "pits_of_inferno",
+   "ouroH": -169490,
+   "rec": 150,
+   "aberta": true,
+   "mortes": 0
+  },
+  {
+   "id": 220,
+   "title": "Inquisition Warlocks",
+   "xpH": 105824,
+   "fonte": "medido",
+   "origem": "sessões",
+   "idadeH": 1224.9,
+   "levelMin": 80,
+   "ilha": null,
+   "ouroH": 20647,
+   "rec": 130,
+   "aberta": true,
+   "mortes": 0
+  },
+  {
+   "id": 225,
+   "title": "Energy Portal",
+   "xpH": 85435,
+   "fonte": "medido",
+   "origem": "sessões",
+   "idadeH": 1026.8,
+   "levelMin": 80,
+   "ilha": "forgotten_knowledge",
+   "ouroH": 34966,
+   "rec": 130,
+   "aberta": true,
+   "mortes": 0
+  },
+  {
+   "id": 228,
+   "title": "Holy Portal",
+   "xpH": 131499,
+   "fonte": "medido",
+   "origem": "sessões",
+   "idadeH": 979.5,
+   "levelMin": 80,
+   "ilha": "forgotten_knowledge",
+   "ouroH": -81803,
+   "rec": 150,
+   "aberta": true,
+   "mortes": 0
+  },
+  {
+   "id": 235,
+   "title": "Upper Spikes",
+   "xpH": 106183,
+   "fonte": "medido",
+   "origem": "sessões",
+   "idadeH": 1225.9,
+   "levelMin": 80,
+   "ilha": null,
+   "ouroH": -76363,
+   "rec": 80,
+   "aberta": true,
+   "mortes": 0
+  },
+  {
+   "id": 236,
+   "title": "Middle Spikes",
+   "xpH": 88328,
+   "fonte": "medido",
+   "origem": "sessões",
+   "idadeH": 1225.6,
+   "levelMin": 80,
+   "ilha": null,
+   "ouroH": -61431,
+   "rec": 100,
+   "aberta": true,
+   "mortes": 0
+  },
+  {
+   "id": 34,
+   "title": "Orc Fortress",
+   "xpH": 39961,
+   "fonte": "medido",
+   "origem": "scan",
+   "idadeH": 1360.8,
+   "levelMin": 35,
+   "ilha": null,
+   "ouroH": 8996,
+   "abatesH": 1575,
+   "rec": 35,
+   "aberta": true,
+   "mortes": 0
+  },
+  {
+   "id": 146,
+   "title": "Djinns Marid Territory",
+   "xpH": 46410,
+   "fonte": "medido",
+   "origem": "scan",
+   "idadeH": 1360.9,
+   "levelMin": 50,
+   "ilha": "yalahar",
+   "ouroH": 16950,
+   "abatesH": 2210,
+   "rec": 50,
+   "aberta": true,
+   "mortes": 0
+  },
+  {
+   "id": 187,
+   "title": "The Banshee Quest",
+   "xpH": 59695,
+   "fonte": "medido",
+   "origem": "scan",
+   "idadeH": 1367.7,
+   "levelMin": 60,
+   "ilha": null,
+   "ouroH": -1985,
+   "abatesH": 1194,
+   "rec": 60,
+   "aberta": true,
+   "mortes": 0
+  },
+  {
+   "id": 190,
+   "title": "Quara's entrance Yalahar",
+   "xpH": 51376,
+   "fonte": "medido",
+   "origem": "scan",
+   "idadeH": 1412.8,
+   "levelMin": 60,
+   "ilha": "yalahar",
+   "ouroH": 2681,
+   "abatesH": 1237,
+   "rec": 60,
+   "aberta": true,
+   "mortes": 0
+  }
+ ],
+ "party": [
+  {
+   "voc": "KNIGHT",
+   "nivel": 251,
+   "eq": {
+    "head": {
+     "nome": "Zaoan helmet",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 77,
+     "atributos": [],
+     "imbuSlots": 1,
+     "imbu": []
+    },
+    "legs": {
+     "nome": "exotic legs",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 202,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "ring": {
+     "nome": "crystal ring",
+     "refino": 0,
+     "raridade": 1,
+     "potencia": 279,
+     "atributos": [
+      {
+       "id": "cura_propria",
+       "valor": 3.7
+      }
+     ],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "armor": {
+     "nome": "magic plate armor",
+     "refino": 4,
+     "raridade": 1,
+     "potencia": 471,
+     "atributos": [
+      {
+       "id": "resist_gelo",
+       "valor": 2.5
+      }
+     ],
+     "imbuSlots": 2,
+     "imbu": []
+    },
+    "boots": {
+     "nome": "guardian boots",
+     "refino": 0,
+     "raridade": 1,
+     "potencia": 156,
+     "atributos": [
+      {
+       "id": "cura_propria",
+       "valor": 1.9
+      }
+     ],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "shield": {
+     "nome": "great shield",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 398,
+     "atributos": [],
+     "imbuSlots": 1,
+     "imbu": []
+    },
+    "weapon": {
+     "nome": "stonecutter axe",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 129,
+     "atributos": [],
+     "imbuSlots": 1,
+     "imbu": [],
+     "ataque": 50
+    },
+    "necklace": {
+     "nome": "gearwheel chain",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 285,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    }
+   },
+   "skills": {
+    "melee": 64,
+    "dist": 10,
+    "ml": 11,
+    "escudo": 65
+   }
+  },
+  {
+   "voc": "PALADIN",
+   "nivel": 251,
+   "eq": {
+    "head": {
+     "nome": "steel helmet",
+     "refino": 0,
+     "raridade": 4,
+     "potencia": 246,
+     "atributos": [
+      {
+       "id": "roubo_vida_quantia",
+       "valor": 0.8
+      },
+      {
+       "id": "resist_morte",
+       "valor": 1.9
+      },
+      {
+       "id": "max_hp",
+       "valor": 30
+      },
+      {
+       "id": "regen_vida",
+       "valor": 1.5
+      }
+     ],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "legs": {
+     "nome": "trousers of the ancients",
+     "refino": 0,
+     "raridade": 3,
+     "potencia": 214,
+     "atributos": [
+      {
+       "id": "resist_energia",
+       "valor": 1.6
+      },
+      {
+       "id": "regen_mana",
+       "valor": 2.2
+      },
+      {
+       "id": "max_hp",
+       "valor": 25
+      }
+     ],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "ring": {
+     "nome": "crystal ring",
+     "refino": 0,
+     "raridade": 2,
+     "potencia": 231,
+     "atributos": [
+      {
+       "id": "resist_gelo",
+       "valor": 0.9
+      },
+      {
+       "id": "regen_mana",
+       "valor": 1.9
+      }
+     ],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "armor": {
+     "nome": "paladin armor",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 341,
+     "atributos": [],
+     "imbuSlots": 1,
+     "imbu": []
+    },
+    "boots": {
+     "nome": "fur boots",
+     "refino": 0,
+     "raridade": 1,
+     "potencia": 203,
+     "atributos": [
+      {
+       "id": "regen_mana",
+       "valor": 2.4
+      }
+     ],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "weapon": {
+     "nome": "hive bow",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 270,
+     "atributos": [],
+     "imbuSlots": 3,
+     "imbu": [],
+     "duasMaos": true
+    },
+    "necklace": {
+     "nome": "wolf tooth chain",
+     "refino": 0,
+     "raridade": 2,
+     "potencia": 338,
+     "atributos": [
+      {
+       "id": "dano_elem_sagrado",
+       "valor": 3.2
+      },
+      {
+       "id": "distancia",
+       "valor": 1
+      }
+     ],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "ammo": {
+     "nome": "burst arrow",
+     "refino": null,
+     "raridade": null,
+     "potencia": null,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": [],
+     "doConfig": true
+    }
+   },
+   "skills": {
+    "melee": 10,
+    "dist": 68,
+    "ml": 21,
+    "escudo": 54
+   }
+  },
+  {
+   "voc": "SORCERER",
+   "nivel": 251,
+   "eq": {
+    "head": {
+     "nome": "magma monocle",
+     "refino": 0,
+     "raridade": 2,
+     "potencia": 344,
+     "atributos": [
+      {
+       "id": "resist_energia",
+       "valor": 1.3
+      },
+      {
+       "id": "regen_mana",
+       "valor": 2.2
+      }
+     ],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "legs": {
+     "nome": "magma legs",
+     "refino": 0,
+     "raridade": 2,
+     "potencia": 191,
+     "atributos": [
+      {
+       "id": "regen_mana",
+       "valor": 1.2
+      },
+      {
+       "id": "regen_vida",
+       "valor": 1.7
+      }
+     ],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "ring": {
+     "nome": "crystal ring",
+     "refino": 0,
+     "raridade": 2,
+     "potencia": 5,
+     "atributos": [
+      {
+       "id": "regen_mana",
+       "valor": 1.5
+      },
+      {
+       "id": "cura_propria",
+       "valor": 1.6
+      }
+     ],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "armor": {
+     "nome": "magma coat",
+     "refino": 0,
+     "raridade": 2,
+     "potencia": 20,
+     "atributos": [
+      {
+       "id": "resist_morte",
+       "valor": 1.1
+      },
+      {
+       "id": "cura_propria",
+       "valor": 1.9
+      }
+     ],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "boots": {
+     "nome": "magma boots",
+     "refino": 0,
+     "raridade": 1,
+     "potencia": 310,
+     "atributos": [
+      {
+       "id": "max_hp",
+       "valor": 19
+      }
+     ],
+     "imbuSlots": 1,
+     "imbu": []
+    },
+    "shield": {
+     "nome": "spellbook of mind control",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 23,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "weapon": {
+     "nome": "wand of vortex",
+     "refino": 0,
+     "raridade": 1,
+     "potencia": 335,
+     "atributos": [
+      {
+       "id": "nivel_magico",
+       "valor": 1
+      }
+     ],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "necklace": {
+     "nome": "beetle necklace",
+     "refino": 0,
+     "raridade": 1,
+     "potencia": 102,
+     "atributos": [
+      {
+       "id": "nivel_magico",
+       "valor": 1
+      }
+     ],
+     "imbuSlots": 0,
+     "imbu": []
+    }
+   },
+   "skills": {
+    "melee": 10,
+    "dist": 10,
+    "ml": 56,
+    "escudo": 24
+   }
+  },
+  {
+   "voc": "DRUID",
+   "nivel": 251,
+   "eq": {
+    "head": {
+     "nome": "magma monocle",
+     "refino": 0,
+     "raridade": 1,
+     "potencia": 344,
+     "atributos": [
+      {
+       "id": "regen_mana",
+       "valor": 2.3
+      }
+     ],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "legs": {
+     "nome": "magma legs",
+     "refino": 0,
+     "raridade": 2,
+     "potencia": 100,
+     "atributos": [
+      {
+       "id": "max_hp",
+       "valor": 16
+      },
+      {
+       "id": "regen_mana",
+       "valor": 1.3
+      }
+     ],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "ring": {
+     "nome": "crystal ring",
+     "refino": 0,
+     "raridade": 1,
+     "potencia": 253,
+     "atributos": [
+      {
+       "id": "regen_mana",
+       "valor": 2.3
+      }
+     ],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "armor": {
+     "nome": "magma coat",
+     "refino": 0,
+     "raridade": 1,
+     "potencia": 21,
+     "atributos": [
+      {
+       "id": "cura_propria",
+       "valor": 1.2
+      }
+     ],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "boots": {
+     "nome": "magma boots",
+     "refino": 0,
+     "raridade": 3,
+     "potencia": 84,
+     "atributos": [
+      {
+       "id": "resist_terra",
+       "valor": 0.6
+      },
+      {
+       "id": "regen_mana",
+       "valor": 1.1
+      },
+      {
+       "id": "resist_morte",
+       "valor": 0.9
+      }
+     ],
+     "imbuSlots": 1,
+     "imbu": []
+    },
+    "shield": {
+     "nome": "spellbook of mind control",
+     "refino": 0,
+     "raridade": 0,
+     "potencia": 69,
+     "atributos": [],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "weapon": {
+     "nome": "snakebite rod",
+     "refino": 0,
+     "raridade": 1,
+     "potencia": 200,
+     "atributos": [
+      {
+       "id": "nivel_magico",
+       "valor": 1
+      }
+     ],
+     "imbuSlots": 0,
+     "imbu": []
+    },
+    "necklace": {
+     "nome": "scarf",
+     "refino": 0,
+     "raridade": 2,
+     "potencia": 228,
+     "atributos": [
+      {
+       "id": "dano_elem_terra",
+       "valor": 1.8
+      },
+      {
+       "id": "dano_magico",
+       "valor": 1.9
+      }
+     ],
+     "imbuSlots": 0,
+     "imbu": []
+    }
+   },
+   "skills": {
+    "melee": 10,
+    "dist": 10,
+    "ml": 62,
+    "escudo": 25
+   }
+  }
+ ],
+ "legado": {
+  "KNIGHT": {
+   "skill": 64,
+   "marcoAtual": 1,
+   "proxMarco": 65,
+   "falta": 1,
+   "bonusAtual": 2,
+   "bonusProx": 5,
+   "ativo": true
+  },
+  "PALADIN": {
+   "skill": 68,
+   "marcoAtual": 2,
+   "proxMarco": 70,
+   "falta": 2,
+   "bonusAtual": 5,
+   "bonusProx": 9,
+   "ativo": true
+  },
+  "SORCERER": {
+   "skill": 56,
+   "marcoAtual": 4,
+   "proxMarco": 60,
+   "falta": 4,
+   "bonusAtual": 14,
+   "bonusProx": 20,
+   "ativo": true
+  },
+  "DRUID": {
+   "skill": 62,
+   "marcoAtual": 5,
+   "proxMarco": 65,
+   "falta": 3,
+   "bonusAtual": 20,
+   "bonusProx": 27,
+   "ativo": true
+  }
+ },
+ "prey": {
+  "buffs": {
+   "KNIGHT": {
+    "tipo": "xp",
+    "tier": 9,
+    "locked": false,
+    "msLeft": 174,
+    "gratis": true
+   },
+   "PALADIN": {
+    "tipo": null,
+    "tier": 0,
+    "locked": false,
+    "msLeft": 0,
+    "gratis": true
+   },
+   "SORCERER": {
+    "tipo": null,
+    "tier": 0,
+    "locked": false,
+    "msLeft": 0,
+    "gratis": true
+   },
+   "DRUID": {
+    "tipo": null,
+    "tier": 0,
+    "locked": false,
+    "msLeft": 0,
+    "gratis": true
+   }
+  },
+  "wildcards": 0,
+  "huntId": null,
+  "semCacada": true
+ },
+ "bencaos": {
+  "tem": 7,
+  "total": 7,
+  "ids": [
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8
+  ],
+  "custoFaltam": 0
+ },
+ "ampulhetas": null,
+ "selo": {
+  "ativo": false,
+  "pausa": null,
+  "abundante": null,
+  "huntId": 222
+ },
+ "mortes": [],
+ "sessoes": [
+  {
+   "hunt": "Inquisition Warlocks",
+   "huntId": 220,
+   "t": 1791405271761,
+   "durMin": 7.1,
+   "xpH": 116466,
+   "xpAprox": true,
+   "ouroH": 5966,
+   "abatesH": 1217,
+   "morte": false
+  },
+  {
+   "hunt": "Inquisition Warlocks",
+   "huntId": 220,
+   "t": 1791405716360,
+   "durMin": 10.6,
+   "xpH": 122165,
+   "xpAprox": true,
+   "ouroH": 66707,
+   "abatesH": 1240,
+   "morte": false
+  },
+  {
+   "hunt": "Inquisition Warlocks",
+   "huntId": 220,
+   "t": 1791405716385,
+   "durMin": 10.6,
+   "xpH": 122166,
+   "xpAprox": true,
+   "ouroH": 66707,
+   "abatesH": 1240,
+   "morte": false
+  },
+  {
+   "hunt": "The Behemoth Quest",
+   "huntId": 188,
+   "t": 1791857907142,
+   "durMin": 2,
+   "xpH": 85091,
+   "xpAprox": true,
+   "ouroH": 47490,
+   "abatesH": 780,
+   "morte": false
+  },
+  {
+   "hunt": "The Behemoth Quest",
+   "huntId": 188,
+   "t": 1791858031648,
+   "durMin": 1.2,
+   "xpH": 111265,
+   "xpAprox": true,
+   "ouroH": 15442,
+   "abatesH": 783,
+   "morte": false
+  },
+  {
+   "hunt": "The Behemoth Quest",
+   "huntId": 188,
+   "t": 1791858105216,
+   "durMin": 7.1,
+   "xpH": 86005,
+   "xpAprox": true,
+   "ouroH": 132871,
+   "abatesH": 811,
+   "morte": false
+  },
+  {
+   "hunt": "The Behemoth Quest",
+   "huntId": 188,
+   "t": 1791858535039,
+   "durMin": 5,
+   "xpH": 87490,
+   "xpAprox": true,
+   "ouroH": 30408,
+   "abatesH": 828,
+   "morte": false
+  },
+  {
+   "hunt": "The Behemoth Quest",
+   "huntId": 188,
+   "t": 1791858838820,
+   "durMin": 48,
+   "xpH": 91901,
+   "xpAprox": true,
+   "ouroH": 107116,
+   "abatesH": 813,
+   "morte": false
+  },
+  {
+   "hunt": "Yalahar Worker Golem",
+   "huntId": 161,
+   "t": 1791867304389,
+   "durMin": 8.5,
+   "xpH": 88095,
+   "xpAprox": true,
+   "ouroH": 44753,
+   "abatesH": 1864,
+   "morte": false
+  },
+  {
+   "hunt": "Yalahar Worker Golem",
+   "huntId": 161,
+   "t": 1791867819157,
+   "durMin": 8,
+   "xpH": 87927,
+   "xpAprox": true,
+   "ouroH": 43830,
+   "abatesH": 1860,
+   "morte": false
+  },
+  {
+   "hunt": "Yalahar Worker Golem",
+   "huntId": 161,
+   "t": 1792113895092,
+   "durMin": 8.2,
+   "xpH": 130205,
+   "xpAprox": true,
+   "ouroH": -59245,
+   "abatesH": 1885,
+   "morte": false
+  },
+  {
+   "hunt": "Yalahar Worker Golem",
+   "huntId": 161,
+   "t": 1792114387100,
+   "durMin": 8.5,
+   "xpH": 136556,
+   "xpAprox": true,
+   "ouroH": 12734,
+   "abatesH": 1976,
+   "morte": false
+  },
+  {
+   "hunt": "Yalahar Worker Golem",
+   "huntId": 161,
+   "t": 1792114902244,
+   "durMin": 12.8,
+   "xpH": 135255,
+   "xpAprox": true,
+   "ouroH": -17600,
+   "abatesH": 1958,
+   "morte": false
+  },
+  {
+   "hunt": "Yalahar Worker Golem",
+   "huntId": 161,
+   "t": 1792115672092,
+   "durMin": 5.1,
+   "xpH": 124770,
+   "xpAprox": true,
+   "ouroH": -17679,
+   "abatesH": 1806,
+   "morte": false
+  },
+  {
+   "hunt": "Yalahar Worker Golem",
+   "huntId": 161,
+   "t": 1792115981149,
+   "durMin": 5.7,
+   "xpH": 133815,
+   "xpAprox": true,
+   "ouroH": -18694,
+   "abatesH": 1937,
+   "morte": false
+  },
+  {
+   "hunt": "Yalahar Worker Golem",
+   "huntId": 161,
+   "t": 1792116328845,
+   "durMin": 7.1,
+   "xpH": 98582,
+   "xpAprox": true,
+   "ouroH": -29104,
+   "abatesH": 1961,
+   "morte": false
+  },
+  {
+   "hunt": "Yalahar Worker Golem",
+   "huntId": 161,
+   "t": 1792116772841,
+   "durMin": 5.1,
+   "xpH": 89865,
+   "xpAprox": true,
+   "ouroH": -33505,
+   "abatesH": 1901,
+   "morte": false
+  },
+  {
+   "hunt": "Yalahar Worker Golem",
+   "huntId": 161,
+   "t": 1792117087842,
+   "durMin": 1.1,
+   "xpH": 103144,
+   "xpAprox": true,
+   "ouroH": -29783,
+   "abatesH": 2182,
+   "morte": false
+  },
+  {
+   "hunt": "Petrified Hollow",
+   "huntId": 184,
+   "t": 1792117162841,
+   "durMin": 2.2,
+   "xpH": 87677,
+   "xpAprox": true,
+   "ouroH": 42195,
+   "abatesH": 2009,
+   "morte": false
+  },
+  {
+   "hunt": "Holy Portal",
+   "huntId": 228,
+   "t": 1792117300844,
+   "durMin": 2.2,
+   "xpH": 150145,
+   "xpAprox": true,
+   "ouroH": -241570,
+   "abatesH": 1340,
+   "morte": false
+  },
+  {
+   "hunt": "Yalahar Worker Golem",
+   "huntId": 161,
+   "t": 1792117435841,
+   "durMin": 9.8,
+   "xpH": 94931,
+   "xpAprox": true,
+   "ouroH": -40010,
+   "abatesH": 2008,
+   "morte": false
+  },
+  {
+   "hunt": "Petrified Hollow",
+   "huntId": 184,
+   "t": 1792118449846,
+   "durMin": 3.2,
+   "xpH": 68624,
+   "xpAprox": true,
+   "ouroH": -26990,
+   "abatesH": 1543,
+   "morte": false
+  },
+  {
+   "hunt": "Energy Portal",
+   "huntId": 225,
+   "t": 1792118767845,
+   "durMin": 11.6,
+   "xpH": 85435,
+   "xpAprox": true,
+   "ouroH": 34966,
+   "abatesH": 1531,
+   "morte": false
+  },
+  {
+   "hunt": "Holy Portal",
+   "huntId": 228,
+   "t": 1792285896922,
+   "durMin": 19.6,
+   "xpH": 142926,
+   "xpAprox": true,
+   "ouroH": -169691,
+   "abatesH": 1277,
+   "morte": false
+  },
+  {
+   "hunt": "Throne of Pumin",
+   "huntId": 204,
+   "t": 1792287078924,
+   "durMin": 5.7,
+   "xpH": 70003,
+   "xpAprox": true,
+   "ouroH": -169490,
+   "abatesH": 552,
+   "morte": false
+  },
+  {
+   "hunt": "Holy Portal",
+   "huntId": 228,
+   "t": 1792287420921,
+   "durMin": 9.6,
+   "xpH": 133937,
+   "xpAprox": true,
+   "ouroH": -133519,
+   "abatesH": 1200,
+   "morte": false
+  },
+  {
+   "hunt": "Holy Portal",
+   "huntId": 228,
+   "t": 1792288001854,
+   "durMin": 11.4,
+   "xpH": 131735,
+   "xpAprox": true,
+   "ouroH": 23276,
+   "abatesH": 1179,
+   "morte": false
+  },
+  {
+   "hunt": "Throne of Bazir",
+   "huntId": 206,
+   "t": 1792288688849,
+   "durMin": 2.7,
+   "xpH": 23505,
+   "xpAprox": true,
+   "ouroH": -36226,
+   "abatesH": 158,
+   "morte": false
+  },
+  {
+   "hunt": "Holy Portal",
+   "huntId": 228,
+   "t": 1792288850856,
+   "durMin": 18.2,
+   "xpH": 117753,
+   "xpAprox": true,
+   "ouroH": -25494,
+   "abatesH": 1051,
+   "morte": false
+  },
+  {
+   "hunt": "desconhecida",
+   "huntId": null,
+   "t": 1792289945882,
+   "durMin": 4.8,
+   "xpH": 112808,
+   "xpAprox": true,
+   "ouroH": 42331,
+   "abatesH": 1011,
+   "morte": false
+  },
+  {
+   "hunt": "desconhecida",
+   "huntId": null,
+   "t": 1792289941135,
+   "durMin": 4.9,
+   "xpH": 113193,
+   "xpAprox": true,
+   "ouroH": 41702,
+   "abatesH": 1014,
+   "morte": false
+  },
+  {
+   "hunt": "Holy Portal",
+   "huntId": 228,
+   "t": 1792290304137,
+   "durMin": 3.1,
+   "xpH": 103551,
+   "xpAprox": true,
+   "ouroH": -97163,
+   "abatesH": 929,
+   "morte": false
+  },
+  {
+   "hunt": "Holy Portal",
+   "huntId": 228,
+   "t": 1792290617515,
+   "durMin": 2.3,
+   "xpH": 111654,
+   "xpAprox": true,
+   "ouroH": -110715,
+   "abatesH": 991,
+   "morte": false
+  },
+  {
+   "hunt": "Throne of Verminor",
+   "huntId": 200,
+   "t": 1792371269062,
+   "durMin": 1.4,
+   "xpH": 87017,
+   "xpAprox": true,
+   "ouroH": -63441,
+   "abatesH": 643,
+   "morte": false
+  },
+  {
+   "hunt": "desconhecida",
+   "huntId": null,
+   "t": 1792371389617,
+   "durMin": 1.4,
+   "xpH": 92299,
+   "xpAprox": true,
+   "ouroH": 1624329,
+   "abatesH": 686,
+   "morte": false
+  },
+  {
+   "hunt": "desconhecida",
+   "huntId": null,
+   "t": 1792371386692,
+   "durMin": 1.5,
+   "xpH": 98482,
+   "xpAprox": true,
+   "ouroH": 1568920,
+   "abatesH": 786,
+   "morte": false
+  },
+  {
+   "hunt": "desconhecida",
+   "huntId": null,
+   "t": 1792373510848,
+   "durMin": 3.2,
+   "xpH": 72903,
+   "xpAprox": true,
+   "ouroH": -91818,
+   "abatesH": 600,
+   "morte": false
+  },
+  {
+   "hunt": "desconhecida",
+   "huntId": null,
+   "t": 1792373507882,
+   "durMin": 3.3,
+   "xpH": 76819,
+   "xpAprox": true,
+   "ouroH": -86643,
+   "abatesH": 628,
+   "morte": false
+  },
+  {
+   "hunt": "Throne of Verminor",
+   "huntId": 200,
+   "t": 1792380819007,
+   "durMin": 3.6,
+   "xpH": 84091,
+   "xpAprox": true,
+   "ouroH": -109434,
+   "abatesH": 750,
+   "morte": false
+  },
+  {
+   "hunt": "Throne of Verminor",
+   "huntId": 200,
+   "t": 1792381943197,
+   "durMin": 1.2,
+   "xpH": 112915,
+   "xpAprox": true,
+   "ouroH": -77779,
+   "abatesH": 626,
+   "morte": false
+  },
+  {
+   "hunt": "Throne of Verminor",
+   "huntId": 200,
+   "t": 1792382801888,
+   "durMin": 39.1,
+   "xpH": 96152,
+   "xpAprox": true,
+   "ouroH": 99576,
+   "abatesH": 638,
+   "morte": false
+  },
+  {
+   "hunt": "Shadow Nexus",
+   "huntId": 222,
+   "t": 1793935424330,
+   "durMin": 7,
+   "xpH": 467174,
+   "xpAprox": true,
+   "ouroH": -277730,
+   "abatesH": 604,
+   "morte": false
+  },
+  {
+   "hunt": "Shadow Nexus",
+   "huntId": 222,
+   "t": 1795568615163,
+   "durMin": 30.7,
+   "xpH": 547752,
+   "xpAprox": true,
+   "ouroH": 137877,
+   "abatesH": 795,
+   "morte": false
+  },
+  {
+   "hunt": "Shadow Nexus",
+   "huntId": 222,
+   "t": 1795571030163,
+   "durMin": 12,
+   "xpH": 626992,
+   "xpAprox": true,
+   "ouroH": -71723110,
+   "abatesH": 875,
+   "morte": false
+  },
+  {
+   "hunt": "Shadow Nexus",
+   "huntId": 222,
+   "t": 1795571810158,
+   "durMin": 4,
+   "xpH": 977383,
+   "xpAprox": true,
+   "ouroH": -384883,
+   "abatesH": 945,
+   "morte": false
+  },
+  {
+   "hunt": "Shadow Nexus",
+   "huntId": 222,
+   "t": 1795662756626,
+   "durMin": 45.4,
+   "xpH": 630524,
+   "xpAprox": true,
+   "ouroH": -610292,
+   "abatesH": 879,
+   "morte": false
+  },
+  {
+   "hunt": "Shadow Nexus",
+   "huntId": 222,
+   "t": 1795665525010,
+   "durMin": 1.2,
+   "xpH": 599146,
+   "xpAprox": true,
+   "ouroH": -224870,
+   "abatesH": 835,
+   "morte": false
+  },
+  {
+   "hunt": "Shadow Nexus",
+   "huntId": 222,
+   "t": 1795665598950,
+   "durMin": 20.7,
+   "xpH": 633960,
+   "xpAprox": true,
+   "ouroH": -646535,
+   "abatesH": 883,
+   "morte": false
+  },
+  {
+   "hunt": "Shadow Nexus",
+   "huntId": 222,
+   "t": 1795666844132,
+   "durMin": 20.5,
+   "xpH": 640161,
+   "xpAprox": true,
+   "ouroH": -655963,
+   "abatesH": 892,
+   "morte": false
+  },
+  {
+   "hunt": "Shadow Nexus",
+   "huntId": 222,
+   "t": 1795745217445,
+   "durMin": 33.2,
+   "xpH": 586985,
+   "xpAprox": true,
+   "ouroH": 1269616,
+   "abatesH": 784,
+   "morte": false
+  },
+  {
+   "hunt": "Shadow Nexus",
+   "huntId": 222,
+   "t": 1795747280614,
+   "durMin": 50,
+   "xpH": 570831,
+   "xpAprox": true,
+   "ouroH": -464074,
+   "abatesH": 774,
+   "morte": false
+  },
+  {
+   "hunt": "Dragon Lair",
+   "huntId": 46,
+   "t": 1795798612388,
+   "durMin": 7.4,
+   "xpH": 62389,
+   "xpAprox": true,
+   "ouroH": 996886,
+   "abatesH": 1459,
+   "morte": false
+  },
+  {
+   "hunt": "Shadow Nexus",
+   "huntId": 222,
+   "t": 1795800163890,
+   "durMin": 6.2,
+   "xpH": 533825,
+   "xpAprox": true,
+   "ouroH": -1582597,
+   "abatesH": 800,
+   "morte": false
+  },
+  {
+   "hunt": "Dragon Lair",
+   "huntId": 46,
+   "t": 1795800553886,
+   "durMin": 1.1,
+   "xpH": 48544,
+   "xpAprox": true,
+   "ouroH": -19636,
+   "abatesH": 1364,
+   "morte": false
+  },
+  {
+   "hunt": "Shadow Nexus",
+   "huntId": 222,
+   "t": 1795800670893,
+   "durMin": 1.5,
+   "xpH": 412764,
+   "xpAprox": true,
+   "ouroH": -218939,
+   "abatesH": 600,
+   "morte": false
+  },
+  {
+   "hunt": "Dragon Lair",
+   "huntId": 46,
+   "t": 1795800808888,
+   "durMin": 15.4,
+   "xpH": 56727,
+   "xpAprox": true,
+   "ouroH": -2634916,
+   "abatesH": 1500,
+   "morte": false
+  },
+  {
+   "hunt": "Shadow Nexus",
+   "huntId": 222,
+   "t": 1795801798890,
+   "durMin": 1.2,
+   "xpH": 449682,
+   "xpAprox": true,
+   "ouroH": -115900,
+   "abatesH": 700,
+   "morte": false
+  },
+  {
+   "hunt": "Dragon Lair",
+   "huntId": 46,
+   "t": 1795801894893,
+   "durMin": 2.1,
+   "xpH": 41354,
+   "xpAprox": true,
+   "ouroH": -86,
+   "abatesH": 1429,
+   "morte": false
+  },
+  {
+   "hunt": "Shadow Nexus",
+   "huntId": 222,
+   "t": 1795802044889,
+   "durMin": 31.9,
+   "xpH": 537916,
+   "xpAprox": true,
+   "ouroH": 111536,
+   "abatesH": 786,
+   "morte": false
+  },
+  {
+   "hunt": "Shadow Nexus",
+   "huntId": 222,
+   "t": 1795803993176,
+   "durMin": 153.7,
+   "xpH": 528463,
+   "xpAprox": true,
+   "ouroH": 820432,
+   "abatesH": 787,
+   "morte": false
+  }
+ ],
+ "checklist": null,
+ "bestiario": [
+  {
+   "huntId": 225,
+   "title": "Energy Portal",
+   "bonus": "maxMana",
+   "ganho": 5,
+   "falta": 657,
+   "horas": 0.4,
+   "xpH": 85435,
+   "abatesH": 1531
+  },
+  {
+   "huntId": 146,
+   "title": "Djinns Marid Territory",
+   "bonus": "maxHealth",
+   "ganho": 4,
+   "falta": 1305,
+   "horas": 0.6,
+   "xpH": 46410,
+   "abatesH": 2210
+  },
+  {
+   "huntId": 191,
+   "title": "Quara's Domain Yalahar",
+   "bonus": "maxHealth",
+   "ganho": 4,
+   "falta": 1264,
+   "horas": 0.7,
+   "xpH": 61920,
+   "abatesH": 1745
+  },
+  {
+   "huntId": 190,
+   "title": "Quara's entrance Yalahar",
+   "bonus": "capacity",
+   "ganho": 20,
+   "falta": 1404,
+   "horas": 1.1,
+   "xpH": 51376,
+   "abatesH": 1237
+  },
+  {
+   "huntId": 34,
+   "title": "Orc Fortress",
+   "bonus": "maxHealth",
+   "ganho": 3,
+   "falta": 1788,
+   "horas": 1.1,
+   "xpH": 39961,
+   "abatesH": 1575
+  },
+  {
+   "huntId": 188,
+   "title": "The Behemoth Quest",
+   "bonus": "capacity",
+   "ganho": 20,
+   "falta": 913,
+   "horas": 1.2,
+   "xpH": 87626,
+   "abatesH": 788
+  },
+  {
+   "huntId": 236,
+   "title": "Middle Spikes",
+   "bonus": "maxHealth",
+   "ganho": 4,
+   "falta": 1883,
+   "horas": 1.6,
+   "xpH": 88328,
+   "abatesH": 1185
+  },
+  {
+   "huntId": 234,
+   "title": "Lower Spikes",
+   "bonus": "maxMana",
+   "ganho": 5,
+   "falta": 2339,
+   "horas": 2.1,
+   "xpH": null,
+   "abatesH": 1129
+  },
+  {
+   "huntId": 200,
+   "title": "Throne of Verminor",
+   "bonus": "hpRegen",
+   "ganho": 1,
+   "falta": 11080,
+   "horas": 17.1,
+   "xpH": 96152,
+   "abatesH": 647
+  },
+  {
+   "huntId": 206,
+   "title": "Throne of Bazir",
+   "bonus": "maxMana",
+   "ganho": 5,
+   "falta": 2832,
+   "horas": 17.9,
+   "xpH": null,
+   "abatesH": 158
+  },
+  {
+   "huntId": 111,
+   "title": "Hellspawns yalahar",
+   "bonus": "maxHealth",
+   "ganho": 4,
+   "falta": 19,
+   "horas": null,
+   "xpH": null,
+   "abatesH": null
+  },
+  {
+   "huntId": 201,
+   "title": "Throne of Infernatil",
+   "bonus": "maxHealth",
+   "ganho": 5,
+   "falta": 94,
+   "horas": null,
+   "xpH": 205000,
+   "abatesH": null
+  },
+  {
+   "huntId": 38,
+   "title": "Cyclops Mistrock",
+   "bonus": "maxHealth",
+   "ganho": 4,
+   "falta": 674,
+   "horas": null,
+   "xpH": null,
+   "abatesH": null
+  },
+  {
+   "huntId": 132,
+   "title": "Elfs Yalahar",
+   "bonus": "maxMana",
+   "ganho": 2,
+   "falta": 944,
+   "horas": null,
+   "xpH": null,
+   "abatesH": null
+  },
+  {
+   "huntId": 30,
+   "title": "Coryms Lair",
+   "bonus": "capacity",
+   "ganho": 14,
+   "falta": 972,
+   "horas": null,
+   "xpH": null,
+   "abatesH": null
+  },
+  {
+   "huntId": 144,
+   "title": "Zombies Yalahar Cemetery Quarter",
+   "bonus": "maxMana",
+   "ganho": 4,
+   "falta": 1000,
+   "horas": null,
+   "xpH": null,
+   "abatesH": null
+  },
+  {
+   "huntId": 215,
+   "title": "Warzone II - Magma Dungeon",
+   "bonus": "maxHealth",
+   "ganho": 5,
+   "falta": 1192,
+   "horas": null,
+   "xpH": null,
+   "abatesH": null
+  },
+  {
+   "huntId": 182,
+   "title": "Return of the beholder",
+   "bonus": "capacity",
+   "ganho": 20,
+   "falta": 1375,
+   "horas": null,
+   "xpH": null,
+   "abatesH": null
+  },
+  {
+   "huntId": 149,
+   "title": "Ice Witch Tower",
+   "bonus": "capacity",
+   "ganho": 20,
+   "falta": 1552,
+   "horas": null,
+   "xpH": null,
+   "abatesH": null
+  },
+  {
+   "huntId": 163,
+   "title": "Feyrist Surface",
+   "bonus": "maxHealth",
+   "ganho": 3,
+   "falta": 1847,
+   "horas": null,
+   "xpH": null,
+   "abatesH": null
+  },
+  {
+   "huntId": 124,
+   "title": "Orcs Edron Cave",
+   "bonus": "maxMana",
+   "ganho": 3,
+   "falta": 1848,
+   "horas": null,
+   "xpH": null,
+   "abatesH": null
+  },
+  {
+   "huntId": 140,
+   "title": "Scarabs Cave",
+   "bonus": "maxMana",
+   "ganho": 3,
+   "falta": 1932,
+   "horas": null,
+   "xpH": null,
+   "abatesH": null
+  },
+  {
+   "huntId": 207,
+   "title": "Ushuriel Seal",
+   "bonus": "maxHealth",
+   "ganho": 5,
+   "falta": 1978,
+   "horas": null,
+   "xpH": 200000,
+   "abatesH": null
+  },
+  {
+   "huntId": 224,
+   "title": "Earth Portal",
+   "bonus": "maxHealth",
+   "ganho": 4,
+   "falta": 2621,
+   "horas": null,
+   "xpH": null,
+   "abatesH": null
+  },
+  {
+   "huntId": 99,
+   "title": "Mintwallin",
+   "bonus": "maxMana",
+   "ganho": 3,
+   "falta": 2623,
+   "horas": null,
+   "xpH": null,
+   "abatesH": null
+  },
+  {
+   "huntId": 103,
+   "title": "Nargor Pirate island",
+   "bonus": "maxMana",
+   "ganho": 4,
+   "falta": 2764,
+   "horas": null,
+   "xpH": null,
+   "abatesH": null
+  },
+  {
+   "huntId": 165,
+   "title": "Zao Caverns",
+   "bonus": "maxHealth",
+   "ganho": 4,
+   "falta": 2976,
+   "horas": null,
+   "xpH": null,
+   "abatesH": null
+  },
+  {
+   "huntId": 248,
+   "title": "Green Belt",
+   "bonus": "maxMana",
+   "ganho": 8,
+   "falta": 3728,
+   "horas": null,
+   "xpH": 245000,
+   "abatesH": null
+  },
+  {
+   "huntId": 105,
+   "title": "Giant Spiders POH",
+   "bonus": "attack",
+   "ganho": 1,
+   "falta": 7071,
+   "horas": null,
+   "xpH": null,
+   "abatesH": null
+  },
+  {
+   "huntId": 221,
+   "title": "Inquisition Entrance",
+   "bonus": "maxHealth",
+   "ganho": 5,
+   "falta": 8934,
+   "horas": null,
+   "xpH": null,
+   "abatesH": null
+  },
+  {
+   "huntId": 142,
+   "title": "Barbarian Camp",
+   "bonus": "attack",
+   "ganho": 1,
+   "falta": 9696,
+   "horas": null,
+   "xpH": null,
+   "abatesH": null
+  },
+  {
+   "huntId": 43,
+   "title": "Cults Goroma",
+   "bonus": "distance",
+   "ganho": 1,
+   "falta": 9767,
+   "horas": null,
+   "xpH": null,
+   "abatesH": null
+  },
+  {
+   "huntId": 230,
+   "title": "Otherworld Edron",
+   "bonus": "maxMana",
+   "ganho": 8,
+   "falta": 9829,
+   "horas": null,
+   "xpH": null,
+   "abatesH": null
+  },
+  {
+   "huntId": 143,
+   "title": "Water Elementals Cavern",
+   "bonus": "armor",
+   "ganho": 1,
+   "falta": 9902,
+   "horas": null,
+   "xpH": null,
+   "abatesH": null
+  },
+  {
+   "huntId": 210,
+   "title": "Latrivan & Golgordan Seal",
+   "bonus": "hpRegen",
+   "ganho": 1,
+   "falta": 9996,
+   "horas": null,
+   "xpH": 145000,
+   "abatesH": null
+  },
+  {
+   "huntId": 183,
+   "title": "Thunderscar Peak",
+   "bonus": "attack",
+   "ganho": 1,
+   "falta": 11909,
+   "horas": null,
+   "xpH": null,
+   "abatesH": null
+  },
+  {
+   "huntId": 192,
+   "title": "Draken Walls",
+   "bonus": "capacity",
+   "ganho": 30,
+   "falta": 12250,
+   "horas": null,
+   "xpH": 230000,
+   "abatesH": null
+  },
+  {
+   "huntId": 62,
+   "title": "Lizard City",
+   "bonus": "maxMana",
+   "ganho": 6,
+   "falta": 14963,
+   "horas": null,
+   "xpH": null,
+   "abatesH": null
+  },
+  {
+   "huntId": 205,
+   "title": "Throne of Ashfalor",
+   "bonus": "maxHealth",
+   "ganho": 5,
+   "falta": 20789,
+   "horas": null,
+   "xpH": 130000,
+   "abatesH": null
+  },
+  {
+   "huntId": 256,
+   "title": "Grim Reapers Yalahar",
+   "bonus": "capacity",
+   "ganho": 30,
+   "falta": 27743,
+   "horas": null,
+   "xpH": null,
+   "abatesH": null
+  },
+  {
+   "huntId": 203,
+   "title": "Throne of Apocalypse",
+   "bonus": "attack",
+   "ganho": 1,
+   "falta": 35642,
+   "horas": null,
+   "xpH": 250000,
+   "abatesH": null
+  },
+  {
+   "huntId": 65,
+   "title": "Warzone III - Crystal Caves",
+   "bonus": "magicLevel",
+   "ganho": 1,
+   "falta": 43577,
+   "horas": null,
+   "xpH": null,
+   "abatesH": null
+  },
+  {
+   "huntId": 212,
+   "title": "Hellgorak Seal",
+   "bonus": "attack",
+   "ganho": 1,
+   "falta": 44896,
+   "horas": null,
+   "xpH": null,
+   "abatesH": null
+  },
+  {
+   "huntId": 249,
+   "title": "Kilmaresh Catacombs",
+   "bonus": "shielding",
+   "ganho": 1,
+   "falta": 49713,
+   "horas": null,
+   "xpH": 400000,
+   "abatesH": null
+  },
+  {
+   "huntId": 233,
+   "title": "Otherworld Zao",
+   "bonus": "magicLevel",
+   "ganho": 1,
+   "falta": 49782,
+   "horas": null,
+   "xpH": null,
+   "abatesH": null
+  },
+  {
+   "huntId": 211,
+   "title": "Annihilon Seal",
+   "bonus": "shielding",
+   "ganho": 1,
+   "falta": 49972,
+   "horas": null,
+   "xpH": null,
+   "abatesH": null
+  },
+  {
+   "huntId": 250,
+   "title": "Salt Caves",
+   "bonus": "attack",
+   "ganho": 1,
+   "falta": 49984,
+   "horas": null,
+   "xpH": null,
+   "abatesH": null
+  }
+ ],
+ "chaves": {
+  "usadas": 1,
+  "max": 22,
+  "elites": [
+   {
+    "nome": "beelzebub",
+    "chave": "beelzebub key",
+    "qtd": 1
+   }
+  ]
+ },
+ "deposito": {},
+ "invasao": {
+  "inscrito": true,
+  "proxima": 1795888800000
+ },
+ "forja": {
+  "idadeH": null,
+  "basesParadas": [],
+  "abaixo4": [
+   {
+    "voc": "KNIGHT",
+    "slot": "head",
+    "nome": "Zaoan helmet",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "KNIGHT",
+    "slot": "necklace",
+    "nome": "gearwheel chain",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "KNIGHT",
+    "slot": "weapon",
+    "nome": "stonecutter axe",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "KNIGHT",
+    "slot": "shield",
+    "nome": "great shield",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "KNIGHT",
+    "slot": "ring",
+    "nome": "crystal ring",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "KNIGHT",
+    "slot": "legs",
+    "nome": "exotic legs",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "KNIGHT",
+    "slot": "boots",
+    "nome": "guardian boots",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "PALADIN",
+    "slot": "head",
+    "nome": "steel helmet",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "PALADIN",
+    "slot": "necklace",
+    "nome": "wolf tooth chain",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "PALADIN",
+    "slot": "armor",
+    "nome": "paladin armor",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "PALADIN",
+    "slot": "weapon",
+    "nome": "hive bow",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "PALADIN",
+    "slot": "ring",
+    "nome": "crystal ring",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "PALADIN",
+    "slot": "legs",
+    "nome": "trousers of the ancients",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "PALADIN",
+    "slot": "boots",
+    "nome": "fur boots",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "SORCERER",
+    "slot": "head",
+    "nome": "magma monocle",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "SORCERER",
+    "slot": "necklace",
+    "nome": "beetle necklace",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "SORCERER",
+    "slot": "armor",
+    "nome": "magma coat",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "SORCERER",
+    "slot": "weapon",
+    "nome": "wand of vortex",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "SORCERER",
+    "slot": "shield",
+    "nome": "spellbook of mind control",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "SORCERER",
+    "slot": "ring",
+    "nome": "crystal ring",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "SORCERER",
+    "slot": "legs",
+    "nome": "magma legs",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "SORCERER",
+    "slot": "boots",
+    "nome": "magma boots",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "DRUID",
+    "slot": "head",
+    "nome": "magma monocle",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "DRUID",
+    "slot": "necklace",
+    "nome": "scarf",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "DRUID",
+    "slot": "armor",
+    "nome": "magma coat",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "DRUID",
+    "slot": "weapon",
+    "nome": "snakebite rod",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "DRUID",
+    "slot": "shield",
+    "nome": "spellbook of mind control",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "DRUID",
+    "slot": "ring",
+    "nome": "crystal ring",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "DRUID",
+    "slot": "legs",
+    "nome": "magma legs",
+    "refino": 0,
+    "custo": 1332500
+   },
+   {
+    "voc": "DRUID",
+    "slot": "boots",
+    "nome": "magma boots",
+    "refino": 0,
+    "custo": 1332500
+   }
+  ]
+ },
+ "topo": {
+  "pos": 174,
+  "total": 200,
+  "top1": {
+   "nivel": 485
+  },
+  "perto": [
+   {
+    "nome": "P1",
+    "nivel": 387,
+    "skills": {
+     "melee": 76,
+     "dist": 80,
+     "ml": {
+      "SORCERER": 64,
+      "DRUID": 68
+     }
+    }
+   },
+   {
+    "nome": "P2",
+    "nivel": 385,
+    "skills": {
+     "melee": 71,
+     "dist": 74,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 66
+     }
+    }
+   },
+   {
+    "nome": "P3",
+    "nivel": 383,
+    "skills": {
+     "melee": 73,
+     "dist": 77,
+     "ml": {
+      "SORCERER": 63,
+      "DRUID": 66
+     }
+    }
+   },
+   {
+    "nome": "P4",
+    "nivel": 374,
+    "skills": {
+     "melee": 73,
+     "dist": 77,
+     "ml": {
+      "SORCERER": 61,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P5",
+    "nivel": 373,
+    "skills": {
+     "melee": 70,
+     "dist": 74,
+     "ml": {
+      "SORCERER": 62,
+      "DRUID": 65
+     }
+    }
+   },
+   {
+    "nome": "P6",
+    "nivel": 367,
+    "skills": {
+     "melee": 76,
+     "dist": 80,
+     "ml": {
+      "SORCERER": 63,
+      "DRUID": 66
+     }
+    }
+   },
+   {
+    "nome": "P7",
+    "nivel": 366,
+    "skills": {
+     "melee": 75,
+     "dist": 80,
+     "ml": {
+      "SORCERER": 61,
+      "DRUID": 65
+     }
+    }
+   },
+   {
+    "nome": "P8",
+    "nivel": 360,
+    "skills": {
+     "melee": 56,
+     "dist": 61,
+     "ml": {
+      "SORCERER": 55,
+      "DRUID": 66
+     }
+    }
+   },
+   {
+    "nome": "P9",
+    "nivel": 360,
+    "skills": {
+     "melee": 76,
+     "dist": 80,
+     "ml": {
+      "SORCERER": 65,
+      "DRUID": 68
+     }
+    }
+   },
+   {
+    "nome": "P10",
+    "nivel": 358,
+    "skills": {
+     "melee": 64,
+     "dist": 72,
+     "ml": {
+      "SORCERER": 61,
+      "DRUID": 66
+     }
+    }
+   },
+   {
+    "nome": "P11",
+    "nivel": 357,
+    "skills": {
+     "melee": 69,
+     "dist": 75,
+     "ml": {
+      "SORCERER": 62,
+      "DRUID": 67
+     }
+    }
+   },
+   {
+    "nome": "P12",
+    "nivel": 354,
+    "skills": {
+     "melee": 71,
+     "dist": 76,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 65
+     }
+    }
+   },
+   {
+    "nome": "P13",
+    "nivel": 350,
+    "skills": {
+     "melee": 75,
+     "dist": 77,
+     "ml": {
+      "SORCERER": 63,
+      "DRUID": 67
+     }
+    }
+   },
+   {
+    "nome": "P14",
+    "nivel": 349,
+    "skills": {
+     "melee": 75,
+     "dist": 80,
+     "ml": {
+      "SORCERER": 61,
+      "DRUID": 66
+     }
+    }
+   },
+   {
+    "nome": "P15",
+    "nivel": 348,
+    "skills": {
+     "melee": 71,
+     "dist": 73,
+     "ml": {
+      "SORCERER": 62,
+      "DRUID": 68
+     }
+    }
+   },
+   {
+    "nome": "P16",
+    "nivel": 347,
+    "skills": {
+     "melee": 69,
+     "dist": 75,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 66
+     }
+    }
+   },
+   {
+    "nome": "P17",
+    "nivel": 346,
+    "skills": {
+     "melee": 73,
+     "dist": 76,
+     "ml": {
+      "SORCERER": 64,
+      "DRUID": 67
+     }
+    }
+   },
+   {
+    "nome": "P18",
+    "nivel": 344,
+    "skills": {
+     "melee": 66,
+     "dist": 71,
+     "ml": {
+      "SORCERER": 61,
+      "DRUID": 67
+     }
+    }
+   },
+   {
+    "nome": "P19",
+    "nivel": 341,
+    "skills": {
+     "melee": 67,
+     "dist": 72,
+     "ml": {
+      "SORCERER": 62,
+      "DRUID": 66
+     }
+    }
+   },
+   {
+    "nome": "P20",
+    "nivel": 338,
+    "skills": {
+     "melee": 71,
+     "dist": 75,
+     "ml": {
+      "SORCERER": 61,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P21",
+    "nivel": 337,
+    "skills": {
+     "melee": 67,
+     "dist": 70,
+     "ml": {
+      "SORCERER": 62,
+      "DRUID": 65
+     }
+    }
+   },
+   {
+    "nome": "P22",
+    "nivel": 335,
+    "skills": {
+     "melee": 79,
+     "dist": 82,
+     "ml": {
+      "SORCERER": 63,
+      "DRUID": 65
+     }
+    }
+   },
+   {
+    "nome": "P23",
+    "nivel": 335,
+    "skills": {
+     "melee": 71,
+     "dist": 74,
+     "ml": {
+      "SORCERER": 61,
+      "DRUID": 66
+     }
+    }
+   },
+   {
+    "nome": "P24",
+    "nivel": 334,
+    "skills": {
+     "melee": 69,
+     "dist": 69,
+     "ml": {
+      "SORCERER": 59,
+      "DRUID": 65
+     }
+    }
+   },
+   {
+    "nome": "P25",
+    "nivel": 334,
+    "skills": {
+     "melee": 63,
+     "dist": 68,
+     "ml": {
+      "SORCERER": 61,
+      "DRUID": 67
+     }
+    }
+   },
+   {
+    "nome": "P26",
+    "nivel": 332,
+    "skills": {
+     "melee": 64,
+     "dist": 73,
+     "ml": {
+      "SORCERER": 59,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P27",
+    "nivel": 329,
+    "skills": {
+     "melee": 70,
+     "dist": 74,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 65
+     }
+    }
+   },
+   {
+    "nome": "P28",
+    "nivel": 328,
+    "skills": {
+     "melee": 62,
+     "dist": 67,
+     "ml": {
+      "SORCERER": 59,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P29",
+    "nivel": 328,
+    "skills": {
+     "melee": 76,
+     "dist": 80,
+     "ml": {
+      "SORCERER": 62,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P30",
+    "nivel": 327,
+    "skills": {
+     "melee": 71,
+     "dist": 76,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P31",
+    "nivel": 327,
+    "skills": {
+     "melee": 77,
+     "dist": 80,
+     "ml": {
+      "SORCERER": 64,
+      "DRUID": 67
+     }
+    }
+   },
+   {
+    "nome": "P32",
+    "nivel": 326,
+    "skills": {
+     "melee": 73,
+     "dist": 76,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 65
+     }
+    }
+   },
+   {
+    "nome": "P33",
+    "nivel": 325,
+    "skills": {
+     "melee": 66,
+     "dist": 79,
+     "ml": {
+      "SORCERER": 62,
+      "DRUID": 67
+     }
+    }
+   },
+   {
+    "nome": "P34",
+    "nivel": 323,
+    "skills": {
+     "melee": 66,
+     "dist": 71,
+     "ml": {
+      "SORCERER": 62,
+      "DRUID": 65
+     }
+    }
+   },
+   {
+    "nome": "P35",
+    "nivel": 322,
+    "skills": {
+     "melee": 73,
+     "dist": 76,
+     "ml": {
+      "SORCERER": 62,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P36",
+    "nivel": 322,
+    "skills": {
+     "melee": 68,
+     "dist": 73,
+     "ml": {
+      "SORCERER": 59,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P37",
+    "nivel": 322,
+    "skills": {
+     "melee": 75,
+     "dist": 76,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 65
+     }
+    }
+   },
+   {
+    "nome": "P38",
+    "nivel": 321,
+    "skills": {
+     "melee": 67,
+     "dist": 72,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P39",
+    "nivel": 321,
+    "skills": {
+     "melee": 72,
+     "dist": 76,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 65
+     }
+    }
+   },
+   {
+    "nome": "P40",
+    "nivel": 320,
+    "skills": {
+     "melee": 63,
+     "dist": 63,
+     "ml": {
+      "SORCERER": 59,
+      "DRUID": 65
+     }
+    }
+   },
+   {
+    "nome": "P41",
+    "nivel": 318,
+    "skills": {
+     "melee": 71,
+     "dist": 72,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P42",
+    "nivel": 317,
+    "skills": {
+     "melee": 66,
+     "dist": 76,
+     "ml": {
+      "SORCERER": 63,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P43",
+    "nivel": 317,
+    "skills": {
+     "melee": 61,
+     "dist": 66,
+     "ml": {
+      "SORCERER": 61,
+      "DRUID": 66
+     }
+    }
+   },
+   {
+    "nome": "P44",
+    "nivel": 314,
+    "skills": {
+     "melee": 74,
+     "dist": 78,
+     "ml": {
+      "SORCERER": 63,
+      "DRUID": 65
+     }
+    }
+   },
+   {
+    "nome": "P45",
+    "nivel": 313,
+    "skills": {
+     "melee": 72,
+     "dist": 77,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P46",
+    "nivel": 312,
+    "skills": {
+     "melee": 66,
+     "dist": 71,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 62
+     }
+    }
+   },
+   {
+    "nome": "P47",
+    "nivel": 311,
+    "skills": {
+     "melee": 67,
+     "dist": 72,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 66
+     }
+    }
+   },
+   {
+    "nome": "P48",
+    "nivel": 310,
+    "skills": {
+     "melee": 65,
+     "dist": 68,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P49",
+    "nivel": 309,
+    "skills": {
+     "melee": 72,
+     "dist": 68,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 61
+     }
+    }
+   },
+   {
+    "nome": "P50",
+    "nivel": 308,
+    "skills": {
+     "melee": 66,
+     "dist": 69,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P51",
+    "nivel": 305,
+    "skills": {
+     "melee": 71,
+     "dist": 76,
+     "ml": {
+      "SORCERER": 61,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P52",
+    "nivel": 305,
+    "skills": {
+     "melee": 64,
+     "dist": 69,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 67
+     }
+    }
+   },
+   {
+    "nome": "P53",
+    "nivel": 304,
+    "skills": {
+     "melee": 68,
+     "dist": 73,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P54",
+    "nivel": 303,
+    "skills": {
+     "melee": 64,
+     "dist": 69,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 62
+     }
+    }
+   },
+   {
+    "nome": "P55",
+    "nivel": 303,
+    "skills": {
+     "melee": 66,
+     "dist": 69,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P56",
+    "nivel": 303,
+    "skills": {
+     "melee": 63,
+     "dist": 67,
+     "ml": {
+      "SORCERER": 62,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P57",
+    "nivel": 303,
+    "skills": {
+     "melee": 67,
+     "dist": 72,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 62
+     }
+    }
+   },
+   {
+    "nome": "P58",
+    "nivel": 302,
+    "skills": {
+     "melee": 67,
+     "dist": 72,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 66
+     }
+    }
+   },
+   {
+    "nome": "P59",
+    "nivel": 302,
+    "skills": {
+     "melee": 65,
+     "dist": 72,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 65
+     }
+    }
+   },
+   {
+    "nome": "P60",
+    "nivel": 302,
+    "skills": {
+     "melee": 79,
+     "dist": 82,
+     "ml": {
+      "SORCERER": 65,
+      "DRUID": 67
+     }
+    }
+   },
+   {
+    "nome": "P61",
+    "nivel": 301,
+    "skills": {
+     "melee": 70,
+     "dist": 73,
+     "ml": {
+      "SORCERER": 59,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P62",
+    "nivel": 299,
+    "skills": {
+     "melee": 71,
+     "dist": 75,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P63",
+    "nivel": 298,
+    "skills": {
+     "melee": 66,
+     "dist": 70,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P64",
+    "nivel": 297,
+    "skills": {
+     "melee": 60,
+     "dist": 64,
+     "ml": {
+      "SORCERER": 59,
+      "DRUID": 65
+     }
+    }
+   },
+   {
+    "nome": "P65",
+    "nivel": 296,
+    "skills": {
+     "melee": 65,
+     "dist": 70,
+     "ml": {
+      "SORCERER": 59,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P66",
+    "nivel": 296,
+    "skills": {
+     "melee": 71,
+     "dist": 73,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P67",
+    "nivel": 293,
+    "skills": {
+     "melee": 62,
+     "dist": 67,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P68",
+    "nivel": 293,
+    "skills": {
+     "melee": 64,
+     "dist": 69,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 61
+     }
+    }
+   },
+   {
+    "nome": "P69",
+    "nivel": 293,
+    "skills": {
+     "melee": 71,
+     "dist": 75,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P70",
+    "nivel": 292,
+    "skills": {
+     "melee": 64,
+     "dist": 70,
+     "ml": {
+      "SORCERER": 59,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P71",
+    "nivel": 292,
+    "skills": {
+     "melee": 68,
+     "dist": 72,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P72",
+    "nivel": 292,
+    "skills": {
+     "melee": 74,
+     "dist": 73,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 62
+     }
+    }
+   },
+   {
+    "nome": "P73",
+    "nivel": 291,
+    "skills": {
+     "melee": 69,
+     "dist": 73,
+     "ml": {
+      "SORCERER": 59,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P74",
+    "nivel": 291,
+    "skills": {
+     "melee": 68,
+     "dist": 73,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P75",
+    "nivel": 291,
+    "skills": {
+     "melee": 66,
+     "dist": 70,
+     "ml": {
+      "SORCERER": 61,
+      "DRUID": 65
+     }
+    }
+   },
+   {
+    "nome": "P76",
+    "nivel": 288,
+    "skills": {
+     "melee": 71,
+     "dist": 74,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P77",
+    "nivel": 286,
+    "skills": {
+     "melee": 71,
+     "dist": 75,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 65
+     }
+    }
+   },
+   {
+    "nome": "P78",
+    "nivel": 284,
+    "skills": {
+     "melee": 66,
+     "dist": 71,
+     "ml": {
+      "SORCERER": 57,
+      "DRUID": 61
+     }
+    }
+   },
+   {
+    "nome": "P79",
+    "nivel": 283,
+    "skills": {
+     "melee": 64,
+     "dist": 69,
+     "ml": {
+      "SORCERER": 57,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P80",
+    "nivel": 283,
+    "skills": {
+     "melee": 70,
+     "dist": 72,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P81",
+    "nivel": 283,
+    "skills": {
+     "melee": 71,
+     "dist": 78,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 62
+     }
+    }
+   },
+   {
+    "nome": "P82",
+    "nivel": 282,
+    "skills": {
+     "melee": 69,
+     "dist": 73,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 66
+     }
+    }
+   },
+   {
+    "nome": "P83",
+    "nivel": 282,
+    "skills": {
+     "melee": 66,
+     "dist": 71,
+     "ml": {
+      "SORCERER": 59,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P84",
+    "nivel": 281,
+    "skills": {
+     "melee": 66,
+     "dist": 70,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P85",
+    "nivel": 281,
+    "skills": {
+     "melee": 68,
+     "dist": 73,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 62
+     }
+    }
+   },
+   {
+    "nome": "P86",
+    "nivel": 279,
+    "skills": {
+     "melee": 71,
+     "dist": 75,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P87",
+    "nivel": 279,
+    "skills": {
+     "melee": 70,
+     "dist": 74,
+     "ml": {
+      "SORCERER": 61,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P88",
+    "nivel": 279,
+    "skills": {
+     "melee": 65,
+     "dist": 68,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P89",
+    "nivel": 279,
+    "skills": {
+     "melee": 68,
+     "dist": 72,
+     "ml": {
+      "SORCERER": 59,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P90",
+    "nivel": 277,
+    "skills": {
+     "melee": 63,
+     "dist": 67,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P91",
+    "nivel": 276,
+    "skills": {
+     "melee": 69,
+     "dist": 73,
+     "ml": {
+      "SORCERER": 59,
+      "DRUID": 62
+     }
+    }
+   },
+   {
+    "nome": "P92",
+    "nivel": 276,
+    "skills": {
+     "melee": 66,
+     "dist": 71,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P93",
+    "nivel": 276,
+    "skills": {
+     "melee": 73,
+     "dist": 76,
+     "ml": {
+      "SORCERER": 59,
+      "DRUID": 61
+     }
+    }
+   },
+   {
+    "nome": "P94",
+    "nivel": 275,
+    "skills": {
+     "melee": 66,
+     "dist": 70,
+     "ml": {
+      "SORCERER": 61,
+      "DRUID": 65
+     }
+    }
+   },
+   {
+    "nome": "P95",
+    "nivel": 275,
+    "skills": {
+     "melee": 60,
+     "dist": 67,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 66
+     }
+    }
+   },
+   {
+    "nome": "P96",
+    "nivel": 275,
+    "skills": {
+     "melee": 67,
+     "dist": 72,
+     "ml": {
+      "SORCERER": 59,
+      "DRUID": 65
+     }
+    }
+   },
+   {
+    "nome": "P97",
+    "nivel": 275,
+    "skills": {
+     "melee": 64,
+     "dist": 68,
+     "ml": {
+      "SORCERER": 59,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P98",
+    "nivel": 275,
+    "skills": {
+     "melee": 65,
+     "dist": 69,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 66
+     }
+    }
+   },
+   {
+    "nome": "P99",
+    "nivel": 274,
+    "skills": {
+     "melee": 71,
+     "dist": 76,
+     "ml": {
+      "SORCERER": 59,
+      "DRUID": 62
+     }
+    }
+   },
+   {
+    "nome": "P100",
+    "nivel": 272,
+    "skills": {
+     "melee": 66,
+     "dist": 72,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P101",
+    "nivel": 272,
+    "skills": {
+     "melee": 67,
+     "dist": 74,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P102",
+    "nivel": 272,
+    "skills": {
+     "melee": 74,
+     "dist": 76,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 61
+     }
+    }
+   },
+   {
+    "nome": "P103",
+    "nivel": 271,
+    "skills": {
+     "melee": 71,
+     "dist": 71,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 66
+     }
+    }
+   },
+   {
+    "nome": "P104",
+    "nivel": 270,
+    "skills": {
+     "melee": 69,
+     "dist": 70,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P105",
+    "nivel": 270,
+    "skills": {
+     "melee": 70,
+     "dist": 73,
+     "ml": {
+      "SORCERER": 57,
+      "DRUID": 61
+     }
+    }
+   },
+   {
+    "nome": "P106",
+    "nivel": 270,
+    "skills": {
+     "melee": 58,
+     "dist": 63,
+     "ml": {
+      "SORCERER": 55,
+      "DRUID": 60
+     }
+    }
+   },
+   {
+    "nome": "P107",
+    "nivel": 270,
+    "skills": {
+     "melee": 75,
+     "dist": 77,
+     "ml": {
+      "SORCERER": 61,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P108",
+    "nivel": 270,
+    "skills": {
+     "melee": 65,
+     "dist": 70,
+     "ml": {
+      "SORCERER": 57,
+      "DRUID": 62
+     }
+    }
+   },
+   {
+    "nome": "P109",
+    "nivel": 269,
+    "skills": {
+     "melee": 68,
+     "dist": 72,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 61
+     }
+    }
+   },
+   {
+    "nome": "P110",
+    "nivel": 269,
+    "skills": {
+     "melee": 67,
+     "dist": 72,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P111",
+    "nivel": 268,
+    "skills": {
+     "melee": 66,
+     "dist": 70,
+     "ml": {
+      "SORCERER": 59,
+      "DRUID": 62
+     }
+    }
+   },
+   {
+    "nome": "P112",
+    "nivel": 268,
+    "skills": {
+     "melee": 66,
+     "dist": 69,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P113",
+    "nivel": 267,
+    "skills": {
+     "melee": 66,
+     "dist": 71,
+     "ml": {
+      "SORCERER": 57,
+      "DRUID": 62
+     }
+    }
+   },
+   {
+    "nome": "P114",
+    "nivel": 267,
+    "skills": {
+     "melee": 68,
+     "dist": 72,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 62
+     }
+    }
+   },
+   {
+    "nome": "P115",
+    "nivel": 267,
+    "skills": {
+     "melee": 65,
+     "dist": 66,
+     "ml": {
+      "SORCERER": 55,
+      "DRUID": 60
+     }
+    }
+   },
+   {
+    "nome": "P116",
+    "nivel": 266,
+    "skills": {
+     "melee": 66,
+     "dist": 71,
+     "ml": {
+      "SORCERER": 59,
+      "DRUID": 65
+     }
+    }
+   },
+   {
+    "nome": "P117",
+    "nivel": 266,
+    "skills": {
+     "melee": 65,
+     "dist": 70,
+     "ml": {
+      "SORCERER": 59,
+      "DRUID": 62
+     }
+    }
+   },
+   {
+    "nome": "P118",
+    "nivel": 266,
+    "skills": {
+     "melee": 62,
+     "dist": 67,
+     "ml": {
+      "SORCERER": 57,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P119",
+    "nivel": 265,
+    "skills": {
+     "melee": 66,
+     "dist": 71,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P120",
+    "nivel": 265,
+    "skills": {
+     "melee": 66,
+     "dist": 70,
+     "ml": {
+      "SORCERER": 57,
+      "DRUID": 62
+     }
+    }
+   },
+   {
+    "nome": "P121",
+    "nivel": 264,
+    "skills": {
+     "melee": 76,
+     "dist": 77,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 62
+     }
+    }
+   },
+   {
+    "nome": "P122",
+    "nivel": 264,
+    "skills": {
+     "melee": 75,
+     "dist": 80,
+     "ml": {
+      "SORCERER": 64,
+      "DRUID": 65
+     }
+    }
+   },
+   {
+    "nome": "P123",
+    "nivel": 263,
+    "skills": {
+     "melee": 62,
+     "dist": 67,
+     "ml": {
+      "SORCERER": 54,
+      "DRUID": 60
+     }
+    }
+   },
+   {
+    "nome": "P124",
+    "nivel": 262,
+    "skills": {
+     "melee": 75,
+     "dist": 77,
+     "ml": {
+      "SORCERER": 61,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P125",
+    "nivel": 262,
+    "skills": {
+     "melee": 62,
+     "dist": 66,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 65
+     }
+    }
+   },
+   {
+    "nome": "P126",
+    "nivel": 261,
+    "skills": {
+     "melee": 72,
+     "dist": 76,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P127",
+    "nivel": 261,
+    "skills": {
+     "melee": 64,
+     "dist": 68,
+     "ml": {
+      "SORCERER": 54,
+      "DRUID": 55
+     }
+    }
+   },
+   {
+    "nome": "P128",
+    "nivel": 260,
+    "skills": {
+     "melee": 65,
+     "dist": 70,
+     "ml": {
+      "SORCERER": 56,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P129",
+    "nivel": 260,
+    "skills": {
+     "melee": 67,
+     "dist": 72,
+     "ml": {
+      "SORCERER": 57,
+      "DRUID": 61
+     }
+    }
+   },
+   {
+    "nome": "P130",
+    "nivel": 260,
+    "skills": {
+     "melee": 66,
+     "dist": 74,
+     "ml": {
+      "SORCERER": 54,
+      "DRUID": 57
+     }
+    }
+   },
+   {
+    "nome": "P131",
+    "nivel": 259,
+    "skills": {
+     "melee": 71,
+     "dist": 75,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P132",
+    "nivel": 259,
+    "skills": {
+     "melee": 67,
+     "dist": 71,
+     "ml": {
+      "SORCERER": 59,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P133",
+    "nivel": 259,
+    "skills": {
+     "melee": 65,
+     "dist": 70,
+     "ml": {
+      "SORCERER": 57,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P134",
+    "nivel": 258,
+    "skills": {
+     "melee": 69,
+     "dist": 74,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P135",
+    "nivel": 258,
+    "skills": {
+     "melee": 65,
+     "dist": 69,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P136",
+    "nivel": 257,
+    "skills": {
+     "melee": 64,
+     "dist": 68,
+     "ml": {
+      "SORCERER": 59,
+      "DRUID": 62
+     }
+    }
+   },
+   {
+    "nome": "P137",
+    "nivel": 257,
+    "skills": {
+     "melee": 67,
+     "dist": 71,
+     "ml": {
+      "SORCERER": 57,
+      "DRUID": 60
+     }
+    }
+   },
+   {
+    "nome": "P138",
+    "nivel": 257,
+    "skills": {
+     "melee": 65,
+     "dist": 70,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 62
+     }
+    }
+   },
+   {
+    "nome": "P139",
+    "nivel": 257,
+    "skills": {
+     "melee": 66,
+     "dist": 69,
+     "ml": {
+      "SORCERER": 59,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P140",
+    "nivel": 257,
+    "skills": {
+     "melee": 69,
+     "dist": 73,
+     "ml": {
+      "SORCERER": 59,
+      "DRUID": 62
+     }
+    }
+   },
+   {
+    "nome": "P141",
+    "nivel": 257,
+    "skills": {
+     "melee": 65,
+     "dist": 70,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P142",
+    "nivel": 257,
+    "skills": {
+     "melee": 76,
+     "dist": 81,
+     "ml": {
+      "SORCERER": 62,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P143",
+    "nivel": 256,
+    "skills": {
+     "melee": 65,
+     "dist": 70,
+     "ml": {
+      "SORCERER": 57,
+      "DRUID": 59
+     }
+    }
+   },
+   {
+    "nome": "P144",
+    "nivel": 256,
+    "skills": {
+     "melee": 65,
+     "dist": 70,
+     "ml": {
+      "SORCERER": 57,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P145",
+    "nivel": 256,
+    "skills": {
+     "melee": 65,
+     "dist": 70,
+     "ml": {
+      "SORCERER": 57,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P146",
+    "nivel": 256,
+    "skills": {
+     "melee": 67,
+     "dist": 71,
+     "ml": {
+      "SORCERER": 57,
+      "DRUID": 60
+     }
+    }
+   },
+   {
+    "nome": "P147",
+    "nivel": 256,
+    "skills": {
+     "melee": 70,
+     "dist": 75,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 61
+     }
+    }
+   },
+   {
+    "nome": "P148",
+    "nivel": 256,
+    "skills": {
+     "melee": 67,
+     "dist": 71,
+     "ml": {
+      "SORCERER": 57,
+      "DRUID": 62
+     }
+    }
+   },
+   {
+    "nome": "P149",
+    "nivel": 255,
+    "skills": {
+     "melee": 66,
+     "dist": 71,
+     "ml": {
+      "SORCERER": 59,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P150",
+    "nivel": 255,
+    "skills": {
+     "melee": 67,
+     "dist": 71,
+     "ml": {
+      "SORCERER": 57,
+      "DRUID": 60
+     }
+    }
+   },
+   {
+    "nome": "P151",
+    "nivel": 255,
+    "skills": {
+     "melee": 59,
+     "dist": 64,
+     "ml": {
+      "SORCERER": 56,
+      "DRUID": 61
+     }
+    }
+   },
+   {
+    "nome": "P152",
+    "nivel": 255,
+    "skills": {
+     "melee": 65,
+     "dist": 69,
+     "ml": {
+      "SORCERER": 56,
+      "DRUID": 59
+     }
+    }
+   },
+   {
+    "nome": "P153",
+    "nivel": 254,
+    "skills": {
+     "melee": 65,
+     "dist": 70,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P154",
+    "nivel": 254,
+    "skills": {
+     "melee": 68,
+     "dist": 73,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P155",
+    "nivel": 254,
+    "skills": {
+     "melee": 63,
+     "dist": 67,
+     "ml": {
+      "SORCERER": 54,
+      "DRUID": 61
+     }
+    }
+   },
+   {
+    "nome": "P156",
+    "nivel": 254,
+    "skills": {
+     "melee": 69,
+     "dist": 73,
+     "ml": {
+      "SORCERER": 59,
+      "DRUID": 62
+     }
+    }
+   },
+   {
+    "nome": "P157",
+    "nivel": 254,
+    "skills": {
+     "melee": 64,
+     "dist": 69,
+     "ml": {
+      "SORCERER": 56,
+      "DRUID": 58
+     }
+    }
+   },
+   {
+    "nome": "P158",
+    "nivel": 253,
+    "skills": {
+     "melee": 64,
+     "dist": 69,
+     "ml": {
+      "SORCERER": 56,
+      "DRUID": 60
+     }
+    }
+   },
+   {
+    "nome": "P159",
+    "nivel": 252,
+    "skills": {
+     "melee": 62,
+     "dist": 67,
+     "ml": {
+      "SORCERER": 59,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P160",
+    "nivel": 252,
+    "skills": {
+     "melee": 63,
+     "dist": 68,
+     "ml": {
+      "SORCERER": 57,
+      "DRUID": 60
+     }
+    }
+   },
+   {
+    "nome": "P161",
+    "nivel": 252,
+    "skills": {
+     "melee": 71,
+     "dist": 75,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 61
+     }
+    }
+   },
+   {
+    "nome": "P162",
+    "nivel": 252,
+    "skills": {
+     "melee": 68,
+     "dist": 73,
+     "ml": {
+      "SORCERER": 57,
+      "DRUID": 60
+     }
+    }
+   },
+   {
+    "nome": "P163",
+    "nivel": 252,
+    "skills": {
+     "melee": 64,
+     "dist": 69,
+     "ml": {
+      "SORCERER": 57,
+      "DRUID": 61
+     }
+    }
+   },
+   {
+    "nome": "P164",
+    "nivel": 251,
+    "skills": {
+     "melee": 63,
+     "dist": 68,
+     "ml": {
+      "SORCERER": 57,
+      "DRUID": 62
+     }
+    }
+   },
+   {
+    "nome": "P165",
+    "nivel": 251,
+    "skills": {
+     "melee": 58,
+     "dist": 62,
+     "ml": {
+      "SORCERER": 55,
+      "DRUID": 63
+     }
+    }
+   },
+   {
+    "nome": "P166",
+    "nivel": 251,
+    "skills": {
+     "melee": 72,
+     "dist": 72,
+     "ml": {
+      "SORCERER": 56,
+      "DRUID": 60
+     }
+    }
+   },
+   {
+    "nome": "P167",
+    "nivel": 251,
+    "skills": {
+     "melee": 55,
+     "dist": 60,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 64
+     }
+    }
+   },
+   {
+    "nome": "P168",
+    "nivel": 251,
+    "skills": {
+     "melee": 63,
+     "dist": 68,
+     "ml": {
+      "SORCERER": 57,
+      "DRUID": 62
+     }
+    }
+   },
+   {
+    "nome": "P169",
+    "nivel": 251,
+    "skills": {
+     "melee": 66,
+     "dist": 71,
+     "ml": {
+      "SORCERER": 58,
+      "DRUID": 62
+     }
+    }
+   },
+   {
+    "nome": "P170",
+    "nivel": 251,
+    "skills": {
+     "melee": 64,
+     "dist": 69,
+     "ml": {
+      "SORCERER": 60,
+      "DRUID": 66
+     }
+    }
+   },
+   {
+    "nome": "P171",
+    "nivel": 251,
+    "skills": {
+     "melee": 63,
+     "dist": 68,
+     "ml": {
+      "SORCERER": 57,
+      "DRUID": 62
+     }
+    }
+   }
+  ],
+  "perfis": [
+   {
+    "nivel": 387,
+    "voc": {
+     "KNIGHT": {
+      "head": "Zaoan helmet",
+      "legs": "exotic legs",
+      "ring": "Royal Signet",
+      "armor": "ornate chestplate",
+      "boots": "guardian boots",
+      "weapon": "Tagralt Greatblade",
+      "necklace": "onyx pendant"
+     },
+     "PALADIN": {
+      "head": "royal helmet",
+      "legs": "bast legs",
+      "ring": "Royal Signet",
+      "armor": "paladin armor",
+      "weapon": "living vine bow",
+      "necklace": "scarf"
+     },
+     "SORCERER": {
+      "head": "hat of the mad",
+      "legs": "dawnfire pantaloons",
+      "ring": "Royal Signet",
+      "armor": "dawnfire sherwani",
+      "boots": "pair of nightmare boots",
+      "shield": "wooden spellbook",
+      "weapon": "naga wand",
+      "necklace": "Theurgic Talisman"
+     },
+     "DRUID": {
+      "head": "mage hat",
+      "legs": "depth ocrea",
+      "ring": "Royal Signet",
+      "armor": "firemind raiment",
+      "boots": "pair of nightmare boots",
+      "shield": "spellbook of mind control",
+      "weapon": "underworld rod",
+      "necklace": "Theurgic Talisman"
+     }
+    }
+   },
+   {
+    "nivel": 335,
+    "voc": {
+     "KNIGHT": {
+      "head": "Zaoan helmet",
+      "legs": "exotic legs",
+      "ring": "crystal ring",
+      "armor": "prismatic armor",
+      "boots": "leather boots",
+      "shield": "prismatic shield",
+      "weapon": "shiny blade",
+      "necklace": "scarf"
+     },
+     "PALADIN": {
+      "head": "wood cape",
+      "legs": "Zaoan legs",
+      "ring": "crystal ring",
+      "armor": "paladin armor",
+      "boots": "fur boots",
+      "weapon": "living vine bow",
+      "necklace": "platinum amulet"
+     },
+     "SORCERER": {
+      "head": "magma monocle",
+      "legs": "magma legs",
+      "ring": "crystal ring",
+      "armor": "firemind raiment",
+      "boots": "magma boots",
+      "shield": "spellbook of enlightenment",
+      "weapon": "wand of destruction",
+      "necklace": "gearwheel chain"
+     },
+     "DRUID": {
+      "head": "batwing hat",
+      "legs": "magma legs",
+      "ring": "crystal ring",
+      "armor": "firemind raiment",
+      "boots": "magma boots",
+      "shield": "spellbook of enlightenment",
+      "weapon": "rod of destruction",
+      "necklace": "scarf"
+     }
+    }
+   }
+  ],
+  "t": 1795816073864,
+  "conta": "Conta",
+  "nivel": 251,
+  "tPerfis": 1795816073864,
+  "idadeH": 0
+ },
+ "precos": {},
+ "ilhas": [
+  {
+   "id": "issavi",
+   "nome": "Issavi",
+   "aberta": true
+  },
+  {
+   "id": "marapur",
+   "nome": "Marapur",
+   "aberta": false
+  },
+  {
+   "id": "dream_courts",
+   "nome": "Dream Courts",
+   "aberta": false
+  },
+  {
+   "id": "otherworld",
+   "nome": "Otherworld",
+   "aberta": true
+  },
+  {
+   "id": "warzone",
+   "nome": "Warzone",
+   "aberta": true
+  },
+  {
+   "id": "forgotten_knowledge",
+   "nome": "Forgotten Knowledge",
+   "aberta": true
+  },
+  {
+   "id": "the_inquisition",
+   "nome": "The Inquisition",
+   "aberta": true
+  },
+  {
+   "id": "zao",
+   "nome": "Zao",
+   "aberta": true
+  },
+  {
+   "id": "gray_island",
+   "nome": "Gray Island",
+   "aberta": true
+  },
+  {
+   "id": "pits_of_inferno",
+   "nome": "Pits of Inferno",
+   "aberta": true
+  },
+  {
+   "id": "yalahar",
+   "nome": "Yalahar",
+   "aberta": true
+  }
+ ],
+ "ouroTravado": 0,
+ "depositoLido": false,
+ "_nota": "foto real de trFoto() ao vivo em 27/11 (conta principal, nível 251, Shadow Nexus lure 3); ouro trocado por 3 M e nomes do topo por P1, P2… (o ouroLivre foi refeito com o ouro neutro)"
+}

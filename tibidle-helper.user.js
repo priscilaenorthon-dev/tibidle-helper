@@ -5250,6 +5250,7 @@
     function observarRecebido(o) {
         try { observarProgresso(o); } catch { } // v2.11 — aba Progresso: só leitura (chaves, bestiário, prey, plano offline)
         try { invObservar(o); } catch (e) { falhou('invasão (observar)', e); } // v2.17.0 — invasão do dia e respostas esperadas
+        try { trObservar(o); } catch (e) { falhou('treinador (observar)', e); } // 2.67.0 — treinador: bênçãos, Invasão, ilhas, premium, ampulhetas, Selo e o player_profile do topo
         try { diagObservar(o); } catch { } // v2.11 — Diagnóstico: guarda só a FORMA das mensagens
         try { observarMercado(o); } catch (e) { falhou('observarMercado', e); } // v2.11 — aba Mercado: premium, mochila, protegidos, respostas do mercado
         /* v2.35.7 — meta_state/meta_result também trazem lureTierByHunt (o lure salvo muda quando o dono troca o lure); welcome/resume já leem abaixo */
@@ -6820,6 +6821,8 @@
             inicio: a0.t, dur: Math.round(dur), motivo,
             ouroH: Math.round(dOuro / dur * 3600),
             expH: dExp != null ? Math.round(dExp / dur * 3600) : null,
+            /* 2.67.0 — XP RAW (sem party/premium/prey/boost): o treinador compara mapas e sessões nessa base */
+            expRawH: anOk && a0.anXpRaw > 0 && aN.anXpRaw >= a0.anXpRaw ? Math.round((aN.anXpRaw - a0.anXpRaw) / dur * 3600) : null,
             abates: dAbates, abatesH: dAbates != null ? Math.round(dAbates / dur * 3600) : null,
             mochilaPctMax: Math.round(pctMax * 100),
             suja, regen,
@@ -6948,7 +6951,7 @@
         const moch = lerMochilaOz();
         const an = anDoFrame();
         const amostra = { t: Date.now(), ouro: ouroAtual(), exp: exp ? exp.atual : null, abates: ab, mochilaPct: moch ? moch.pct : 0 };
-        if (an) Object.assign(amostra, { anMs: an.elapsedMs, anXp: an.xp, anLoot: an.lootGold, anSup: an.suppliesGold });
+        if (an) Object.assign(amostra, { anMs: an.elapsedMs, anXp: an.xp, anXpRaw: an.xpRaw, anLoot: an.lootGold, anSup: an.suppliesGold }); // 2.67.0: raw para o treinador
         if (!SESSAO.a0) SESSAO.a0 = amostra;
         SESSAO.pctMax = Math.max(SESSAO.pctMax || 0, amostra.mochilaPct);
         SESSAO.amostras.push(amostra);
@@ -12897,6 +12900,7 @@
         return out;
     }
     TR_AGENTES.push({ id: 'ouro', nome: 'Dinheiro', icone: '$', fase: 2, rodar: trAgenteDinheiro });
+    const TR_SLOT_JOGO = { feet: 'boots', hand: 'weapon', helmet: 'head', amulet: 'necklace', quiver: 'ammo' }; // nomes do jogo → TR_SLOTS
     /* @@TREINADOR-PURO-FIM */
     /* @@ARENA-PURO-INICIO — Sobrevivência (2.57.0): decisões do robô, puras (o tempo é st.tempoMs, sem DOM).
      * st = estado da simulação do cliente (ref.current.st do componente da partida). O mesmo código rodou no simulador
@@ -19213,7 +19217,7 @@
             else if (dl) radarAcumular({ tipo: 'delta', huntId: sm.huntId, title: tpTituloResumo(sm), delta: dl });
             if (/death|dead|morr/i.test(String(sm.reason || ''))) {
                 radarAcumular({ tipo: 'morte' });
-                if (sm.huntId != null) { const m = ler('radar_mortes', {}) || {}; const x = m[sm.huntId] || { n: 0 }; m[sm.huntId] = { n: (Date.now() - (x.t || 0) < 7 * 86400000 ? x.n : 0) + 1, t: Date.now() }; guardar('radar_mortes', m); }
+                if (sm.huntId != null) { const m = ler('radar_mortes', {}) || {}; const x = m[sm.huntId] || { n: 0 }; m[sm.huntId] = Object.assign({}, x, { n: (Date.now() - (x.t || 0) < 7 * 86400000 ? x.n : 0) + 1, t: Date.now() }); guardar('radar_mortes', m); } /* 2.67.0: mantém as autópsias (laudos) — o treinador lê as mortes por vocação delas */
             }
             lv.base = null;
             radarSalvarDia(true);
@@ -20224,6 +20228,386 @@
     `;
     function fjGarantirCss() { if (document.getElementById('tb-fj-css')) return; const st = document.createElement('style'); st.id = 'tb-fj-css'; st.textContent = FJ_CSS; (document.head || document.documentElement).appendChild(st); }
     const fjSeloTxt = { vale: '✓ vale', estoque: 'falta gema', ouro: 'falta ouro', nao: 'não vale' };
+    /* @@TREINADOR-INICIO — aba Progresso (2.67.0): a FOTO real da conta para os especialistas puros (@@TREINADOR-PURO) e a leitura do topo.
+     * trFoto() só junta o que o helper JÁ sabe (estado do socket, gavetas da conta, catálogos): nada de rede e nada de simulação
+     * (rankingRodar, estimarMapa, equipAtualizar, fjLer e mkPedir ficam de fora). Cada bloco tem o seu try: um bloco quebrado deixa o campo
+     * como em trFotoVazia() e avisa UMA vez (falhou). A XP é sempre RAW (sem party/premium/prey/boost) — medidoAtual, mapas e sessões
+     * na mesma base, senão o "XP caiu" e o "Onde upar" comparavam ×2,7 com ×1.
+     *
+     * De onde vem cada campo (27/11):
+     *   nivel/xpTotal ........ rail do jogo (rail-level-n) › frame.state.character › account do welcome/resume
+     *   ouro/ouroTravado ..... frame.state.balance (total) e balanceLocked (PROG.estado) › account.gold/goldLocked
+     *   ouroLivre ............ ouro normal − (3 × gasto/h da caçada que o travado não cobre) − bênçãos que faltam
+     *   premium .............. account.premiumUntil (welcome/resume) › meta_result.premiumUntil › MK.premiumAte
+     *   hunt ................. ESTADO_WS.huntId + CAT.hunts; lure = frame.state.lureTier › meta.lureTierByHunt; rec = trRecDe
+     *   medidoAtual .......... frame.analyzer (xpRaw, killsTotal, lootGold, suppliesGold, elapsedMs) por hora
+     *   mapas ................ Scans (xpRawH) · caçada de agora (≥ 5 min) · sessões do Analisador (expRawH; as antigas ÷ multiplicador de agora)
+     *                          · Radar guardado (radar_rank; estimado, sem risco alto) · setups do Discord com "raw" no texto; 1 por caçada
+     *                          (medido > comunidade > estimado; empate = o mais novo); aberta = unlockedIslands; mortes = radar_mortes (7 dias)
+     *   party ................ roster do welcome/resume (ESTADO_WS.rosterFull; sem ele, a fibra) + skills treinadas vistas no frame;
+     *                          munição = battleConfigs[voc].ammo (não fica no corpo)
+     *   legado ............... skill treinada da party na tabela TR_BASE.legado (nulo só com legacy_state.ativo === false)
+     *   prey ................. PROG.prey/PROG.meta (meta.preyHunt, preyBuffs, wildcards); semCacada só com meta.preyHunt === null lido
+     *   bencaos .............. meta.blessings (ids 2–8) · ampulhetas: ampulheta_state · selo: selo_state (os dois só quando o jogo manda)
+     *   mortes ............... radar_mortes[huntId].laudos (autópsias tipo 'morte', com vocação e t) + o `ended` com motivo de morte sem
+     *                          autópsia perto (1 entrada sem vocação) + RAZAO.mortes da caçada de agora
+     *   sessoes .............. ler('sessoes') (dur em s → durMin); morte = alguma morte da mesma caçada dentro da sessão
+     *   checklist ............ mlChecklist(EQUIP.res) só se o Equip já calculou · bestiario: pgLinhasBestiario + XP/h de mapas
+     *   chaves ............... PROG.chaves (keyBag) com o nome do Elite pelo keyItem de CAT.bosses
+     *   deposito ............. depot_state desta sessão (ESTADO_WS.depotReal) + mochila (MK.bag) · precos: MK.catalogo (minSell > 0)
+     *   invasao .............. meta.invasao / invasion_update · forja: peças vestidas < +4 (gemas de pgRefino 'melhor' × preço da gema de
+     *                          FJ.custos ou fjCustoGemas), idadeH de FJ.t, bases ≥ potBase do depósito/mochila
+     *   topo ................. lerComum('tr_topo') (trLerTopo) · ilhas: unlockedIslands × TR_BASE.ilhas */
+    const TR = { topo: { lendo: false, status: null }, esperas: [], avisados: new Set() };
+    const TR_H = 3600000, TR_DIA = 864e5;
+    /* Uma linha em observarRecebido: guarda o que a foto precisa e o helper ainda não guardava (nada é enviado daqui). */
+    function trObservar(o) {
+        if (!o || typeof o.type !== 'string') return;
+        const d = o.data && typeof o.data === 'object' ? o.data : null;
+        if (!d) return;
+        const tipo = o.type, agora = Date.now(), x = ESTADO_WS.tr || (ESTADO_WS.tr = {});
+        if (tipo === 'frame') { // a cada frame: só dois números, barato
+            const st = d.state && typeof d.state === 'object' ? d.state : null, ch = st && st.character;
+            if (ch && ch.xp != null && Number.isFinite(Number(ch.xp))) (x.conta || (x.conta = {})).xp = Number(ch.xp);
+            if (ch && Number(ch.level) > 0) (x.conta || (x.conta = {})).nivel = Number(ch.level);
+            return;
+        }
+        /* legacy_state é RECEBIDO, mas o tratamento da 2.22.0 ficou em observarEnviado: ESTADO_WS.legado nunca enchia (visto ao vivo em 27/11:
+         * {ativo: true, personagens: [{vocation, visto}]}). Mesmo formato de lá; legadoDaConta passa a funcionar. */
+        if (tipo === 'legacy_state') { ESTADO_WS.legado = { ativo: d.ativo === true, personagens: Array.isArray(d.personagens) ? clonar(d.personagens) : [] }; return; }
+        const meta = d.meta && typeof d.meta === 'object' ? d.meta : tipo === 'meta_state' ? d : null;
+        if (meta) {
+            if (Array.isArray(meta.blessings)) x.bencaos = { ids: meta.blessings.map(Number).filter(Number.isFinite), t: agora };
+            if (meta.invasao && typeof meta.invasao === 'object') x.invasao = trLerInvasao(meta.invasao, agora);
+        }
+        if (tipo === 'invasion_update' && d.invasao && typeof d.invasao === 'object') x.invasao = trLerInvasao(d.invasao, agora);
+        if (d.account && typeof d.account === 'object') {
+            const a = d.account, c = x.conta || (x.conta = {});
+            if (a.name) c.nome = String(a.name);
+            if (Number(a.level) > 0) c.nivel = Number(a.level);
+            if (a.xp != null && Number.isFinite(Number(a.xp))) c.xp = Number(a.xp);
+            if (a.gold != null) c.ouro = Number(a.gold);
+            if (a.goldLocked != null) c.trav = Number(a.goldLocked);
+            if ('premiumUntil' in a) c.premiumAte = a.premiumUntil || null;
+            c.t = agora;
+        }
+        if (tipo === 'meta_result' && typeof d.premiumUntil === 'string') (x.conta || (x.conta = {})).premiumAte = d.premiumUntil;
+        if (Array.isArray(d.unlockedIslands)) x.ilhas = { lista: d.unlockedIslands.map(String), t: agora };
+        if (tipo === 'ampulheta_state' && d.vocacoes && typeof d.vocacoes === 'object') x.ampulheta = { vocacoes: clonar(d.vocacoes), resetEm: trNum(d.resetEm), t: agora };
+        if (tipo === 'selo_state') x.selo = { ativo: d.ativo !== false, selos: Array.isArray(d.selos) ? clonar(d.selos) : [], t: agora };
+    }
+    // Invasão do dia: inscrito (null quando as 3 janelas de hoje já acabaram: não sei se a inscrição de amanhã abriu) e a próxima (ms)
+    function trLerInvasao(inv, agora) {
+        const prox = inv.proxima && typeof inv.proxima === 'object' ? trNum(inv.proxima.startAtMs) : NaN;
+        return { inscrito: inv.encerrada ? null : !!inv.inscrito, proxima: Number.isFinite(prox) ? prox : null, encerrada: !!inv.encerrada, t: agora };
+    }
+    const trIlhaCat = (h) => (h && h.island && h.island !== 'tibidle_island' ? String(h.island) : h && h.title ? (trCacada(h.title, TR_BASE) || {}).ilha || null : null);
+    // XP/h raw do texto de um setup do Discord ("950k raw", "140–150k raw", "≈350k (320k raw)"); sem "raw" = null (tem bônus misturado)
+    function trXpRawDeTexto(s) {
+        const m = String(s || '').match(/([\d.,]+)\s*([kKmM])?\s*(?:[–-]\s*([\d.,]+)\s*([kKmM])?)?\s*raw/);
+        if (!m) return null;
+        const mult = (u) => (/m/i.test(u || '') ? 1e6 : /k/i.test(u || '') ? 1e3 : 1);
+        const num = (v) => parseFloat(String(v).replace(',', '.'));
+        const a = num(m[1]) * mult(m[2] || m[4]), b = m[3] ? num(m[3]) * mult(m[4]) : a;
+        const v = (a + b) / 2;
+        return v > 1000 ? Math.round(v) : null;
+    }
+    // "dd/mm" do setup → ms (ano corrente; data no futuro = ano passado)
+    function trDataDdMm(s, agora) {
+        const m = String(s || '').match(/(\d{1,2})\/(\d{1,2})/);
+        if (!m) return null;
+        const hoje = new Date(agora);
+        let t = new Date(hoje.getFullYear(), Number(m[2]) - 1, Number(m[1]), 12).getTime();
+        if (t > agora) t = new Date(hoje.getFullYear() - 1, Number(m[2]) - 1, Number(m[1]), 12).getTime();
+        return t;
+    }
+    // Peça do roster (equipment do jogo) no formato da foto
+    function trPecaFoto(p) {
+        const fj = p.forja && typeof p.forja === 'object' ? p.forja : null, a = p.attrs && typeof p.attrs === 'object' ? p.attrs : {};
+        const pc = { nome: String(p.name), refino: fj ? trNum(fj.refino) || 0 : null, raridade: fj ? trNum(fj.raridade) || 0 : null,
+                     potencia: fj ? potenciaTotal(p) : null,
+                     atributos: fj && Array.isArray(fj.atributos) ? fj.atributos.filter(z => z && z.id).map(z => ({ id: String(z.id), valor: trNum(z.valor) })) : [],
+                     // encaixes: o `imbue` do Tibidle manda (null = a peça não aceita imbuement aqui, mesmo com attrs.imbuementslot — guardian boots, 27/11)
+                     imbuSlots: p.imbue && typeof p.imbue === 'object' ? trNum(p.imbue.slots) || 0 : p.imbue === null ? 0 : trNum(a.imbuementslot) || 0,
+                     imbu: (Array.isArray(p.imbuements) ? p.imbuements : []).filter(Boolean).map(z => (typeof z === 'object' ? String(z.name || z.type || z.id || 'imbuement') : String(z))) };
+        if (a.slotType) pc.duasMaos = a.slotType === 'two-handed';
+        // arco/besta: o ataque que conta é o da munição somado (o arco sozinho tem 2–5); sem ele, o especialista usa o padrão (50)
+        if (trNum(a.attack) > 0 && !trUsaMunicao(pc, TR_BASE)) pc.ataque = Number(a.attack);
+        return pc;
+    }
+    function trFoto() {
+        const f = trFotoVazia(), agora = Date.now(), x = ESTADO_WS.tr || {};
+        f.t = agora;
+        const bloco = (nome, fn) => {
+            try { fn(); } catch (e) { if (!TR.avisados.has(nome)) { TR.avisados.add(nome); falhou('treinador (foto: ' + nome + ')', e); } }
+        };
+        const hs = CAT.hunts || [], huntDe = (id) => hs.find(h => h && trMesmoId(h.id, id)) || null;
+        bloco('base', () => {
+            const el = tid('rail-level-n') || tid('mobile-hud-level'), nDom = el ? parseInt((el.textContent || '').replace(/\D/g, ''), 10) : NaN;
+            const fr = ESTADO_WS.frame;
+            f.nivel = nDom > 0 ? nDom : fr && fr.nivel > 0 ? Number(fr.nivel) : x.conta && x.conta.nivel > 0 ? x.conta.nivel : null;
+            f.xpTotal = x.conta && x.conta.xp > 0 ? x.conta.xp : null;
+            f.emHunt = emHunt();
+            f.naCidade = !f.emHunt;
+        });
+        bloco('ouro', () => {
+            const fr = frameFresco() && ESTADO_WS.frame.balance != null ? Number(ESTADO_WS.frame.balance) : null;
+            const pe = PROG.estado && agora - PROG.estado.t < 10 * 60000 ? PROG.estado : null;
+            f.ouro = Number.isFinite(fr) ? fr : pe && pe.ouro != null ? pe.ouro : x.conta && Number.isFinite(x.conta.ouro) ? x.conta.ouro : null;
+            f.ouroTravado = pe && pe.trav != null ? pe.trav : x.conta && Number.isFinite(x.conta.trav) ? x.conta.trav : null;
+        });
+        bloco('premium', () => {
+            const ate = x.conta && 'premiumAte' in x.conta ? x.conta.premiumAte : MK.premiumAte;
+            if (ate !== undefined) f.premium = { ativo: mkPremium(ate, agora) === true, ate: ate || null };
+        });
+        bloco('hunt', () => {
+            const id = ESTADO_WS.huntId;
+            if (id == null || ESTADO_WS.boss || !f.emHunt) return;
+            const h = huntDe(id), fr = ESTADO_WS.frame;
+            const lt = h && Array.isArray(h.lureTiers) ? h.lureTiers.map(z => ({ min: trNum(z && z.min), max: trNum(z && z.max) })) : [];
+            const salvo = ESTADO_WS.lureTierByHunt ? trNum(ESTADO_WS.lureTierByHunt[id]) : NaN;
+            const lure = fr && trNum(fr.lureTier) > 0 ? Number(fr.lureTier) : salvo > 0 ? salvo : null;
+            f.hunt = { id: Number(id), title: h ? h.title : null, lure, maxLure: lt.length || (h && trNum(h.maxLure) > 0 ? Number(h.maxLure) : null),
+                       lureTiers: lt, levelMin: h && trNum(h.levelMin) > 0 ? Number(h.levelMin) : null, ilha: trIlhaCat(h) };
+            f.hunt.rec = trRecDe(f.hunt, TR_BASE);
+        });
+        bloco('medidoAtual', () => {
+            const an = frameFresco() && ESTADO_WS.frame.an ? ESTADO_WS.frame.an : null;
+            if (!an || !(an.elapsedMs > 0) || ESTADO_WS.boss) return;
+            const h = an.elapsedMs / TR_H;
+            f.medidoAtual = { xpH: Math.round(an.xpRaw / h), ouroH: Math.round((an.lootGold - an.suppliesGold) / h), gastoH: Math.round(an.suppliesGold / h),
+                              lootH: Math.round(an.lootGold / h), abatesH: Math.round(an.kills / h), min: Math.round(an.elapsedMs / 6000) / 10, xpBonusH: Math.round(an.xp / h) };
+        });
+        bloco('bencaos', () => {
+            if (!x.bencaos) return;
+            const ids = new Set(x.bencaos.ids.filter(i => i >= 2 && i <= 8)), b = TR_BASE.bencaos, nv = f.nivel;
+            const comuns = [...ids].filter(i => i <= 6).length, enh = [...ids].filter(i => i >= 7).length;
+            f.bencaos = { tem: ids.size, total: b.n, ids: [...ids].sort((p, q) => p - q),
+                          custoFaltam: nv ? (b.comuns - comuns) * b.preco(nv) + (b.enhanced - enh) * b.precoEnh(nv) : null };
+        });
+        let abertas = null;
+        bloco('ilhas', () => {
+            // a fibra só quando o welcome/resume não foi visto, e só com o estado de verdade (roster cheio): na tela de manutenção/lobby
+            // o estado padrão do cliente traz unlockedIslands [] e tudo virava "fechado" (visto ao vivo em 27/11)
+            let sh = null;
+            if (!x.ilhas) { try { sh = lerShellFibra(); } catch { sh = null; } }
+            abertas = x.ilhas ? x.ilhas.lista : sh && Array.isArray(sh.roster) && sh.roster.length && Array.isArray(sh.unlockedIslands) ? sh.unlockedIslands.map(String) : null;
+            if (abertas) f.ilhas = (TR_BASE.ilhas || []).map(i => ({ id: i.id, nome: i.nome, aberta: abertas.includes(i.id) }));
+        });
+        bloco('mapas', () => {
+            const porId = new Map(), peso = { medido: 3, comunidade: 2, wiki: 1, estimado: 0 };
+            const add = (id, xpH, fonte, origem, tMs, title, extra) => {
+                const n = trNum(id), xp = trNum(xpH);
+                if (!Number.isFinite(n) || !(xp > 0) || n === HUNT_ID_BOSS) return;
+                const h = huntDe(n), idadeH = trNum(tMs) > 0 ? Math.max(0, Math.round((agora - Number(tMs)) / TR_H * 10) / 10) : null;
+                const m = Object.assign({ id: n, title: h ? h.title : title || null, xpH: Math.round(xp), fonte, origem, idadeH,
+                                          levelMin: h && trNum(h.levelMin) > 0 ? Number(h.levelMin) : null, ilha: trIlhaCat(h || { title }) }, extra || {});
+                const a = porId.get(n);
+                if (!a || peso[fonte] > peso[a.fonte] || (peso[fonte] === peso[a.fonte] && (m.idadeH ?? 1e9) < (a.idadeH ?? 1e9))) porId.set(n, m);
+            };
+            // Radar guardado (estimativa do ranking; a linha medida também entra). Risco alto/bloqueado fica de fora (o dono morreu num topo do Radar, 02/10).
+            const rank = ler('radar_rank', null);
+            if (rank && Array.isArray(rank.linhas) && agora - (rank.t || 0) < 7 * TR_DIA) {
+                for (const l of rank.linhas) {
+                    if (!l) continue;
+                    const medido = l.fonte === 'medido';
+                    if (!medido && (l.bloqueio && l.bloqueio !== 'ilha fechada' || (l.risco && /alto|bloqueado/.test(l.risco.nivel || '')))) continue;
+                    add(l.id, l.xpH, medido ? 'medido' : 'estimado', 'radar', medido && l.medido && l.medido.t ? l.medido.t : rank.t, l.title, { ouroH: trNum(l.ouroH) || null });
+                }
+            }
+            // setups da comunidade com XP/h RAW no texto (sem "raw" o número tem prey/boost misturado: fica de fora)
+            for (const s of SETUPS_DISCORD) {
+                const xp = s && s.huntId != null && s.estatisticas ? trXpRawDeTexto(s.estatisticas.xpH) : null;
+                if (xp) add(s.huntId, xp, 'comunidade', 'discord', trDataDdMm(s.data, agora), s.hunt, { nivelMedida: trNum(s.estatisticas.nivel) || null, setup: s.id });
+            }
+            // sessões do Analisador (≥ 5 min): média por tempo; as antigas (sem expRawH) ÷ o multiplicador de XP de agora (aproximado)
+            const mult = xpMultiplicador(), porH = {};
+            for (const s of sessoes() || []) {
+                if (!s || s.huntId == null || !(s.dur >= 300)) continue;
+                const raw = trNum(s.expRawH) > 0 ? Number(s.expRawH) : trNum(s.expH) > 0 && mult > 0 ? s.expH / mult : null;
+                if (!(raw > 0)) continue;
+                const g = porH[s.huntId] || (porH[s.huntId] = { xp: 0, ouro: 0, dur: 0, t: 0, title: s.hunt });
+                g.xp += raw * s.dur; g.ouro += (trNum(s.ouroH) || 0) * s.dur; g.dur += s.dur; g.t = Math.max(g.t, (s.inicio || 0) + s.dur * 1000);
+            }
+            for (const [id, g] of Object.entries(porH)) add(id, g.xp / g.dur, 'medido', 'sessões', g.t, g.title, { ouroH: Math.round(g.ouro / g.dur) });
+            // Scans: o melhor limpo (mais XP raw) de cada mapa
+            const melhorScan = {};
+            for (const r of Object.values(scanResultados() || {})) {
+                if (!r || r.erro || !(trNum(r.xpRawH) > 0) || r.id == null) continue;
+                if (!melhorScan[r.id] || r.xpRawH > melhorScan[r.id].xpRawH) melhorScan[r.id] = r;
+            }
+            for (const r of Object.values(melhorScan)) add(r.id, r.xpRawH, 'medido', 'scan', r.t, r.title, { ouroH: trNum(r.ouroH) || null, abatesH: trNum(r.abatesH) || null });
+            // a caçada de agora (≥ 5 min no analisador) é a medida mais nova
+            if (f.hunt && f.medidoAtual && f.medidoAtual.min >= 5 && f.medidoAtual.xpH > 0) add(f.hunt.id, f.medidoAtual.xpH, 'medido', 'agora', agora, f.hunt.title, { ouroH: f.medidoAtual.ouroH, abatesH: f.medidoAtual.abatesH });
+            f.mapas = [...porId.values()].map(m => {
+                m.rec = trRecDe(m, TR_BASE);
+                if (abertas) m.aberta = !m.ilha || abertas.includes(m.ilha);
+                m.mortes = radarMortes(m.id);
+                return m;
+            });
+        });
+        bloco('party', () => {
+            const roster = Array.isArray(ESTADO_WS.rosterFull) && ESTADO_WS.rosterFull.length ? ESTADO_WS.rosterFull : rosterEquip();
+            if (!Array.isArray(roster)) return;
+            const sk = ESTADO_WS.sk || {};
+            f.party = roster.filter(r => r && r.vocation).map(r => {
+                const s = r.skills || {}, t = sk[r.vocation] || {}, eq = {};
+                for (const [slot, p] of Object.entries(r.equipment || {})) {
+                    const k = TR_SLOT_JOGO[slot] || slot;
+                    if (TR_SLOTS.includes(k) && p && p.name) eq[k] = trPecaFoto(p);
+                }
+                // munição não fica no corpo: é a do battle config (o jogo gasta da mochila). Sem ela, o slot fica vazio de verdade.
+                const bc = ESTADO_WS.battleConfigs && ESTADO_WS.battleConfigs[r.vocation];
+                const ammo = bc && bc.ammo ? (typeof bc.ammo === 'object' ? bc.ammo.name : bc.ammo) : null;
+                if (!eq.ammo && ammo) eq.ammo = { nome: String(ammo), refino: null, raridade: null, potencia: null, atributos: [], imbuSlots: 0, imbu: [], doConfig: true };
+                // skill TREINADA: a do frame (meleeT/distT/mlT) quando vista, senão a do roster (o roster já vem sem bônus)
+                const tr = (vT, vR) => (trNum(vT) > 0 ? Number(vT) : Number.isFinite(trNum(vR)) ? Number(vR) : null);
+                return { voc: r.vocation, nivel: trNum(r.level) || null, eq,
+                         skills: { melee: tr(t.meleeT, s.melee), dist: tr(t.distT, s.distance), ml: tr(t.mlT, s.magic), escudo: Number.isFinite(trNum(s.shielding)) ? Number(s.shielding) : null } };
+            });
+        });
+        bloco('legado', () => {
+            if (ESTADO_WS.legado && ESTADO_WS.legado.ativo === false) return; // o jogo disse que o Legado não está ativo
+            const lg = TR_BASE.legado, out = {};
+            const bonus = (n) => (n <= 0 ? 0 : lg.bonus[n - 1] != null ? lg.bonus[n - 1] : n * (n + 3) / 2); // sem teto: n(n+3)/2 (wiki/legado)
+            for (const m of f.party) {
+                const ch = lg.skill[m.voc], s = trNum(m.skills && m.skills[ch]);
+                if (!ch || !Number.isFinite(s)) continue;
+                const ini = ch === 'ml' ? lg.mlInicio : lg.skillInicio, marco = s >= ini ? Math.floor((s - ini) / lg.passo) + 1 : 0, prox = ini + marco * lg.passo;
+                out[m.voc] = { skill: s, marcoAtual: marco, proxMarco: prox, falta: prox - s, bonusAtual: bonus(marco), bonusProx: bonus(marco + 1),
+                               ativo: ESTADO_WS.legado ? !!ESTADO_WS.legado.ativo : null };
+            }
+            f.legado = Object.keys(out).length ? out : null;
+        });
+        bloco('prey', () => {
+            const p = PROG.prey, meta = PROG.meta || {};
+            if (!p) return;
+            const o = { buffs: {}, wildcards: p.wildcards };
+            if (p.cacada && p.cacada.huntId != null) Object.assign(o, { huntId: Number(p.cacada.huntId), huntTitle: p.cacada.titulo, huntLocked: !!p.cacada.locked, huntMsLeft: p.cacada.msLeft });
+            else if ('preyHunt' in meta && meta.preyHunt === null) Object.assign(o, { huntId: null, semCacada: true });
+            for (const [v, b] of Object.entries(p.buffs || {})) if (b) o.buffs[v] = { tipo: b.tipo, tier: b.tier || 0, locked: !!b.locked, msLeft: b.msLeft, gratis: !!b.gratis };
+            f.prey = o;
+        });
+        bloco('ampulhetas', () => {
+            const a = x.ampulheta;
+            if (!a) return;
+            const reset = a.resetEm > 1e12 ? a.resetEm : a.resetEm > 0 ? a.t + a.resetEm : null, virou = reset != null && agora >= reset;
+            const o = {};
+            for (const [v, z] of Object.entries(a.vocacoes)) {
+                if (z && typeof z === 'object') o[v] = { usadasH: virou ? 0 : Math.round((trNum(z.hojeMs) || 0) / TR_H * 100) / 100, treinando: !!z.treinando, temPersonagem: z.temPersonagem !== false };
+            }
+            f.ampulhetas = o;
+        });
+        bloco('selo', () => {
+            const s = x.selo;
+            if (!s || s.ativo === false || !f.hunt) return;
+            const e = (s.selos || []).find(z => z && trMesmoId(z.huntId, f.hunt.id));
+            const ab = e && Array.isArray(e.pactos) ? e.pactos.filter(p => p && /abund/i.test(String(p.buff || ''))) : [];
+            f.selo = { ativo: !!(e && e.ligado), pausa: e ? e.pausa || null : null, abundante: ab.length ? Math.max(...ab.map(p => trNum(p.tier) || 0)) || null : null, huntId: f.hunt.id };
+        });
+        bloco('mortes', () => {
+            const rm = ler('radar_mortes', {}) || {}, out = [], desde = agora - 30 * TR_DIA;
+            for (const [id, z] of Object.entries(rm)) {
+                if (!z || typeof z !== 'object') continue;
+                const hunt = (huntDe(id) || {}).title || null, huntId = trNum(id);
+                const laudos = (Array.isArray(z.laudos) ? z.laudos : []).filter(l => l && l.tipo === 'morte' && trNum(l.t) >= desde);
+                for (const l of laudos) out.push({ t: Number(l.t), hunt, huntId, voc: VOCS.includes(l.voc) ? l.voc : null, fonte: 'autópsia' });
+                // o `ended` com motivo de morte conta em z.n/z.t; sem autópsia perto desse t, vira 1 entrada sem vocação
+                if (Number(z.n) > 0 && trNum(z.t) >= desde && !laudos.some(l => Math.abs(Number(l.t) - z.t) <= 60000)) out.push({ t: Number(z.t), hunt, huntId, voc: null, fonte: 'fim da caçada' });
+            }
+            const idAgora = ESTADO_WS.huntId;
+            for (const m of (RAZAO && RAZAO.mortes) || []) {
+                if (idAgora == null || !m || !VOCS.includes(m.voc) || out.some(o => o.voc === m.voc && Math.abs(o.t - m.t) < 5000)) continue;
+                out.push({ t: m.t, hunt: (huntDe(idAgora) || {}).title || null, huntId: Number(idAgora), voc: m.voc, fonte: 'agora' });
+            }
+            f.mortes = out.sort((p, q) => p.t - q.t);
+        });
+        bloco('sessoes', () => {
+            const mult = xpMultiplicador();
+            f.sessoes = (sessoes() || []).filter(s => s && s.dur > 0).slice(-60).map(s => {
+                const rawOk = trNum(s.expRawH) > 0, raw = rawOk ? Number(s.expRawH) : trNum(s.expH) > 0 && mult > 0 ? Math.round(s.expH / mult) : null;
+                const ini = trNum(s.inicio) || 0, fim = ini + s.dur * 1000, huntId = s.huntId != null ? Number(s.huntId) : null;
+                return { hunt: s.hunt || null, huntId, t: ini || null, durMin: Math.round(s.dur / 6) / 10, xpH: raw, xpAprox: !rawOk && raw != null,
+                         ouroH: Number.isFinite(trNum(s.ouroH)) ? Number(s.ouroH) : null, abatesH: trNum(s.abatesH) || null,
+                         morte: f.mortes.some(m => trMesmoId(m.huntId, huntId) && m.t >= ini - 60000 && m.t <= fim + 120000) };
+            });
+        });
+        bloco('checklist', () => { if (EQUIP.res && EQUIP.res.porVoc) f.checklist = mlChecklist(EQUIP.res.porVoc, EQUIP.ctx); });
+        bloco('bestiario', () => {
+            const cont = pgMesclarBestiario(ler('prog_bestiario', {}) || {}, PROG.best);
+            f.bestiario = pgLinhasBestiario(hs, cont, pgMedidos(), f.nivel).map(l => {
+                const id = l.hunt.id, m = f.mapas.find(z => trMesmoId(z.id, id));
+                const aqui = f.hunt && trMesmoId(f.hunt.id, id) && f.medidoAtual && f.medidoAtual.xpH > 0;
+                return { huntId: id, title: l.hunt.title, bonus: l.e.bonus, ganho: l.e.ganho, falta: l.e.falta,
+                         horas: l.horas != null ? Math.round(l.horas * 10) / 10 : null, xpH: aqui ? f.medidoAtual.xpH : m ? m.xpH : null, abatesH: l.abatesH ? Math.round(l.abatesH) : null };
+            });
+        });
+        bloco('chaves', () => {
+            const c = PROG.chaves;
+            if (!c) return;
+            const elites = Object.entries(c.chaves || {}).filter(([, q]) => q > 0).map(([k, q]) => {
+                const b = (CAT.bosses || []).find(z => z && z.kind === 'mini' && trNome(z.keyItem) === trNome(k));
+                return { nome: b ? b.name : k, chave: k, qtd: q };
+            });
+            f.chaves = { usadas: trNum(c.usadas) || 0, max: trNum(c.max) > 0 ? Number(c.max) : null, elites };
+        });
+        bloco('deposito', () => {
+            const dep = {}, soma = (n, q) => { const k = trNome(n), v = trNum(q); if (k && v > 0) dep[k] = (dep[k] || 0) + v; };
+            const d0 = ESTADO_WS.depotReal || (ESTADO_WS.depot && !ESTADO_WS.depot.lembrado ? ESTADO_WS.depot : null);
+            for (const e of (d0 && Array.isArray(d0.entries) ? d0.entries : [])) if (e) soma(e.itemName || e.name, e.count != null ? e.count : 1);
+            for (const [n, q] of Object.entries(MK.bag || {})) soma(n, q);
+            f.deposito = dep;
+            f.depositoLido = !!d0; // false = só a mochila: o depósito não foi lido nesta sessão (na caçada o jogo não manda)
+        });
+        bloco('invasao', () => { if (x.invasao) f.invasao = { inscrito: x.invasao.inscrito, proxima: x.invasao.proxima }; });
+        bloco('forja', () => {
+            const fb = TR_BASE.forja, ate = fb.refinoSeguroAte, abaixo4 = [];
+            // preço de cada gema hoje: o da última leitura da Forja (lastro + fragmento do Mercado) ou criar + 100 fragmentos (wiki/estimado)
+            const cg = FJ.custos || fjCustoGemas(null, MK.catalogo || null, null), g = (k) => (cg[k] && cg[k].custo > 0 ? cg[k].custo : FORJA_GEMA_OURO[k]);
+            for (const m of f.party) {
+                for (const slot of TR_SLOTS) {
+                    const p = m.eq[slot];
+                    if (!p || p.refino == null || p.refino >= ate) continue;
+                    let custo = null;
+                    try { const t = pgRefino(p.refino, ate, 'melhor').total; custo = Math.round(t.T1 * g('refino') + t.T2 * g('refino_maior') + t.G * g('garantia')); } catch { custo = null; }
+                    abaixo4.push({ voc: m.voc, slot, nome: p.nome, refino: p.refino, custo: custo > 0 ? custo : null });
+                }
+            }
+            const dep = ESTADO_WS.depotReal && Array.isArray(ESTADO_WS.depotReal.entries) ? ESTADO_WS.depotReal.entries : ((lembrarDepot() || {}).entries || []);
+            const bases = [];
+            for (const e of dep.concat(Array.isArray(MK.bagInst) ? MK.bagInst : [])) {
+                if (!e || !e.forja || e.forja.potenciaBase == null) continue;
+                const pot = potenciaTotal(e);
+                if (pot >= fb.potBase) bases.push({ nome: String(e.itemName || e.name), potencia: pot });
+            }
+            f.forja = { idadeH: FJ.t > 0 ? Math.round((agora - FJ.t) / TR_H * 10) / 10 : null, basesParadas: bases.sort((p, q) => q.potencia - p.potencia).slice(0, 20) };
+            if (f.party.length) f.forja.abaixo4 = abaixo4; // sem party lida não afirma "tudo em +4"
+        });
+        bloco('topo', () => {
+            const tp = lerComum('tr_topo', null);
+            if (!tp || typeof tp !== 'object') return;
+            const eu = x.conta && x.conta.nome ? x.conta.nome : ESTADO_WS.conta && ESTADO_WS.conta.nome;
+            // a leitura é da gaveta comum: de outra conta (ou de outra faixa de nível) não vale como fresca
+            const outra = (tp.conta && eu && trNome(tp.conta) !== trNome(eu)) || (Number.isFinite(trNum(tp.nivel)) && f.nivel && Math.abs(tp.nivel - f.nivel) > 30);
+            f.topo = Object.assign({}, tp, { idadeH: !outra && tp.t > 0 ? Math.round((agora - tp.t) / TR_H * 10) / 10 : null, pos: outra ? null : tp.pos });
+        });
+        bloco('precos', () => {
+            if (!MK.catalogo) return;
+            const p = {};
+            for (const [k, v] of Object.entries(MK.catalogo)) { const n = trNum(v && v.minSell); if (n > 0) p[k] = n; }
+            f.precos = p;
+        });
+        bloco('ouroLivre', () => {
+            if (!Number.isFinite(f.ouro)) return;
+            const trav = Number.isFinite(f.ouroTravado) ? f.ouroTravado : 0;
+            // o gasto de suprimento sai primeiro do ouro travado (wiki /ouro-e-ouro-travado): só a parte que ele não cobre sai do normal
+            const gasto3 = f.emHunt && f.medidoAtual && f.medidoAtual.min >= 1 ? 3 * Math.max(0, f.medidoAtual.gastoH || 0) : 0;
+            const v = f.ouro - trav - Math.max(0, gasto3 - trav) - (f.bencaos && f.bencaos.custoFaltam > 0 ? f.bencaos.custoFaltam : 0);
+            f.ouroLivre = Number.isFinite(v) ? Math.round(v) : null;
+        });
+        return f;
+    }
+    /* @@TREINADOR-FIM */
     /* @@ARENA-INICIO — aba Sobrevivência ☠ (2.57.0, dono 26/11: "colocar na nossa automação para fazer automaticamente").
      * O robô lê o estado da simulação do cliente (o mesmo que o jogo desenha) e aperta as setas e as teclas 1-2-3 como o jogador:
      * nada novo vai pelo socket — o próprio cliente manda run_keys. Só roda com o dono ligando (como o Auto Hunt).
@@ -21102,7 +21486,9 @@
         // v2.29.0 — Pechinchas (modelo e o estado; comprar NÃO fica exposto)
         pchItensVigiaveis, pchVigiados, pchCandidato, pchLivro, pchAvaliar, get PCH() { return PCH; },
         // v2.17.0 — Invasão (leituras e o plano; o salvar só pelo botão)
-        invPlanoHoje, invPosicoes, invMontarPreset, invResumoReplay, invTemplateDoReplay, invAplicarTemplate, invModelos, get INV() { return INV; }
+        invPlanoHoje, invPosicoes, invMontarPreset, invResumoReplay, invTemplateDoReplay, invAplicarTemplate, invModelos, get INV() { return INV; },
+        // 2.67.0 — treinador (foto e especialistas: só leitura)
+        trFoto, trRodar, TR_BASE, get TR() { return TR; }
     }; }
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar);
