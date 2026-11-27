@@ -6,7 +6,7 @@ const i = src.indexOf('/* @@TREINADOR-PURO-INICIO'), f = src.indexOf('/* @@TREIN
 assert(i > 0 && f > i, 'trecho @@TREINADOR-PURO não encontrado');
 const T = new Function(src.slice(i, f) + '\nreturn { TR_BASE, TR_AGENTES, trConselho, trOrdenar, trRodar, trFotoVazia, trCacada, trAgenteUpar, trAgenteMult, trAgenteLegado, '
     + 'trMesmoId, trQtd, trLimitadoPorDano, trDanoParaXp, trTipoPrey, trXpAtual, trRecDe, trMortesRecentes, trAgenteTopo, trAgenteErros, trXpPerdidaMorte, trAgenteBoss, trEventosMorte, trImpactoMorte, '
-    + 'trAgenteBestiario };')();
+    + 'trAgenteBestiario, trAgenteItens };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 // agentes falsos: troca os de verdade pelos falsos, roda e devolve os de verdade sempre
@@ -926,6 +926,43 @@ t('bestiário: no máximo 2 conselhos (os de maior impacto) + o ok do mapa atual
 t('bestiário: foto vazia → ok; registrado', () => {
     assert.deepStrictEqual(best(T.trFotoVazia()).map(c => c.estado), ['ok']);
     assert(T.TR_AGENTES.some(a => a.id === 'best' && a.rodar === T.trAgenteBestiario && a.icone === '☰'));
+});
+
+// ── Caçar itens (⌕)
+const fItens = (o) => foto(Object.assign({ nivel: 275, hunt: huntSN(), ilhas: [{ id: 'issavi', aberta: true }, { nome: 'Marapur', aberta: false }] }, o || {}));
+const itens = (f) => T.trAgenteItens(f, T.TR_BASE);
+t('itens: Marapur com 4 Conch no depósito e preço 300 mil → custo 10 M + 6 × 300 mil, comprar-mercado', () => {
+    const cs = itens(fItens({ deposito: { 'spectral conch': 4 }, precos: { 'Spectral Conch': 300000 } }));
+    assert.strictEqual(cs.length, 1); const c = cs[0];
+    assert.strictEqual(c.id, 'itens:ilha-marapur'); assert.strictEqual(c.custo, 10e6 + 6 * 300000); assert.strictEqual(c.impacto, 5); assert.strictEqual(c.confianca, 'estimado');
+    assert.strictEqual(c.titulo, 'Abrir Marapur: faltam 10 M de ouro + 6 Spectral Conch');
+    assert.deepStrictEqual(c.numeros.materiais.map(m => [m.nome, m.falta, m.preco]), [['Spectral Conch', 6, 300000]]);
+    assert.strictEqual(c.numeros.ouro, 10e6);
+    assert.strictEqual(c.acao.tipo, 'comprar-mercado'); assert.deepStrictEqual(c.acao.itens, [{ nome: 'Spectral Conch', qtd: 6, preco: 300000 }]);
+    assert(/Comprar 6 Spectral Conch/.test(c.porque) && /Seacrest Grounds/.test(c.porque), c.porque);
+});
+t('itens: sem preço → "Caçar <material>: onde", custo só o ouro, sem ação', () => {
+    const c = itens(fItens({ deposito: { 'Spectral Conch': 4 } }))[0];
+    assert.strictEqual(c.custo, 10e6); assert.strictEqual(c.acao, null); assert.strictEqual(c.numeros.materiais[0].preco, null);
+    assert(/Caçar Spectral Conch: Elite Entombed Wraithlord/.test(c.porque), c.porque);
+});
+t('itens: material já no depósito → abrir-silas', () => {
+    const c = itens(fItens({ deposito: { 'Spectral Conch': 12 } }))[0];
+    assert.deepStrictEqual(c.acao && [c.acao.tipo, c.acao.ilha], ['abrir-silas', 'marapur']); assert.deepStrictEqual(c.numeros.materiais, []);
+    assert.strictEqual(c.titulo, 'Abrir Marapur: 10 M de ouro no Silas');
+});
+t('itens: escolhe a ilha fechada de menor custo (Issavi 10 M × Marapur 11,8 M)', () => {
+    const cs = itens(fItens({ ilhas: [{ id: 'issavi', aberta: false }, { id: 'marapur', aberta: false }], deposito: { 'spectral conch': 4 }, precos: { 'spectral conch': 300000 } }));
+    assert.deepStrictEqual(cs.map(c => c.id), ['itens:ilha-issavi']); assert.strictEqual(cs[0].acao.tipo, 'abrir-silas');
+});
+t('itens: ilha cujas caçadas passam o nível + 20 (ou não passam a de agora) → ignorada', () => {
+    const cs = itens(fItens({ nivel: 238 })); // Seacrest 290 > 258; Temple of the Moon Goddess 240 ≤ Rec 250 de agora
+    assert.deepStrictEqual(cs.map(c => [c.estado, c.titulo]), [['ok', 'Nenhuma ilha a abrir no seu nível agora']]);
+});
+t('itens: tudo aberto → ok; foto vazia → ok sem afirmar; registrado', () => {
+    assert.deepStrictEqual(itens(fItens({ ilhas: [{ id: 'marapur', aberta: true }] })).map(c => c.estado), ['ok']);
+    assert.deepStrictEqual(itens(T.trFotoVazia()).map(c => [c.estado, c.titulo]), [['ok', 'Nada a apontar com os dados lidos']]);
+    assert(T.TR_AGENTES.some(a => a.id === 'itens' && a.rodar === T.trAgenteItens && a.icone === '⌕'));
 });
 
 process.on('exit', () => { if (!process.exitCode) console.log(`\n${n} testes ok`); });

@@ -12624,6 +12624,44 @@
         return out;
     }
     TR_AGENTES.push({ id: 'best', nome: 'Bestiário', icone: '☰', rodar: trAgenteBestiario });
+
+    // ── Especialista 8: Caçar itens (⌕). A PRÓXIMA ilha a abrir: fechada na foto (trIlhaFechada) e com caçada (base.cacadasTopo) de
+    //    Rec ≤ nível + 20 e acima do Rec da caçada de agora; entre as que servem, a de menor custo (ouro + material com preço).
+    //    Material: falta = qtd − depósito; com preço → comprar; sem preço → caçar (o "onde" vem de base.ilhas[].materiais).
+    //    impacto 5 ESTIMADO (o "Onde upar" diz quanto a caçada da ilha rende); custo = ouro da ilha + só a parte com preço.
+    function trAgenteItens(foto, base) {
+        const b = base || TR_BASE, nivel = trNum(foto.nivel), recAtual = trRecDe(foto.hunt, b) || 0;
+        const cacadas = Object.entries(b.cacadasTopo || {}), opcoes = [];
+        for (const il of Number.isFinite(nivel) ? b.ilhas || [] : []) {
+            if (!trIlhaFechada(foto, b, il.id)) continue;
+            const abre = cacadas.filter(([, c]) => c.ilha === il.id && c.rec <= nivel + 20 && c.rec > recAtual).sort((x, y) => x[1].rec - y[1].rec);
+            if (!abre.length) continue;
+            const mats = (il.materiais || []).map(m => {
+                const tem = trPorNome(foto.deposito, m.nome) || 0, preco = trPorNome(foto.precos, m.nome, true);
+                return { nome: m.nome, falta: Math.max(0, m.qtd - tem), preco: preco > 0 ? preco : null, onde: m.onde };
+            }).filter(m => m.falta > 0);
+            const custo = (il.ouro || 0) + mats.reduce((s, m) => s + (m.preco ? m.falta * m.preco : 0), 0);
+            opcoes.push({ il, abre, mats, custo, semPreco: mats.filter(m => !m.preco).length });
+        }
+        const o = opcoes.sort((x, y) => (x.custo - y.custo) || (x.semPreco - y.semPreco))[0];
+        if (!o) {
+            const leu = Number.isFinite(nivel) && Array.isArray(foto.ilhas) && foto.ilhas.length > 0;
+            return [trConselho('itens', 'ok', { titulo: leu ? 'Nenhuma ilha a abrir no seu nível agora' : 'Nada a apontar com os dados lidos', estado: 'ok',
+                porque: leu ? `Nenhuma ilha fechada tem caçada até o nível ${nivel + 20} acima da de agora.` : 'Sem o nível ou a lista de ilhas abertas para conferir.' })];
+        }
+        const { il, abre, mats, custo } = o, ouro = il.ouro || 0;
+        const partes = [ouro ? `${trQtd(ouro)} de ouro` : null, ...mats.map(m => `${m.falta} ${m.nome}`)].filter(Boolean);
+        const passos = mats.map(m => (m.preco ? `Comprar ${m.falta} ${m.nome} (~${trQtd(m.falta * m.preco)})` : `Caçar ${m.nome}: ${m.onde}`));
+        return [trConselho('itens', 'ilha-' + il.id, { impacto: 5, custo,
+            titulo: trCorta(mats.length ? `Abrir ${il.nome}: faltam ${partes.join(' + ')}` : `Abrir ${il.nome}: ${partes.join(' + ') || 'entrega'} no Silas`),
+            porque: `${il.nome} abre ${trLista(abre.map(([t, c]) => `${t} (Rec ${c.rec})`))}` + (recAtual ? `, acima do Rec ${recAtual} de agora` : '') + '. '
+                + (passos.length ? passos.join('; ') + '. ' : 'Os materiais já estão com você. ')
+                + 'A entrega é no Silas, na cidade (conta mochila + depósito). O "Onde upar" diz quanto a caçada rende.',
+            numeros: { ilha: il.id, ouro, materiais: mats, abre: abre.map(([t]) => t) },
+            acao: !mats.length ? { tipo: 'abrir-silas', ilha: il.id, rotulo: 'Silas' }
+                : mats.every(m => m.preco) ? { tipo: 'comprar-mercado', itens: mats.map(m => ({ nome: m.nome, qtd: m.falta, preco: m.preco })), rotulo: 'Mercado' } : null })];
+    }
+    TR_AGENTES.push({ id: 'itens', nome: 'Caçar itens', icone: '⌕', rodar: trAgenteItens });
     /* @@TREINADOR-PURO-FIM */
     /* @@ARENA-PURO-INICIO — Sobrevivência (2.57.0): decisões do robô, puras (o tempo é st.tempoMs, sem DOM).
      * st = estado da simulação do cliente (ref.current.st do componente da partida). O mesmo código rodou no simulador
