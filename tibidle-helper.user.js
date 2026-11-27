@@ -11872,17 +11872,39 @@
     // [contrato] Escala do chefe: nota = impacto × peso da confiança × (0,3 se falta ouro); conselho com estado 'erro' tem nota MÍNIMA 4 (piso),
     // para um erro de fato (slot vazio, ouro acabando) não ficar atrás de palpite. Fatos da foto usam confiança 'medido'.
     const TR_PISO_ERRO = 4;
+    // [contrato] Custo efetivo = desembolso único + 3 × numeros.custoH (o mesmo horizonte de 3 h do ouro livre). NaN conta 0; Infinity fica.
+    function trCustoEfetivo(c) {
+        const custo = Number(c && c.custo), h = Number(c && c.numeros && c.numeros.custoH);
+        return (custo > 0 ? custo : 0) + (h > 0 ? 3 * h : 0);
+    }
+    // [contrato] Dedupe: conselhos com o mesmo numeros.dedupe (ex. 'ilha:issavi') viram 1 só — fica o de maior impacto × peso, que herda
+    // a ação e o custo (e o custoH) do outro quando não tem. `ids` guarda todos os ids juntados (o plano do Dinheiro cita qualquer um).
+    // semOuro = custo efetivo > 0 e (> ouro livre, ou ficou fora de ouro:plano.numeros.escolhidos).
     function trOrdenar(conselhos, foto) {
         const livre = foto && Number.isFinite(foto.ouroLivre) ? foto.ouroLivre : Infinity;
-        const out = [];
+        const validos = [], grupos = new Map();
         for (const c of conselhos || []) {
             if (!c || typeof c !== 'object' || c.estado === 'ok') continue;
             const imp = Number(c.impacto);
             if (!Number.isFinite(imp) || imp <= 0) continue;
-            const custo = Number(c.custo) || 0, semOuro = custo > livre;
-            const nota = imp * trPeso(c.confianca) * (semOuro ? 0.3 : 1);
-            out.push(Object.assign({}, c, { nota: c.estado === 'erro' ? Math.max(TR_PISO_ERRO, nota) : nota, semOuro }));
+            const k = c.numeros && typeof c.numeros.dedupe === 'string' ? c.numeros.dedupe : null;
+            if (!k) { validos.push(Object.assign({}, c, { ids: [c.id] })); continue; }
+            const g = grupos.get(k);
+            if (!g) { const x = Object.assign({}, c, { ids: [c.id] }); grupos.set(k, x); validos.push(x); continue; }
+            const [vence, perde] = imp * trPeso(c.confianca) > Number(g.impacto) * trPeso(g.confianca) ? [Object.assign({}, c), g] : [g, c];
+            if (!vence.acao && perde.acao) vence.acao = perde.acao;
+            if (!(Number(vence.custo) > 0) && Number(perde.custo) > 0) vence.custo = perde.custo;
+            if (!(vence.numeros && Number(vence.numeros.custoH) > 0) && perde.numeros && Number(perde.numeros.custoH) > 0) vence.numeros = Object.assign({}, vence.numeros, { custoH: perde.numeros.custoH });
+            vence.ids = g.ids.concat(c.id);
+            if (vence !== g) { validos[validos.indexOf(g)] = vence; grupos.set(k, vence); }
         }
+        const plano = (conselhos || []).find(c => c && c.id === 'ouro:plano' && c.numeros && Array.isArray(c.numeros.escolhidos));
+        const escolhidos = plano ? new Set(plano.numeros.escolhidos) : null;
+        const out = validos.map(c => {
+            const ce = trCustoEfetivo(c), semOuro = ce > 0 && (ce > livre || (!!escolhidos && !c.ids.some(id => escolhidos.has(id))));
+            const nota = Number(c.impacto) * trPeso(c.confianca) * (semOuro ? 0.3 : 1);
+            return Object.assign(c, { nota: c.estado === 'erro' ? Math.max(TR_PISO_ERRO, nota) : nota, semOuro });
+        });
         return out.sort((a, b) => b.nota - a.nota);
     }
     function trRodar(foto, base) {

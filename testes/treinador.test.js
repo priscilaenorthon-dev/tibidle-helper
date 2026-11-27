@@ -6,7 +6,7 @@ const i = src.indexOf('/* @@TREINADOR-PURO-INICIO'), f = src.indexOf('/* @@TREIN
 assert(i > 0 && f > i, 'trecho @@TREINADOR-PURO não encontrado');
 const T = new Function(src.slice(i, f) + '\nreturn { TR_BASE, TR_AGENTES, trConselho, trOrdenar, trRodar, trFotoVazia, trCacada, trAgenteUpar, trAgenteMult, trAgenteLegado, '
     + 'trMesmoId, trQtd, trLimitadoPorDano, trDanoParaXp, trTipoPrey, trXpAtual, trRecDe, trMortesRecentes, trAgenteTopo, trAgenteErros, trXpPerdidaMorte, trAgenteBoss, trEventosMorte, trImpactoMorte, '
-    + 'trAgenteBestiario, trAgenteItens, trAgenteForja, trAgenteDinheiro, trCortaSufixo };')();
+    + 'trAgenteBestiario, trAgenteItens, trAgenteForja, trAgenteDinheiro, trCortaSufixo, trParty, trVelho, trEhMago, trDanoDeUm, trCustoEfetivo };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 // agentes falsos: troca os de verdade pelos falsos, roda e devolve os de verdade sempre
@@ -1068,7 +1068,8 @@ t('dinheiro: fase 2 recebe os conselhos da fase 1 pelo trRodar e não passa à f
     const r = T.trRodar(foto({ ouroLivre: 1e6 }), T.TR_BASE);
     const cartao = r.cartoes.find(c => c.id === 'ouro');
     assert(cartao.conselhos.some(c => c.id === 'ouro:plano' && c.numeros.escolhidos.length === 2));
-    assert.deepStrictEqual(r.passos.map(c => c.id), ['a:c900', 'a:c400', 'a:c500']);
+    // o de 900 mil ficou fora do plano: semOuro (nota × 0,3) e cai para o fim
+    assert.deepStrictEqual(r.passos.map(c => [c.id, c.semOuro]), [['a:c400', false], ['a:c500', false], ['a:c900', true]]);
 }));
 t('dinheiro: registrado como fase 2', () => {
     assert(T.TR_AGENTES.some(a => a.id === 'ouro' && a.rodar === T.trAgenteDinheiro && a.icone === '$' && a.fase === 2));
@@ -1119,6 +1120,40 @@ t('forja: anel +2 (slot fora da conta) com o resto em +4 → o ok não diz "Peç
     assert(!/Peças vestidas já em/.test(so[0].titulo) && /anel/.test(so[0].porque), so[0].titulo + ' | ' + so[0].porque);
     delete p2[0].eq.ring;
     assert.strictEqual(forja(fForja({ party: p2, forja: null })).find(c => c.id === 'forja:ok').titulo, 'Peças vestidas já em +4');
+});
+
+t('ajudantes: trCortaSufixo com sufixo ≥ 70 não quebra; trParty, trVelho, trEhMago, trDanoDeUm', () => {
+    const suf = ' ' + 'x'.repeat(75);
+    assert(T.trCortaSufixo('abc', suf).endsWith(suf));
+    assert.deepStrictEqual(T.trParty({ party: [null, { voc: 'KNIGHT' }, {}] }).map(m => m.voc), ['KNIGHT']); assert.deepStrictEqual(T.trParty({}), []);
+    assert(T.trVelho(undefined) && T.trVelho(25) && !T.trVelho(24) && !T.trVelho('3') && T.trVelho(7, 6));
+    assert(T.trEhMago('DRUID') && T.trEhMago('SORCERER') && !T.trEhMago('KNIGHT'));
+    assert(Math.abs(T.trDanoDeUm(8, foto(), T.TR_BASE) - 8 / 4 * 0.7) < 1e-12); // sem medida: ÷ 4 colunas × 0,7
+});
+// ── Chefe: custo efetivo (custo + 3 × custoH), dedupe e quem não coube no plano do Dinheiro
+t('trCustoEfetivo = custo + 3 × numeros.custoH; NaN vira 0', () => {
+    assert.strictEqual(T.trCustoEfetivo({ custo: 1000, numeros: { custoH: 500 } }), 2500);
+    assert.strictEqual(T.trCustoEfetivo({ custo: NaN, numeros: null }), 0); assert.strictEqual(T.trCustoEfetivo({ custo: Infinity }), Infinity);
+});
+t('trOrdenar: ouro livre negativo não penaliza conselho grátis; custoH conta no horizonte de 3 h', () => {
+    const r = T.trOrdenar([{ id: 'gratis', impacto: 5, confianca: 'medido', custo: 0 }, { id: 'h', impacto: 5, confianca: 'medido', custo: 100, numeros: { custoH: 400 } }], { ouroLivre: -100000 });
+    assert.deepStrictEqual(r.map(c => [c.id, c.semOuro, c.nota]), [['gratis', false, 5], ['h', true, 1.5]]);
+    const s = T.trOrdenar([{ id: 'h', impacto: 5, confianca: 'medido', custo: 100, numeros: { custoH: 400 } }], { ouroLivre: 1200 }); // 100 + 1200 > 1200
+    assert.strictEqual(s[0].semOuro, true);
+});
+t('trOrdenar: numeros.dedupe junta os dois; fica o de maior nota e herda ação/custo do outro', () => {
+    const r = T.trOrdenar([
+        T.trConselho('upar', 'abrir-ilha', { titulo: 'Abrir Issavi para Salt Caves', impacto: 20, confianca: 'comunidade', numeros: { dedupe: 'ilha:issavi' } }),
+        T.trConselho('itens', 'ilha-issavi', { titulo: 'Abrir Issavi: 10 M de ouro no Silas', impacto: 5, custo: 10e6, numeros: { dedupe: 'ilha:issavi' }, acao: { tipo: 'abrir-silas', ilha: 'issavi' } }),
+        T.trConselho('x', 'y', { impacto: 1 })], { ouroLivre: 20e6 });
+    assert.deepStrictEqual(r.map(c => c.id), ['upar:abrir-ilha', 'x:y']);
+    assert.strictEqual(r[0].impacto, 20); assert.strictEqual(r[0].custo, 10e6); assert.strictEqual(r[0].acao.tipo, 'abrir-silas');
+});
+t('trOrdenar: com ouro:plano, quem tem custo e ficou fora dos escolhidos ganha semOuro', () => {
+    const cs = [T.trConselho('a', 'dentro', { impacto: 5, custo: 100, confianca: 'medido' }), T.trConselho('a', 'fora', { impacto: 5, custo: 200, confianca: 'medido' }),
+        T.trConselho('ouro', 'plano', { impacto: 0.5, numeros: { escolhidos: ['a:dentro'] } })];
+    const r = T.trOrdenar(cs, { ouroLivre: 250 });
+    assert.deepStrictEqual(r.map(c => [c.id, c.semOuro]), [['a:dentro', false], ['a:fora', true], ['ouro:plano', false]]);
 });
 
 process.on('exit', () => { if (!process.exitCode) console.log(`\n${n} testes ok`); });
