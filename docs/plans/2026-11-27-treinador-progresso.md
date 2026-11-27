@@ -65,6 +65,30 @@ sem dependências), eslint 10, Playwright para o teste ao vivo.
 >   `TR_SLOTS`/`trSlotPt`, `trMediana`, `trXpPerdidaMorte`, `trPerdaFracMorte`, `trEventosMorte`, `trImpactoMorte`, `trDuasMaos`, `trUsaMunicao`,
 >   `trCorta`, `trLista`.
 
+> **Atualização 27/11 (após o lote C, Tasks 10–13) — contrato da foto (Task 14) e da UI (Task 16):**
+> - [contrato] **Sessões**: `foto.sessoes[].durMin` = duração em MINUTOS (era `dur`). A foto converte o `dur` do helper (segundos) ÷ 60.
+>   O "XP caiu" do Erros só usa sessões com `durMin ≥ 5`.
+> - Erros: "(party inteira)" só quando UM evento tem as 4 vocações (eventos separados K+P e S+D listam as vocações).
+> - [contrato] **Bestiário**: `foto.bestiario = [{ huntId, title, bonus, ganho, falta, horas, xpH }]`, 1 linha por caçada (o próximo marco,
+>   de `pgLinhasBestiario`); `bonus` = nome de bônus do jogo (`magicLevel`, `attack`, `melee`, `distance`, `manaRegen`, `maxHealth`, `armor`,
+>   `shielding`…); `horas` = `falta ÷ abates/h medidos` ou `null` (linha ignorada); `xpH` = XP/h do mapa em `foto.mapas` ou `null`
+>   (entra como 'estimado', impacto ÷ 2). A linha do mapa atual é achada por `trMesmoId(huntId, hunt.id)`.
+> - [contrato] **Ilhas**: `foto.ilhas = [{ id | nome, aberta }]`; ilha ausente da lista = aberta (o "Caçar itens" não sugere abrir).
+>   O "onde" do material de ilha vem de `TR_BASE.ilhas[].materiais[].onde` (fonte única); `TR_BASE.materiais` segue para os bosses.
+>   `deposito`/`precos` por nome via `trPorNome` (preço > 0 conta; 0/ausente = sem preço → "Caçar").
+> - [contrato] **Forja**: `foto.forja = { abaixo4: [{ voc, slot, nome, refino, custo | null }], idadeH, basesParadas: [{ nome, potencia }] } | null`.
+>   `abaixo4` = só peças VESTIDAS (slot em `TR_SLOTS`; arma de mago pode vir, é pulada); quando existe, vence `party[].eq`.
+>   `idadeH` ausente = velho (pede `forja-ler`, como o topo). `party[].eq.weapon.ataque` = ataque da arma (sem ele, 50).
+>   `basesParadas` = peças do depósito/mochila com potência (o agente só avisa as ≥ `forja.potBase`).
+> - Ações novas para a UI: `abrir-silas { ilha }`, `comprar-mercado { itens: [{ nome, qtd, preco }] }`, `abrir-forja { voc, slot } | { item }`,
+>   `forja-ler`; o Bestiário usa `ir-mapa { huntId }`.
+> - Dinheiro (fase 2): ids `ouro:plano | juntar | nao-gaste | livre | ok`. Resumo vale 0,1 × soma dos impactos escolhidos.
+>   "Juntar para" → `falta = custo − sobra` (o que sobra depois dos escolhidos). No exemplo 400/500/900 mil com 1 M: sobram 100 mil e o de
+>   900 mil precisa de mais **800 mil** (os "100 mil" do enunciado eram a sobra, não a falta).
+> - Ajudantes novos: `TR_BONUS_PT`/`trBonusPt` (bônus do bestiário em português), `trHorasPt`, `TR_BONUS_IMPACTO`, `TR_REFINO_IMPACTO`.
+> - Atenção (Task 16): "Onde upar" (`upar:abrir-ilha`, impacto 5, sem ação) e "Caçar itens" (`itens:ilha-<id>`, impacto 5) podem apontar
+>   a MESMA ilha nos passos; o "Caçar itens" é o que tem custo e ação.
+
 ---
 
 ## Task 1: Descobrir o protocolo e os campos que faltam (pesquisa, sem código)
@@ -260,13 +284,13 @@ foto = {
   legado: { VOC: { skill, marcoAtual, proxMarco, falta, bonusAtual, bonusProx } } | null,
   prey: { buffs: { VOC: { tipo, tier, locked, msLeft, huntId } }, wildcards } | null,
   bencaos: { tem, total } | null, ampulhetas: { VOC: { usadasH } } | null, selo: { ativo, abundante } | null,
-  mortes: [{ t, hunt, voc }], sessoes: [{ hunt, huntId, dur, xpH, ouroH, morte }],
+  mortes: [{ t, hunt, voc }], sessoes: [{ hunt, huntId, durMin, xpH, ouroH, morte }],
   checklist: { VOC: [{ chave, ok, titulo, texto }] } | null,
   bestiario: [{ huntId, title, bonus, ganho, falta, horas, xpH }], chaves: { usadas, max, elites: [{ nome, qtd }] } | null,
   deposito: { nomeItem: qtd }, invasao: { inscrito, janela } | null,
-  forja: { abaixo4: [{ voc, slot, nome, refino, custo }], idadeH, proximo } | null,
+  forja: { abaixo4: [{ voc, slot, nome, refino, custo }], idadeH, proximo, basesParadas: [{ nome, potencia }] } | null,
   topo: { pos, total, top1, perto: [{ nivel, skills }], perfis: [{ nivel, voc: { VOC: { slot: nome } } }], idadeH } | null,
-  precos: { nomeItem: preço }, ilhas: [{ nome, aberta }]
+  precos: { nomeItem: preço }, ilhas: [{ id | nome, aberta }]
 }
 ```
 
