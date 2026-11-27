@@ -6,7 +6,7 @@ const i = src.indexOf('/* @@TREINADOR-PURO-INICIO'), f = src.indexOf('/* @@TREIN
 assert(i > 0 && f > i, 'trecho @@TREINADOR-PURO não encontrado');
 const T = new Function(src.slice(i, f) + '\nreturn { TR_BASE, TR_AGENTES, trConselho, trOrdenar, trRodar, trFotoVazia, trCacada, trAgenteUpar, trAgenteMult, trAgenteLegado, '
     + 'trMesmoId, trQtd, trLimitadoPorDano, trDanoParaXp, trTipoPrey, trXpAtual, trRecDe, trMortesRecentes, trAgenteTopo, trAgenteErros, trXpPerdidaMorte, trAgenteBoss, trEventosMorte, trImpactoMorte, '
-    + 'trAgenteBestiario, trAgenteItens, trAgenteForja, trAgenteDinheiro, trCortaSufixo, trParty, trVelho, trEhMago, trDanoDeUm, trCustoEfetivo, trResumirTopo, trOuroLivre, trMesclarMapas, trAnotar };')();
+    + 'trAgenteBestiario, trAgenteItens, trAgenteForja, trAgenteDinheiro, trCortaSufixo, trParty, trVelho, trEhMago, trDanoDeUm, trCustoEfetivo, trResumirTopo, trOuroLivre, trMesclarMapas, trAnotar, trFreioTopo, trPerfisDepois };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 // agentes falsos: troca os de verdade pelos falsos, roda e devolve os de verdade sempre
@@ -1474,5 +1474,29 @@ t('trAnotar: welcome de OUTRA conta zera o que era da anterior; mensagem estranh
 t('trFotoVazia: ouroTravado e depositoLido no formato canônico', () => {
     const fv = T.trFotoVazia();
     assert.strictEqual(fv.ouroTravado, null); assert.strictEqual(fv.depositoLido, false);
+});
+// ── Freio e perfis do topo (puros)
+t('trFreioTopo: sem leitura ou outra conta → tudo; < 6 h nada; 6–24 h só o leaderboard; > 24 h tudo', () => {
+    const h = 36e5, agora = 1.8e12;
+    assert.deepStrictEqual(T.trFreioTopo(null, agora, true), { lerLb: true, lerPerfis: true });
+    assert.deepStrictEqual(T.trFreioTopo({ t: agora - h, tPerfis: agora - h }, agora, false), { lerLb: true, lerPerfis: true });
+    assert.deepStrictEqual(T.trFreioTopo({ t: agora - h, tPerfis: agora - h }, agora, true), { lerLb: false, lerPerfis: false });
+    assert.deepStrictEqual(T.trFreioTopo({ t: agora - 7 * h, tPerfis: agora - 7 * h }, agora, true), { lerLb: true, lerPerfis: false });
+    assert.deepStrictEqual(T.trFreioTopo({ t: agora - 25 * h, tPerfis: agora - 25 * h }, agora, true), { lerLb: true, lerPerfis: true });
+});
+t('trFreioTopo: leitura sem perfil visível (tPerfisParcial) espera só 1 h — e reler perfis relê o leaderboard', () => {
+    const h = 36e5, agora = 1.8e12;
+    assert.deepStrictEqual(T.trFreioTopo({ t: agora - 0.5 * h, tPerfisParcial: agora - 0.5 * h }, agora, true), { lerLb: false, lerPerfis: false });
+    assert.deepStrictEqual(T.trFreioTopo({ t: agora - 2 * h, tPerfisParcial: agora - 2 * h }, agora, true), { lerLb: true, lerPerfis: true });
+    // perfis bons de 3 h + tentativa parcial depois: os bons valem 24 h
+    assert.deepStrictEqual(T.trFreioTopo({ t: agora - 2 * h, tPerfis: agora - 3 * h, tPerfisParcial: agora - 2 * h }, agora, true), { lerLb: false, lerPerfis: false });
+});
+t('trPerfisDepois: nada lido, ou parou sem visível → ficam os de antes (mesma conta) e marca parcial; senão valem os novos', () => {
+    const salvo = { perfis: [{ nivel: 300, voc: {} }], tPerfis: 100 }, novos = [{ name: 'A' }];
+    assert.deepStrictEqual(T.trPerfisDepois(salvo, true, { lidos: 0, visiveis: 0, parou: null, novos: [] }, 999), { perfis: salvo.perfis, tPerfis: 100, tPerfisParcial: 999 });
+    assert.deepStrictEqual(T.trPerfisDepois(salvo, true, { lidos: 3, visiveis: 0, parou: 'sem resposta', novos: [] }, 999), { perfis: salvo.perfis, tPerfis: 100, tPerfisParcial: 999 });
+    assert.deepStrictEqual(T.trPerfisDepois(salvo, false, { lidos: 0, visiveis: 0, parou: null, novos: [] }, 999), { perfis: [], tPerfis: null, tPerfisParcial: 999 });
+    assert.deepStrictEqual(T.trPerfisDepois(salvo, true, { lidos: 3, visiveis: 1, parou: 'sem resposta', novos }, 999), { perfis: novos, tPerfis: 999, tPerfisParcial: null });
+    assert.deepStrictEqual(T.trPerfisDepois(salvo, true, { lidos: 25, visiveis: 0, parou: null, novos: [] }, 999), { perfis: [], tPerfis: 999, tPerfisParcial: null });
 });
 process.on('exit', () => { if (!process.exitCode) console.log(`\n${n} testes ok`); });

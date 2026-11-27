@@ -13024,6 +13024,24 @@
         if (tipo === 'selo_state') x.selo = { ativo: d.ativo !== false, selos: Array.isArray(d.selos) ? trCopia(d.selos) : [], t: agora };
         return x;
     }
+    // Freio do topo (Task 15), por conta: leaderboard a cada 6 h; perfis a cada 24 h; leitura de perfis que não trouxe nenhum visível
+    // (tPerfisParcial) espera só 1 h. Perfil a reler obriga a reler o leaderboard (é dele que sai a faixa). Outra conta/faixa: tudo.
+    const TR_TOPO_LB_H = 6, TR_TOPO_PERFIS_H = 24, TR_TOPO_PARCIAL_H = 1;
+    function trFreioTopo(salvo, agora, mesmaConta) {
+        if (!salvo || typeof salvo !== 'object' || !mesmaConta) return { lerLb: true, lerPerfis: true };
+        const idade = (k) => (trNum(salvo[k]) > 0 ? (agora - Number(salvo[k])) / 36e5 : Infinity);
+        const lerPerfis = !(idade('tPerfis') < TR_TOPO_PERFIS_H) && !(idade('tPerfisParcial') < TR_TOPO_PARCIAL_H);
+        return { lerLb: lerPerfis || !(idade('t') < TR_TOPO_LB_H), lerPerfis };
+    }
+    // Perfis depois de uma leitura r = { lidos, visiveis, parou, novos }: nenhum lido, ou parou sem nenhum visível → ficam os de antes
+    // (mesma conta) e marca tPerfisParcial; senão os novos valem (tPerfis = agora).
+    function trPerfisDepois(salvo, mesmaConta, r, agora) {
+        const velho = mesmaConta && salvo && typeof salvo === 'object' ? salvo : null;
+        if (!(r && r.lidos > 0) || (r.parou && !(r.visiveis > 0))) {
+            return { perfis: velho && Array.isArray(velho.perfis) ? velho.perfis : [], tPerfis: velho && trNum(velho.tPerfis) > 0 ? Number(velho.tPerfis) : null, tPerfisParcial: agora };
+        }
+        return { perfis: Array.isArray(r.novos) ? r.novos : [], tPerfis: agora, tPerfisParcial: null };
+    }
     /* @@TREINADOR-PURO-FIM */
     /* @@ARENA-PURO-INICIO — Sobrevivência (2.57.0): decisões do robô, puras (o tempo é st.tempoMs, sem DOM).
      * st = estado da simulação do cliente (ref.current.st do componente da partida). O mesmo código rodou no simulador
@@ -20382,8 +20400,9 @@
      *   deposito ............. depot_state desta sessão (ESTADO_WS.depotReal) + mochila (MK.bag) · precos: MK.catalogo (minSell > 0)
      *   invasao .............. meta.invasao / invasion_update · forja: peças vestidas < +4 (gemas de pgRefino 'melhor' × preço da gema de
      *                          FJ.custos ou fjCustoGemas), idadeH de FJ.t, bases ≥ potBase do depósito/mochila
-     *   topo ................. lerComum('tr_topo') (trLerTopo) · ilhas: unlockedIslands × TR_BASE.ilhas */
-    const TR = { topo: { lendo: false, status: null }, esperas: [], avisados: new Set() };
+     *   topo ................. ler('tr_topo') — por conta (trLerTopo) · ilhas: unlockedIslands × TR_BASE.ilhas */
+    // topo: progresso 'k/n' a cada perfil e cancelar = true para o laço (a tela da Task 16 usa os dois)
+    const TR = { topo: { lendo: false, status: null, progresso: null, cancelar: false }, esperas: [], avisados: new Set() };
     const TR_H = 3600000, TR_DIA = 864e5;
     /* Uma linha em observarRecebido: guarda o que a foto precisa e o helper ainda não guardava (nada é enviado daqui). */
     function trObservar(o) {
@@ -20692,10 +20711,10 @@
             f.forja = forja;
         });
         bloco('topo', () => {
-            const tp = lerComum('tr_topo', null);
+            const tp = ler('tr_topo', null);
             if (!tp || typeof tp !== 'object') return;
             const eu = x.conta && x.conta.nome ? x.conta.nome : ESTADO_WS.conta && ESTADO_WS.conta.nome;
-            // a leitura é da gaveta comum: de outra conta (ou de outra faixa de nível) não vale como fresca
+            // gaveta da conta; mesmo assim, leitura de outro nome (gaveta trocada) ou de outra faixa de nível não vale como fresca
             const outra = (tp.conta && eu && trNome(tp.conta) !== trNome(eu)) || (Number.isFinite(trNum(tp.nivel)) && f.nivel && Math.abs(tp.nivel - f.nivel) > 30);
             f.topo = Object.assign({}, tp, { idadeH: !outra && tp.t > 0 ? Math.round((agora - tp.t) / TR_H * 10) / 10 : null, pos: outra ? null : tp.pos });
         });
@@ -20714,10 +20733,11 @@
     /* ── Topo do rank (Task 15): rede com freio. Só pelo botão do treinador (ação ler-topo), nunca no carregamento da página.
      *   1) GET /leaderboard (público) → posição, top 1 e as skills da faixa [nível, nível + 150];
      *   2) player_profile {name} pelo socket (consulta: external_query no próprio cliente) de até 25 nomes da faixa, 1 por segundo,
-     *      parando no 1º erro ou sem resposta em 5 s; só os perfis com equipamento à mostra entram.
-     *   Freio: < 6 h não relê nada; 6–24 h relê só o leaderboard (os perfis ficam); > 24 h (ou outra conta/faixa) relê tudo.
-     *   Guarda o resumo (trResumirTopo) em guardarComum('tr_topo') com t, conta, nivel e tPerfis. Devolve um texto curto para a tela. */
-    const TR_TOPO_MAX = 25, TR_TOPO_ESPERA_MS = 5000, TR_TOPO_PASSO_MS = 1000, TR_TOPO_LB_H = 6, TR_TOPO_TUDO_H = 24;
+     *      parando no 1º erro, sem resposta em 5 s ou com TR.topo.cancelar; só entram perfis com equipamento à mostra de verdade.
+     *   Freio (trFreioTopo, puro): leaderboard a cada 6 h, perfis a cada 24 h; leitura que não trouxe perfil visível espera 1 h e
+     *   mantém os perfis de antes (trPerfisDepois). Outra conta ou outra faixa de nível relê tudo.
+     *   Guarda o resumo (trResumirTopo) POR CONTA em guardar('tr_topo') com t, conta, nivel, tPerfis e tPerfisParcial. Devolve um texto curto. */
+    const TR_TOPO_MAX = 25, TR_TOPO_ESPERA_MS = 5000, TR_TOPO_PASSO_MS = 1000;
     function trEsperarPerfil(nome) {
         let e = null;
         const p = new Promise((res, rej) => {
@@ -20726,49 +20746,60 @@
         TR.esperas.push(e);
         return { p, cancelar: () => { clearTimeout(e.timer); TR.esperas = TR.esperas.filter(z => z !== e); } };
     }
+    // perfil com equipamento à mostra DE VERDADE: algum personagem com peça no corpo (equipmentVisible sozinho não basta)
+    const trPerfilVisivel = (r) => !!(r && r.equipmentVisible !== false && Array.isArray(r.characters)
+        && r.characters.some(c => c && c.equipment && typeof c.equipment === 'object' && Object.keys(c.equipment).length));
     async function trLerTopo(opc) {
         opc = opc || {};
         if (TR.topo.lendo) return 'já estou lendo o topo';
         const agora = Date.now(), x = ESTADO_WS.tr || {};
         const nome = (x.conta && x.conta.nome) || (ESTADO_WS.conta && ESTADO_WS.conta.nome) || null;
-        let nivel = null;
-        try { nivel = trFoto().nivel; } catch { nivel = null; }
+        const nv = nivelAtual(), nivel = nv > 1 ? nv : x.conta && x.conta.nivel > 0 ? x.conta.nivel : null; // nivelAtual cai em 1 sem leitura
         if (!(nivel > 0)) return 'sem o nível da conta: entre no jogo e tente de novo';
-        const salvo = lerComum('tr_topo', null);
-        // outra conta só quando os dois nomes existem e diferem: sem o nome (conta ou leitura), o freio vale pelo salvo.t (pos fica null)
+        const salvo = ler('tr_topo', null);
+        // outra conta só quando os dois nomes existem e diferem: sem o nome, o freio vale pelo salvo.t (pos fica null)
         const outraConta = !!(salvo && salvo.conta && nome && trNome(salvo.conta) !== trNome(nome));
         const mesma = !!(salvo && !outraConta && Math.abs((trNum(salvo.nivel) || 0) - nivel) <= 30);
-        const idade = mesma && salvo.t > 0 ? (agora - salvo.t) / TR_H : Infinity;
-        const idadePerfis = mesma && salvo.tPerfis > 0 ? (agora - salvo.tPerfis) / TR_H : Infinity;
-        if (!opc.forcar && idade < TR_TOPO_LB_H) return `topo lido há ${trHorasPt(idade)} h: leio de novo em ${trHorasPt(TR_TOPO_LB_H - idade)} h`;
-        const soLb = !opc.forcar && idadePerfis < TR_TOPO_TUDO_H;
-        TR.topo.lendo = true;
+        const fr = opc.forcar ? { lerLb: true, lerPerfis: true } : trFreioTopo(salvo, agora, mesma);
+        const idadeH = (k) => (salvo && trNum(salvo[k]) > 0 ? (agora - Number(salvo[k])) / TR_H : Infinity);
+        if (!fr.lerLb && !fr.lerPerfis) {
+            const prox = Math.min(TR_TOPO_LB_H - idadeH('t'), idadeH('tPerfis') < TR_TOPO_PERFIS_H ? Infinity : TR_TOPO_PARCIAL_H - idadeH('tPerfisParcial'));
+            return `topo lido há ${trHorasPt(idadeH('t'))} h: leio de novo em ${trHorasPt(Math.max(0, prox))} h`;
+        }
+        TR.topo.lendo = true; TR.topo.cancelar = false; TR.topo.progresso = null;
         try {
             const lb = await buscarJSON('/leaderboard');
             const lista = Array.isArray(lb) ? lb : lb && Array.isArray(lb.players) ? lb.players : null;
             if (!lista || !lista.length) throw new Error('o /leaderboard veio vazio');
-            const perfis = soLb ? (Array.isArray(salvo.perfis) ? salvo.perfis.slice() : []) : [];
-            let lidos = 0, visiveis = 0, parou = null, banda = [];
-            if (!soLb) {
-                banda = lista.filter(p => p && p.name && trNome(p.name) !== trNome(nome) && Number(p.level) >= nivel && Number(p.level) <= nivel + TR_TOPO_FAIXA)
+            const novos = [];
+            let lidos = 0, visiveis = 0, parou = null;
+            if (fr.lerPerfis) {
+                const banda = lista.filter(p => p && p.name && trNome(p.name) !== trNome(nome) && Number(p.level) >= nivel && Number(p.level) <= nivel + TR_TOPO_FAIXA)
                     .sort((p, q) => Number(q.level) - Number(p.level)).slice(0, TR_TOPO_MAX);
+                TR.topo.progresso = `0/${banda.length}`;
                 for (const p of banda) {
+                    if (TR.topo.cancelar) { parou = 'cancelado'; break; }
                     if (!socketAberto()) { parou = 'socket do jogo fechado'; break; }
                     const w = trEsperarPerfil(p.name);
                     try { enviarWS({ type: 'player_profile', data: { name: String(p.name) } }); } catch (e) { w.cancelar(); parou = e.message; break; }
                     try {
                         const r = await w.p;
                         lidos++;
-                        if (r && r.equipmentVisible !== false) { visiveis++; perfis.push(Object.assign({ level: Number(p.level) }, r)); }
+                        if (trPerfilVisivel(r)) { visiveis++; novos.push(Object.assign({ level: Number(p.level) }, r)); }
                     } catch (e) { parou = e.message; break; }
+                    TR.topo.progresso = `${lidos}/${banda.length}`;
                     await dorme(TR_TOPO_PASSO_MS);
                 }
             }
-            const resumo = Object.assign(trResumirTopo(lista, perfis, nivel, agora, nome), { conta: nome, nivel, tPerfis: soLb ? salvo.tPerfis : agora });
-            guardarComum('tr_topo', resumo);
+            const pf = fr.lerPerfis ? trPerfisDepois(salvo, mesma, { lidos, visiveis, parou, novos }, agora)
+                : { perfis: mesma && Array.isArray(salvo.perfis) ? salvo.perfis : [], tPerfis: mesma ? salvo.tPerfis || null : null, tPerfisParcial: mesma ? salvo.tPerfisParcial || null : null };
+            const resumo = Object.assign(trResumirTopo(lista, pf.perfis, nivel, agora, nome), { conta: nome, nivel, tPerfis: pf.tPerfis, tPerfisParcial: pf.tPerfisParcial });
+            guardar('tr_topo', resumo);
             const pos = resumo.pos ? `você é o ${resumo.pos}º de ${resumo.total}` : `fora dos ${resumo.total} do ranking`;
-            const txt = soLb ? `topo relido (${pos}); perfis de ${trHorasPt(idadePerfis)} h atrás`
-                : `topo lido: ${pos}; ${visiveis} de ${lidos} perfis com equipamento à mostra` + (parou ? ` (parei: ${parou})` : '');
+            const manteve = fr.lerPerfis && pf.tPerfisParcial === agora && pf.perfis.length > 0;
+            const txt = !fr.lerPerfis ? `topo relido (${pos}); perfis de ${trHorasPt(idadeH('tPerfis'))} h atrás`
+                : `topo lido: ${pos}; ${visiveis} de ${lidos} perfis com equipamento à mostra` + (parou ? ` (parei: ${parou})` : '')
+                    + (manteve ? '; mantive os perfis da leitura anterior' : '');
             TR.topo.status = txt;
             log('treinador: ' + txt, parou ? 'aviso' : 'ok');
             return txt;
