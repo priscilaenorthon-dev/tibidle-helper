@@ -7762,3 +7762,46 @@ no lugar do Haste).
 - **Ao vivo com a 2.65.0 (27/11, 5 buffs, 3 trocas)**: 141 aos 15:11 (abertura sorteada pelo timer: o robô ligou na carta 14 — Onda de
   choque tomou a vaga do Ímã) e **142 aos 15:09** (4 ultimates aos 9:10, vida mínima 66 %, cristais recolhidos). Ritmo de 12 s desde 1:42
   (antes, ~3:45). u2tag 20º → **18º** (140 → 142). Ligar o robô com a aba ☠ aberta antes de COMEÇAR, senão o timer de 10 s escolhe.
+
+## 27/11 (tarde) — Ameaça inicial: só a ARMA do Knight (de verdade, no corpo) mexe; potência, escudo e party não
+- Teste ao vivo com o corpo real (u2tag, level 250, melee 64, partidas sem buff encerradas logo após as 21 cartas; grampo em
+  `MessageEvent.data` lendo `run_welcome.estado.retrato`). Retrato salvo em `.playwright-mcp/sv-retrato-base-27-11.json`.
+  | Knight | forca | degrauInicial |
+  |---|---|---|
+  | stonecutter axe (ataque 50, potência 129, +0, Comum) + great shield — base | 174 | 70 |
+  | **sem arma** (punho, `weapon.attack` 6) | **74** | **30** |
+  | stonecutter + **sem escudo** (`shieldDefense` 0) | 174 | 70 |
+  | war axe (ataque 48, **potência 344**, raridade 2, +2 % dano físico), sem escudo | 173 | 70 |
+  | base + **Feiticeiro sem nenhuma peça** | 174 | 70 |
+- Leitura: o servidor calcula `forca` com a arma vestida no corpo (o teste com pinos de 26/11 não mexia no corpo, por isso deu igual).
+  Escudo, armadura e os outros 3 personagens não contam. Potência/raridade/linhas não contam; ataque base conta pouco perto de 50
+  (+2 de ataque ≈ +1 de forca). degrauInicial ≈ 0,4 × forca (74→30, 174→70). Refino = +1 de ataque: +10 de refino ≈ +2 de ameaça inicial.
+- O enigma continua: forca caiu de 177 (level 247, 26/11) para 174 (level 250) sem trocar a arma; o retrato traz o Knight com
+  hp 2915/3879 e mana 158/1317 (não regenera na cidade) — hipótese seguinte: forca usa a vida/mana ATUAIS. Ranking de 27/11:
+  inicial mínima (ameaça − tempo/12 s) de 84 em felipesantiago (181), 93 em GatteR (245) e Conde Vladrukh (253), 92 em Westie (259).
+- Motor: `ameaca_mais`/`ameaca_menos` (±5 degraus) existem só em `modoDeTeste` (comando dev); a regra de jogo é 1 degrau por cota cheia
+  com ≥ 12 s no degrau (ou pelo relógio do degrau).
+- **Vida e mana (27/11, 17:00)**: party no Dragon Lair, Knight 3879/3879 e mana 195 → **forca 183** (era 174 na cidade com vida 2915);
+  mana 273 → 183. Parecia a vida, mas **não é**: depois, no Shadow Nexus, vida 2837 (73 %) → 183 e vida 3256 → 183. O que mudou de 174
+  para 183 foi **começar com a party dentro de uma caçada** (174 = na cidade, com a caçada encerrada). Mana não conta.
+- **A ameaça inicial é o FIM DE UM CAPÍTULO** da escada (capítulos de 5 degraus: g26–30 = cap. 6, g66–70 = cap. 14, g71–75 = cap. 15).
+  forca 74 → 30; forca 173–183 → 70. Ranking de 27/11 bate: inicial mínima de cada um arredonda para o fim de capítulo (SDNunoh e
+  Vokim 115, Emperor Kakasoulzs 120, theDoctor 110, Conde/GatteR/Westie 95, felipesantiago 85). O próximo degrau da u2tag é 75
+  (cap. 15, 1º bicho Crawler, xp 40, dano 67): exige forca acima de 183. Pelo xp do 1º bicho do capítulo (k ≈ 0,219 × forca) faltaria
+  ~1 ponto; pelo dano (k ≈ 0,346) faltariam ~10. Alavancas medidas: estar caçando (+9 contra a cidade), ataque da arma (~+0,5 por ponto), level.
+- Na tela de caçadas a busca é por criatura/item (Shadow Nexus sai buscando "Fury"); o slot da poção de mana do Knight é Mana Potion
+  ≤3 % (subir a 100 % não enche: ele gasta em magia o que bebe — voltou a 3 %).
+
+## 2.66.0 (27/11) — Sobrevivência: botão único
+- Dono: "deixar isso aqui em um botão único" (LIGAR ROBÔ + COMEÇAR PARTIDA). Agora um botão `#tb-sv-ligar` com 3 estados
+  (`svBotaoUnico`, puro): **▶ JOGAR COM O ROBÔ** (liga, acerta os buffs da aba, abre e começa — buffs cobrados), **ROBÔ: JOGAR ESTA
+  PARTIDA** (já há partida aberta: só liga, não cobra) e **ROBÔ LIGADO — DESLIGAR**.
+- O robô não fica mais ligado à toa (`svDesligarSozinho`, puro): com "recomeçar sozinho" desmarcado, desliga quando a partida acaba
+  (fim simulado ou a tela `sobrevivencia-fim` aberta — ENCERRAR na mão deixa a camada e não marca fim) e quando passa 90 s ligado sem
+  partida (F5 com o robô ligado: em 27/11 ele voltou "esperando" com a party caçando). Carência de 10 s depois de JOGAR para a tela de
+  fim da partida anterior não desligar o robô na hora.
+- Ajuda da aba explica a ameaça inicial (fim de capítulo; arma do Knight; caçando 183 × cidade 174).
+- Ao vivo (aba nova com a 2.66.0, partidas sem buff e sem troca): JOGAR → partida em 2,7 s; DESLIGAR → "JOGAR ESTA PARTIDA" → LIGADO;
+  ENCERRAR → "partida acabou — robô desligado" no mesmo segundo; F5 com o robô ligado e sem partida → desligou em ~90 s.
+  Armadilhas do teste: com a partida aberta a gaveta do helper fica oculta (o DOM do botão fica velho até reabrir); depois de
+  recarregar, o jogo cai no lobby "Seu grupo" e JOGAR não acha o medalhão até ENTRAR NO JOGO. 2 testes novos em `testes/arena.test.js`.

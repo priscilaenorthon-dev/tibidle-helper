@@ -4,7 +4,7 @@ const fs = require('fs'), path = require('path'), assert = require('assert');
 const src = fs.readFileSync(path.join(__dirname, '..', 'tibidle-helper.user.js'), 'utf8');
 const i = src.indexOf('/* @@ARENA-PURO-INICIO'), f = src.indexOf('/* @@ARENA-PURO-FIM');
 assert(i > 0 && f > i, 'trecho @@ARENA-PURO não encontrado');
-const A = new Function(src.slice(i, f) + '\nreturn { SV_PAR, SV_CFG, svDecidir, svEscolherAlvo, svEscolherCarta, svNotaCarta, svPerigo, SV_BUFFS, svBuffsParaClicar, svParede, svQuerReroll };')();
+const A = new Function(src.slice(i, f) + '\nreturn { SV_PAR, SV_CFG, svDecidir, svEscolherAlvo, svEscolherCarta, svNotaCarta, svPerigo, SV_BUFFS, svBuffsParaClicar, svParede, svQuerReroll, svBotaoUnico, svDesligarSozinho };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 
@@ -30,6 +30,24 @@ t('alvo: baú e orbe na frente de cristal; comida só vale com vida baixa', () =
     assert.strictEqual(A.svEscolherAlvo(cheio, A.SV_CFG).tipo, 'cristal');
     const ferido = estado({ knight: { x: 0, y: 0, hp: 300, maxHp: 1000 }, itens: [{ id: 1, tipo: 'comida', x: 3, y: 0 }, { id: 2, tipo: 'cristal', x: 3, y: 3, xp: 200 }] });
     assert.strictEqual(A.svEscolherAlvo(ferido, A.SV_CFG).tipo, 'comida');
+});
+t('2.66.0 botão único: desligado e sem partida = JOGAR COM O ROBÔ; partida aberta = assume; ligado = desligar', () => {
+    assert.deepStrictEqual(A.svBotaoUnico({ ligado: false, partidaAberta: false }).acao, 'jogar');
+    assert.ok(/JOGAR COM O ROBÔ/.test(A.svBotaoUnico({ ligado: false, partidaAberta: false }).rotulo));
+    assert.strictEqual(A.svBotaoUnico({ ligado: false, partidaAberta: true }).acao, 'assumir', 'partida já aberta: só liga, não começa outra');
+    const lig = A.svBotaoUnico({ ligado: true, partidaAberta: true });
+    assert.strictEqual(lig.acao, 'desligar'); assert.ok(lig.pri); assert.ok(/DESLIGAR/.test(lig.rotulo));
+    assert.strictEqual(A.svBotaoUnico({ ligado: true, partidaAberta: false }).acao, 'desligar');
+});
+t('2.66.0 robô desliga sozinho: fim da partida sem "recomeçar" e 90 s ligado sem partida', () => {
+    const b = { ligado: true, recomecar: false, partidaAberta: true, fimDaPartida: false, semPartidaMs: 0 };
+    assert.strictEqual(A.svDesligarSozinho(b), false, 'partida rolando');
+    assert.strictEqual(A.svDesligarSozinho(Object.assign({}, b, { fimDaPartida: true })), true, 'acabou e não recomeça');
+    assert.strictEqual(A.svDesligarSozinho(Object.assign({}, b, { fimDaPartida: true, recomecar: true })), false, 'recomeçar ligado: segue');
+    assert.strictEqual(A.svDesligarSozinho(Object.assign({}, b, { partidaAberta: false, semPartidaMs: 30000 })), false, 'ainda abrindo a partida');
+    assert.strictEqual(A.svDesligarSozinho(Object.assign({}, b, { partidaAberta: false, semPartidaMs: 90000 })), true, 'F5 sem partida: não fica esperando');
+    assert.strictEqual(A.svDesligarSozinho(Object.assign({}, b, { partidaAberta: false, semPartidaMs: 999999, recomecar: true })), false);
+    assert.strictEqual(A.svDesligarSozinho(Object.assign({}, b, { ligado: false, fimDaPartida: true })), false);
 });
 t('boss: vai no de menos vida primeiro (dono, 26/11: do mais fácil ao mais difícil)', () => {
     const st = estado({ bichos: [bicho(1, 10, 0, { ehBoss: true, hp: 9000 }), bicho(2, -10, 0, { ehBoss: true, hp: 3000 })] });

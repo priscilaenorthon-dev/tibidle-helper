@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.65.0
+// @version      2.66.0
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.65.0';
+    const VERSAO = '2.66.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -11972,6 +11972,20 @@
         const q = new Set(queridos || []);
         return Object.keys(marcados || {}).filter(id => !!marcados[id] !== q.has(id));
     }
+    /* 2.66.0 — botão único da aba ☠ (dono, 27/11: "deixar isso aqui em um botão único"). Desligado e sem partida = liga e começa
+     * (buffs da aba cobrados); partida já aberta = só liga o robô nela; ligado = desliga. */
+    function svBotaoUnico(e) {
+        if (e.ligado) return { acao: 'desligar', pri: true, rotulo: 'ROBÔ LIGADO — DESLIGAR', titulo: 'o robô está jogando (ou abrindo a partida); toque para parar' };
+        if (e.partidaAberta) return { acao: 'assumir', pri: false, rotulo: 'ROBÔ: JOGAR ESTA PARTIDA', titulo: 'liga o robô na partida que já está aberta (não começa outra, não cobra nada)' };
+        return { acao: 'jogar', pri: false, rotulo: '▶ JOGAR COM O ROBÔ', titulo: 'abre a Sobrevivência, acerta os buffs marcados aqui, clica COMEÇAR PARTIDA e o robô joga (os buffs são cobrados)' };
+    }
+    /* O robô não fica ligado à toa: acabou a partida sem "recomeçar sozinho", ou 90 s ligado sem partida aberta (F5 com o robô
+     * ligado: em 27/11 ele voltou "esperando" e confundiu). */
+    function svDesligarSozinho(e) {
+        if (!e.ligado || e.recomecar) return false;
+        if (e.fimDaPartida) return true;
+        return !e.partidaAberta && e.semPartidaMs >= 90000;
+    }
     /* @@ARENA-PURO-FIM */
     /* @@CASCA-INICIO — geometria e contas puras da casca (sem DOM); testes/casca.test.js roda este trecho no node. */
     const CEL_MAX = 640, MARGEM = 8;
@@ -18928,7 +18942,7 @@
      * relógio (45 s); fogueira a cada 15 s, quebra a 1 casa ou por golpe físico, solta comida (cura 30 %), gelo (congela 6 s),
      * orbe (puxa todos os cristais) ou caveira (mata tudo); coleta a 1 casa (+Ímã); aviso de golpe = casas vermelhas, bate 1 s
      * depois; boss a cada 2 min (até 7), baú = ultimate da magia nível 8 com a passiva de par. */
-    const ARENA = { ligado: false, recomecar: false, mapa: true, ref: null, B: {}, timer: null, timerMapa: null, ultimaCarta: -1, fimDe: null, recomecarEm: 0, apertadas: new Set(), ultPinta: 0 };
+    const ARENA = { ligado: false, recomecar: false, mapa: true, ref: null, B: {}, timer: null, timerMapa: null, ultimaCarta: -1, fimDe: null, recomecarEm: 0, apertadas: new Set(), ultPinta: 0, semPartidaDesde: 0 };
     function svCfgArena() { return Object.assign({}, SV_CFG, { trocas: ARENA.trocas || 0 }); }
     function svAcharRef() {
         const el = document.querySelector('[data-testid="sobrevivencia-camada"]'); if (!el) return null;
@@ -18962,6 +18976,15 @@
     function svPasso() {
         try {
             const st = svEstado();
+            if (st) ARENA.semPartidaDesde = 0; else if (!ARENA.semPartidaDesde) ARENA.semPartidaDesde = Date.now();
+            /* fim = a partida simulada diz que acabou, ou a tela de fim do jogo está aberta (ENCERRAR na mão: a camada fica, mas a simulação não marca fim) */
+            const fimSimulado = !!(st && (st.desfecho || st.fimEm || st.fase === 'fim'));
+            const fimDaPartida = fimSimulado || (Date.now() - (ARENA.comecouEm || 0) > 10000 && !!document.querySelector('[data-testid="sobrevivencia-fim"]')); // 10 s: JOGAR apertado na tela de fim da anterior
+            if (fimSimulado) svAnotarFim(st);
+            if (svDesligarSozinho({ ligado: ARENA.ligado, recomecar: ARENA.recomecar, partidaAberta: !!st, fimDaPartida, semPartidaMs: st ? 0 : Date.now() - ARENA.semPartidaDesde })) {
+                svLigar(false); log(fimDaPartida ? 'sobrevivência: partida acabou — robô desligado (recomeçar está desmarcado)' : 'sobrevivência: 90 s sem partida aberta — robô desligado', 'info');
+                if (ABA === 'arena') renderizar(); return;
+            }
             if (!st) {
                 svSegurar(new Set());
                 /* recomeçar: a tela de fim fecha a camada? então o clique vem da tela de entrada */
@@ -18997,7 +19020,7 @@
     }
     /* JOGAR DE NOVO (tela de fim) → COMEÇAR PARTIDA (tela de entrada). Os buffs ficam como o dono marcou na tela do jogo. */
     function svRecomecar() {
-        ARENA.recomecarEm = Date.now() + 8000;
+        ARENA.recomecarEm = Date.now() + 8000; ARENA.comecouEm = Date.now();
         const dn = document.querySelector('[data-testid="sobrevivencia-fim-jogar-de-novo"]');
         if (dn) { dn.click(); return; }
         const cm = document.querySelector('[data-testid="sobrevivencia-comecar"]');
@@ -19042,7 +19065,7 @@
         ctx.fillText(`alvo: ${B.alvo ? B.alvo.tipo : '-'}`, 6, cv.height - 6);
     }
     function svLigar(on) {
-        ARENA.ligado = !!on; guardar('sv_ligado', ARENA.ligado);
+        ARENA.ligado = !!on; guardar('sv_ligado', ARENA.ligado); ARENA.semPartidaDesde = 0;
         clearInterval(ARENA.timer); clearInterval(ARENA.timerMapa); ARENA.timer = ARENA.timerMapa = null; svSegurar(new Set());
         if (ARENA.ligado) { ARENA.ref = null; ARENA.timer = setInterval(svPasso, 50); ARENA.timerMapa = setInterval(svDesenhar, 150); log('sobrevivência: robô ligado', 'ok'); }
         else { svDesenhar(); log('sobrevivência: robô desligado', 'info'); }
@@ -19055,8 +19078,8 @@
         const st = ARENA.ref && ARENA.ref.st && document.querySelector('[data-testid="sobrevivencia-camada"]') ? ARENA.ref.st : null;
         const ps = ler('sv_partidas', []), melhor = ps.reduce((m, p) => (!m || p.ameaca > m.ameaca ? p : m), null);
         const mmss = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-        let h = `<div id="tb-arena"><div class="tb-eq-bts"><button type="button" class="tb-bt ${ARENA.ligado ? 'pri' : ''}" id="tb-sv-ligar" title="o robô joga a partida da Sobrevivência que estiver aberta: anda, foge dos avisos, mói a multidão, caça boss e escolhe as cartas">${ARENA.ligado ? 'ROBÔ LIGADO — DESLIGAR' : 'LIGAR ROBÔ'}</button>` +
-                `<button type="button" class="tb-bt" id="tb-sv-comecar" ${st ? 'disabled' : ''} title="abre a Sobrevivência, acerta os buffs escolhidos aqui e clica COMEÇAR PARTIDA (os buffs são cobrados)">COMEÇAR PARTIDA</button></div>`;
+        const bt = svBotaoUnico({ ligado: ARENA.ligado, partidaAberta: !!document.querySelector('[data-testid="sobrevivencia-camada"]') });
+        let h = `<div id="tb-arena"><div class="tb-eq-bts"><button type="button" class="tb-bt tb-larga ${bt.pri ? 'pri' : ''}" id="tb-sv-ligar" data-acao="${bt.acao}" title="${escHtml(bt.titulo)}">${bt.rotulo}</button></div>`;
         h += `<div class="tb-linha" style="margin-top:4px"><label class="tb-l"><input type="checkbox" id="tb-sv-recomecar" ${ARENA.recomecar ? 'checked' : ''}> recomeçar sozinho ao acabar</label> <label class="tb-l"><input type="checkbox" id="tb-sv-mapa" ${ARENA.mapa ? 'checked' : ''}> minimapa</label></div>`;
         h += `<div class="tb-linha" style="margin-top:2px"><label class="tb-l" title="quando a oferta só tem passiva que toma a vaga do par (a magia 8 ficaria sem ultimate), o robô aperta Trocar cartas. Custa 100 mil, 150 mil, 200 mil… de ouro (sobe 50 mil a cada troca na mesma partida). Simulador: média 133,0 → 134,7; 0,8 troca por partida">Trocar cartas ruins: até <select id="tb-sv-trocas">${[0, 1, 2, 3].map(n => `<option value="${n}" ${ARENA.trocas === n ? 'selected' : ''}>${n ? n + ' por partida' : 'nunca'}</option>`).join('')}</select></label></div>`;
         {
@@ -19069,15 +19092,23 @@
             h += `<div class="tb-cx"><b>Partida</b> ${mmss(t)} · ameaça <b>${st.ameaca.nivel}</b> (início ${st.ameaca.inicial}) · nível ${st.nivel} · vida ${Math.round(100 * K.hp / K.maxHp)} % · ${st.abates} abates` +
                  `<div class="tb-mut">alvo: ${ARENA.B.alvo ? escHtml(ARENA.B.alvo.tipo) : '—'} · ${bos.length} boss(es) vivo(s) · ${st.itens.filter(i => i.tipo === 'cristal').length} cristais no chão · ${st.fogueiras.length} fogueira(s)${st.reaper ? ' · <span class="tb-ruim">Reaper chegou</span>' : ''}</div>` +
                  `<div class="tb-mut">magias: ${escHtml(st.baralho.magias.map(m => (m.evoluiu ? '★' : '') + m.nome + ' ' + m.nivel).join(', ') || '—')}<br>passivas: ${escHtml(st.baralho.passivas.map(x => (x.nome || x) + ' ' + (x.nivel || '')).join(', ') || '—')}</div></div>`;
-        } else h += `<div class="tb-mut" style="margin-top:4px">${ARENA.ligado ? 'Esperando uma partida: abra a Sobrevivência (medalhão na cidade) e comece, ou use COMEÇAR PARTIDA.' : 'Robô desligado.'}</div>`;
+        } else h += `<div class="tb-mut" style="margin-top:4px">${ARENA.ligado ? 'Abrindo a partida… (sem partida em 90 s, o robô se desliga sozinho)' : 'Robô desligado. ▶ JOGAR COM O ROBÔ começa uma partida e joga; com uma partida já aberta, o botão só liga o robô nela.'}</div>`;
         if (melhor) h += `<div class="tb-mut" style="margin-top:4px">Melhor partida guardada: ameaça <b>${melhor.ameaca}</b> aos ${mmss(melhor.s)} (nível ${melhor.nivel}).</div>`;
         if (ps.length) h += `<h4 style="margin:8px 0 2px">Últimas partidas</h4>` + ps.slice(0, 8).map(p => `<div class="tb-sb-lin" title="${escHtml(p.magias + ' · ' + p.passivas)}"><span class="tb-sb-n">${new Date(p.em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} · ameaça <b>${p.ameaca}</b> aos ${mmss(p.s)} · nv ${p.nivel} · ${p.abates} abates</span></div>`).join('');
-        h += aj('sv-ajuda', 'O robô lê a partida que o próprio jogo simula e aperta as setas e 1-2-3, como você. <b>Prioridades:</b> sair do aviso vermelho (o golpe cai 1 s depois); com vida acima de 30 %, ficar no meio dos bichos (a ameaça — a pontuação — é a inicial + 1 a cada 12 s vivo, desde que o dano encha a cota do nível: moer garante a cota e o xp das cartas); baú, orbe, caveira e fogueira (comida cura 30 %); cristais; boss do mais fácil ao mais difícil. <b>Cartas:</b> 4 magias, e a vaga de passiva fica para o par de cada uma (Facas+Recarga, Aura+Recovery, Groundshaker+Área, Berserk+Blood Rage, Espadas+Haste, Whirlwind+Ímã, Lâminas+Sorte, Annihilation+Crítico): nível 8 com o par vira ultimate no baú do boss. <b>Buffs</b>: marque aqui; antes de cada partida o robô deixa a loja do jogo igual (no simulador, os 5 juntos deram +9 de ameaça média; Velocidade sozinha, +5). Sem ouro para os marcados, o jogo não cobra nada e a partida não começa. O Reaper chega aos 15:00 (fim da partida): o teto é a ameaça inicial + 75. <b>Trocar cartas</b>: oferta só com passiva que tomaria a vaga do par → aperta Trocar cartas (ouro).', 'como funciona');
+        h += aj('sv-ajuda', 'O robô lê a partida que o próprio jogo simula e aperta as setas e 1-2-3, como você. <b>Prioridades:</b> sair do aviso vermelho (o golpe cai 1 s depois); com vida acima de 30 %, ficar no meio dos bichos (a ameaça — a pontuação — é a inicial + 1 a cada 12 s vivo, desde que o dano encha a cota do nível: moer garante a cota e o xp das cartas); baú, orbe, caveira e fogueira (comida cura 30 %); cristais; boss do mais fácil ao mais difícil. <b>Cartas:</b> 4 magias, e a vaga de passiva fica para o par de cada uma (Facas+Recarga, Aura+Recovery, Groundshaker+Área, Berserk+Blood Rage, Espadas+Haste, Whirlwind+Ímã, Lâminas+Sorte, Annihilation+Crítico): nível 8 com o par vira ultimate no baú do boss. <b>Buffs</b>: marque aqui; antes de cada partida o robô deixa a loja do jogo igual (no simulador, os 5 juntos deram +9 de ameaça média; Velocidade sozinha, +5). Sem ouro para os marcados, o jogo não cobra nada e a partida não começa. O Reaper chega aos 15:00 (fim da partida): o teto é a ameaça inicial + 75. <b>Ameaça inicial</b> (medido 27/11): é sempre o fim de um capítulo da escada (…, 65, 70, 75…), escolhido pela força do Knight: a arma vestida (ataque) pesa; mana, vida, escudo, armadura, potência e os outros 3 não. Começar com a party caçando deu força 183; na cidade, 174. <b>Trocar cartas</b>: oferta só com passiva que tomaria a vaga do par → aperta Trocar cartas (ouro).', 'como funciona');
         return h + `</div>`;
     }
     function ligarArena() {
-        const l = $('#tb-sv-ligar'); if (l) l.onclick = () => { svLigar(!ARENA.ligado); renderizar(); };
-        const c = $('#tb-sv-comecar'); if (c) c.onclick = () => { if (!ARENA.ligado) svLigar(true); ARENA.recomecarEm = 0; ARENA.fimDe = null; svRecomecar(); setTimeout(svRecomecar, 2500); renderizar(); };
+        const l = $('#tb-sv-ligar');
+        if (l) {
+            l.onclick = () => {
+                const acao = svBotaoUnico({ ligado: ARENA.ligado, partidaAberta: !!document.querySelector('[data-testid="sobrevivencia-camada"]') }).acao;
+                if (acao === 'desligar') svLigar(false);
+                else if (acao === 'assumir') svLigar(true);
+                else { svLigar(true); ARENA.comecouEm = Date.now(); ARENA.recomecarEm = 0; ARENA.fimDe = null; svRecomecar(); setTimeout(svRecomecar, 2500); }
+                renderizar();
+            };
+        }
         const r = $('#tb-sv-recomecar'); if (r) r.onchange = () => { ARENA.recomecar = r.checked; guardar('sv_recomecar', r.checked); renderizar(); };
         $$('[data-sv-buff]').forEach(cx => { cx.onchange = () => { const q = new Set(ler('sv_buffs', [])); if (cx.checked) q.add(cx.dataset.svBuff); else q.delete(cx.dataset.svBuff); guardar('sv_buffs', [...q]); renderizar(); }; });
         const tr = $('#tb-sv-trocas'); if (tr) tr.onchange = () => { ARENA.trocas = +tr.value || 0; guardar('sv_trocas', ARENA.trocas); };
