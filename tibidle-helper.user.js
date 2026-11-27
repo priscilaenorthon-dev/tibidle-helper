@@ -11851,6 +11851,16 @@
                              { id: agente + ':' + id, agente });
     }
     // Formato canônico da foto (Task 14 preenche). ouroLivre = ouro − reserva da caçada, calculado pela foto (não pelo agente Dinheiro).
+    // Campos que os especialistas 4–6 (topo, erros, boss) leem:
+    //   party: [{ voc, skills: { melee, dist, ml, escudo }, eq: { SLOT: { nome, refino, raridade, potencia, atributos: [{ id, valor }], imbuSlots, imbu: [], duasMaos? } } }]
+    //          SLOT ∈ TR_SLOTS; slot vazio = ausente/null/sem nome; duasMaos = attrs.slotType === 'two-handed' (sem a dica, vale o nome: TR_BASE.equip.duasMaosNomes)
+    //   checklist: { VOC: [{ chave, ok, titulo, texto }] } | null — o mlChecklist da aba Melhorias (régua "ficar forte" da comunidade)
+    //   mortes: [{ t, hunt, huntId, voc }] · sessoes: [{ hunt, huntId, dur, xpH, ouroH, morte }] em ordem de tempo (a última no fim)
+    //   chaves: { usadas, max, elites: [{ nome, qtd }] } | null · deposito: { nomeItem: qtd } (depósito + mochila; nomes comparados sem maiúsculas)
+    //   invasao: { inscrito, proxima } | null · precos: { nomeItem: ouro } (nomes sem maiúsculas)
+    //   topo: { pos, total, top1, idadeH, perto: [{ nome, nivel, skills: { melee, dist, ml } }], perfis: [{ nivel, voc: { VOC: { SLOT: nomeItem } } }] } | null
+    //         (perto[].skills.ml pode ser número ou { SORCERER, DRUID }: o ML do topo é por vocação)
+    //   hunt: { id, title, lure, maxLure, lureTiers: [{ min, max }] (criaturas por degrau; lure 1 = lureTiers[0]), rec, levelMin, ilha } | null
     function trFotoVazia() {
         return { t: 0, nivel: null, xpTotal: null, ouro: null, ouroLivre: null, premium: null, emHunt: false, naCidade: false, hunt: null, medidoAtual: null,
                  mapas: [], party: [], legado: null, prey: null, bencaos: null, ampulhetas: null, selo: null, mortes: [], sessoes: [], checklist: null,
@@ -11971,6 +11981,28 @@
         const folga = (b.spawn.porLure * Number(foto.hunt.lure) / Number(foto.medidoAtual.abatesH) - 1) * 100;
         return Math.min(p, folga);
     }
+    // Slots do equipamento (ordem da tela) e o nome em português — o SLOT_PT da aba Equip é este mesmo objeto.
+    const TR_SLOTS = ['head', 'necklace', 'armor', 'weapon', 'shield', 'ring', 'legs', 'boots', 'ammo'];
+    const TR_SLOT_PT = { weapon: 'arma', hand: 'arma', shield: 'escudo', head: 'elmo', helmet: 'elmo', armor: 'armadura', legs: 'calça', boots: 'bota', feet: 'bota', necklace: 'colar', ring: 'anel', ammo: 'munição' };
+    const trSlotPt = (s) => TR_SLOT_PT[s] || String(s || '?');
+    // Número de um item pelo NOME, sem diferença de maiúsculas ({ nome: n } da foto: deposito, precos).
+    // Soma as grafias repetidas (depósito + mochila); `primeiro` = só a 1ª (preço). null = o item não está lá.
+    function trPorNome(obj, nome, primeiro) {
+        const k = String(nome || '').trim().toLowerCase();
+        if (!k || !obj || typeof obj !== 'object') return null;
+        let soma = null;
+        for (const [n, v] of Object.entries(obj)) {
+            if (n.trim().toLowerCase() !== k || !Number.isFinite(trNum(v))) continue;
+            if (primeiro) return Number(v);
+            soma = (soma || 0) + Number(v);
+        }
+        return soma;
+    }
+    // Mediana de números (ignora o que não é número); null se não sobra nenhum.
+    function trMediana(lista) {
+        const a = (lista || []).map(trNum).filter(Number.isFinite).sort((x, y) => x - y), m = a.length >> 1;
+        return !a.length ? null : a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+    }
 
     // ── Especialista 1: Onde upar (⤴). Só compara mapas com XP/h conhecida, sem morte, abertos e do nível.
     //    Régua: xpH × peso da fonte (medido 1 · comunidade 0,8 · wiki 0,6 · estimado 0,4); trocar só com ≥ 10 % de vantagem.
@@ -12033,7 +12065,9 @@
         }
         // Lure: só com evidência (≥ 1 sessão aqui ou ≥ 5 min medidos), sem morte nas 2 últimas sessões daqui (em ordem de tempo,
         // a última no fim) e sem morte nesta caçada em 7 dias. Modelo (teto de spawn = porLure × lure):
-        //   limitada por DANO → mais criatura não vira abate: não sugere; limitada por SPAWN → o teto sobe 1/lure: impacto min(100/lure, 25);
+        //   limitada por DANO → mais criatura não vira abate: não sugere;
+        //   limitada por SPAWN → com hunt.lureTiers (criaturas por degrau, lure 1 = [0]): min((criaturas do próximo ÷ de agora − 1) × 100, 40);
+        //     sem lureTiers, o teto sobe 1/lure: min(100/lure, 25);
         //   sem saber → 8 por degrau (estimado, como antes).
         const lure = hunt ? trNum(hunt.lure) : NaN, maxLure = hunt ? trNum(hunt.maxLure) : NaN;
         if (hunt && Number.isFinite(lure) && Number.isFinite(maxLure) && lure < maxLure) {
@@ -12042,12 +12076,16 @@
             const semMorte = !daqui.slice(-2).some(s => s.morte) && !trMortesRecentes(foto, b, 7, hunt).length && !(daCacada && trNum(daCacada.mortes) > 0);
             const lim = trLimitadoPorDano(foto, b);
             if (evidencia && semMorte && lim !== true) {
-                const n = lure + 1, imp = lim === false ? Math.min(100 / Math.max(1, lure), 25) : 8;
+                const tiers = Array.isArray(hunt.lureTiers) ? hunt.lureTiers : [];
+                const cAgora = trNum((tiers[lure - 1] || {}).min), cProx = trNum((tiers[lure] || {}).min);
+                const porCriatura = lim === false && cAgora > 0 && cProx > 0; // número real de criaturas por degrau
+                const n = lure + 1, imp = porCriatura ? Math.min((cProx - cAgora) / cAgora * 100, 40) : lim === false ? Math.min(100 / Math.max(1, lure), 25) : 8;
                 out.push(trConselho('upar', 'lure', { titulo: `Subir a lure para ${n}`, impacto: imp,
                     porque: `Lure ${lure} de ${maxLure} e nenhuma morte aqui nas últimas sessões. `
-                        + (lim === false ? `A caçada está limitada por spawn: a lure ${n} sobe o teto de criaturas em ≈ ${Math.round(100 / Math.max(1, lure))} %.`
-                            : 'Mais lure = mais criaturas por onda (≈ +8 % de XP/h por degrau, estimado).') + ' Se morrer, o "Aguentar" mostra por quê.',
-                    numeros: { lure, maxLure, limite: lim === false ? 'spawn' : null },
+                        + (porCriatura ? `A caçada está limitada por spawn: a lure ${n} leva de ${cAgora} → ${cProx} criaturas por onda (≈ +${Math.round(imp)} % de XP/h${imp >= 40 ? ', teto do modelo' : ''}).`
+                            : lim === false ? `A caçada está limitada por spawn: a lure ${n} sobe o teto de criaturas (≈ +${Math.round(imp)} % de XP/h).`
+                                : 'Mais lure = mais criaturas por onda (≈ +8 % de XP/h por degrau, estimado).') + ' Se morrer, o "Aguentar" mostra por quê.',
+                    numeros: { lure, maxLure, limite: lim === false ? 'spawn' : null, criaturas: porCriatura ? [cAgora, cProx] : null },
                     acao: { tipo: 'lure', huntId: hunt.id, lure: n, rotulo: 'Lure ' + n } }));
             }
         }
@@ -12215,6 +12253,77 @@
         return lista.sort((x, y) => (y.c.impacto - x.c.impacto) || (x.rel - y.rel)).map(x => x.c);
     }
     TR_AGENTES.push({ id: 'legado', nome: 'Treino e Legado', icone: '⚔', rodar: trAgenteLegado });
+
+    // ── Especialista 4: Set × topo do rank (♛). Perfis visíveis do leaderboard com nível entre o meu e +150 (≥ 3).
+    //    Item que ≥ 50 % do topo veste naquela vocação/slot e eu não → 1 sugestão por vocação (a de maior frequência).
+    //    impacto 3 ESTIMADO (o especialista Melhorias/Equip dá o ganho exato). Skill principal < mediana do topo − 3 → só aviso (impacto 0).
+    function trAgenteTopo(foto, base) {
+        const b = base || TR_BASE, tp = foto.topo && typeof foto.topo === 'object' ? foto.topo : null;
+        if (!tp || trNum(tp.idadeH) > 24) {
+            // sem party nem nível (foto vazia) não há o que comparar: impacto 0
+            const temConta = (Array.isArray(foto.party) && foto.party.length > 0) || Number.isFinite(trNum(foto.nivel));
+            return [trConselho('topo', 'ler', { titulo: 'Comparar com o topo do rank', impacto: temConta ? 1 : 0,
+                porque: (tp ? `A leitura do topo tem ${Math.round(Number(tp.idadeH))} h. ` : 'Ainda não li os perfis do topo do rank. ')
+                    + 'Ler de novo compara o seu set e as skills com quem está até 150 níveis acima.',
+                acao: { tipo: 'ler-topo', rotulo: 'Ler o topo' } })];
+        }
+        const out = [], nivel = trNum(foto.nivel), comNivel = Number.isFinite(nivel);
+        const de = comNivel ? nivel : -Infinity, ate = comNivel ? nivel + 150 : Infinity, faixa = comNivel ? `nível ${nivel}–${ate}` : 'todos os níveis';
+        const naFaixa = (x) => x && trNum(x.nivel) >= de && trNum(x.nivel) <= ate;
+        const minusc = (s) => String(s || '').trim().toLowerCase();
+        const party = (Array.isArray(foto.party) ? foto.party : []).filter(m => m && m.voc);
+        const perfis = (Array.isArray(tp.perfis) ? tp.perfis : []).filter(p => naFaixa(p) && p.voc && typeof p.voc === 'object');
+        let itens = 0;
+        if (perfis.length < 3) {
+            out.push(trConselho('topo', 'poucos', { titulo: 'Poucos perfis visíveis para comparar', impacto: 0,
+                porque: `Só ${perfis.length} perfil(is) do topo com equipamento à mostra no ${faixa}; preciso de 3.`, numeros: { n: perfis.length } }));
+        } else {
+            for (const m of party) {
+                const eq = m.eq && typeof m.eq === 'object' ? m.eq : null;
+                const deles = perfis.map(p => p.voc[m.voc]).filter(x => x && typeof x === 'object' && Object.keys(x).length);
+                if (!eq || deles.length < 3) continue;
+                let melhor = null;
+                for (const slot of TR_SLOTS) {
+                    const meu = minusc(eq[slot] && eq[slot].nome), cont = new Map();
+                    for (const d of deles) {
+                        const k = minusc(d[slot]);
+                        if (k) cont.set(k, { nome: (cont.get(k) || {}).nome || String(d[slot]).trim(), k: ((cont.get(k) || {}).k || 0) + 1 });
+                    }
+                    for (const [k, x] of cont) if (k !== meu && x.k / deles.length >= 0.5 && (!melhor || x.k > melhor.k)) melhor = { slot, item: x.nome, k: x.k, meu: eq[slot] && eq[slot].nome };
+                }
+                if (!melhor) continue;
+                itens++;
+                const preco = trPorNome(foto.precos, melhor.item, true), n = deles.length, nome = trVocPt(m.voc);
+                out.push(trConselho('topo', 'item-' + m.voc, { titulo: `${nome}: o topo usa ${melhor.item} (${trSlotPt(melhor.slot)})`,
+                    confianca: 'comunidade', impacto: 3, custo: preco > 0 ? preco : 0,
+                    porque: `${melhor.k} de ${n} perfis do topo (${faixa}) vestem ${melhor.item} como ${trSlotPt(melhor.slot)}; o ${nome} usa ${melhor.meu || 'nada'}. `
+                        + (preco > 0 ? `No Mercado ≈ ${trQtd(preco)}. ` : '') + 'A aba Melhorias diz quanto a troca rende de verdade.',
+                    numeros: { voc: m.voc, slot: melhor.slot, item: melhor.item, k: melhor.k, n, preco: preco > 0 ? preco : null },
+                    acao: { tipo: 'abrir-melhorias', voc: m.voc, slot: melhor.slot, item: melhor.item, rotulo: 'Melhorias' } }));
+            }
+        }
+        // skill principal (a do Legado) × mediana do topo na mesma faixa; ml do topo pode vir por vocação
+        const perto = (Array.isArray(tp.perto) ? tp.perto : []).filter(naFaixa);
+        const SKILL_PT = { melee: 'melee', dist: 'distância', ml: 'ML' };
+        let skills = 0;
+        for (const m of party) {
+            const chave = b.legado.skill[m.voc], minha = trNum(m.skills && chave ? m.skills[chave] : null);
+            if (!chave || !Number.isFinite(minha)) continue;
+            const vals = perto.map(p => { const v = p.skills ? p.skills[chave] : null; return v && typeof v === 'object' ? v[m.voc] : v; });
+            const med = trMediana(vals), n = vals.map(trNum).filter(Number.isFinite).length;
+            if (n < 3 || !(minha < med - 3)) continue;
+            skills++;
+            out.push(trConselho('topo', 'skill-' + m.voc, { titulo: `${trVocPt(m.voc)}: ${SKILL_PT[chave]} ${minha} × ${trPct(med)} no topo`, impacto: 0, confianca: 'comunidade',
+                porque: `Mediana de ${n} jogadores do topo (${faixa}): ${trPct(med)}. A skill treinada vira dano para sempre pelo Legado — veja o especialista "Treino e Legado".`,
+                numeros: { voc: m.voc, skill: chave, minha, mediana: med, n } }));
+        }
+        if (perfis.length >= 3 && !itens && !skills) {
+            out.push(trConselho('topo', 'ok', { titulo: 'Seu set bate com o do topo', estado: 'ok', confianca: 'comunidade',
+                porque: `Nenhum item que ≥ 50 % dos ${perfis.length} perfis do topo (${faixa}) vestem falta no seu set, e as skills estão perto da mediana.` }));
+        }
+        return out;
+    }
+    TR_AGENTES.push({ id: 'topo', nome: 'Set × topo do rank', icone: '♛', rodar: trAgenteTopo });
     /* @@TREINADOR-PURO-FIM */
     /* @@ARENA-PURO-INICIO — Sobrevivência (2.57.0): decisões do robô, puras (o tempo é st.tempoMs, sem DOM).
      * st = estado da simulação do cliente (ref.current.st do componente da partida). O mesmo código rodou no simulador
@@ -13751,7 +13860,7 @@
     /* v2.11 (D2) — vocações e slots em português em todas as telas (o Equip
      * dizia "Knight" num botão, "Cav" na aba ao lado e WEAPON/LEGS nas linhas) */
     const VOC_ROTULO = { KNIGHT: 'Cavaleiro', PALADIN: 'Paladino', SORCERER: 'Feiticeiro', DRUID: 'Druida' };
-    const SLOT_PT = { weapon: 'arma', hand: 'arma', shield: 'escudo', head: 'elmo', helmet: 'elmo', armor: 'armadura', legs: 'calça', boots: 'bota', feet: 'bota', necklace: 'colar', ring: 'anel', ammo: 'munição' };
+    const SLOT_PT = TR_SLOT_PT; // o mesmo objeto do treinador (@@TREINADOR-PURO)
     const slotPt = (s) => SLOT_PT[s] || s;
     /* 28/09: com 0,5 ele sugeria trocar um bonelord shield por outro quase igual (+0,55). */
     const GANHO_MIN = EQUIP_GANHO_TROCA; // abaixo disso é empate técnico: não vale a troca (espaço vazio: qualquer ganho — trocaVale)

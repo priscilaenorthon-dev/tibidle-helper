@@ -5,7 +5,7 @@ const src = fs.readFileSync(path.join(__dirname, '..', 'tibidle-helper.user.js')
 const i = src.indexOf('/* @@TREINADOR-PURO-INICIO'), f = src.indexOf('/* @@TREINADOR-PURO-FIM');
 assert(i > 0 && f > i, 'trecho @@TREINADOR-PURO não encontrado');
 const T = new Function(src.slice(i, f) + '\nreturn { TR_BASE, TR_AGENTES, trConselho, trOrdenar, trRodar, trFotoVazia, trCacada, trAgenteUpar, trAgenteMult, trAgenteLegado, '
-    + 'trMesmoId, trQtd, trLimitadoPorDano, trDanoParaXp, trTipoPrey, trXpAtual, trRecDe, trMortesRecentes };')();
+    + 'trMesmoId, trQtd, trLimitadoPorDano, trDanoParaXp, trTipoPrey, trXpAtual, trRecDe, trMortesRecentes, trAgenteTopo };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 // agentes falsos: troca os de verdade pelos falsos, roda e devolve os de verdade sempre
@@ -484,6 +484,107 @@ t('legado: sem legado → aviso "Legado não lido ainda", sem ação e sem impac
     assert.strictEqual(cs.length, 1); assert.strictEqual(cs[0].estado, 'aviso'); assert.strictEqual(cs[0].impacto, 0); assert.strictEqual(cs[0].acao, null);
     assert.strictEqual(cs[0].id, 'legado:sem-dado');
     assert(T.TR_AGENTES.some(a => a.id === 'legado' && a.rodar === T.trAgenteLegado && a.icone === '⚔'));
+});
+
+// ── Lote B: lure pelo número real de criaturas por degrau (hunt.lureTiers)
+t('upar: lure com lureTiers (Shadow Nexus 3/5/7/8) limitada por spawn → 2 → 3 = +40 % (teto 40); 3 → 4 = +14,3 %', () => {
+    const tiers = [3, 5, 7, 8].map(m => ({ min: m, max: m }));
+    const base = { nivel: 238, mapas: [mapa(1, 'Shadow Nexus', 540000)] };
+    let l = acoes(T.trAgenteUpar(foto(Object.assign({ hunt: huntSN({ lure: 2, lureTiers: tiers }), medidoAtual: { xpH: 540000, min: 10, abatesH: 650 } }, base)), T.TR_BASE), 'lure');
+    assert.strictEqual(l.length, 1); assert.strictEqual(l[0].impacto, 40); assert(/40 %/.test(l[0].porque) && /5 → 7/.test(l[0].porque), l[0].porque);
+    l = acoes(T.trAgenteUpar(foto(Object.assign({ hunt: huntSN({ lure: 3, lureTiers: tiers }), medidoAtual: { xpH: 540000, min: 10, abatesH: 1000 } }, base)), T.TR_BASE), 'lure');
+    assert(Math.abs(l[0].impacto - (8 / 7 - 1) * 100) < 1e-9, String(l[0].impacto)); assert(/14 %/.test(l[0].porque), l[0].porque);
+    // degrau que mais que dobra as criaturas fica no teto de 40
+    l = acoes(T.trAgenteUpar(foto(Object.assign({ hunt: huntSN({ lure: 1, lureTiers: [{ min: 1, max: 2 }, { min: 4, max: 5 }] }), medidoAtual: { xpH: 540000, min: 10, abatesH: 330 } }, base)), T.TR_BASE), 'lure');
+    assert.strictEqual(l[0].impacto, 40);
+    // lureTiers incompleto → volta ao modelo antigo (min(100/lure, 25))
+    l = acoes(T.trAgenteUpar(foto(Object.assign({ hunt: huntSN({ lure: 2, lureTiers: [{ min: 3 }] }), medidoAtual: { xpH: 540000, min: 10, abatesH: 650 } }, base)), T.TR_BASE), 'lure');
+    assert.strictEqual(l[0].impacto, 25);
+});
+
+// ── Task 7: Set × topo do rank
+const TOPO = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'treinador-topo.json'), 'utf8'));
+const topoDe = (o) => Object.assign({}, TOPO, o || {});
+const pecas = (nomes) => Object.fromEntries(Object.entries(nomes).filter(([, n]) => n)
+    .map(([s, n]) => [s, { nome: n, refino: 0, raridade: 'comum', potencia: 400, atributos: [], imbuSlots: 0, imbu: [] }]));
+const SET_KN = { head: 'Zaoan helmet', necklace: 'onyx pendant', armor: 'dwarven armor', weapon: 'stonecutter axe', shield: 'prismatic shield', ring: 'crystal ring', legs: 'exotic legs', boots: 'guardian boots' };
+const SET_PA = { head: 'wood cape', necklace: 'scarf', armor: 'paladin armor', weapon: 'living vine bow', ammo: 'arrow', ring: 'crystal ring', legs: 'bast legs', boots: 'leather boots' };
+const SET_MA = { head: 'jade hat', necklace: 'onyx pendant', armor: 'magma coat', weapon: 'jungle wand', shield: 'spellbook of mind control', ring: 'crystal ring', legs: 'magma legs', boots: 'makeshift boots' };
+// no topo: Druida veste firemind raiment (5 de 9) e magma boots (5 de 9); Feiticeiro, makeshift boots (5 de 9)
+const SET_DR = Object.assign({}, SET_MA, { armor: 'firemind raiment', weapon: 'jungle rod', boots: 'magma boots' });
+const partyTopo = (o) => {
+    o = o || {};
+    return [{ voc: 'KNIGHT', skills: { melee: 72, dist: 30, ml: 12, escudo: 70 }, eq: pecas(Object.assign({}, SET_KN, o.KNIGHT)) },
+        { voc: 'PALADIN', skills: { melee: 30, dist: 75, ml: 20, escudo: 40 }, eq: pecas(Object.assign({}, SET_PA, o.PALADIN)) },
+        { voc: 'SORCERER', skills: { melee: 10, dist: 10, ml: 62, escudo: 20 }, eq: pecas(Object.assign({}, SET_MA, o.SORCERER)) },
+        { voc: 'DRUID', skills: { melee: 10, dist: 10, ml: 66, escudo: 20 }, eq: pecas(Object.assign({}, SET_DR, o.DRUID)) }];
+};
+t('topo: fixture anônima (9 perfis visíveis, 80 no "perto", sem nome de jogador)', () => {
+    assert.strictEqual(TOPO.perfis.length, 9); assert.strictEqual(TOPO.perto.length, 80);
+    assert(TOPO.perto.every(p => /^P\d+$/.test(p.nome))); assert(TOPO.perfis.every(p => !('nome' in p)));
+});
+t('topo: magos sem magma legs (7 de 9 no topo) → sugere, comunidade, impacto 3, preço do Mercado (sem maiúsculas)', () => {
+    const f = foto({ nivel: 250, topo: topoDe(), precos: { 'Magma Legs': 900000 },
+        party: partyTopo({ SORCERER: { legs: 'blue legs' }, DRUID: { legs: 'MAGMA LEGS' } }) });
+    const cs = T.trAgenteTopo(f, T.TR_BASE), m = acoes(cs, 'abrir-melhorias');
+    assert.strictEqual(m.length, 1, cs.map(c => c.titulo).join(' | '));
+    const c = m[0];
+    assert.deepStrictEqual([c.acao.voc, c.acao.slot, c.acao.item], ['SORCERER', 'legs', 'magma legs']);
+    assert.strictEqual(c.confianca, 'comunidade'); assert.strictEqual(c.impacto, 3); assert.strictEqual(c.estado, 'aviso');
+    assert.strictEqual(c.numeros.k, 7); assert.strictEqual(c.numeros.n, 9); assert.strictEqual(c.numeros.preco, 900000); assert.strictEqual(c.custo, 900000);
+    assert(/Feiticeiro/.test(c.titulo) && /magma legs/.test(c.titulo) && c.titulo.length <= 70, c.titulo);
+    assert(/7 de 9/.test(c.porque), c.porque);
+});
+t('topo: 1 conselho por vocação (o item mais usado); sem preço → custo 0 e preco null', () => {
+    const f = foto({ nivel: 250, topo: topoDe(), party: partyTopo({ SORCERER: { legs: 'blue legs', ring: 'gold ring' } }) });
+    const m = acoes(T.trAgenteTopo(f, T.TR_BASE), 'abrir-melhorias');
+    assert.deepStrictEqual(m.map(c => [c.acao.voc, c.acao.item]), [['SORCERER', 'magma legs']]); // magma legs 7/9 > crystal ring 6/9
+    assert.strictEqual(m[0].custo, 0); assert.strictEqual(m[0].numeros.preco, null);
+});
+t('topo: Royal Signet no Cavaleiro (2 de 9, < 50 %) → não sugere', () => {
+    const cs = T.trAgenteTopo(foto({ nivel: 250, topo: topoDe(), party: partyTopo() }), T.TR_BASE);
+    assert(!cs.some(c => c.acao && /royal signet/i.test(c.acao.item || '')));
+    assert.strictEqual(acoes(cs, 'abrir-melhorias').length, 0);
+});
+t('topo: tudo igual ou melhor → ok "Seu set bate com o do topo"', () => {
+    const cs = T.trAgenteTopo(foto({ nivel: 250, topo: topoDe(), party: partyTopo() }), T.TR_BASE);
+    assert.deepStrictEqual(cs.map(c => c.estado), ['ok']); assert(/bate com o do topo/.test(cs[0].titulo));
+});
+t('topo: skill principal < mediana − 3 → aviso sem ação e impacto 0 (Cavaleiro melee 64 × 69; Druida 62 × 65 não)', () => {
+    const party = partyTopo(); party[0].skills.melee = 64; party[3].skills.ml = 62;
+    const cs = T.trAgenteTopo(foto({ nivel: 250, topo: topoDe(), party }), T.TR_BASE);
+    const sk = cs.filter(c => c.id.startsWith('topo:skill-'));
+    assert.deepStrictEqual(sk.map(c => c.numeros.voc), ['KNIGHT']);
+    const c = sk[0]; assert.strictEqual(c.impacto, 0); assert.strictEqual(c.acao, null); assert.strictEqual(c.estado, 'aviso');
+    assert.strictEqual(c.numeros.minha, 64); assert.strictEqual(c.numeros.mediana, 69);
+    assert(/64 × 69/.test(c.titulo) && c.titulo.length <= 70, c.titulo); assert(/Treino e Legado/.test(c.porque));
+    assert(!cs.some(x => x.estado === 'ok'));
+});
+t('topo: ml do topo por vocação (Feiticeiro 57 × 60 não avisa; 56 avisa)', () => {
+    const party = partyTopo(); party[2].skills.ml = 57;
+    const sk = () => T.trAgenteTopo(foto({ nivel: 250, topo: topoDe(), party }), T.TR_BASE).filter(c => c.id.startsWith('topo:skill-')).map(c => c.numeros.voc);
+    assert.deepStrictEqual(sk(), []);
+    party[2].skills.ml = 56;
+    assert.deepStrictEqual(sk(), ['SORCERER']);
+});
+t('topo: sem topo ou topo velho (idadeH 30) → só "Comparar com o topo do rank" (ler-topo, impacto 1)', () => {
+    for (const topo of [null, topoDe({ idadeH: 30 })]) {
+        const cs = T.trAgenteTopo(foto({ nivel: 250, topo, party: partyTopo({ SORCERER: { legs: 'blue legs' } }) }), T.TR_BASE);
+        assert.strictEqual(cs.length, 1); assert.strictEqual(cs[0].acao && cs[0].acao.tipo, 'ler-topo');
+        assert.strictEqual(cs[0].impacto, 1); assert.strictEqual(cs[0].confianca, 'estimado');
+    }
+});
+t('topo: < 3 perfis na faixa (nível..nível+150) → "Poucos perfis visíveis", impacto 0, sem sugestão de item', () => {
+    const party = partyTopo({ SORCERER: { legs: 'blue legs' } });
+    for (const f of [foto({ nivel: 250, topo: topoDe({ perfis: TOPO.perfis.slice(0, 2) }), party }), foto({ nivel: 100, topo: topoDe(), party })]) {
+        const cs = T.trAgenteTopo(f, T.TR_BASE);
+        const p = cs.find(c => c.id === 'topo:poucos');
+        assert(p, cs.map(c => c.titulo).join(' | ')); assert.strictEqual(p.impacto, 0); assert.strictEqual(acoes(cs, 'abrir-melhorias').length, 0);
+    }
+});
+t('topo: foto vazia → ler-topo; registrado em TR_AGENTES', () => {
+    assert.deepStrictEqual(T.trAgenteTopo(T.trFotoVazia(), T.TR_BASE).map(c => c.acao && c.acao.tipo), ['ler-topo']);
+    assert(T.TR_AGENTES.some(a => a.id === 'topo' && a.rodar === T.trAgenteTopo && a.icone === '♛'));
 });
 
 process.on('exit', () => { if (!process.exitCode) console.log(`\n${n} testes ok`); });
