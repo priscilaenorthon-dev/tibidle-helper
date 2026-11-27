@@ -25,6 +25,16 @@ sem dependências), eslint 10, Playwright para o teste ao vivo.
 - Teste ao vivo no Playwright: aba nova + `addInitScript` com guarda em `__tbHelper` (memória `tibidle-testar-versao-nova-aba-limpa`);
   devolver aba limpa no fim; avisar o dono que a sessão do Chrome dele cai.
 
+
+> **Atualização 27/11 (após a revisão das Tasks 2–3, commit c5ee110) — vale para as Tasks 4–17:**
+> - `trRodar(foto, base)` chama `rodar(foto, base, todos)`: agentes de fase 1 recebem `[]`; agentes registrados com `fase: 2`
+>   rodam depois e recebem os conselhos da fase 1. O retorno pode ser array/objeto/null (é normalizado).
+> - `foto.ouroLivre` é calculado pela FOTO (Task 14), não pelo agente Dinheiro. `trFotoVazia()` é o formato canônico.
+> - Unidades: número sem sufixo = pontos de %; fração tem sufixo `Frac` (`bencaos.corteFrac`, `morte.perdaFracSemBencao`, …).
+> - Skills na foto e no TR_BASE: `melee`, `dist`, `ml`, `escudo`. `legado.skillInicio` (60, melee e distância), `legado.mlInicio` (40).
+> - `bosses[].tentativa` é SEMPRE lista `[{ item, qtd }]`. `cacadasTopo[titulo] = { rec, ilha }`; helper `trCacada(titulo, base)`.
+> - `trConselho(agente, id, o)`: `o` não sobrescreve `id`/`agente`.
+
 ---
 
 ## Task 1: Descobrir o protocolo e os campos que faltam (pesquisa, sem código)
