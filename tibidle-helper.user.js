@@ -11715,7 +11715,14 @@
             { nome: 'Warzone', id: 'warzone', ouro: 3e6, materiais: [{ nome: 'Warzone Voucher', qtd: 40, onde: 'Upper Spikes Box 10,8 %, Middle Spikes Box 15,2 %, Lower Spikes Box 22,5 % (×3)' }] },
             { nome: 'Forgotten Knowledge', id: 'forgotten_knowledge', ouro: 3e6, materiais: [] },
             { nome: 'The Inquisition', id: 'the_inquisition', ouro: 5e6, materiais: [{ nome: 'Inquisition Badge', qtd: 20, onde: 'Merlin (Inquisition Warlocks) 23 %, Magma Wolf (Inquisition Entrance) 28 % (×4)' },
-                { nome: 'relíquias dos 7 tronos', qtd: 56, onde: "8 de cada: Bazir's, Infernatil's, Tafariel's, Apocalypse's, Ashfalor's, Pumin's, Verminor's Relic (Elites dos tronos, ×2)" }] },
+                // as 7 relíquias, 8 de cada (wiki/acesso-as-ilhas: Elites dos tronos de Pits of Inferno, 2 por vez)
+                { nome: "Bazir's Relic", qtd: 8, onde: 'Throne of Bazir Box (Elite Countess Sorrow) 14,7 %, ×2' },
+                { nome: "Infernatil's Relic", qtd: 8, onde: 'Throne of Infernatil Box (Elite The Imperor) 18,2 %, ×2' },
+                { nome: "Tafariel's Relic", qtd: 8, onde: 'Throne of Tafariel Box (Elite Mr. Punish) 22 %, ×2' },
+                { nome: "Apocalypse's Relic", qtd: 8, onde: 'Throne of Apocalypse Box (Elite Massacre) 22 %, ×2' },
+                { nome: "Ashfalor's Relic", qtd: 8, onde: 'Throne of Ashfalor Box (Elite Dracola) 18,2 %, ×2' },
+                { nome: "Pumin's Relic", qtd: 8, onde: 'Throne of Pumin Box (Elite The Handmaiden) 18,2 %, ×2' },
+                { nome: "Verminor's Relic", qtd: 8, onde: 'Throne of Verminor Box (Elite The Plasmother) 18,2 %, ×2' }] },
             { nome: 'Zao', id: 'zao', ouro: 0, materiais: [{ nome: 'Yalahar Soul Fragment', qtd: 100, onde: 'toda vitória nos 13 Elites de Yalahar' }, { nome: 'Yalahar gear wheel', qtd: 70, onde: 'caixas dos Elites de Yalahar 25–35 %' }] },
             { nome: 'Gray Island', id: 'gray_island', ouro: 0, materiais: [{ nome: 'Yalahar Soul Fragment', qtd: 100, onde: 'toda vitória nos 13 Elites de Yalahar' }, { nome: 'Yalahar gear wheel', qtd: 70, onde: 'caixas dos Elites de Yalahar 25–35 %' }] },
             { nome: 'Pits of Inferno', id: 'pits_of_inferno', ouro: 0, materiais: [{ nome: 'unholy book', qtd: 1, onde: 'Giant Spider 0,05 % (Giant Spiders POH / Mushroom Gardens)' }] },
@@ -11794,21 +11801,7 @@
             armor: [['Rotworms Darashia', 10000, 1], ['Water Elementals Cavern', 10000, 1], ['Bog Raiders Yalahar', 10000, 1], ['Hero Fortress Entrance', 12000, 1],
                     ['Hive Queen Chamber', 12000, 1], ['Putrid Mummies', 12000, 1], ['Ice Portal', 50000, 1], ['Warzone I - Rocky Mountain', 50000, 1], ['Seacrest Grounds', 50000, 1]],
             shielding: [['Gladiators Arena Yalahar', 10000, 1], ['Gargoyles Meriana', 10000, 1], ['Throne of Tafariel', 50000, 1], ['Annihilon Seal', 50000, 1], ['Kilmaresh Catacombs', 50000, 1]] },
-        // ── De onde vêm os materiais (ilhas e tentativas de boss)
-        materiais: { // wiki/acesso-as-ilhas, acesso-aos-bosses, lojas-das-ilhas
-            'Spectral Conch': 'Haunted Nexus Tomb Box (Elite Entombed Wraithlord) 20,83 %, 2 por vez',
-            'Haunted Sigil': 'Haunted Nexus Temple Box 10,42 % / Haunted Nexus Cellar Box 20,83 %, 2 por vez',
-            'Thunderscar Spark': 'Thunderscar Peak Box (Elite Balerion) 23 %, 4 por vez',
-            'Warzone Voucher': 'Upper/Middle/Lower Spikes Box 10,8/15,2/22,5 %, 3 por vez',
-            'Inquisition Badge': 'Inquisition Warlocks Box 23 % / Inquisition Entrance Box 28 %, 4 por vez',
-            'Yalahar gear wheel': 'caixas dos 13 Elites de Yalahar 25 % (Viscous/Flameborn/Olhao 30 %, Jaws 35 %)',
-            'Yalahar Soul Fragment': 'toda vitória nos 13 Elites de Yalahar',
-            'Sphinx Dust': 'Salt Caves / Ruins of Nuur, ou 2 tokens na loja de Issavi',
-            "Timira's Scale": 'Seacrest Grounds / Emerald Gardens, ou 2 tokens na loja de Marapur',
-            "Izcandar's Shard": 'Buried Cathedral Box 4,17 % / Dream Talisman Box 6,94 %, ou 2 tokens na loja de Dream Courts',
-            'Breach Shard': 'loja do Otherworld, 15 tokens',
-            "The inquisitor's circlet": 'caixas dos 7 Elites dos selos da Inquisition 0,93–2,49 %',
-            'Necronomicon': 'caixas dos 6 Elites dos portais 10,5–17,5 % (Holy Portal 17,5 %)' },
+        // De onde vem cada material: fonte única em ilhas[].materiais[].onde (ilha) e bosses[].onde (tentativa de boss).
         tokensIlha: { issavi: { fragmentos: 10, ouro: 20000, coins: 49 }, marapur: { fragmentos: 10, ouro: 20000, coins: 49 }, // wiki/lojas-das-ilhas (preço de 1 token); TODO confirmar id marapur/dream_courts
                       dream_courts: { fragmentos: 10, ouro: 20000, coins: 49 }, otherworld: { fragmentos: 10, ouro: 20000, coins: 9 } },
         // ── Equipamento do topo (nível 297–386 visível em 27/11) e réguas da comunidade
@@ -12075,6 +12068,8 @@
     const trUsaMunicao = (peca, base) => trNomeTem(peca, (base || TR_BASE).equip.municaoNomes);
     // Título no limite da tela (70); o resto vai no porquê.
     const trCorta = (s, n) => { const t = String(s), max = n || 70; return t.length <= max ? t : t.slice(0, max - 1).trimEnd() + '…'; };
+    // Corta só a BASE para `base + sufixo` caber em n (70): o sufixo ("(~6 h)", "(~1,2 M, sem risco)", "(falta 800 mil)") fica inteiro.
+    const trCortaSufixo = (base, sufixo, n) => { const suf = String(sufixo || ''); return trCorta(base, (n || 70) - suf.length) + suf; };
     // ['elmo', 'anel', 'bota'] → 'elmo, anel e bota'
     const trLista = (a) => (a.length > 1 ? a.slice(0, -1).join(', ') + ' e ' + a[a.length - 1] : a.join(''));
 
@@ -12601,14 +12596,14 @@
             const marco = `${trBonusPt(r.bonus)} +${trNum(r.ganho) > 0 ? Number(r.ganho) : '?'}`, mapa = r.title || (aqui && hunt.title) || 'outro mapa';
             const numeros = { huntId: r.huntId ?? null, bonus: r.bonus, ganho: trNum(r.ganho) || null, falta: trNum(r.falta) || null, horas, xpH, xpAtual };
             if (aqui && horas <= 10) {
-                out.push(trConselho('best', 'aqui', { titulo: trCorta(`Já fechando ${marco} aqui (~${trHorasPt(horas)} h)`), estado: 'ok', confianca: 'medido', numeros,
+                out.push(trConselho('best', 'aqui', { titulo: trCortaSufixo(`Já fechando ${marco} aqui`, ` (~${trHorasPt(horas)} h)`), estado: 'ok', confianca: 'medido', numeros,
                     porque: `Faltam ${trQtd(r.falta)} abates em ${mapa}: no seu ritmo, ~${trHorasPt(horas)} h. O bônus fica para sempre.` }));
                 continue;
             }
             const compara = aqui || (xpH != null && xpAtual != null);
             if (compara && !aqui && xpH < 0.8 * xpAtual) continue; // trocar de mapa por bônus não pode custar mais de 20 % de XP/h
             const imp = (TR_BONUS_IMPACTO[r.bonus] || 0.5) / Math.max(1, horas / 10) * (compara ? 1 : 0.5);
-            cand.push(trConselho('best', 'marco-' + (r.huntId ?? mapa), { titulo: trCorta(`Fechar ${marco} em ${mapa} (~${trHorasPt(horas)} h)`), impacto: imp,
+            cand.push(trConselho('best', 'marco-' + (r.huntId ?? mapa), { titulo: trCortaSufixo(`Fechar ${marco} em ${mapa}`, ` (~${trHorasPt(horas)} h)`), impacto: imp,
                 confianca: compara ? 'wiki' : 'estimado', numeros,
                 porque: `Faltam ${trQtd(r.falta)} abates (~${trHorasPt(horas)} h no ritmo medido) para ${marco} permanente para a party. `
                     + (aqui ? 'Você já caça aqui: é só continuar.'
@@ -12649,11 +12644,17 @@
             return [trConselho('itens', 'ok', { titulo: leu ? 'Nenhuma ilha a abrir no seu nível agora' : 'Nada a apontar com os dados lidos', estado: 'ok',
                 porque: leu ? `Nenhuma ilha fechada tem caçada até o nível ${nivel + 20} acima da de agora.` : 'Sem o nível ou a lista de ilhas abertas para conferir.' })];
         }
-        const { il, abre, mats, custo } = o, ouro = il.ouro || 0;
-        const partes = [ouro ? `${trQtd(ouro)} de ouro` : null, ...mats.map(m => `${m.falta} ${m.nome}`)].filter(Boolean);
+        const { il, abre, mats, custo } = o, ouro = il.ouro || 0, ouroTxt = ouro ? `${trQtd(ouro)} de ouro` : null;
+        // título: o ouro sempre visível; materiais por extenso enquanto cabem, o resto vira "+ N itens"
+        let titulo = `Abrir ${il.nome}: ${ouroTxt || 'entrega'} no Silas`;
+        for (let k = mats.length; mats.length && k >= 0; k--) {
+            const resto = mats.length - k;
+            titulo = `Abrir ${il.nome}: faltam ` + [ouroTxt, ...mats.slice(0, k).map(m => `${m.falta} ${m.nome}`), resto ? `${resto} ${resto > 1 ? 'itens' : 'item'}` : null].filter(Boolean).join(' + ');
+            if (titulo.length <= 70) break;
+        }
         const passos = mats.map(m => (m.preco ? `Comprar ${m.falta} ${m.nome} (~${trQtd(m.falta * m.preco)})` : `Caçar ${m.nome}: ${m.onde}`));
         return [trConselho('itens', 'ilha-' + il.id, { impacto: 5, custo,
-            titulo: trCorta(mats.length ? `Abrir ${il.nome}: faltam ${partes.join(' + ')}` : `Abrir ${il.nome}: ${partes.join(' + ') || 'entrega'} no Silas`),
+            titulo: trCorta(titulo),
             porque: `${il.nome} abre ${trLista(abre.map(([t, c]) => `${t} (Rec ${c.rec})`))}` + (recAtual ? `, acima do Rec ${recAtual} de agora` : '') + '. '
                 + (passos.length ? passos.join('; ') + '. ' : 'Os materiais já estão com você. ')
                 + 'A entrega é no Silas, na cidade (conta mochila + depósito). O "Onde upar" diz quanto a caçada rende.',
@@ -12675,7 +12676,8 @@
         const party = (Array.isArray(foto.party) ? foto.party : []).filter(m => m && m.voc);
         const eqDe = (voc, slot) => { const m = party.find(x => x.voc === voc); return m ? trPeca(m.eq, slot) : null; };
         const mago = (voc) => b.legado.skill[voc] === 'ml';
-        let pecas = [], leu = false, magoPulado = false;
+        let pecas = [], leu = false;
+        const fora = []; // abaixo de +4 mas fora da conta (arma de mago; anel/colar/munição): o ok não pode dizer "tudo em +4"
         if (fj && Array.isArray(fj.abaixo4)) {
             leu = true;
             pecas = fj.abaixo4.filter(p => p && p.voc && p.slot && trNum(p.refino) < ate)
@@ -12692,9 +12694,10 @@
         }
         const cand = [];
         for (const p of pecas) {
-            if (p.slot === 'weapon' && mago(p.voc)) { magoPulado = true; continue; }
+            if (p.slot === 'weapon' && mago(p.voc)) { fora.push(`arma de mago (${p.nome} +${p.refino}: o refino só dá potência)`); continue; }
             if (p.slot !== 'weapon') {
-                if (TR_REFINO_IMPACTO[p.slot]) cand.push(Object.assign({}, p, { imp: TR_REFINO_IMPACTO[p.slot] })); // anel/colar/munição: fora
+                if (TR_REFINO_IMPACTO[p.slot]) cand.push(Object.assign({}, p, { imp: TR_REFINO_IMPACTO[p.slot] }));
+                else fora.push(`${trSlotPt(p.slot)} (${p.nome} +${p.refino})`);
                 continue;
             }
             const w = eqDe(p.voc, 'weapon'), atk = trNum(w && w.ataque) > 0 ? Number(w.ataque) : 50, danoPct = (ate - p.refino) / atk * 100;
@@ -12704,7 +12707,7 @@
         for (const p of cand.slice(0, 3)) {
             const nome = trVocPt(p.voc), arma = p.slot === 'weapon';
             out.push(trConselho('forja', `refino-${p.voc}-${p.slot}`, { confianca: 'wiki', custo: p.custo || 0, impacto: p.imp,
-                titulo: trCorta(`Refinar ${p.nome} +${p.refino} → +${ate} (${p.custo ? '~' + trQtd(p.custo) + ', ' : ''}sem risco)`),
+                titulo: trCortaSufixo(`Refinar ${p.nome} +${p.refino} → +${ate}`, ` (${p.custo ? '~' + trQtd(p.custo) + ', ' : ''}sem risco)`),
                 porque: `${p.nome} (${trSlotPt(p.slot)} do ${nome}): até +${ate} o refino não falha. `
                     + (arma ? `Cada refino soma 1 de ataque: +${ate - p.refino} sobre ${p.atk} ≈ +${trPct(p.danoPct)} % de dano do ${nome}`
                         + (p.imp > 0 ? '. ' : ', mas a caçada está limitada por spawn: não vira XP agora. ')
@@ -12714,8 +12717,10 @@
                 acao: { tipo: 'abrir-forja', voc: p.voc, slot: p.slot, rotulo: 'Forja' } }));
         }
         if (leu && !cand.length) {
-            out.push(trConselho('forja', 'ok', { titulo: `Peças vestidas já em +${ate}`, estado: 'ok', confianca: 'medido',
-                porque: `Nenhuma peça vestida abaixo de +${ate}` + (magoPulado ? ' (arma de mago fica de fora: o refino dela só dá potência).' : '.') }));
+            // "já em +4" só quando nada ficou abaixo de +4; senão o ok fala só dos slots que a conta trata (arma e defesa)
+            out.push(trConselho('forja', 'ok', { titulo: fora.length ? `Refino que rende XP já em +${ate}` : `Peças vestidas já em +${ate}`, estado: 'ok', confianca: 'medido',
+                porque: fora.length ? `Arma (Cavaleiro/Paladino), elmo, armadura, escudo, calça e bota em +${ate}. Fora da conta, abaixo de +${ate}: ${trLista(fora)}.`
+                    : `Nenhuma peça vestida abaixo de +${ate}.` }));
         }
         // cálculo velho: idadeH ausente = sem data = velho (mesma regra do topo)
         if (!fj || !(trNum(fj.idadeH) <= 24)) {
@@ -12777,7 +12782,7 @@
         if (fora) {
             const falta = Number(fora.custo) - sobra, fim = ` (falta ${trQtd(falta)})`;
             out.push(trConselho('ouro', 'juntar', { impacto: 0,
-                titulo: `Juntar para: ${trCorta(fora.titulo, 70 - 'Juntar para: '.length - fim.length)}${fim}`,
+                titulo: trCortaSufixo(`Juntar para: ${fora.titulo}`, fim),
                 porque: `${fora.titulo} custa ${trQtd(fora.custo)}` + (escolhidos.length ? `; depois dos passos acima sobram ${trQtd(sobra)}.` : `; o ouro livre é ${trQtd(livre)}.`),
                 numeros: { id: fora.id, custo: Number(fora.custo), sobra, falta } }));
         }

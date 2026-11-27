@@ -74,7 +74,13 @@ sem dependências), eslint 10, Playwright para o teste ao vivo.
 >   `shielding`…); `horas` = `falta ÷ abates/h medidos` ou `null` (linha ignorada); `xpH` = XP/h do mapa em `foto.mapas` ou `null`
 >   (entra como 'estimado', impacto ÷ 2). A linha do mapa atual é achada por `trMesmoId(huntId, hunt.id)`.
 > - [contrato] **Ilhas**: `foto.ilhas = [{ id | nome, aberta }]`; ilha ausente da lista = aberta (o "Caçar itens" não sugere abrir).
->   O "onde" do material de ilha vem de `TR_BASE.ilhas[].materiais[].onde` (fonte única); `TR_BASE.materiais` segue para os bosses.
+>   O "onde" do material de ilha vem de `TR_BASE.ilhas[].materiais[].onde` (fonte única); o da tentativa de boss, de `bosses[].onde`.
+>   `TR_BASE.materiais` foi REMOVIDO (duplicava os dois e ninguém lia). Todo material de ilha tem nome próprio (a Inquisition pede as
+>   7 relíquias por nome, 8 de cada — wiki/acesso-as-ilhas), então a falta é contada por `trPorNome` sem exceção.
+> - Títulos com sufixo usam `trCortaSufixo(base, sufixo)` (corta só a base): Bestiário "(~h h)", Forja "(~X, sem risco)", Dinheiro "(falta Y)".
+>   Itens: o ouro fica sempre visível; materiais por extenso enquanto cabem, o resto vira "+ N itens".
+> - Forja: "Peças vestidas já em +4" só quando nada vestido ficou abaixo de +4; se só arma de mago/anel/colar/munição estão abaixo,
+>   o ok vira "Refino que rende XP já em +4" e lista no porquê o que ficou fora da conta.
 >   `deposito`/`precos` por nome via `trPorNome` (preço > 0 conta; 0/ausente = sem preço → "Caçar").
 > - [contrato] **Forja**: `foto.forja = { abaixo4: [{ voc, slot, nome, refino, custo | null }], idadeH, basesParadas: [{ nome, potencia }] } | null`.
 >   `abaixo4` = só peças VESTIDAS (slot em `TR_SLOTS`; arma de mago pode vir, é pulada); quando existe, vence `party[].eq`.

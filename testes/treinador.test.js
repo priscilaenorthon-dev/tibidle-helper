@@ -6,7 +6,7 @@ const i = src.indexOf('/* @@TREINADOR-PURO-INICIO'), f = src.indexOf('/* @@TREIN
 assert(i > 0 && f > i, 'trecho @@TREINADOR-PURO não encontrado');
 const T = new Function(src.slice(i, f) + '\nreturn { TR_BASE, TR_AGENTES, trConselho, trOrdenar, trRodar, trFotoVazia, trCacada, trAgenteUpar, trAgenteMult, trAgenteLegado, '
     + 'trMesmoId, trQtd, trLimitadoPorDano, trDanoParaXp, trTipoPrey, trXpAtual, trRecDe, trMortesRecentes, trAgenteTopo, trAgenteErros, trXpPerdidaMorte, trAgenteBoss, trEventosMorte, trImpactoMorte, '
-    + 'trAgenteBestiario, trAgenteItens, trAgenteForja, trAgenteDinheiro };')();
+    + 'trAgenteBestiario, trAgenteItens, trAgenteForja, trAgenteDinheiro, trCortaSufixo };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 // agentes falsos: troca os de verdade pelos falsos, roda e devolve os de verdade sempre
@@ -1072,6 +1072,53 @@ t('dinheiro: fase 2 recebe os conselhos da fase 1 pelo trRodar e não passa à f
 }));
 t('dinheiro: registrado como fase 2', () => {
     assert(T.TR_AGENTES.some(a => a.id === 'ouro' && a.rodar === T.trAgenteDinheiro && a.icone === '$' && a.fase === 2));
+});
+
+// ── Lote C ajustado: corte que preserva o sufixo, ok honesto da Forja, materiais com nome próprio
+const LONGO = 'Nome de Mapa Muito Comprido Que Não Cabe Na Tela Do Celular De Jeito Nenhum';
+t('trCortaSufixo: corta só a base e mantém o sufixo inteiro em 70', () => {
+    assert.strictEqual(T.trCortaSufixo('curto', ' (fim)'), 'curto (fim)');
+    const s = T.trCortaSufixo(LONGO, ' (~6 h)');
+    assert.strictEqual(s.length, 70); assert(s.endsWith('… (~6 h)'), s);
+});
+t('títulos longos guardam o sufixo: Bestiário "(~h h)", Forja "(~X, sem risco)", Dinheiro "(falta Y)"', () => {
+    const b = best(fBest({ bestiario: [lb(7, LONGO, 'magicLevel', 6, 500000), lb(1, LONGO, 'magicLevel', 8, 540000)] }));
+    assert(b.length === 2 && b.every(c => c.titulo.length <= 70 && c.titulo.endsWith(c.estado === 'ok' ? 'aqui (~8 h)' : '(~6 h)')), b.map(c => c.titulo).join(' | '));
+    const fj = { abaixo4: [{ voc: 'KNIGHT', slot: 'shield', nome: 'spellbook of the very ancient and extremely long lost order', refino: 0, custo: 1200000 }], idadeH: 1 };
+    const r = refinos(forja(fForja({ forja: fj })))[0];
+    assert(r.titulo.length <= 70 && r.titulo.startsWith('Refinar spellbook') && r.titulo.endsWith('… (~1,2 M, sem risco)'), r.titulo);
+    const j = din(foto({ ouroLivre: 1000 }), [T.trConselho('a', 'x', { titulo: LONGO, custo: 5000, impacto: 1 })]).find(c => c.id === 'ouro:juntar');
+    assert(j.titulo.length <= 70 && j.titulo.startsWith('Juntar para: ') && j.titulo.endsWith('(falta 4 mil)'), j.titulo);
+});
+t('itens: The Inquisition pede as 7 relíquias por nome; muitos materiais → "faltam 5 M de ouro + N itens"', () => {
+    const f = (dep) => itens(foto({ nivel: 240, hunt: { id: 3, title: 'Fire Portal', rec: 175 }, ilhas: [{ id: 'the_inquisition', aberta: false }], deposito: dep }))[0];
+    let c = f({});
+    assert.strictEqual(c.id, 'itens:ilha-the_inquisition'); assert.strictEqual(c.numeros.materiais.length, 8);
+    assert.strictEqual(c.titulo, 'Abrir The Inquisition: faltam 5 M de ouro + 8 itens');
+    assert(/Caçar Verminor's Relic: .*Plasmother/.test(c.porque), c.porque);
+    const quase = { 'inquisition badge': 20 };
+    for (const r of ['Bazir', 'Infernatil', 'Tafariel', 'Apocalypse', 'Ashfalor', 'Pumin']) quase[r + "'s Relic"] = 8;
+    c = f(Object.assign(quase, { "Verminor's Relic": 3 }));
+    assert.strictEqual(c.titulo, "Abrir The Inquisition: faltam 5 M de ouro + 5 Verminor's Relic");
+    c = f({ 'inquisition badge': 4 });
+    assert(c.titulo.startsWith('Abrir The Inquisition: faltam 5 M de ouro + ') && c.titulo.length <= 70, c.titulo);
+});
+t('base: todo material de ilha tem nome próprio e "onde" (sem TR_BASE.materiais duplicado)', () => {
+    assert(!('materiais' in T.TR_BASE));
+    for (const il of T.TR_BASE.ilhas) for (const m of il.materiais) assert(m.nome && m.qtd > 0 && m.onde && !/relíquias/.test(m.nome), il.id + ': ' + m.nome);
+});
+t('forja: anel +2 (slot fora da conta) com o resto em +4 → o ok não diz "Peças vestidas já em +4"', () => {
+    const p = partyForja(); p[0].eq.weapon.refino = 4; p[0].eq.ring = pc('Royal Signet', 2);
+    const p2 = partyForja(); p2[0].eq.weapon.refino = 4; p2[1].eq.weapon.refino = 4;
+    const cs = forja(fForja({ party: p, forja: null })).filter(c => c.id !== 'forja:ler');
+    // a wand do Feiticeiro (+0) e o anel ficam de fora: o ok não pode afirmar "todas em +4"
+    assert.deepStrictEqual(cs.map(c => c.estado), ['ok']); assert(!/Peças vestidas já em/.test(cs[0].titulo), cs[0].titulo);
+    assert(/anel/.test(cs[0].porque) && /arma de mago/.test(cs[0].porque), cs[0].porque);
+    p2[0].eq.ring = pc('Royal Signet', 2);
+    const so = forja(fForja({ party: p2, forja: null })).filter(c => c.id !== 'forja:ler');
+    assert(!/Peças vestidas já em/.test(so[0].titulo) && /anel/.test(so[0].porque), so[0].titulo + ' | ' + so[0].porque);
+    delete p2[0].eq.ring;
+    assert.strictEqual(forja(fForja({ party: p2, forja: null })).find(c => c.id === 'forja:ok').titulo, 'Peças vestidas já em +4');
 });
 
 process.on('exit', () => { if (!process.exitCode) console.log(`\n${n} testes ok`); });
