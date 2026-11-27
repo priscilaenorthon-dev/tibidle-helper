@@ -213,6 +213,26 @@ t('upar: sem medida, o melhor da faixa (maior Rec ≤ nível) em ilha fechada �
     const ab = T.trAgenteUpar(f, T.TR_BASE).find(c => /^Abrir/.test(c.titulo));
     assert(ab && /Issavi/.test(ab.titulo) && /Kilmaresh Catacombs/.test(ab.titulo), ab && ab.titulo);
 });
+t('upar: Shadow Nexus (Rec 250) no 238 com Issavi fechada → nenhum "Abrir Issavi"', () => {
+    const f = foto({ nivel: 238, hunt: huntSN(), medidoAtual: { xpH: 540000 }, ilhas: [{ id: 'issavi', aberta: false }], mapas: [mapa(1, 'Shadow Nexus', 540000)] });
+    assert(!T.trAgenteUpar(f, T.TR_BASE).some(c => /^Abrir/.test(c.titulo)));
+    // e com um mapa aberto medido melhor que o de agora, também não
+    const g = foto({ nivel: 238, hunt: huntSN({ id: 3, title: 'Ice Portal', rec: 200 }), medidoAtual: { xpH: 300000 }, ilhas: [{ id: 'issavi', aberta: false }],
+        mapas: [mapa(3, 'Ice Portal', 300000), mapa(1, 'Shadow Nexus', 540000)] });
+    assert(!T.trAgenteUpar(g, T.TR_BASE).some(c => /^Abrir/.test(c.titulo)));
+});
+t('upar: mapa melhor mas < 10 % (560k × 540k) → ok, sem ir-mapa', () => {
+    const f = foto({ nivel: 238, hunt: huntSN(), medidoAtual: { xpH: 540000 }, mapas: [mapa(1, 'Shadow Nexus', 540000), mapa(2, 'Summer Court', 560000)] });
+    const cs = T.trAgenteUpar(f, T.TR_BASE);
+    assert.strictEqual(acoes(cs, 'ir-mapa').length, 0);
+    const ok = cs.find(c => c.estado === 'ok'); assert(ok && /Summer Court/.test(ok.porque) && /10 %/.test(ok.porque), ok && ok.porque);
+});
+t('upar: sem XP/h atual (fora de caçada) → ir-mapa no melhor medido com impacto 5', () => {
+    const f = foto({ nivel: 238, mapas: [mapa(2, 'Summer Court', 650000), mapa(3, 'Ice Portal', 300000)] });
+    const ir = acoes(T.trAgenteUpar(f, T.TR_BASE), 'ir-mapa');
+    assert.strictEqual(ir.length, 1); assert.strictEqual(ir[0].acao.huntId, 2); assert.strictEqual(ir[0].impacto, 5);
+    assert(/650k XP\/h/.test(ir[0].titulo), ir[0].titulo);
+});
 t('upar: já no melhor mapa medido → estado ok e sem ir-mapa', () => {
     const f = foto({ nivel: 238, hunt: huntSN(), medidoAtual: { xpH: 650000 },
         mapas: [mapa(1, 'Shadow Nexus', 650000), mapa(2, 'Summer Court', 600000)] });
@@ -268,6 +288,24 @@ t('mult: caçada limitada por dano → prey de EXP vira DANO', () => {
     assert.deepStrictEqual(tr.map(c => c.acao.voc), ['KNIGHT']); assert(/DANO/.test(tr[0].titulo));
     assert(Math.abs(tr[0].impacto - (4 * 5 / 4 - 5 / 2)) < 1e-9); // DANO ★5 = 20 % de 1 dos 4 → 5; menos o EXP ★5 (2,5)
 });
+t('mult: tipos do jogo (xp/damage/defense) — limitada por spawn: damage vira EXP e xp NÃO pede troca', () => {
+    const f = foto({ nivel: 238, hunt: huntSN(), medidoAtual: { abatesH: 1300 }, prey: preyDe({ KNIGHT: buff('damage', 5), DRUID: buff('xp', 5), PALADIN: buff('XP', 5) }) });
+    const tr = acoes(T.trAgenteMult(f, T.TR_BASE), 'prey-trocar');
+    assert.deepStrictEqual(tr.map(c => c.acao.voc), ['KNIGHT']); assert(/EXP/.test(tr[0].titulo));
+    assert(Math.abs(tr[0].impacto - 2.5) < 1e-9);
+});
+t('mult: tipos do jogo — limitada por dano: xp vira DANO; defense de quem morreu fica', () => {
+    const f = foto({ nivel: 238, hunt: huntSN(), medidoAtual: { abatesH: 500 }, mortes: [{ t: 1.8e12 - DIA, voc: 'DRUID' }],
+        prey: preyDe({ KNIGHT: buff('xp', 5), PALADIN: buff('damage', 5), DRUID: buff('defense', 5) }) });
+    const tr = acoes(T.trAgenteMult(f, T.TR_BASE), 'prey-trocar');
+    assert.deepStrictEqual(tr.map(c => c.acao.voc), ['KNIGHT']); assert(/DANO/.test(tr[0].titulo));
+    assert(Math.abs(tr[0].impacto - 2.5) < 1e-9);
+});
+t('mult: prey em outro mapa soma o que se perde também com tipos do jogo', () => {
+    const f = foto({ nivel: 238, hunt: huntSN(), prey: preyDe({ KNIGHT: buff('xp', 5), DRUID: buff('xp', 3) }, { huntId: 9 }) });
+    const c = acoes(T.trAgenteMult(f, T.TR_BASE), 'prey-escolher')[0];
+    assert(Math.abs(c.impacto - 4) < 1e-9, String(c.impacto)); // (5 + 3) ÷ 200 × 100
+});
 t('mult: sem abates medidos não opina no tipo; defesa de quem morreu fica', () => {
     let f = foto({ nivel: 238, hunt: huntSN(), prey: preyDe({ KNIGHT: buff('loot', 5) }) });
     assert.strictEqual(acoes(T.trAgenteMult(f, T.TR_BASE), 'prey-trocar').length, 0);
@@ -275,11 +313,15 @@ t('mult: sem abates medidos não opina no tipo; defesa de quem morreu fica', () 
         prey: preyDe({ DRUID: buff('defesa', 5) }) });
     assert.strictEqual(acoes(T.trAgenteMult(f, T.TR_BASE), 'prey-trocar').length, 0);
 });
-t('mult: tier 6 destravada com tempo → trancar; travada, tier 10 ou sem tempo → nada', () => {
+t('mult: tier 6 e tier 10 destravadas com tempo → trancar (2 + 0,2 × tier); travada, sem tempo, tipo errado ou sem abates → nada', () => {
     const base = { nivel: 238, hunt: huntSN(), medidoAtual: { abatesH: 1300 } };
     let tc = acoes(T.trAgenteMult(foto(Object.assign({ prey: preyDe({ SORCERER: buff('exp', 6, { locked: false }) }) }, base)), T.TR_BASE), 'prey-trancar');
-    assert.strictEqual(tc.length, 1); assert.strictEqual(tc[0].acao.voc, 'SORCERER'); assert(/tier 6/.test(tc[0].titulo)); assert.strictEqual(tc[0].impacto, 2);
-    for (const b of [buff('exp', 6), buff('exp', 10, { locked: false }), buff('exp', 6, { locked: false, msLeft: 0 })]) {
+    assert.strictEqual(tc.length, 1); assert.strictEqual(tc[0].acao.voc, 'SORCERER'); assert(/tier 6/.test(tc[0].titulo)); assert(Math.abs(tc[0].impacto - 3.2) < 1e-9);
+    tc = acoes(T.trAgenteMult(foto(Object.assign({ prey: preyDe({ DRUID: buff('xp', 10, { locked: false }) }) }, base)), T.TR_BASE), 'prey-trancar');
+    assert.strictEqual(tc.length, 1); assert(/tier 10/.test(tc[0].titulo)); assert(Math.abs(tc[0].impacto - 4) < 1e-9);
+    tc = acoes(T.trAgenteMult(foto({ nivel: 238, hunt: huntSN(), prey: preyDe({ DRUID: buff('xp', 6, { locked: false }) }) }), T.TR_BASE), 'prey-trancar');
+    assert.strictEqual(tc.length, 0, 'sem abates não há tipo ideal');
+    for (const b of [buff('exp', 6), buff('exp', 6, { locked: false, msLeft: 0 }), buff('loot', 6, { locked: false })]) {
         tc = acoes(T.trAgenteMult(foto(Object.assign({ prey: preyDe({ SORCERER: b }) }, base)), T.TR_BASE), 'prey-trancar');
         assert.strictEqual(tc.length, 0, JSON.stringify(b));
     }
@@ -324,7 +366,7 @@ t('legado: Cavaleiro melee 64 → marco 65 (+2 → +5): impacto = 3 × xpPorDano
     assert(Math.abs(c.impacto - 3 * T.TR_BASE.legado.xpPorDanoFrac / 4) < 1e-9, String(c.impacto));
     assert.strictEqual(c.estado, 'aviso'); assert.strictEqual(c.confianca, 'wiki');
     assert.deepStrictEqual(c.acao && { tipo: c.acao.tipo, voc: c.acao.voc }, { tipo: 'ampulheta', voc: 'KNIGHT' });
-    assert.strictEqual(c.custo, T.TR_BASE.ampulheta.preco8h);
+    assert.strictEqual(c.custo, 6 * T.TR_BASE.ampulheta.preco1h); // 6 h livres × preço da hora
     assert(/Cavaleiro/.test(c.titulo) && /falta 1 de skill/.test(c.titulo) && /\+3 % de dano/.test(c.titulo) && c.titulo.length <= 70, c.titulo);
     assert(/6 h de ampulheta livres hoje/.test(c.porque), c.porque);
 });
@@ -332,9 +374,13 @@ t('legado: ampulheta do dia usada (8 h) → estado ok "treino do dia feito"', ()
     const c = T.trAgenteLegado(foto({ legado: { KNIGHT: leg() }, ampulhetas: { KNIGHT: { usadasH: 8 } } }), T.TR_BASE)[0];
     assert.strictEqual(c.estado, 'ok'); assert(/treino do dia feito/.test(c.titulo), c.titulo); assert(!/livres/.test(c.porque));
 });
-t('legado: poucas horas livres pedem a ampulheta menor', () => {
-    const c = T.trAgenteLegado(foto({ legado: { KNIGHT: leg() }, ampulhetas: { KNIGHT: { usadasH: 7 } } }), T.TR_BASE)[0];
+t('legado: custo = horas livres (para cima) × preço da hora; sem dado de horas = a de 8 h', () => {
+    let c = T.trAgenteLegado(foto({ legado: { KNIGHT: leg() }, ampulhetas: { KNIGHT: { usadasH: 7 } } }), T.TR_BASE)[0];
     assert.strictEqual(c.custo, T.TR_BASE.ampulheta.preco1h); assert(/1 h de ampulheta livres hoje/.test(c.porque));
+    c = T.trAgenteLegado(foto({ legado: { KNIGHT: leg() }, ampulhetas: { KNIGHT: { usadasH: 4.5 } } }), T.TR_BASE)[0];
+    assert.strictEqual(c.custo, 4 * T.TR_BASE.ampulheta.preco1h);
+    c = T.trAgenteLegado(foto({ legado: { KNIGHT: leg() } }), T.TR_BASE)[0];
+    assert.strictEqual(c.custo, T.TR_BASE.ampulheta.preco8h); assert(!/livres/.test(c.porque));
 });
 t('legado: ordena pela menor falta relativa (falta ÷ passo)', () => {
     const f = foto({ legado: { KNIGHT: leg({ skill: 61, falta: 4 }), SORCERER: leg({ skill: 54, proxMarco: 55, falta: 1, bonusAtual: 9, bonusProx: 14 }),

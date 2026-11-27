@@ -11941,6 +11941,7 @@
         const xpAtual = ma && trNum(ma.xpH) > 0 ? Number(ma.xpH) : daCacada && trNum(daCacada.xpH) > 0 ? Number(daCacada.xpH) : null;
         const nomeAtual = hunt ? hunt.title || (daCacada && daCacada.title) || 'a caçada atual' : null;
         const outros = cand.filter(m => !hunt || m.id !== hunt.id);
+        const melhorOutro = xpAtual ? outros.some(m => m.xpH >= 1.1 * xpAtual) : outros.length > 0; // já há mapa aberto medido melhor
         const irPara = (m, imp, porque) => trConselho('upar', 'mapa', {
             titulo: xpAtual ? `Upar em ${m.title}: +${Math.round(imp)} % de XP/h` : `Upar em ${m.title}: ${trK(m.xpH)} XP/h`,
             porque, numeros: { xpH: m.xpH, xpAtual, fonte: m.fonte || null }, impacto: imp, confianca: trConf(m.fonte),
@@ -11965,10 +11966,11 @@
         let abrir = null;
         if (melhorFechado && (!melhor || melhorFechado.xpH * trPeso(melhorFechado.fonte) > melhor.xpH * trPeso(melhor.fonte))) {
             abrir = { title: melhorFechado.title, ilha: ilhaDe(melhorFechado), xpH: melhorFechado.xpH };
-        } else if (!melhorFechado && nivel != null) {
-            const fx = trFaixaDoNivel(nivel, b);
+        } else if (!melhorFechado && !melhorOutro && nivel != null) {
+            // sem medida: só aponta a caçada de maior Rec ≤ nível da faixa se ela passa o Rec da caçada de agora
+            const fx = trFaixaDoNivel(nivel, b), recAtual = hunt ? Number(hunt.rec) || (trCacada(hunt.title, b) || {}).rec || 0 : 0;
             const topo = fx ? fx.hunts.map(h => Object.assign({ title: h }, trCacada(h, b))).filter(c => c.rec != null && c.rec <= nivel).sort((x, y) => y.rec - x.rec)[0] : null;
-            if (topo && trIlhaFechada(foto, b, topo.ilha)) abrir = { title: topo.title, ilha: topo.ilha, xpH: null };
+            if (topo && topo.rec > recAtual && trIlhaFechada(foto, b, topo.ilha)) abrir = { title: topo.title, ilha: topo.ilha, xpH: null };
         }
         if (abrir && abrir.ilha) {
             const ilha = trNomeIlha(b, abrir.ilha);
@@ -12014,6 +12016,10 @@
     const trOuroTxt = (v) => (v >= 1e6 ? String(Math.round(v / 1e5) / 10).replace('.', ',') + ' M' : v >= 1e3 ? Math.round(v / 1e3) + ' mil' : String(Math.round(v)));
     const trPct = (v) => String(Math.round(v * 10) / 10).replace('.', ','); // 4.75 → '4,8'
     const TR_SEMANA_MS = 7 * 864e5;
+    // Tipo da prey: o jogo (e TR_BASE.prey.tiposBuff) fala xp/loot/damage/defense; o resto do helper, exp/dano/defesa. Aceita os dois.
+    const TR_PREY_TIPO = { xp: 'xp', exp: 'xp', damage: 'damage', dano: 'damage', defense: 'defense', defesa: 'defense', loot: 'loot' };
+    const trTipoPrey = (t) => TR_PREY_TIPO[String(t || '').toLowerCase()] || null;
+    const TR_PREY_PT = { xp: 'EXP', damage: 'DANO', defense: 'DEFESA', loot: 'LOOT' }; // texto para o dono
     function trAgenteMult(foto, base) {
         const b = base || TR_BASE, out = [], den = 100 + b.xp.party;
         const nivel = Number.isFinite(foto.nivel) ? foto.nivel : null, hunt = foto.hunt || null;
@@ -12033,10 +12039,11 @@
         if (prey && hunt) {
             const porDano = trLimitadoPorDano(foto, b), ma = foto.medidoAtual || {};
             const folga = porDano ? (b.spawn.porLure * Number(hunt.lure) / Number(ma.abatesH) - 1) * 100 : Infinity; // o dano não passa o teto de spawn
-            const tierMax = b.prey.tierMax, xpPorTier = b.xp.preyColunaMax / tierMax;
+            const xpPorTier = b.xp.preyColunaMax / b.prey.tierMax;
             const valor = (tipo, tier) => {
-                if (tipo === 'exp') return tier * xpPorTier / den * 100;
-                if (tipo === 'dano') return porDano === true ? Math.min(b.prey.danoPorTier * tier / 4, folga) : porDano === null ? b.prey.danoPorTier * tier / 8 : 0;
+                const tp = trTipoPrey(tipo);
+                if (tp === 'xp') return tier * xpPorTier / den * 100;
+                if (tp === 'damage') return porDano === true ? Math.min(b.prey.danoPorTier * tier / 4, folga) : porDano === null ? b.prey.danoPorTier * tier / 8 : 0;
                 return 0;
             };
             const buffs = prey.buffs && typeof prey.buffs === 'object' ? prey.buffs : {};
@@ -12050,28 +12057,29 @@
                     numeros: { huntPrey, huntAtual: hunt.id, perdido },
                     acao: { tipo: 'prey-escolher', huntId: hunt.id, rotulo: 'Prey aqui' } }));
             }
-            const ideal = porDano === true ? 'dano' : porDano === false ? 'exp' : null;
+            const ideal = porDano === true ? 'damage' : porDano === false ? 'xp' : null;
             for (const voc of Object.keys(buffs)) {
                 const x = buffs[voc];
                 if (!x) continue;
-                const tier = Math.max(0, Number(x.tier) || 0), nome = trVocPt(voc);
+                const tier = Math.max(0, Number(x.tier) || 0), nome = trVocPt(voc), tipo = trTipoPrey(x.tipo);
                 const morreu = mortes.some(m => m.voc === voc);
-                const trocar = ideal && x.tipo !== ideal && !(x.tipo === 'defesa' && morreu);
+                const trocar = ideal && tipo !== ideal && !(tipo === 'defense' && morreu);
                 if (trocar) {
-                    const t1 = Math.max(1, tier), ganho = valor(ideal, t1) - valor(x.tipo, t1);
+                    const t1 = Math.max(1, tier), ganho = valor(ideal, t1) - valor(tipo, t1);
                     if (ganho > 0) {
-                        out.push(trConselho('mult', 'prey-tipo-' + voc, { titulo: `Prey do ${nome}: trocar para ${ideal.toUpperCase()}`, impacto: ganho,
-                            porque: (ideal === 'dano' ? `A caçada está limitada por dano (abates abaixo de ${Math.round(b.spawn.limitadoPorSpawnFrac * 100)} % do teto de spawn): `
+                        out.push(trConselho('mult', 'prey-tipo-' + voc, { titulo: `Prey do ${nome}: trocar para ${TR_PREY_PT[ideal]}`, impacto: ganho,
+                            porque: (ideal === 'damage' ? `A caçada está limitada por dano (abates abaixo de ${Math.round(b.spawn.limitadoPorSpawnFrac * 100)} % do teto de spawn): `
                                 + `DANO ★${t1} dá +${b.prey.danoPorTier * t1} % ao ${nome} (≈ +${trPct(b.prey.danoPorTier * t1 / 4)} % do grupo, 1 de 4).`
                                 : `A caçada está limitada por spawn: mais dano não vira XP. EXP ★${t1} soma +${t1 * xpPorTier} de XP para o grupo todo.`)
                                 + ` O sorteio é aleatório (1º do dia grátis, depois 1 wildcard) e o tier sobe a cada sorteio com o bônus ativo.`,
-                            numeros: { voc, tipo: x.tipo, ideal, tier },
+                            numeros: { voc, tipo, ideal, tier },
                             acao: { tipo: 'prey-trocar', voc, rotulo: 'Sortear' } }));
                     }
-                } else if (tier >= 1 && tier < tierMax && !x.locked && Number(x.msLeft) > 0 && (ideal ? x.tipo === ideal : x.tipo === 'exp' || x.tipo === 'dano')) {
-                    out.push(trConselho('mult', 'prey-trava-' + voc, { titulo: `Trancar a prey do ${nome} (tier ${tier})`, impacto: 2,
-                        porque: `Sem trava, quando as ${b.prey.duracaoH} h acabam o tier zera. Travada, renova sozinha no mesmo tier por ${b.prey.travaWildcards} wildcard.`,
-                        numeros: { voc, tipo: x.tipo, tier },
+                } else if (ideal && tipo === ideal && tier >= 1 && !x.locked && Number(x.msLeft) > 0) {
+                    // decisão do controlador: no ★10 também (é quando a trava mais vale); impacto estimado 2 + 0,2 por tier
+                    out.push(trConselho('mult', 'prey-trava-' + voc, { titulo: `Trancar a prey do ${nome} (tier ${tier})`, impacto: 2 + tier * 0.2,
+                        porque: `${TR_PREY_PT[tipo]} ★${tier} é o tipo certo aqui. Sem trava, quando as ${b.prey.duracaoH} h acabam o tier zera. Travada, renova sozinha no mesmo tier por ${b.prey.travaWildcards} wildcard.`,
+                        numeros: { voc, tipo, tier },
                         acao: { tipo: 'prey-trancar', voc, rotulo: 'Trancar' } }));
                 }
             }
@@ -12127,8 +12135,8 @@
             const usadas = foto.ampulhetas && foto.ampulhetas[voc] ? trNum(foto.ampulhetas[voc].usadasH) : NaN;
             const livres = Number.isFinite(usadas) ? Math.max(0, amp.horasDia - usadas) : null;
             const feito = livres === 0;
-            // a menor ampulheta que cobre as horas livres de hoje (sem dado = a de 8 h)
-            const custo = livres != null && livres <= 1 ? amp.preco1h : livres != null && livres <= 4 ? amp.preco4h : amp.preco8h;
+            // horas livres de hoje arredondadas para cima × preço da hora (sem dado = a de 8 h)
+            const horas = livres != null ? Math.ceil(livres) : amp.horasDia, custo = livres != null ? horas * amp.preco1h : amp.preco8h;
             const skillTxt = b.legado.skill[voc] === 'ml' ? 'nível mágico' : 'skill';
             return trConselho('legado', 'amp-' + voc, {
                 titulo: feito ? `${nome}: treino do dia feito (${falta === 1 ? 'falta' : 'faltam'} ${falta} para +${ganho} %)`
@@ -12137,7 +12145,7 @@
                 porque: `${nome} com ${skillTxt} ${l.skill} treinada; ao chegar a ${l.proxMarco}, o Legado vai de +${l.bonusAtual || 0} % para +${l.bonusProx} % de dano dele, para sempre. `
                     + (feito ? `Já usou as ${amp.horasDia} h de ampulheta de hoje.`
                         : (livres != null ? `${trPct(livres)} h de ampulheta livres hoje (teto ${amp.horasDia} h por vocação). ` : '')
-                            + `Ampulheta de ${custo === amp.preco1h ? 1 : custo === amp.preco4h ? 4 : 8} h: ${trOuroTxt(custo)} de ouro.`),
+                            + `${horas} h de ampulheta: ${trOuroTxt(custo)} de ouro.`),
                 numeros: { voc, skill: l.skill, falta, proxMarco: l.proxMarco, bonusAtual: l.bonusAtual, bonusProx: l.bonusProx, livres },
                 acao: feito ? null : { tipo: 'ampulheta', voc, rotulo: 'Ampulheta' } });
         });
