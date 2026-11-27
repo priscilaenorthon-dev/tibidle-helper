@@ -11613,6 +11613,7 @@
      * Conselho = { id, agente, titulo, porque, numeros, impacto (% de XP/h, ou equivalente), confianca, custo (ouro), acao }.
      * confianca: medido (da conta) > comunidade (post com número) > wiki > estimado. Sem DOM, sem rede, sem Date.now (foto.t). */
     const TR_PESO_CONF = { medido: 1, comunidade: 0.8, wiki: 0.6, estimado: 0.4 };
+    const trPeso = (fonte) => TR_PESO_CONF[String(fonte || '').toLowerCase()] || 0.4; // confiança desconhecida = estimado
     /* TR_BASE — o que um jogador profissional sabe (27/11/2026). Fontes: data/treinador-pesquisa-27-11.md e data/wiki-27-11/*.txt.
      * Convenção dos comentários: wiki/<página> · comunidade <quem/preset> · medido dd/mm (conta do dono) · protocolo (docs/protocolo-treinador.md).
      * Só dados; as poucas funções são contas puras de tabela da wiki.
@@ -11624,7 +11625,8 @@
         xp: { party: 100, premium: 10, boost: 50, preyColunaMax: 10, preyColunas: 4, // wiki/premium-o-que-muda, loja, prey
               seloAbundante: [4, 7, 10, 14, 20], seloPerigoFrac: 0.1, // wiki/selo-da-cacada (buff × (1 + 0,1 × Perigo))
               tetoBonus: 100, // wiki/selo-da-cacada: Selo + Prey + Boost "para em +100 %" (não diz se conta party/premium)
-              sessaoH: 12, sessao24hH: 24 }, // wiki/skills-e-treino (offline rende igual)
+              sessaoH: 12, sessao24hH: 24, // wiki/skills-e-treino (offline rende igual)
+              xpPorDanoFrac: 0.7 }, // estimado: fração da alta de dano do grupo que vira XP/h quando não se sabe se a caçada é limitada por dano ou spawn (trDanoParaXp)
         // ── teto de spawn × dano: xp/h = min(porLure × lure, fatorDanoFrac × DPS × 3600 ÷ HP) × xp por abate — erro < 2 % (medido 27/09)
         spawn: { porLure: 340, fatorDanoFrac: 0.707, limitadoPorSpawnFrac: 0.85, // medido 27/09; 0,85 = corte do plano (abates < 85 % do teto → dano)
                  xpPorHp: { 'Shadow Nexus': 0.061, 'Otherworld Zao': 0.094, ilhasNovas: [0.04, 0.07] } }, // comunidade (xp ÷ vida da 1ª criatura; ninguém mediu)
@@ -11641,8 +11643,7 @@
         legado: { skillInicio: 60, mlInicio: 40, passo: 5, // wiki/legado (skillInicio = corpo a corpo e distância; mlInicio = nível mágico)
                   bonus: [2, 5, 9, 14, 20, 27, 35, 44, 54, 65, 77, 90, 104], // % total no marco I..XIII; sem teto: cada marco soma 1 ponto a mais (XIV = +119)
                   skill: { KNIGHT: 'melee', PALADIN: 'dist', SORCERER: 'ml', DRUID: 'ml' }, // chaves de skill do helper/foto
-                  semCritico: true, // wiki/legado: entra sobre o golpe sem crítico; não mexe em roubo de vida/mana
-                  xpPorDanoFrac: 0.7 }, // estimado: XP ~ dano quando a caçada é limitada por dano (fração da alta de dano que vira XP/h)
+                  semCritico: true }, // wiki/legado: entra sobre o golpe sem crítico; não mexe em roubo de vida/mana
         // ── Treino: skill quase não sobe caçando; ampulheta = treino normal DURANTE a caçada (sem arma de treino)
         ampulheta: { horasDia: 8, fator: 8, // horasDia: wiki/ampulhetas-de-treino (por vocação); fator: arma de treino ×8 na Sala de Treino (wiki/skills-e-treino)
                      preco1h: 525000, preco4h: 2100000, preco8h: 4200000, // protocolo (meta.rules.cash, ouro)
@@ -11867,8 +11868,7 @@
             const imp = Number(c.impacto);
             if (!Number.isFinite(imp) || imp <= 0) continue;
             const custo = Number(c.custo) || 0, semOuro = custo > livre;
-            const peso = TR_PESO_CONF[String(c.confianca || '').toLowerCase()] || 0.4;
-            out.push(Object.assign({}, c, { nota: imp * peso * (semOuro ? 0.3 : 1), semOuro }));
+            out.push(Object.assign({}, c, { nota: imp * trPeso(c.confianca) * (semOuro ? 0.3 : 1), semOuro }));
         }
         return out.sort((a, b) => b.nota - a.nota);
     }
@@ -11898,11 +11898,25 @@
         }
         return { cartoes, passos: trOrdenar(todos, foto).slice(0, 3), todos };
     }
-    // ── Ajudantes dos especialistas (puros)
-    const trPeso = (fonte) => TR_PESO_CONF[String(fonte || '').toLowerCase()] || 0.4;
+    // ── Ajudantes dos especialistas (puros). Os próximos agentes REUSAM estes; não copiar a lógica para dentro do agente.
     const trConf = (fonte) => { const f = String(fonte || '').toLowerCase(); return f in TR_PESO_CONF ? f : 'estimado'; };
-    const trK = (v) => Math.round(v / 1000) + 'k'; // 540000 → 540k
-    const trNum = (v) => (v == null || v === '' ? NaN : Number(v)); // null/'' não viram 0
+    const trNum = (v) => (v == null || v === '' ? NaN : Number(v)); // null/'' não viram 0; '540000' vira número
+    // Ids da foto são Number, mas comparar SEMPRE por aqui: texto × número e null-safe (null nunca casa).
+    const trMesmoId = (a, b) => a != null && b != null && String(a) === String(b);
+    const trPct = (v) => String(Math.round(v * 10) / 10).replace('.', ','); // 4.75 → '4,8'
+    // Formatador neutro de quantidade (ouro, XP, XP/h): 950 · 540 mil · 1,2 M
+    function trQtd(v) {
+        const n = trNum(v), a = Math.abs(n);
+        if (!Number.isFinite(n)) return '?';
+        return a >= 999500 ? trPct(n / 1e6) + ' M' : a >= 1000 ? Math.round(n / 1000) + ' mil' : String(Math.round(n));
+    }
+    const TR_VOC_PT = { KNIGHT: 'Cavaleiro', PALADIN: 'Paladino', SORCERER: 'Feiticeiro', DRUID: 'Druida' };
+    const trVocPt = (v) => TR_VOC_PT[v] || String(v || '?');
+    const TR_DIA_MS = 864e5; // janelas em dias: trMortesRecentes(foto, base, 7) = a última semana
+    // Tipo da prey: o jogo (e TR_BASE.prey.tiposBuff) fala xp/loot/damage/defense; o resto do helper, exp/dano/defesa. Aceita os dois.
+    const TR_PREY_TIPO = { xp: 'xp', exp: 'xp', damage: 'damage', dano: 'damage', defense: 'defense', defesa: 'defense', loot: 'loot' };
+    const trTipoPrey = (t) => TR_PREY_TIPO[String(t || '').toLowerCase()] || null;
+    const TR_PREY_PT = { xp: 'EXP', damage: 'DANO', defense: 'DEFESA', loot: 'LOOT' }; // texto para o dono
     // Faixa de base.faixas onde o nível cai ([de, ate)); null sem nível.
     function trFaixaDoNivel(nivel, base) {
         return Number.isFinite(nivel) ? ((base || TR_BASE).faixas || []).find(x => nivel >= x.de && nivel < x.ate) || null : null;
@@ -11910,122 +11924,159 @@
     const trNomeIlha = (base, ilha) => { const i = ((base || TR_BASE).ilhas || []).find(x => x.id === ilha); return i ? i.nome : String(ilha); };
     // Ilha fechada? foto.ilhas = [{ id|nome, aberta }]; aceita o id do Silas ou o nome. Sem notícia = aberta (não inventa bloqueio).
     function trIlhaFechada(foto, base, ilha) {
-        if (!ilha) return false;
+        if (!ilha || !Array.isArray(foto.ilhas)) return false;
         const info = ((base || TR_BASE).ilhas || []).find(x => x.id === ilha);
         const nomes = [ilha, info && info.nome].filter(Boolean).map(s => String(s).toLowerCase());
-        const st = (foto.ilhas || []).find(x => x && [x.id, x.nome].some(v => v != null && nomes.includes(String(v).toLowerCase())));
+        const st = foto.ilhas.find(x => x && [x.id, x.nome].some(v => v != null && nomes.includes(String(v).toLowerCase())));
         return !!(st && st.aberta === false);
     }
-    // Caçada limitada por dano? abates/h < limitadoPorSpawnFrac × (porLure × lure) — teto de spawn medido 27/09. null = sem dado.
+    // XP/h de agora: o analisador da caçada (medidoAtual) ou, sem ele, a medida do mapa da caçada em foto.mapas. null = não sei.
+    function trXpAtual(foto) {
+        const ma = foto.medidoAtual, h = foto.hunt;
+        if (ma && trNum(ma.xpH) > 0) return Number(ma.xpH);
+        const m = h && Array.isArray(foto.mapas) ? foto.mapas.find(x => x && trMesmoId(x.id, h.id)) : null;
+        return m && trNum(m.xpH) > 0 ? Number(m.xpH) : null;
+    }
+    // Rec da caçada: hunt.rec → wiki (trCacada) → nível mínimo → null.
+    function trRecDe(hunt, base) {
+        if (!hunt) return null;
+        if (trNum(hunt.rec) > 0) return Number(hunt.rec);
+        const c = trCacada(hunt.title, base);
+        if (c && c.rec != null) return c.rec;
+        return trNum(hunt.levelMin) > 0 ? Number(hunt.levelMin) : null;
+    }
+    // Mortes de foto.mortes nos últimos `dias` (relativo a foto.t, em ms). `cacada` (opcional): título, id ou { id, title } da caçada.
+    function trMortesRecentes(foto, base, dias, cacada) {
+        const t0 = trNum(foto.t);
+        if (!(t0 > 0)) return [];
+        const desde = t0 - dias * TR_DIA_MS;
+        const id = cacada && typeof cacada === 'object' ? cacada.id : cacada;
+        const titulo = String(cacada && typeof cacada === 'object' ? cacada.title || '' : cacada == null ? '' : cacada).toLowerCase();
+        return (Array.isArray(foto.mortes) ? foto.mortes : []).filter(m => m && trNum(m.t) >= desde && (cacada == null
+            || trMesmoId(m.huntId, id) || (titulo && String(m.hunt || '').toLowerCase() === titulo)));
+    }
+    // Caçada limitada por dano? abates/h < limitadoPorSpawnFrac × (porLure × lure) — teto de spawn medido 27/09.
+    // Exige ≥ 5 min de medida e abates > 0; fora disso null (sem opinião).
     function trLimitadoPorDano(foto, base) {
         const b = base || TR_BASE, ma = foto.medidoAtual, h = foto.hunt;
-        const abates = ma ? trNum(ma.abatesH) : NaN, lure = h ? trNum(h.lure) : NaN;
-        if (!Number.isFinite(abates) || !(lure > 0)) return null;
-        return abates < b.spawn.limitadoPorSpawnFrac * b.spawn.porLure * lure;
+        if (!ma || !h || !(trNum(ma.min) >= 5) || !(trNum(ma.abatesH) > 0) || !(trNum(h.lure) > 0)) return null;
+        return Number(ma.abatesH) < b.spawn.limitadoPorSpawnFrac * b.spawn.porLure * Number(h.lure);
+    }
+    // Pontos de dano do GRUPO → pontos de XP/h, respeitando o teto de spawn:
+    // limitada por spawn → 0; desconhecido → × xp.xpPorDanoFrac (estimado); limitada por dano → até a folga que falta ao teto.
+    function trDanoParaXp(pontos, foto, base) {
+        const b = base || TR_BASE, lim = trLimitadoPorDano(foto, b), p = trNum(pontos);
+        if (!(p > 0) || lim === false) return 0;
+        if (lim === null) return p * b.xp.xpPorDanoFrac;
+        const folga = (b.spawn.porLure * Number(foto.hunt.lure) / Number(foto.medidoAtual.abatesH) - 1) * 100;
+        return Math.min(p, folga);
     }
 
     // ── Especialista 1: Onde upar (⤴). Só compara mapas com XP/h conhecida, sem morte, abertos e do nível.
-    //    Lure: sobe 1 degrau por vez e NUNCA sugere baixar (regra do dono).
+    //    Régua: xpH × peso da fonte (medido 1 · comunidade 0,8 · wiki 0,6 · estimado 0,4); trocar só com ≥ 10 % de vantagem.
+    //    Lure: sobe 1 degrau por vez, com evidência, e NUNCA sugere baixar (regra do dono).
     function trAgenteUpar(foto, base) {
         const b = base || TR_BASE, out = [];
-        const nivel = Number.isFinite(foto.nivel) ? foto.nivel : null, hunt = foto.hunt || null, ma = foto.medidoAtual || null;
-        const mapas = (Array.isArray(foto.mapas) ? foto.mapas : []).filter(m => m && typeof m === 'object');
+        const nivel = Number.isFinite(trNum(foto.nivel)) ? Number(foto.nivel) : null, hunt = foto.hunt || null, ma = foto.medidoAtual || null;
+        const mapas = (Array.isArray(foto.mapas) ? foto.mapas : []).filter(m => m && typeof m === 'object')
+            .map(m => Object.assign({}, m, { xpH: trNum(m.xpH), levelMin: trNum(m.levelMin) }));
         const ilhaDe = (m) => m.ilha || (trCacada(m.title, b) || {}).ilha || null;
         // aberta: true do jogo vence; sem ela, vale a lista de ilhas da foto
         const fechado = (m) => m.aberta === false || (m.aberta !== true && trIlhaFechada(foto, b, ilhaDe(m)));
-        const usavel = (m) => nivel != null && trNum(m.xpH) > 0 && !m.mortes && (Number(m.levelMin) || 0) <= nivel;
-        const melhorDe = (lista) => lista.reduce((a, m) => (!a || m.xpH * trPeso(m.fonte) > a.xpH * trPeso(a.fonte) ? m : a), null);
+        const usavel = (m) => nivel != null && m.xpH > 0 && !(trNum(m.mortes) > 0) && (Number.isFinite(m.levelMin) ? m.levelMin : 0) <= nivel;
+        const nota = (m) => m.xpH * trPeso(m.fonte);
+        const melhorDe = (lista) => lista.reduce((a, m) => (!a || nota(m) > nota(a) ? m : a), null);
         const cand = mapas.filter(m => usavel(m) && !fechado(m)), fechados = mapas.filter(m => usavel(m) && fechado(m));
         const melhor = melhorDe(cand), melhorFechado = melhorDe(fechados);
-        const daCacada = hunt ? mapas.find(m => m.id === hunt.id) || null : null;
-        const xpAtual = ma && trNum(ma.xpH) > 0 ? Number(ma.xpH) : daCacada && trNum(daCacada.xpH) > 0 ? Number(daCacada.xpH) : null;
+        const daCacada = hunt ? mapas.find(m => trMesmoId(m.id, hunt.id)) || null : null;
+        const xpAtual = trXpAtual(foto);
+        // nota de agora na mesma régua: o analisador vale como medido; a medida do mapa, pelo peso da fonte dela
+        const notaAtual = xpAtual == null ? null : ma && trNum(ma.xpH) > 0 ? xpAtual : xpAtual * trPeso(daCacada && daCacada.fonte);
         const nomeAtual = hunt ? hunt.title || (daCacada && daCacada.title) || 'a caçada atual' : null;
-        const outros = cand.filter(m => !hunt || m.id !== hunt.id);
-        const melhorOutro = xpAtual ? outros.some(m => m.xpH >= 1.1 * xpAtual) : outros.length > 0; // já há mapa aberto medido melhor
+        const outros = cand.filter(m => !hunt || !trMesmoId(m.id, hunt.id)), melhorDosOutros = melhorDe(outros);
+        const melhorOutro = notaAtual != null ? outros.some(m => nota(m) >= 1.1 * notaAtual) : outros.length > 0; // há mapa aberto medido melhor
         const irPara = (m, imp, porque) => trConselho('upar', 'mapa', {
-            titulo: xpAtual ? `Upar em ${m.title}: +${Math.round(imp)} % de XP/h` : `Upar em ${m.title}: ${trK(m.xpH)} XP/h`,
-            porque, numeros: { xpH: m.xpH, xpAtual, fonte: m.fonte || null }, impacto: imp, confianca: trConf(m.fonte),
+            titulo: xpAtual ? `Upar em ${m.title}: +${Math.round(imp)} % de XP/h` : `Upar em ${m.title}: ${trQtd(m.xpH)} XP/h`,
+            porque, numeros: { xpH: m.xpH, xpAtual, fonte: m.fonte || null, idadeH: m.idadeH ?? null }, impacto: imp, confianca: trConf(m.fonte),
             acao: { tipo: 'ir-mapa', huntId: m.id, rotulo: 'Ir para ' + m.title } });
         if (melhor && outros.length) {
-            if (hunt && melhor.id === hunt.id) {
-                out.push(trConselho('upar', 'mapa', { titulo: 'Você já está no melhor mapa medido', estado: 'ok', confianca: trConf(melhor.fonte),
-                    porque: `${nomeAtual} rende ${trK(xpAtual || melhor.xpH)} XP/h; nenhum outro mapa medido do seu nível passa disso.` }));
-            } else if (xpAtual && melhor.xpH >= 1.1 * xpAtual) {
+            const ok = (porque) => trConselho('upar', 'mapa', { titulo: 'Você já está no melhor mapa medido', estado: 'ok', confianca: trConf(melhor.fonte), porque,
+                numeros: { xpAtual, melhorOutro: melhorDosOutros.title, xpHOutro: melhorDosOutros.xpH } });
+            if (hunt && trMesmoId(melhor.id, hunt.id)) {
+                out.push(ok(`${nomeAtual} rende ${trQtd(xpAtual || melhor.xpH)} XP/h; nenhum outro mapa medido do seu nível passa disso.`));
+            } else if (notaAtual != null && nota(melhor) >= 1.1 * notaAtual) {
                 out.push(irPara(melhor, (melhor.xpH / xpAtual - 1) * 100,
-                    `${melhor.title} rende ${trK(melhor.xpH)} XP/h (${trConf(melhor.fonte)}${melhor.idadeH != null ? ', há ' + Math.round(melhor.idadeH) + ' h' : ''}) `
-                        + `contra ${trK(xpAtual)} XP/h em ${nomeAtual}. Sem morte na medida.`));
-            } else if (xpAtual) {
-                out.push(trConselho('upar', 'mapa', { titulo: 'Você já está no melhor mapa medido', estado: 'ok', confianca: trConf(melhor.fonte),
-                    porque: `O melhor outro mapa (${melhor.title}, ${trK(melhor.xpH)} XP/h) não passa 10 % dos ${trK(xpAtual)} XP/h de agora: não vale a viagem.` }));
+                    `${melhor.title} rende ${trQtd(melhor.xpH)} XP/h (${trConf(melhor.fonte)}) contra ${trQtd(xpAtual)} XP/h em ${nomeAtual}. Sem morte na medida.`));
+            } else if (notaAtual != null) {
+                out.push(ok(`O melhor outro mapa (${melhorDosOutros.title}, ${trQtd(melhorDosOutros.xpH)} XP/h) não passa 10 % do de agora: não vale a viagem.`));
             } else {
                 // sem XP/h da caçada atual (ou fora de caçada): aponta o melhor medido, com impacto pequeno por não ter com o que comparar
-                out.push(irPara(melhor, 5, `${melhor.title} é o mapa medido que mais rende no seu nível (${trK(melhor.xpH)} XP/h). Sem a XP/h de agora para comparar.`));
+                out.push(irPara(melhor, 5, `${melhor.title} é o mapa medido que mais rende no seu nível (${trQtd(melhor.xpH)} XP/h). Sem a XP/h de agora para comparar.`));
             }
         }
-        // Ilha fechada: 1º o melhor medido de ilha fechada que passa o melhor aberto; sem medida, o mapa de maior Rec ≤ nível da faixa.
+        // Ilha fechada: 1º o melhor medido de ilha fechada que passa o melhor aberto; sem medida (e sem mapa aberto melhor),
+        // a caçada de maior Rec ≤ nível da faixa — só se o Rec dela passa o da caçada de agora.
         let abrir = null;
-        if (melhorFechado && (!melhor || melhorFechado.xpH * trPeso(melhorFechado.fonte) > melhor.xpH * trPeso(melhor.fonte))) {
+        if (melhorFechado && (!melhor || nota(melhorFechado) > nota(melhor))) {
             abrir = { title: melhorFechado.title, ilha: ilhaDe(melhorFechado), xpH: melhorFechado.xpH };
         } else if (!melhorFechado && !melhorOutro && nivel != null) {
-            // sem medida: só aponta a caçada de maior Rec ≤ nível da faixa se ela passa o Rec da caçada de agora
-            const fx = trFaixaDoNivel(nivel, b), recAtual = hunt ? Number(hunt.rec) || (trCacada(hunt.title, b) || {}).rec || 0 : 0;
+            const fx = trFaixaDoNivel(nivel, b), recAtual = trRecDe(hunt, b) || 0;
             const topo = fx ? fx.hunts.map(h => Object.assign({ title: h }, trCacada(h, b))).filter(c => c.rec != null && c.rec <= nivel).sort((x, y) => y.rec - x.rec)[0] : null;
             if (topo && topo.rec > recAtual && trIlhaFechada(foto, b, topo.ilha)) abrir = { title: topo.title, ilha: topo.ilha, xpH: null };
         }
         if (abrir && abrir.ilha) {
             const ilha = trNomeIlha(b, abrir.ilha);
             out.push(trConselho('upar', 'abrir-ilha', { titulo: `Abrir ${ilha} para ${abrir.title}`, impacto: 5,
-                porque: (abrir.xpH ? `${abrir.title} rende ${trK(abrir.xpH)} XP/h, mais que os mapas abertos. ` : `${abrir.title} é a caçada de maior Rec da sua faixa. `)
+                porque: (abrir.xpH ? `${abrir.title} rende ${trQtd(abrir.xpH)} XP/h, mais que os mapas abertos. ` : `${abrir.title} é a caçada de maior Rec da sua faixa. `)
                     + `O especialista "Caçar itens" diz o que falta para abrir ${ilha}.`,
-                numeros: { ilha: abrir.ilha, xpH: abrir.xpH } }));
+                numeros: { ilha: abrir.ilha, mapa: abrir.title, xpH: abrir.xpH } }));
         }
-        // Lure: sobe 1 degrau se as 2 últimas sessões desta caçada não tiveram morte (sessões em ordem de tempo, a última no fim).
-        if (hunt && Number.isFinite(trNum(hunt.lure)) && Number.isFinite(trNum(hunt.maxLure)) && Number(hunt.lure) < Number(hunt.maxLure)) {
-            const ult = (Array.isArray(foto.sessoes) ? foto.sessoes : []).filter(s => s && s.huntId === hunt.id).slice(-2);
-            if (!ult.some(s => s.morte) && !(daCacada && daCacada.mortes)) {
-                const n = Number(hunt.lure) + 1, porDano = trLimitadoPorDano(foto, b) === true;
-                out.push(trConselho('upar', 'lure', { titulo: `Subir a lure para ${n}`, impacto: porDano ? 4 : 8,
-                    porque: `Lure ${hunt.lure} de ${hunt.maxLure} e nenhuma morte nas últimas sessões aqui. Mais lure = mais criaturas por onda (≈ +8 % de XP/h por degrau, estimado).`
-                        + (porDano ? ' A caçada já está limitada por dano (abates abaixo do teto de spawn): conto só metade.' : '') + ' Se morrer, o "Aguentar" mostra por quê.',
-                    numeros: { lure: Number(hunt.lure), maxLure: Number(hunt.maxLure), porDano },
+        // Lure: só com evidência (≥ 1 sessão aqui ou ≥ 5 min medidos), sem morte nas 2 últimas sessões daqui (em ordem de tempo,
+        // a última no fim) e sem morte nesta caçada em 7 dias. Modelo (teto de spawn = porLure × lure):
+        //   limitada por DANO → mais criatura não vira abate: não sugere; limitada por SPAWN → o teto sobe 1/lure: impacto min(100/lure, 25);
+        //   sem saber → 8 por degrau (estimado, como antes).
+        const lure = hunt ? trNum(hunt.lure) : NaN, maxLure = hunt ? trNum(hunt.maxLure) : NaN;
+        if (hunt && Number.isFinite(lure) && Number.isFinite(maxLure) && lure < maxLure) {
+            const daqui = (Array.isArray(foto.sessoes) ? foto.sessoes : []).filter(s => s && trMesmoId(s.huntId, hunt.id));
+            const evidencia = daqui.length >= 1 || (ma && trNum(ma.min) >= 5);
+            const semMorte = !daqui.slice(-2).some(s => s.morte) && !trMortesRecentes(foto, b, 7, hunt).length && !(daCacada && trNum(daCacada.mortes) > 0);
+            const lim = trLimitadoPorDano(foto, b);
+            if (evidencia && semMorte && lim !== true) {
+                const n = lure + 1, imp = lim === false ? Math.min(100 / Math.max(1, lure), 25) : 8;
+                out.push(trConselho('upar', 'lure', { titulo: `Subir a lure para ${n}`, impacto: imp,
+                    porque: `Lure ${lure} de ${maxLure} e nenhuma morte aqui nas últimas sessões. `
+                        + (lim === false ? `A caçada está limitada por spawn: a lure ${n} sobe o teto de criaturas em ≈ ${Math.round(100 / Math.max(1, lure))} %.`
+                            : 'Mais lure = mais criaturas por onda (≈ +8 % de XP/h por degrau, estimado).') + ' Se morrer, o "Aguentar" mostra por quê.',
+                    numeros: { lure, maxLure, limite: lim === false ? 'spawn' : null },
                     acao: { tipo: 'lure', huntId: hunt.id, lure: n, rotulo: 'Lure ' + n } }));
             }
         }
-        // Sem nenhum outro mapa medido: pedir medida de até 3 caçadas da faixa (as de maior Rec ≤ nível, fora de ilha fechada).
+        // Sem nenhum outro mapa medido: medir até 3 caçadas da faixa — as de maior Rec ≤ nível (ordenadas pelo Rec da wiki), fora de ilha fechada.
         if (!outros.length && !fechados.length) {
             const fx = trFaixaDoNivel(nivel, b), atual = hunt && hunt.title ? String(hunt.title).toLowerCase() : null;
-            const titulos = fx ? fx.hunts.filter(h => {
-                const c = trCacada(h, b) || {};
-                return h.toLowerCase() !== atual && (c.rec == null || c.rec <= nivel) && !trIlhaFechada(foto, b, c.ilha);
-            }).slice(-3) : [];
-            const huntIds = titulos.map(h => (mapas.find(m => String(m.title || '').toLowerCase() === h.toLowerCase()) || {}).id).filter(x => x != null);
-            out.push(trConselho('upar', 'medir', { titulo: 'Medir mapas da sua faixa', impacto: titulos.length ? 3 : 0,
-                porque: titulos.length ? `Não tenho XP/h medida de outro mapa para comparar. Meça 5 min em: ${titulos.join(', ')}.`
+            const alvos = fx ? fx.hunts.map((h, i) => ({ h, i, c: trCacada(h, b) || {} }))
+                .filter(x => x.h.toLowerCase() !== atual && (x.c.rec == null || x.c.rec <= nivel) && !trIlhaFechada(foto, b, x.c.ilha))
+                .sort((x, y) => ((x.c.rec ?? -1) - (y.c.rec ?? -1)) || (x.i - y.i)) // sem Rec conhecido fica na ordem da wiki, antes
+                .slice(-3)
+                .map(x => ({ title: x.h, huntId: (mapas.find(m => String(m.title || '').toLowerCase() === x.h.toLowerCase()) || {}).id ?? null })) : [];
+            out.push(trConselho('upar', 'medir', { titulo: 'Medir mapas da sua faixa', impacto: alvos.length ? 3 : 0,
+                porque: alvos.length ? `Não tenho XP/h medida de outro mapa para comparar. Meça 5 min em: ${alvos.map(a => a.title).join(', ')}.`
                     : 'Não tenho XP/h medida de outro mapa nem caçadas da sua faixa na base.',
-                numeros: { titulos },
-                acao: titulos.length ? { tipo: 'medir', huntIds, titulos, rotulo: 'Medir' } : null }));
+                numeros: { n: alvos.length },
+                acao: alvos.length ? { tipo: 'medir', alvos, rotulo: 'Medir' } : null }));
         }
         return out;
     }
     TR_AGENTES.push({ id: 'upar', nome: 'Onde upar', icone: '⤴', rodar: trAgenteUpar });
 
-    // ── Especialista 2: Multiplicadores (✕). Premium, Prey (caçada, tipo e trava), bênçãos e Selo.
+    // ── Especialista 2: Multiplicadores (✕). Premium, Prey (caçada da conta, tipo e travas), bênçãos e Selo.
     //    Régua do impacto: os bônus de XP SOMAM; +k pontos valem k ÷ (100 + party) da XP/h de agora (premium/prey/boost fora do denominador, simples de propósito).
-    const TR_VOC_PT = { KNIGHT: 'Cavaleiro', PALADIN: 'Paladino', SORCERER: 'Feiticeiro', DRUID: 'Druida' };
-    const trVocPt = (v) => TR_VOC_PT[v] || String(v || '?');
-    const trOuroTxt = (v) => (v >= 1e6 ? String(Math.round(v / 1e5) / 10).replace('.', ',') + ' M' : v >= 1e3 ? Math.round(v / 1e3) + ' mil' : String(Math.round(v)));
-    const trPct = (v) => String(Math.round(v * 10) / 10).replace('.', ','); // 4.75 → '4,8'
-    const TR_SEMANA_MS = 7 * 864e5;
-    // Tipo da prey: o jogo (e TR_BASE.prey.tiposBuff) fala xp/loot/damage/defense; o resto do helper, exp/dano/defesa. Aceita os dois.
-    const TR_PREY_TIPO = { xp: 'xp', exp: 'xp', damage: 'damage', dano: 'damage', defense: 'defense', defesa: 'defense', loot: 'loot' };
-    const trTipoPrey = (t) => TR_PREY_TIPO[String(t || '').toLowerCase()] || null;
-    const TR_PREY_PT = { xp: 'EXP', damage: 'DANO', defense: 'DEFESA', loot: 'LOOT' }; // texto para o dono
+    //    custo = desembolso ÚNICO em ouro; custo por hora vai em numeros.custoH.
     function trAgenteMult(foto, base) {
         const b = base || TR_BASE, out = [], den = 100 + b.xp.party;
-        const nivel = Number.isFinite(foto.nivel) ? foto.nivel : null, hunt = foto.hunt || null;
-        const mapas = Array.isArray(foto.mapas) ? foto.mapas : [];
-        const daCacada = hunt ? mapas.find(m => m && m.id === hunt.id) || null : null;
-        const mortes = (Array.isArray(foto.mortes) ? foto.mortes : []).filter(m => m && Number.isFinite(m.t) && foto.t > 0 && m.t >= foto.t - TR_SEMANA_MS);
+        const nivel = Number.isFinite(trNum(foto.nivel)) ? Number(foto.nivel) : null, hunt = foto.hunt || null;
+        const daCacada = hunt && Array.isArray(foto.mapas) ? foto.mapas.find(m => m && trMesmoId(m.id, hunt.id)) || null : null;
+        const mortes7 = trMortesRecentes(foto, b, 7);
         // Premium: +10 de XP (soma com party/prey/boost)
         if (foto.premium && !foto.premium.ativo) {
             out.push(trConselho('mult', 'premium', { titulo: `Ativar Premium (+${b.xp.premium} % de XP)`, confianca: 'wiki', custo: 0,
@@ -12034,85 +12085,95 @@
                     + `Custa ${b.premium.coins} coins por ${b.premium.dias} dias (não sai do ouro); também liga a venda automática.`,
                 acao: { tipo: 'abrir-loja', rotulo: 'Abrir a loja' } }));
         }
-        // Prey: EXP vale para o grupo (★T = +T de XP); DANO só no personagem da coluna (★T = +4T % do dano dele ≈ +T % do grupo).
+        // Prey: a caçada é da CONTA (meta.preyHunt). EXP vale para o grupo (★T = +T de XP); DANO só no personagem da coluna
+        // (★T = +4T % do dano dele = 4T ÷ preyColunas pontos do grupo, convertidos por trDanoParaXp).
         const prey = foto.prey && typeof foto.prey === 'object' ? foto.prey : null;
         if (prey && hunt) {
-            const porDano = trLimitadoPorDano(foto, b), ma = foto.medidoAtual || {};
-            const folga = porDano ? (b.spawn.porLure * Number(hunt.lure) / Number(ma.abatesH) - 1) * 100 : Infinity; // o dano não passa o teto de spawn
-            const xpPorTier = b.xp.preyColunaMax / b.prey.tierMax;
+            const lim = trLimitadoPorDano(foto, b), xpPorTier = b.xp.preyColunaMax / b.prey.tierMax;
             const valor = (tipo, tier) => {
                 const tp = trTipoPrey(tipo);
                 if (tp === 'xp') return tier * xpPorTier / den * 100;
-                if (tp === 'damage') return porDano === true ? Math.min(b.prey.danoPorTier * tier / 4, folga) : porDano === null ? b.prey.danoPorTier * tier / 8 : 0;
+                if (tp === 'damage') return trDanoParaXp(b.prey.danoPorTier * tier / b.xp.preyColunas, foto, b);
                 return 0;
             };
             const buffs = prey.buffs && typeof prey.buffs === 'object' ? prey.buffs : {};
-            const huntPrey = prey.huntId != null ? prey.huntId : (Object.values(buffs).find(x => x && x.huntId != null) || {}).huntId;
-            if (huntPrey !== hunt.id) {
-                const perdido = Object.values(buffs).reduce((s, x) => s + (x ? valor(x.tipo, Math.max(0, Number(x.tier) || 0)) : 0), 0);
-                const wc = Number.isFinite(prey.wildcards) ? ` (você tem ${prey.wildcards})` : '';
-                out.push(trConselho('mult', 'prey-mapa', { titulo: huntPrey == null ? 'A prey não tem caçada' : 'A prey está em outro mapa',
+            const aqui = prey.huntId != null && trMesmoId(prey.huntId, hunt.id);
+            const outro = prey.huntId != null && !aqui;
+            // sem caçada só quando a foto diz (semCacada: meta.preyHunt === null lido); huntId ausente = não sei → não opina
+            const semCacada = prey.huntId === null && prey.semCacada === true;
+            if (outro || semCacada) {
+                const perdido = Object.values(buffs).reduce((s, x) => s + (x ? valor(x.tipo, Math.max(0, trNum(x.tier) || 0)) : 0), 0);
+                const wc = Number.isFinite(trNum(prey.wildcards)) ? ` (você tem ${prey.wildcards})` : '';
+                out.push(trConselho('mult', 'prey-mapa', { titulo: semCacada ? 'A prey não tem caçada' : 'A prey está em outro mapa',
                     impacto: Math.max(1, perdido),
                     porque: `O bônus da prey só vale (e o tempo só corre) na caçada da prey. ESCOLHER CAÇADA põe ${hunt.title || 'esta caçada'} por ${b.prey.escolherWildcards} wildcards${wc}.`,
-                    numeros: { huntPrey, huntAtual: hunt.id, perdido },
+                    numeros: { huntPrey: prey.huntId, huntAtual: hunt.id, perdido, wildcards: b.prey.escolherWildcards },
                     acao: { tipo: 'prey-escolher', huntId: hunt.id, rotulo: 'Prey aqui' } }));
             }
-            const ideal = porDano === true ? 'damage' : porDano === false ? 'xp' : null;
+            // trava da CAÇADA: sem ela, a caçada da prey some quando as 2 h acabam (escolher de novo = 5 wildcards). Impacto estimado 2.
+            if (aqui && prey.huntLocked === false && trNum(prey.huntMsLeft) > 0) {
+                out.push(trConselho('mult', 'prey-trava-hunt', { titulo: 'Trancar a caçada da prey', impacto: 2,
+                    porque: `Sem trava, a caçada da prey vence com as ${b.prey.duracaoH} h e escolher de novo custa ${b.prey.escolherWildcards} wildcards. Travada, renova por ${b.prey.travaWildcards} wildcard.`,
+                    numeros: { huntId: hunt.id },
+                    acao: { tipo: 'prey-trancar', alvo: 'hunt', rotulo: 'Trancar' } }));
+            }
+            const ideal = lim === true ? 'damage' : lim === false ? 'xp' : null;
+            // o sorteio sai num tipo DIFERENTE do atual (wiki/prey): chance de acertar o ideal = 1 ÷ (tipos − 1)
+            const chance = 1 / Math.max(1, b.prey.tiposBuff.length - 1);
             for (const voc of Object.keys(buffs)) {
                 const x = buffs[voc];
                 if (!x) continue;
-                const tier = Math.max(0, Number(x.tier) || 0), nome = trVocPt(voc), tipo = trTipoPrey(x.tipo);
-                const morreu = mortes.some(m => m.voc === voc);
-                const trocar = ideal && tipo !== ideal && !(tipo === 'defense' && morreu);
-                if (trocar) {
+                const tier = Math.max(0, trNum(x.tier) || 0), nome = trVocPt(voc), tipo = trTipoPrey(x.tipo);
+                const morreu = mortes7.some(m => m.voc === voc);
+                if (ideal && tipo !== ideal && !(tipo === 'defense' && morreu)) {
                     const t1 = Math.max(1, tier), ganho = valor(ideal, t1) - valor(tipo, t1);
                     if (ganho > 0) {
-                        out.push(trConselho('mult', 'prey-tipo-' + voc, { titulo: `Prey do ${nome}: trocar para ${TR_PREY_PT[ideal]}`, impacto: ganho,
-                            porque: (ideal === 'damage' ? `A caçada está limitada por dano (abates abaixo de ${Math.round(b.spawn.limitadoPorSpawnFrac * 100)} % do teto de spawn): `
-                                + `DANO ★${t1} dá +${b.prey.danoPorTier * t1} % ao ${nome} (≈ +${trPct(b.prey.danoPorTier * t1 / 4)} % do grupo, 1 de 4).`
+                        out.push(trConselho('mult', 'prey-tipo-' + voc, { titulo: `Prey do ${nome}: trocar para ${TR_PREY_PT[ideal]}`, impacto: ganho * chance,
+                            porque: (ideal === 'damage' ? `A caçada está limitada por dano: DANO ★${t1} dá +${b.prey.danoPorTier * t1} % ao ${nome}.`
                                 : `A caçada está limitada por spawn: mais dano não vira XP. EXP ★${t1} soma +${t1 * xpPorTier} de XP para o grupo todo.`)
-                                + ` O sorteio é aleatório (1º do dia grátis, depois 1 wildcard) e o tier sobe a cada sorteio com o bônus ativo.`,
-                            numeros: { voc, tipo, ideal, tier },
+                                + ` O sorteio é aleatório (1 chance em ${Math.round(1 / chance)}; 1º do dia grátis, depois 1 wildcard) e o tier sobe a cada sorteio com o bônus ativo.`,
+                            numeros: { voc, tipo, ideal, tier, ganho, chance },
                             acao: { tipo: 'prey-trocar', voc, rotulo: 'Sortear' } }));
                     }
-                } else if (ideal && tipo === ideal && tier >= 1 && !x.locked && Number(x.msLeft) > 0) {
-                    // decisão do controlador: no ★10 também (é quando a trava mais vale); impacto estimado 2 + 0,2 por tier
+                } else if (aqui && ideal && tipo === ideal && tier >= 1 && !x.locked && trNum(x.msLeft) > 0) {
+                    // decisão do controlador: no ★10 também (é quando a trava mais vale). Impacto ESTIMADO: 2 + 0,2 por tier.
                     out.push(trConselho('mult', 'prey-trava-' + voc, { titulo: `Trancar a prey do ${nome} (tier ${tier})`, impacto: 2 + tier * 0.2,
                         porque: `${TR_PREY_PT[tipo]} ★${tier} é o tipo certo aqui. Sem trava, quando as ${b.prey.duracaoH} h acabam o tier zera. Travada, renova sozinha no mesmo tier por ${b.prey.travaWildcards} wildcard.`,
                         numeros: { voc, tipo, tier },
-                        acao: { tipo: 'prey-trancar', voc, rotulo: 'Trancar' } }));
+                        acao: { tipo: 'prey-trancar', alvo: voc, voc, rotulo: 'Trancar' } }));
                 }
             }
         }
-        // Bênçãos: só a partir do 120 e com morte em 7 dias (ou na medida do mapa atual). Somem na morte: protegem 1 morte por compra.
+        // Bênçãos: nível ≥ 120, `tem` conhecido, faltando alguma, e morte em 7 dias (ou na medida do mapa atual).
+        // Somem na morte: 1 compra protege 1 morte → impacto = XP salva em UMA morte ÷ XP de uma semana (24 h/dia); custo = 1 compra das que faltam.
         const bc = foto.bencaos && typeof foto.bencaos === 'object' ? foto.bencaos : null;
-        const tem = bc ? Math.max(0, Number(bc.tem) || 0) : null;
-        const morteMapa = !!(daCacada && daCacada.mortes);
-        if (bc && tem < b.bencaos.n && nivel != null && nivel >= 120 && (mortes.length || morteMapa)) {
-            const nMortes = Math.max(mortes.length, morteMapa ? 1 : 0), faltam = b.bencaos.n - tem;
-            const custo = Math.round(b.bencaos.total(nivel) * faltam / b.bencaos.n);
-            const xpH = foto.medidoAtual && foto.medidoAtual.xpH > 0 ? foto.medidoAtual.xpH : daCacada && daCacada.xpH > 0 ? daCacada.xpH : null;
-            // XP salva por semana = mortes × perda sem bênção (fração da XP total) × corte das que faltam; ÷ XP de uma semana caçando 24 h/dia
-            const salvo = Number(foto.xpTotal) > 0 ? nMortes * b.morte.perdaFracSemBencao * foto.xpTotal * faltam * b.bencaos.cortePorFrac : null;
+        const tem = bc && Number.isFinite(trNum(bc.tem)) ? Math.max(0, Number(bc.tem)) : null;
+        const morteMapa = !!(daCacada && trNum(daCacada.mortes) > 0);
+        if (tem != null && tem < b.bencaos.n && nivel != null && nivel >= 120 && (mortes7.length || morteMapa)) {
+            const faltam = b.bencaos.n - tem, custo = Math.round(b.bencaos.total(nivel) * faltam / b.bencaos.n), xpH = trXpAtual(foto);
+            const salvo = trNum(foto.xpTotal) > 0 ? b.morte.perdaFracSemBencao * Number(foto.xpTotal) * faltam * b.bencaos.cortePorFrac : null;
             const impacto = salvo != null && xpH ? salvo / (xpH * 24 * 7) * 100 : 1;
-            out.push(trConselho('mult', 'bencaos', { titulo: `Comprar as bênçãos (≈ ${trOuroTxt(custo)} de ouro)`, confianca: 'wiki', custo, impacto,
+            const nMortes = Math.max(mortes7.length, morteMapa ? 1 : 0);
+            out.push(trConselho('mult', 'bencaos', { titulo: `Comprar as bênçãos (≈ ${trQtd(custo)} de ouro)`, confianca: 'wiki', custo, impacto,
                 porque: `${nMortes} ${nMortes > 1 ? 'mortes' : 'morte'} na última semana. Sem bênção a morte leva ≈ ${trPct(b.morte.perdaFracSemBencao * 100)} % da XP total; `
                     + `as ${faltam} que faltam cortam ${Math.round(faltam * b.bencaos.cortePorFrac * 100)} % disso`
-                    + (salvo != null ? ` (≈ ${trOuroTxt(salvo / nMortes)} de XP por morte)` : '') + '. Somem na morte: recompre depois de cada uma.',
+                    + (salvo != null ? ` (≈ ${trQtd(salvo)} de XP na próxima morte)` : '') + '. Somem na morte: recompre depois de cada uma.',
                 numeros: { nMortes, faltam, salvo, xpH },
                 acao: { tipo: 'bencaos', rotulo: 'Comprar' } }));
         }
-        // Selo da Caçada desligado numa caçada comum: Abundante soma XP, mas cada hora ligada custa ouro (o buff é sorteado).
+        // Selo da Caçada desligado numa caçada (toda foto.hunt conta como caçada comum). Abundante soma XP; cada hora ligada custa ouro.
+        // custo = 1 Rolar (o 1º pacto); custoH = Rolar × peso do tier (protocolo). Tier desconhecido: T1 × 0,25 (Abundante sai em ~25 % dos pactos).
         const selo = foto.selo && typeof foto.selo === 'object' ? foto.selo : null;
-        const rec = hunt ? Number(hunt.rec) || (trCacada(hunt.title, b) || {}).rec || Number(hunt.levelMin) || 0 : 0;
+        const rec = trRecDe(hunt, b);
         if (selo && !selo.ativo && hunt && rec >= 20) {
-            const tier = Math.min(5, Math.max(1, Number(selo.abundante) || 1)), pct = b.xp.seloAbundante[tier - 1];
-            const hora = 100 * Math.round(b.selo.rolar(rec) * Math.round(10 * b.selo.pesoHora[tier - 1]) / 1000); // protocolo: 1 pacto do tier
-            out.push(trConselho('mult', 'selo', { titulo: `Ligar o Selo: +${pct} % de XP por ≈ ${trOuroTxt(hora)}/h`, confianca: 'wiki', custo: hora,
-                impacto: pct / den * 100,
-                porque: (selo.abundante ? `Seu Selo aqui tem Abundante T${tier} (+${pct} de XP, × o Perigo). ` : `Abundante T1 dá +${pct} de XP (sai em 25 % dos pactos; o buff é sorteado). `)
-                    + `Cada hora ligada custa ≈ ${trOuroTxt(hora)} de ouro por pacto (faixa ${10 * Math.floor(rec / 10)}); os debuffs podem matar.`,
-                numeros: { rec, tier, hora },
+            const tierSabido = trNum(selo.abundante) >= 1 && trNum(selo.abundante) <= 5;
+            const tier = tierSabido ? Math.round(Number(selo.abundante)) : 1, pct = b.xp.seloAbundante[tier - 1];
+            const custo = b.selo.rolar(rec), custoH = 100 * Math.round(custo * Math.round(10 * b.selo.pesoHora[tier - 1]) / 1000);
+            out.push(trConselho('mult', 'selo', { titulo: `Ligar o Selo: +${pct} % de XP por ≈ ${trQtd(custoH)}/h`, confianca: tierSabido ? 'wiki' : 'estimado', custo,
+                impacto: pct / den * 100 * (tierSabido ? 1 : 0.25),
+                porque: (tierSabido ? `Seu Selo aqui tem Abundante T${tier} (+${pct} de XP, × o Perigo). ` : `Abundante T1 dá +${pct} de XP, mas o buff é sorteado (≈ 1 pacto em 4). `)
+                    + `Cada hora ligada custa ≈ ${trQtd(custoH)} de ouro (faixa ${10 * Math.floor(rec / 10)}; 1º pacto ${trQtd(custo)}); os debuffs podem matar.`,
+                numeros: { rec, tier, tierSabido, custoH },
                 acao: { tipo: 'selo', huntId: hunt.id, rotulo: 'Selo' } }));
         }
         return out;
@@ -12120,7 +12181,7 @@
     TR_AGENTES.push({ id: 'mult', nome: 'Multiplicadores', icone: '✕', rodar: trAgenteMult });
 
     // ── Especialista 3: Treino e Legado (⚔). Ampulheta = treino durante a caçada; o Legado vira dano permanente do personagem.
-    //    impacto = pontos de dano do próximo marco × xpPorDanoFrac ÷ 4 (o marco é de UM personagem; a party tem 4).
+    //    impacto = trDanoParaXp(pontos do marco ÷ preyColunas) — o marco é de UM personagem; o teto de spawn manda.
     function trAgenteLegado(foto, base) {
         const b = base || TR_BASE, lg = foto.legado && typeof foto.legado === 'object' ? foto.legado : null;
         const vocs = lg ? Object.keys(lg).filter(v => lg[v] && trNum(lg[v].falta) > 0 && Number.isFinite(trNum(lg[v].bonusProx))) : [];
@@ -12128,27 +12189,30 @@
             return [trConselho('legado', 'sem-dado', { titulo: 'Legado não lido ainda', impacto: 0,
                 porque: 'Abra o Legado (UTILIDADES ▸ LEGADO) ou o painel de skills para eu ver quanto falta ao próximo marco de cada vocação.' })];
         }
-        const passo = b.legado.passo || 5, fator = b.legado.xpPorDanoFrac, amp = b.ampulheta;
-        const ord = vocs.slice().sort((x, y) => (trNum(lg[x].falta) / passo) - (trNum(lg[y].falta) / passo));
-        return ord.map(voc => {
-            const l = lg[voc], falta = Number(l.falta), ganho = Number(l.bonusProx) - (Number(l.bonusAtual) || 0), nome = trVocPt(voc);
+        const passo = b.legado.passo || 5, amp = b.ampulheta;
+        const lista = vocs.map(voc => {
+            const l = lg[voc], falta = Number(l.falta), ganho = Number(l.bonusProx) - (trNum(l.bonusAtual) || 0), nome = trVocPt(voc);
             const usadas = foto.ampulhetas && foto.ampulhetas[voc] ? trNum(foto.ampulhetas[voc].usadasH) : NaN;
             const livres = Number.isFinite(usadas) ? Math.max(0, amp.horasDia - usadas) : null;
             const feito = livres === 0;
             // horas livres de hoje arredondadas para cima × preço da hora (sem dado = a de 8 h)
             const horas = livres != null ? Math.ceil(livres) : amp.horasDia, custo = livres != null ? horas * amp.preco1h : amp.preco8h;
-            const skillTxt = b.legado.skill[voc] === 'ml' ? 'nível mágico' : 'skill';
-            return trConselho('legado', 'amp-' + voc, {
-                titulo: feito ? `${nome}: treino do dia feito (${falta === 1 ? 'falta' : 'faltam'} ${falta} para +${ganho} %)`
-                    : `Ampulheta no ${nome}: ${falta === 1 ? 'falta' : 'faltam'} ${falta} de skill para +${ganho} % de dano`,
-                estado: feito ? 'ok' : 'aviso', confianca: 'wiki', custo: feito ? 0 : custo, impacto: ganho * fator / 4,
-                porque: `${nome} com ${skillTxt} ${l.skill} treinada; ao chegar a ${l.proxMarco}, o Legado vai de +${l.bonusAtual || 0} % para +${l.bonusProx} % de dano dele, para sempre. `
+            const ml = b.legado.skill[voc] === 'ml', unidade = ml ? 'ML' : 'skill';
+            const impacto = trDanoParaXp(ganho / b.xp.preyColunas, foto, b);
+            const c = trConselho('legado', 'amp-' + voc, {
+                titulo: feito ? `${nome}: treino do dia feito (${falta === 1 ? 'falta' : 'faltam'} ${falta} de ${unidade})`
+                    : `Ampulheta no ${nome}: ${falta === 1 ? 'falta' : 'faltam'} ${falta} de ${unidade} para +${ganho} % de dano`,
+                estado: feito ? 'ok' : 'aviso', confianca: 'wiki', custo: feito ? 0 : custo, impacto,
+                porque: `${nome} com ${ml ? 'nível mágico' : 'skill'} ${l.skill} treinada; ao chegar a ${l.proxMarco}, o Legado vai de +${trNum(l.bonusAtual) || 0} % para +${l.bonusProx} % de dano dele, para sempre. `
+                    + 'O marco pode levar vários dias de ampulheta. '
                     + (feito ? `Já usou as ${amp.horasDia} h de ampulheta de hoje.`
-                        : (livres != null ? `${trPct(livres)} h de ampulheta livres hoje (teto ${amp.horasDia} h por vocação). ` : '')
-                            + `${horas} h de ampulheta: ${trOuroTxt(custo)} de ouro.`),
-                numeros: { voc, skill: l.skill, falta, proxMarco: l.proxMarco, bonusAtual: l.bonusAtual, bonusProx: l.bonusProx, livres },
+                        : (livres != null ? `${trPct(livres)} h livres hoje (teto ${amp.horasDia} h por vocação). ` : '') + `${horas} h de ampulheta: ${trQtd(custo)} de ouro.`),
+                numeros: { voc, skill: l.skill, falta, proxMarco: l.proxMarco, bonusAtual: l.bonusAtual, bonusProx: l.bonusProx, ganho, livres, horas },
                 acao: feito ? null : { tipo: 'ampulheta', voc, rotulo: 'Ampulheta' } });
+            return { c, rel: falta / passo };
         });
+        // maior impacto primeiro; empate: o marco mais perto (falta ÷ passo)
+        return lista.sort((x, y) => (y.c.impacto - x.c.impacto) || (x.rel - y.rel)).map(x => x.c);
     }
     TR_AGENTES.push({ id: 'legado', nome: 'Treino e Legado', icone: '⚔', rodar: trAgenteLegado });
     /* @@TREINADOR-PURO-FIM */

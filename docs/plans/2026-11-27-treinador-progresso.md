@@ -35,6 +35,18 @@ sem dependências), eslint 10, Playwright para o teste ao vivo.
 > - `bosses[].tentativa` é SEMPRE lista `[{ item, qtd }]`. `cacadasTopo[titulo] = { rec, ilha }`; helper `trCacada(titulo, base)`.
 > - `trConselho(agente, id, o)`: `o` não sobrescreve `id`/`agente`.
 
+> **Atualização 27/11 (após a revisão do lote A, Tasks 4–6) — contrato para a foto (Task 14), a UI (Task 15) e os próximos agentes:**
+> - [contrato] **Prey** é da CONTA (`meta.preyHunt`). Foto: `prey = { huntId, huntLocked, huntMsLeft, buffs: { VOC: { tipo, tier, locked, msLeft } }, wildcards }`
+>   (+ `semCacada: true` só quando `meta.preyHunt === null` foi lido de verdade). `tipo` pode vir do jogo (`xp|loot|damage|defense`) ou do helper
+>   (`exp|dano|defesa`): comparar sempre por `trTipoPrey`. `huntId` ausente = não sei → nenhum agente opina sobre "outro mapa".
+>   Ações: `prey-escolher {huntId}`, `prey-trocar {voc}`, `prey-trancar {alvo: 'hunt' | VOC, voc?}` (= `prey_lock_set {target}`).
+> - [contrato] **Ids**: todo id da foto é Number; ainda assim, comparar SEMPRE com `trMesmoId(a, b)` (texto, null nunca casa).
+> - [contrato] **Custo**: `custo` = desembolso ÚNICO em ouro (o que sai ao tocar "Fazer"); custo recorrente vai em `numeros.custoH` (ouro/h).
+>   Ex.: Selo → `custo` = 1 Rolar, `numeros.custoH` = Rolar × peso do tier. Bênçãos → 1 compra das que faltam.
+> - Ação `medir`: `{ tipo: 'medir', alvos: [{ title, huntId | null }] }` (a UI resolve o `huntId` null pelo título).
+> - Ajudantes puros para reusar (não copiar): `trNum`, `trMesmoId`, `trQtd`, `trPct`, `trVocPt`, `trPeso`, `trConf`, `trXpAtual`, `trRecDe`,
+>   `trMortesRecentes`, `trLimitadoPorDano` (exige `medidoAtual.min ≥ 5` e abates > 0), `trDanoParaXp` (teto de spawn; `TR_BASE.xp.xpPorDanoFrac`).
+
 ---
 
 ## Task 1: Descobrir o protocolo e os campos que faltam (pesquisa, sem código)
