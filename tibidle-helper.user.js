@@ -11609,6 +11609,38 @@
      * dentro da cena e para antes da barra de ação. Arrastar ao fundo tirava 6
      * ícones da tela (o limite olhava só 120 px do trilho): agora o trilho
      * inteiro fica na tela e a gaveta cresce para cima quando embaixo não cabe. */
+    /* @@TREINADOR-PURO-INICIO — aba Progresso (2.67.0): o treinador. Especialistas puros: f(foto, base) → conselhos.
+     * Conselho = { id, agente, titulo, porque, numeros, impacto (% de XP/h, ou equivalente), confianca, custo (ouro), acao }.
+     * confianca: medido (da conta) > comunidade (post com número) > wiki > estimado. Sem DOM, sem rede, sem Date.now (foto.t). */
+    const TR_PESO_CONF = { medido: 1, comunidade: 0.8, wiki: 0.6, estimado: 0.4 };
+    const TR_BASE = { versao: '2026-11-27' }; // preenchido na Task 3
+    function trConselho(agente, id, o) {
+        return Object.assign({ id: agente + ':' + id, agente, titulo: '', porque: '', numeros: null, impacto: 0, confianca: 'estimado', custo: 0, acao: null, estado: 'aviso' }, o || {});
+    }
+    function trFotoVazia() {
+        return { t: 0, nivel: null, xpTotal: null, ouro: null, premium: null, emHunt: false, naCidade: false, hunt: null, medidoAtual: null,
+                 mapas: [], party: [], legado: null, prey: null, mortes: [], sessoes: [], checklist: null, bestiario: [], chaves: null,
+                 deposito: {}, invasao: null, forja: null, topo: null, precos: {}, ilhas: [], skillsTreino: null };
+    }
+    const TR_AGENTES = []; // [{ id, nome, icone, rodar(foto, base) → conselhos[] }] — Tasks 4–13
+    function trOrdenar(conselhos, foto) {
+        const livre = foto && foto.ouroLivre != null ? foto.ouroLivre : Infinity;
+        return conselhos.filter(c => c.impacto > 0 && c.estado !== 'ok')
+            .map(c => Object.assign({}, c, { nota: c.impacto * (TR_PESO_CONF[c.confianca] || 0.4) * (c.custo > livre ? 0.3 : 1), semOuro: c.custo > livre }))
+            .sort((a, b) => b.nota - a.nota);
+    }
+    function trRodar(foto, base) {
+        const cartoes = [], todos = [];
+        for (const a of TR_AGENTES) {
+            let lista = [];
+            try { lista = a.rodar(foto, base) || []; } catch (e) { lista = [trConselho(a.id, 'erro', { titulo: 'não consegui analisar', porque: String(e && e.message || e), estado: 'erro' })]; }
+            const pior = lista.some(c => c.estado === 'erro') ? 'erro' : lista.some(c => c.estado === 'aviso') ? 'aviso' : 'ok';
+            cartoes.push({ id: a.id, nome: a.nome, icone: a.icone, estado: pior, conselhos: lista.slice(0, 3) });
+            todos.push(...lista);
+        }
+        return { cartoes, passos: trOrdenar(todos, foto).slice(0, 3), todos };
+    }
+    /* @@TREINADOR-PURO-FIM */
     /* @@ARENA-PURO-INICIO — Sobrevivência (2.57.0): decisões do robô, puras (o tempo é st.tempoMs, sem DOM).
      * st = estado da simulação do cliente (ref.current.st do componente da partida). O mesmo código rodou no simulador
      * (motor do jogo, chunk 8606, no node) em 26/11: fugir sempre = ameaça média 100; moer a multidão + caçar boss +
