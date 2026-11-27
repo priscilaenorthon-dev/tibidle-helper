@@ -6,7 +6,7 @@ const i = src.indexOf('/* @@TREINADOR-PURO-INICIO'), f = src.indexOf('/* @@TREIN
 assert(i > 0 && f > i, 'trecho @@TREINADOR-PURO não encontrado');
 const T = new Function(src.slice(i, f) + '\nreturn { TR_BASE, TR_AGENTES, trConselho, trOrdenar, trRodar, trFotoVazia, trCacada, trAgenteUpar, trAgenteMult, trAgenteLegado, '
     + 'trMesmoId, trQtd, trLimitadoPorDano, trDanoParaXp, trTipoPrey, trXpAtual, trRecDe, trMortesRecentes, trAgenteTopo, trAgenteErros, trXpPerdidaMorte, trAgenteBoss, trEventosMorte, trImpactoMorte, '
-    + 'trAgenteBestiario, trAgenteItens, trAgenteForja, trAgenteDinheiro, trCortaSufixo, trParty, trVelho, trEhMago, trDanoDeUm, trCustoEfetivo, trResumirTopo };')();
+    + 'trAgenteBestiario, trAgenteItens, trAgenteForja, trAgenteDinheiro, trCortaSufixo, trParty, trVelho, trEhMago, trDanoDeUm, trCustoEfetivo, trResumirTopo, trOuroLivre, trMesclarMapas, trAnotar };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 // agentes falsos: troca os de verdade pelos falsos, roda e devolve os de verdade sempre
@@ -1390,7 +1390,7 @@ t('foto XundaBr: mochila de chaves cheia, Premium e ilha fechada medida', () => 
 //    e ESTADO_WS.legado/loyalty/snap nunca enchiam — visto ao vivo em 27/11). Recorte da função com stubs: tudo antes do despacho por
 //    tipo está em try, então os observadores que não existem aqui só caem no falhou (stub).
 function observarRecebidoIsolado() {
-    const iR = src.indexOf('    function observarRecebido(o) {'), fR = src.indexOf('    /* v2.11 — O ANALISADOR DO PRÓPRIO JOGO PRIMEIRO');
+    const iR = src.indexOf('/* @@OBSERVAR-RECEBIDO-INICIO'), fR = src.indexOf('/* @@OBSERVAR-RECEBIDO-FIM');
     assert(iR > 0 && fR > iR, 'observarRecebido não encontrado');
     const E = { huntId: 222, legado: null, loyalty: null, snap: null };
     const fn = new Function('ESTADO_WS', 'clonar', 'falhou', src.slice(iR, fR) + '\nreturn observarRecebido;')(E, (x) => JSON.parse(JSON.stringify(x)), () => null);
@@ -1412,5 +1412,67 @@ t('observarRecebido: party_snapshot enche ESTADO_WS.snap com a caçada de agora 
     assert.strictEqual(E.snap.huntId, 222); assert.strictEqual(E.snap.elapsedSec, 600); assert.strictEqual(E.snap.members[0].vocation, 'DRUID'); assert(E.snap.t > 0);
     fn({ type: 'party_snapshot', data: { elapsedSec: 1 } }); // sem members: ignora
     assert.strictEqual(E.snap.elapsedSec, 600);
+});
+// ── Partes puras da foto (revisão de qualidade das Tasks 14–15)
+t('trOuroLivre: normal − 3 h de gasto que o travado não cobre − bênçãos; sem ouro → null', () => {
+    assert.strictEqual(T.trOuroLivre(6582197, 0, 328636, 0), 6582197 - 3 * 328636); // ao vivo 27/11 (u2tag)
+    assert.strictEqual(T.trOuroLivre(1000000, 300000, 200000, 50000), 1000000 - 300000 - 300000 - 50000); // travado cobre 300 de 600 mil
+    assert.strictEqual(T.trOuroLivre(1000000, 900000, 200000, 0), 100000); // travado cobre todo o gasto: sobra só o normal
+    assert.strictEqual(T.trOuroLivre(500000, null, 0, 0), 500000); // na cidade, sem gasto
+    assert.strictEqual(T.trOuroLivre(100000, 0, 300000, 0), -800000); // negativo é número (o Dinheiro trata)
+    assert.strictEqual(T.trOuroLivre(null, 0, 0, 0), null); assert.strictEqual(T.trOuroLivre('abc', 0, 0, 0), null);
+});
+t('trMesclarMapas: medido > comunidade > estimado; empate = a mais nova; medida > 14 dias sai; comunidade velha fica', () => {
+    const agora = 1.8e12, h = 36e5, dia = 864e5;
+    const r = T.trMesclarMapas([
+        { id: 1, xpH: 500000, fonte: 'estimado', origem: 'radar', t: agora - h, title: 'A' },
+        { id: 1, xpH: 400000, fonte: 'comunidade', origem: 'discord', t: agora - 30 * dia },
+        { id: 1, xpH: 380000.4, fonte: 'medido', origem: 'scan', t: agora - 2 * h },
+        { id: '1', xpH: 300000, fonte: 'medido', origem: 'sessões', t: agora - 5 * h },
+        { id: 2, xpH: 900000, fonte: 'medido', origem: 'scan', t: agora - 20 * dia }, // velha: sai
+        { id: 2, xpH: 200000, fonte: 'comunidade', origem: 'discord', t: agora - 40 * dia },
+        { id: 3, xpH: 0, fonte: 'medido', t: agora }, { id: 'x', xpH: 1, fonte: 'medido' }, null,
+        { id: 4, xpH: 100000, fonte: 'qualquer', t: null }], agora);
+    const por = Object.fromEntries(r.map(m => [m.id, m]));
+    assert.deepStrictEqual(Object.keys(por).sort(), ['1', '2', '4']);
+    assert.deepStrictEqual([por[1].xpH, por[1].fonte, por[1].origem, por[1].idadeH, por[1].title], [380000, 'medido', 'scan', 2, undefined]);
+    assert(!('t' in por[1]));
+    assert.deepStrictEqual([por[2].fonte, por[2].xpH, por[2].idadeH], ['comunidade', 200000, 960]);
+    assert.deepStrictEqual([por[4].fonte, por[4].idadeH], ['estimado', null]);
+});
+const RESUME = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'treinador-welcome-u2tag.json'), 'utf8'));
+t('trAnotar: resume real → conta, bênçãos, ilhas e Invasão', () => {
+    const x = T.trAnotar({}, RESUME, 1000);
+    assert.deepStrictEqual([x.conta.nome, x.conta.nivel, x.conta.xp, x.conta.ouro, x.conta.trav, x.conta.premiumAte], ['Conta', 250, 257118582, 0, 0, '2026-12-26T13:48:55.909Z']);
+    assert.deepStrictEqual(x.bencaos.ids, [2, 3, 4, 5, 6, 7, 8]);
+    assert(x.ilhas.lista.includes('the_inquisition') && !x.ilhas.lista.includes('marapur'));
+    assert.deepStrictEqual([x.invasao.inscrito, x.invasao.proxima, x.invasao.encerrada], [true, RESUME.data.meta.invasao.proxima.startAtMs, false]);
+});
+t('trAnotar: ouro de qualquer mensagem com gold/goldLocked no 1º nível; frame só mexe em xp/nível', () => {
+    const x = T.trAnotar({}, RESUME, 1000);
+    T.trAnotar(x, { type: 'market_execute_result', data: { requestId: 'r', gold: 5000000, goldLocked: 120000 } }, 2000);
+    assert.deepStrictEqual([x.conta.ouro, x.conta.trav, x.conta.tOuro, x.conta.nome], [5000000, 120000, 2000, 'Conta']);
+    T.trAnotar(x, { type: 'depot_result', data: { entries: [], gold: 4900000 } }, 3000);
+    assert.deepStrictEqual([x.conta.ouro, x.conta.trav], [4900000, 120000]);
+    T.trAnotar(x, { type: 'frame', data: { gold: 1, state: { character: { xp: '257200000', level: 251 } } } }, 4000);
+    assert.deepStrictEqual([x.conta.ouro, x.conta.xp, x.conta.nivel], [4900000, 257200000, 251]);
+    T.trAnotar(x, { type: 'invasion_update', data: { invasao: { inscrito: false, encerrada: false } } }, 5000);
+    assert.strictEqual(x.invasao.inscrito, false);
+    T.trAnotar(x, { type: 'selo_state', data: { ativo: true, selos: [{ huntId: 222, pactos: [], ligado: false }] } }, 6000);
+    T.trAnotar(x, { type: 'ampulheta_state', data: { vocacoes: { KNIGHT: { hojeMs: 36e5 } }, resetEm: 9e12 } }, 7000);
+    assert.strictEqual(x.selo.selos[0].huntId, 222); assert.strictEqual(x.ampulheta.vocacoes.KNIGHT.hojeMs, 36e5);
+});
+t('trAnotar: welcome de OUTRA conta zera o que era da anterior; mensagem estranha não quebra', () => {
+    const x = T.trAnotar({}, RESUME, 1000);
+    T.trAnotar(x, { type: 'selo_state', data: { ativo: true, selos: [] } }, 1500);
+    T.trAnotar(x, { type: 'welcome', data: { account: { name: 'Outra', level: 121, gold: 7 } } }, 2000);
+    assert.deepStrictEqual([x.conta.nome, x.conta.nivel, x.conta.ouro], ['Outra', 121, 7]);
+    assert(!x.bencaos && !x.ilhas && !x.invasao && !x.selo, Object.keys(x).join());
+    for (const o of [null, {}, { type: 'x' }, { type: 'x', data: 3 }]) assert.strictEqual(T.trAnotar(x, o, 1), x);
+    assert.strictEqual(T.trAnotar(null, RESUME, 1), null);
+});
+t('trFotoVazia: ouroTravado e depositoLido no formato canônico', () => {
+    const fv = T.trFotoVazia();
+    assert.strictEqual(fv.ouroTravado, null); assert.strictEqual(fv.depositoLido, false);
 });
 process.on('exit', () => { if (!process.exitCode) console.log(`\n${n} testes ok`); });

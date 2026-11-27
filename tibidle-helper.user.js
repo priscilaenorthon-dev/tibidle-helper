@@ -5244,6 +5244,7 @@
         if (o.type === 'analyzer_reset') { if (SESSAO) fecharSessao('analisador zerado'); }
         /* v2.22.0 — Legado, Loyalty e o snapshot do grupo: 2.67.0 moveu para observarRecebido (são mensagens RECEBIDAS; aqui nunca chegavam) */
     }
+    /* @@OBSERVAR-RECEBIDO-INICIO — testes/treinador.test.js recorta esta função (stubs: ESTADO_WS, clonar, falhou) */
     function observarRecebido(o) {
         try { observarProgresso(o); } catch { } // v2.11 — aba Progresso: só leitura (chaves, bestiário, prey, plano offline)
         try { invObservar(o); } catch (e) { falhou('invasão (observar)', e); } // v2.17.0 — invasão do dia e respostas esperadas
@@ -5415,6 +5416,7 @@
         }
     }
 
+    /* @@OBSERVAR-RECEBIDO-FIM */
     /* v2.11 — O ANALISADOR DO PRÓPRIO JOGO PRIMEIRO. frame.analyzer (em
      * ESTADO_WS.frame.an) traz abates, xp, xp raw, loot e tempo da caçada — o
      * mesmo número da janela "Estatísticas da caça", sem depender dela aberta.
@@ -11901,7 +11903,8 @@
     function trFotoVazia() {
         return { t: 0, nivel: null, xpTotal: null, ouro: null, ouroLivre: null, premium: null, emHunt: false, naCidade: false, hunt: null, medidoAtual: null,
                  mapas: [], party: [], legado: null, prey: null, bencaos: null, ampulhetas: null, selo: null, mortes: [], sessoes: [], checklist: null,
-                 bestiario: [], chaves: null, deposito: {}, invasao: null, forja: null, topo: null, precos: {}, ilhas: [] };
+                 bestiario: [], chaves: null, deposito: {}, invasao: null, forja: null, topo: null, precos: {}, ilhas: [],
+                 ouroTravado: null, depositoLido: false }; // ouroTravado: parte do ouro que só paga suprimento; depositoLido: false = só a mochila
     }
     // [{ id, nome, icone, fase?: 2, rodar(foto, base, todos) → conselho | conselhos[] }] — Tasks 4–13.
     // Fase 2 roda depois de todos e recebe em `todos` os conselhos da fase 1; os da fase 1 recebem [].
@@ -12946,6 +12949,80 @@
             if (voc && Object.keys(voc).length) resumo.push({ nivel: lv, voc });
         }
         return { pos: i >= 0 ? i + 1 : null, total: lista.length, top1: lista.length ? { nivel: Number(lista[0].level) } : null, perto, perfis: resumo, t: trNum(t) > 0 ? Number(t) : 0 };
+    }
+    // ── Foto (Task 14): as partes puras do trFoto/trObservar (o DOM só junta as fontes e chama estas).
+    // Ouro livre: ouro normal (total − travado) − a parte de 3 h de gasto que o travado NÃO cobre − bênçãos que faltam.
+    // O gasto de suprimento sai primeiro do ouro travado (wiki /ouro-e-ouro-travado). gastoH = 0 fora da caçada. Sem ouro → null.
+    function trOuroLivre(ouro, trav, gastoH, custoBencaos) {
+        const o = trNum(ouro);
+        if (!Number.isFinite(o)) return null;
+        const t = Math.max(0, trNum(trav) || 0), g3 = 3 * Math.max(0, trNum(gastoH) || 0), b = Math.max(0, trNum(custoBencaos) || 0);
+        return Math.round(o - t - Math.max(0, g3 - t) - b);
+    }
+    // Mapas: 1 por caçada a partir de várias fontes [{ id, xpH, fonte, origem, t (ms | null), ...resto }].
+    // Prioridade medido > comunidade > wiki > estimado; empate = a mais nova (sem t = a mais velha). Medida ('medido') mais velha que a
+    // janela (14 dias) sai — skill e set mudam; o post da comunidade tem semanas por natureza e o Radar já vem cortado em 7 dias.
+    // → [{ ...resto, id: Number, xpH (inteiro), fonte, origem, idadeH (0,1 h) | null }] (sem o `t`).
+    const TR_MAPA_PESO = { medido: 3, comunidade: 2, wiki: 1, estimado: 0 }, TR_MAPA_JANELA_DIAS = 14;
+    function trMesclarMapas(fontes, agora, janelaDias) {
+        const jan = (janelaDias || TR_MAPA_JANELA_DIAS) * TR_DIA_MS, porId = new Map();
+        for (const e of Array.isArray(fontes) ? fontes : []) {
+            if (!e || typeof e !== 'object') continue;
+            const id = trNum(e.id), xp = trNum(e.xpH), t = trNum(e.t), fonte = trConf(e.fonte);
+            if (!Number.isFinite(id) || !(xp > 0)) continue;
+            if (fonte === 'medido' && t > 0 && agora - t > jan) continue;
+            const m = Object.assign({}, e, { id, xpH: Math.round(xp), fonte, origem: e.origem || null,
+                                             idadeH: t > 0 ? Math.max(0, Math.round((agora - t) / 36e5 * 10) / 10) : null });
+            delete m.t;
+            const a = porId.get(id), pa = a ? TR_MAPA_PESO[a.fonte] : -1, pm = TR_MAPA_PESO[fonte];
+            if (!a || pm > pa || (pm === pa && (m.idadeH ?? Infinity) < (a.idadeH ?? Infinity))) porId.set(id, m);
+        }
+        return [...porId.values()];
+    }
+    // Invasão do dia: inscrito (null quando as 3 janelas de hoje já acabaram: não sei se a inscrição de amanhã abriu) e a próxima (ms)
+    function trLerInvasao(inv, agora) {
+        const prox = inv.proxima && typeof inv.proxima === 'object' ? trNum(inv.proxima.startAtMs) : NaN;
+        return { inscrito: inv.encerrada ? null : !!inv.inscrito, proxima: Number.isFinite(prox) ? prox : null, encerrada: !!inv.encerrada, t: agora };
+    }
+    // O que a foto guarda de UMA mensagem do socket (o trObservar do DOM chama com ESTADO_WS.tr). Muda `x` e o devolve.
+    //   conta (nome, nível, xp, ouro, travado, premiumAte) · bencaos · invasao · ilhas · ampulheta · selo.
+    //   Ouro: account.gold/goldLocked e QUALQUER mensagem com gold/goldLocked no 1º nível (meta_result, mercado, depósito, loja…).
+    //   Outra conta no welcome/resume (account.name diferente) zera tudo antes: o que era da conta velha não vale.
+    const trCopia = (v) => JSON.parse(JSON.stringify(v));
+    function trAnotar(x, o, agora) {
+        if (!x || typeof x !== 'object' || !o || typeof o.type !== 'string' || !o.data || typeof o.data !== 'object') return x;
+        const d = o.data, tipo = o.type, conta = () => x.conta || (x.conta = {});
+        if (tipo === 'frame') { // a cada frame: só dois números, barato
+            const st = d.state && typeof d.state === 'object' ? d.state : null, ch = st && st.character;
+            if (ch && ch.xp != null && Number.isFinite(Number(ch.xp))) conta().xp = Number(ch.xp);
+            if (ch && Number(ch.level) > 0) conta().nivel = Number(ch.level);
+            return x;
+        }
+        const a = d.account && typeof d.account === 'object' ? d.account : null;
+        if (a && a.name && x.conta && x.conta.nome && trNome(a.name) !== trNome(x.conta.nome)) for (const k of Object.keys(x)) delete x[k];
+        const meta = d.meta && typeof d.meta === 'object' ? d.meta : tipo === 'meta_state' ? d : null;
+        if (meta) {
+            if (Array.isArray(meta.blessings)) x.bencaos = { ids: meta.blessings.map(Number).filter(Number.isFinite), t: agora };
+            if (meta.invasao && typeof meta.invasao === 'object') x.invasao = trLerInvasao(meta.invasao, agora);
+        }
+        if (tipo === 'invasion_update' && d.invasao && typeof d.invasao === 'object') x.invasao = trLerInvasao(d.invasao, agora);
+        if (a) {
+            const c = conta();
+            if (a.name) c.nome = String(a.name);
+            if (Number(a.level) > 0) c.nivel = Number(a.level);
+            if (a.xp != null && Number.isFinite(Number(a.xp))) c.xp = Number(a.xp);
+            if (a.gold != null && Number.isFinite(Number(a.gold))) { c.ouro = Number(a.gold); c.tOuro = agora; }
+            if (a.goldLocked != null && Number.isFinite(Number(a.goldLocked))) c.trav = Number(a.goldLocked);
+            if ('premiumUntil' in a) c.premiumAte = a.premiumUntil || null;
+            c.t = agora;
+        }
+        if (d.gold != null && Number.isFinite(Number(d.gold))) { conta().ouro = Number(d.gold); conta().tOuro = agora; }
+        if (d.goldLocked != null && Number.isFinite(Number(d.goldLocked))) conta().trav = Number(d.goldLocked);
+        if (tipo === 'meta_result' && typeof d.premiumUntil === 'string') conta().premiumAte = d.premiumUntil;
+        if (Array.isArray(d.unlockedIslands)) x.ilhas = { lista: d.unlockedIslands.map(String), t: agora };
+        if (tipo === 'ampulheta_state' && d.vocacoes && typeof d.vocacoes === 'object') x.ampulheta = { vocacoes: trCopia(d.vocacoes), resetEm: trNum(d.resetEm), t: agora };
+        if (tipo === 'selo_state') x.selo = { ativo: d.ativo !== false, selos: Array.isArray(d.selos) ? trCopia(d.selos) : [], t: agora };
+        return x;
     }
     /* @@TREINADOR-PURO-FIM */
     /* @@ARENA-PURO-INICIO — Sobrevivência (2.57.0): decisões do robô, puras (o tempo é st.tempoMs, sem DOM).
@@ -20282,15 +20359,17 @@
      *
      * De onde vem cada campo (27/11):
      *   nivel/xpTotal ........ rail do jogo (rail-level-n) › frame.state.character › account do welcome/resume
-     *   ouro/ouroTravado ..... frame.state.balance (total) e balanceLocked (PROG.estado) › account.gold/goldLocked
-     *   ouroLivre ............ ouro normal − (3 × gasto/h da caçada que o travado não cobre) − bênçãos que faltam
+     *   ouro/ouroTravado ..... frame.state.balance (total) e balanceLocked (PROG.estado) › carteira da fibra (wallet.gold/goldLocked)
+     *                          › hud-gold + travado › o último gold/goldLocked visto em qualquer mensagem (trAnotar)
+     *   ouroLivre ............ trOuroLivre: ouro normal − (3 × gasto/h da caçada que o travado não cobre) − bênçãos que faltam
      *   premium .............. account.premiumUntil (welcome/resume) › meta_result.premiumUntil › MK.premiumAte
      *   hunt ................. ESTADO_WS.huntId + CAT.hunts; lure = frame.state.lureTier › meta.lureTierByHunt; rec = trRecDe
      *   medidoAtual .......... frame.analyzer (xpRaw, killsTotal, lootGold, suppliesGold, elapsedMs) por hora
-     *   mapas ................ Scans (xpRawH) · caçada de agora (≥ 5 min) · sessões do Analisador (expRawH; as antigas ÷ multiplicador de agora)
-     *                          · Radar guardado (radar_rank; estimado, sem risco alto) · setups do Discord com "raw" no texto; 1 por caçada
-     *                          (medido > comunidade > estimado; empate = o mais novo); aberta = unlockedIslands; mortes = radar_mortes (7 dias)
-     *   party ................ roster do welcome/resume (ESTADO_WS.rosterFull; sem ele, a fibra) + skills treinadas vistas no frame;
+     *   mapas ................ trMesclarMapas de: Scans limpos (xpRawH) · caçada de agora (≥ 5 min) · sessões do Analisador dos últimos 14 dias
+     *                          (expRawH; as antigas ÷ multiplicador de agora) · Radar guardado (< 7 dias; estimado sem risco alto) · setups do
+     *                          Discord com "raw" no texto. 1 por caçada: medido > comunidade > estimado, empate = a mais nova; medida > 14 dias
+     *                          sai. aberta = unlockedIslands; mortes = radar_mortes[id].n dos últimos 7 dias (lido uma vez por foto)
+     *   party ................ roster do welcome/resume (ESTADO_WS.rosterFull; com mais de 3 min, a fibra via rosterEquip) + skills treinadas;
      *                          munição = battleConfigs[voc].ammo (não fica no corpo)
      *   legado ............... skill treinada da party na tabela TR_BASE.legado (nulo só com legacy_state.ativo === false)
      *   prey ................. PROG.prey/PROG.meta (meta.preyHunt, preyBuffs, wildcards); semCacada só com meta.preyHunt === null lido
@@ -20320,37 +20399,7 @@
                 if (tipo === 'error') e.rej(new Error('o jogo respondeu erro: ' + (d.code || d.key || '?'))); else e.res(clonar(d));
             }
         }
-        if (tipo === 'frame') { // a cada frame: só dois números, barato
-            const st = d.state && typeof d.state === 'object' ? d.state : null, ch = st && st.character;
-            if (ch && ch.xp != null && Number.isFinite(Number(ch.xp))) (x.conta || (x.conta = {})).xp = Number(ch.xp);
-            if (ch && Number(ch.level) > 0) (x.conta || (x.conta = {})).nivel = Number(ch.level);
-            return;
-        }
-        const meta = d.meta && typeof d.meta === 'object' ? d.meta : tipo === 'meta_state' ? d : null;
-        if (meta) {
-            if (Array.isArray(meta.blessings)) x.bencaos = { ids: meta.blessings.map(Number).filter(Number.isFinite), t: agora };
-            if (meta.invasao && typeof meta.invasao === 'object') x.invasao = trLerInvasao(meta.invasao, agora);
-        }
-        if (tipo === 'invasion_update' && d.invasao && typeof d.invasao === 'object') x.invasao = trLerInvasao(d.invasao, agora);
-        if (d.account && typeof d.account === 'object') {
-            const a = d.account, c = x.conta || (x.conta = {});
-            if (a.name) c.nome = String(a.name);
-            if (Number(a.level) > 0) c.nivel = Number(a.level);
-            if (a.xp != null && Number.isFinite(Number(a.xp))) c.xp = Number(a.xp);
-            if (a.gold != null) c.ouro = Number(a.gold);
-            if (a.goldLocked != null) c.trav = Number(a.goldLocked);
-            if ('premiumUntil' in a) c.premiumAte = a.premiumUntil || null;
-            c.t = agora;
-        }
-        if (tipo === 'meta_result' && typeof d.premiumUntil === 'string') (x.conta || (x.conta = {})).premiumAte = d.premiumUntil;
-        if (Array.isArray(d.unlockedIslands)) x.ilhas = { lista: d.unlockedIslands.map(String), t: agora };
-        if (tipo === 'ampulheta_state' && d.vocacoes && typeof d.vocacoes === 'object') x.ampulheta = { vocacoes: clonar(d.vocacoes), resetEm: trNum(d.resetEm), t: agora };
-        if (tipo === 'selo_state') x.selo = { ativo: d.ativo !== false, selos: Array.isArray(d.selos) ? clonar(d.selos) : [], t: agora };
-    }
-    // Invasão do dia: inscrito (null quando as 3 janelas de hoje já acabaram: não sei se a inscrição de amanhã abriu) e a próxima (ms)
-    function trLerInvasao(inv, agora) {
-        const prox = inv.proxima && typeof inv.proxima === 'object' ? trNum(inv.proxima.startAtMs) : NaN;
-        return { inscrito: inv.encerrada ? null : !!inv.inscrito, proxima: Number.isFinite(prox) ? prox : null, encerrada: !!inv.encerrada, t: agora };
+        trAnotar(x, o, agora); // conta, bênçãos, Invasão, ilhas, ampulheta, Selo e o ouro de qualquer mensagem (@@TREINADOR-PURO)
     }
     const trIlhaCat = (h) => (h && h.island && h.island !== 'tibidle_island' ? String(h.island) : h && h.title ? (trCacada(h.title, TR_BASE) || {}).ilha || null : null);
     // XP/h raw do texto de um setup do Discord ("950k raw", "140–150k raw", "≈350k (320k raw)"); sem "raw" = null (tem bônus misturado)
@@ -20401,11 +20450,22 @@
             Object.assign(f, { nivel, xpTotal: x.conta && x.conta.xp > 0 ? x.conta.xp : null, emHunt: eh, naCidade: !eh });
         });
         bloco('ouro', () => {
-            const fr = frameFresco() && ESTADO_WS.frame.balance != null ? Number(ESTADO_WS.frame.balance) : null;
-            const pe = PROG.estado && agora - PROG.estado.t < 10 * 60000 ? PROG.estado : null;
-            const ouro = Number.isFinite(fr) ? fr : pe && pe.ouro != null ? pe.ouro : x.conta && Number.isFinite(x.conta.ouro) ? x.conta.ouro : null;
-            const trav = pe && pe.trav != null ? pe.trav : x.conta && Number.isFinite(x.conta.trav) ? x.conta.trav : null;
-            Object.assign(f, { ouro, ouroTravado: trav });
+            const pe = PROG.estado && agora - PROG.estado.t < 10 * 60000 ? PROG.estado : null, c = x.conta || {};
+            const travMsg = Number.isFinite(c.trav) ? c.trav : null;
+            let ouro = null, trav = null;
+            if (frameFresco() && ESTADO_WS.frame.balance != null) { ouro = Number(ESTADO_WS.frame.balance); trav = pe && pe.trav != null ? pe.trav : travMsg; }
+            if (!Number.isFinite(ouro)) { // na cidade: a carteira do cliente (como mlOuroNormal), só com o estado de verdade (roster cheio)
+                let sh = null;
+                try { sh = lerShellFibra(); } catch { sh = null; }
+                const w = sh && Array.isArray(sh.roster) && sh.roster.length && sh.wallet;
+                if (w && Number.isFinite(Number(w.gold))) { ouro = Number(w.gold); trav = Number(w.goldLocked) || 0; }
+            }
+            if (!Number.isFinite(ouro)) { // o HUD mostra o ouro normal (gold − goldLocked)
+                const el = tid('hud-gold') || tid('mobile-hud-gold'), n = el ? parseInt((el.textContent || '').replace(/\D/g, ''), 10) : NaN;
+                if (n >= 0) { trav = travMsg || 0; ouro = n + trav; }
+            }
+            if (!Number.isFinite(ouro) && Number.isFinite(c.ouro)) { ouro = c.ouro; trav = travMsg; }
+            Object.assign(f, { ouro: Number.isFinite(ouro) ? ouro : null, ouroTravado: Number.isFinite(trav) ? trav : null });
         });
         bloco('premium', () => {
             const ate = x.conta && 'premiumAte' in x.conta ? x.conta.premiumAte : MK.premiumAte;
@@ -20447,17 +20507,28 @@
             if (lista) f.ilhas = (TR_BASE.ilhas || []).map(i => ({ id: i.id, nome: i.nome, aberta: lista.includes(i.id) }));
             abertas = lista;
         });
+        let rmortes = {}; // radar_mortes, lido uma vez por foto (mortes e mapas)
+        bloco('mortes', () => {
+            const rm = ler('radar_mortes', {}) || {}, out = [], desde = agora - 30 * TR_DIA;
+            rmortes = rm;
+            for (const [id, z] of Object.entries(rm)) {
+                if (!z || typeof z !== 'object') continue;
+                const hunt = (huntDe(id) || {}).title || null, huntId = Number.isFinite(trNum(id)) ? Number(id) : null;
+                const laudos = (Array.isArray(z.laudos) ? z.laudos : []).filter(l => l && l.tipo === 'morte' && trNum(l.t) >= desde);
+                for (const l of laudos) out.push({ t: Number(l.t), hunt, huntId, voc: VOCS.includes(l.voc) ? l.voc : null, fonte: 'autópsia' });
+                // o `ended` com motivo de morte conta em z.n/z.t; sem autópsia perto desse t, vira 1 entrada sem vocação
+                if (Number(z.n) > 0 && trNum(z.t) >= desde && !laudos.some(l => Math.abs(Number(l.t) - z.t) <= 60000)) out.push({ t: Number(z.t), hunt, huntId, voc: null, fonte: 'fim da caçada' });
+            }
+            const idAgora = ESTADO_WS.huntId;
+            for (const m of (RAZAO && RAZAO.mortes) || []) {
+                if (idAgora == null || !m || !VOCS.includes(m.voc) || out.some(o => o.voc === m.voc && Math.abs(o.t - m.t) < 5000)) continue;
+                out.push({ t: m.t, hunt: (huntDe(idAgora) || {}).title || null, huntId: Number(idAgora), voc: m.voc, fonte: 'agora' });
+            }
+            f.mortes = out.sort((p, q) => p.t - q.t);
+        });
         bloco('mapas', () => {
-            const porId = new Map(), peso = { medido: 3, comunidade: 2, wiki: 1, estimado: 0 };
-            const add = (id, xpH, fonte, origem, tMs, title, extra) => {
-                const n = trNum(id), xp = trNum(xpH);
-                if (!Number.isFinite(n) || !(xp > 0) || n === HUNT_ID_BOSS) return;
-                const h = huntDe(n), idadeH = trNum(tMs) > 0 ? Math.max(0, Math.round((agora - Number(tMs)) / TR_H * 10) / 10) : null;
-                const m = Object.assign({ id: n, title: h ? h.title : title || null, xpH: Math.round(xp), fonte, origem, idadeH,
-                                          levelMin: h && trNum(h.levelMin) > 0 ? Number(h.levelMin) : null, ilha: trIlhaCat(h || { title }) }, extra || {});
-                const a = porId.get(n);
-                if (!a || peso[fonte] > peso[a.fonte] || (peso[fonte] === peso[a.fonte] && (m.idadeH ?? 1e9) < (a.idadeH ?? 1e9))) porId.set(n, m);
-            };
+            const fontes = [], jan = TR_MAPA_JANELA_DIAS * TR_DIA;
+            const add = (id, xpH, fonte, origem, t, title, extra) => fontes.push(Object.assign({ id, xpH, fonte, origem, t, title: title || null }, extra || {}));
             // Radar guardado (estimativa do ranking; a linha medida também entra). Risco alto/bloqueado fica de fora (o dono morreu num topo do Radar, 02/10).
             const rank = ler('radar_rank', null);
             if (rank && Array.isArray(rank.linhas) && agora - (rank.t || 0) < 7 * TR_DIA) {
@@ -20473,34 +20544,35 @@
                 const xp = s && s.huntId != null && s.estatisticas ? trXpRawDeTexto(s.estatisticas.xpH) : null;
                 if (xp) add(s.huntId, xp, 'comunidade', 'discord', trDataDdMm(s.data, agora), s.hunt, { nivelMedida: trNum(s.estatisticas.nivel) || null, setup: s.id });
             }
-            // sessões do Analisador (≥ 5 min): média por tempo; as antigas (sem expRawH) ÷ o multiplicador de XP de agora (aproximado)
+            // sessões do Analisador (≥ 5 min, terminadas nos últimos 14 dias): média por tempo; as antigas (sem expRawH) ÷ o multiplicador de agora
             const mult = xpMultiplicador(), porH = {};
             for (const s of sessoes() || []) {
-                if (!s || s.huntId == null || !(s.dur >= 300)) continue;
+                if (!s || s.huntId == null || !(s.dur >= 300) || (trNum(s.inicio) || 0) + s.dur * 1000 < agora - jan) continue;
                 const raw = trNum(s.expRawH) > 0 ? Number(s.expRawH) : trNum(s.expH) > 0 && mult > 0 ? s.expH / mult : null;
                 if (!(raw > 0)) continue;
                 const g = porH[s.huntId] || (porH[s.huntId] = { xp: 0, ouro: 0, dur: 0, t: 0, title: s.hunt });
                 g.xp += raw * s.dur; g.ouro += (trNum(s.ouroH) || 0) * s.dur; g.dur += s.dur; g.t = Math.max(g.t, (s.inicio || 0) + s.dur * 1000);
             }
             for (const [id, g] of Object.entries(porH)) add(id, g.xp / g.dur, 'medido', 'sessões', g.t, g.title, { ouroH: Math.round(g.ouro / g.dur) });
-            // Scans: o melhor limpo (mais XP raw) de cada mapa
-            const melhorScan = {};
+            // Scans limpos: todos entram e o trMesclarMapas fica com o mais recente (não o maior de sempre); > 14 dias sai lá
             for (const r of Object.values(scanResultados() || {})) {
-                if (!r || r.erro || !(trNum(r.xpRawH) > 0) || r.id == null) continue;
-                if (!melhorScan[r.id] || r.xpRawH > melhorScan[r.id].xpRawH) melhorScan[r.id] = r;
+                if (r && !r.erro && trNum(r.xpRawH) > 0 && r.id != null) add(r.id, r.xpRawH, 'medido', 'scan', r.t, r.title, { ouroH: trNum(r.ouroH) || null, abatesH: trNum(r.abatesH) || null });
             }
-            for (const r of Object.values(melhorScan)) add(r.id, r.xpRawH, 'medido', 'scan', r.t, r.title, { ouroH: trNum(r.ouroH) || null, abatesH: trNum(r.abatesH) || null });
             // a caçada de agora (≥ 5 min no analisador) é a medida mais nova
             if (f.hunt && f.medidoAtual && f.medidoAtual.min >= 5 && f.medidoAtual.xpH > 0) add(f.hunt.id, f.medidoAtual.xpH, 'medido', 'agora', agora, f.hunt.title, { ouroH: f.medidoAtual.ouroH, abatesH: f.medidoAtual.abatesH });
-            f.mapas = [...porId.values()].map(m => {
-                m.rec = trRecDe(m, TR_BASE);
-                if (abertas) m.aberta = !m.ilha || abertas.includes(m.ilha);
-                m.mortes = radarMortes(m.id);
-                return m;
+            f.mapas = trMesclarMapas(fontes, agora).filter(m => m.id !== HUNT_ID_BOSS).map(m => {
+                const h = huntDe(m.id), z = rmortes[m.id];
+                const r = Object.assign(m, { title: h ? h.title : m.title, levelMin: h && trNum(h.levelMin) > 0 ? Number(h.levelMin) : null, ilha: trIlhaCat(h || { title: m.title }) });
+                r.rec = trRecDe(r, TR_BASE);
+                if (abertas) r.aberta = !r.ilha || abertas.includes(r.ilha);
+                r.mortes = z && agora - (trNum(z.t) || 0) < 7 * TR_DIA ? Number(z.n) || 0 : 0; // a mesma janela do radarMortes
+                return r;
             });
         });
         bloco('party', () => {
-            const roster = Array.isArray(ESTADO_WS.rosterFull) && ESTADO_WS.rosterFull.length ? ESTADO_WS.rosterFull : rosterEquip();
+            // o roster do welcome/resume envelhece (equipar, forjar): com mais de 3 min, a fibra (rosterEquip, cache de 2 s; sem ela, o mesmo roster)
+            const novo = ESTADO_WS.rosterFull_t > 0 && agora - ESTADO_WS.rosterFull_t <= 3 * 60000;
+            const roster = novo && Array.isArray(ESTADO_WS.rosterFull) && ESTADO_WS.rosterFull.length ? ESTADO_WS.rosterFull : rosterEquip();
             if (!Array.isArray(roster)) return;
             const sk = ESTADO_WS.sk || {};
             f.party = roster.filter(r => r && r.vocation).map(r => {
@@ -20557,23 +20629,6 @@
             const e = (s.selos || []).find(z => z && trMesmoId(z.huntId, f.hunt.id));
             const ab = e && Array.isArray(e.pactos) ? e.pactos.filter(p => p && /abund/i.test(String(p.buff || ''))) : [];
             f.selo = { ativo: !!(e && e.ligado), pausa: e ? e.pausa || null : null, abundante: ab.length ? Math.max(...ab.map(p => trNum(p.tier) || 0)) || null : null, huntId: f.hunt.id };
-        });
-        bloco('mortes', () => {
-            const rm = ler('radar_mortes', {}) || {}, out = [], desde = agora - 30 * TR_DIA;
-            for (const [id, z] of Object.entries(rm)) {
-                if (!z || typeof z !== 'object') continue;
-                const hunt = (huntDe(id) || {}).title || null, huntId = Number.isFinite(trNum(id)) ? Number(id) : null;
-                const laudos = (Array.isArray(z.laudos) ? z.laudos : []).filter(l => l && l.tipo === 'morte' && trNum(l.t) >= desde);
-                for (const l of laudos) out.push({ t: Number(l.t), hunt, huntId, voc: VOCS.includes(l.voc) ? l.voc : null, fonte: 'autópsia' });
-                // o `ended` com motivo de morte conta em z.n/z.t; sem autópsia perto desse t, vira 1 entrada sem vocação
-                if (Number(z.n) > 0 && trNum(z.t) >= desde && !laudos.some(l => Math.abs(Number(l.t) - z.t) <= 60000)) out.push({ t: Number(z.t), hunt, huntId, voc: null, fonte: 'fim da caçada' });
-            }
-            const idAgora = ESTADO_WS.huntId;
-            for (const m of (RAZAO && RAZAO.mortes) || []) {
-                if (idAgora == null || !m || !VOCS.includes(m.voc) || out.some(o => o.voc === m.voc && Math.abs(o.t - m.t) < 5000)) continue;
-                out.push({ t: m.t, hunt: (huntDe(idAgora) || {}).title || null, huntId: Number(idAgora), voc: m.voc, fonte: 'agora' });
-            }
-            f.mortes = out.sort((p, q) => p.t - q.t);
         });
         bloco('sessoes', () => {
             const mult = xpMultiplicador();
@@ -20651,12 +20706,8 @@
             f.precos = p;
         });
         bloco('ouroLivre', () => {
-            if (!Number.isFinite(f.ouro)) return;
-            const trav = Number.isFinite(f.ouroTravado) ? f.ouroTravado : 0;
-            // o gasto de suprimento sai primeiro do ouro travado (wiki /ouro-e-ouro-travado): só a parte que ele não cobre sai do normal
-            const gasto3 = f.emHunt && f.medidoAtual && f.medidoAtual.min >= 1 ? 3 * Math.max(0, f.medidoAtual.gastoH || 0) : 0;
-            const v = f.ouro - trav - Math.max(0, gasto3 - trav) - (f.bencaos && f.bencaos.custoFaltam > 0 ? f.bencaos.custoFaltam : 0);
-            f.ouroLivre = Number.isFinite(v) ? Math.round(v) : null;
+            const gastoH = f.emHunt && f.medidoAtual && f.medidoAtual.min >= 1 ? f.medidoAtual.gastoH : 0;
+            f.ouroLivre = trOuroLivre(f.ouro, f.ouroTravado, gastoH, f.bencaos ? f.bencaos.custoFaltam : 0);
         });
         return f;
     }
