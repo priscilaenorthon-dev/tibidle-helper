@@ -13187,6 +13187,7 @@
         if (!Array.isArray(p.espera) || !p.espera.includes(o.type)) return null;
         if (rid != null && p.rid != null && rid !== p.rid) return null;
         if (o.type === 'meta_result' && d.action != null && d.action !== p.tipo) return null;
+        if (o.type === 'meta_result' && d.applied === false) return 'res'; // recusa do jogo (Invasão fechada…): o trResposta mostra o notice
         if (trRespostaConfirma(p.tipo, d, p.alvo) === false) return null; // empurrada e não confirma (outro Selo, Invasão sem inscrito): segue esperando
         return 'res';
     }
@@ -13269,7 +13270,8 @@
             const ord = ((lr.data && lr.data.orders) || []).find(x => x && x.id === c.orderId);
             if (!ord || !(Number(ord.quantityRemaining) >= 1) || Number(ord.unitPrice) !== c.unitPrice) continue; // vendida ou preço mudou: não compra
             const ouro = trNum(d.ouro());
-            const q = Math.min(c.quantity, Number(ord.quantityRemaining), Number.isFinite(ouro) ? Math.floor(ouro / c.unitPrice) : 0);
+            if (!Number.isFinite(ouro)) return resumo('ouro desconhecido — parei'); // leitor do ouro sumiu no meio: não é "acabou"
+            const q = Math.min(c.quantity, Number(ord.quantityRemaining), Math.floor(ouro / c.unitPrice));
             if (q < 1) return resumo('o ouro acabou');
             const r = await d.pedir('market_execute', { orderId: c.orderId, quantity: q, requestId: d.rid() });
             if (r.erro) return resumo(`${q} ${c.nome}: ${txt(r.erro)}`);
@@ -21287,7 +21289,8 @@
         }
         case 'invasao': {
             // a resposta exata do invasion_join está "a confirmar" no protocolo: só vale inscrito === true no invasion_update/meta (o
-            // trCasaResposta ignora o resto); sem resposta, só se o estado guardado passou de não-inscrito a inscrito DEPOIS do envio
+            // trCasaResposta ignora o resto, menos a recusa meta_result applied:false, que volta com o notice); sem resposta, só se o
+            // estado guardado passou de não-inscrito a inscrito DEPOIS do envio
             const inv0 = ESTADO_WS.tr && ESTADO_WS.tr.invasao ? Object.assign({}, ESTADO_WS.tr.invasao) : null, tEnvio = Date.now();
             const rr = await trPedir('invasion_join', {}, ['invasion_update', 'meta_result']);
             const res = rr.erro === 'sem_resposta'

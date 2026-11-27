@@ -1752,4 +1752,25 @@ ta('trExecutarCompra: preço mudou na releitura → não compra aquela; quantida
     r = await T.trExecutarCompra(conch, d);
     assert.deepStrictEqual([r.feitas.length, r.parou, d.enviados.filter(e => e[0] === 'market_execute').length], [0, 'ouro desconhecido', 0]);
 });
+// revisão final: Invasão recusada (meta_result applied:false) termina a espera com o motivo; ouro ilegível no meio da compra
+t('trCasaResposta: meta_result applied:false do invasion_join é a resposta (recusa com motivo), não "não confirma"', () => {
+    const i = { tipo: 'invasion_join', rid: 'r9', espera: ['invasion_update', 'meta_result'] };
+    const recusa = { type: 'meta_result', data: { requestId: 'r9', action: 'invasion_join', applied: false, notice: { key: 'invasion.closed' } } };
+    assert.strictEqual(T.trCasaResposta(i, recusa), 'res');
+    assert.strictEqual(T.trCasaResposta(i, { type: 'meta_result', data: { action: 'invasion_join', applied: false } }), 'res', 'sem requestId também');
+    assert.strictEqual(T.trCasaResposta(i, { type: 'meta_result', data: { requestId: 'outro', action: 'invasion_join', applied: false } }), null, 'recusa de outro pedido');
+    assert.strictEqual(T.trCasaResposta(i, { type: 'meta_result', data: { action: 'prey_hunt_roll', applied: false } }), null, 'recusa de outra ação');
+    assert.strictEqual(T.trCasaResposta(i, { type: 'meta_result', data: { action: 'invasion_join', applied: true } }), null, 'aplicado sem inscrito segue esperando');
+});
+ta('trExecutarCompra: ouro some no meio → "ouro desconhecido — parei" (não "o ouro acabou")', async () => {
+    const d = mercadoFalso(livroConch(), { minhas: ['m'] });
+    let chamadas = 0;
+    const ouroReal = d.ouro;
+    d.ouro = () => (++chamadas > 1 ? null : ouroReal());
+    const r = await T.trExecutarCompra(conch, d);
+    assert.deepStrictEqual([r.feitas.length, r.parou, d.enviados.filter(e => e[0] === 'market_execute').length], [0, 'ouro desconhecido — parei', 0]);
+    const d2 = mercadoFalso(livroConch(), { minhas: ['m'] });
+    let c2 = 0; d2.ouro = () => (++c2 > 1 ? 1000 : 5e6);
+    assert.strictEqual((await T.trExecutarCompra(conch, d2)).parou, 'o ouro acabou', 'ouro conhecido e baixo continua "acabou"');
+});
 process.on('exit', () => { if (!process.exitCode) console.log(`\n${n} testes ok`); });
