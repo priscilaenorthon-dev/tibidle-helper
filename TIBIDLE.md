@@ -8014,3 +8014,20 @@ no lugar do Haste).
   ganhar. O Cavaleiro não muda.
 - Também: nota "seus anúncios: N peças conferidas — nenhuma ganha…" quando nada dos seus anúncios serve (2.67.7 ficava calada).
 - Testes: 812 ok (sobreviver +2; 2 ajustados ao piso).
+
+## 2.67.9 (28/11) — setups da ilha Issavi revisados para as 3 contas (185, 245, 252)
+- Pedido do dono: "verifica se os setups que criamos estão bons para as 5 hunts de Issavi; tenho 3 contas, 252, 245 e 185". Análise por
+  agente com os ataques/resistências do jogo (/hunts/select) e a vida real da conta 252 (Cav 3.909, Pal 2.744, magos ~1.488 de vida e
+  7.427 de mana). Relatório: o elemento estava certo nos 6; o problema dos mapas fortes é sobreviver.
+- Veredito: Exotic Cave (rec 150) e Green Belt (180) viáveis nas 3 contas (Green Belt é a melhor da ilha para a 185; taina: 245k raw,
+  +205k/h no 180); Kilmaresh (230) arriscada (golpe de 1.150–1.288 de energia/morte; medido na 252: 341k raw, −326k/h com o modelo "Em
+  área"); Salt Caves (280) só 245+ (energia até 1.350 ≈ 91 % da vida do mago + dreno de mana 270–450); Ruins of Nuur (330) não
+  recomendada para nenhuma das 3 (físico até 2.500, morte 1.665–2.100). Nenhuma rende mais que o Shadow Nexus nas contas 245/252
+  (XP por vida dos monstros: Nexus 71,5; Kilmaresh 41, Salt 52, Ruins 58).
+- northon-247: sem Magic Shield nos magos (golpe máximo 313), Groundshaker no lugar do Brutal Strike, Divine Missile no lugar da
+  Ethereal Spear, curas e mana ajustadas. northon-250: Energy Wave primeiro no Feiticeiro (~407 × ~274 da Great Fire Wave), Divine
+  Missile, Groundshaker, Intense Recovery 95, mana dos magos 65, Mass Healing ≤85. northon-251: mesmas trocas. `nivel` de cada um diz
+  para quais contas serve. kilmaresh-felipes: barra intacta (transcrição fiel) + aviso na obs (Intense Wound Cleansing é a única cura do
+  Cavaleiro, recarga de 10 min). As versões com poção mais forte (Supreme/Great Mana, `pocaoDoMapa`) ficaram de fora: são palpite até medir.
+- Teste "padrão 2.28.2" aceita o Cavaleiro com Groundshaker nos 3 revisados (REVISADOS_ISSAVI). Os 6 montam a barra sem aviso nos
+  níveis 185/245/252. Falta medir 5 min: Green Belt na 245/252 e Kilmaresh na 252 com o setup do FelipeS.

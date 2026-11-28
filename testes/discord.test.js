@@ -169,11 +169,15 @@ t('Northon (2.28.0): título "Northon - <mapa>", a barra dos 4, nenhum mapa repe
     }
     assert(M.SETUPS_DISCORD.filter(s => s.huntId === 191 && /-adapt$/.test(s.id)).every(s => /^Northon - /.test(s.titulo))); // 2.51.0: o mapa ganhou o post do Xibara; os dois adaptados seguem "Northon -"
 });
+const REVISADOS_ISSAVI = new Set(['northon-247', 'northon-250', 'northon-251']);
 t('Northon (2.28.2): o padrão da comunidade — Cavaleiro de dano, a mesma runa nos três, nenhum slot que a fila nunca dispara', () => {
     const nn = M.SETUPS_DISCORD.filter(s => /^northon-\d+$/.test(s.id));
     const sp = (n) => SPELLS.find(x => x.name === n && x.combatType && (x.vocations || []).length) || SPELLS.find(x => x.name === n);
     for (const s of nn) {
-        assert.deepStrictEqual(s.chars.KNIGHT.ataque.map(a => a[0]), ['Fierce Berserk', 'Berserk', 'Lesser Front Sweep', 'Brutal Strike'], s.id);
+        /* 2.67.9 — Issavi revisada pelos dados do jogo (28/11): os monstros cercam o Cavaleiro, então a área em volta dele (Groundshaker) entra
+         * no lugar do golpe de alvo único (Brutal Strike), como Specter e FelipeS fazem nos mapas da ilha */
+        const kn = REVISADOS_ISSAVI.has(s.id) ? ['Fierce Berserk', 'Groundshaker', 'Berserk', 'Lesser Front Sweep'] : ['Fierce Berserk', 'Berserk', 'Lesser Front Sweep', 'Brutal Strike'];
+        assert.deepStrictEqual(s.chars.KNIGHT.ataque.map(a => a[0]), kn, s.id);
         const runas = ['PALADIN', 'SORCERER', 'DRUID'].map(v => (s.chars[v].ataque.find(a => / rune$/.test(a[0]) && a[0] !== 'sudden death rune') || [])[0]);
         assert(runas[0] && runas.every(r => r === runas[0]), s.id + ': runas ' + runas.join(', '));
         for (const [voc, ch] of Object.entries(s.chars)) {
