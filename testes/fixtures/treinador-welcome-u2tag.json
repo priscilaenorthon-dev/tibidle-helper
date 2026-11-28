@@ -1,0 +1,7091 @@
+{
+  "type": "resume",
+  "data": {
+    "huntId": 222,
+    "state": {
+      "character": {
+        "name": "Conta",
+        "vocation": "KNIGHT",
+        "sex": "male",
+        "level": 250,
+        "hp": 3153,
+        "maxHp": 3879,
+        "mana": 183,
+        "maxMana": 1317,
+        "xp": "257118582",
+        "gold": 0
+      },
+      "active": [
+        {
+          "id": 416,
+          "slug": "demon",
+          "name": "Demon",
+          "hp": 255,
+          "maxHp": 8200,
+          "look": 35,
+          "speed": 128,
+          "pos": [
+            0,
+            1
+          ]
+        },
+        {
+          "id": 419,
+          "slug": "juggernaut",
+          "name": "Juggernaut",
+          "hp": 2677,
+          "maxHp": 9000,
+          "look": 244,
+          "speed": 170,
+          "pos": [
+            1,
+            -1
+          ]
+        }
+      ],
+      "nextWaveMs": 0,
+      "waveOrdinal": 60,
+      "skills": {
+        "level": {
+          "value": 250,
+          "pct": 93,
+          "xp": "257118582",
+          "xpNext": "257325000"
+        },
+        "melee": {
+          "value": 64,
+          "pct": 40,
+          "bonus": 7
+        },
+        "distance": {
+          "value": 10,
+          "pct": 0,
+          "bonus": 4
+        },
+        "shielding": {
+          "value": 65,
+          "pct": 82,
+          "bonus": 8
+        },
+        "magic": {
+          "value": 11,
+          "pct": 31,
+          "bonus": 4
+        }
+      },
+      "party": [
+        {
+          "name": "Conta",
+          "vocation": "KNIGHT",
+          "level": 250,
+          "hp": 3153,
+          "maxHp": 3879,
+          "mana": 183,
+          "maxMana": 1317,
+          "pos": [
+            0,
+            0
+          ],
+          "suppliesGold": 41928,
+          "supplyUsed": {
+            "Mana Potion": {
+              "count": 563,
+              "gold": 31528
+            },
+            "Supreme Health Potion": {
+              "count": 16,
+              "gold": 10400
+            }
+          },
+          "skills": {
+            "level": {
+              "value": 250,
+              "pct": 93,
+              "xp": "257118582",
+              "xpNext": "257325000"
+            },
+            "melee": {
+              "value": 64,
+              "pct": 40,
+              "bonus": 7
+            },
+            "distance": {
+              "value": 10,
+              "pct": 0,
+              "bonus": 4
+            },
+            "shielding": {
+              "value": 65,
+              "pct": 82,
+              "bonus": 8
+            },
+            "magic": {
+              "value": 11,
+              "pct": 31,
+              "bonus": 4
+            }
+          },
+          "kit": [
+            {
+              "name": "Fierce Berserk",
+              "words": "exori gran",
+              "level": 90,
+              "mana": 340,
+              "cooldownMs": 6000,
+              "cdLeft": 0,
+              "effectId": 10
+            },
+            {
+              "name": "Berserk",
+              "words": "exori",
+              "level": 35,
+              "mana": 115,
+              "cooldownMs": 4000,
+              "cdLeft": 2898,
+              "effectId": 10
+            },
+            {
+              "name": "Groundshaker",
+              "words": "exori mas",
+              "level": 33,
+              "mana": 160,
+              "cooldownMs": 8000,
+              "cdLeft": 2897,
+              "effectId": 35
+            },
+            {
+              "name": "Lesser Front Sweep",
+              "words": "exori infir min",
+              "level": 1,
+              "mana": 6,
+              "cooldownMs": 6000,
+              "cdLeft": 2898,
+              "effectId": 10
+            }
+          ],
+          "cds": {
+            "groups": {
+              "support": 0,
+              "attack": 898,
+              "healing": 0
+            },
+            "potionMs": 0,
+            "heals": [
+              null,
+              {
+                "name": "Intense Wound Cleansing",
+                "cdLeft": 0,
+                "cooldownMs": 600000
+              },
+              {
+                "name": "Wound Cleansing",
+                "cdLeft": 0,
+                "cooldownMs": 1000
+              }
+            ],
+            "supports": [
+              {
+                "name": "Train Party",
+                "cdLeft": 56199,
+                "cooldownMs": 120000
+              }
+            ]
+          },
+          "potions": {
+            "heal": {
+              "name": "Supreme Health Potion",
+              "itemId": 23375
+            },
+            "mana": {
+              "name": "Mana Potion",
+              "itemId": 268
+            }
+          },
+          "blessings": [
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "equipment": {
+            "head": {
+              "id": 10385,
+              "name": "Zaoan helmet",
+              "attrs": {
+                "primarytype": "helmets",
+                "absorbpercentphysical": 5,
+                "armor": 9,
+                "weight": 6600,
+                "imbuementslot": 1,
+                "mana leech": 3,
+                "skillboost axe": 3,
+                "skillboost sword": 3,
+                "skillboost club": 3,
+                "skillboost shielding": 3,
+                "skillboost distance": 3,
+                "script": "moveevent",
+                "slot": "head",
+                "vocation": "Knight;true, Paladin;true, Elite Knight, Royal Paladin"
+              },
+              "imbue": {
+                "slots": 1,
+                "types": {
+                  "mana leech": 3,
+                  "skillboost shielding": 3,
+                  "skillboost distance": 3,
+                  "skillboost melee": 3
+                }
+              },
+              "imbuements": [
+                null
+              ],
+              "value": 45000,
+              "iid": "mviu3hvc.87d.1",
+              "forja": {
+                "fonte": "elite",
+                "refino": 0,
+                "raridade": 0,
+                "atributos": [],
+                "potenciaBase": 77
+              }
+            },
+            "legs": {
+              "id": 35516,
+              "name": "exotic legs",
+              "attrs": {
+                "primarytype": "legs",
+                "absorbpercentphysical": 4,
+                "armor": 8,
+                "weight": 7200,
+                "script": "moveevent",
+                "level": 130,
+                "slot": "legs",
+                "vocation": "Knight;true, Elite Knight"
+              },
+              "imbue": null,
+              "imbuements": [],
+              "value": 1,
+              "iid": "mwih3508.52f.1",
+              "forja": {
+                "fonte": "elite",
+                "refino": 0,
+                "raridade": 0,
+                "atributos": [],
+                "potenciaBase": 202
+              }
+            },
+            "ring": {
+              "id": 3007,
+              "name": "crystal ring",
+              "attrs": {
+                "primarytype": "rings",
+                "weight": 90,
+                "script": "moveevent",
+                "slot": "ring"
+              },
+              "imbue": null,
+              "imbuements": [],
+              "value": 250,
+              "iid": "muyndir3.2wp.56",
+              "forja": {
+                "fonte": "hunt",
+                "refino": 0,
+                "raridade": 1,
+                "atributos": [
+                  {
+                    "id": "cura_propria",
+                    "valor": 3.7
+                  }
+                ],
+                "potenciaBase": 279
+              }
+            },
+            "armor": {
+              "id": 3366,
+              "name": "magic plate armor",
+              "attrs": {
+                "primarytype": "armors",
+                "armor": 17,
+                "weight": 8500,
+                "imbuementslot": 2,
+                "life leech": 3,
+                "elemental protection death": 3,
+                "elemental protection earth": 3,
+                "elemental protection fire": 3,
+                "elemental protection ice": 3,
+                "elemental protection energy": 3,
+                "elemental protection holy": 3,
+                "script": "moveevent",
+                "slot": "armor",
+                "vocation": "Knight;true, Paladin;true, Elite Knight, Royal Paladin"
+              },
+              "imbue": {
+                "slots": 2,
+                "types": {
+                  "life leech": 3,
+                  "elemental protection death": 3,
+                  "elemental protection earth": 3,
+                  "elemental protection fire": 3,
+                  "elemental protection ice": 3,
+                  "elemental protection energy": 3,
+                  "elemental protection holy": 3
+                }
+              },
+              "imbuements": [
+                null,
+                null
+              ],
+              "value": 90000,
+              "iid": "mvbfvdbp.6fj.1",
+              "forja": {
+                "fonte": "elite",
+                "refino": 4,
+                "raridade": 1,
+                "atributos": [
+                  {
+                    "id": "resist_gelo",
+                    "valor": 2.5
+                  }
+                ],
+                "potenciaBase": 271
+              }
+            },
+            "boots": {
+              "id": 10323,
+              "name": "guardian boots",
+              "attrs": {
+                "primarytype": "boots",
+                "absorbpercentphysical": 2,
+                "absorbpercentholy": -2,
+                "armor": 3,
+                "weight": 2250,
+                "imbuementslot": 1,
+                "paralysis deflection": 3,
+                "script": "moveevent",
+                "level": 70,
+                "slot": "feet",
+                "vocation": "Knight;true, Paladin;true, Elite Knight, Royal Paladin"
+              },
+              "imbue": null,
+              "imbuements": [],
+              "value": 35000,
+              "iid": "mwih311h.526.1",
+              "forja": {
+                "fonte": "elite",
+                "refino": 0,
+                "raridade": 1,
+                "atributos": [
+                  {
+                    "id": "cura_propria",
+                    "valor": 1.9
+                  }
+                ],
+                "potenciaBase": 156
+              }
+            },
+            "shield": {
+              "id": 3422,
+              "name": "great shield",
+              "attrs": {
+                "primarytype": "shields",
+                "description": "The shield is made of dragon scales",
+                "weaponType": "shield",
+                "defense": 38,
+                "weight": 8400,
+                "imbuementslot": 1,
+                "elemental protection death": 3,
+                "elemental protection earth": 3,
+                "elemental protection fire": 3,
+                "elemental protection ice": 3,
+                "elemental protection energy": 3,
+                "elemental protection holy": 3,
+                "skillboost shielding": 3,
+                "script": "moveevent",
+                "slot": "shield"
+              },
+              "imbue": {
+                "slots": 1,
+                "types": {
+                  "elemental protection death": 3,
+                  "elemental protection earth": 3,
+                  "elemental protection fire": 3,
+                  "elemental protection ice": 3,
+                  "elemental protection energy": 3,
+                  "elemental protection holy": 3,
+                  "skillboost shielding": 3
+                }
+              },
+              "imbuements": [
+                null
+              ],
+              "value": 480,
+              "iid": "mvvs4xgg.1ny.1",
+              "forja": {
+                "fonte": "elite",
+                "refino": 0,
+                "raridade": 0,
+                "atributos": [],
+                "potenciaBase": 398
+              }
+            },
+            "weapon": {
+              "id": 3319,
+              "name": "stonecutter axe",
+              "attrs": {
+                "primarytype": "axe weapons",
+                "description": "You feel the power of this mighty axe",
+                "weaponType": "axe",
+                "attack": 50,
+                "extradef": 3,
+                "defense": 30,
+                "weight": 9900,
+                "imbuementslot": 1,
+                "elemental damage": 3,
+                "life leech": 3,
+                "mana leech": 3,
+                "critical hit": 3,
+                "skillboost axe": 3,
+                "script": "moveevent;weapon",
+                "level": 90,
+                "unproperly": "true"
+              },
+              "imbue": {
+                "slots": 1,
+                "types": {
+                  "life leech": 3,
+                  "mana leech": 3,
+                  "critical hit": 3,
+                  "skillboost melee": 3
+                }
+              },
+              "imbuements": [
+                null
+              ],
+              "value": 320,
+              "iid": "mvfqvwho.4of.1",
+              "forja": {
+                "fonte": "elite",
+                "refino": 0,
+                "raridade": 0,
+                "atributos": [],
+                "potenciaBase": 129
+              }
+            },
+            "necklace": {
+              "id": 21170,
+              "name": "gearwheel chain",
+              "attrs": {
+                "primarytype": "amulets and necklaces",
+                "armor": 3,
+                "weight": 1000,
+                "script": "moveevent",
+                "level": 75,
+                "slot": "necklace"
+              },
+              "imbue": null,
+              "imbuements": [],
+              "value": 5000,
+              "iid": "mvomiilg.dko.1",
+              "forja": {
+                "fonte": "elite",
+                "refino": 0,
+                "raridade": 0,
+                "atributos": [],
+                "potenciaBase": 285
+              }
+            }
+          },
+          "outfit": {
+            "lookType": 760,
+            "colors": {
+              "head": 78,
+              "body": 75,
+              "legs": 58,
+              "feet": 76
+            },
+            "addons": {
+              "a1": true,
+              "a2": true
+            },
+            "mountId": 50
+          }
+        },
+        {
+          "name": "Conta",
+          "vocation": "PALADIN",
+          "level": 250,
+          "hp": 2446,
+          "maxHp": 2724,
+          "mana": 265,
+          "maxMana": 3737,
+          "pos": [
+            -2,
+            0
+          ],
+          "suppliesGold": 26574,
+          "supplyUsed": {
+            "burst arrow": {
+              "count": 638,
+              "gold": 5742
+            },
+            "thunderstorm rune": {
+              "count": 308,
+              "gold": 2464
+            },
+            "Mana Potion": {
+              "count": 328,
+              "gold": 18368
+            }
+          },
+          "skills": {
+            "level": {
+              "value": 250,
+              "pct": 93,
+              "xp": "257118582",
+              "xpNext": "257325000"
+            },
+            "melee": {
+              "value": 10,
+              "pct": 0,
+              "bonus": 5
+            },
+            "distance": {
+              "value": 68,
+              "pct": 96,
+              "bonus": 9
+            },
+            "shielding": {
+              "value": 54,
+              "pct": 8,
+              "bonus": 6
+            },
+            "magic": {
+              "value": 21,
+              "pct": 39,
+              "bonus": 4
+            }
+          },
+          "kit": [
+            {
+              "name": "Divine Caldera",
+              "words": "exevo mas san",
+              "level": 50,
+              "mana": 160,
+              "cooldownMs": 4000,
+              "cdLeft": 898,
+              "effectId": 50
+            },
+            {
+              "name": "thunderstorm rune",
+              "words": null,
+              "level": 30,
+              "cooldownMs": 2000,
+              "cdLeft": 898,
+              "effectId": 12
+            },
+            {
+              "name": "Strong Ethereal Spear",
+              "words": "exori gran con",
+              "level": 90,
+              "mana": 55,
+              "cooldownMs": 8000,
+              "cdLeft": 0,
+              "effectId": 10
+            },
+            {
+              "name": "Divine Missile",
+              "words": "exori san",
+              "level": 40,
+              "mana": 20,
+              "cooldownMs": 2000,
+              "cdLeft": 0,
+              "effectId": 40
+            }
+          ],
+          "cds": {
+            "groups": {
+              "support": 0,
+              "attack": 898,
+              "healing": 0
+            },
+            "potionMs": 0,
+            "heals": [
+              null,
+              {
+                "name": "Salvation",
+                "cdLeft": 0,
+                "cooldownMs": 1000
+              },
+              {
+                "name": "Intense Healing",
+                "cdLeft": 0,
+                "cooldownMs": 1000
+              }
+            ],
+            "supports": [
+              {
+                "name": "Protect Party",
+                "cdLeft": 21156,
+                "cooldownMs": 120000
+              }
+            ]
+          },
+          "potions": {
+            "heal": {
+              "name": "Ultimate Spirit Potion",
+              "itemId": 23374
+            },
+            "mana": {
+              "name": "Mana Potion",
+              "itemId": 268
+            }
+          },
+          "blessings": [],
+          "equipment": {
+            "head": {
+              "id": 3351,
+              "name": "steel helmet",
+              "attrs": {
+                "primarytype": "helmets",
+                "armor": 6,
+                "weight": 4600,
+                "script": "moveevent",
+                "slot": "head"
+              },
+              "imbue": null,
+              "imbuements": [],
+              "value": 293,
+              "iid": "mvb1u73r.4g7.52",
+              "forja": {
+                "fonte": "hunt",
+                "refino": 0,
+                "raridade": 4,
+                "atributos": [
+                  {
+                    "id": "roubo_vida_quantia",
+                    "valor": 0.8
+                  },
+                  {
+                    "id": "resist_morte",
+                    "valor": 1.9
+                  },
+                  {
+                    "id": "max_hp",
+                    "valor": 30
+                  },
+                  {
+                    "id": "regen_vida",
+                    "valor": 1.5
+                  }
+                ],
+                "potenciaBase": 246
+              }
+            },
+            "legs": {
+              "id": 9383,
+              "name": "trousers of the ancients",
+              "attrs": {
+                "description": "These atavistic trousers already served the forefathers of mankind",
+                "armor": 2,
+                "weight": 30,
+                "script": "moveevent",
+                "slot": "legs"
+              },
+              "imbue": null,
+              "imbuements": [],
+              "value": 5,
+              "iid": "mv4j31a5.nwg.93",
+              "forja": {
+                "fonte": "hunt",
+                "refino": 0,
+                "raridade": 3,
+                "atributos": [
+                  {
+                    "id": "resist_energia",
+                    "valor": 1.6
+                  },
+                  {
+                    "id": "regen_mana",
+                    "valor": 2.2
+                  },
+                  {
+                    "id": "max_hp",
+                    "valor": 25
+                  }
+                ],
+                "potenciaBase": 214
+              }
+            },
+            "ring": {
+              "id": 3007,
+              "name": "crystal ring",
+              "attrs": {
+                "primarytype": "rings",
+                "weight": 90,
+                "script": "moveevent",
+                "slot": "ring"
+              },
+              "imbue": null,
+              "imbuements": [],
+              "value": 250,
+              "iid": "mvdbym2x.h53.5",
+              "forja": {
+                "fonte": "hunt",
+                "refino": 0,
+                "raridade": 2,
+                "atributos": [
+                  {
+                    "id": "resist_gelo",
+                    "valor": 0.9
+                  },
+                  {
+                    "id": "regen_mana",
+                    "valor": 1.9
+                  }
+                ],
+                "potenciaBase": 231
+              }
+            },
+            "armor": {
+              "id": 8063,
+              "name": "paladin armor",
+              "attrs": {
+                "primarytype": "armors",
+                "skilldist": 2,
+                "armor": 12,
+                "weight": 6500,
+                "imbuementslot": 1,
+                "life leech": 3,
+                "elemental protection death": 3,
+                "elemental protection earth": 3,
+                "elemental protection fire": 3,
+                "elemental protection ice": 3,
+                "elemental protection energy": 3,
+                "elemental protection holy": 3,
+                "script": "moveevent",
+                "slot": "armor",
+                "vocation": "Paladin;true, Royal Paladin"
+              },
+              "imbue": {
+                "slots": 1,
+                "types": {
+                  "life leech": 3,
+                  "elemental protection death": 3,
+                  "elemental protection earth": 3,
+                  "elemental protection fire": 3,
+                  "elemental protection ice": 3,
+                  "elemental protection energy": 3,
+                  "elemental protection holy": 3
+                }
+              },
+              "imbuements": [
+                null
+              ],
+              "value": 15000,
+              "iid": "mw2kt4ml.orm.1",
+              "forja": {
+                "fonte": "elite",
+                "refino": 0,
+                "raridade": 0,
+                "atributos": [],
+                "potenciaBase": 341
+              }
+            },
+            "boots": {
+              "id": 7457,
+              "name": "fur boots",
+              "attrs": {
+                "primarytype": "boots",
+                "description": "These boots keep your toes warm even in the iciest regions, but they feel kind of heavy",
+                "speed": -6,
+                "armor": 2,
+                "weight": 1200,
+                "imbuementslot": 1,
+                "paralysis deflection": 3,
+                "script": "moveevent",
+                "slot": "feet"
+              },
+              "imbue": null,
+              "imbuements": [],
+              "value": 2000,
+              "iid": "mvhu15zi.2wc.1",
+              "forja": {
+                "fonte": "elite",
+                "refino": 0,
+                "raridade": 1,
+                "atributos": [
+                  {
+                    "id": "regen_mana",
+                    "valor": 2.4
+                  }
+                ],
+                "potenciaBase": 203
+              }
+            },
+            "weapon": {
+              "id": 14246,
+              "name": "hive bow",
+              "attrs": {
+                "primarytype": "distance weapons",
+                "weaponType": "distance",
+                "slotType": "two-handed",
+                "ammotype": "arrow",
+                "hitchance": 5,
+                "range": 6,
+                "attack": 2,
+                "weight": 4600,
+                "imbuementslot": 3,
+                "elemental damage": 3,
+                "life leech": 3,
+                "mana leech": 3,
+                "critical hit": 3,
+                "skillboost distance": 3,
+                "script": "moveevent;weapon",
+                "level": 85,
+                "unproperly": "true",
+                "vocation": "Paladin;true, Royal Paladin"
+              },
+              "imbue": {
+                "slots": 3,
+                "types": {
+                  "life leech": 3,
+                  "mana leech": 3,
+                  "critical hit": 3,
+                  "skillboost distance": 3
+                }
+              },
+              "imbuements": [
+                null,
+                null,
+                null
+              ],
+              "value": 28000,
+              "iid": "muyv4xxh.5l6.1",
+              "forja": {
+                "fonte": "elite",
+                "refino": 0,
+                "raridade": 0,
+                "atributos": [],
+                "potenciaBase": 270
+              }
+            },
+            "necklace": {
+              "id": 3012,
+              "name": "wolf tooth chain",
+              "attrs": {
+                "primarytype": "amulets and necklaces",
+                "weight": 330,
+                "script": "moveevent",
+                "slot": "necklace"
+              },
+              "imbue": null,
+              "imbuements": [],
+              "value": 100,
+              "iid": "mukppd3o.1p4.3",
+              "forja": {
+                "fonte": "hunt",
+                "refino": 0,
+                "raridade": 2,
+                "atributos": [
+                  {
+                    "id": "dano_elem_sagrado",
+                    "valor": 3.2
+                  },
+                  {
+                    "id": "distancia",
+                    "valor": 1
+                  }
+                ],
+                "potenciaBase": 338
+              }
+            }
+          },
+          "outfit": {
+            "lookType": 760,
+            "colors": {
+              "head": 78,
+              "body": 75,
+              "legs": 58,
+              "feet": 76
+            },
+            "addons": {
+              "a1": true,
+              "a2": true
+            },
+            "mountId": 50
+          }
+        },
+        {
+          "name": "Conta",
+          "vocation": "SORCERER",
+          "level": 250,
+          "hp": 1204,
+          "maxHp": 1478,
+          "mana": 246,
+          "maxMana": 7367,
+          "pos": [
+            -4,
+            0
+          ],
+          "suppliesGold": 18488,
+          "supplyUsed": {
+            "Mana Potion": {
+              "count": 265,
+              "gold": 14840
+            },
+            "thunderstorm rune": {
+              "count": 456,
+              "gold": 3648
+            }
+          },
+          "skills": {
+            "level": {
+              "value": 250,
+              "pct": 93,
+              "xp": "257118582",
+              "xpNext": "257325000"
+            },
+            "melee": {
+              "value": 10,
+              "pct": 0,
+              "bonus": 5
+            },
+            "distance": {
+              "value": 10,
+              "pct": 0,
+              "bonus": 4
+            },
+            "shielding": {
+              "value": 24,
+              "pct": 98,
+              "bonus": 6
+            },
+            "magic": {
+              "value": 56,
+              "pct": 91,
+              "bonus": 10
+            }
+          },
+          "kit": [
+            {
+              "name": "Energy Wave",
+              "words": "exevo vis hur",
+              "level": 50,
+              "mana": 170,
+              "cooldownMs": 8000,
+              "cdLeft": 4898,
+              "effectId": 38
+            },
+            {
+              "name": "thunderstorm rune",
+              "words": null,
+              "level": 30,
+              "cooldownMs": 2000,
+              "cdLeft": 898,
+              "effectId": 12
+            },
+            {
+              "name": "Ultimate Energy Strike",
+              "words": "exori max vis",
+              "level": 100,
+              "mana": 100,
+              "cooldownMs": 30000,
+              "cdLeft": 0,
+              "effectId": 38
+            },
+            {
+              "name": "Strong Energy Strike",
+              "words": "exori gran vis",
+              "level": 80,
+              "mana": 60,
+              "cooldownMs": 8000,
+              "cdLeft": 0,
+              "effectId": 38
+            }
+          ],
+          "cds": {
+            "groups": {
+              "support": 0,
+              "attack": 898,
+              "healing": 0,
+              "ultimatestrikes": 0,
+              "special": 0
+            },
+            "potionMs": 0,
+            "heals": [
+              null,
+              {
+                "name": "Ultimate Healing",
+                "cdLeft": 0,
+                "cooldownMs": 1000
+              },
+              {
+                "name": "Intense Healing",
+                "cdLeft": 0,
+                "cooldownMs": 1000
+              }
+            ],
+            "supports": [
+              {
+                "name": "Enchant Party",
+                "cdLeft": 54296,
+                "cooldownMs": 120000
+              }
+            ]
+          },
+          "potions": {
+            "heal": {
+              "name": "Health Potion",
+              "itemId": 266
+            },
+            "mana": {
+              "name": "Mana Potion",
+              "itemId": 268
+            }
+          },
+          "blessings": [],
+          "equipment": {
+            "head": {
+              "id": 827,
+              "name": "magma monocle",
+              "attrs": {
+                "primarytype": "helmets",
+                "absorbpercentice": -5,
+                "absorbpercentfire": 4,
+                "armor": 5,
+                "weight": 1000,
+                "script": "moveevent",
+                "slot": "head",
+                "vocation": "Sorcerer;true, Druid;true, Master Sorcerer, Elder Druid"
+              },
+              "imbue": null,
+              "imbuements": [],
+              "value": 2500,
+              "iid": "muljc4cv.b7x.31",
+              "forja": {
+                "fonte": "hunt",
+                "refino": 0,
+                "raridade": 2,
+                "atributos": [
+                  {
+                    "id": "resist_energia",
+                    "valor": 1.3
+                  },
+                  {
+                    "id": "regen_mana",
+                    "valor": 2.2
+                  }
+                ],
+                "potenciaBase": 344
+              }
+            },
+            "legs": {
+              "id": 821,
+              "name": "magma legs",
+              "attrs": {
+                "primarytype": "legs",
+                "absorbpercentice": -6,
+                "absorbpercentfire": 6,
+                "armor": 8,
+                "weight": 1900,
+                "script": "moveevent",
+                "level": 40,
+                "slot": "legs",
+                "vocation": "Sorcerer;true, Druid;true, Master Sorcerer, Elder Druid"
+              },
+              "imbue": null,
+              "imbuements": [],
+              "value": 11000,
+              "iid": "mwo59gbr.g7l.141",
+              "forja": {
+                "fonte": "hunt",
+                "refino": 0,
+                "raridade": 2,
+                "atributos": [
+                  {
+                    "id": "regen_mana",
+                    "valor": 1.2
+                  },
+                  {
+                    "id": "regen_vida",
+                    "valor": 1.7
+                  }
+                ],
+                "potenciaBase": 191
+              }
+            },
+            "ring": {
+              "id": 3007,
+              "name": "crystal ring",
+              "attrs": {
+                "primarytype": "rings",
+                "weight": 90,
+                "script": "moveevent",
+                "slot": "ring"
+              },
+              "imbue": null,
+              "imbuements": [],
+              "value": 250,
+              "iid": "mvei3v16.nw5.226",
+              "forja": {
+                "fonte": "hunt",
+                "refino": 0,
+                "raridade": 2,
+                "atributos": [
+                  {
+                    "id": "regen_mana",
+                    "valor": 1.5
+                  },
+                  {
+                    "id": "cura_propria",
+                    "valor": 1.6
+                  }
+                ],
+                "potenciaBase": 5
+              }
+            },
+            "armor": {
+              "id": 826,
+              "name": "magma coat",
+              "attrs": {
+                "primarytype": "armors",
+                "absorbpercentice": -8,
+                "absorbpercentfire": 8,
+                "armor": 11,
+                "weight": 2250,
+                "script": "moveevent",
+                "level": 50,
+                "slot": "armor",
+                "vocation": "Sorcerer;true, Druid;true, Master Sorcerer, Elder Druid"
+              },
+              "imbue": null,
+              "imbuements": [],
+              "value": 11000,
+              "iid": "mwsjyz7i.sfa.96",
+              "forja": {
+                "fonte": "hunt",
+                "refino": 0,
+                "raridade": 2,
+                "atributos": [
+                  {
+                    "id": "resist_morte",
+                    "valor": 1.1
+                  },
+                  {
+                    "id": "cura_propria",
+                    "valor": 1.9
+                  }
+                ],
+                "potenciaBase": 20
+              }
+            },
+            "boots": {
+              "id": 818,
+              "name": "magma boots",
+              "attrs": {
+                "primarytype": "boots",
+                "absorbpercentice": -5,
+                "absorbpercentfire": 5,
+                "armor": 2,
+                "weight": 750,
+                "imbuementslot": 1,
+                "paralysis deflection": 3,
+                "increase speed": 3,
+                "script": "moveevent",
+                "level": 35,
+                "slot": "feet",
+                "vocation": "Sorcerer;true, Druid;true, Master Sorcerer, Elder Druid"
+              },
+              "imbue": {
+                "slots": 1,
+                "types": {
+                  "increase speed": 3
+                }
+              },
+              "imbuements": [],
+              "value": 2500,
+              "iid": "mwut0qxs.dwd.52",
+              "forja": {
+                "fonte": "hunt",
+                "refino": 0,
+                "raridade": 1,
+                "atributos": [
+                  {
+                    "id": "max_hp",
+                    "valor": 19
+                  }
+                ],
+                "potenciaBase": 310
+              }
+            },
+            "shield": {
+              "id": 8074,
+              "name": "spellbook of mind control",
+              "attrs": {
+                "description": "It shows your spells and can also shield against attacks when worn",
+                "weaponType": "spellbook",
+                "magiclevelpoints": 2,
+                "defense": 16,
+                "weight": 2450,
+                "script": "moveevent",
+                "level": 50,
+                "slot": "shield",
+                "vocation": "Sorcerer;true, Druid;true, Master Sorcerer, Elder Druid"
+              },
+              "imbue": null,
+              "imbuements": [],
+              "value": 13000,
+              "iid": "mvcmdd94.gm7.10",
+              "forja": {
+                "fonte": "hunt",
+                "refino": 0,
+                "raridade": 0,
+                "atributos": [],
+                "potenciaBase": 23
+              }
+            },
+            "weapon": {
+              "id": 3074,
+              "name": "wand of vortex",
+              "attrs": {
+                "description": "Surges of energy rush through the tip of this wand",
+                "weaponType": "wand",
+                "shootType": "energy",
+                "range": 3,
+                "weight": 1900,
+                "script": "moveevent;weapon",
+                "level": 6,
+                "mana": 1,
+                "fromDamage": 8,
+                "toDamage": 18,
+                "wandType": "energy",
+                "vocation": "Sorcerer;true, Master Sorcerer",
+                "slot": "hand"
+              },
+              "imbue": null,
+              "imbuements": [],
+              "value": 100,
+              "iid": "mukjt5ud.zbk.9",
+              "forja": {
+                "fonte": "hunt",
+                "refino": 0,
+                "raridade": 1,
+                "atributos": [
+                  {
+                    "id": "nivel_magico",
+                    "valor": 1
+                  }
+                ],
+                "potenciaBase": 335
+              }
+            },
+            "necklace": {
+              "id": 10457,
+              "name": "beetle necklace",
+              "attrs": {
+                "primarytype": "amulets and necklaces",
+                "showAttributes": 1,
+                "speed": 2,
+                "weight": 820,
+                "script": "moveevent",
+                "slot": "necklace"
+              },
+              "imbue": null,
+              "imbuements": [],
+              "value": 1500,
+              "iid": "mv8z78zt.145.156",
+              "forja": {
+                "fonte": "hunt",
+                "refino": 0,
+                "raridade": 1,
+                "atributos": [
+                  {
+                    "id": "nivel_magico",
+                    "valor": 1
+                  }
+                ],
+                "potenciaBase": 102
+              }
+            }
+          },
+          "outfit": {
+            "lookType": 760,
+            "colors": {
+              "head": 78,
+              "body": 75,
+              "legs": 58,
+              "feet": 76
+            },
+            "addons": {
+              "a1": true,
+              "a2": true
+            },
+            "mountId": 50
+          }
+        },
+        {
+          "name": "Conta",
+          "vocation": "DRUID",
+          "level": 250,
+          "hp": 1092,
+          "maxHp": 1475,
+          "mana": 1507,
+          "maxMana": 7367,
+          "pos": [
+            -3,
+            0
+          ],
+          "suppliesGold": 94166,
+          "supplyUsed": {
+            "Strong Mana Potion": {
+              "count": 832,
+              "gold": 89856
+            },
+            "avalanche rune": {
+              "count": 445,
+              "gold": 3560
+            },
+            "Health Potion": {
+              "count": 15,
+              "gold": 750
+            }
+          },
+          "skills": {
+            "level": {
+              "value": 250,
+              "pct": 93,
+              "xp": "257118582",
+              "xpNext": "257325000"
+            },
+            "melee": {
+              "value": 10,
+              "pct": 0,
+              "bonus": 5
+            },
+            "distance": {
+              "value": 10,
+              "pct": 0,
+              "bonus": 4
+            },
+            "shielding": {
+              "value": 25,
+              "pct": 5,
+              "bonus": 6
+            },
+            "magic": {
+              "value": 62,
+              "pct": 2,
+              "bonus": 9
+            }
+          },
+          "kit": [
+            {
+              "name": "Strong Ice Wave",
+              "words": "exevo gran frigo hur",
+              "level": 50,
+              "mana": 170,
+              "cooldownMs": 8000,
+              "cdLeft": 4898,
+              "effectId": 42
+            },
+            {
+              "name": "avalanche rune",
+              "words": null,
+              "level": 30,
+              "cooldownMs": 2000,
+              "cdLeft": 898,
+              "effectId": 42
+            },
+            {
+              "name": "Strong Ice Strike",
+              "words": "exori gran frigo",
+              "level": 80,
+              "mana": 60,
+              "cooldownMs": 8000,
+              "cdLeft": 0,
+              "effectId": 44
+            },
+            {
+              "name": "Energy Strike",
+              "words": "exori vis",
+              "level": 12,
+              "mana": 20,
+              "cooldownMs": 2000,
+              "cdLeft": 0,
+              "effectId": 38
+            }
+          ],
+          "cds": {
+            "groups": {
+              "support": 0,
+              "attack": 898,
+              "healing": 99,
+              "special": 0
+            },
+            "potionMs": 0,
+            "heals": [
+              null,
+              {
+                "name": "Ultimate Healing",
+                "cdLeft": 0,
+                "cooldownMs": 1000
+              },
+              {
+                "name": "Mass Healing",
+                "cdLeft": 1099,
+                "cooldownMs": 2000
+              },
+              {
+                "name": "Heal Friend",
+                "cdLeft": 0,
+                "cooldownMs": 1000
+              }
+            ],
+            "supports": [
+              {
+                "name": "Heal Party",
+                "cdLeft": 7034,
+                "cooldownMs": 120000
+              }
+            ]
+          },
+          "potions": {
+            "heal": {
+              "name": "Health Potion",
+              "itemId": 266
+            },
+            "mana": {
+              "name": "Strong Mana Potion",
+              "itemId": 237
+            }
+          },
+          "blessings": [],
+          "equipment": {
+            "head": {
+              "id": 827,
+              "name": "magma monocle",
+              "attrs": {
+                "primarytype": "helmets",
+                "absorbpercentice": -5,
+                "absorbpercentfire": 4,
+                "armor": 5,
+                "weight": 1000,
+                "script": "moveevent",
+                "slot": "head",
+                "vocation": "Sorcerer;true, Druid;true, Master Sorcerer, Elder Druid"
+              },
+              "imbue": null,
+              "imbuements": [],
+              "value": 2500,
+              "iid": "mwxkm7xo.8cr.68",
+              "forja": {
+                "fonte": "hunt",
+                "refino": 0,
+                "raridade": 1,
+                "atributos": [
+                  {
+                    "id": "regen_mana",
+                    "valor": 2.3
+                  }
+                ],
+                "potenciaBase": 344
+              }
+            },
+            "legs": {
+              "id": 821,
+              "name": "magma legs",
+              "attrs": {
+                "primarytype": "legs",
+                "absorbpercentice": -6,
+                "absorbpercentfire": 6,
+                "armor": 8,
+                "weight": 1900,
+                "script": "moveevent",
+                "level": 40,
+                "slot": "legs",
+                "vocation": "Sorcerer;true, Druid;true, Master Sorcerer, Elder Druid"
+              },
+              "imbue": null,
+              "imbuements": [],
+              "value": 11000,
+              "iid": "mwa7dqb1.8v4.70",
+              "forja": {
+                "fonte": "hunt",
+                "refino": 0,
+                "raridade": 2,
+                "atributos": [
+                  {
+                    "id": "max_hp",
+                    "valor": 16
+                  },
+                  {
+                    "id": "regen_mana",
+                    "valor": 1.3
+                  }
+                ],
+                "potenciaBase": 100
+              }
+            },
+            "ring": {
+              "id": 3007,
+              "name": "crystal ring",
+              "attrs": {
+                "primarytype": "rings",
+                "weight": 90,
+                "script": "moveevent",
+                "slot": "ring"
+              },
+              "imbue": null,
+              "imbuements": [],
+              "value": 250,
+              "iid": "mul5xbac.5jc.75",
+              "forja": {
+                "fonte": "hunt",
+                "refino": 0,
+                "raridade": 1,
+                "atributos": [
+                  {
+                    "id": "regen_mana",
+                    "valor": 2.3
+                  }
+                ],
+                "potenciaBase": 253
+              }
+            },
+            "armor": {
+              "id": 826,
+              "name": "magma coat",
+              "attrs": {
+                "primarytype": "armors",
+                "absorbpercentice": -8,
+                "absorbpercentfire": 8,
+                "armor": 11,
+                "weight": 2250,
+                "script": "moveevent",
+                "level": 50,
+                "slot": "armor",
+                "vocation": "Sorcerer;true, Druid;true, Master Sorcerer, Elder Druid"
+              },
+              "imbue": null,
+              "imbuements": [],
+              "value": 11000,
+              "iid": "mwtkbx0t.2ns.52",
+              "forja": {
+                "fonte": "hunt",
+                "refino": 0,
+                "raridade": 1,
+                "atributos": [
+                  {
+                    "id": "cura_propria",
+                    "valor": 1.2
+                  }
+                ],
+                "potenciaBase": 21
+              }
+            },
+            "boots": {
+              "id": 818,
+              "name": "magma boots",
+              "attrs": {
+                "primarytype": "boots",
+                "absorbpercentice": -5,
+                "absorbpercentfire": 5,
+                "armor": 2,
+                "weight": 750,
+                "imbuementslot": 1,
+                "paralysis deflection": 3,
+                "increase speed": 3,
+                "script": "moveevent",
+                "level": 35,
+                "slot": "feet",
+                "vocation": "Sorcerer;true, Druid;true, Master Sorcerer, Elder Druid"
+              },
+              "imbue": {
+                "slots": 1,
+                "types": {
+                  "increase speed": 3
+                }
+              },
+              "imbuements": [],
+              "value": 2500,
+              "iid": "mwur1ipa.ez4.85",
+              "forja": {
+                "fonte": "hunt",
+                "refino": 0,
+                "raridade": 3,
+                "atributos": [
+                  {
+                    "id": "resist_terra",
+                    "valor": 0.6
+                  },
+                  {
+                    "id": "regen_mana",
+                    "valor": 1.1
+                  },
+                  {
+                    "id": "resist_morte",
+                    "valor": 0.9
+                  }
+                ],
+                "potenciaBase": 84
+              }
+            },
+            "shield": {
+              "id": 8074,
+              "name": "spellbook of mind control",
+              "attrs": {
+                "description": "It shows your spells and can also shield against attacks when worn",
+                "weaponType": "spellbook",
+                "magiclevelpoints": 2,
+                "defense": 16,
+                "weight": 2450,
+                "script": "moveevent",
+                "level": 50,
+                "slot": "shield",
+                "vocation": "Sorcerer;true, Druid;true, Master Sorcerer, Elder Druid"
+              },
+              "imbue": null,
+              "imbuements": [],
+              "value": 13000,
+              "iid": "mvcsi1ps.8mn.1",
+              "forja": {
+                "fonte": "hunt",
+                "refino": 0,
+                "raridade": 0,
+                "atributos": [],
+                "potenciaBase": 69
+              }
+            },
+            "weapon": {
+              "id": 3066,
+              "name": "snakebite rod",
+              "attrs": {
+                "primarytype": "rods",
+                "description": "It seems to twitch and quiver as if trying to escape your grip",
+                "weaponType": "wand",
+                "shootType": "smallearth",
+                "range": 3,
+                "weight": 1900,
+                "script": "moveevent;weapon",
+                "level": 6,
+                "mana": 2,
+                "fromDamage": 8,
+                "toDamage": 18,
+                "wandType": "earth",
+                "vocation": "Druid;true, Elder Druid",
+                "slot": "hand"
+              },
+              "imbue": null,
+              "imbuements": [],
+              "value": 100,
+              "iid": "mukt73qp.do.79",
+              "forja": {
+                "fonte": "hunt",
+                "refino": 0,
+                "raridade": 1,
+                "atributos": [
+                  {
+                    "id": "nivel_magico",
+                    "valor": 1
+                  }
+                ],
+                "potenciaBase": 200
+              }
+            },
+            "necklace": {
+              "id": 3572,
+              "name": "scarf",
+              "attrs": {
+                "primarytype": "amulets and necklaces",
+                "armor": 1,
+                "weight": 200,
+                "script": "moveevent",
+                "slot": "necklace"
+              },
+              "imbue": null,
+              "imbuements": [],
+              "value": 1,
+              "iid": "mvyim6r4.7x3.20",
+              "forja": {
+                "fonte": "hunt",
+                "refino": 0,
+                "raridade": 2,
+                "atributos": [
+                  {
+                    "id": "dano_elem_terra",
+                    "valor": 1.8
+                  },
+                  {
+                    "id": "dano_magico",
+                    "valor": 1.9
+                  }
+                ],
+                "potenciaBase": 228
+              }
+            }
+          },
+          "outfit": {
+            "lookType": 133,
+            "colors": {
+              "head": 78,
+              "body": 75,
+              "legs": 58,
+              "feet": 76
+            },
+            "addons": {
+              "a1": false,
+              "a2": false
+            },
+            "mountId": 50
+          }
+        }
+      ],
+      "inventory": [
+        {
+          "name": "cleansing fragment t1",
+          "count": 3,
+          "id": 100314,
+          "weight": 0,
+          "value": 0,
+          "protected": false,
+          "stackable": true,
+          "slot": null
+        },
+        {
+          "name": "refine fragment t1",
+          "count": 3,
+          "id": 100312,
+          "weight": 0,
+          "value": 0,
+          "protected": false,
+          "stackable": true,
+          "slot": null
+        },
+        {
+          "name": "flask of demonic blood",
+          "count": 3,
+          "id": 6558,
+          "weight": 6,
+          "value": 1,
+          "protected": false,
+          "stackable": true,
+          "slot": null
+        },
+        {
+          "name": "gold ingot",
+          "count": 1,
+          "id": 9058,
+          "weight": 18,
+          "value": 5000,
+          "protected": false,
+          "stackable": true,
+          "slot": null
+        },
+        {
+          "name": "small emerald",
+          "count": 11,
+          "id": 3032,
+          "weight": 1.1,
+          "value": 250,
+          "protected": false,
+          "stackable": true,
+          "slot": null
+        },
+        {
+          "name": "demonic essence",
+          "count": 4,
+          "id": 6499,
+          "weight": 4,
+          "value": 1000,
+          "protected": false,
+          "stackable": true,
+          "slot": null
+        },
+        {
+          "name": "small amethyst",
+          "count": 3,
+          "id": 3033,
+          "weight": 0.3,
+          "value": 200,
+          "protected": false,
+          "stackable": true,
+          "slot": null
+        },
+        {
+          "name": "soul orb",
+          "count": 1,
+          "id": 5944,
+          "weight": 0.2,
+          "value": 25,
+          "protected": false,
+          "stackable": true,
+          "slot": null
+        },
+        {
+          "name": "small topaz",
+          "count": 7,
+          "id": 9057,
+          "weight": 0.7,
+          "value": 200,
+          "protected": false,
+          "stackable": true,
+          "slot": null
+        },
+        {
+          "name": "red gem",
+          "count": 1,
+          "id": 3039,
+          "weight": 0.3,
+          "value": 1000,
+          "protected": false,
+          "stackable": true,
+          "slot": null
+        },
+        {
+          "name": "hellhound slobber",
+          "count": 1,
+          "id": 9637,
+          "weight": 0.75,
+          "value": 500,
+          "protected": false,
+          "stackable": true,
+          "slot": null
+        },
+        {
+          "name": "orb",
+          "count": 1,
+          "id": 3060,
+          "weight": 8,
+          "value": 750,
+          "protected": false,
+          "stackable": true,
+          "slot": null
+        },
+        {
+          "name": "demon horn",
+          "count": 1,
+          "id": 5954,
+          "weight": 10,
+          "value": 1000,
+          "protected": false,
+          "stackable": true,
+          "slot": null
+        },
+        {
+          "name": "platinum amulet",
+          "count": 1,
+          "id": 3055,
+          "weight": 6,
+          "value": 2500,
+          "protected": false,
+          "stackable": false,
+          "slot": "necklace",
+          "iid": "mwz8fma2.ao1.2",
+          "forja": {
+            "fonte": "hunt",
+            "selado": true
+          },
+          "entrouEm": 1795799979747
+        },
+        {
+          "name": "crystal ring",
+          "count": 1,
+          "id": 3007,
+          "weight": 0.9,
+          "value": 250,
+          "protected": false,
+          "stackable": false,
+          "slot": "ring",
+          "iid": "mwz8fma2.ao1.5",
+          "forja": {
+            "fonte": "hunt",
+            "selado": true
+          },
+          "entrouEm": 1795800451766
+        },
+        {
+          "name": "magma monocle",
+          "count": 1,
+          "id": 827,
+          "weight": 10,
+          "value": 2500,
+          "protected": false,
+          "stackable": false,
+          "slot": "head",
+          "iid": "mwza609w.b77.2",
+          "forja": {
+            "selado": true,
+            "fonte": "hunt"
+          },
+          "entrouEm": 1795802513973
+        },
+        {
+          "name": "platinum amulet",
+          "count": 1,
+          "id": 3055,
+          "weight": 6,
+          "value": 2500,
+          "protected": false,
+          "stackable": false,
+          "slot": "necklace",
+          "iid": "mwza609w.b77.3",
+          "forja": {
+            "selado": true,
+            "fonte": "hunt"
+          },
+          "entrouEm": 1795802550725
+        },
+        {
+          "name": "magma monocle",
+          "count": 1,
+          "id": 827,
+          "weight": 10,
+          "value": 2500,
+          "protected": false,
+          "stackable": false,
+          "slot": "head",
+          "iid": "mwza609w.b77.5",
+          "forja": {
+            "selado": true,
+            "fonte": "hunt"
+          },
+          "entrouEm": 1795803021937
+        },
+        {
+          "name": "war axe",
+          "count": 1,
+          "id": 3342,
+          "weight": 61.5,
+          "value": 12000,
+          "protected": false,
+          "stackable": false,
+          "slot": "weapon",
+          "iid": "mwza609w.b77.8",
+          "forja": {
+            "selado": true,
+            "fonte": "hunt"
+          },
+          "entrouEm": 1795803632524
+        }
+      ],
+      "cap": {
+        "used": 143.75,
+        "total": 6942
+      },
+      "balance": 0,
+      "balanceLocked": 0,
+      "lureTier": 3,
+      "autoSellInMs": 486192,
+      "keyClock": {
+        "item": "beelzebub key",
+        "tierMs": 102100401,
+        "everyMs": 14400000,
+        "count": 1,
+        "effMs": 14100000,
+        "leftMs": 12826691
+      },
+      "keyBag": {
+        "beelzebub key": 1
+      },
+      "keyBagUsed": 1,
+      "keyBagMax": 22,
+      "keyBagTierId": "keybag_t3",
+      "founderGrantOk": false
+    },
+    "analyzer": {
+      "elapsedMs": 1913808,
+      "sessionElapsedMs": 1913808,
+      "xp": "314592",
+      "xpPerHour": 591768,
+      "kills": {
+        "Fury": 50,
+        "Demon": 53,
+        "Juggernaut": 52,
+        "Hellhound": 52,
+        "Angry Demon": 163,
+        "Undead Dragon": 48
+      },
+      "killsTotal": 418,
+      "damageDealt": 3440859,
+      "damageTaken": 1298741,
+      "healingDone": 1196313,
+      "lootGold": 198296,
+      "suppliesGold": 181156,
+      "drops": {
+        "gold coin": 6405,
+        "soul orb": 10,
+        "platinum coin": 369,
+        "demonic essence": 17,
+        "small amethyst": 49,
+        "small topaz": 69,
+        "orb": 5,
+        "demon horn": 25,
+        "small ruby": 56,
+        "dragon hammer": 1,
+        "flask of demonic blood": 35,
+        "hellhound slobber": 4,
+        "small emerald": 59,
+        "gold ingot": 3,
+        "green gem": 1,
+        "magma monocle": 2,
+        "talon": 12,
+        "platinum amulet": 1,
+        "green piece of cloth": 1,
+        "black pearl": 6,
+        "red gem": 5,
+        "beelzebub key": 1,
+        "refine fragment t1": 3,
+        "small sapphire": 5,
+        "red piece of cloth": 1,
+        "golden mug": 3,
+        "big bone": 1,
+        "life crystal": 1,
+        "war axe": 1,
+        "cleansing fragment t1": 1
+      },
+      "xpRaw": 286040,
+      "boxTurns": {
+        "10": 12,
+        "11": 31,
+        "12": 11,
+        "13": 5
+      }
+    },
+    "offline": {
+      "elapsedMs": 0,
+      "xp": "0",
+      "killsTotal": 0,
+      "lootGold": 0
+    },
+    "worldToken": "x",
+    "meta": {
+      "blessings": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "wildcards": 0,
+      "huntBestiary": {
+        "28": 10000,
+        "30": 1028,
+        "34": 212,
+        "38": 1326,
+        "43": 233,
+        "46": 10655,
+        "49": 29482,
+        "50": 105553,
+        "62": 37,
+        "65": 6423,
+        "99": 2377,
+        "102": 12618,
+        "103": 7236,
+        "105": 4929,
+        "106": 50073,
+        "109": 31290,
+        "110": 12018,
+        "111": 1981,
+        "119": 10000,
+        "124": 152,
+        "125": 4035,
+        "132": 56,
+        "134": 20140,
+        "140": 68,
+        "142": 304,
+        "143": 98,
+        "144": 1000,
+        "146": 3695,
+        "149": 448,
+        "151": 48409,
+        "155": 24248,
+        "161": 41440,
+        "163": 153,
+        "165": 24,
+        "170": 12102,
+        "176": 4004,
+        "178": 14624,
+        "182": 625,
+        "183": 91,
+        "184": 66154,
+        "187": 21482,
+        "188": 2087,
+        "189": 12360,
+        "190": 3596,
+        "191": 1736,
+        "192": 37750,
+        "195": 12005,
+        "199": 57503,
+        "200": 38920,
+        "201": 9906,
+        "202": 50001,
+        "203": 14358,
+        "204": 56575,
+        "205": 29211,
+        "206": 168,
+        "207": 8022,
+        "210": 4,
+        "211": 28,
+        "212": 5104,
+        "215": 8808,
+        "217": 74492,
+        "220": 70643,
+        "221": 11066,
+        "222": 72718,
+        "224": 379,
+        "225": 2343,
+        "226": 327038,
+        "227": 72985,
+        "228": 50013,
+        "230": 171,
+        "233": 218,
+        "234": 661,
+        "235": 72175,
+        "236": 1117,
+        "239": 83318,
+        "248": 46272,
+        "249": 287,
+        "250": 16,
+        "256": 22257,
+        "263": 28051
+      },
+      "ultimaHunt": 222,
+      "eliteBestiary": {
+        "Jaws": 1,
+        "Genio": 3,
+        "Linck": 2,
+        "Olhao": 1,
+        "Pinky": 1,
+        "Drogon": 1,
+        "Worgen": 1,
+        "Caraxes": 3,
+        "Dracola": 2,
+        "Rhaegal": 2,
+        "Viscous": 3,
+        "Draculla": 4,
+        "Gnomevil": 3,
+        "Gordzila": 4,
+        "Gul'Dhan": 1,
+        "Mad Mage": 1,
+        "Massacre": 1,
+        "Ushuriel": 1,
+        "Ashmunrah": 1,
+        "Flameborn": 3,
+        "Hellgorak": 1,
+        "beelzebub": 4,
+        "Davy Jones": 1,
+        "Giant Wasp": 2,
+        "Hive Queen": 1,
+        "Mr. Punish": 1,
+        "Versperoth": 1,
+        "Black widow": 1,
+        "Dwarf Elder": 3,
+        "Pesso&Vesso": 2,
+        "Sugar Mommy": 1,
+        "The Imperor": 2,
+        "The emperor": 3,
+        "Black Knight": 2,
+        "Renegade Orc": 1,
+        "Witch Doctor": 1,
+        "Captain Jones": 2,
+        "Diseased Fred": 4,
+        "Quara Fishman": 4,
+        "Stone Devourer": 1,
+        "The Handmaiden": 1,
+        "The Plasmother": 4,
+        "Cerebro is Back": 1,
+        "Goblin Assassin": 1,
+        "Janna Pouldmore": 1,
+        "Ragnar Lohtbrok": 1,
+        "The End of Days": 1,
+        "Cursed Gladiator": 3,
+        "Mestre dos mortos": 3,
+        "Sun-Marked Goanna": 1,
+        "The Time Guardian": 2,
+        "Soulharvest Reaper": 1,
+        "The Lantern Reaper": 5,
+        "Bonehead the Cursed": 1,
+        "Dragonking Zyrtarch": 9,
+        "Norgle Glacierbeard": 4,
+        "Solid Frozen Horror": 4,
+        "Metal Weregargoylemon": 2,
+        "The Weeping Matriarch": 1,
+        "Xul'gath, the Soul Devourer": 4
+      },
+      "preyHunt": null,
+      "preyHuntRollFreeDay": true,
+      "preyBuffs": {
+        "KNIGHT": {
+          "bonus": {
+            "type": "xp",
+            "bonusType": "BONUS_XP",
+            "label": "Bônus de XP",
+            "tier": 9,
+            "percent": 9
+          },
+          "huntId": null,
+          "msLeft": 174,
+          "locked": false,
+          "tierFloor": 9,
+          "rollFreeDay": true
+        },
+        "PALADIN": {
+          "bonus": null,
+          "huntId": null,
+          "msLeft": 0,
+          "locked": false,
+          "tierFloor": 0,
+          "rollFreeDay": true
+        },
+        "SORCERER": {
+          "bonus": null,
+          "huntId": null,
+          "msLeft": 0,
+          "locked": false,
+          "tierFloor": 0,
+          "rollFreeDay": true
+        },
+        "DRUID": {
+          "bonus": null,
+          "huntId": null,
+          "msLeft": 0,
+          "locked": false,
+          "tierFloor": 0,
+          "rollFreeDay": true
+        }
+      },
+      "preyAvisos": [
+        {
+          "target": "hunt",
+          "kind": "renovado",
+          "vezes": 50
+        },
+        {
+          "target": "KNIGHT",
+          "kind": "renovado",
+          "vezes": 40
+        },
+        {
+          "target": "PALADIN",
+          "kind": "renovado",
+          "vezes": 15
+        },
+        {
+          "target": "SORCERER",
+          "kind": "renovado",
+          "vezes": 15
+        },
+        {
+          "target": "DRUID",
+          "kind": "renovado",
+          "vezes": 7
+        }
+      ],
+      "preyHuntOpcoes": [
+        {
+          "huntId": 261,
+          "title": "Pumpkin Fields",
+          "levelMin": 1,
+          "podeEntrar": false,
+          "levelMax": 79,
+          "acimaDoTeto": true
+        },
+        {
+          "huntId": 176,
+          "title": "Wasps Dungeons",
+          "levelMin": 1,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 170,
+          "title": "Wolves Den",
+          "levelMin": 1,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 175,
+          "title": "Carlin Raids",
+          "levelMin": 12,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 178,
+          "title": "Salamander Cave",
+          "levelMin": 12,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 131,
+          "title": "Dwarven Mines",
+          "levelMin": 15,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 132,
+          "title": "Elfs Yalahar",
+          "levelMin": 15,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 125,
+          "title": "Goblins Femor Hills",
+          "levelMin": 15,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 128,
+          "title": "Larva Ankrahmuns",
+          "levelMin": 15,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 26,
+          "title": "Daramian Minotaur Pyramid",
+          "levelMin": 20,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 194,
+          "title": "Desert Quest",
+          "levelMin": 20,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 124,
+          "title": "Orcs Edron Cave",
+          "levelMin": 20,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 126,
+          "title": "Rotworms Darashia",
+          "levelMin": 20,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 28,
+          "title": "Tarpit Tomb First Floor",
+          "levelMin": 20,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 180,
+          "title": "Amazon Camp",
+          "levelMin": 25,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 135,
+          "title": "Chakoyas Svargrond",
+          "levelMin": 25,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 119,
+          "title": "Dwarf Bridge",
+          "levelMin": 25,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 134,
+          "title": "Dworcs Port Hope",
+          "levelMin": 25,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 139,
+          "title": "Crocodiles Port Hope",
+          "levelMin": 30,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 166,
+          "title": "Cults Carlin",
+          "levelMin": 30,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 32,
+          "title": "Elfs Shadowthorn",
+          "levelMin": 30,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 195,
+          "title": "Mad Mage Room",
+          "levelMin": 30,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 99,
+          "title": "Mintwallin",
+          "levelMin": 30,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 140,
+          "title": "Scarabs Cave",
+          "levelMin": 30,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 110,
+          "title": "Tortoise Meriana",
+          "levelMin": 30,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 30,
+          "title": "Coryms Lair",
+          "levelMin": 35,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 141,
+          "title": "Cyclops Thais",
+          "levelMin": 35,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 34,
+          "title": "Orc Fortress",
+          "levelMin": 35,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 101,
+          "title": "Pirates Yalahar",
+          "levelMin": 35,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 138,
+          "title": "Terramites Ankrahmun",
+          "levelMin": 35,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 142,
+          "title": "Barbarian Camp",
+          "levelMin": 40,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 217,
+          "title": "Black Knight Quest",
+          "levelMin": 40,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 189,
+          "title": "Gladiators Arena Yalahar",
+          "levelMin": 40,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 102,
+          "title": "Mutated Humans",
+          "levelMin": 40,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 162,
+          "title": "Werebadgers Nest",
+          "levelMin": 40,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 38,
+          "title": "Cyclops Mistrock",
+          "levelMin": 45,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 43,
+          "title": "Cults Goroma",
+          "levelMin": 50,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 146,
+          "title": "Djinns Marid Territory",
+          "levelMin": 50,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 109,
+          "title": "Gargoyles Meriana",
+          "levelMin": 50,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 50,
+          "title": "Vampire hell",
+          "levelMin": 50,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 143,
+          "title": "Water Elementals Cavern",
+          "levelMin": 50,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 144,
+          "title": "Zombies Yalahar Cemetery Quarter",
+          "levelMin": 50,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 46,
+          "title": "Dragon Lair",
+          "levelMin": 60,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 45,
+          "title": "Foreign Quarter",
+          "levelMin": 60,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 149,
+          "title": "Ice Witch Tower",
+          "levelMin": 60,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 103,
+          "title": "Nargor Pirate island",
+          "levelMin": 60,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 190,
+          "title": "Quara's entrance Yalahar",
+          "levelMin": 60,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 182,
+          "title": "Return of the beholder",
+          "levelMin": 60,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 155,
+          "title": "Stonerefiners Cavern",
+          "levelMin": 60,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 187,
+          "title": "The Banshee Quest",
+          "levelMin": 60,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 151,
+          "title": "Bog Raiders Yalahar",
+          "levelMin": 70,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 163,
+          "title": "Feyrist Surface",
+          "levelMin": 70,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 111,
+          "title": "Hellspawns yalahar",
+          "levelMin": 70,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 161,
+          "title": "Yalahar Worker Golem",
+          "levelMin": 70,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 211,
+          "title": "Annihilon Seal",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 197,
+          "title": "Bottom of the Ocean",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 254,
+          "title": "Buried Cathedral",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 133,
+          "title": "Carnivora's Rocks",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 262,
+          "title": "Crow's Rest",
+          "levelMin": 80,
+          "podeEntrar": false,
+          "levelMax": 149,
+          "acimaDoTeto": true
+        },
+        {
+          "huntId": 237,
+          "title": "Crystal Keeper",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 223,
+          "title": "Death Portal",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 196,
+          "title": "Deepling Library",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 192,
+          "title": "Draken Walls",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 255,
+          "title": "Dream Talisman",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 224,
+          "title": "Earth Portal",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 246,
+          "title": "Emerald Gardens",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 225,
+          "title": "Energy Portal",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 247,
+          "title": "Exotic Cave",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 193,
+          "title": "Fiehonja Stairway",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 226,
+          "title": "Fire Portal",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 53,
+          "title": "Frozen Hell",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 105,
+          "title": "Giant Spiders POH",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 242,
+          "title": "Great Pearl Fan Reef",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 248,
+          "title": "Green Belt",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 256,
+          "title": "Grim Reapers Yalahar",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 259,
+          "title": "Haunted Nexus Cellar",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 258,
+          "title": "Haunted Nexus Temple",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 257,
+          "title": "Haunted Nexus Tomb",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 212,
+          "title": "Hellgorak Seal",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 106,
+          "title": "Hero Fortress Entrance",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 60,
+          "title": "Hero Fortress Underground",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 199,
+          "title": "Hive Queen Chamber",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 198,
+          "title": "Hive Tower",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 228,
+          "title": "Holy Portal",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 227,
+          "title": "Ice Portal",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 221,
+          "title": "Inquisition Entrance",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 220,
+          "title": "Inquisition Warlocks",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 157,
+          "title": "Killer Caiman Caverns",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 249,
+          "title": "Kilmaresh Catacombs",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 210,
+          "title": "Latrivan & Golgordan Seal",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 241,
+          "title": "Lava Hot Spot",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 107,
+          "title": "Lizard Chosen's Dojo",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 62,
+          "title": "Lizard City",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 234,
+          "title": "Lower Spikes",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 209,
+          "title": "Madareth Seal",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 236,
+          "title": "Middle Spikes",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 240,
+          "title": "Mushroom Gardens",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 231,
+          "title": "Otherworld Ankrahmun",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 230,
+          "title": "Otherworld Edron",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 229,
+          "title": "Otherworld Kazordoon",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 232,
+          "title": "Otherworld Svargrond",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 233,
+          "title": "Otherworld Zao",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 184,
+          "title": "Petrified Hollow",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 49,
+          "title": "Pits of Inferno Entrance",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 264,
+          "title": "Putrid Mummies",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 191,
+          "title": "Quara's Domain Yalahar",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 251,
+          "title": "Ruins of Nuur",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 250,
+          "title": "Salt Caves",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 243,
+          "title": "Sea Serpent Depths",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 245,
+          "title": "Seacrest Grounds",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 222,
+          "title": "Shadow Nexus",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 156,
+          "title": "Souleater's Canyon",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 253,
+          "title": "Summer Court",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 244,
+          "title": "Temple of the Moon Goddess",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 188,
+          "title": "The Behemoth Quest",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 123,
+          "title": "The Hive Entrance",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 203,
+          "title": "Throne of Apocalypse",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 205,
+          "title": "Throne of Ashfalor",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 206,
+          "title": "Throne of Bazir",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 201,
+          "title": "Throne of Infernatil",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 204,
+          "title": "Throne of Pumin",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 202,
+          "title": "Throne of Tafariel",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 200,
+          "title": "Throne of Verminor",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 183,
+          "title": "Thunderscar Peak",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 235,
+          "title": "Upper Spikes",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 207,
+          "title": "Ushuriel Seal",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 148,
+          "title": "Warzone - Lava Lurkers",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 214,
+          "title": "Warzone I - Fungus",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 238,
+          "title": "Warzone I - Rocky Mountain",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 215,
+          "title": "Warzone II - Magma Dungeon",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 239,
+          "title": "Warzone II - Parasite Nest",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 65,
+          "title": "Warzone III - Crystal Caves",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 63,
+          "title": "Werebeasts",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 252,
+          "title": "Winter Court",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 165,
+          "title": "Zao Caverns",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 186,
+          "title": "Zao Entrance",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 208,
+          "title": "Zugurosh Seal",
+          "levelMin": 80,
+          "podeEntrar": true
+        },
+        {
+          "huntId": 263,
+          "title": "Reaper's Hollow",
+          "levelMin": 150,
+          "podeEntrar": true
+        }
+      ],
+      "training": {
+        "charges": {}
+      },
+      "bossCooldowns": {},
+      "protected": [
+        "dragonking zyrtarch key",
+        "massacre key",
+        "mestre dos mortos key",
+        "diseased fred key",
+        "haunted sigil",
+        "ashfalor's relic",
+        "bazir's relic",
+        "inquisition badge",
+        "verminor's relic"
+      ],
+      "protectedIids": [
+        "muj3ywmg.92f.1",
+        "mvhu15zi.2wc.1",
+        "muks6h52.2co.58",
+        "mvbflxql.6dv.1",
+        "mv4j31a5.nwg.93",
+        "mvkffsyl.dqm.1",
+        "mw01d1tu.fc8.43",
+        "mvkffsyl.dqn.1",
+        "mv5eq8n3.sut.177",
+        "mv4j31a5.nwg.174",
+        "mwshl8tl.qoy.1",
+        "mvyim6r4.7x3.20",
+        "mv8z78zt.145.156",
+        "mvb1u73r.4g7.52",
+        "muqwzmto.5ua.83",
+        "mwtkbx0t.2ns.52",
+        "mwo59gbr.g7l.141",
+        "mwut0qxs.dwd.52",
+        "muljc4cv.b7x.31",
+        "mwsjyz7i.sfa.96",
+        "mwa7dqb1.8v4.70",
+        "mwur1ipa.ez4.85",
+        "mwo59gbr.g7l.88"
+      ],
+      "protectPorCopia": true,
+      "autoLeave": {
+        "enabled": false,
+        "floor": 0,
+        "onCap": false
+      },
+      "autoUso": {
+        "SORCERER": [
+          {
+            "item": "magma amulet",
+            "pct": 85,
+            "on": false
+          }
+        ],
+        "DRUID": [
+          {
+            "item": "shockwave amulet",
+            "pct": 70,
+            "on": false
+          },
+          {
+            "item": "magma amulet",
+            "pct": 85,
+            "on": false
+          }
+        ]
+      },
+      "autoUsoPrio": [
+        "DRUID",
+        "SORCERER",
+        "PALADIN",
+        "KNIGHT"
+      ],
+      "autoUsoHist": [
+        {
+          "t": 1795625488793,
+          "k": "semCopia",
+          "voc": "DRUID",
+          "item": "magma amulet"
+        },
+        {
+          "t": 1795625488793,
+          "k": "voltou",
+          "voc": "DRUID",
+          "item": "scarf"
+        },
+        {
+          "t": 1795625488793,
+          "k": "semCopia",
+          "voc": "SORCERER",
+          "item": "magma amulet"
+        },
+        {
+          "t": 1795625488793,
+          "k": "voltou",
+          "voc": "SORCERER",
+          "item": "beetle necklace"
+        },
+        {
+          "t": 1795624635225,
+          "k": "equipou",
+          "voc": "SORCERER",
+          "item": "magma amulet",
+          "vida": 75
+        },
+        {
+          "t": 1795624635224,
+          "k": "equipou",
+          "voc": "DRUID",
+          "item": "magma amulet",
+          "vida": 74
+        },
+        {
+          "t": 1795624634822,
+          "k": "voltou",
+          "voc": "DRUID",
+          "item": "scarf"
+        },
+        {
+          "t": 1795624634822,
+          "k": "voltou",
+          "voc": "SORCERER",
+          "item": "beetle necklace"
+        },
+        {
+          "t": 1795623788595,
+          "k": "equipou",
+          "voc": "SORCERER",
+          "item": "magma amulet",
+          "vida": 82
+        },
+        {
+          "t": 1795623788595,
+          "k": "equipou",
+          "voc": "DRUID",
+          "item": "magma amulet",
+          "vida": 71
+        },
+        {
+          "t": 1795623769942,
+          "k": "voltou",
+          "voc": "DRUID",
+          "item": "scarf"
+        },
+        {
+          "t": 1795623769942,
+          "k": "voltou",
+          "voc": "SORCERER",
+          "item": "beetle necklace"
+        },
+        {
+          "t": 1795622875664,
+          "k": "equipou",
+          "voc": "SORCERER",
+          "item": "magma amulet",
+          "vida": 80
+        },
+        {
+          "t": 1795622875664,
+          "k": "equipou",
+          "voc": "DRUID",
+          "item": "magma amulet",
+          "vida": 84
+        },
+        {
+          "t": 1795622869655,
+          "k": "voltou",
+          "voc": "DRUID",
+          "item": "scarf"
+        },
+        {
+          "t": 1795622869655,
+          "k": "voltou",
+          "voc": "SORCERER",
+          "item": "beetle necklace"
+        },
+        {
+          "t": 1795621856066,
+          "k": "equipou",
+          "voc": "SORCERER",
+          "item": "magma amulet",
+          "vida": 79
+        },
+        {
+          "t": 1795621856066,
+          "k": "equipou",
+          "voc": "DRUID",
+          "item": "magma amulet",
+          "vida": 78
+        },
+        {
+          "t": 1795621856066,
+          "k": "voltou",
+          "voc": "DRUID",
+          "item": "scarf"
+        },
+        {
+          "t": 1795621856066,
+          "k": "voltou",
+          "voc": "SORCERER",
+          "item": "beetle necklace"
+        }
+      ],
+      "tutorial": {
+        "done": true
+      },
+      "lureTierByHunt": {
+        "43": 2,
+        "46": 4,
+        "49": 4,
+        "62": 4,
+        "65": 2,
+        "99": 3,
+        "103": 3,
+        "105": 4,
+        "106": 4,
+        "109": 2,
+        "110": 2,
+        "111": 4,
+        "119": 2,
+        "124": 2,
+        "132": 2,
+        "134": 3,
+        "140": 2,
+        "142": 3,
+        "146": 2,
+        "149": 4,
+        "151": 4,
+        "155": 3,
+        "161": 4,
+        "165": 4,
+        "170": 2,
+        "176": 2,
+        "178": 2,
+        "182": 4,
+        "183": 4,
+        "184": 4,
+        "190": 3,
+        "191": 4,
+        "192": 4,
+        "199": 4,
+        "200": 4,
+        "201": 4,
+        "202": 4,
+        "204": 4,
+        "205": 4,
+        "222": 3,
+        "224": 4,
+        "225": 4,
+        "227": 4,
+        "228": 4,
+        "230": 4,
+        "233": 4,
+        "234": 4,
+        "235": 4,
+        "236": 4,
+        "256": 4
+      },
+      "xpBoost": null,
+      "fishingXpBoost": null,
+      "herbalismXpBoost": null,
+      "serverDay": "2026-11-27",
+      "rules": {
+        "durationMs": 7200000,
+        "listGold": 50000,
+        "store": [
+          {
+            "id": "premium_30d",
+            "name": "Premium · 30 dias",
+            "price": 290,
+            "currency": "coins",
+            "description": "Garante acesso ao Mercado, Leilão, Sistema de Correio e Trocas Diretas, além de +10% XP! Dura 30 dias e soma 1 Loyalty Point. Compras consecutivas se acumulam."
+          },
+          {
+            "id": "sessao_24h_30d",
+            "name": "Sessão 24h · 30 dias",
+            "price": 190,
+            "currency": "coins",
+            "description": "Aumenta o limite contínuo das suas sessões de Hunt e Treino de 12h para 24h! Dura 30 dias. Compras consecutivas se acumulam."
+          },
+          {
+            "id": "troca_nome",
+            "name": "Troca de Nome",
+            "price": 290,
+            "currency": "coins",
+            "description": "Troque o nome da sua conta por um novo, à sua escolha. Seus nomes antigos continuam reservados para você."
+          },
+          {
+            "id": "xp_boost",
+            "name": "XP Boost +50% · 1h30",
+            "price": 45,
+            "currency": "coins",
+            "description": "Aumente o seu ganho de Experiência por um período! Limitado a 4 compras por dia. Compras consecutivas se acumulam.",
+            "stage": {
+              "bought": 0,
+              "cap": 4
+            }
+          },
+          {
+            "id": "xp_boost_pesca",
+            "name": "XP Boost de Pescaria +50% · 1h30",
+            "price": 45,
+            "currency": "coins",
+            "description": "Aumente o seu ganho de Experiência de Pescaria por um período! Limitado a 4 compras por dia. Compras consecutivas se acumulam.",
+            "stage": {
+              "bought": 0,
+              "cap": 4
+            }
+          },
+          {
+            "id": "xp_boost_herbalismo",
+            "name": "XP Boost de Herbalismo +50% · 350 colheitas",
+            "price": 45,
+            "currency": "coins",
+            "description": "Aumente o seu ganho de Experiência de Herbalismo nas próximas colheitas! Limitado a 4 compras por dia. Compras consecutivas se acumulam.",
+            "stage": {
+              "bought": 0,
+              "cap": 4
+            }
+          },
+          {
+            "id": "wildcards",
+            "name": "Prey Wildcards",
+            "price": 10,
+            "currency": "coins",
+            "description": "Utilize para ativar Buffs temporários nas suas Hunts! Desde +10% XP e +10% Loot para a Party, até +40% de Dano e Defesa para Vocações."
+          }
+        ],
+        "cash": [
+          {
+            "id": "durable_exercise_sword_1_coins",
+            "name": "durable exercise sword",
+            "price": 70,
+            "currency": "coins",
+            "itemId": 35279,
+            "description": "Aumente o seu ganho de XP de Skills em 8x no Treino. Consome uma carga por ataque!"
+          },
+          {
+            "id": "durable_exercise_bow_1_coins",
+            "name": "durable exercise bow",
+            "price": 70,
+            "currency": "coins",
+            "itemId": 35282,
+            "description": "Aumente o seu ganho de XP de Skills em 8x no Treino. Consome uma carga por ataque!"
+          },
+          {
+            "id": "durable_exercise_rod_1_coins",
+            "name": "durable exercise rod",
+            "price": 70,
+            "currency": "coins",
+            "itemId": 35283,
+            "description": "Aumente o seu ganho de XP de Skills em 8x no Treino. Consome uma carga por ataque!"
+          },
+          {
+            "id": "durable_exercise_wand_1_coins",
+            "name": "durable exercise wand",
+            "price": 70,
+            "currency": "coins",
+            "itemId": 35284,
+            "description": "Aumente o seu ganho de XP de Skills em 8x no Treino. Consome uma carga por ataque!"
+          },
+          {
+            "id": "lasting_exercise_sword_1_coins",
+            "name": "lasting exercise sword",
+            "price": 490,
+            "currency": "coins",
+            "itemId": 35285,
+            "description": "Aumente o seu ganho de XP de Skills em 8x no Treino. Consome uma carga por ataque!"
+          },
+          {
+            "id": "lasting_exercise_bow_1_coins",
+            "name": "lasting exercise bow",
+            "price": 490,
+            "currency": "coins",
+            "itemId": 35288,
+            "description": "Aumente o seu ganho de XP de Skills em 8x no Treino. Consome uma carga por ataque!"
+          },
+          {
+            "id": "lasting_exercise_rod_1_coins",
+            "name": "lasting exercise rod",
+            "price": 490,
+            "currency": "coins",
+            "itemId": 35289,
+            "description": "Aumente o seu ganho de XP de Skills em 8x no Treino. Consome uma carga por ataque!"
+          },
+          {
+            "id": "lasting_exercise_wand_1_coins",
+            "name": "lasting exercise wand",
+            "price": 490,
+            "currency": "coins",
+            "itemId": 35290,
+            "description": "Aumente o seu ganho de XP de Skills em 8x no Treino. Consome uma carga por ataque!"
+          },
+          {
+            "id": "death_redemption_1_coins",
+            "name": "Death Redemption",
+            "price": 30,
+            "currency": "coins",
+            "itemId": 100734,
+            "description": "Recupera a EXP perdida da sua última morte."
+          },
+          {
+            "id": "brief_knight_hourglass_1_gold",
+            "name": "Brief Knight Hourglass",
+            "price": 525000,
+            "currency": "gold",
+            "itemId": 100784,
+            "description": "Carrega 1 hora de treino no seu Knight. Ele sobe de skill enquanto caça, na velocidade do treino grátis. Limite de 8 horas treinadas por dia."
+          },
+          {
+            "id": "brief_paladin_hourglass_1_gold",
+            "name": "Brief Paladin Hourglass",
+            "price": 525000,
+            "currency": "gold",
+            "itemId": 100787,
+            "description": "Carrega 1 hora de treino no seu Paladin. Ele sobe de skill enquanto caça, na velocidade do treino grátis. Limite de 8 horas treinadas por dia."
+          },
+          {
+            "id": "brief_druid_hourglass_1_gold",
+            "name": "Brief Druid Hourglass",
+            "price": 525000,
+            "currency": "gold",
+            "itemId": 100790,
+            "description": "Carrega 1 hora de treino no seu Druid. Ele sobe de skill enquanto caça, na velocidade do treino grátis. Limite de 8 horas treinadas por dia."
+          },
+          {
+            "id": "brief_sorcerer_hourglass_1_gold",
+            "name": "Brief Sorcerer Hourglass",
+            "price": 525000,
+            "currency": "gold",
+            "itemId": 100793,
+            "description": "Carrega 1 hora de treino no seu Sorcerer. Ele sobe de skill enquanto caça, na velocidade do treino grátis. Limite de 8 horas treinadas por dia."
+          },
+          {
+            "id": "steady_knight_hourglass_1_gold",
+            "name": "Steady Knight Hourglass",
+            "price": 2100000,
+            "currency": "gold",
+            "itemId": 100785,
+            "description": "Carrega 4 horas de treino no seu Knight. Ele sobe de skill enquanto caça, na velocidade do treino grátis. Limite de 8 horas treinadas por dia."
+          },
+          {
+            "id": "steady_paladin_hourglass_1_gold",
+            "name": "Steady Paladin Hourglass",
+            "price": 2100000,
+            "currency": "gold",
+            "itemId": 100788,
+            "description": "Carrega 4 horas de treino no seu Paladin. Ele sobe de skill enquanto caça, na velocidade do treino grátis. Limite de 8 horas treinadas por dia."
+          },
+          {
+            "id": "steady_druid_hourglass_1_gold",
+            "name": "Steady Druid Hourglass",
+            "price": 2100000,
+            "currency": "gold",
+            "itemId": 100791,
+            "description": "Carrega 4 horas de treino no seu Druid. Ele sobe de skill enquanto caça, na velocidade do treino grátis. Limite de 8 horas treinadas por dia."
+          },
+          {
+            "id": "steady_sorcerer_hourglass_1_gold",
+            "name": "Steady Sorcerer Hourglass",
+            "price": 2100000,
+            "currency": "gold",
+            "itemId": 100794,
+            "description": "Carrega 4 horas de treino no seu Sorcerer. Ele sobe de skill enquanto caça, na velocidade do treino grátis. Limite de 8 horas treinadas por dia."
+          },
+          {
+            "id": "enduring_knight_hourglass_1_gold",
+            "name": "Enduring Knight Hourglass",
+            "price": 4200000,
+            "currency": "gold",
+            "itemId": 100786,
+            "description": "Carrega 8 horas de treino no seu Knight. Ele sobe de skill enquanto caça, na velocidade do treino grátis. Limite de 8 horas treinadas por dia."
+          },
+          {
+            "id": "enduring_paladin_hourglass_1_gold",
+            "name": "Enduring Paladin Hourglass",
+            "price": 4200000,
+            "currency": "gold",
+            "itemId": 100789,
+            "description": "Carrega 8 horas de treino no seu Paladin. Ele sobe de skill enquanto caça, na velocidade do treino grátis. Limite de 8 horas treinadas por dia."
+          },
+          {
+            "id": "enduring_druid_hourglass_1_gold",
+            "name": "Enduring Druid Hourglass",
+            "price": 4200000,
+            "currency": "gold",
+            "itemId": 100792,
+            "description": "Carrega 8 horas de treino no seu Druid. Ele sobe de skill enquanto caça, na velocidade do treino grátis. Limite de 8 horas treinadas por dia."
+          },
+          {
+            "id": "enduring_sorcerer_hourglass_1_gold",
+            "name": "Enduring Sorcerer Hourglass",
+            "price": 4200000,
+            "currency": "gold",
+            "itemId": 100795,
+            "description": "Carrega 8 horas de treino no seu Sorcerer. Ele sobe de skill enquanto caça, na velocidade do treino grátis. Limite de 8 horas treinadas por dia."
+          },
+          {
+            "id": "daily_calm_pond_rod_1_coins",
+            "name": "daily calm pond rod",
+            "price": 100,
+            "currency": "coins",
+            "itemId": 100698
+          },
+          {
+            "id": "daily_shadow_pool_rod_1_coins",
+            "name": "daily shadow pool rod",
+            "price": 100,
+            "currency": "coins",
+            "itemId": 100700
+          },
+          {
+            "id": "daily_abyssal_lake_rod_1_coins",
+            "name": "daily abyssal lake rod",
+            "price": 100,
+            "currency": "coins",
+            "itemId": 100702
+          },
+          {
+            "id": "daily_valley_garden_tool_1_coins",
+            "name": "daily valley garden tool",
+            "price": 100,
+            "currency": "coins",
+            "itemId": 100704
+          },
+          {
+            "id": "daily_herb_field_tool_1_coins",
+            "name": "daily herb field tool",
+            "price": 100,
+            "currency": "coins",
+            "itemId": 100706
+          },
+          {
+            "id": "daily_ancient_grove_tool_1_coins",
+            "name": "daily ancient grove tool",
+            "price": 100,
+            "currency": "coins",
+            "itemId": 100708
+          }
+        ],
+        "caixaItemIds": [
+          100090,
+          100091,
+          100092,
+          100093,
+          100094,
+          100096,
+          100097,
+          100098,
+          100099,
+          100100,
+          100103,
+          100104,
+          100106,
+          100112,
+          100114,
+          100115,
+          100116,
+          100117,
+          100118,
+          100120,
+          100121,
+          100122,
+          100123,
+          100125,
+          100129,
+          100132,
+          100133,
+          100134,
+          100135,
+          100136,
+          100137,
+          100139,
+          100140,
+          100186,
+          100190,
+          100193,
+          100194,
+          100196,
+          100199,
+          100202,
+          100203,
+          100205,
+          100207,
+          100209,
+          100211,
+          100212,
+          100213,
+          100214,
+          100215,
+          100216,
+          100220,
+          100221,
+          100222,
+          100224,
+          100225,
+          100226,
+          100227,
+          100229,
+          100230,
+          100231,
+          100233,
+          100234,
+          100236,
+          100239,
+          100240,
+          100241,
+          100244,
+          100246,
+          100248,
+          100249,
+          100252,
+          100253,
+          100255,
+          100257,
+          100268,
+          100269,
+          100270,
+          100271,
+          100272,
+          100273,
+          100274,
+          100275,
+          100276,
+          100285,
+          100294,
+          100295,
+          100296,
+          100297,
+          100298,
+          100299,
+          100300,
+          100327,
+          100328,
+          100329,
+          100330,
+          100334,
+          100335,
+          100336,
+          100337,
+          100338,
+          100339,
+          100340,
+          100355,
+          100356,
+          100357,
+          100359,
+          100360,
+          100361,
+          100362,
+          100363,
+          100364,
+          100365,
+          100366,
+          100367,
+          100368,
+          100386,
+          100387,
+          100388,
+          100389,
+          100399,
+          100401,
+          100403,
+          100434,
+          100435,
+          100436,
+          100437,
+          100438,
+          100439,
+          100440,
+          100441,
+          100442,
+          100443,
+          100444,
+          100445,
+          100446,
+          100447,
+          100448,
+          100449,
+          100450,
+          100451,
+          100452,
+          100453,
+          100454,
+          100455,
+          100456,
+          100457,
+          100458,
+          100459,
+          100460,
+          100461,
+          100462,
+          100466,
+          100467,
+          100468,
+          100490,
+          100491,
+          100492,
+          100493,
+          100494,
+          100495,
+          100498,
+          100499,
+          100500,
+          100537,
+          100538,
+          100539,
+          100540,
+          100541,
+          100542,
+          100543,
+          100544,
+          100545,
+          100546,
+          100547,
+          100548,
+          100549,
+          100550,
+          100551,
+          100552,
+          100553,
+          100554,
+          100555,
+          100556,
+          100557,
+          100559,
+          100560,
+          100561,
+          100562,
+          100563,
+          100564,
+          100566,
+          100567,
+          100568,
+          100569,
+          100577,
+          100578,
+          100579,
+          100580,
+          100581,
+          100582,
+          100585,
+          100586,
+          100587,
+          100588,
+          100589,
+          100590,
+          100591,
+          100592,
+          100593,
+          100594,
+          100595,
+          100596,
+          100597,
+          100598,
+          100599,
+          100606,
+          100616,
+          100617,
+          100618,
+          100619,
+          100620,
+          100621,
+          100622,
+          100623,
+          100624,
+          100625,
+          100626,
+          100627,
+          100629,
+          100630,
+          100733
+        ],
+        "keyBags": [
+          {
+            "id": "keybag_t1",
+            "rank": 1,
+            "name": "Key backpack",
+            "maxKeys": 5,
+            "spriteItemId": 5950,
+            "price": 0,
+            "starter": true
+          },
+          {
+            "id": "keybag_t2",
+            "rank": 2,
+            "name": "Key Backpack T1",
+            "maxKeys": 10,
+            "spriteItemId": 16100,
+            "price": 100,
+            "starter": false
+          },
+          {
+            "id": "keybag_t3",
+            "rank": 3,
+            "name": "Key Backpack T2",
+            "maxKeys": 22,
+            "spriteItemId": 9604,
+            "price": 200,
+            "starter": false
+          },
+          {
+            "id": "keybag_t4",
+            "rank": 4,
+            "name": "Key Backpack T3",
+            "maxKeys": 36,
+            "spriteItemId": 5801,
+            "price": 300,
+            "starter": false
+          },
+          {
+            "id": "keybag_t5",
+            "rank": 5,
+            "name": "Key Backpack T4",
+            "maxKeys": 50,
+            "spriteItemId": 32620,
+            "price": 400,
+            "starter": false
+          }
+        ],
+        "cargasDeTreino": {
+          "training sword": 50,
+          "training axe": 50,
+          "training club": 50,
+          "training bow": 50,
+          "training rod": 50,
+          "training wand": 50,
+          "exercise sword": 500,
+          "exercise axe": 500,
+          "exercise club": 500,
+          "exercise bow": 500,
+          "exercise rod": 500,
+          "exercise wand": 500,
+          "durable exercise sword": 1800,
+          "durable exercise axe": 1800,
+          "durable exercise club": 1800,
+          "durable exercise bow": 1800,
+          "durable exercise rod": 1800,
+          "durable exercise wand": 1800,
+          "lasting exercise sword": 14400,
+          "lasting exercise axe": 14400,
+          "lasting exercise club": 14400,
+          "lasting exercise bow": 14400,
+          "lasting exercise rod": 14400,
+          "lasting exercise wand": 14400,
+          "training shield": 50,
+          "exercise shield": 500,
+          "durable exercise shield": 1800,
+          "lasting exercise shield": 14400
+        },
+        "consumiveisDeAutoUso": {
+          "terra amulet": {
+            "slot": "necklace",
+            "cargas": 200
+          },
+          "glacier amulet": {
+            "slot": "necklace",
+            "cargas": 200
+          },
+          "lightning pendant": {
+            "slot": "necklace",
+            "cargas": 200
+          },
+          "magma amulet": {
+            "slot": "necklace",
+            "cargas": 200
+          },
+          "shapeshifter ring": {
+            "slot": "ring",
+            "duracaoS": 36000
+          },
+          "strange talisman": {
+            "slot": "necklace",
+            "cargas": 200
+          },
+          "might ring": {
+            "slot": "ring",
+            "cargas": 20
+          },
+          "stealth ring": {
+            "slot": "ring",
+            "duracaoS": 600
+          },
+          "power ring": {
+            "slot": "ring",
+            "duracaoS": 1800
+          },
+          "energy ring": {
+            "slot": "ring",
+            "duracaoS": 600,
+            "vocacoes": [
+              "KNIGHT",
+              "PALADIN"
+            ]
+          },
+          "life ring": {
+            "slot": "ring",
+            "duracaoS": 1200
+          },
+          "time ring": {
+            "slot": "ring",
+            "duracaoS": 600
+          },
+          "silver amulet": {
+            "slot": "necklace",
+            "cargas": 200
+          },
+          "bronze amulet": {
+            "slot": "necklace",
+            "cargas": 200
+          },
+          "stone skin amulet": {
+            "slot": "necklace",
+            "cargas": 5
+          },
+          "elven amulet": {
+            "slot": "necklace",
+            "cargas": 50
+          },
+          "garlic necklace": {
+            "slot": "necklace",
+            "cargas": 150
+          },
+          "protection amulet": {
+            "slot": "necklace",
+            "cargas": 250
+          },
+          "dragon necklace": {
+            "slot": "necklace",
+            "cargas": 200
+          },
+          "sword ring": {
+            "slot": "ring",
+            "duracaoS": 1800
+          },
+          "axe ring": {
+            "slot": "ring",
+            "duracaoS": 1800
+          },
+          "club ring": {
+            "slot": "ring",
+            "duracaoS": 1800
+          },
+          "dwarven ring": {
+            "slot": "ring",
+            "duracaoS": 3600
+          },
+          "ring of healing": {
+            "slot": "ring",
+            "duracaoS": 450
+          },
+          "death ring": {
+            "slot": "ring",
+            "duracaoS": 480
+          },
+          "bonfire amulet": {
+            "slot": "necklace",
+            "cargas": 5
+          },
+          "sacred tree amulet": {
+            "slot": "necklace",
+            "cargas": 5
+          },
+          "leviathan's amulet": {
+            "slot": "necklace",
+            "cargas": 5
+          },
+          "shockwave amulet": {
+            "slot": "necklace",
+            "cargas": 5
+          },
+          "star ring": {
+            "slot": "ring",
+            "duracaoS": 600,
+            "vocacoes": []
+          },
+          "necklace of the deep": {
+            "slot": "necklace",
+            "cargas": 50
+          },
+          "gill necklace": {
+            "slot": "necklace",
+            "cargas": 750
+          },
+          "prismatic necklace": {
+            "slot": "necklace",
+            "cargas": 750
+          },
+          "prismatic ring": {
+            "slot": "ring",
+            "duracaoS": 3600
+          },
+          "glooth amulet": {
+            "slot": "necklace",
+            "cargas": 20,
+            "vocacoes": [
+              "SORCERER",
+              "DRUID"
+            ]
+          },
+          "enchanted werewolf amulet": {
+            "slot": "necklace",
+            "duracaoS": 3600
+          },
+          "collar of blue plasma": {
+            "slot": "necklace",
+            "duracaoS": 1800,
+            "vocacoes": [
+              "PALADIN"
+            ]
+          },
+          "collar of green plasma": {
+            "slot": "necklace",
+            "duracaoS": 1800,
+            "vocacoes": [
+              "SORCERER",
+              "DRUID"
+            ]
+          },
+          "collar of red plasma": {
+            "slot": "necklace",
+            "duracaoS": 1800,
+            "vocacoes": [
+              "KNIGHT"
+            ]
+          },
+          "ring of blue plasma": {
+            "slot": "ring",
+            "duracaoS": 1800,
+            "vocacoes": [
+              "PALADIN"
+            ]
+          },
+          "ring of green plasma": {
+            "slot": "ring",
+            "duracaoS": 1800,
+            "vocacoes": [
+              "SORCERER",
+              "DRUID"
+            ]
+          },
+          "ring of red plasma": {
+            "slot": "ring",
+            "duracaoS": 1800,
+            "vocacoes": [
+              "KNIGHT"
+            ]
+          },
+          "enchanted theurgic amulet": {
+            "slot": "necklace",
+            "duracaoS": 7200,
+            "vocacoes": [
+              "SORCERER",
+              "DRUID"
+            ]
+          },
+          "enchanted blister ring": {
+            "slot": "ring",
+            "duracaoS": 3600
+          },
+          "enchanted ring of souls": {
+            "slot": "ring",
+            "duracaoS": 7200
+          },
+          "ring of temptation": {
+            "slot": "ring",
+            "cargas": 200
+          },
+          "ring of orange plasma": {
+            "slot": "ring",
+            "duracaoS": 1800,
+            "vocacoes": []
+          },
+          "collar of orange plasma": {
+            "slot": "necklace",
+            "duracaoS": 1800,
+            "vocacoes": []
+          }
+        },
+        "ofertas": [
+          {
+            "id": "bf_rascoohan",
+            "nome": "Pacote Rascoohan",
+            "conteudo": [
+              {
+                "kind": "outfit",
+                "rotulo": "Outfit Rascoohan com Addons",
+                "lookType": 1371
+              },
+              {
+                "kind": "mount",
+                "rotulo": "Montaria Black Sheep",
+                "lookType": 371
+              },
+              {
+                "kind": "itens",
+                "rotulo": "Durable Exercise Sword, Bow, Rod e Wand",
+                "itemId": 35279
+              },
+              {
+                "kind": "session_cap_days",
+                "rotulo": "Sessão 24h · 30 dias"
+              },
+              {
+                "kind": "wildcards",
+                "rotulo": "50 Prey Wildcards"
+              },
+              {
+                "kind": "itens",
+                "rotulo": "3 Death Redemption",
+                "itemId": 100734
+              }
+            ]
+          },
+          {
+            "id": "bf_ghost_blade",
+            "nome": "Pacote Ghost Blade",
+            "conteudo": [
+              {
+                "kind": "outfit",
+                "rotulo": "Outfit Ghost Blade com Addons",
+                "lookType": 1489
+              },
+              {
+                "kind": "mount",
+                "rotulo": "Montaria Tamed Panda",
+                "lookType": 402
+              },
+              {
+                "kind": "itens",
+                "rotulo": "Lasting Exercise Sword, Bow, Rod e Wand",
+                "itemId": 35285
+              },
+              {
+                "kind": "session_cap_days",
+                "rotulo": "Sessão 24h · 30 dias"
+              },
+              {
+                "kind": "wildcards",
+                "rotulo": "100 Prey Wildcards"
+              },
+              {
+                "kind": "itens",
+                "rotulo": "5 Death Redemption",
+                "itemId": 100734
+              }
+            ]
+          }
+        ]
+      },
+      "invasao": {
+        "nowMs": 1795803951218,
+        "date": "2026-11-27",
+        "invasionId": "o_inverno_chegou",
+        "invasionNome": "O inverno chegou",
+        "bossName": "Vozerion",
+        "janelas": [
+          {
+            "idx": 0,
+            "windowId": "x",
+            "startAtMs": 1795798800000,
+            "durNominalMs": 695935,
+            "estado": "ao_vivo",
+            "battleAtMs": 1795798941424,
+            "revealAtMs": 1795799252739
+          },
+          {
+            "idx": 1,
+            "windowId": "x",
+            "startAtMs": 1795813200000,
+            "durNominalMs": 695935
+          },
+          {
+            "idx": 2,
+            "windowId": "x",
+            "startAtMs": 1795827600000,
+            "durNominalMs": 695935
+          }
+        ],
+        "inscrito": true,
+        "proximaIdx": 1,
+        "encerrada": false,
+        "proxima": {
+          "startAtMs": 1795888800000,
+          "bossName": "Minotaur Warlord"
+        }
+      },
+      "invasaoReabre": {
+        "reabreAtMs": 1795870800000
+      },
+      "raidTokens": 3440,
+      "nopingOn": true,
+      "ampulhetaOn": true,
+      "presetsContaOn": true,
+      "casaOff": true
+    },
+    "roster": [
+      {
+        "name": "Conta",
+        "vocation": "KNIGHT",
+        "sex": "male",
+        "level": 250,
+        "hp": 3328,
+        "maxHp": 3879,
+        "mana": 173,
+        "maxMana": 1317,
+        "xp": "257118582",
+        "gold": 0,
+        "skills": {
+          "melee": 64,
+          "distance": 10,
+          "shielding": 65,
+          "magic": 11
+        },
+        "equipment": {
+          "head": {
+            "id": 10385,
+            "name": "Zaoan helmet",
+            "attrs": {
+              "primarytype": "helmets",
+              "absorbpercentphysical": 5,
+              "armor": 9,
+              "weight": 6600,
+              "imbuementslot": 1,
+              "mana leech": 3,
+              "skillboost axe": 3,
+              "skillboost sword": 3,
+              "skillboost club": 3,
+              "skillboost shielding": 3,
+              "skillboost distance": 3,
+              "script": "moveevent",
+              "slot": "head",
+              "vocation": "Knight;true, Paladin;true, Elite Knight, Royal Paladin"
+            },
+            "imbue": {
+              "slots": 1,
+              "types": {
+                "mana leech": 3,
+                "skillboost shielding": 3,
+                "skillboost distance": 3,
+                "skillboost melee": 3
+              }
+            },
+            "imbuements": [
+              null
+            ],
+            "value": 45000,
+            "iid": "mviu3hvc.87d.1",
+            "forja": {
+              "fonte": "elite",
+              "refino": 0,
+              "raridade": 0,
+              "atributos": [],
+              "potenciaBase": 77
+            }
+          },
+          "legs": {
+            "id": 35516,
+            "name": "exotic legs",
+            "attrs": {
+              "primarytype": "legs",
+              "absorbpercentphysical": 4,
+              "armor": 8,
+              "weight": 7200,
+              "script": "moveevent",
+              "level": 130,
+              "slot": "legs",
+              "vocation": "Knight;true, Elite Knight"
+            },
+            "imbue": null,
+            "imbuements": [],
+            "value": 1,
+            "iid": "mwih3508.52f.1",
+            "forja": {
+              "fonte": "elite",
+              "refino": 0,
+              "raridade": 0,
+              "atributos": [],
+              "potenciaBase": 202
+            }
+          },
+          "ring": {
+            "id": 3007,
+            "name": "crystal ring",
+            "attrs": {
+              "primarytype": "rings",
+              "weight": 90,
+              "script": "moveevent",
+              "slot": "ring"
+            },
+            "imbue": null,
+            "imbuements": [],
+            "value": 250,
+            "iid": "muyndir3.2wp.56",
+            "forja": {
+              "fonte": "hunt",
+              "refino": 0,
+              "raridade": 1,
+              "atributos": [
+                {
+                  "id": "cura_propria",
+                  "valor": 3.7
+                }
+              ],
+              "potenciaBase": 279
+            }
+          },
+          "armor": {
+            "id": 3366,
+            "name": "magic plate armor",
+            "attrs": {
+              "primarytype": "armors",
+              "armor": 17,
+              "weight": 8500,
+              "imbuementslot": 2,
+              "life leech": 3,
+              "elemental protection death": 3,
+              "elemental protection earth": 3,
+              "elemental protection fire": 3,
+              "elemental protection ice": 3,
+              "elemental protection energy": 3,
+              "elemental protection holy": 3,
+              "script": "moveevent",
+              "slot": "armor",
+              "vocation": "Knight;true, Paladin;true, Elite Knight, Royal Paladin"
+            },
+            "imbue": {
+              "slots": 2,
+              "types": {
+                "life leech": 3,
+                "elemental protection death": 3,
+                "elemental protection earth": 3,
+                "elemental protection fire": 3,
+                "elemental protection ice": 3,
+                "elemental protection energy": 3,
+                "elemental protection holy": 3
+              }
+            },
+            "imbuements": [
+              null,
+              null
+            ],
+            "value": 90000,
+            "iid": "mvbfvdbp.6fj.1",
+            "forja": {
+              "fonte": "elite",
+              "refino": 4,
+              "raridade": 1,
+              "atributos": [
+                {
+                  "id": "resist_gelo",
+                  "valor": 2.5
+                }
+              ],
+              "potenciaBase": 271
+            }
+          },
+          "boots": {
+            "id": 10323,
+            "name": "guardian boots",
+            "attrs": {
+              "primarytype": "boots",
+              "absorbpercentphysical": 2,
+              "absorbpercentholy": -2,
+              "armor": 3,
+              "weight": 2250,
+              "imbuementslot": 1,
+              "paralysis deflection": 3,
+              "script": "moveevent",
+              "level": 70,
+              "slot": "feet",
+              "vocation": "Knight;true, Paladin;true, Elite Knight, Royal Paladin"
+            },
+            "imbue": null,
+            "imbuements": [],
+            "value": 35000,
+            "iid": "mwih311h.526.1",
+            "forja": {
+              "fonte": "elite",
+              "refino": 0,
+              "raridade": 1,
+              "atributos": [
+                {
+                  "id": "cura_propria",
+                  "valor": 1.9
+                }
+              ],
+              "potenciaBase": 156
+            }
+          },
+          "shield": {
+            "id": 3422,
+            "name": "great shield",
+            "attrs": {
+              "primarytype": "shields",
+              "description": "The shield is made of dragon scales",
+              "weaponType": "shield",
+              "defense": 38,
+              "weight": 8400,
+              "imbuementslot": 1,
+              "elemental protection death": 3,
+              "elemental protection earth": 3,
+              "elemental protection fire": 3,
+              "elemental protection ice": 3,
+              "elemental protection energy": 3,
+              "elemental protection holy": 3,
+              "skillboost shielding": 3,
+              "script": "moveevent",
+              "slot": "shield"
+            },
+            "imbue": {
+              "slots": 1,
+              "types": {
+                "elemental protection death": 3,
+                "elemental protection earth": 3,
+                "elemental protection fire": 3,
+                "elemental protection ice": 3,
+                "elemental protection energy": 3,
+                "elemental protection holy": 3,
+                "skillboost shielding": 3
+              }
+            },
+            "imbuements": [
+              null
+            ],
+            "value": 480,
+            "iid": "mvvs4xgg.1ny.1",
+            "forja": {
+              "fonte": "elite",
+              "refino": 0,
+              "raridade": 0,
+              "atributos": [],
+              "potenciaBase": 398
+            }
+          },
+          "weapon": {
+            "id": 3319,
+            "name": "stonecutter axe",
+            "attrs": {
+              "primarytype": "axe weapons",
+              "description": "You feel the power of this mighty axe",
+              "weaponType": "axe",
+              "attack": 50,
+              "extradef": 3,
+              "defense": 30,
+              "weight": 9900,
+              "imbuementslot": 1,
+              "elemental damage": 3,
+              "life leech": 3,
+              "mana leech": 3,
+              "critical hit": 3,
+              "skillboost axe": 3,
+              "script": "moveevent;weapon",
+              "level": 90,
+              "unproperly": "true"
+            },
+            "imbue": {
+              "slots": 1,
+              "types": {
+                "life leech": 3,
+                "mana leech": 3,
+                "critical hit": 3,
+                "skillboost melee": 3
+              }
+            },
+            "imbuements": [
+              null
+            ],
+            "value": 320,
+            "iid": "mvfqvwho.4of.1",
+            "forja": {
+              "fonte": "elite",
+              "refino": 0,
+              "raridade": 0,
+              "atributos": [],
+              "potenciaBase": 129
+            }
+          },
+          "necklace": {
+            "id": 21170,
+            "name": "gearwheel chain",
+            "attrs": {
+              "primarytype": "amulets and necklaces",
+              "armor": 3,
+              "weight": 1000,
+              "script": "moveevent",
+              "level": 75,
+              "slot": "necklace"
+            },
+            "imbue": null,
+            "imbuements": [],
+            "value": 5000,
+            "iid": "mvomiilg.dko.1",
+            "forja": {
+              "fonte": "elite",
+              "refino": 0,
+              "raridade": 0,
+              "atributos": [],
+              "potenciaBase": 285
+            }
+          }
+        },
+        "cap": {
+          "used": 143.75,
+          "total": 6942
+        },
+        "levelProgress": {
+          "value": 250,
+          "pct": 93,
+          "xp": "257118582",
+          "xpNext": "257325000"
+        },
+        "skillsProgress": {
+          "melee": {
+            "value": 64,
+            "pct": 40,
+            "bonus": 4
+          },
+          "distance": {
+            "value": 10,
+            "pct": 0,
+            "bonus": 1
+          },
+          "shielding": {
+            "value": 65,
+            "pct": 82,
+            "bonus": 5
+          },
+          "magic": {
+            "value": 11,
+            "pct": 31,
+            "bonus": 3
+          }
+        },
+        "outfit": {
+          "lookType": 760,
+          "colors": {
+            "head": 78,
+            "body": 75,
+            "legs": 58,
+            "feet": 76
+          },
+          "addons": {
+            "a1": true,
+            "a2": true
+          },
+          "mountId": 50
+        }
+      },
+      {
+        "name": "Conta",
+        "vocation": "PALADIN",
+        "sex": "male",
+        "level": 250,
+        "hp": 2724,
+        "maxHp": 2724,
+        "mana": 248,
+        "maxMana": 3737,
+        "xp": "257118582",
+        "gold": 0,
+        "skills": {
+          "melee": 10,
+          "distance": 68,
+          "shielding": 54,
+          "magic": 21
+        },
+        "equipment": {
+          "head": {
+            "id": 3351,
+            "name": "steel helmet",
+            "attrs": {
+              "primarytype": "helmets",
+              "armor": 6,
+              "weight": 4600,
+              "script": "moveevent",
+              "slot": "head"
+            },
+            "imbue": null,
+            "imbuements": [],
+            "value": 293,
+            "iid": "mvb1u73r.4g7.52",
+            "forja": {
+              "fonte": "hunt",
+              "refino": 0,
+              "raridade": 4,
+              "atributos": [
+                {
+                  "id": "roubo_vida_quantia",
+                  "valor": 0.8
+                },
+                {
+                  "id": "resist_morte",
+                  "valor": 1.9
+                },
+                {
+                  "id": "max_hp",
+                  "valor": 30
+                },
+                {
+                  "id": "regen_vida",
+                  "valor": 1.5
+                }
+              ],
+              "potenciaBase": 246
+            }
+          },
+          "legs": {
+            "id": 9383,
+            "name": "trousers of the ancients",
+            "attrs": {
+              "description": "These atavistic trousers already served the forefathers of mankind",
+              "armor": 2,
+              "weight": 30,
+              "script": "moveevent",
+              "slot": "legs"
+            },
+            "imbue": null,
+            "imbuements": [],
+            "value": 5,
+            "iid": "mv4j31a5.nwg.93",
+            "forja": {
+              "fonte": "hunt",
+              "refino": 0,
+              "raridade": 3,
+              "atributos": [
+                {
+                  "id": "resist_energia",
+                  "valor": 1.6
+                },
+                {
+                  "id": "regen_mana",
+                  "valor": 2.2
+                },
+                {
+                  "id": "max_hp",
+                  "valor": 25
+                }
+              ],
+              "potenciaBase": 214
+            }
+          },
+          "ring": {
+            "id": 3007,
+            "name": "crystal ring",
+            "attrs": {
+              "primarytype": "rings",
+              "weight": 90,
+              "script": "moveevent",
+              "slot": "ring"
+            },
+            "imbue": null,
+            "imbuements": [],
+            "value": 250,
+            "iid": "mvdbym2x.h53.5",
+            "forja": {
+              "fonte": "hunt",
+              "refino": 0,
+              "raridade": 2,
+              "atributos": [
+                {
+                  "id": "resist_gelo",
+                  "valor": 0.9
+                },
+                {
+                  "id": "regen_mana",
+                  "valor": 1.9
+                }
+              ],
+              "potenciaBase": 231
+            }
+          },
+          "armor": {
+            "id": 8063,
+            "name": "paladin armor",
+            "attrs": {
+              "primarytype": "armors",
+              "skilldist": 2,
+              "armor": 12,
+              "weight": 6500,
+              "imbuementslot": 1,
+              "life leech": 3,
+              "elemental protection death": 3,
+              "elemental protection earth": 3,
+              "elemental protection fire": 3,
+              "elemental protection ice": 3,
+              "elemental protection energy": 3,
+              "elemental protection holy": 3,
+              "script": "moveevent",
+              "slot": "armor",
+              "vocation": "Paladin;true, Royal Paladin"
+            },
+            "imbue": {
+              "slots": 1,
+              "types": {
+                "life leech": 3,
+                "elemental protection death": 3,
+                "elemental protection earth": 3,
+                "elemental protection fire": 3,
+                "elemental protection ice": 3,
+                "elemental protection energy": 3,
+                "elemental protection holy": 3
+              }
+            },
+            "imbuements": [
+              null
+            ],
+            "value": 15000,
+            "iid": "mw2kt4ml.orm.1",
+            "forja": {
+              "fonte": "elite",
+              "refino": 0,
+              "raridade": 0,
+              "atributos": [],
+              "potenciaBase": 341
+            }
+          },
+          "boots": {
+            "id": 7457,
+            "name": "fur boots",
+            "attrs": {
+              "primarytype": "boots",
+              "description": "These boots keep your toes warm even in the iciest regions, but they feel kind of heavy",
+              "speed": -6,
+              "armor": 2,
+              "weight": 1200,
+              "imbuementslot": 1,
+              "paralysis deflection": 3,
+              "script": "moveevent",
+              "slot": "feet"
+            },
+            "imbue": null,
+            "imbuements": [],
+            "value": 2000,
+            "iid": "mvhu15zi.2wc.1",
+            "forja": {
+              "fonte": "elite",
+              "refino": 0,
+              "raridade": 1,
+              "atributos": [
+                {
+                  "id": "regen_mana",
+                  "valor": 2.4
+                }
+              ],
+              "potenciaBase": 203
+            }
+          },
+          "weapon": {
+            "id": 14246,
+            "name": "hive bow",
+            "attrs": {
+              "primarytype": "distance weapons",
+              "weaponType": "distance",
+              "slotType": "two-handed",
+              "ammotype": "arrow",
+              "hitchance": 5,
+              "range": 6,
+              "attack": 2,
+              "weight": 4600,
+              "imbuementslot": 3,
+              "elemental damage": 3,
+              "life leech": 3,
+              "mana leech": 3,
+              "critical hit": 3,
+              "skillboost distance": 3,
+              "script": "moveevent;weapon",
+              "level": 85,
+              "unproperly": "true",
+              "vocation": "Paladin;true, Royal Paladin"
+            },
+            "imbue": {
+              "slots": 3,
+              "types": {
+                "life leech": 3,
+                "mana leech": 3,
+                "critical hit": 3,
+                "skillboost distance": 3
+              }
+            },
+            "imbuements": [
+              null,
+              null,
+              null
+            ],
+            "value": 28000,
+            "iid": "muyv4xxh.5l6.1",
+            "forja": {
+              "fonte": "elite",
+              "refino": 0,
+              "raridade": 0,
+              "atributos": [],
+              "potenciaBase": 270
+            }
+          },
+          "necklace": {
+            "id": 3012,
+            "name": "wolf tooth chain",
+            "attrs": {
+              "primarytype": "amulets and necklaces",
+              "weight": 330,
+              "script": "moveevent",
+              "slot": "necklace"
+            },
+            "imbue": null,
+            "imbuements": [],
+            "value": 100,
+            "iid": "mukppd3o.1p4.3",
+            "forja": {
+              "fonte": "hunt",
+              "refino": 0,
+              "raridade": 2,
+              "atributos": [
+                {
+                  "id": "dano_elem_sagrado",
+                  "valor": 3.2
+                },
+                {
+                  "id": "distancia",
+                  "valor": 1
+                }
+              ],
+              "potenciaBase": 338
+            }
+          }
+        },
+        "cap": {
+          "used": 143.75,
+          "total": 6942
+        },
+        "levelProgress": {
+          "value": 250,
+          "pct": 93,
+          "xp": "257118582",
+          "xpNext": "257325000"
+        },
+        "skillsProgress": {
+          "melee": {
+            "value": 10,
+            "pct": 0,
+            "bonus": 2
+          },
+          "distance": {
+            "value": 68,
+            "pct": 96,
+            "bonus": 6
+          },
+          "shielding": {
+            "value": 54,
+            "pct": 8,
+            "bonus": 3
+          },
+          "magic": {
+            "value": 21,
+            "pct": 39,
+            "bonus": 3
+          }
+        },
+        "outfit": {
+          "lookType": 760,
+          "colors": {
+            "head": 78,
+            "body": 75,
+            "legs": 58,
+            "feet": 76
+          },
+          "addons": {
+            "a1": true,
+            "a2": true
+          },
+          "mountId": 50
+        }
+      },
+      {
+        "name": "Conta",
+        "vocation": "SORCERER",
+        "sex": "male",
+        "level": 250,
+        "hp": 1478,
+        "maxHp": 1478,
+        "mana": 231,
+        "maxMana": 7367,
+        "xp": "257118582",
+        "gold": 0,
+        "skills": {
+          "melee": 10,
+          "distance": 10,
+          "shielding": 24,
+          "magic": 56
+        },
+        "equipment": {
+          "head": {
+            "id": 827,
+            "name": "magma monocle",
+            "attrs": {
+              "primarytype": "helmets",
+              "absorbpercentice": -5,
+              "absorbpercentfire": 4,
+              "armor": 5,
+              "weight": 1000,
+              "script": "moveevent",
+              "slot": "head",
+              "vocation": "Sorcerer;true, Druid;true, Master Sorcerer, Elder Druid"
+            },
+            "imbue": null,
+            "imbuements": [],
+            "value": 2500,
+            "iid": "muljc4cv.b7x.31",
+            "forja": {
+              "fonte": "hunt",
+              "refino": 0,
+              "raridade": 2,
+              "atributos": [
+                {
+                  "id": "resist_energia",
+                  "valor": 1.3
+                },
+                {
+                  "id": "regen_mana",
+                  "valor": 2.2
+                }
+              ],
+              "potenciaBase": 344
+            }
+          },
+          "legs": {
+            "id": 821,
+            "name": "magma legs",
+            "attrs": {
+              "primarytype": "legs",
+              "absorbpercentice": -6,
+              "absorbpercentfire": 6,
+              "armor": 8,
+              "weight": 1900,
+              "script": "moveevent",
+              "level": 40,
+              "slot": "legs",
+              "vocation": "Sorcerer;true, Druid;true, Master Sorcerer, Elder Druid"
+            },
+            "imbue": null,
+            "imbuements": [],
+            "value": 11000,
+            "iid": "mwo59gbr.g7l.141",
+            "forja": {
+              "fonte": "hunt",
+              "refino": 0,
+              "raridade": 2,
+              "atributos": [
+                {
+                  "id": "regen_mana",
+                  "valor": 1.2
+                },
+                {
+                  "id": "regen_vida",
+                  "valor": 1.7
+                }
+              ],
+              "potenciaBase": 191
+            }
+          },
+          "ring": {
+            "id": 3007,
+            "name": "crystal ring",
+            "attrs": {
+              "primarytype": "rings",
+              "weight": 90,
+              "script": "moveevent",
+              "slot": "ring"
+            },
+            "imbue": null,
+            "imbuements": [],
+            "value": 250,
+            "iid": "mvei3v16.nw5.226",
+            "forja": {
+              "fonte": "hunt",
+              "refino": 0,
+              "raridade": 2,
+              "atributos": [
+                {
+                  "id": "regen_mana",
+                  "valor": 1.5
+                },
+                {
+                  "id": "cura_propria",
+                  "valor": 1.6
+                }
+              ],
+              "potenciaBase": 5
+            }
+          },
+          "armor": {
+            "id": 826,
+            "name": "magma coat",
+            "attrs": {
+              "primarytype": "armors",
+              "absorbpercentice": -8,
+              "absorbpercentfire": 8,
+              "armor": 11,
+              "weight": 2250,
+              "script": "moveevent",
+              "level": 50,
+              "slot": "armor",
+              "vocation": "Sorcerer;true, Druid;true, Master Sorcerer, Elder Druid"
+            },
+            "imbue": null,
+            "imbuements": [],
+            "value": 11000,
+            "iid": "mwsjyz7i.sfa.96",
+            "forja": {
+              "fonte": "hunt",
+              "refino": 0,
+              "raridade": 2,
+              "atributos": [
+                {
+                  "id": "resist_morte",
+                  "valor": 1.1
+                },
+                {
+                  "id": "cura_propria",
+                  "valor": 1.9
+                }
+              ],
+              "potenciaBase": 20
+            }
+          },
+          "boots": {
+            "id": 818,
+            "name": "magma boots",
+            "attrs": {
+              "primarytype": "boots",
+              "absorbpercentice": -5,
+              "absorbpercentfire": 5,
+              "armor": 2,
+              "weight": 750,
+              "imbuementslot": 1,
+              "paralysis deflection": 3,
+              "increase speed": 3,
+              "script": "moveevent",
+              "level": 35,
+              "slot": "feet",
+              "vocation": "Sorcerer;true, Druid;true, Master Sorcerer, Elder Druid"
+            },
+            "imbue": {
+              "slots": 1,
+              "types": {
+                "increase speed": 3
+              }
+            },
+            "imbuements": [],
+            "value": 2500,
+            "iid": "mwut0qxs.dwd.52",
+            "forja": {
+              "fonte": "hunt",
+              "refino": 0,
+              "raridade": 1,
+              "atributos": [
+                {
+                  "id": "max_hp",
+                  "valor": 19
+                }
+              ],
+              "potenciaBase": 310
+            }
+          },
+          "shield": {
+            "id": 8074,
+            "name": "spellbook of mind control",
+            "attrs": {
+              "description": "It shows your spells and can also shield against attacks when worn",
+              "weaponType": "spellbook",
+              "magiclevelpoints": 2,
+              "defense": 16,
+              "weight": 2450,
+              "script": "moveevent",
+              "level": 50,
+              "slot": "shield",
+              "vocation": "Sorcerer;true, Druid;true, Master Sorcerer, Elder Druid"
+            },
+            "imbue": null,
+            "imbuements": [],
+            "value": 13000,
+            "iid": "mvcmdd94.gm7.10",
+            "forja": {
+              "fonte": "hunt",
+              "refino": 0,
+              "raridade": 0,
+              "atributos": [],
+              "potenciaBase": 23
+            }
+          },
+          "weapon": {
+            "id": 3074,
+            "name": "wand of vortex",
+            "attrs": {
+              "description": "Surges of energy rush through the tip of this wand",
+              "weaponType": "wand",
+              "shootType": "energy",
+              "range": 3,
+              "weight": 1900,
+              "script": "moveevent;weapon",
+              "level": 6,
+              "mana": 1,
+              "fromDamage": 8,
+              "toDamage": 18,
+              "wandType": "energy",
+              "vocation": "Sorcerer;true, Master Sorcerer",
+              "slot": "hand"
+            },
+            "imbue": null,
+            "imbuements": [],
+            "value": 100,
+            "iid": "mukjt5ud.zbk.9",
+            "forja": {
+              "fonte": "hunt",
+              "refino": 0,
+              "raridade": 1,
+              "atributos": [
+                {
+                  "id": "nivel_magico",
+                  "valor": 1
+                }
+              ],
+              "potenciaBase": 335
+            }
+          },
+          "necklace": {
+            "id": 10457,
+            "name": "beetle necklace",
+            "attrs": {
+              "primarytype": "amulets and necklaces",
+              "showAttributes": 1,
+              "speed": 2,
+              "weight": 820,
+              "script": "moveevent",
+              "slot": "necklace"
+            },
+            "imbue": null,
+            "imbuements": [],
+            "value": 1500,
+            "iid": "mv8z78zt.145.156",
+            "forja": {
+              "fonte": "hunt",
+              "refino": 0,
+              "raridade": 1,
+              "atributos": [
+                {
+                  "id": "nivel_magico",
+                  "valor": 1
+                }
+              ],
+              "potenciaBase": 102
+            }
+          }
+        },
+        "cap": {
+          "used": 143.75,
+          "total": 6942
+        },
+        "levelProgress": {
+          "value": 250,
+          "pct": 93,
+          "xp": "257118582",
+          "xpNext": "257325000"
+        },
+        "skillsProgress": {
+          "melee": {
+            "value": 10,
+            "pct": 0,
+            "bonus": 2
+          },
+          "distance": {
+            "value": 10,
+            "pct": 0,
+            "bonus": 1
+          },
+          "shielding": {
+            "value": 24,
+            "pct": 98,
+            "bonus": 3
+          },
+          "magic": {
+            "value": 56,
+            "pct": 91,
+            "bonus": 9
+          }
+        },
+        "outfit": {
+          "lookType": 760,
+          "colors": {
+            "head": 78,
+            "body": 75,
+            "legs": 58,
+            "feet": 76
+          },
+          "addons": {
+            "a1": true,
+            "a2": true
+          },
+          "mountId": 50
+        }
+      },
+      {
+        "name": "Conta",
+        "vocation": "DRUID",
+        "sex": "male",
+        "level": 250,
+        "hp": 1475,
+        "maxHp": 1475,
+        "mana": 1490,
+        "maxMana": 7367,
+        "xp": "257118582",
+        "gold": 0,
+        "skills": {
+          "melee": 10,
+          "distance": 10,
+          "shielding": 25,
+          "magic": 62
+        },
+        "equipment": {
+          "head": {
+            "id": 827,
+            "name": "magma monocle",
+            "attrs": {
+              "primarytype": "helmets",
+              "absorbpercentice": -5,
+              "absorbpercentfire": 4,
+              "armor": 5,
+              "weight": 1000,
+              "script": "moveevent",
+              "slot": "head",
+              "vocation": "Sorcerer;true, Druid;true, Master Sorcerer, Elder Druid"
+            },
+            "imbue": null,
+            "imbuements": [],
+            "value": 2500,
+            "iid": "mwxkm7xo.8cr.68",
+            "forja": {
+              "fonte": "hunt",
+              "refino": 0,
+              "raridade": 1,
+              "atributos": [
+                {
+                  "id": "regen_mana",
+                  "valor": 2.3
+                }
+              ],
+              "potenciaBase": 344
+            }
+          },
+          "legs": {
+            "id": 821,
+            "name": "magma legs",
+            "attrs": {
+              "primarytype": "legs",
+              "absorbpercentice": -6,
+              "absorbpercentfire": 6,
+              "armor": 8,
+              "weight": 1900,
+              "script": "moveevent",
+              "level": 40,
+              "slot": "legs",
+              "vocation": "Sorcerer;true, Druid;true, Master Sorcerer, Elder Druid"
+            },
+            "imbue": null,
+            "imbuements": [],
+            "value": 11000,
+            "iid": "mwa7dqb1.8v4.70",
+            "forja": {
+              "fonte": "hunt",
+              "refino": 0,
+              "raridade": 2,
+              "atributos": [
+                {
+                  "id": "max_hp",
+                  "valor": 16
+                },
+                {
+                  "id": "regen_mana",
+                  "valor": 1.3
+                }
+              ],
+              "potenciaBase": 100
+            }
+          },
+          "ring": {
+            "id": 3007,
+            "name": "crystal ring",
+            "attrs": {
+              "primarytype": "rings",
+              "weight": 90,
+              "script": "moveevent",
+              "slot": "ring"
+            },
+            "imbue": null,
+            "imbuements": [],
+            "value": 250,
+            "iid": "mul5xbac.5jc.75",
+            "forja": {
+              "fonte": "hunt",
+              "refino": 0,
+              "raridade": 1,
+              "atributos": [
+                {
+                  "id": "regen_mana",
+                  "valor": 2.3
+                }
+              ],
+              "potenciaBase": 253
+            }
+          },
+          "armor": {
+            "id": 826,
+            "name": "magma coat",
+            "attrs": {
+              "primarytype": "armors",
+              "absorbpercentice": -8,
+              "absorbpercentfire": 8,
+              "armor": 11,
+              "weight": 2250,
+              "script": "moveevent",
+              "level": 50,
+              "slot": "armor",
+              "vocation": "Sorcerer;true, Druid;true, Master Sorcerer, Elder Druid"
+            },
+            "imbue": null,
+            "imbuements": [],
+            "value": 11000,
+            "iid": "mwtkbx0t.2ns.52",
+            "forja": {
+              "fonte": "hunt",
+              "refino": 0,
+              "raridade": 1,
+              "atributos": [
+                {
+                  "id": "cura_propria",
+                  "valor": 1.2
+                }
+              ],
+              "potenciaBase": 21
+            }
+          },
+          "boots": {
+            "id": 818,
+            "name": "magma boots",
+            "attrs": {
+              "primarytype": "boots",
+              "absorbpercentice": -5,
+              "absorbpercentfire": 5,
+              "armor": 2,
+              "weight": 750,
+              "imbuementslot": 1,
+              "paralysis deflection": 3,
+              "increase speed": 3,
+              "script": "moveevent",
+              "level": 35,
+              "slot": "feet",
+              "vocation": "Sorcerer;true, Druid;true, Master Sorcerer, Elder Druid"
+            },
+            "imbue": {
+              "slots": 1,
+              "types": {
+                "increase speed": 3
+              }
+            },
+            "imbuements": [],
+            "value": 2500,
+            "iid": "mwur1ipa.ez4.85",
+            "forja": {
+              "fonte": "hunt",
+              "refino": 0,
+              "raridade": 3,
+              "atributos": [
+                {
+                  "id": "resist_terra",
+                  "valor": 0.6
+                },
+                {
+                  "id": "regen_mana",
+                  "valor": 1.1
+                },
+                {
+                  "id": "resist_morte",
+                  "valor": 0.9
+                }
+              ],
+              "potenciaBase": 84
+            }
+          },
+          "shield": {
+            "id": 8074,
+            "name": "spellbook of mind control",
+            "attrs": {
+              "description": "It shows your spells and can also shield against attacks when worn",
+              "weaponType": "spellbook",
+              "magiclevelpoints": 2,
+              "defense": 16,
+              "weight": 2450,
+              "script": "moveevent",
+              "level": 50,
+              "slot": "shield",
+              "vocation": "Sorcerer;true, Druid;true, Master Sorcerer, Elder Druid"
+            },
+            "imbue": null,
+            "imbuements": [],
+            "value": 13000,
+            "iid": "mvcsi1ps.8mn.1",
+            "forja": {
+              "fonte": "hunt",
+              "refino": 0,
+              "raridade": 0,
+              "atributos": [],
+              "potenciaBase": 69
+            }
+          },
+          "weapon": {
+            "id": 3066,
+            "name": "snakebite rod",
+            "attrs": {
+              "primarytype": "rods",
+              "description": "It seems to twitch and quiver as if trying to escape your grip",
+              "weaponType": "wand",
+              "shootType": "smallearth",
+              "range": 3,
+              "weight": 1900,
+              "script": "moveevent;weapon",
+              "level": 6,
+              "mana": 2,
+              "fromDamage": 8,
+              "toDamage": 18,
+              "wandType": "earth",
+              "vocation": "Druid;true, Elder Druid",
+              "slot": "hand"
+            },
+            "imbue": null,
+            "imbuements": [],
+            "value": 100,
+            "iid": "mukt73qp.do.79",
+            "forja": {
+              "fonte": "hunt",
+              "refino": 0,
+              "raridade": 1,
+              "atributos": [
+                {
+                  "id": "nivel_magico",
+                  "valor": 1
+                }
+              ],
+              "potenciaBase": 200
+            }
+          },
+          "necklace": {
+            "id": 3572,
+            "name": "scarf",
+            "attrs": {
+              "primarytype": "amulets and necklaces",
+              "armor": 1,
+              "weight": 200,
+              "script": "moveevent",
+              "slot": "necklace"
+            },
+            "imbue": null,
+            "imbuements": [],
+            "value": 1,
+            "iid": "mvyim6r4.7x3.20",
+            "forja": {
+              "fonte": "hunt",
+              "refino": 0,
+              "raridade": 2,
+              "atributos": [
+                {
+                  "id": "dano_elem_terra",
+                  "valor": 1.8
+                },
+                {
+                  "id": "dano_magico",
+                  "valor": 1.9
+                }
+              ],
+              "potenciaBase": 228
+            }
+          }
+        },
+        "cap": {
+          "used": 143.75,
+          "total": 6942
+        },
+        "levelProgress": {
+          "value": 250,
+          "pct": 93,
+          "xp": "257118582",
+          "xpNext": "257325000"
+        },
+        "skillsProgress": {
+          "melee": {
+            "value": 10,
+            "pct": 0,
+            "bonus": 2
+          },
+          "distance": {
+            "value": 10,
+            "pct": 0,
+            "bonus": 1
+          },
+          "shielding": {
+            "value": 25,
+            "pct": 5,
+            "bonus": 3
+          },
+          "magic": {
+            "value": 62,
+            "pct": 2,
+            "bonus": 8
+          }
+        },
+        "outfit": {
+          "lookType": 133,
+          "colors": {
+            "head": 78,
+            "body": 75,
+            "legs": 58,
+            "feet": 76
+          },
+          "addons": {
+            "a1": false,
+            "a2": false
+          },
+          "mountId": 50
+        }
+      }
+    ],
+    "account": {
+      "name": "Conta",
+      "level": 250,
+      "xp": "257118582",
+      "gold": 0,
+      "goldLocked": 0,
+      "coins": 0,
+      "towerCoins": 0,
+      "mainVocation": "KNIGHT",
+      "unlocked": [
+        "KNIGHT",
+        "PALADIN",
+        "SORCERER",
+        "DRUID"
+      ],
+      "premiumUntil": "2026-12-26T13:48:55.909Z",
+      "longSessionUntil": "2026-12-24T23:48:11.872Z",
+      "founderGrantOk": false
+    },
+    "bagSince": {
+      "cleansing fragment t1": 1795800696799,
+      "refine fragment t1": 1795803237691
+    },
+    "chatCooldownRemainingMs": 0,
+    "chatTimeoutRemainingMs": 0,
+    "chatRole": "player",
+    "chatGuild": {
+      "name": "Guilda",
+      "tag": "x"
+    },
+    "systemMailPending": 1,
+    "keyBag": {
+      "beelzebub key": 1
+    },
+    "keyBagTierId": "keybag_t3",
+    "keyBagUsed": 1,
+    "keyBagMax": 22,
+    "unlockedIslands": [
+      "yalahar",
+      "pits_of_inferno",
+      "forgotten_knowledge",
+      "otherworld",
+      "the_inquisition",
+      "gray_island",
+      "issavi",
+      "zao",
+      "warzone"
+    ],
+    "keyBagBuffsMs": [
+      81155804,
+      81156206,
+      0,
+      0
+    ],
+    "keyBagAutoBuy": [
+      1,
+      2
+    ],
+    "unlockedBosses": [],
+    "serverWeek": "2026-W48",
+    "nextWeeklyResetAt": 1796043600000,
+    "profiles": {
+      "KNIGHT": {
+        "list": [
+          {
+            "name": "1",
+            "config": {
+              "heals": [
+                {
+                  "name": "Supreme Health Potion",
+                  "percent": 40
+                },
+                {
+                  "name": "Intense Wound Cleansing",
+                  "percent": 30
+                },
+                {
+                  "name": "Wound Cleansing",
+                  "percent": 55
+                }
+              ],
+              "skills": [
+                "Fierce Berserk",
+                "Berserk",
+                "Groundshaker",
+                "Lesser Front Sweep"
+              ],
+              "supports": [
+                "Train Party",
+                null
+              ],
+              "manaPotion": {
+                "name": "Mana Potion",
+                "percent": 8
+              },
+              "minCreatures": {
+                "Berserk": 2,
+                "Groundshaker": 2,
+                "Fierce Berserk": 2,
+                "Lesser Front Sweep": 1
+              }
+            }
+          },
+          {
+            "name": "2",
+            "config": {
+              "heals": [
+                {
+                  "name": "Health Potion",
+                  "percent": 60
+                },
+                null,
+                null,
+                null
+              ],
+              "skills": [
+                "Lesser Front Sweep",
+                null,
+                null,
+                null
+              ],
+              "supports": [
+                null,
+                null
+              ],
+              "manaPotion": {
+                "name": "Strong Mana Potion",
+                "percent": 0
+              },
+              "minCreatures": {
+                "Lesser Front Sweep": 2
+              }
+            }
+          },
+          {
+            "name": "3",
+            "config": {
+              "heals": [
+                {
+                  "name": "Health Potion",
+                  "percent": 60
+                },
+                null,
+                null,
+                null
+              ],
+              "skills": [
+                "Lesser Front Sweep",
+                null,
+                null,
+                null
+              ],
+              "supports": [
+                null,
+                null
+              ],
+              "manaPotion": {
+                "name": "Strong Mana Potion",
+                "percent": 0
+              },
+              "minCreatures": {
+                "Lesser Front Sweep": 2
+              }
+            }
+          },
+          {
+            "name": "4",
+            "config": {
+              "heals": [
+                {
+                  "name": "Health Potion",
+                  "percent": 60
+                },
+                null,
+                null,
+                null
+              ],
+              "skills": [
+                "Lesser Front Sweep",
+                null,
+                null,
+                null
+              ],
+              "supports": [
+                null,
+                null
+              ],
+              "manaPotion": {
+                "name": "Strong Mana Potion",
+                "percent": 0
+              },
+              "minCreatures": {
+                "Lesser Front Sweep": 2
+              }
+            }
+          }
+        ],
+        "active": 0
+      },
+      "PALADIN": {
+        "list": [
+          {
+            "name": "1",
+            "config": {
+              "ammo": "burst arrow",
+              "heals": [
+                {
+                  "name": "Ultimate Spirit Potion",
+                  "percent": 30
+                },
+                {
+                  "name": "Salvation",
+                  "percent": 50
+                },
+                {
+                  "name": "Intense Healing",
+                  "percent": 70
+                }
+              ],
+              "skills": [
+                "Divine Caldera",
+                "thunderstorm rune",
+                "Strong Ethereal Spear",
+                "Divine Missile"
+              ],
+              "supports": [
+                "Protect Party",
+                null
+              ],
+              "manaPotion": {
+                "name": "Mana Potion",
+                "percent": 5
+              },
+              "minCreatures": {
+                "Divine Caldera": 2,
+                "Divine Missile": 1,
+                "thunderstorm rune": 2,
+                "Strong Ethereal Spear": 1
+              }
+            }
+          },
+          {
+            "name": "2",
+            "config": {
+              "ammo": "arrow",
+              "heals": [
+                {
+                  "name": "Health Potion",
+                  "percent": 60
+                },
+                null,
+                null,
+                null
+              ],
+              "skills": [
+                "Lesser Ethereal Spear",
+                null,
+                null,
+                null
+              ],
+              "supports": [
+                null,
+                null
+              ],
+              "manaPotion": {
+                "name": "Great Mana Potion",
+                "percent": 0
+              },
+              "minCreatures": {
+                "Lesser Ethereal Spear": 1
+              }
+            }
+          },
+          {
+            "name": "3",
+            "config": null
+          },
+          {
+            "name": "4",
+            "config": null
+          }
+        ],
+        "active": 0
+      },
+      "SORCERER": {
+        "list": [
+          {
+            "name": "1",
+            "config": {
+              "heals": [
+                {
+                  "name": "Health Potion",
+                  "percent": 30
+                },
+                {
+                  "name": "Ultimate Healing",
+                  "percent": 60
+                },
+                {
+                  "name": "Intense Healing",
+                  "percent": 75
+                }
+              ],
+              "skills": [
+                "Energy Wave",
+                "thunderstorm rune",
+                "Ultimate Energy Strike",
+                "Strong Energy Strike"
+              ],
+              "supports": [
+                "Enchant Party",
+                null
+              ],
+              "manaPotion": {
+                "name": "Mana Potion",
+                "percent": 3
+              },
+              "minCreatures": {
+                "Energy Wave": 1,
+                "thunderstorm rune": 2,
+                "Strong Energy Strike": 1,
+                "Ultimate Energy Strike": 1
+              }
+            }
+          },
+          {
+            "name": "2",
+            "config": {
+              "heals": [
+                {
+                  "name": "Health Potion",
+                  "percent": 60
+                },
+                null,
+                null,
+                null
+              ],
+              "skills": [
+                "Scorch",
+                null,
+                null,
+                null
+              ],
+              "supports": [
+                null,
+                null
+              ],
+              "manaPotion": {
+                "name": "Mana Potion",
+                "percent": 0
+              },
+              "minCreatures": {
+                "Scorch": 1
+              }
+            }
+          },
+          {
+            "name": "3",
+            "config": {
+              "heals": [
+                {
+                  "name": "Health Potion",
+                  "percent": 60
+                },
+                null,
+                null,
+                null
+              ],
+              "skills": [
+                "Scorch",
+                null,
+                null,
+                null
+              ],
+              "supports": [
+                null,
+                null
+              ],
+              "manaPotion": {
+                "name": "Mana Potion",
+                "percent": 0
+              },
+              "minCreatures": {
+                "Scorch": 1
+              }
+            }
+          },
+          {
+            "name": "4",
+            "config": {
+              "heals": [
+                {
+                  "name": "Health Potion",
+                  "percent": 60
+                },
+                null,
+                null,
+                null
+              ],
+              "skills": [
+                "Ice Strike",
+                null,
+                null,
+                null
+              ],
+              "supports": [
+                null,
+                null
+              ],
+              "manaPotion": {
+                "name": "Mana Potion",
+                "percent": 0
+              },
+              "minCreatures": {
+                "Ice Strike": 1
+              }
+            }
+          }
+        ],
+        "active": 0
+      },
+      "DRUID": {
+        "list": [
+          {
+            "name": "1",
+            "config": {
+              "heals": [
+                {
+                  "name": "Health Potion",
+                  "percent": 50
+                },
+                {
+                  "name": "Ultimate Healing",
+                  "percent": 60
+                },
+                {
+                  "name": "Mass Healing",
+                  "percent": 70
+                },
+                {
+                  "name": "Heal Friend",
+                  "percent": 60
+                }
+              ],
+              "skills": [
+                "Strong Ice Wave",
+                "avalanche rune",
+                "Strong Ice Strike",
+                "Energy Strike"
+              ],
+              "supports": [
+                "Heal Party",
+                null
+              ],
+              "manaPotion": {
+                "name": "Strong Mana Potion",
+                "percent": 20
+              },
+              "minCreatures": {
+                "Energy Strike": 1,
+                "avalanche rune": 2,
+                "Strong Ice Wave": 1,
+                "Strong Ice Strike": 1
+              }
+            }
+          },
+          {
+            "name": "2",
+            "config": null
+          },
+          {
+            "name": "3",
+            "config": null
+          },
+          {
+            "name": "4",
+            "config": null
+          }
+        ],
+        "active": 0
+      }
+    },
+    "battleConfigs": {
+      "KNIGHT": {
+        "heals": [
+          {
+            "name": "Supreme Health Potion",
+            "percent": 40
+          },
+          {
+            "name": "Intense Wound Cleansing",
+            "percent": 30
+          },
+          {
+            "name": "Wound Cleansing",
+            "percent": 55
+          }
+        ],
+        "manaPotion": {
+          "name": "Mana Potion",
+          "percent": 8
+        },
+        "skills": [
+          "Fierce Berserk",
+          "Berserk",
+          "Groundshaker",
+          "Lesser Front Sweep"
+        ],
+        "minCreatures": {
+          "Berserk": 2,
+          "Groundshaker": 2,
+          "Fierce Berserk": 2,
+          "Lesser Front Sweep": 1
+        },
+        "supports": [
+          "Train Party",
+          null
+        ]
+      },
+      "PALADIN": {
+        "heals": [
+          {
+            "name": "Ultimate Spirit Potion",
+            "percent": 30
+          },
+          {
+            "name": "Salvation",
+            "percent": 50
+          },
+          {
+            "name": "Intense Healing",
+            "percent": 70
+          }
+        ],
+        "manaPotion": {
+          "name": "Mana Potion",
+          "percent": 5
+        },
+        "skills": [
+          "Divine Caldera",
+          "thunderstorm rune",
+          "Strong Ethereal Spear",
+          "Divine Missile"
+        ],
+        "minCreatures": {
+          "Divine Caldera": 2,
+          "Divine Missile": 1,
+          "thunderstorm rune": 2,
+          "Strong Ethereal Spear": 1
+        },
+        "supports": [
+          "Protect Party",
+          null
+        ],
+        "ammo": "burst arrow"
+      },
+      "SORCERER": {
+        "heals": [
+          {
+            "name": "Health Potion",
+            "percent": 30
+          },
+          {
+            "name": "Ultimate Healing",
+            "percent": 60
+          },
+          {
+            "name": "Intense Healing",
+            "percent": 75
+          }
+        ],
+        "manaPotion": {
+          "name": "Mana Potion",
+          "percent": 3
+        },
+        "skills": [
+          "Energy Wave",
+          "thunderstorm rune",
+          "Ultimate Energy Strike",
+          "Strong Energy Strike"
+        ],
+        "minCreatures": {
+          "Energy Wave": 1,
+          "thunderstorm rune": 2,
+          "Strong Energy Strike": 1,
+          "Ultimate Energy Strike": 1
+        },
+        "supports": [
+          "Enchant Party",
+          null
+        ]
+      },
+      "DRUID": {
+        "heals": [
+          {
+            "name": "Health Potion",
+            "percent": 50
+          },
+          {
+            "name": "Ultimate Healing",
+            "percent": 60
+          },
+          {
+            "name": "Mass Healing",
+            "percent": 70
+          },
+          {
+            "name": "Heal Friend",
+            "percent": 60
+          }
+        ],
+        "manaPotion": {
+          "name": "Strong Mana Potion",
+          "percent": 20
+        },
+        "skills": [
+          "Strong Ice Wave",
+          "avalanche rune",
+          "Strong Ice Strike",
+          "Energy Strike"
+        ],
+        "minCreatures": {
+          "Energy Strike": 1,
+          "avalanche rune": 2,
+          "Strong Ice Wave": 1,
+          "Strong Ice Strike": 1
+        },
+        "supports": [
+          "Heal Party",
+          null
+        ]
+      }
+    },
+    "battleSeeds": {
+      "KNIGHT": {
+        "heals": [
+          {
+            "name": "Health Potion",
+            "percent": 60
+          },
+          null,
+          null,
+          null
+        ],
+        "manaPotion": {
+          "name": "Strong Mana Potion",
+          "percent": 0
+        },
+        "skills": [
+          "Lesser Front Sweep",
+          null,
+          null,
+          null
+        ],
+        "minCreatures": {
+          "Lesser Front Sweep": 2
+        },
+        "supports": [
+          null,
+          null
+        ]
+      },
+      "PALADIN": {
+        "heals": [
+          {
+            "name": "Health Potion",
+            "percent": 60
+          },
+          null,
+          null,
+          null
+        ],
+        "manaPotion": {
+          "name": "Great Mana Potion",
+          "percent": 0
+        },
+        "skills": [
+          "Lesser Ethereal Spear",
+          null,
+          null,
+          null
+        ],
+        "minCreatures": {
+          "Lesser Ethereal Spear": 1
+        },
+        "supports": [
+          null,
+          null
+        ],
+        "ammo": "arrow"
+      },
+      "SORCERER": {
+        "heals": [
+          {
+            "name": "Health Potion",
+            "percent": 60
+          },
+          null,
+          null,
+          null
+        ],
+        "manaPotion": {
+          "name": "Ultimate Mana Potion",
+          "percent": 0
+        },
+        "skills": [
+          "Scorch",
+          null,
+          null,
+          null
+        ],
+        "minCreatures": {
+          "Scorch": 1
+        },
+        "supports": [
+          null,
+          null
+        ]
+      },
+      "DRUID": {
+        "heals": [
+          {
+            "name": "Health Potion",
+            "percent": 60
+          },
+          null,
+          null,
+          null
+        ],
+        "manaPotion": {
+          "name": "Ultimate Mana Potion",
+          "percent": 0
+        },
+        "skills": [
+          "Mud Attack",
+          null,
+          null,
+          null
+        ],
+        "minCreatures": {
+          "Mud Attack": 1
+        },
+        "supports": [
+          null,
+          null
+        ]
+      }
+    },
+    "presets": {
+      "active": 0,
+      "list": [
+        {
+          "name": "Preset 1",
+          "kits": {
+            "DRUID": {
+              "heals": [
+                {
+                  "name": "Health Potion",
+                  "percent": 50
+                },
+                {
+                  "name": "Ultimate Healing",
+                  "percent": 60
+                },
+                {
+                  "name": "Mass Healing",
+                  "percent": 70
+                },
+                {
+                  "name": "Heal Friend",
+                  "percent": 60
+                }
+              ],
+              "manaPotion": {
+                "name": "Strong Mana Potion",
+                "percent": 20
+              },
+              "skills": [
+                "Strong Ice Wave",
+                "avalanche rune",
+                "Strong Ice Strike",
+                "Energy Strike"
+              ],
+              "minCreatures": {
+                "Energy Strike": 1,
+                "avalanche rune": 2,
+                "Strong Ice Wave": 1,
+                "Strong Ice Strike": 1
+              },
+              "supports": [
+                "Heal Party",
+                null
+              ]
+            },
+            "KNIGHT": {
+              "heals": [
+                {
+                  "name": "Supreme Health Potion",
+                  "percent": 40
+                },
+                {
+                  "name": "Intense Wound Cleansing",
+                  "percent": 30
+                },
+                {
+                  "name": "Wound Cleansing",
+                  "percent": 55
+                }
+              ],
+              "manaPotion": {
+                "name": "Mana Potion",
+                "percent": 8
+              },
+              "skills": [
+                "Fierce Berserk",
+                "Berserk",
+                "Groundshaker",
+                "Lesser Front Sweep"
+              ],
+              "minCreatures": {
+                "Berserk": 2,
+                "Groundshaker": 2,
+                "Fierce Berserk": 2,
+                "Lesser Front Sweep": 1
+              },
+              "supports": [
+                "Train Party",
+                null
+              ]
+            },
+            "PALADIN": {
+              "heals": [
+                {
+                  "name": "Ultimate Spirit Potion",
+                  "percent": 30
+                },
+                {
+                  "name": "Salvation",
+                  "percent": 50
+                },
+                {
+                  "name": "Intense Healing",
+                  "percent": 70
+                }
+              ],
+              "manaPotion": {
+                "name": "Mana Potion",
+                "percent": 5
+              },
+              "skills": [
+                "Divine Caldera",
+                "thunderstorm rune",
+                "Strong Ethereal Spear",
+                "Divine Missile"
+              ],
+              "minCreatures": {
+                "Divine Caldera": 2,
+                "Divine Missile": 1,
+                "thunderstorm rune": 2,
+                "Strong Ethereal Spear": 1
+              },
+              "supports": [
+                "Protect Party",
+                null
+              ],
+              "ammo": "burst arrow"
+            },
+            "SORCERER": {
+              "heals": [
+                {
+                  "name": "Health Potion",
+                  "percent": 30
+                },
+                {
+                  "name": "Ultimate Healing",
+                  "percent": 60
+                },
+                {
+                  "name": "Intense Healing",
+                  "percent": 75
+                }
+              ],
+              "manaPotion": {
+                "name": "Mana Potion",
+                "percent": 3
+              },
+              "skills": [
+                "Energy Wave",
+                "thunderstorm rune",
+                "Ultimate Energy Strike",
+                "Strong Energy Strike"
+              ],
+              "minCreatures": {
+                "Energy Wave": 1,
+                "thunderstorm rune": 2,
+                "Strong Energy Strike": 1,
+                "Ultimate Energy Strike": 1
+              },
+              "supports": [
+                "Enchant Party",
+                null
+              ]
+            }
+          },
+          "formation": {
+            "DRUID": [
+              -3,
+              0
+            ],
+            "PALADIN": [
+              -2,
+              0
+            ],
+            "SORCERER": [
+              -4,
+              0
+            ]
+          }
+        },
+        {
+          "name": "Preset 2",
+          "kits": {
+            "DRUID": {},
+            "KNIGHT": {
+              "heals": [
+                {
+                  "name": "Health Potion",
+                  "percent": 60
+                },
+                null,
+                null,
+                null
+              ],
+              "manaPotion": {
+                "name": "Strong Mana Potion",
+                "percent": 0
+              },
+              "skills": [
+                "Lesser Front Sweep",
+                null,
+                null,
+                null
+              ],
+              "minCreatures": {
+                "Lesser Front Sweep": 2
+              },
+              "supports": [
+                null,
+                null
+              ]
+            },
+            "PALADIN": {
+              "heals": [
+                {
+                  "name": "Health Potion",
+                  "percent": 60
+                },
+                null,
+                null,
+                null
+              ],
+              "manaPotion": {
+                "name": "Great Mana Potion",
+                "percent": 0
+              },
+              "skills": [
+                "Lesser Ethereal Spear",
+                null,
+                null,
+                null
+              ],
+              "minCreatures": {
+                "Lesser Ethereal Spear": 1
+              },
+              "supports": [
+                null,
+                null
+              ],
+              "ammo": "arrow"
+            },
+            "SORCERER": {
+              "heals": [
+                {
+                  "name": "Health Potion",
+                  "percent": 60
+                },
+                null,
+                null,
+                null
+              ],
+              "manaPotion": {
+                "name": "Mana Potion",
+                "percent": 0
+              },
+              "skills": [
+                "Scorch",
+                null,
+                null,
+                null
+              ],
+              "minCreatures": {
+                "Scorch": 1
+              },
+              "supports": [
+                null,
+                null
+              ]
+            }
+          },
+          "formation": {
+            "DRUID": [
+              3,
+              0
+            ],
+            "PALADIN": [
+              2,
+              0
+            ],
+            "SORCERER": [
+              4,
+              0
+            ]
+          }
+        },
+        {
+          "name": "Preset 3",
+          "kits": {
+            "DRUID": {},
+            "KNIGHT": {
+              "heals": [
+                {
+                  "name": "Health Potion",
+                  "percent": 60
+                },
+                null,
+                null,
+                null
+              ],
+              "manaPotion": {
+                "name": "Strong Mana Potion",
+                "percent": 0
+              },
+              "skills": [
+                "Lesser Front Sweep",
+                null,
+                null,
+                null
+              ],
+              "minCreatures": {
+                "Lesser Front Sweep": 2
+              },
+              "supports": [
+                null,
+                null
+              ]
+            },
+            "PALADIN": {
+              "ammo": "arrow"
+            },
+            "SORCERER": {
+              "heals": [
+                {
+                  "name": "Health Potion",
+                  "percent": 60
+                },
+                null,
+                null,
+                null
+              ],
+              "manaPotion": {
+                "name": "Mana Potion",
+                "percent": 0
+              },
+              "skills": [
+                "Scorch",
+                null,
+                null,
+                null
+              ],
+              "minCreatures": {
+                "Scorch": 1
+              },
+              "supports": [
+                null,
+                null
+              ]
+            }
+          },
+          "formation": {
+            "DRUID": [
+              3,
+              0
+            ],
+            "PALADIN": [
+              2,
+              0
+            ],
+            "SORCERER": [
+              4,
+              0
+            ]
+          }
+        },
+        {
+          "name": "Preset 4",
+          "kits": {
+            "DRUID": {},
+            "KNIGHT": {
+              "heals": [
+                {
+                  "name": "Health Potion",
+                  "percent": 60
+                },
+                null,
+                null,
+                null
+              ],
+              "manaPotion": {
+                "name": "Strong Mana Potion",
+                "percent": 0
+              },
+              "skills": [
+                "Lesser Front Sweep",
+                null,
+                null,
+                null
+              ],
+              "minCreatures": {
+                "Lesser Front Sweep": 2
+              },
+              "supports": [
+                null,
+                null
+              ]
+            },
+            "PALADIN": {
+              "ammo": "arrow"
+            },
+            "SORCERER": {
+              "heals": [
+                {
+                  "name": "Health Potion",
+                  "percent": 60
+                },
+                null,
+                null,
+                null
+              ],
+              "manaPotion": {
+                "name": "Mana Potion",
+                "percent": 0
+              },
+              "skills": [
+                "Ice Strike",
+                null,
+                null,
+                null
+              ],
+              "minCreatures": {
+                "Ice Strike": 1
+              },
+              "supports": [
+                null,
+                null
+              ]
+            }
+          },
+          "formation": {
+            "DRUID": [
+              3,
+              0
+            ],
+            "PALADIN": [
+              2,
+              0
+            ],
+            "SORCERER": [
+              4,
+              0
+            ]
+          }
+        }
+      ]
+    },
+    "autoSell": {
+      "enabled": true,
+      "included": [
+        "pelvis bone",
+        "small flask of eyedrops",
+        "hatchet",
+        "longsword",
+        "mace",
+        "spellbook",
+        "viking helmet",
+        "brass shield",
+        "morning star",
+        "stone wing",
+        "shiny stone",
+        "wolf tooth chain",
+        "brass helmet",
+        "club ring",
+        "crowbar",
+        "steel axe",
+        "studded armor",
+        "mutated flesh",
+        "fern",
+        "battle axe",
+        "strange talisman",
+        "sword",
+        "peanut",
+        "scale armor",
+        "knight axe",
+        "meat",
+        "spiked iron ball",
+        "cyclops toe",
+        "halberd",
+        "battle hammer",
+        "double axe",
+        "heavy machete",
+        "cyclops trophy",
+        "black pearl",
+        "silver brooch",
+        "petrified scream",
+        "grave flower",
+        "bone toothpick",
+        "essence of a bad dream",
+        "demonic skeletal hand",
+        "spike sword",
+        "blood preservation",
+        "mind stone",
+        "bunch of troll hair",
+        "dragon ham",
+        "yellow gem",
+        "dragon's tail",
+        "serpent sword",
+        "spidris mandible",
+        "spider silk",
+        "poison spider shell",
+        "time ring",
+        "white pearl",
+        "ogre ear stud",
+        "small ruby",
+        "onyx chip",
+        "opal",
+        "behemoth claw",
+        "ogre nose ring",
+        "perfect behemoth fang",
+        "strange symbol",
+        "big bone",
+        "amphora",
+        "lump of earth",
+        "small topaz",
+        "emerald bangle",
+        "terra amulet",
+        "clay lump",
+        "coal",
+        "sling herb",
+        "goat grass",
+        "dark rosary",
+        "red apple",
+        "talon",
+        "powder herb",
+        "black hood",
+        "small sapphire",
+        "wood mushroom",
+        "clerical mace",
+        "wooden flute",
+        "crystal ball",
+        "book",
+        "blue gem",
+        "skull staff",
+        "piggy bank",
+        "dwarven ring",
+        "heavy old tome",
+        "red dragon leather",
+        "lost basher's spike",
+        "basalt figurine",
+        "golden mug",
+        "basalt fetish",
+        "bloody dwarven beard",
+        "blue crystal shard",
+        "red dragon scale",
+        "small pitchfork",
+        "demonic essence",
+        "small diamond",
+        "soul orb",
+        "blank rune",
+        "piece of hellfire armor",
+        "scimitar",
+        "cleaver",
+        "ancient belt buckle",
+        "tarnished rhino figurine",
+        "rhino horn carving",
+        "orichalcum pearl",
+        "magic light wand",
+        "wand of decay",
+        "life crystal",
+        "gear crystal",
+        "green mushroom",
+        "slime mould",
+        "gear wheel",
+        "flask of demonic blood",
+        "gold ingot",
+        "violet gem",
+        "ancient coin",
+        "small emerald",
+        "red gem",
+        "hellhound slobber",
+        "green gem",
+        "hardened bone",
+        "yellow piece of cloth",
+        "green piece of cloth",
+        "red piece of cloth",
+        "brown mushroom",
+        "green crystal splinter",
+        "blue crystal splinter",
+        "brown crystal splinter",
+        "vein of ore",
+        "pulverized ore",
+        "drill bolt",
+        "worm",
+        "iron ore",
+        "broken throwing axe",
+        "wimp tooth chain",
+        "lost bracers",
+        "skull shatterer",
+        "wand of inferno",
+        "fire axe",
+        "grapes",
+        "bony tail",
+        "crossbow",
+        "rope",
+        "scroll",
+        "bone club",
+        "green tunic",
+        "bonebeast trophy",
+        "battle shield",
+        "glob of acid slime",
+        "glob of tar",
+        "giant shimmering pearl",
+        "garlic necklace",
+        "steel shield",
+        "gold ring",
+        "dirty cape",
+        "golden sickle",
+        "cursed shoulder spikes",
+        "green perch",
+        "crab pincers",
+        "quara bone",
+        "fish fin",
+        "maxilla maximus",
+        "stone skin amulet",
+        "cat's paw",
+        "black shield",
+        "chain helmet",
+        "brass armor",
+        "iron helmet",
+        "condensed energy",
+        "strange proto matter",
+        "small energy ball",
+        "plasma pearls",
+        "solid rage",
+        "energy drink",
+        "red crystal fragment",
+        "violet crystal shard",
+        "cyan crystal fragment",
+        "energy bar",
+        "dragon hammer",
+        "fire sword",
+        "dragonbone staff",
+        "demon trophy",
+        "devil helmet",
+        "orb",
+        "purple tome",
+        "scythe leg",
+        "white mushroom",
+        "zaoan shoes",
+        "guardian shield",
+        "scale of corruption",
+        "trousers of the ancients",
+        "lightning pendant",
+        "dark shield",
+        "scythe",
+        "glowing rune",
+        "plasmatic lightning",
+        "dangerous proto matter",
+        "sparkion legs",
+        "sparkion stings",
+        "sparkion tail",
+        "sparkion claw",
+        "volatile proto matter",
+        "curious matter",
+        "odd organ",
+        "green crystal shard",
+        "energy ball",
+        "instable proto matter",
+        "frozen lightning",
+        "small amethyst",
+        "sphinx feather",
+        "lamassu horn",
+        "lamassu hoof",
+        "sphinx tiara",
+        "green crystal fragment",
+        "two handed sword",
+        "plate armor",
+        "demonbone amulet",
+        "heavy mace",
+        "plate legs",
+        "steel helmet",
+        "blue robe",
+        "necrotic rod",
+        "knight armor",
+        "brass legs",
+        "lizard scale",
+        "lizard leather",
+        "wood cape",
+        "zaoan halberd",
+        "widow's mandibles",
+        "magic sulphur",
+        "elvish bow",
+        "bone shoulderplate",
+        "draken sulphur",
+        "weaver's wandtip",
+        "eye of a weeper",
+        "fiery heart",
+        "amber staff",
+        "demon horn",
+        "red goanna scale",
+        "goanna meat",
+        "blue goanna scale",
+        "small enchanted emerald",
+        "goanna claw",
+        "rainbow quartz",
+        "gemmed figurine",
+        "coral brooch",
+        "lizard heart"
+      ]
+    }
+  }
+}

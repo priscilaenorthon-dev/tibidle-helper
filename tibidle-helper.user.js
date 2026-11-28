@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.66.0
-// @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
+// @version      2.67.0
+// @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (treinador: 10 especialistas e os 3 próximos passos para upar) + Rotina (bestiário, prey, plano offline, invasão) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
 // @updateURL    https://raw.githubusercontent.com/priscilaenorthon-dev/tibidle-helper/main/tibidle-helper.user.js
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.66.0';
+    const VERSAO = '2.67.0';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -451,7 +451,7 @@
             if (!cheioDeVerdade(e)) { falhou('guardar ' + chave.replace(/^tb_helper_/, ''), e); return false; }
             if (!_semEspacoAvisado) {
                 _semEspacoAvisado = true;
-                log('localStorage sem espaço — o que o helper mediu NÃO está sendo salvo (' + chave.replace(/^tb_helper_/, '') + '). Limpe o histórico do Analisador e os resultados do Scan.', 'erro');
+                log('localStorage sem espaço — o que o helper mediu NÃO está sendo salvo (' + chave.replace(/^tb_helper_/, '') + '). Limpe o histórico de sessões (rodapé da aba Progresso) e os resultados do Scan.', 'erro');
             }
             return false;
         }
@@ -5242,14 +5242,13 @@
         /* v2.11 — analisador zerado (botão da janela ou o Scan): a sessão do
          * Analisador fecha aqui — as contas dela partiam do zero antigo. */
         if (o.type === 'analyzer_reset') { if (SESSAO) fecharSessao('analisador zerado'); }
-        /* v2.22.0 — Legado, Loyalty e o snapshot do grupo (dano recebido por elemento, por personagem) */
-        if (o.type === 'legacy_state') { ESTADO_WS.legado = { ativo: d.ativo === true, personagens: Array.isArray(d.personagens) ? clonar(d.personagens) : [] }; return; }
-        if (o.type === 'loyalty_update') { ESTADO_WS.loyalty = { points: Number(d.points) || 0, level: Number(d.level) || 0, bonus: Number(d.bonus) || 0, t: Date.now() }; return; }
-        if (o.type === 'party_snapshot' && Array.isArray(d.members)) { ESTADO_WS.snap = Object.assign({ t: Date.now(), huntId: ESTADO_WS.huntId }, clonar(d)); return; }
+        /* v2.22.0 — Legado, Loyalty e o snapshot do grupo: 2.67.0 moveu para observarRecebido (são mensagens RECEBIDAS; aqui nunca chegavam) */
     }
+    /* @@OBSERVAR-RECEBIDO-INICIO — testes/treinador.test.js recorta esta função (stubs: ESTADO_WS, clonar, falhou) */
     function observarRecebido(o) {
         try { observarProgresso(o); } catch { } // v2.11 — aba Progresso: só leitura (chaves, bestiário, prey, plano offline)
         try { invObservar(o); } catch (e) { falhou('invasão (observar)', e); } // v2.17.0 — invasão do dia e respostas esperadas
+        try { trObservar(o); } catch (e) { falhou('treinador (observar)', e); } // 2.67.0 — treinador: bênçãos, Invasão, ilhas, premium, ampulhetas, Selo e o player_profile do topo
         try { diagObservar(o); } catch { } // v2.11 — Diagnóstico: guarda só a FORMA das mensagens
         try { observarMercado(o); } catch (e) { falhou('observarMercado', e); } // v2.11 — aba Mercado: premium, mochila, protegidos, respostas do mercado
         /* v2.35.7 — meta_state/meta_result também trazem lureTierByHunt (o lure salvo muda quando o dono troca o lure); welcome/resume já leem abaixo */
@@ -5258,6 +5257,11 @@
         try { radarObservar(o); } catch (e) { falhou('radar (observar)', e); } // v2.13.0 — aba Radar: loot ao vivo e o dia (só leitura)
         if (!o || !o.type) return;
         const d = (o.data && typeof o.data === 'object') ? o.data : {};
+        /* v2.22.0 — Legado, Loyalty e o snapshot do grupo (dano recebido por elemento, por personagem). 2.67.0: estavam em observarEnviado,
+         * mas o servidor é quem MANDA estas três — ESTADO_WS.legado/loyalty/snap nunca enchiam (legacy_state visto ao vivo em 27/11). Mesmo formato. */
+        if (o.type === 'legacy_state') { ESTADO_WS.legado = { ativo: d.ativo === true, personagens: Array.isArray(d.personagens) ? clonar(d.personagens) : [] }; return; }
+        if (o.type === 'loyalty_update') { ESTADO_WS.loyalty = { points: Number(d.points) || 0, level: Number(d.level) || 0, bonus: Number(d.bonus) || 0, t: Date.now() }; return; }
+        if (o.type === 'party_snapshot') { if (Array.isArray(d.members)) ESTADO_WS.snap = Object.assign({ t: Date.now(), huntId: ESTADO_WS.huntId }, clonar(d)); return; }
         if (o.type === 'depot_state' && Array.isArray(d.entries)) {
             ESTADO_WS.depot = { entries: clonar(d.entries), used: d.used, total: d.total }; ESTADO_WS.depot_t = Date.now();
             ESTADO_WS.depotReal = ESTADO_WS.depot; // v2.29.1 — o depósito inteiro (gemas, fragmentos, pilhas), que a foto do Equip não tem
@@ -5412,6 +5416,7 @@
         }
     }
 
+    /* @@OBSERVAR-RECEBIDO-FIM */
     /* v2.11 — O ANALISADOR DO PRÓPRIO JOGO PRIMEIRO. frame.analyzer (em
      * ESTADO_WS.frame.an) traz abates, xp, xp raw, loot e tempo da caçada — o
      * mesmo número da janela "Estatísticas da caça", sem depender dela aberta.
@@ -6456,7 +6461,7 @@
         const ocup = travaJogo();
         if (ocup) { log('Scan: ' + ocup + ' em andamento — espera terminar', 'erro'); return false; }
         if (ESTADO_WS.boss) { log('Scan: boss em andamento — termina o boss antes', 'erro'); return false; }
-        if (BEST.ativo) { log('Scan: o modo "completar bestiário" está ligado (aba Progresso) — pare ele antes', 'erro'); return false; }
+        if (BEST.ativo) { log('Scan: o modo "completar bestiário" está ligado (aba Rotina) — pare ele antes', 'erro'); return false; }
         ouvirEncerramentos();
         /* v2.11 — FOTO do jogo antes de mexer: mapa, lure e perfis por vocação */
         const cacando = frameFresco() && ESTADO_WS.huntId != null;
@@ -6820,6 +6825,8 @@
             inicio: a0.t, dur: Math.round(dur), motivo,
             ouroH: Math.round(dOuro / dur * 3600),
             expH: dExp != null ? Math.round(dExp / dur * 3600) : null,
+            /* 2.67.0 — XP RAW (sem party/premium/prey/boost): o treinador compara mapas e sessões nessa base */
+            expRawH: anOk && a0.anXpRaw != null && aN.anXpRaw != null && aN.anXpRaw >= a0.anXpRaw ? Math.round((aN.anXpRaw - a0.anXpRaw) / dur * 3600) : null,
             abates: dAbates, abatesH: dAbates != null ? Math.round(dAbates / dur * 3600) : null,
             mochilaPctMax: Math.round(pctMax * 100),
             suja, regen,
@@ -6948,7 +6955,7 @@
         const moch = lerMochilaOz();
         const an = anDoFrame();
         const amostra = { t: Date.now(), ouro: ouroAtual(), exp: exp ? exp.atual : null, abates: ab, mochilaPct: moch ? moch.pct : 0 };
-        if (an) Object.assign(amostra, { anMs: an.elapsedMs, anXp: an.xp, anLoot: an.lootGold, anSup: an.suppliesGold });
+        if (an) Object.assign(amostra, { anMs: an.elapsedMs, anXp: an.xp, anXpRaw: an.xpRaw, anLoot: an.lootGold, anSup: an.suppliesGold }); // 2.67.0: raw para o treinador
         if (!SESSAO.a0) SESSAO.a0 = amostra;
         SESSAO.pctMax = Math.max(SESSAO.pctMax || 0, amostra.mochilaPct);
         SESSAO.amostras.push(amostra);
@@ -11594,7 +11601,7 @@
         return UI;
     };
     const guardarUI = (patch) => { UI = Object.assign(ui(), patch); guardar('ui', UI); };
-    const ICONES = [['estado', '⌂', 'Status'], ['magia', '✦', 'Magia'], ['autohunt', '↻', 'Auto Hunt'], ['scan', '◎', 'Scan'], ['equip', '⛨', 'Equip'], ['analise', '▤', 'Analisador'], ['progresso', '⚑', 'Progresso'], ['mercado', '⚖', 'Mercado'], ['melhorias', '⇧', 'Melhorias'], ['forja', '⚒', 'Forja'], ['sobreviver', '🛡', 'Aguentar'], ['arena', '☠', 'Sobrevivência'], ['radar', '⌖', 'Radar'], ['log', '≡', 'Log']];
+    const ICONES = [['estado', '⌂', 'Status'], ['magia', '✦', 'Magia'], ['autohunt', '↻', 'Auto Hunt'], ['scan', '◎', 'Scan'], ['equip', '⛨', 'Equip'], ['treinador', '▤', 'Progresso'], ['progresso', '⚑', 'Rotina'], ['mercado', '⚖', 'Mercado'], ['melhorias', '⇧', 'Melhorias'], ['forja', '⚒', 'Forja'], ['sobreviver', '🛡', 'Aguentar'], ['arena', '☠', 'Sobrevivência'], ['radar', '⌖', 'Radar'], ['log', '≡', 'Log']];
     /* "?" com a explicação escondida; data-k preserva aberto/fechado ao repintar */
     const aj = (k, html, rotulo) => `<details class="tb-aj" data-k="${k}"><summary>${rotulo || '?'}</summary><div class="tb-mut">${html}</div></details>`;
 
@@ -11609,6 +11616,1680 @@
      * dentro da cena e para antes da barra de ação. Arrastar ao fundo tirava 6
      * ícones da tela (o limite olhava só 120 px do trilho): agora o trilho
      * inteiro fica na tela e a gaveta cresce para cima quando embaixo não cabe. */
+    /* @@TREINADOR-PURO-INICIO — aba Progresso (2.67.0): o treinador. Especialistas puros: f(foto, base) → conselhos.
+     * Conselho = { id, agente, titulo, porque, numeros, impacto (% de XP/h, ou equivalente), confianca, custo (ouro), acao }.
+     * confianca: medido (da conta) > comunidade (post com número) > wiki > estimado. Sem DOM, sem rede, sem Date.now (foto.t). */
+    const TR_PESO_CONF = { medido: 1, comunidade: 0.8, wiki: 0.6, estimado: 0.4 };
+    const trPeso = (fonte) => TR_PESO_CONF[String(fonte || '').toLowerCase()] || 0.4; // confiança desconhecida = estimado
+    /* TR_BASE — o que um jogador profissional sabe (27/11/2026). Fontes: data/treinador-pesquisa-27-11.md e data/wiki-27-11/*.txt.
+     * Convenção dos comentários: wiki/<página> · comunidade <quem/preset> · medido dd/mm (conta do dono) · protocolo (docs/protocolo-treinador.md).
+     * Só dados; as poucas funções são contas puras de tabela da wiki.
+     * Unidades: número sem sufixo = PONTOS de % (+10 = +10 %); sufixo Frac = fração (0,56 = 56 %); H = horas, S = segundos, Min = minutos.
+     * Skills: o vocabulário é o do helper e da foto — melee, dist, ml, escudo. Os nomes do bestiário (magicLevel, attack…) são de BÔNUS. */
+    const TR_BASE = {
+        versao: '2026-11-27',
+        // ── XP: os bônus SOMAM (não multiplicam); party 4 vocações +100, premium +10, boost +50, prey de +10 → ×2,70 da base
+        xp: { party: 100, premium: 10, boost: 50, preyColunaMax: 10, preyColunas: 4, // wiki/premium-o-que-muda, loja, prey
+              seloAbundante: [4, 7, 10, 14, 20], seloPerigoFrac: 0.1, // wiki/selo-da-cacada (buff × (1 + 0,1 × Perigo))
+              tetoBonus: 100, // wiki/selo-da-cacada: Selo + Prey + Boost "para em +100 %" (não diz se conta party/premium)
+              sessaoH: 12, sessao24hH: 24, // wiki/skills-e-treino (offline rende igual)
+              xpPorDanoFrac: 0.7 }, // estimado: fração da alta de dano do grupo que vira XP/h quando não se sabe se a caçada é limitada por dano ou spawn (trDanoParaXp)
+        // ── teto de spawn × dano: xp/h = min(porLure × lure, fatorDanoFrac × DPS × 3600 ÷ HP) × xp por abate — erro < 2 % (medido 27/09)
+        spawn: { porLure: 340, fatorDanoFrac: 0.707, limitadoPorSpawnFrac: 0.85, // medido 27/09; 0,85 = corte do plano (abates < 85 % do teto → dano)
+                 xpPorHp: { 'Shadow Nexus': 0.061, 'Otherworld Zao': 0.094, ilhasNovas: [0.04, 0.07] } }, // comunidade (xp ÷ vida da 1ª criatura; ninguém mediu)
+        lure: { maxCriaturas: 8, niveis: [1, 4], portalS: 10 }, // wiki/cacadas
+        dinamica: { corteS: 0.25, portalDeS: 10, portalAteS: 8.5 }, // wiki/cacadas (turno abaixo da referência)
+        dinamicas: ['Salt Caves', 'Ruins of Nuur', 'Seacrest Grounds', 'Emerald Gardens', 'Buried Cathedral', 'Dream Talisman'], // wiki/cacadas
+        // ── Prey: 2 h de caçada, só na caçada da prey; tier sobe só sorteando com bônus ativo; expira sem trava → zera
+        prey: { duracaoH: 2, wildcardCoins: 10, escolherWildcards: 5, trocaOuroPorNivel: 200, trocaGratisDia: 1, // wiki/prey; protocolo: rules.listGold 50.000 no nível 250 = 200 × nível
+                travaWildcards: 1, danoPorTier: 4, defesaPorTier: 4, tierMax: 10, tiposBuff: ['xp', 'loot', 'damage', 'defense'] }, // wiki/prey, protocolo (preyBuffs)
+        premium: { coins: 290, dias: 30, xp: 10, autoSellFrac: 0.9, autoSellFreeFrac: 0.8 }, // wiki/premium-o-que-muda
+        boost: { min: 90, coins: [45, 90, 180, 360], porDia: 4, soCacadaComum: true }, // wiki/loja (não corre em Elite/Boss/Torre/treino)
+        loja: { sessao24hCoins: 190, deathRedemptionCoins: 30, coinOuro: 52000 }, // wiki/loja, bencaos; comunidade: coin ≈ 50–54 mil de ouro
+        // ── Legado: dano permanente pela skill TREINADA (item/bestiário/loyalty não contam). Knight melee, Paladin distância, magos ML (Druid: cura também)
+        legado: { skillInicio: 60, mlInicio: 40, passo: 5, // wiki/legado (skillInicio = corpo a corpo e distância; mlInicio = nível mágico)
+                  bonus: [2, 5, 9, 14, 20, 27, 35, 44, 54, 65, 77, 90, 104], // % total no marco I..XIII; sem teto: cada marco soma 1 ponto a mais (XIV = +119)
+                  skill: { KNIGHT: 'melee', PALADIN: 'dist', SORCERER: 'ml', DRUID: 'ml' }, // chaves de skill do helper/foto
+                  semCritico: true }, // wiki/legado: entra sobre o golpe sem crítico; não mexe em roubo de vida/mana
+        // ── Treino: skill quase não sobe caçando; ampulheta = treino normal DURANTE a caçada (sem arma de treino)
+        ampulheta: { horasDia: 8, fator: 8, // horasDia: wiki/ampulhetas-de-treino (por vocação); fator: arma de treino ×8 na Sala de Treino (wiki/skills-e-treino)
+                     preco1h: 525000, preco4h: 2100000, preco8h: 4200000, // protocolo (meta.rules.cash, ouro)
+                     itens: { KNIGHT: [100784, 100785, 100786], PALADIN: [100787, 100788, 100789], DRUID: [100790, 100791, 100792], SORCERER: [100793, 100794, 100795] }, // protocolo (1 h / 4 h / 8 h)
+                     lasting8hCoins: 490, // comunidade (guardar para evento de +50 % de skill)
+                     foraDoConsumo: ['Torre', 'Elites', 'Bosses', 'Invasão', 'Sobrevivência', 'Sala de Treino'] }, // wiki/ampulhetas-de-treino
+        // ── Morte e bênçãos: morte de qualquer um encerra a caçada; 7 bênçãos cortam 56 % da perda e somem na morte
+        bencaos: { n: 7, comuns: 5, enhanced: 2, corteFrac: 0.56, cortePorFrac: 0.08, // wiki/bencaos
+                   preco: (nv) => nv <= 30 ? 2000 : nv < 120 ? 200 * (nv - 20) : 20000 + 75 * (nv - 120), // comum (ids 2–6)
+                   precoEnh: (nv) => nv <= 30 ? 2000 : nv < 120 ? 260 * (nv - 20) : 26000 + 100 * (nv - 120), // enhanced (ids 7–8)
+                   total(nv) { return 5 * this.preco(nv) + 2 * this.precoEnh(nv); } }, // as 7 juntas (nível 200 = 198.000, wiki)
+        morte: { perdaFracSemBencao: 0.0227, perdaFracPorNivel: { 24: 0.0478, 50: 0.0306, 100: 0.0227 }, // wiki/durante-a-cacada (fração da XP total; usar como ordem de grandeza)
+                 tetoImpacto: 50, eventoS: 60 }, // decisão do controlador (27/11): impacto de morte no ranking ≤ 50; mortes da party a ≤ 60 s na mesma caçada = 1 evento
+        // ── Faixas de nível → caçadas pelo Rec da wiki (faixa = [de, ate): Rec ≥ de e < ate). Abaixo de 80 o Radar já cobre (Tibidle Island, nível mínimo)
+        faixas: [ // wiki/cacadas (coluna Rec)
+            { de: 1, ate: 80, hunts: [] },
+            { de: 80, ate: 130, hunts: ['Giant Spiders POH', 'Hero Fortress Entrance', 'The Behemoth Quest', 'Upper Spikes', 'Werebeasts', 'Fiehonja Stairway',
+                'The Hive Entrance', 'Killer Caiman Caverns', 'Zao Entrance', 'Middle Spikes', 'Petrified Hollow', 'Thunderscar Peak', 'Putrid Mummies',
+                'Death Portal', 'Hive Tower', 'Pits of Inferno Entrance', 'Frozen Hell', "Souleater's Canyon", "Lizard Chosen's Dojo", 'Hero Fortress Underground'] },
+            { de: 130, ate: 170, hunts: ['Inquisition Warlocks', 'Lower Spikes', 'Earth Portal', 'Energy Portal', 'Bottom of the Ocean', 'Deepling Library',
+                'Hive Queen Chamber', 'Otherworld Kazordoon', 'Throne of Bazir', 'Zugurosh Seal', 'Crystal Keeper', 'Mushroom Gardens', "Quara's Domain Yalahar",
+                'Lizard City', 'Zao Caverns', 'Inquisition Entrance', 'Haunted Nexus Tomb', 'Holy Portal', 'Exotic Cave', 'Otherworld Svargrond', 'Throne of Ashfalor',
+                'Throne of Pumin', 'Throne of Verminor', 'Lava Hot Spot', 'Grim Reapers Yalahar', 'Draken Walls', 'Great Pearl Fan Reef', 'Warzone I - Fungus'] },
+            { de: 170, ate: 200, hunts: ['Haunted Nexus Temple', "Carnivora's Rocks", 'Otherworld Ankrahmun', 'Throne of Apocalypse', 'Throne of Tafariel', 'Fire Portal',
+                'Green Belt', 'Throne of Infernatil', 'Annihilon Seal', 'Latrivan & Golgordan Seal', 'Madareth Seal', 'Ushuriel Seal', 'Warzone - Lava Lurkers',
+                'Warzone I - Rocky Mountain', 'Haunted Nexus Cellar', 'Sea Serpent Depths', 'Otherworld Edron'] },
+            { de: 200, ate: 250, hunts: ['Winter Court', 'Ice Portal', 'Hellgorak Seal', 'Warzone II - Magma Dungeon', 'Warzone II - Parasite Nest', 'Kilmaresh Catacombs', 'Temple of the Moon Goddess'] },
+            { de: 250, ate: 300, hunts: ['Summer Court', 'Otherworld Zao', 'Shadow Nexus', 'Warzone III - Crystal Caves', 'Salt Caves', 'Seacrest Grounds'] },
+            { de: 300, ate: 350, hunts: ['Buried Cathedral', 'Ruins of Nuur', 'Emerald Gardens'] },
+            { de: 350, ate: 999, hunts: ['Dream Talisman'] } ],
+        // Rec e ilha (id do Silas) de todas as caçadas com Rec na wiki (Rec ≥ 80; ilha null = Tibidle Island). Use trCacada(titulo) para ler.
+        // (o nome ficou cacadasTopo por contrato; abaixo de 200 entrou em 27/11 para o "Caçar itens" e o Rec funcionarem em nível baixo)
+        cacadasTopo: {
+            // Rec < 200 — wiki/cacadas (todas as tabelas); ilha null = Tibidle Island (sempre aberta)
+            'Giant Spiders POH': { rec: 80, ilha: null }, 'Hero Fortress Entrance': { rec: 80, ilha: null }, 'The Behemoth Quest': { rec: 80, ilha: null },
+            'Upper Spikes': { rec: 80, ilha: null }, 'Middle Spikes': { rec: 100, ilha: null }, 'Petrified Hollow': { rec: 100, ilha: null },
+            'Thunderscar Peak': { rec: 100, ilha: null }, 'Inquisition Warlocks': { rec: 130, ilha: null }, 'Lower Spikes': { rec: 130, ilha: null },
+            'Inquisition Entrance': { rec: 150, ilha: null }, 'Werebeasts': { rec: 80, ilha: null }, 'Putrid Mummies': { rec: 100, ilha: null },
+            'Hero Fortress Underground': { rec: 120, ilha: null }, 'Haunted Nexus Tomb': { rec: 150, ilha: null }, 'Haunted Nexus Temple': { rec: 170, ilha: null },
+            'Haunted Nexus Cellar': { rec: 190, ilha: null },
+            "Carnivora's Rocks": { rec: 170, ilha: 'dream_courts' },
+            'Death Portal': { rec: 100, ilha: 'forgotten_knowledge' }, 'Earth Portal': { rec: 130, ilha: 'forgotten_knowledge' },
+            'Energy Portal': { rec: 130, ilha: 'forgotten_knowledge' }, 'Holy Portal': { rec: 150, ilha: 'forgotten_knowledge' },
+            'Fire Portal': { rec: 180, ilha: 'forgotten_knowledge' },
+            'Fiehonja Stairway': { rec: 80, ilha: 'gray_island' }, 'The Hive Entrance': { rec: 80, ilha: 'gray_island' },
+            'Hive Tower': { rec: 100, ilha: 'gray_island' }, 'Bottom of the Ocean': { rec: 130, ilha: 'gray_island' },
+            'Deepling Library': { rec: 130, ilha: 'gray_island' }, 'Hive Queen Chamber': { rec: 130, ilha: 'gray_island' },
+            'Exotic Cave': { rec: 150, ilha: 'issavi' }, 'Green Belt': { rec: 180, ilha: 'issavi' },
+            'Great Pearl Fan Reef': { rec: 160, ilha: 'marapur' }, 'Sea Serpent Depths': { rec: 190, ilha: 'marapur' },
+            'Otherworld Kazordoon': { rec: 130, ilha: 'otherworld' }, 'Otherworld Svargrond': { rec: 150, ilha: 'otherworld' },
+            'Otherworld Ankrahmun': { rec: 170, ilha: 'otherworld' }, 'Otherworld Edron': { rec: 190, ilha: 'otherworld' },
+            'Pits of Inferno Entrance': { rec: 100, ilha: 'pits_of_inferno' }, 'Throne of Bazir': { rec: 130, ilha: 'pits_of_inferno' },
+            'Throne of Ashfalor': { rec: 150, ilha: 'pits_of_inferno' }, 'Throne of Pumin': { rec: 150, ilha: 'pits_of_inferno' },
+            'Throne of Verminor': { rec: 150, ilha: 'pits_of_inferno' }, 'Throne of Apocalypse': { rec: 170, ilha: 'pits_of_inferno' },
+            'Throne of Tafariel': { rec: 170, ilha: 'pits_of_inferno' }, 'Throne of Infernatil': { rec: 180, ilha: 'pits_of_inferno' },
+            'Zugurosh Seal': { rec: 130, ilha: 'the_inquisition' }, 'Annihilon Seal': { rec: 180, ilha: 'the_inquisition' },
+            'Latrivan & Golgordan Seal': { rec: 180, ilha: 'the_inquisition' }, 'Madareth Seal': { rec: 180, ilha: 'the_inquisition' },
+            'Ushuriel Seal': { rec: 180, ilha: 'the_inquisition' },
+            'Crystal Keeper': { rec: 130, ilha: 'warzone' }, 'Mushroom Gardens': { rec: 130, ilha: 'warzone' }, 'Lava Hot Spot': { rec: 150, ilha: 'warzone' },
+            'Warzone I - Fungus': { rec: 160, ilha: 'warzone' }, 'Warzone - Lava Lurkers': { rec: 180, ilha: 'warzone' },
+            'Warzone I - Rocky Mountain': { rec: 180, ilha: 'warzone' },
+            "Quara's Domain Yalahar": { rec: 130, ilha: 'yalahar' }, 'Grim Reapers Yalahar': { rec: 150, ilha: 'yalahar' },
+            'Killer Caiman Caverns': { rec: 80, ilha: 'zao' }, 'Zao Entrance': { rec: 80, ilha: 'zao' }, 'Frozen Hell': { rec: 100, ilha: 'zao' },
+            "Souleater's Canyon": { rec: 100, ilha: 'zao' }, "Lizard Chosen's Dojo": { rec: 110, ilha: 'zao' }, 'Lizard City': { rec: 130, ilha: 'zao' },
+            'Zao Caverns': { rec: 130, ilha: 'zao' },
+            'Winter Court': { rec: 200, ilha: 'dream_courts' }, // TODO confirmar id
+            'Ice Portal': { rec: 200, ilha: 'forgotten_knowledge' },
+            'Hellgorak Seal': { rec: 200, ilha: 'the_inquisition' },
+            'Warzone II - Magma Dungeon': { rec: 200, ilha: 'warzone' },
+            'Warzone II - Parasite Nest': { rec: 220, ilha: 'warzone' },
+            'Kilmaresh Catacombs': { rec: 230, ilha: 'issavi' },
+            'Temple of the Moon Goddess': { rec: 240, ilha: 'marapur' }, // TODO confirmar id
+            'Summer Court': { rec: 250, ilha: 'dream_courts' }, // TODO confirmar id
+            'Otherworld Zao': { rec: 250, ilha: 'otherworld' },
+            'Shadow Nexus': { rec: 250, ilha: 'the_inquisition' },
+            'Warzone III - Crystal Caves': { rec: 250, ilha: 'warzone' },
+            'Salt Caves': { rec: 280, ilha: 'issavi' },
+            'Seacrest Grounds': { rec: 290, ilha: 'marapur' }, // TODO confirmar id
+            'Buried Cathedral': { rec: 300, ilha: 'dream_courts' }, // TODO confirmar id
+            'Ruins of Nuur': { rec: 330, ilha: 'issavi' },
+            'Emerald Gardens': { rec: 340, ilha: 'marapur' }, // TODO confirmar id
+            'Dream Talisman': { rec: 350, ilha: 'dream_courts' } }, // TODO confirmar id
+        // XP/h e saldo/h já vistos (raw = sem prey/boost); faixas [mín, máx] onde a fonte deu intervalo; nivel = da party na medida
+        medidos: [
+            { hunt: 'Shadow Nexus', xpH: 950000, saldoH: [400000, 600000], nivel: [217, 246], fonte: 'comunidade preset 57 (com imbuements; sem imbuement ~zero a zero)' },
+            { hunt: 'Shadow Nexus', xpH: 540000, saldoH: 117000, nivel: 238, fonte: 'medido (u2tag)' },
+            { hunt: 'Shadow Nexus', xpH: 590000, saldoH: -80000, nivel: 207, fonte: 'medido 15/11 (ShamanBr, Extremo)' },
+            { hunt: 'Shadow Nexus', xpH: 950000, saldoH: null, nivel: null, fonte: 'comunidade Specter (legados 3/3/4/5; skills EK 71, RP 71, MS 58, ED 60)' },
+            { hunt: 'Fire Portal', xpH: [275000, 290000], saldoH: null, nivel: 161, fonte: 'comunidade' },
+            { hunt: 'Throne of Tafariel', xpH: 270000, saldoH: null, nivel: 200, fonte: 'comunidade' },
+            { hunt: 'Throne of Infernatil', xpH: [200000, 214000], saldoH: [190000, 245000], nivel: null, fonte: 'comunidade' },
+            { hunt: 'Draken Walls', xpH: [235000, 250000], saldoH: [180000, 270000], nivel: null, fonte: 'comunidade' },
+            { hunt: 'Throne of Apocalypse', xpH: [230000, 244000], saldoH: null, nivel: null, fonte: 'comunidade' },
+            { hunt: 'Lizard City', xpH: [199000, 230000], saldoH: null, nivel: [120, 130], fonte: 'comunidade' } ],
+        preyDanoXp: { com: 780000, sem: [400000, 500000], fonte: 'comunidade Lucasdela (prey de ataque)' },
+        // ── Ilhas (entrega única no Silas, só na cidade; o jogo conta mochila + depósito)
+        ilhas: [ // wiki/acesso-as-ilhas, dream-courts, marapur
+            { nome: 'Issavi', id: 'issavi', ouro: 10e6, materiais: [] },
+            { nome: 'Marapur', id: 'marapur', ouro: 10e6, materiais: [{ nome: 'Spectral Conch', qtd: 10, onde: 'Elite Entombed Wraithlord (Haunted Nexus Tomb, Rec 150): 20,83 % ×2' }] }, // TODO confirmar id
+            { nome: 'Dream Courts', id: 'dream_courts', ouro: 15e6, materiais: [{ nome: 'Haunted Sigil', qtd: 10, onde: 'Hollow High Priest (Haunted Nexus Temple, Rec 170) 10,42 % ×2; Wailing Matron (Haunted Nexus Cellar, Rec 190) 20,83 % ×2' }] }, // TODO confirmar id
+            { nome: 'Otherworld', id: 'otherworld', ouro: 3e6, materiais: [{ nome: 'Thunderscar Spark', qtd: 20, onde: 'Elite Balerion (Thunderscar Peak, Rec 100): 23 % ×4' }] },
+            { nome: 'Warzone', id: 'warzone', ouro: 3e6, materiais: [{ nome: 'Warzone Voucher', qtd: 40, onde: 'Upper Spikes Box 10,8 %, Middle Spikes Box 15,2 %, Lower Spikes Box 22,5 % (×3)' }] },
+            { nome: 'Forgotten Knowledge', id: 'forgotten_knowledge', ouro: 3e6, materiais: [] },
+            { nome: 'The Inquisition', id: 'the_inquisition', ouro: 5e6, materiais: [{ nome: 'Inquisition Badge', qtd: 20, onde: 'Merlin (Inquisition Warlocks) 23 %, Magma Wolf (Inquisition Entrance) 28 % (×4)' },
+                // as 7 relíquias, 8 de cada (wiki/acesso-as-ilhas: Elites dos tronos de Pits of Inferno, 2 por vez)
+                { nome: "Bazir's Relic", qtd: 8, onde: 'Throne of Bazir Box (Elite Countess Sorrow) 14,7 %, ×2' },
+                { nome: "Infernatil's Relic", qtd: 8, onde: 'Throne of Infernatil Box (Elite The Imperor) 18,2 %, ×2' },
+                { nome: "Tafariel's Relic", qtd: 8, onde: 'Throne of Tafariel Box (Elite Mr. Punish) 22 %, ×2' },
+                { nome: "Apocalypse's Relic", qtd: 8, onde: 'Throne of Apocalypse Box (Elite Massacre) 22 %, ×2' },
+                { nome: "Ashfalor's Relic", qtd: 8, onde: 'Throne of Ashfalor Box (Elite Dracola) 18,2 %, ×2' },
+                { nome: "Pumin's Relic", qtd: 8, onde: 'Throne of Pumin Box (Elite The Handmaiden) 18,2 %, ×2' },
+                { nome: "Verminor's Relic", qtd: 8, onde: 'Throne of Verminor Box (Elite The Plasmother) 18,2 %, ×2' }] },
+            { nome: 'Zao', id: 'zao', ouro: 0, materiais: [{ nome: 'Yalahar Soul Fragment', qtd: 100, onde: 'toda vitória nos 13 Elites de Yalahar' }, { nome: 'Yalahar gear wheel', qtd: 70, onde: 'caixas dos Elites de Yalahar 25–35 %' }] },
+            { nome: 'Gray Island', id: 'gray_island', ouro: 0, materiais: [{ nome: 'Yalahar Soul Fragment', qtd: 100, onde: 'toda vitória nos 13 Elites de Yalahar' }, { nome: 'Yalahar gear wheel', qtd: 70, onde: 'caixas dos Elites de Yalahar 25–35 %' }] },
+            { nome: 'Pits of Inferno', id: 'pits_of_inferno', ouro: 0, materiais: [{ nome: 'unholy book', qtd: 1, onde: 'Giant Spider 0,05 % (Giant Spiders POH / Mushroom Gardens)' }] },
+            { nome: 'Yalahar', id: 'yalahar', ouro: 0, materiais: [{ nome: 'dwarven pickaxe', qtd: 1, onde: 'Dwarf 0,03 % / Dwarf Soldier 0,08 %' }] } ],
+        // ── Bosses: tentativa = lista de { item, qtd } pedidos por 1 tentativa. 1 tentativa por luta (trocada no Silas, só na cidade); sem cooldown; morte de qualquer um = derrota e tentativa perdida
+        bosses: [ // wiki/bosses, acesso-aos-bosses, database/criaturas
+            // vida: a página Bosses diz 360.000 ("o maior dos cinco"); database/criaturas diz 250.000 e a pesquisa trazia 250–360k — fico com 360k (pior caso)
+            { nome: 'The Inquisitor', ilha: 'the_inquisition', rec: 250, vida: 360000, tentativa: [{ item: "The inquisitor's circlet", qtd: 10 }],
+              onde: 'caixas dos 7 Elites dos selos 0,93–2,49 % (beelzebub/Shadow Nexus Box 2,49 %)',
+              drops: "Inquisition Box: avenger, emerald sword, master archer's armor, fireborn giant armor, arbalest, warsinger bow 9 %; soft boots, spellbook of dark mysteries 5 %; Gem Box 130 refine fragment t2 (40 %)",
+              vale: 'o maior pacote de fragmentos (130 refine t2); base de boss 250–500' },
+            // vida: Bosses 250.000; database/criaturas 100.000 (pesquisa 100–250k) — fico com 250k
+            { nome: 'The Last Lore Keeper', ilha: 'forgotten_knowledge', rec: 250, vida: 250000, tentativa: [{ item: 'Necronomicon', qtd: 10 }],
+              onde: 'caixas dos 6 Elites dos portais 10,5–17,5 % (Holy Portal Box 17,5 %)',
+              drops: '9 armas crude umbral (4 % cada, direto); sem caixa nem pacote de fragmentos', vale: 'só pelas armas umbral' },
+            { nome: 'Eradicator', ilha: 'otherworld', rec: 250, vida: 145000, tentativa: [{ item: 'Breach Shard', qtd: 5 }], // vida: wiki/database/criaturas
+              onde: 'loja do Otherworld (15 tokens)', drops: 'jungle wand, jungle bow, Zaoan legs 6,3 %', vale: 'jungle wand/bow para os magos/Paladin' },
+            { nome: 'Urmahlullu', nomeJogo: 'Urmahlullu the Weakened', ilha: 'issavi', rec: 330, vida: 300000, tentativa: [{ item: 'Sphinx Dust', qtd: 5 }],
+              onde: 'Salt Caves / Ruins of Nuur, ou 2 tokens na loja de Issavi', drops: 'jungle rod/wand/bow ~10,7 % (ML +1); rainbow necklace 20 %', vale: 'arma de mago com ML +1' },
+            { nome: 'Timira', nomeJogo: 'Timira the Many-Headed', ilha: 'marapur', rec: 340, // TODO confirmar id
+              vida: 360000, tentativa: [{ item: "Timira's Scale", qtd: 5 }],
+              onde: 'Seacrest Grounds / Emerald Gardens, ou 2 tokens na loja de Marapur', drops: 'naga wand/rod (ML +2), naga axe/club (atk 52) 8 %; guardian boots 18 %',
+              vale: 'naga wand/rod ML +2 e naga axe/club para o Knight' },
+            { nome: 'Izcandar', nomeJogo: 'Izcandar the Banished', ilha: 'dream_courts', rec: 350, // TODO confirmar id
+              vida: 415000, tentativa: [{ item: "Izcandar's Shard", qtd: 5 }],
+              onde: 'Buried Cathedral Box 4,17 % / Dream Talisman Box 6,94 %, ou 2 tokens na loja de Dream Courts',
+              drops: 'Blade of Summers/Winters, Wardstrider Boots 8 %; nightmare boots 18 %; dwarven armor 21 %', vale: 'o boss mais forte (415k)' },
+            { nome: 'Shen-long', ilha: 'zao', rec: null, vida: 160180, tentativa: [{ item: 'the orb of Light Undying', qtd: 7 }],
+              onde: 'Draken Walls Box (The emperor) 5 %', drops: 'Zao Island Box: Zaoan armor/helmet/legs, crystal ring, wood cape, mycological bow 6–8 %; Zao Gem Pack 52 refine t2', vale: 'Zaoan helmet/legs e crystal ring do topo' },
+            { nome: 'Azerus', ilha: 'yalahar', rec: null, vida: 130000, xp: 6000, tentativa: [{ item: 'yalahari figurine', qtd: 5 }],
+              onde: "Quara's Domain Yalahar Box (Jaws) 3,6 %", drops: 'Yalahar Island Box: wand of cosmic energy, tower shield 15 %; onyx pendant, paladin armor 10 %; Yalahar Gem Pack 40 refine t2', vale: 'único boss que dá XP (6.000)' },
+            { nome: 'Jaul', ilha: 'gray_island', rec: null, vida: 70000, tentativa: [{ item: 'trophy of Tanjis', qtd: 5 }, { item: 'trophy of Obujos', qtd: 5 }],
+              onde: 'Bottom of the Ocean Box (Tanjis) / Deepling Library Box (Obujos) 5 %', drops: 'Gray Island Box: depth/ornate 4–8 %; Gray Island Gem Pack 68 refine t2', vale: 'boss mais fraco (70k)' } ],
+        bossDicas: { manaAntes: 'encher a mana numa caçada antes e ir sem poção (magos); nunca de frente', // comunidade (vídeos 22/10)
+                     boost: 'XP Boost ativo é gasto à toa no boss (só corre em caçada comum)', // wiki/loja
+                     autoBoss: 'testar 1 tentativa antes do Auto-boss: com o jogo fechado ele gasta todas' }, // wiki/bosses
+        // ── Forja (Uzgod) e tier (Thorgal)
+        purificacao: { hunt: { comum: 86, incomum: 11, raro: 2.5, epico: 0.45, lendario: 0.05, base: [0, 350] }, // wiki/forja (% por raridade; base = potência)
+                       elite: { comum: 76, incomum: 18, raro: 5, epico: 0.85, lendario: 0.15, base: [50, 420] },
+                       boss: { comum: 54, incomum: 30, raro: 13, epico: 2.6, lendario: 0.4, base: [250, 500] } },
+        forja: { refinoSeguroAte: 4, chT1: [80, 70, 60, 50], chT2: [35, 25, 20, 15, 10, 5], // wiki/forja: T1 falha não cai; T2 falha cai 1 (Garantia T1 evita)
+                 potPorRefino: 50, potPorTier: 5, potTeto: 1000, faixaPot: 200, // wiki/forja (potência = base + 50/refino + 5/tier)
+                 potMin: 350, potBase: 400, potMeta: 600, // comunidade + Forja 2.43 (base 400+, mínimo 350, meta 600)
+                 raridadeCh: [55, 35, 20, 10], miticoCh: 3, // wiki/forja (Comum→Incomum … Épico→Lendário; Lendário→Mítico)
+                 tierOuro: [250000, 500000, 1000000, 2000000, 4000000], tierCh: [75, 100], // wiki/tiers (1 cópia 75 %, 2 cópias 100 %)
+                 custoMedido: { magicPlate0a4: 1450000, de4a5Tentativa: 440000, guardianBoots4IncomumLinha: 2270000, atributoT1: 500000 }, // medido 19/10 e projeto
+                 ordem: ['arma + amuleto do Knight', 'magos', 'armadura do Knight'], // comunidade
+                 regra: 'refinar até +4 ANTES de sortear linhas; só trabalhar peça com 2 das 3 linhas certas', // wiki/forja + comunidade
+                 desmancheDobro: ['10–11h', '21–22h'] }, // comunidade (fragmento em dobro)
+        // ── Imbuements: 20 h de caçada por carga, até 10 cargas no encaixe
+        imbuements: { horasCarga: 20, cargasMax: 10, powerful: 200000, protecaoPowerful: 50000, chPowerful: 50, // wiki/imbuements
+                      vampirism: 25, void: 8, strikeCrit: 10, strikeDano: 50, protElem: 15, // Powerful (%)
+                      inuteis: ['Swiftness', 'Time Ring', 'Stealth Ring', 'Dwarven Ring', 'Bronze Amulet'] }, // wiki/imbuements + comunidade
+        // ── Selo da Caçada: preço do Rolar por faixa de Rec e custo por hora ligado
+        selo: { tierCh: [30, 25, 22, 17, 6], perigoPeso: [1, 1, 2, 2, 3], pesoHora: [4.3, 5.8, 7.6, 11.9, 27.5], // wiki/selo-da-cacada, protocolo
+                adicionarMult: [1, 3, 5], perigoConfirma: 6,
+                // Rolar da faixa (faixa = 10 × ⌊Rec/10⌋, mín. 20) — protocolo; faixa 70 → 4.300 (exemplo da wiki)
+                rolar: (rec) => { const fx = Math.max(20, 10 * Math.floor((rec || 0) / 10)); const v = 600 * Math.pow((fx + 5) / 25, 1.8); const q = v >= 10000 ? 1000 : 100; return Math.round(v / q) * q; } },
+        // ── Chaves de Elite
+        chaves: { minLureMax: 60, minOutros: 240, mochilaMin: 1, energizarMin: 1.5, chavesDiaTudo: 28, sweepMax: 100 }, // wiki/chaves-e-caixas, elites; comunidade (≈28/dia com tudo)
+        // ── Invasão: diária, grátis, 3 janelas (14/18/22h); tokens pela posição no dano do boss
+        invasao: { janelas: [14, 18, 22], tokens: [[1, 500], [2, 350], [3, 250], [10, 190], [50, 150], [200, 120], [500, 100], [9999, 30]], // wiki/invasao ([até a posição, tokens]; 9999 = demais)
+                   ravena: { refineT2: { qtd: 100, tokens: 120 }, caixaEliteAleatoria: { tokens: 150 } },
+                   dica: 'inscrever antes das 14h (soma as 3 janelas)' }, // comunidade
+        mercado: { taxaCriacaoFrac: 0.05, ordemDias: 3, leilaoCoins: 20, leilaoTaxaFrac: 0.10, gemaOuro: 390000 }, // wiki/mercado, leilao; comunidade (gema ≈ 390k)
+        // ── Bestiário: 3 marcos (vale o maior), caçadas diferentes somam, só o marco III dá skill/ataque/armadura.
+        //    Atenção: as chaves abaixo são nomes de BÔNUS do bestiário (PG_BONUS: magicLevel, attack, melee, distance…), não as chaves de skill (melee/dist/ml/escudo).
+        bestiarioPrioridade: ['magicLevel', 'attack', 'melee', 'distance', 'manaRegen', 'maxHealth', 'armor', 'shielding'], // comunidade (regen de mana, ML, ataque, skill) + wiki/bestiario
+        bestiarioMarcos: { // wiki/bestiario: [caçada, abates do marco III, bônus]
+            magicLevel: [['Vampire hell', 10000, 1], ['Pits of Inferno Entrance', 12000, 1], ['Otherworld Zao', 50000, 1], ['Shadow Nexus', 50000, 1], ['Warzone III - Crystal Caves', 50000, 1], ['Dream Talisman', 50000, 1]],
+            attack: [['Barbarian Camp', 10000, 1], ['Giant Spiders POH', 12000, 1], ["Souleater's Canyon", 12000, 1], ['Thunderscar Peak', 12000, 1], ['Fire Portal', 12000, 1],
+                     ['Throne of Apocalypse', 50000, 1], ['Hellgorak Seal', 50000, 1], ['Winter Court', 50000, 1], ['Salt Caves', 50000, 1]],
+            melee: [['Mutated Humans', 10000, 1], ['Death Portal', 12000, 1], ['Warzone II - Parasite Nest', 50000, 1]],
+            distance: [['Cults Goroma', 10000, 1], ['Holy Portal', 50000, 1], ['Madareth Seal', 50000, 1], ['Sea Serpent Depths', 50000, 1]],
+            manaRegen: [['Wasps Dungeons', 4000, 3], ['Goblins Femor Hills', 4000, 3], ['Dworcs Port Hope', 10000, 3], ['Warzone I - Fungus', 50000, 3]],
+            armor: [['Rotworms Darashia', 10000, 1], ['Water Elementals Cavern', 10000, 1], ['Bog Raiders Yalahar', 10000, 1], ['Hero Fortress Entrance', 12000, 1],
+                    ['Hive Queen Chamber', 12000, 1], ['Putrid Mummies', 12000, 1], ['Ice Portal', 50000, 1], ['Warzone I - Rocky Mountain', 50000, 1], ['Seacrest Grounds', 50000, 1]],
+            shielding: [['Gladiators Arena Yalahar', 10000, 1], ['Gargoyles Meriana', 10000, 1], ['Throne of Tafariel', 50000, 1], ['Annihilon Seal', 50000, 1], ['Kilmaresh Catacombs', 50000, 1]] },
+        // De onde vem cada material: fonte única em ilhas[].materiais[].onde (ilha) e bosses[].onde (tentativa de boss).
+        tokensIlha: { issavi: { fragmentos: 10, ouro: 20000, coins: 49 }, marapur: { fragmentos: 10, ouro: 20000, coins: 49 }, // wiki/lojas-das-ilhas (preço de 1 token); TODO confirmar id marapur/dream_courts
+                      dream_courts: { fragmentos: 10, ouro: 20000, coins: 49 }, otherworld: { fragmentos: 10, ouro: 20000, coins: 9 } },
+        // ── Equipamento do topo (nível 297–386 visível em 27/11) e réguas da comunidade
+        topoVisto: { KNIGHT: ['Zaoan helmet', 'exotic legs', 'Zaoan legs', 'guardian boots', 'crystal ring', 'Royal Signet', 'stonecutter axe', 'axe of destruction', 'avenger', 'onyx pendant'],
+                     PALADIN: ['paladin armor', 'wood cape', 'living vine bow', 'mycological bow'],
+                     MAGOS: ['magma legs', 'magma boots', 'magma coat', 'firemind raiment', 'spellbook of mind control', 'spellbook of enlightenment', 'jade hat', 'batwing hat'] }, // jogo ao vivo 27/11
+        topoMelee: [66, 79], // jogo ao vivo 27/11: melee do Knight no topo visível (u2tag 64)
+        reguas: { protFisicaKnight: 16, vidaMagos: [1100, 1400], potMin: 350, // comunidade (guia Shadow Nexus 24/11, Melhorias 2.52)
+                  magiaCriaturaIgnoraArmadura: true }, // wiki/como-o-dano-e-calculado: só resist. ao elemento, proteção mágica e Magic Shield
+        // ── Erros comuns (o agente "Onde estou errando" usa como texto de apoio)
+        erros: [
+            'subir de mapa por over-level sem resistência ao elemento e potência (comunidade)',
+            'Knight tomando poção de mana (comunidade)',
+            'morrer cedo no offline e achar que caçou 12 h: a morte encerra a caçada (wiki/durante-a-cacada)',
+            'economizar poção na Shadow Nexus (comunidade)',
+            'forjar peça ruim cedo: só trabalhar base 350–400+ com 2 das 3 linhas certas (comunidade)',
+            'prey em mapa errado: o bônus só vale na caçada da prey (wiki/prey)',
+            'slots de equipamento e encaixes de imbuement vazios (comunidade)',
+            'Druid morrendo por fila de cura (medido 26/10, Draken Walls)',
+            'anúncio a preço errado e taxa de 5 % afundada no Mercado (projeto)',
+            'munição cara: diamond arrow custou 258k/h (medido)',
+            'Great Mana Potion no Druid: 195k/h (medido)',
+            'mana leech pode dar prejuízo: medir ≥ 1 h antes de decidir (comunidade TV de Souza)',
+            'XP Boost ligado em Elite/Boss/Torre não corre (wiki/loja)' ],
+        // ── Equipamento: slots que nunca ficam vazios (escudo só com arma de 1 mão; munição só no Paladino — regra no agente "Onde estou errando")
+        equip: { obrigatorios: ['head', 'necklace', 'armor', 'weapon', 'ring', 'legs', 'boots'],
+                 duasMaosNomes: ['bow', 'crossbow', 'arbalest'], // jogo: arco/besta são de 2 mãos; o resto vem de attrs.slotType ('two-handed') em eq.weapon.duasMaos
+                 municaoNomes: ['bow', 'crossbow', 'arbalest'] }, // jogo: só arco/besta gastam munição (lança/estrela não)
+        topoSkills: null, // preenchido em tempo de execução pelo /leaderboard
+    };
+    // Caçada pelo título (sem diferença de maiúsculas): { rec, ilha, faixa } — rec/ilha de base.cacadasTopo (todas com Rec na wiki); null se a base não conhece.
+    function trCacada(titulo, base) {
+        const b = base || TR_BASE, chave = String(titulo || '').trim().toLowerCase();
+        if (!chave) return null;
+        const nome = Object.keys(b.cacadasTopo || {}).find(k => k.toLowerCase() === chave);
+        const topo = nome ? b.cacadasTopo[nome] : null;
+        const faixa = (b.faixas || []).find(x => x.hunts.some(h => h.toLowerCase() === chave))
+            || (topo ? (b.faixas || []).find(x => topo.rec >= x.de && topo.rec < x.ate) : null) || null;
+        if (!topo && !faixa) return null;
+        return { rec: topo ? topo.rec : null, ilha: topo ? topo.ilha : null, faixa };
+    }
+    // id e agente vêm por último: o objeto `o` não pode trocar a identidade do conselho.
+    function trConselho(agente, id, o) {
+        return Object.assign({ titulo: '', porque: '', numeros: null, impacto: 0, confianca: 'estimado', custo: 0, acao: null, estado: 'aviso' }, o || {},
+                             { id: agente + ':' + id, agente });
+    }
+    // Formato canônico da foto (Task 14 preenche). ouroLivre = ouro − reserva da caçada, calculado pela foto (não pelo agente Dinheiro).
+    // Campos que os especialistas 4–6 (topo, erros, boss) leem:
+    //   party: [{ voc, skills: { melee, dist, ml, escudo }, eq: { SLOT: { nome, refino, raridade, potencia, atributos: [{ id, valor }], imbuSlots, imbu: [], duasMaos? } } }]
+    //          SLOT ∈ TR_SLOTS; slot vazio = ausente/null/sem nome; duasMaos = attrs.slotType === 'two-handed' (sem a dica, vale o nome: TR_BASE.equip.duasMaosNomes)
+    //   checklist: { VOC: [{ chave, ok, titulo, texto }] } | null — o mlChecklist da aba Melhorias (régua "ficar forte" da comunidade)
+    //   mortes: [{ t, hunt, huntId, voc }] · sessoes: [{ hunt, huntId, durMin, xpH, ouroH, morte }] em ordem de tempo (a última no fim)
+    //          durMin = duração em MINUTOS (a foto converte o `dur` em segundos do helper ÷ 60)
+    //   chaves: { usadas, max, elites: [{ nome, qtd }] } | null · deposito: { nomeItem: qtd } (depósito + mochila; nomes comparados sem maiúsculas)
+    //   invasao: { inscrito, proxima } | null · precos: { nomeItem: ouro } (nomes sem maiúsculas)
+    //   topo: { pos, total, top1, idadeH, perto: [{ nome, nivel, skills: { melee, dist, ml } }], perfis: [{ nivel, voc: { VOC: { SLOT: nomeItem } } }] } | null
+    //         (perto[].skills.ml pode ser número ou { SORCERER, DRUID }: o ML do topo é por vocação)
+    //   hunt: { id, title, lure, maxLure, lureTiers: [{ min, max }] (criaturas por degrau; lure 1 = lureTiers[0]), rec, levelMin, ilha } | null
+    function trFotoVazia() {
+        return { t: 0, nivel: null, xpTotal: null, ouro: null, ouroLivre: null, premium: null, emHunt: false, naCidade: false, hunt: null, medidoAtual: null,
+                 mapas: [], party: [], legado: null, prey: null, bencaos: null, ampulhetas: null, selo: null, mortes: [], sessoes: [], checklist: null,
+                 bestiario: [], chaves: null, deposito: {}, invasao: null, forja: null, topo: null, precos: {}, ilhas: [],
+                 ouroTravado: null, depositoLido: false }; // ouroTravado: parte do ouro que só paga suprimento; depositoLido: false = só a mochila
+    }
+    // [{ id, nome, icone, fase?: 2, rodar(foto, base, todos) → conselho | conselhos[] }] — Tasks 4–13.
+    // Fase 2 roda depois de todos e recebe em `todos` os conselhos da fase 1; os da fase 1 recebem [].
+    const TR_AGENTES = [];
+    const TR_GRAVIDADE = { erro: 0, aviso: 1, ok: 2 };
+    // [contrato] Escala do chefe: nota = impacto × peso da confiança × (0,3 se falta ouro); conselho com estado 'erro' tem nota MÍNIMA 4 (piso),
+    // para um erro de fato (slot vazio, ouro acabando) não ficar atrás de palpite. Fatos da foto usam confiança 'medido'.
+    const TR_PISO_ERRO = 4;
+    // [contrato] Custo efetivo = desembolso único + 3 × numeros.custoH (o mesmo horizonte de 3 h do ouro livre). NaN conta 0; Infinity fica.
+    function trCustoEfetivo(c) {
+        const custo = Number(c && c.custo), h = Number(c && c.numeros && c.numeros.custoH);
+        return (custo > 0 ? custo : 0) + (h > 0 ? 3 * h : 0);
+    }
+    // [contrato] Dedupe: conselhos com o mesmo numeros.dedupe (ex. 'ilha:issavi') viram 1 só — fica o de maior impacto × peso, que herda
+    // a ação e o custo (e o custoH) do outro quando não tem. `ids` guarda todos os ids juntados (o plano do Dinheiro cita qualquer um).
+    // semOuro = custo efetivo > 0 e (> ouro livre, ou ficou fora de ouro:plano.numeros.escolhidos).
+    function trOrdenar(conselhos, foto) {
+        const livre = foto && Number.isFinite(foto.ouroLivre) ? foto.ouroLivre : Infinity;
+        const validos = [], grupos = new Map();
+        for (const c of conselhos || []) {
+            if (!c || typeof c !== 'object' || c.estado === 'ok') continue;
+            const imp = Number(c.impacto);
+            if (!Number.isFinite(imp) || imp <= 0) continue;
+            const k = c.numeros && typeof c.numeros.dedupe === 'string' ? c.numeros.dedupe : null;
+            if (!k) { validos.push(Object.assign({}, c, { ids: [c.id] })); continue; }
+            const g = grupos.get(k);
+            if (!g) { const x = Object.assign({}, c, { ids: [c.id] }); grupos.set(k, x); validos.push(x); continue; }
+            const [vence, perde] = imp * trPeso(c.confianca) > Number(g.impacto) * trPeso(g.confianca) ? [Object.assign({}, c), g] : [g, c];
+            if (!vence.acao && perde.acao) vence.acao = perde.acao;
+            if (!(Number(vence.custo) > 0) && Number(perde.custo) > 0) vence.custo = perde.custo;
+            if (!(vence.numeros && Number(vence.numeros.custoH) > 0) && perde.numeros && Number(perde.numeros.custoH) > 0) vence.numeros = Object.assign({}, vence.numeros, { custoH: perde.numeros.custoH });
+            vence.ids = g.ids.concat(c.id);
+            if (vence !== g) { validos[validos.indexOf(g)] = vence; grupos.set(k, vence); }
+        }
+        const plano = (conselhos || []).find(c => c && c.id === 'ouro:plano' && c.numeros && Array.isArray(c.numeros.escolhidos));
+        const escolhidos = plano ? new Set(plano.numeros.escolhidos) : null;
+        const out = validos.map(c => {
+            const ce = trCustoEfetivo(c), semOuro = ce > 0 && (ce > livre || (!!escolhidos && !c.ids.some(id => escolhidos.has(id))));
+            const nota = Number(c.impacto) * trPeso(c.confianca) * (semOuro ? 0.3 : 1);
+            return Object.assign(c, { nota: c.estado === 'erro' ? Math.max(TR_PISO_ERRO, nota) : nota, semOuro });
+        });
+        return out.sort((a, b) => b.nota - a.nota);
+    }
+    function trRodar(foto, base) {
+        const porAgente = new Map(), fase1 = [];
+        const rodar = (a, todosAntes) => {
+            let lista;
+            try {
+                const r = a.rodar(foto, base, todosAntes);
+                lista = (Array.isArray(r) ? r : r ? [r] : []).filter(c => c && typeof c === 'object');
+            } catch (e) {
+                lista = [trConselho(a.id, 'erro', { titulo: 'não consegui analisar', porque: String(e && e.message || e), estado: 'erro' })];
+            }
+            porAgente.set(a, lista);
+            return lista;
+        };
+        for (const a of TR_AGENTES) if (a.fase !== 2) fase1.push(...rodar(a, []));
+        for (const a of TR_AGENTES) if (a.fase === 2) rodar(a, fase1.slice());
+        const cartoes = [], todos = [];
+        for (const a of TR_AGENTES) { // cartões na ordem de TR_AGENTES
+            const lista = porAgente.get(a) || [];
+            const ord = lista.slice().sort((x, y) => ((TR_GRAVIDADE[x.estado] ?? 1) - (TR_GRAVIDADE[y.estado] ?? 1)) || ((Number(y.impacto) || 0) - (Number(x.impacto) || 0)));
+            // pior estado com a mesma régua da ordenação: sem estado (ou estado estranho) conta como aviso
+            const pior = ['erro', 'aviso', 'ok'][lista.reduce((p, c) => Math.min(p, TR_GRAVIDADE[c.estado] ?? 1), 2)];
+            cartoes.push({ id: a.id, nome: a.nome, icone: a.icone, estado: pior, conselhos: ord.slice(0, 3) });
+            todos.push(...lista);
+        }
+        return { cartoes, passos: trOrdenar(todos, foto).slice(0, 3), todos };
+    }
+    // ── Ajudantes dos especialistas (puros). Os próximos agentes REUSAM estes; não copiar a lógica para dentro do agente.
+    const trConf = (fonte) => { const f = String(fonte || '').toLowerCase(); return f in TR_PESO_CONF ? f : 'estimado'; };
+    const trNum = (v) => (v == null || v === '' ? NaN : Number(v)); // null/'' não viram 0; '540000' vira número
+    // Ids da foto são Number, mas comparar SEMPRE por aqui: texto × número e null-safe (null nunca casa).
+    const trMesmoId = (a, b) => a != null && b != null && String(a) === String(b);
+    const trPct = (v) => String(Math.round(v * 10) / 10).replace('.', ','); // 4.75 → '4,8'
+    // Formatador neutro de quantidade (ouro, XP, XP/h): 950 · 540 mil · 1,2 M
+    function trQtd(v) {
+        const n = trNum(v), a = Math.abs(n);
+        if (!Number.isFinite(n)) return '?';
+        return a >= 999500 ? trPct(n / 1e6) + ' M' : a >= 1000 ? Math.round(n / 1000) + ' mil' : String(Math.round(n));
+    }
+    const TR_VOC_PT = { KNIGHT: 'Cavaleiro', PALADIN: 'Paladino', SORCERER: 'Feiticeiro', DRUID: 'Druida' };
+    const trVocPt = (v) => TR_VOC_PT[v] || String(v || '?');
+    const TR_DIA_MS = 864e5; // janelas em dias: trMortesRecentes(foto, base, 7) = a última semana
+    // Tipo da prey: o jogo (e TR_BASE.prey.tiposBuff) fala xp/loot/damage/defense; o resto do helper, exp/dano/defesa. Aceita os dois.
+    const TR_PREY_TIPO = { xp: 'xp', exp: 'xp', damage: 'damage', dano: 'damage', defense: 'defense', defesa: 'defense', loot: 'loot' };
+    const trTipoPrey = (t) => TR_PREY_TIPO[String(t || '').toLowerCase()] || null;
+    const TR_PREY_PT = { xp: 'EXP', damage: 'DANO', defense: 'DEFESA', loot: 'LOOT' }; // texto para o dono
+    // Faixa de base.faixas onde o nível cai ([de, ate)); null sem nível.
+    function trFaixaDoNivel(nivel, base) {
+        return Number.isFinite(nivel) ? ((base || TR_BASE).faixas || []).find(x => nivel >= x.de && nivel < x.ate) || null : null;
+    }
+    const trNomeIlha = (base, ilha) => { const i = ((base || TR_BASE).ilhas || []).find(x => x.id === ilha); return i ? i.nome : String(ilha); };
+    // Ilha fechada? foto.ilhas = [{ id|nome, aberta }]; aceita o id do Silas ou o nome. Sem notícia = aberta (não inventa bloqueio).
+    function trIlhaFechada(foto, base, ilha) {
+        if (!ilha || !Array.isArray(foto.ilhas)) return false;
+        const info = ((base || TR_BASE).ilhas || []).find(x => x.id === ilha);
+        const nomes = [ilha, info && info.nome].filter(Boolean).map(s => String(s).toLowerCase());
+        const st = foto.ilhas.find(x => x && [x.id, x.nome].some(v => v != null && nomes.includes(String(v).toLowerCase())));
+        return !!(st && st.aberta === false);
+    }
+    // A medida de agora (analisador) vale como XP/h? Só com ≥ 5 min (teste ao vivo 27/11: 0,4 min depois de trocar de mapa = 35 mil
+    // XP/h, e o Upar comparava os mapas com isso). min ausente = vale (foto antiga/teste).
+    const trMaValida = (ma) => !!ma && trNum(ma.xpH) > 0 && !(trNum(ma.min) < 5);
+    // XP/h de agora: o analisador da caçada (medidoAtual) ou, sem ele, a medida do mapa da caçada em foto.mapas. null = não sei.
+    function trXpAtual(foto) {
+        const ma = foto.medidoAtual, h = foto.hunt;
+        if (trMaValida(ma)) return Number(ma.xpH);
+        const m = h && Array.isArray(foto.mapas) ? foto.mapas.find(x => x && trMesmoId(x.id, h.id)) : null;
+        return m && trNum(m.xpH) > 0 ? Number(m.xpH) : null;
+    }
+    // Rec da caçada: hunt.rec → wiki (trCacada) → nível mínimo → null.
+    function trRecDe(hunt, base) {
+        if (!hunt) return null;
+        if (trNum(hunt.rec) > 0) return Number(hunt.rec);
+        const c = trCacada(hunt.title, base);
+        if (c && c.rec != null) return c.rec;
+        return trNum(hunt.levelMin) > 0 ? Number(hunt.levelMin) : null;
+    }
+    // Mortes de foto.mortes nos últimos `dias` (relativo a foto.t, em ms). `cacada` (opcional): título, id ou { id, title } da caçada.
+    function trMortesRecentes(foto, base, dias, cacada) {
+        const t0 = trNum(foto.t);
+        if (!(t0 > 0)) return [];
+        const desde = t0 - dias * TR_DIA_MS;
+        const id = cacada && typeof cacada === 'object' ? cacada.id : cacada;
+        const titulo = String(cacada && typeof cacada === 'object' ? cacada.title || '' : cacada == null ? '' : cacada).toLowerCase();
+        return (Array.isArray(foto.mortes) ? foto.mortes : []).filter(m => m && trNum(m.t) >= desde && (cacada == null
+            || trMesmoId(m.huntId, id) || (titulo && String(m.hunt || '').toLowerCase() === titulo)));
+    }
+    // Caçada limitada por dano? abates/h < limitadoPorSpawnFrac × (porLure × lure) — teto de spawn medido 27/09.
+    // Exige ≥ 5 min de medida e abates > 0; fora disso null (sem opinião).
+    function trLimitadoPorDano(foto, base) {
+        const b = base || TR_BASE, ma = foto.medidoAtual, h = foto.hunt;
+        if (!ma || !h || !(trNum(ma.min) >= 5) || !(trNum(ma.abatesH) > 0) || !(trNum(h.lure) > 0)) return null;
+        return Number(ma.abatesH) < b.spawn.limitadoPorSpawnFrac * b.spawn.porLure * Number(h.lure);
+    }
+    // Pontos de dano do GRUPO → pontos de XP/h, respeitando o teto de spawn:
+    // limitada por spawn → 0; desconhecido → × xp.xpPorDanoFrac (estimado); limitada por dano → até a folga que falta ao teto.
+    function trDanoParaXp(pontos, foto, base) {
+        const b = base || TR_BASE, lim = trLimitadoPorDano(foto, b), p = trNum(pontos);
+        if (!(p > 0) || lim === false) return 0;
+        if (lim === null) return p * b.xp.xpPorDanoFrac;
+        const folga = (b.spawn.porLure * Number(foto.hunt.lure) / Number(foto.medidoAtual.abatesH) - 1) * 100;
+        return Math.min(p, folga);
+    }
+    // Slots do equipamento (ordem da tela) e o nome em português — o SLOT_PT da aba Equip é este mesmo objeto.
+    const TR_SLOTS = ['head', 'necklace', 'armor', 'weapon', 'shield', 'ring', 'legs', 'boots', 'ammo'];
+    const TR_SLOT_PT = { weapon: 'arma', hand: 'arma', shield: 'escudo', head: 'elmo', helmet: 'elmo', armor: 'armadura', legs: 'calça', boots: 'bota', feet: 'bota', necklace: 'colar', ring: 'anel', ammo: 'munição' };
+    const trSlotPt = (s) => TR_SLOT_PT[s] || String(s || '?');
+    // Número de um item pelo NOME, sem diferença de maiúsculas ({ nome: n } da foto: deposito, precos).
+    // Soma as grafias repetidas (depósito + mochila); `primeiro` = só a 1ª (preço). null = o item não está lá.
+    const trNome = (s) => String(s == null ? '' : s).trim().toLowerCase(); // normalizador comum de nome de item
+    // Peça vestida no slot (com nome) ou null: slot vazio = ausente/null/sem nome.
+    const trPeca = (eq, slot) => (eq && typeof eq === 'object' && eq[slot] && trNome(eq[slot].nome) ? eq[slot] : null);
+    function trPorNome(obj, nome, primeiro) {
+        const k = trNome(nome);
+        if (!k || !obj || typeof obj !== 'object') return null;
+        let soma = null;
+        for (const [n, v] of Object.entries(obj)) {
+            if (trNome(n) !== k || !Number.isFinite(trNum(v))) continue;
+            if (primeiro) return Number(v);
+            soma = (soma || 0) + Number(v);
+        }
+        return soma;
+    }
+    // Mediana de números (ignora o que não é número); null se não sobra nenhum.
+    function trMediana(lista) {
+        const a = (lista || []).map(trNum).filter(Number.isFinite).sort((x, y) => x - y), m = a.length >> 1;
+        return !a.length ? null : a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+    }
+    // Fração da XP total perdida numa morte SEM bênção, pelo nível: interpola morte.perdaFracPorNivel (24 → 4,78 %, 50 → 3,06 %,
+    // 100+ → 2,27 %; nível baixo perde mais). Nível desconhecido → perdaFracSemBencao.
+    function trPerdaFracMorte(nivel, base) {
+        const b = base || TR_BASE, nv = trNum(nivel);
+        const pts = Object.entries(b.morte.perdaFracPorNivel || {}).map(([n, f]) => [Number(n), Number(f)]).sort((x, y) => x[0] - y[0]);
+        if (!Number.isFinite(nv) || !pts.length) return b.morte.perdaFracSemBencao;
+        if (nv <= pts[0][0]) return pts[0][1];
+        for (let k = 1; k < pts.length; k++) {
+            const [n0, f0] = pts[k - 1], [n1, f1] = pts[k];
+            if (nv <= n1) return f0 + (f1 - f0) * (nv - n0) / (n1 - n0);
+        }
+        return pts[pts.length - 1][1];
+    }
+    // XP perdida numa morte tendo `bencaos` bênçãos (wiki/bencaos e durante-a-cacada: cada bênção corta cortePorFrac da perda sem bênção).
+    // null sem foto.xpTotal. XP que as bênçãos salvam = perda(tem) − perda(todas).
+    function trXpPerdidaMorte(foto, base, bencaos) {
+        const b = base || TR_BASE, xp = trNum(foto.xpTotal);
+        if (!(xp > 0)) return null;
+        const n = Math.min(b.bencaos.n, Math.max(0, trNum(bencaos) || 0));
+        return trPerdaFracMorte(foto.nivel, b) * xp * (1 - n * b.bencaos.cortePorFrac);
+    }
+    // [contrato] Mortes = EVENTOS: foto.mortes tem 1 entrada por vocação; mesma caçada (huntId por trMesmoId; sem os dois huntIds, o título;
+    // sem dado nenhum, não separa) e |Δt| ≤ morte.eventoS = 1 evento. → [{ t, hunt, huntId, vocs }] em ordem de tempo.
+    function trEventosMorte(foto, base, dias) {
+        const b = base || TR_BASE, jan = (b.morte.eventoS || 60) * 1000;
+        const mesma = (e, m) => (e.huntId != null && m.huntId != null ? trMesmoId(e.huntId, m.huntId)
+            : e.hunt && m.hunt ? String(e.hunt).toLowerCase() === String(m.hunt).toLowerCase() : true);
+        const ev = [];
+        for (const m of trMortesRecentes(foto, b, dias).slice().sort((x, y) => trNum(x.t) - trNum(y.t))) {
+            const e = ev.find(x => Math.abs(trNum(m.t) - x.t) <= jan && mesma(x, m));
+            if (!e) { ev.push({ t: trNum(m.t), hunt: m.hunt || null, huntId: m.huntId ?? null, vocs: m.voc ? [m.voc] : [] }); continue; }
+            if (m.voc && !e.vocs.includes(m.voc)) e.vocs.push(m.voc);
+            if (!e.hunt && m.hunt) e.hunt = m.hunt;
+            if (e.huntId == null && m.huntId != null) e.huntId = m.huntId;
+        }
+        return ev;
+    }
+    // [contrato] Régua ÚNICA do impacto de morte (Erros e bênçãos): ritmo = eventos em 7 dias ÷ 7 (por dia);
+    // bruto = ritmo × trXpPerdidaMorte(bencaosTem) ÷ (XP/h × 24) × 100; impacto = min(bruto, morte.tetoImpacto).
+    // Sem xpTotal ou sem XP/h → impacto/bruto null. `nEventos` (opcional) troca a contagem dos 7 dias.
+    function trImpactoMorte(foto, base, bencaosTem, nEventos) {
+        const b = base || TR_BASE, n = nEventos != null ? nEventos : trEventosMorte(foto, b, 7).length;
+        const ritmo = n / 7, perda = trXpPerdidaMorte(foto, b, bencaosTem), xpH = trXpAtual(foto);
+        if (perda == null || !(xpH > 0)) return { impacto: null, bruto: null, ritmo, perda };
+        const bruto = ritmo * perda / (xpH * 24) * 100;
+        return { impacto: Math.min(b.morte.tetoImpacto, bruto), bruto, ritmo, perda };
+    }
+    // Arma de 2 mãos? A dica da foto (eq.weapon.duasMaos, do attrs.slotType) vence; sem ela, o nome (arco/besta).
+    // O nome da peça tem alguma das palavras da lista? (palavra inteira, sem maiúsculas)
+    const trNomeTem = (peca, lista) => !!peca && (lista || []).some(w => new RegExp('\\b' + w + '\\b').test(trNome(peca.nome)));
+    function trDuasMaos(peca, base) {
+        if (!peca) return false;
+        if (typeof peca.duasMaos === 'boolean') return peca.duasMaos;
+        return trNomeTem(peca, (base || TR_BASE).equip.duasMaosNomes);
+    }
+    // Arma que gasta munição (arco/besta, pelo nome): só então a munição vazia é erro.
+    const trUsaMunicao = (peca, base) => trNomeTem(peca, (base || TR_BASE).equip.municaoNomes);
+    // Título no limite da tela (70); o resto vai no porquê.
+    const trCorta = (s, n) => { const t = String(s), max = n || 70; return t.length <= max ? t : t.slice(0, max - 1).trimEnd() + '…'; };
+    // Corta só a BASE para `base + sufixo` caber em n (70): o sufixo ("(~6 h)", "(~1,2 M, sem risco)", "(falta 800 mil)") fica inteiro.
+    const trCortaSufixo = (base, sufixo, n) => { const suf = String(sufixo || ''); return trCorta(base, Math.max(1, (n || 70) - suf.length)) + suf; };
+    // Party da foto (só quem tem vocação) · leitura velha (idadeH ausente/NaN = velho) · vocação maga (ML é a skill do Legado)
+    const trParty = (foto) => (Array.isArray(foto && foto.party) ? foto.party : []).filter(m => m && m.voc);
+    const trVelho = (idadeH, maxH) => !(trNum(idadeH) <= (maxH || 24));
+    const trEhMago = (voc, base) => (base || TR_BASE).legado.skill[voc] === 'ml';
+    // Pontos de dano de UM personagem → pontos do grupo (÷ preyColunas) → XP/h pelo teto de spawn (trDanoParaXp).
+    const trDanoDeUm = (pct, foto, base) => trDanoParaXp(trNum(pct) / (base || TR_BASE).xp.preyColunas, foto, base);
+    // ['elmo', 'anel', 'bota'] → 'elmo, anel e bota'
+    const trLista = (a) => (a.length > 1 ? a.slice(0, -1).join(', ') + ' e ' + a[a.length - 1] : a.join(''));
+
+    // ── Especialista 1: Onde upar (⤴). Só compara mapas com XP/h conhecida, sem morte, abertos e do nível.
+    //    Régua: xpH × peso da fonte (medido 1 · comunidade 0,8 · wiki 0,6 · estimado 0,4); trocar só com ≥ 10 % de vantagem.
+    //    Lure: sobe 1 degrau por vez, com evidência, e NUNCA sugere baixar (regra do dono).
+    // Mapas da foto na régua do "Onde upar" (xpH × peso da fonte; usável = XP/h conhecida, sem morte, do nível). Usado pelo Upar e por trIlhaAlvo.
+    function trMapasUpar(foto, base) {
+        const b = base || TR_BASE;
+        const nivel = Number.isFinite(trNum(foto.nivel)) ? Number(foto.nivel) : null, hunt = foto.hunt || null, ma = foto.medidoAtual || null;
+        const mapas = (Array.isArray(foto.mapas) ? foto.mapas : []).filter(m => m && typeof m === 'object')
+            .map(m => Object.assign({}, m, { xpH: trNum(m.xpH), levelMin: trNum(m.levelMin) }));
+        const ilhaDe = (m) => m.ilha || (trCacada(m.title, b) || {}).ilha || null;
+        // aberta: true do jogo vence; sem ela, vale a lista de ilhas da foto
+        const fechado = (m) => m.aberta === false || (m.aberta !== true && trIlhaFechada(foto, b, ilhaDe(m)));
+        const usavel = (m) => nivel != null && m.xpH > 0 && !(trNum(m.mortes) > 0) && (Number.isFinite(m.levelMin) ? m.levelMin : 0) <= nivel;
+        const nota = (m) => m.xpH * trPeso(m.fonte);
+        const melhorDe = (lista) => lista.reduce((a, m) => (!a || nota(m) > nota(a) ? m : a), null);
+        const cand = mapas.filter(m => usavel(m) && !fechado(m)), fechados = mapas.filter(m => usavel(m) && fechado(m));
+        const daCacada = hunt ? mapas.find(m => trMesmoId(m.id, hunt.id)) || null : null;
+        const xpAtual = trXpAtual(foto);
+        // nota de agora na mesma régua: o analisador vale como medido; a medida do mapa, pelo peso da fonte dela
+        const notaAtual = xpAtual == null ? null : trMaValida(ma) ? xpAtual : xpAtual * trPeso(daCacada && daCacada.fonte);
+        return { nivel, hunt, ma, mapas, ilhaDe, nota, melhorDe, cand, fechados, melhor: melhorDe(cand), melhorFechado: melhorDe(fechados), daCacada, xpAtual, notaAtual };
+    }
+    // O que falta para abrir uma ilha de base.ilhas: materiais (falta = qtd − depósito, preço do Mercado) e custo (ouro + a parte com preço).
+    function trCustoIlha(foto, base, il) {
+        const mats = (il.materiais || []).map(m => {
+            const tem = trPorNome(foto.deposito, m.nome) || 0, preco = trPorNome(foto.precos, m.nome, true);
+            return { nome: m.nome, falta: Math.max(0, m.qtd - tem), preco: preco > 0 ? preco : null, onde: m.onde };
+        }).filter(m => m.falta > 0);
+        return { mats, custo: (il.ouro || 0) + mats.reduce((s, m) => s + (m.preco ? m.falta * m.preco : 0), 0), semPreco: mats.filter(m => !m.preco).length };
+    }
+    // [contrato] Ilha ALVO única (Upar e Caçar itens apontam a mesma):
+    //   1) o melhor mapa MEDIDO de ilha fechada (régua xpH × peso), se passa 10 % do melhor aberto e da XP/h de agora (a mesma folga do ir-mapa);
+    //   2) sem isso, entre as ilhas fechadas com caçada de Rec acima da de agora e ≤ nível + 20, a de menos materiais sem preço e, depois, menor custo.
+    //   → { ilha, nome, title (a caçada), rec, xpH, fonte, medido, abre: [títulos], mats, custo, semPreco } | null
+    function trIlhaAlvo(foto, base) {
+        const b = base || TR_BASE, u = trMapasUpar(foto, b), mf = u.melhorFechado;
+        const ref = Math.max(u.melhor ? u.nota(u.melhor) : 0, u.notaAtual || 0);
+        const ilhaDaBase = (id) => (b.ilhas || []).find(x => x.id === id) || null;
+        if (mf && u.ilhaDe(mf) && u.nota(mf) >= 1.1 * ref) {
+            const id = u.ilhaDe(mf), il = ilhaDaBase(id);
+            return Object.assign({ ilha: id, nome: trNomeIlha(b, id), title: mf.title, rec: trRecDe(mf, b), xpH: mf.xpH, fonte: trConf(mf.fonte), medido: true, abre: [mf.title] },
+                                 il ? trCustoIlha(foto, b, il) : { mats: [], custo: null, semPreco: 0 });
+        }
+        if (u.nivel == null) return null;
+        const recAtual = trRecDe(u.hunt, b) || 0, cacadas = Object.entries(b.cacadasTopo || {}), ops = [];
+        for (const il of b.ilhas || []) {
+            if (!trIlhaFechada(foto, b, il.id)) continue;
+            const abre = cacadas.filter(([, c]) => c.ilha === il.id && c.rec <= u.nivel + 20 && c.rec > recAtual).sort((x, y) => x[1].rec - y[1].rec);
+            if (!abre.length) continue;
+            const [title, c] = abre[abre.length - 1];
+            ops.push(Object.assign({ ilha: il.id, nome: il.nome, title, rec: c.rec, xpH: null, fonte: 'estimado', medido: false, abre: abre.map(([t]) => t) }, trCustoIlha(foto, b, il)));
+        }
+        return ops.sort((x, y) => (x.semPreco - y.semPreco) || (x.custo - y.custo))[0] || null;
+    }
+    function trAgenteUpar(foto, base) {
+        const b = base || TR_BASE, out = [], u = trMapasUpar(foto, b);
+        const { nivel, hunt, ma, mapas, nota, melhorDe, cand, fechados, melhor, daCacada, xpAtual, notaAtual } = u;
+        const nomeAtual = hunt ? hunt.title || (daCacada && daCacada.title) || 'a caçada atual' : null;
+        const outros = cand.filter(m => !hunt || !trMesmoId(m.id, hunt.id)), melhorDosOutros = melhorDe(outros);
+        const melhorOutro = notaAtual != null ? outros.some(m => nota(m) >= 1.1 * notaAtual) : outros.length > 0; // há mapa aberto medido melhor
+        const irPara = (m, imp, porque) => trConselho('upar', 'mapa', {
+            titulo: xpAtual ? `Upar em ${m.title}: +${Math.round(imp)} % de XP/h` : `Upar em ${m.title}: ${trQtd(m.xpH)} XP/h`,
+            porque, numeros: { xpH: m.xpH, xpAtual, fonte: m.fonte || null, idadeH: m.idadeH ?? null }, impacto: imp, confianca: trConf(m.fonte),
+            acao: { tipo: 'ir-mapa', huntId: m.id, rotulo: 'Ir para ' + m.title } });
+        if (melhor && outros.length) {
+            const ok = (porque) => trConselho('upar', 'mapa', { titulo: 'Você já está no melhor mapa medido', estado: 'ok', confianca: trConf(melhor.fonte), porque,
+                numeros: { xpAtual, melhorOutro: melhorDosOutros.title, xpHOutro: melhorDosOutros.xpH } });
+            if (hunt && trMesmoId(melhor.id, hunt.id)) {
+                out.push(ok(`${nomeAtual} rende ${trQtd(xpAtual || melhor.xpH)} XP/h; nenhum outro mapa medido do seu nível passa disso.`));
+            } else if (notaAtual != null && nota(melhor) >= 1.1 * notaAtual) {
+                out.push(irPara(melhor, (melhor.xpH / xpAtual - 1) * 100,
+                    `${melhor.title} rende ${trQtd(melhor.xpH)} XP/h (${trConf(melhor.fonte)}) contra ${trQtd(xpAtual)} XP/h em ${nomeAtual}. Sem morte na medida.`));
+            } else if (notaAtual != null) {
+                out.push(ok(`O melhor outro mapa (${melhorDosOutros.title}, ${trQtd(melhorDosOutros.xpH)} XP/h) não passa 10 % do de agora: não vale a viagem.`));
+            } else {
+                // sem XP/h da caçada atual (ou fora de caçada): aponta o melhor medido, com impacto pequeno por não ter com o que comparar
+                out.push(irPara(melhor, 5, `${melhor.title} é o mapa medido que mais rende no seu nível (${trQtd(melhor.xpH)} XP/h). Sem a XP/h de agora para comparar.`));
+            }
+        }
+        // Ilha fechada: a ilha ALVO (trIlhaAlvo, a mesma do "Caçar itens"). Medida → impacto real (xpH ÷ agora − 1) × 100;
+        // sem medida, só quando nenhum mapa aberto medido passa o de agora, impacto 5 (estimado). dedupe 'ilha:<id>' junta com o "Caçar itens".
+        const alvo = trIlhaAlvo(foto, b);
+        if (alvo && (alvo.medido || !melhorOutro)) {
+            const imp = alvo.medido && xpAtual > 0 ? (alvo.xpH / xpAtual - 1) * 100 : 5;
+            out.push(trConselho('upar', 'abrir-ilha', { titulo: trCorta(`Abrir ${alvo.nome} para ${alvo.title}`), impacto: imp, confianca: alvo.medido ? alvo.fonte : 'estimado',
+                porque: (alvo.medido ? `${alvo.title} rende ${trQtd(alvo.xpH)} XP/h (${alvo.fonte})` + (xpAtual ? ` contra ${trQtd(xpAtual)} agora` : '') + ', mais que os mapas abertos. '
+                    : `${alvo.title} (Rec ${alvo.rec}) passa a caçada de agora e cabe no seu nível. `)
+                    + `O especialista "Caçar itens" diz o que falta para abrir ${alvo.nome}.`,
+                numeros: { ilha: alvo.ilha, mapa: alvo.title, xpH: alvo.xpH, dedupe: 'ilha:' + alvo.ilha } }));
+        }
+        // Lure: só com evidência (≥ 1 sessão aqui ou ≥ 5 min medidos), sem morte nas 2 últimas sessões daqui (em ordem de tempo,
+        // a última no fim) e sem morte nesta caçada em 7 dias. Modelo (teto de spawn = porLure × lure):
+        //   limitada por DANO → mais criatura não vira abate: não sugere;
+        //   limitada por SPAWN → com hunt.lureTiers (criaturas por degrau, lure 1 = [0]; média (min+max)/2 do degrau): min((próximo ÷ agora − 1) × 100, 40);
+        //     sem lureTiers, o teto sobe 1/lure: min(100/lure, 25);
+        //   sem saber → 8 por degrau (estimado, como antes).
+        const lure = hunt ? trNum(hunt.lure) : NaN, maxLure = hunt ? trNum(hunt.maxLure) : NaN;
+        if (hunt && Number.isFinite(lure) && Number.isFinite(maxLure) && lure < maxLure) {
+            const daqui = (Array.isArray(foto.sessoes) ? foto.sessoes : []).filter(s => s && trMesmoId(s.huntId, hunt.id));
+            const evidencia = daqui.length >= 1 || (ma && trNum(ma.min) >= 5);
+            const semMorte = !daqui.slice(-2).some(s => s.morte) && !trMortesRecentes(foto, b, 7, hunt).length && !(daCacada && trNum(daCacada.mortes) > 0);
+            const lim = trLimitadoPorDano(foto, b);
+            if (evidencia && semMorte && lim !== true) {
+                const tiers = Array.isArray(hunt.lureTiers) ? hunt.lureTiers : [];
+                const media = (d) => { const mn = trNum(d && d.min), mx = trNum(d && d.max); return Number.isFinite(mx) ? (mn + mx) / 2 : mn; };
+                const cAgora = media(tiers[lure - 1]), cProx = media(tiers[lure]);
+                const porCriatura = lim === false && cAgora > 0 && cProx > 0; // número real de criaturas por degrau
+                const bruto = porCriatura ? (cProx - cAgora) / cAgora * 100 : null;
+                const n = lure + 1, imp = porCriatura ? Math.min(bruto, 40) : lim === false ? Math.min(100 / Math.max(1, lure), 25) : 8;
+                out.push(trConselho('upar', 'lure', { titulo: `Subir a lure para ${n}`, impacto: imp,
+                    porque: `Lure ${lure} de ${maxLure} e nenhuma morte aqui nas últimas sessões. `
+                        + (porCriatura ? `A caçada está limitada por spawn: a lure ${n} leva de ${trPct(cAgora)} → ${trPct(cProx)} criaturas por onda (≈ +${Math.round(imp)} % de XP/h${bruto > 40 ? ', teto do modelo' : ''}).`
+                            : lim === false ? `A caçada está limitada por spawn: a lure ${n} sobe o teto de criaturas (≈ +${Math.round(imp)} % de XP/h).`
+                                : 'Mais lure = mais criaturas por onda (≈ +8 % de XP/h por degrau, estimado).') + ' Se morrer, o "Aguentar" mostra por quê.',
+                    numeros: { lure, maxLure, limite: lim === false ? 'spawn' : null, criaturas: porCriatura ? [cAgora, cProx] : null },
+                    acao: { tipo: 'lure', huntId: hunt.id, lure: n, rotulo: 'Lure ' + n } }));
+            }
+        }
+        // Sem nenhum outro mapa medido: medir até 3 caçadas da faixa — as de maior Rec ≤ nível (ordenadas pelo Rec da wiki), fora de ilha fechada.
+        if (!outros.length && !fechados.length) {
+            const fx = trFaixaDoNivel(nivel, b), atual = hunt && hunt.title ? String(hunt.title).toLowerCase() : null;
+            const alvos = fx ? fx.hunts.map((h, i) => ({ h, i, c: trCacada(h, b) || {} }))
+                .filter(x => x.h.toLowerCase() !== atual && (x.c.rec == null || x.c.rec <= nivel) && !trIlhaFechada(foto, b, x.c.ilha))
+                .sort((x, y) => ((x.c.rec ?? -1) - (y.c.rec ?? -1)) || (x.i - y.i)) // sem Rec conhecido fica na ordem da wiki, antes
+                .slice(-3)
+                .map(x => ({ title: x.h, huntId: (mapas.find(m => String(m.title || '').toLowerCase() === x.h.toLowerCase()) || {}).id ?? null })) : [];
+            out.push(trConselho('upar', 'medir', { titulo: 'Medir mapas da sua faixa', impacto: alvos.length ? 3 : 0,
+                porque: alvos.length ? `Não tenho XP/h medida de outro mapa para comparar. Meça 5 min em: ${alvos.map(a => a.title).join(', ')}.`
+                    : 'Não tenho XP/h medida de outro mapa nem caçadas da sua faixa na base.',
+                numeros: { n: alvos.length },
+                acao: alvos.length ? { tipo: 'medir', alvos, rotulo: 'Medir' } : null }));
+        }
+        return out;
+    }
+    TR_AGENTES.push({ id: 'upar', nome: 'Onde upar', icone: '⤴', rodar: trAgenteUpar });
+
+    // ── Especialista 2: Multiplicadores (✕). Premium, Prey (caçada da conta, tipo e travas), bênçãos e Selo.
+    //    Régua do impacto: os bônus de XP SOMAM; +k pontos valem k ÷ (100 + party) da XP/h de agora (premium/prey/boost fora do denominador, simples de propósito).
+    //    custo = desembolso ÚNICO em ouro; custo por hora vai em numeros.custoH.
+    function trAgenteMult(foto, base) {
+        const b = base || TR_BASE, out = [], den = 100 + b.xp.party;
+        const nivel = Number.isFinite(trNum(foto.nivel)) ? Number(foto.nivel) : null, hunt = foto.hunt || null;
+        const daCacada = hunt && Array.isArray(foto.mapas) ? foto.mapas.find(m => m && trMesmoId(m.id, hunt.id)) || null : null;
+        const mortes7 = trMortesRecentes(foto, b, 7);
+        // Premium: +10 de XP (soma com party/prey/boost)
+        if (foto.premium && !foto.premium.ativo) {
+            out.push(trConselho('mult', 'premium', { titulo: `Ativar Premium (+${b.xp.premium} % de XP)`, confianca: 'wiki', custo: 0,
+                impacto: b.xp.premium / den * 100,
+                porque: `+${b.xp.premium} de XP somados aos +${b.xp.party} da party = +${trPct(b.xp.premium / den * 100)} % na XP/h. `
+                    + `Custa ${b.premium.coins} coins por ${b.premium.dias} dias (não sai do ouro); também liga a venda automática.`,
+                acao: { tipo: 'abrir-loja', rotulo: 'Abrir a loja' } }));
+        }
+        // Prey: a caçada é da CONTA (meta.preyHunt). EXP vale para o grupo (★T = +T de XP); DANO só no personagem da coluna
+        // (★T = +4T % do dano dele = 4T ÷ preyColunas pontos do grupo, convertidos por trDanoParaXp).
+        const prey = foto.prey && typeof foto.prey === 'object' ? foto.prey : null;
+        if (prey && hunt) {
+            const lim = trLimitadoPorDano(foto, b), xpPorTier = b.xp.preyColunaMax / b.prey.tierMax;
+            const valor = (tipo, tier) => {
+                const tp = trTipoPrey(tipo);
+                if (tp === 'xp') return tier * xpPorTier / den * 100;
+                if (tp === 'damage') return trDanoDeUm(b.prey.danoPorTier * tier, foto, b);
+                return 0;
+            };
+            const buffs = prey.buffs && typeof prey.buffs === 'object' ? prey.buffs : {};
+            const aqui = prey.huntId != null && trMesmoId(prey.huntId, hunt.id);
+            const outro = prey.huntId != null && !aqui;
+            // sem caçada só quando a foto diz (semCacada: meta.preyHunt === null lido); huntId ausente = não sei → não opina
+            const semCacada = prey.huntId === null && prey.semCacada === true;
+            if (outro || semCacada) {
+                const perdido = Object.values(buffs).reduce((s, x) => s + (x ? valor(x.tipo, Math.max(0, trNum(x.tier) || 0)) : 0), 0);
+                const wc = Number.isFinite(trNum(prey.wildcards)) ? ` (você tem ${prey.wildcards})` : '';
+                out.push(trConselho('mult', 'prey-mapa', { titulo: semCacada ? 'A prey não tem caçada' : 'A prey está em outro mapa',
+                    impacto: Math.max(1, perdido),
+                    porque: `O bônus da prey só vale (e o tempo só corre) na caçada da prey. ESCOLHER CAÇADA põe ${hunt.title || 'esta caçada'} por ${b.prey.escolherWildcards} wildcards${wc}.`,
+                    numeros: { huntPrey: prey.huntId, huntAtual: hunt.id, perdido, wildcards: b.prey.escolherWildcards },
+                    acao: { tipo: 'prey-escolher', huntId: hunt.id, rotulo: 'Prey aqui' } }));
+            }
+            // trava da CAÇADA: sem ela, a caçada da prey some quando as 2 h acabam (escolher de novo = 5 wildcards). Impacto estimado 2.
+            if (aqui && prey.huntLocked === false && trNum(prey.huntMsLeft) > 0) {
+                out.push(trConselho('mult', 'prey-trava-hunt', { titulo: 'Trancar a caçada da prey', impacto: 2,
+                    porque: `Sem trava, a caçada da prey vence com as ${b.prey.duracaoH} h e escolher de novo custa ${b.prey.escolherWildcards} wildcards. Travada, renova por ${b.prey.travaWildcards} wildcard.`,
+                    numeros: { huntId: hunt.id },
+                    acao: { tipo: 'prey-trancar', alvo: 'hunt', rotulo: 'Trancar' } }));
+            }
+            const ideal = lim === true ? 'damage' : lim === false ? 'xp' : null;
+            // o sorteio sai num tipo DIFERENTE do atual (wiki/prey): chance de acertar o ideal = 1 ÷ (tipos − 1)
+            const chance = 1 / Math.max(1, b.prey.tiposBuff.length - 1);
+            for (const voc of Object.keys(buffs)) {
+                const x = buffs[voc];
+                if (!x) continue;
+                const tier = Math.max(0, trNum(x.tier) || 0), nome = trVocPt(voc), tipo = trTipoPrey(x.tipo);
+                const morreu = mortes7.some(m => m.voc === voc);
+                // com a prey em outro mapa (ou sem caçada), o passo é trazê-la para cá; trocar o TIPO antes não rende nada
+                if (ideal && tipo !== ideal && !(tipo === 'defense' && morreu) && !outro && !semCacada) {
+                    const t1 = Math.max(1, tier), ganho = valor(ideal, t1) - valor(tipo, t1);
+                    if (ganho > 0) {
+                        out.push(trConselho('mult', 'prey-tipo-' + voc, { titulo: `Prey do ${nome}: trocar para ${TR_PREY_PT[ideal]}`, impacto: ganho * chance,
+                            porque: (ideal === 'damage' ? `A caçada está limitada por dano: DANO ★${t1} dá +${b.prey.danoPorTier * t1} % ao ${nome}.`
+                                : `A caçada está limitada por spawn: mais dano não vira XP. EXP ★${t1} soma +${t1 * xpPorTier} de XP para o grupo todo.`)
+                                + ` O sorteio é aleatório (1 chance em ${Math.round(1 / chance)}; 1º do dia grátis, depois 1 wildcard) e o tier sobe a cada sorteio com o bônus ativo.`,
+                            numeros: { voc, tipo, ideal, tier, ganho, chance },
+                            acao: { tipo: 'prey-trocar', voc, rotulo: 'Sortear' } }));
+                    }
+                } else if (aqui && ideal && tipo === ideal && tier >= 1 && !x.locked && trNum(x.msLeft) > 0) {
+                    // decisão do controlador: no ★10 também (é quando a trava mais vale). Impacto ESTIMADO: 2 + 0,2 por tier.
+                    out.push(trConselho('mult', 'prey-trava-' + voc, { titulo: `Trancar a prey do ${nome} (tier ${tier})`, impacto: 2 + tier * 0.2,
+                        porque: `${TR_PREY_PT[tipo]} ★${tier} é o tipo certo aqui. Sem trava, quando as ${b.prey.duracaoH} h acabam o tier zera. Travada, renova sozinha no mesmo tier por ${b.prey.travaWildcards} wildcard.`,
+                        numeros: { voc, tipo, tier },
+                        acao: { tipo: 'prey-trancar', alvo: voc, voc, rotulo: 'Trancar' } }));
+                }
+            }
+        }
+        // Bênçãos: nível ≥ 120, `tem` conhecido, faltando alguma, e morte (evento) em 7 dias (ou na medida do mapa atual).
+        // Régua única das mortes (trImpactoMorte): impacto = bruto(tem) − bruto(todas), com o teto do ranking; custo = 1 compra das que faltam.
+        const bc = foto.bencaos && typeof foto.bencaos === 'object' ? foto.bencaos : null;
+        const tem = bc && Number.isFinite(trNum(bc.tem)) ? Math.max(0, Number(bc.tem)) : null;
+        const morteMapa = !!(daCacada && trNum(daCacada.mortes) > 0), eventos7 = trEventosMorte(foto, b, 7).length;
+        if (tem != null && tem < b.bencaos.n && nivel != null && nivel >= 120 && (eventos7 || morteMapa)) {
+            const faltam = b.bencaos.n - tem, custo = Math.round(b.bencaos.total(nivel) * faltam / b.bencaos.n), xpH = trXpAtual(foto);
+            const nMortes = Math.max(eventos7, morteMapa ? 1 : 0);
+            const com = trImpactoMorte(foto, b, tem, nMortes), todas = trImpactoMorte(foto, b, b.bencaos.n, nMortes);
+            const salvo = com.perda == null ? null : com.perda - todas.perda;
+            const impacto = com.bruto != null ? Math.min(b.morte.tetoImpacto, com.bruto - todas.bruto) : 1;
+            out.push(trConselho('mult', 'bencaos', { titulo: `Comprar as bênçãos (≈ ${trQtd(custo)} de ouro)`, curto: 'bênçãos', confianca: 'wiki', custo, impacto,
+                porque: `${nMortes} ${nMortes > 1 ? 'mortes' : 'morte'} na última semana. Sem bênção a morte leva ≈ ${trPct(trPerdaFracMorte(nivel, b) * 100)} % da XP total; `
+                    + `as ${faltam} que faltam cortam ${Math.round(faltam * b.bencaos.cortePorFrac * 100)} % disso`
+                    + (salvo != null ? ` (≈ ${trQtd(salvo)} de XP na próxima morte)` : '') + '. Somem na morte: recompre depois de cada uma.',
+                numeros: { nMortes, faltam, salvo, xpH },
+                acao: { tipo: 'bencaos', rotulo: 'Comprar' } }));
+        }
+        // Selo da Caçada desligado numa caçada (toda foto.hunt conta como caçada comum). Abundante soma XP; cada hora ligada custa ouro.
+        // custo = 1 Rolar (o 1º pacto); custoH = Rolar × peso do tier (protocolo). Tier desconhecido: T1 × 0,25 (Abundante sai em ~25 % dos pactos).
+        const selo = foto.selo && typeof foto.selo === 'object' ? foto.selo : null;
+        const rec = trRecDe(hunt, b);
+        if (selo && !selo.ativo && hunt && rec >= 20) {
+            const tierSabido = trNum(selo.abundante) >= 1 && trNum(selo.abundante) <= 5;
+            const tier = tierSabido ? Math.round(Number(selo.abundante)) : 1, pct = b.xp.seloAbundante[tier - 1];
+            const custo = b.selo.rolar(rec), custoH = 100 * Math.round(custo * Math.round(10 * b.selo.pesoHora[tier - 1]) / 1000);
+            out.push(trConselho('mult', 'selo', { titulo: `Ligar o Selo: +${pct} % de XP por ≈ ${trQtd(custoH)}/h`, curto: 'Selo', confianca: tierSabido ? 'wiki' : 'estimado', custo,
+                impacto: pct / den * 100 * (tierSabido ? 1 : 0.25),
+                porque: (tierSabido ? `Seu Selo aqui tem Abundante T${tier} (+${pct} de XP, × o Perigo). ` : `Abundante T1 dá +${pct} de XP, mas o buff é sorteado (≈ 1 pacto em 4). `)
+                    + `Cada hora ligada custa ≈ ${trQtd(custoH)} de ouro (faixa ${10 * Math.floor(rec / 10)}; 1º pacto ${trQtd(custo)}); os debuffs podem matar.`,
+                numeros: { rec, tier, tierSabido, custoH },
+                acao: { tipo: 'selo', huntId: hunt.id, rotulo: 'Selo' } }));
+        }
+        return out;
+    }
+    TR_AGENTES.push({ id: 'mult', nome: 'Multiplicadores', icone: '✕', rodar: trAgenteMult });
+
+    // ── Especialista 3: Treino e Legado (⚔). Ampulheta = treino durante a caçada; o Legado vira dano permanente do personagem.
+    //    impacto = trDanoDeUm(pontos do marco) — o marco é de UM personagem; o teto de spawn manda.
+    function trAgenteLegado(foto, base) {
+        const b = base || TR_BASE, lg = foto.legado && typeof foto.legado === 'object' ? foto.legado : null;
+        const vocs = lg ? Object.keys(lg).filter(v => lg[v] && trNum(lg[v].falta) > 0 && Number.isFinite(trNum(lg[v].bonusProx))) : [];
+        if (!vocs.length) {
+            return [trConselho('legado', 'sem-dado', { titulo: 'Legado não lido ainda', impacto: 0,
+                porque: 'Abra o Legado (UTILIDADES ▸ LEGADO) ou o painel de skills para eu ver quanto falta ao próximo marco de cada vocação.' })];
+        }
+        const passo = b.legado.passo || 5, amp = b.ampulheta;
+        const lista = vocs.map(voc => {
+            const l = lg[voc], falta = Number(l.falta), ganho = Number(l.bonusProx) - (trNum(l.bonusAtual) || 0), nome = trVocPt(voc);
+            const usadas = foto.ampulhetas && foto.ampulhetas[voc] ? trNum(foto.ampulhetas[voc].usadasH) : NaN;
+            const livres = Number.isFinite(usadas) ? Math.max(0, amp.horasDia - usadas) : null;
+            const feito = livres === 0;
+            // horas livres de hoje arredondadas para cima × preço da hora (sem dado = a de 8 h)
+            const horas = livres != null ? Math.ceil(livres) : amp.horasDia, custo = livres != null ? horas * amp.preco1h : amp.preco8h;
+            const ml = trEhMago(voc, b), unidade = ml ? 'ML' : 'skill';
+            const impacto = trDanoDeUm(ganho, foto, b);
+            const c = trConselho('legado', 'amp-' + voc, { curto: 'ampulheta do ' + nome,
+                titulo: feito ? `${nome}: treino do dia feito (${falta === 1 ? 'falta' : 'faltam'} ${falta} de ${unidade})`
+                    : `Ampulheta no ${nome}: ${falta === 1 ? 'falta' : 'faltam'} ${falta} de ${unidade} para +${ganho} % de dano`,
+                estado: feito ? 'ok' : 'aviso', confianca: 'wiki', custo: feito ? 0 : custo, impacto,
+                porque: `${nome} com ${ml ? 'nível mágico' : 'skill'} ${l.skill} treinada; ao chegar a ${l.proxMarco}, o Legado vai de +${trNum(l.bonusAtual) || 0} % para +${l.bonusProx} % de dano dele, para sempre. `
+                    + 'O marco pode levar vários dias de ampulheta. '
+                    + (feito ? `Já usou as ${amp.horasDia} h de ampulheta de hoje.`
+                        : (livres != null ? `${trPct(livres)} h livres hoje (teto ${amp.horasDia} h por vocação). ` : '') + `${horas} h de ampulheta: ${trQtd(custo)} de ouro.`),
+                numeros: { voc, skill: l.skill, falta, proxMarco: l.proxMarco, bonusAtual: l.bonusAtual, bonusProx: l.bonusProx, ganho, livres, horas },
+                acao: feito ? null : { tipo: 'ampulheta', voc, rotulo: 'Ampulheta' } });
+            return { c, rel: falta / passo };
+        });
+        // maior impacto primeiro; empate: o marco mais perto (falta ÷ passo)
+        return lista.sort((x, y) => (y.c.impacto - x.c.impacto) || (x.rel - y.rel)).map(x => x.c);
+    }
+    TR_AGENTES.push({ id: 'legado', nome: 'Treino e Legado', icone: '⚔', rodar: trAgenteLegado });
+
+    // ── Especialista 4: Set × topo do rank (♛). Perfis visíveis do leaderboard com nível entre o meu e +150 (≥ 3).
+    //    Item que ≥ 50 % do topo veste naquela vocação/slot e eu não → 1 sugestão por vocação (a de maior frequência).
+    //    impacto 3 ESTIMADO (o especialista Melhorias/Equip dá o ganho exato). Skill principal < mediana do topo − 3 → só aviso (impacto 0).
+    function trAgenteTopo(foto, base) {
+        const b = base || TR_BASE, tp = foto.topo && typeof foto.topo === 'object' ? foto.topo : null;
+        if (!tp || trVelho(tp.idadeH)) { // idadeH ausente = não sei a idade = velho
+            // sem party nem nível (foto vazia) não há o que comparar: impacto 0
+            const temConta = (Array.isArray(foto.party) && foto.party.length > 0) || Number.isFinite(trNum(foto.nivel));
+            return [trConselho('topo', 'ler', { titulo: 'Comparar com o topo do rank', impacto: temConta ? 1 : 0,
+                porque: (!tp ? 'Ainda não li os perfis do topo do rank. ' : Number.isFinite(trNum(tp.idadeH)) ? `A leitura do topo tem ${Math.round(Number(tp.idadeH))} h. ` : 'A leitura do topo não tem data. ')
+                    + 'Ler de novo compara o seu set e as skills com quem está até 150 níveis acima.',
+                acao: { tipo: 'ler-topo', rotulo: 'Ler o topo' } })];
+        }
+        const out = [], nivel = trNum(foto.nivel), comNivel = Number.isFinite(nivel);
+        const de = comNivel ? nivel : -Infinity, ate = comNivel ? nivel + 150 : Infinity, faixa = comNivel ? `nível ${nivel}–${ate}` : 'todos os níveis';
+        const naFaixa = (x) => x && trNum(x.nivel) >= de && trNum(x.nivel) <= ate;
+        const party = trParty(foto);
+        const perfis = (Array.isArray(tp.perfis) ? tp.perfis : []).filter(p => naFaixa(p) && p.voc && typeof p.voc === 'object');
+        let itens = 0, comparados = 0;
+        if (perfis.length < 3) {
+            out.push(trConselho('topo', 'poucos', { titulo: 'Poucos perfis visíveis para comparar', impacto: 0,
+                porque: `Só ${perfis.length} perfil(is) do topo com equipamento à mostra no ${faixa}; preciso de 3.`, numeros: { n: perfis.length } }));
+        } else {
+            for (const m of party) {
+                const eq = m.eq && typeof m.eq === 'object' ? m.eq : null;
+                const deles = perfis.map(p => p.voc[m.voc]).filter(x => x && typeof x === 'object' && Object.keys(x).length);
+                // eq não lido (ausente ou sem nenhum slot com nome) não é "veste nada": não compara
+                if (!TR_SLOTS.some(sl => trPeca(eq, sl)) || deles.length < 3) continue;
+                comparados++;
+                let melhor = null;
+                for (const slot of TR_SLOTS) {
+                    const peca = trPeca(eq, slot), meu = trNome(peca && peca.nome), cont = new Map();
+                    for (const d of deles) {
+                        const k = trNome(d[slot]);
+                        if (k) cont.set(k, { nome: (cont.get(k) || {}).nome || String(d[slot]).trim(), k: ((cont.get(k) || {}).k || 0) + 1 });
+                    }
+                    for (const [k, x] of cont) if (k !== meu && x.k / deles.length >= 0.5 && (!melhor || x.k > melhor.k)) melhor = { slot, item: x.nome, k: x.k, meu: peca && peca.nome };
+                }
+                if (!melhor) continue;
+                itens++;
+                const preco = trPorNome(foto.precos, melhor.item, true), n = deles.length, nome = trVocPt(m.voc);
+                out.push(trConselho('topo', 'item-' + m.voc, { titulo: trCorta(`${nome}: o topo usa ${melhor.item} (${trSlotPt(melhor.slot)})`), curto: melhor.item,
+                    confianca: 'comunidade', impacto: 3, custo: preco > 0 ? preco : 0,
+                    porque: `${melhor.k} de ${n} perfis do topo (${faixa}) vestem ${melhor.item} como ${trSlotPt(melhor.slot)}; o ${nome} usa ${melhor.meu || 'nada'}. `
+                        + (preco > 0 ? `No Mercado ≈ ${trQtd(preco)}. ` : '') + 'A aba Melhorias diz quanto a troca rende de verdade.',
+                    numeros: { voc: m.voc, slot: melhor.slot, item: melhor.item, k: melhor.k, n, preco: preco > 0 ? preco : null },
+                    acao: { tipo: 'abrir-melhorias', voc: m.voc, slot: melhor.slot, item: melhor.item, rotulo: 'Melhorias' } }));
+            }
+        }
+        // skill principal (a do Legado) × mediana do topo na mesma faixa; ml do topo pode vir por vocação
+        const perto = (Array.isArray(tp.perto) ? tp.perto : []).filter(naFaixa);
+        const SKILL_PT = { melee: 'melee', dist: 'distância', ml: 'ML' };
+        let skills = 0, skillsVistas = 0;
+        for (const m of party) {
+            const chave = b.legado.skill[m.voc], minha = trNum(m.skills && chave ? m.skills[chave] : null);
+            if (!chave || !Number.isFinite(minha)) continue;
+            const vals = perto.map(p => { const v = p.skills ? p.skills[chave] : null; return v && typeof v === 'object' ? v[m.voc] : v; });
+            const med = trMediana(vals), n = vals.map(trNum).filter(Number.isFinite).length;
+            if (n >= 3) skillsVistas++;
+            if (n < 3 || !(minha < med - 3)) continue;
+            skills++;
+            out.push(trConselho('topo', 'skill-' + m.voc, { titulo: `${trVocPt(m.voc)}: ${SKILL_PT[chave]} ${minha} × ${trPct(med)} no topo`, impacto: 0, confianca: 'comunidade',
+                porque: `Mediana de ${n} jogadores do topo (${faixa}): ${trPct(med)}. A skill treinada vira dano para sempre pelo Legado — veja o especialista "Treino e Legado".`,
+                numeros: { voc: m.voc, skill: chave, minha, mediana: med, n } }));
+        }
+        if (comparados > 0 && !itens && !skills) { // "bate" só com pelo menos 1 set de verdade comparado
+            out.push(trConselho('topo', 'ok', { titulo: 'Seu set bate com o do topo', estado: 'ok', confianca: 'comunidade',
+                porque: `Nenhum item que ≥ 50 % dos ${perfis.length} perfis do topo (${faixa}) vestem falta no seu set`
+                    + (skillsVistas ? ', e as skills principais estão perto da mediana.' : '.') }));
+        }
+        return out;
+    }
+    TR_AGENTES.push({ id: 'topo', nome: 'Set × topo do rank', icone: '♛', rodar: trAgenteTopo });
+
+    // ── Especialista 5: Onde estou errando (⚠). Uma regra = um conselho; estado 'erro' quando custa XP agora.
+    //    Mortes 24 h · ouro acabando · slot vazio · encaixe de imbuement livre · régua "ficar forte" · XP caiu no mapa · mochila de chaves cheia.
+    function trAgenteErros(foto, base) {
+        const b = base || TR_BASE, out = [], hunt = foto.hunt || null, ma = foto.medidoAtual || null, xpH = trXpAtual(foto);
+        const party = trParty(foto);
+        // 1) Mortes (EVENTOS) nas últimas 24 h: dispara a regra. O impacto é a régua única trImpactoMorte (ritmo de 7 dias, bênçãos de agora,
+        //    teto 50); sem xpTotal ou XP/h → 3 (estimado).
+        const eventos = trEventosMorte(foto, b, 1);
+        if (eventos.length) {
+            const n = eventos.length, quem = [...new Set(eventos.flatMap(e => e.vocs))];
+            // "party inteira" = algum EVENTO com as 4 vocações (não a soma de eventos separados)
+            const todos = eventos.some(e => Object.keys(TR_VOC_PT).every(v => e.vocs.includes(v)));
+            const porMapa = {};
+            for (const e of eventos) {
+                const k = e.hunt || (hunt && trMesmoId(e.huntId, hunt.id) ? hunt.title : null);
+                if (k) porMapa[k] = (porMapa[k] || 0) + 1;
+            }
+            const mapas = Object.keys(porMapa).sort((x, y) => porMapa[y] - porMapa[x]);
+            const tem = foto.bencaos && Number.isFinite(trNum(foto.bencaos.tem)) ? Number(foto.bencaos.tem) : 0;
+            const im = trImpactoMorte(foto, b, tem), conta = im.impacto != null, cortado = conta && im.bruto > im.impacto;
+            out.push(trConselho('erros', 'mortes', { estado: 'erro', confianca: conta ? 'wiki' : 'estimado', impacto: conta ? im.impacto : 3,
+                titulo: trCorta(`${n} ${n > 1 ? 'mortes' : 'morte'}` + (todos ? ' (party inteira)' : quem.length ? ` (${quem.map(trVocPt).join(', ')})` : '')
+                    + (mapas.length === 1 ? ` em ${mapas[0]}` : mapas.length > 1 ? ` em ${mapas.length} mapas` : '')),
+                porque: 'Cada morte encerra a caçada' + (im.perda != null ? ` e leva ≈ ${trQtd(im.perda)} de XP (com ${tem} de ${b.bencaos.n} bênçãos)` : '')
+                    + (conta ? `. No ritmo de ${trPct(im.ritmo * 7)} em 7 dias, isso é ${trPct(im.bruto)} % de um dia de XP` + (cortado ? ` (teto ${b.morte.tetoImpacto} no ranking)` : '') : '')
+                    + `. ${mapas.length > 1 ? 'Mapas: ' + mapas.map(k => `${k} (${porMapa[k]})`).join(', ') + '. ' : ''}O "Aguentar" mostra o que matou.`,
+                numeros: { n, vocs: quem, mapas: porMapa, perda: im.perda, xpH, bencaos: tem, ritmo: im.ritmo, impactoBruto: im.bruto },
+                acao: { tipo: 'abrir-aguentar', rotulo: 'Aguentar' } }));
+        }
+        // 2) Ouro acabando: caçada com saldo/h negativo (≥ 5 min medidos) e ouro livre para menos de 3 h. Fato medido, impacto 10.
+        const ouroH = ma ? trNum(ma.ouroH) : NaN, livre = trNum(foto.ouroLivre);
+        if (ma && trNum(ma.min) >= 5 && ouroH < 0 && Number.isFinite(livre) && livre < 3 * -ouroH) {
+            const horas = Math.max(0, livre) / -ouroH;
+            out.push(trConselho('erros', 'ouro', { titulo: `O ouro acaba em ${trPct(horas)} h nesta caçada`, estado: 'erro', impacto: 10, confianca: 'medido',
+                porque: `A caçada gasta ${trQtd(-ouroH)} de ouro por hora e sobram ${trQtd(livre)} livres. Sem ouro as poções param e o grupo morre: baixe o gasto (magias/poções) ou troque de mapa.`,
+                numeros: { ouroH, ouroLivre: livre, horas },
+                acao: { tipo: 'abrir-magia', rotulo: 'Magia' } }));
+        }
+        // 3) Slot vazio (escudo só com arma de 1 mão; munição só com arma que gasta munição). Fato da foto: confiança medido, impacto 5.
+        //    Equipamento não lido (nenhum slot com nome) não opina.
+        // 4) Encaixes de imbuement livres em peça vestida (somados num aviso só).
+        let livres = 0, comEq = 0;
+        const comSlot = new Set(); // vocações com slot vazio já apontado (o item 'arma' da régua não repete)
+        const ondeImbu = [];
+        for (const m of party) {
+            const eq = m.eq && typeof m.eq === 'object' ? m.eq : null, tem = (s) => !!trPeca(eq, s);
+            if (!TR_SLOTS.some(tem)) continue;
+            comEq++;
+            const arma = trPeca(eq, 'weapon');
+            const faltam = TR_SLOTS.filter(s => !tem(s) && (b.equip.obrigatorios.includes(s)
+                || (s === 'shield' && arma && !trDuasMaos(arma, b)) || (s === 'ammo' && trUsaMunicao(arma, b))));
+            if (faltam.length) {
+                comSlot.add(m.voc);
+                const nome = trVocPt(m.voc);
+                out.push(trConselho('erros', 'slot-' + m.voc, { titulo: trCorta(`${nome} sem ${trLista(faltam.map(trSlotPt))}`), estado: 'erro', impacto: 5, confianca: 'medido',
+                    porque: `Slot vazio é atributo que não existe: qualquer peça do depósito ou do Mercado já rende mais que nada. A aba Equip escolhe a melhor para o ${nome}.`,
+                    numeros: { voc: m.voc, slots: faltam },
+                    acao: { tipo: 'abrir-equip', voc: m.voc, rotulo: 'Equip' } }));
+            }
+            for (const s of TR_SLOTS) {
+                if (!tem(s)) continue;
+                const p = eq[s], cabe = trNum(p.imbuSlots), usados = Array.isArray(p.imbu) ? p.imbu.filter(Boolean).length : 0;
+                if (cabe > usados) { livres += cabe - usados; ondeImbu.push(`${trVocPt(m.voc)}: ${trSlotPt(s)}`); }
+            }
+        }
+        if (livres > 0) {
+            out.push(trConselho('erros', 'imbu', { titulo: `${livres} ${livres > 1 ? 'encaixes' : 'encaixe'} de imbuement ${livres > 1 ? 'livres' : 'livre'}`, impacto: 2,
+                porque: `Encaixe vazio em ${ondeImbu.join(', ')}. A comunidade usa Void (mana) e Strike (crítico); cada carga dura ${b.imbuements.horasCarga} h de caçada. O "Aguentar" diz o que pôr em cada um.`,
+                numeros: { n: livres, onde: ondeImbu },
+                acao: { tipo: 'abrir-aguentar', rotulo: 'Aguentar' } }));
+        }
+        // 5) Régua "ficar forte" da comunidade (mlChecklist): o 1º item falho de cada vocação, até 3.
+        //    Pulados (o mesmo conselho já sai em outro lugar), passando ao próximo item falho: 'arma-refino' sempre (a Forja cuida);
+        //    'imbu' com aviso de encaixe livre; 'arma' com slot vazio já apontado; 'potencia' com base boa parada na Forja.
+        const ck = foto.checklist && typeof foto.checklist === 'object' ? foto.checklist : null;
+        let nCheck = 0;
+        const basesParadas = !!(foto.forja && Array.isArray(foto.forja.basesParadas) && foto.forja.basesParadas.length);
+        for (const voc of ck ? Object.keys(ck) : []) {
+            const pula = (x) => x.chave === 'arma-refino' || (x.chave === 'imbu' && livres > 0) || (x.chave === 'arma' && comSlot.has(voc)) || (x.chave === 'potencia' && basesParadas);
+            const it = nCheck < 3 && Array.isArray(ck[voc]) ? ck[voc].find(x => x && x.ok === false && !pula(x)) : null;
+            if (!it) continue;
+            nCheck++;
+            out.push(trConselho('erros', 'check-' + voc, { titulo: trCorta(`${trVocPt(voc)}: ${it.titulo || it.chave || 'item da régua da comunidade'}`), impacto: 2, confianca: 'comunidade',
+                porque: (it.texto ? it.texto + '. ' : '') + 'Régua "ficar forte" da comunidade (aba Melhorias).',
+                numeros: { voc, chave: it.chave || null },
+                acao: { tipo: 'abrir-melhorias', voc, rotulo: 'Melhorias' } }));
+        }
+        // 6) XP/h de agora < 70 % da melhor sessão do MESMO mapa (≥ 2 sessões de ≥ 5 min; medida de agora com ≥ 5 min, se houver).
+        //    impacto = queda × 0,5 (estimado). Sessão curta não vale como "melhor" (XP/h de 3 min é ruído).
+        const curta = ma && trNum(ma.xpH) > 0 && trNum(ma.min) < 5;
+        let sessoesVistas = false;
+        if (hunt && xpH > 0 && !curta) {
+            const daqui = (Array.isArray(foto.sessoes) ? foto.sessoes : []).filter(s => s && trMesmoId(s.huntId, hunt.id) && trNum(s.xpH) > 0 && trNum(s.durMin) >= 5);
+            sessoesVistas = daqui.length >= 2;
+            const melhor = daqui.length >= 2 ? Math.max(...daqui.map(s => Number(s.xpH))) : 0;
+            if (melhor > 0 && xpH < 0.7 * melhor) {
+                const queda = Math.round((1 - xpH / melhor) * 100);
+                out.push(trConselho('erros', 'xp-caiu', { titulo: `XP caiu ${queda} % neste mapa (setup/lure?)`, impacto: queda * 0.5,
+                    porque: `Agora ${trQtd(xpH)} XP/h; a melhor das ${daqui.length} sessões em ${hunt.title || 'este mapa'} fez ${trQtd(melhor)}. Confira a barra de magias, a lure e quem trocou de equipamento.`,
+                    numeros: { xpH, melhor, queda, n: daqui.length },
+                    acao: { tipo: 'abrir-magia', rotulo: 'Magia' } }));
+            }
+        }
+        // 7) Mochila de chaves cheia: a próxima chave que cair na caçada some (wiki/chaves-e-caixas).
+        const ch = foto.chaves && typeof foto.chaves === 'object' ? foto.chaves : null;
+        if (ch && trNum(ch.max) > 0 && trNum(ch.usadas) >= Number(ch.max)) {
+            out.push(trConselho('erros', 'chaves', { titulo: 'Mochila de chaves cheia: a próxima chave se perde', estado: 'erro', impacto: 2, confianca: 'medido',
+                porque: `${ch.usadas}/${ch.max} chaves. Use as chaves nos Elites (sweep) ou guarde as extras no depósito.`,
+                numeros: { usadas: Number(ch.usadas), max: Number(ch.max) },
+                acao: { tipo: 'abrir-elite', rotulo: 'Elites' } }));
+        }
+        if (!out.length) { // o "ok" só afirma o que foi conferido de verdade
+            const conferi = [];
+            if (trNum(foto.t) > 0 && Array.isArray(foto.mortes)) conferi.push('nenhuma morte em 24 h');
+            if (ma && trNum(ma.min) >= 5 && Number.isFinite(ouroH) && Number.isFinite(livre)) conferi.push('o ouro dá para a caçada');
+            if (comEq) conferi.push('slots e encaixes de imbuement cheios');
+            if (ck) conferi.push('régua da comunidade em dia');
+            if (sessoesVistas) conferi.push('XP/h no nível das suas sessões');
+            if (ch && trNum(ch.max) > 0) conferi.push('mochila de chaves com vaga');
+            out.push(trConselho('erros', 'ok', { titulo: conferi.length ? 'Nenhum erro visível' : 'Nada a apontar com os dados lidos', estado: 'ok',
+                porque: conferi.length ? 'Conferi: ' + trLista(conferi) + '.' : 'Ainda faltam dados (mortes, caçada medida, equipamento) para conferir.' }));
+        }
+        return out;
+    }
+    TR_AGENTES.push({ id: 'erros', nome: 'Onde estou errando', icone: '⚠', rodar: trAgenteErros });
+
+    // ── Especialista 6: Boss e Elite (☗). Chaves de Elite paradas, tentativas de boss já no depósito e a Invasão do dia.
+    //    Impactos ESTIMADOS (o ganho é base de forja/fragmento, não XP direta): sweep e luta 2, juntar e Invasão 1.
+    function trAgenteBoss(foto, base) {
+        const b = base || TR_BASE, out = [], nivel = trNum(foto.nivel);
+        // 1) Chaves de Elite: cada uma abre um Elite (caixa + base de forja da faixa de Elite). Até 3, as de mais chaves primeiro.
+        const ch = foto.chaves && typeof foto.chaves === 'object' ? foto.chaves : null;
+        const elites = (ch && Array.isArray(ch.elites) ? ch.elites : []).filter(e => e && e.nome && trNum(e.qtd) > 0)
+            .sort((x, y) => Number(y.qtd) - Number(x.qtd)).slice(0, 3);
+        const [bMin, bMax] = b.purificacao.elite.base;
+        for (const e of elites) {
+            const q = Number(e.qtd);
+            out.push(trConselho('boss', 'elite-' + e.nome, { titulo: trCorta(`Usar ${q} ${q > 1 ? 'chaves' : 'chave'} de ${e.nome} (sweep)`), impacto: 2,
+                porque: `Cada chave abre um Elite: caixa + peça de base ${bMin}–${bMax} de potência para a forja. O sweep gasta várias de uma vez (até ${b.chaves.sweepMax}).`,
+                numeros: { elite: e.nome, qtd: q },
+                acao: { tipo: 'abrir-elite', elite: e.nome, rotulo: 'Elites' } }));
+        }
+        // 2) Bosses do nível (Rec ≤ nível + 20, ou sem Rec), com a ilha aberta: tentativas = min(⌊depósito ÷ qtd⌋) entre os itens pedidos.
+        //    Sem tentativa: 1 só "Juntar" para o boss mais perto de fechar (só se já tem algum item; o "onde" vai no porquê).
+        let juntar = null;
+        for (const bo of b.bosses || []) {
+            if (!(bo.rec == null || bo.rec <= nivel + 20) || trIlhaFechada(foto, b, bo.ilha)) continue;
+            const itens = (bo.tentativa || []).filter(x => x && x.item && trNum(x.qtd) > 0)
+                .map(x => ({ item: x.item, qtd: Number(x.qtd), tem: trPorNome(foto.deposito, x.item) || 0 }));
+            if (!itens.length) continue;
+            const k = Math.min(...itens.map(x => Math.floor(x.tem / x.qtd)));
+            if (k >= 1) {
+                out.push(trConselho('boss', 'lutar-' + bo.nome, { titulo: trCorta(`Pode lutar ${bo.nome} ${k} ${k > 1 ? 'vezes' : 'vez'}`), impacto: 2,
+                    porque: `Por luta: ${itens.map(x => `${x.qtd} ${x.item}`).join(' + ')} (troca no Silas, na cidade). Cai: ${bo.drops}.` + (b.bossDicas && b.bossDicas.autoBoss ? ` Dica: ${b.bossDicas.autoBoss}.` : ''),
+                    numeros: { boss: bo.nome, qtd: k, rec: bo.rec ?? null, vida: bo.vida },
+                    acao: Object.assign({ tipo: 'boss-trocar', boss: bo.nome }, bo.nomeJogo ? { nomeJogo: bo.nomeJogo } : {}, { qtd: k, rotulo: 'Trocar tentativa' }) }));
+                continue;
+            }
+            const perto = Math.min(...itens.map(x => Math.min(1, x.tem / x.qtd)));
+            if (bo.vale && itens.some(x => x.tem > 0) && (!juntar || perto > juntar.perto)) juntar = { bo, itens, perto };
+        }
+        if (juntar) {
+            const { bo, itens } = juntar, falta = itens.filter(x => x.tem < x.qtd);
+            out.push(trConselho('boss', 'juntar-' + bo.nome, { titulo: trCorta(`Juntar ${trLista(falta.map(x => `${x.item} (${x.tem}/${x.qtd})`))} para ${bo.nome}`), impacto: 1,
+                porque: `Onde cai: ${bo.onde}. Vale por: ${bo.vale}.`,
+                numeros: { boss: bo.nome, itens, onde: bo.onde } }));
+        }
+        // 3) Invasão: diária e grátis; o dano no boss vira tokens (Ravena troca por refine T2).
+        if (foto.invasao && foto.invasao.inscrito === false) {
+            const r = b.invasao.ravena.refineT2;
+            out.push(trConselho('boss', 'invasao', { titulo: 'Inscrever na Invasão (fragmento T2 grátis)', impacto: 1, confianca: 'wiki',
+                porque: `Grátis: ${b.invasao.dica}. A posição no dano dá tokens; ${r.tokens} tokens = ${r.qtd} refine T2 na Ravena.`,
+                numeros: { proxima: foto.invasao.proxima ?? null },
+                acao: { tipo: 'invasao', rotulo: 'Inscrever' } }));
+        }
+        if (!out.length) {
+            out.push(trConselho('boss', 'ok', { titulo: 'Nada parado em Elite, boss ou Invasão', estado: 'ok',
+                porque: 'Sem chave de Elite guardada, sem tentativa de boss completa no depósito e a Invasão do dia em dia.' }));
+        }
+        return out;
+    }
+    TR_AGENTES.push({ id: 'boss', nome: 'Boss e Elite', icone: '☗', rodar: trAgenteBoss });
+
+    // ── Especialista 7: Bestiário (☰). foto.bestiario = o próximo marco de cada caçada (pgLinhasBestiario): { huntId, title, bonus, ganho, falta, horas, xpH }.
+    //    Só bônus de base.bestiarioPrioridade, com horas conhecidas (abates/h medidos) e num mapa que rende ≥ 80 % da XP/h de agora.
+    //    impacto ESTIMADO por bônus, ÷ max(1, horas ÷ 10) (o que fecha logo vale mais):
+    //      dano (ML/ataque/corpo a corpo/distância): cada +1 ≈ +3 % de dano do GRUPO (estimado; o bônus do bestiário vale para a party) × ganho,
+    //        convertido por trDanoParaXp (limitada por spawn → 0);
+    //      regen. de mana: +3 vale 1 (o marco típico é +3; impacto = ganho ÷ 3) · vida máx. 1 · armadura/escudo 0,5 (fixos).
+    //    XP/h do mapa (ou a de agora) desconhecida → entra como 'estimado' e com metade do impacto. Até 2 conselhos.
+    //    Mapa atual: ≤ 10 h → ok "já fechando"; > 10 h → aviso de impacto 0 ("é só continuar": não é um passo).
+    const TR_BONUS_PT = { magicLevel: 'ML', attack: 'ataque', melee: 'corpo a corpo', distance: 'distância', manaRegen: 'regen. de mana',
+                          maxHealth: 'vida máx.', armor: 'armadura', shielding: 'escudo' };
+    const TR_BONUS_DANO = ['magicLevel', 'attack', 'melee', 'distance'], TR_BONUS_DANO_PCT = 3; // estimado: +1 do bestiário ≈ +3 % de dano do grupo
+    function trImpactoBonus(bonus, ganho, foto, base) {
+        const g = trNum(ganho) > 0 ? Number(ganho) : 1;
+        if (TR_BONUS_DANO.includes(bonus)) return trDanoParaXp(TR_BONUS_DANO_PCT * g, foto, base);
+        return bonus === 'manaRegen' ? g / 3 : bonus === 'maxHealth' ? 1 : 0.5;
+    }
+    const trBonusPt = (k) => TR_BONUS_PT[k] || String(k || '?');
+    const trHorasPt = (h) => (h < 10 ? trPct(h) : String(Math.round(h))); // 8 → '8' · 2,46 → '2,5' · 29,6 → '30'
+    function trAgenteBestiario(foto, base) {
+        const b = base || TR_BASE, pri = b.bestiarioPrioridade || [], hunt = foto.hunt || null, xpAtual = trXpAtual(foto);
+        const out = [], cand = [];
+        for (const r of Array.isArray(foto.bestiario) ? foto.bestiario : []) {
+            if (!r || !pri.includes(r.bonus) || !(trNum(r.horas) >= 0)) continue;
+            const horas = Number(r.horas), xpH = trNum(r.xpH) > 0 ? Number(r.xpH) : null, aqui = !!hunt && trMesmoId(r.huntId, hunt.id);
+            const marco = `${trBonusPt(r.bonus)} +${trNum(r.ganho) > 0 ? Number(r.ganho) : '?'}`, mapa = r.title || (aqui && hunt.title) || 'outro mapa';
+            const numeros = { huntId: r.huntId ?? null, bonus: r.bonus, ganho: trNum(r.ganho) || null, falta: trNum(r.falta) || null, horas, xpH, xpAtual };
+            if (aqui && horas <= 10) {
+                out.push(trConselho('best', 'aqui', { titulo: trCortaSufixo(`Já fechando ${marco} aqui`, ` (~${trHorasPt(horas)} h)`), estado: 'ok', confianca: 'medido', numeros,
+                    porque: `Faltam ${trQtd(r.falta)} abates em ${mapa}: no seu ritmo, ~${trHorasPt(horas)} h. O bônus fica para sempre.` }));
+                continue;
+            }
+            const compara = aqui || (xpH != null && xpAtual != null);
+            if (compara && !aqui && xpH < 0.8 * xpAtual) continue; // trocar de mapa por bônus não pode custar mais de 20 % de XP/h
+            const imp = aqui ? 0 : trImpactoBonus(r.bonus, r.ganho, foto, b) / Math.max(1, horas / 10) * (compara ? 1 : 0.5);
+            if (!aqui && !(imp > 0)) continue; // não vira XP agora (ex.: bônus de dano numa caçada limitada por spawn)
+            (aqui ? out : cand).push(trConselho('best', 'marco-' + (r.huntId ?? mapa), { titulo: trCortaSufixo(`Fechar ${marco} em ${mapa}`, ` (~${trHorasPt(horas)} h)`), impacto: imp,
+                confianca: compara ? 'wiki' : 'estimado', numeros,
+                porque: `Faltam ${trQtd(r.falta)} abates (~${trHorasPt(horas)} h no ritmo medido) para ${marco} permanente para a party. `
+                    + (aqui ? 'Você já caça aqui: é só continuar.'
+                        : compara ? `${mapa} rende ${trQtd(xpH)} XP/h contra ${trQtd(xpAtual)} agora.` : 'Sem XP/h medida para comparar com a de agora: meça antes de ficar.'),
+                acao: aqui ? null : { tipo: 'ir-mapa', huntId: r.huntId, rotulo: 'Ir para ' + mapa } }));
+        }
+        out.push(...cand.sort((x, y) => y.impacto - x.impacto).slice(0, 2));
+        if (!out.length) {
+            out.push(trConselho('best', 'ok', { titulo: 'Sem marco de bestiário que valha agora', estado: 'ok',
+                porque: (Array.isArray(foto.bestiario) && foto.bestiario.length ? 'Nenhum marco aberto de bônus útil fecha num mapa com XP/h perto da de agora.'
+                    : 'Sem marcos de bestiário lidos (abra a Rotina ▸ Bestiário).') }));
+        }
+        return out;
+    }
+    TR_AGENTES.push({ id: 'best', nome: 'Bestiário', icone: '☰', rodar: trAgenteBestiario });
+
+    // ── Especialista 8: Caçar itens (⌕). A ilha a abrir é a ALVO (trIlhaAlvo — a mesma do "Onde upar"): mapa medido de ilha fechada
+    //    que rende mais, ou a de caçada acima da de agora (Rec ≤ nível + 20) com menos materiais sem preço e menor custo.
+    //    Material: falta = qtd − depósito; com preço → comprar; sem preço → caçar (o "onde" vem de base.ilhas[].materiais).
+    //    impacto 5 ESTIMADO (o "Onde upar" diz quanto a caçada da ilha rende; o chefe junta os dois por numeros.dedupe 'ilha:<id>').
+    //    custo = ouro da ilha + só a parte com preço.
+    function trAgenteItens(foto, base) {
+        const b = base || TR_BASE, nivel = trNum(foto.nivel), recAtual = trRecDe(foto.hunt, b) || 0;
+        const alvo = trIlhaAlvo(foto, b), il = alvo ? (b.ilhas || []).find(x => x.id === alvo.ilha) || null : null;
+        if (!il) {
+            const leu = Number.isFinite(nivel) && Array.isArray(foto.ilhas) && foto.ilhas.length > 0;
+            return [trConselho('itens', 'ok', { titulo: leu ? 'Nenhuma ilha a abrir no seu nível agora' : 'Nada a apontar com os dados lidos', estado: 'ok',
+                porque: leu ? `Nenhuma ilha fechada tem caçada até o nível ${nivel + 20} acima da de agora.` : 'Sem o nível ou a lista de ilhas abertas para conferir.' })];
+        }
+        const { mats, custo } = alvo, abre = alvo.abre.map(t => [t, { rec: trRecDe({ title: t }, b) }]), ouro = il.ouro || 0, ouroTxt = ouro ? `${trQtd(ouro)} de ouro` : null;
+        // título: o ouro sempre visível; materiais por extenso enquanto cabem, o resto vira "+ N itens"
+        let titulo = `Abrir ${il.nome}: ${ouroTxt || 'entrega'} no Silas`;
+        for (let k = mats.length; mats.length && k >= 0; k--) {
+            const resto = mats.length - k;
+            titulo = `Abrir ${il.nome}: faltam ` + [ouroTxt, ...mats.slice(0, k).map(m => `${m.falta} ${m.nome}`), resto ? `${resto} ${resto > 1 ? 'itens' : 'item'}` : null].filter(Boolean).join(' + ');
+            if (titulo.length <= 70) break;
+        }
+        const passos = mats.map(m => (m.preco ? `Comprar ${m.falta} ${m.nome} (~${trQtd(m.falta * m.preco)})` : `Caçar ${m.nome}: ${m.onde}`));
+        return [trConselho('itens', 'ilha-' + il.id, { impacto: 5, custo, curto: 'abrir ' + il.nome,
+            titulo: trCorta(titulo),
+            porque: `${il.nome} abre ${trLista(abre.map(([t, c]) => (c.rec ? `${t} (Rec ${c.rec})` : t)))}`
+                + (alvo.medido ? `, que rende ${trQtd(alvo.xpH)} XP/h` : recAtual ? `, acima do Rec ${recAtual} de agora` : '') + '. '
+                + (passos.length ? passos.join('; ') + '. ' : 'Os materiais já estão com você. ')
+                + 'A entrega é no Silas, na cidade (conta mochila + depósito). O "Onde upar" diz quanto a caçada rende.',
+            numeros: { ilha: il.id, ouro, materiais: mats, abre: abre.map(([t]) => t), dedupe: 'ilha:' + il.id },
+            acao: !mats.length ? { tipo: 'abrir-silas', ilha: il.id, rotulo: 'Silas' }
+                : mats.every(m => m.preco) ? { tipo: 'comprar-mercado', itens: mats.map(m => ({ nome: m.nome, qtd: m.falta, preco: m.preco })), rotulo: 'Mercado' } : null })];
+    }
+    TR_AGENTES.push({ id: 'itens', nome: 'Caçar itens', icone: '⌕', rodar: trAgenteItens });
+
+    // ── Especialista 9: Forja e refino (⚒). foto.forja = { abaixo4: [{ voc, slot, nome, refino, custo }], idadeH, basesParadas: [{ nome, potencia }] } | null.
+    //    Refino até forja.refinoSeguroAte (+4) não tem risco (wiki/forja). Sem abaixo4, as peças vêm de party[].eq (custo não calculado).
+    //    impacto: arma de Cavaleiro/Paladino = trDanoDeUm((4 − r) ÷ ataque × 100) (+1 de ataque por refino; ataque
+    //    ausente = 50); elmo/armadura/escudo/calça/bota 0,5 (estimado); arma de mago fica de fora (o refino dela só dá potência).
+    //    Até 3, por impacto ÷ custo (sem custo, depois, pelo impacto). Cálculo velho (> 24 h ou sem data) → "Recalcular a Forja".
+    const TR_REFINO_IMPACTO = { head: 0.5, armor: 0.5, shield: 0.5, legs: 0.5, boots: 0.5 };
+    function trAgenteForja(foto, base) {
+        const b = base || TR_BASE, ate = b.forja.refinoSeguroAte, out = [];
+        const fj = foto.forja && typeof foto.forja === 'object' ? foto.forja : null;
+        const party = trParty(foto);
+        const eqDe = (voc, slot) => { const m = party.find(x => x.voc === voc); return m ? trPeca(m.eq, slot) : null; };
+        let pecas = [], leu = false;
+        const fora = []; // abaixo de +4 mas fora da conta (arma de mago; anel/colar/munição): o ok não pode dizer "tudo em +4"
+        if (fj && Array.isArray(fj.abaixo4)) {
+            leu = true;
+            pecas = fj.abaixo4.filter(p => p && p.voc && p.slot && trNum(p.refino) < ate)
+                .map(p => ({ voc: p.voc, slot: p.slot, nome: p.nome || (eqDe(p.voc, p.slot) || {}).nome || trSlotPt(p.slot), refino: Number(p.refino), custo: trNum(p.custo) > 0 ? Number(p.custo) : null }));
+        } else {
+            for (const m of party) {
+                for (const slot of TR_SLOTS) {
+                    const p = trPeca(m.eq, slot);
+                    if (!p || !Number.isFinite(trNum(p.refino))) continue;
+                    leu = true;
+                    if (Number(p.refino) < ate) pecas.push({ voc: m.voc, slot, nome: p.nome, refino: Number(p.refino), custo: null });
+                }
+            }
+        }
+        const cand = [];
+        for (const p of pecas) {
+            if (p.slot === 'weapon' && trEhMago(p.voc, b)) { fora.push(`arma de mago (${p.nome} +${p.refino}: o refino só dá potência)`); continue; }
+            if (p.slot !== 'weapon') {
+                if (TR_REFINO_IMPACTO[p.slot]) cand.push(Object.assign({}, p, { imp: TR_REFINO_IMPACTO[p.slot] }));
+                else fora.push(`${trSlotPt(p.slot)} (${p.nome} +${p.refino})`);
+                continue;
+            }
+            const w = eqDe(p.voc, 'weapon'), atk = trNum(w && w.ataque) > 0 ? Number(w.ataque) : 50, danoPct = (ate - p.refino) / atk * 100;
+            cand.push(Object.assign({}, p, { atk, danoPct, imp: trDanoDeUm(danoPct, foto, b) }));
+        }
+        cand.sort((x, y) => ((y.custo > 0) - (x.custo > 0)) || (x.custo > 0 ? y.imp / y.custo - x.imp / x.custo : y.imp - x.imp));
+        for (const p of cand.slice(0, 3)) {
+            const nome = trVocPt(p.voc), arma = p.slot === 'weapon';
+            out.push(trConselho('forja', `refino-${p.voc}-${p.slot}`, { confianca: 'wiki', custo: p.custo || 0, impacto: p.imp, curto: 'refino ' + p.nome,
+                titulo: trCortaSufixo(`Refinar ${p.nome} +${p.refino} → +${ate}`, ` (${p.custo ? '~' + trQtd(p.custo) + ', ' : ''}sem risco)`),
+                porque: `${p.nome} (${trSlotPt(p.slot)} do ${nome}): até +${ate} o refino não falha. `
+                    + (arma ? `Cada refino soma 1 de ataque: +${ate - p.refino} sobre ${p.atk} ≈ +${trPct(p.danoPct)} % de dano do ${nome}`
+                        + (p.imp > 0 ? '. ' : ', mas a caçada está limitada por spawn: não vira XP agora. ')
+                        : `Refino em ${trSlotPt(p.slot)} soma defesa e +${b.forja.potPorRefino} de potência por nível. `)
+                    + (p.custo ? `Custo ≈ ${trQtd(p.custo)}.` : 'Sem preço: custo não calculado (a aba Forja calcula).'),
+                numeros: { voc: p.voc, slot: p.slot, nome: p.nome, refino: p.refino, ate, custo: p.custo },
+                acao: { tipo: 'abrir-forja', voc: p.voc, slot: p.slot, rotulo: 'Forja' } }));
+        }
+        if (leu && !cand.length) {
+            // "já em +4" só quando nada ficou abaixo de +4; senão o ok fala só dos slots que a conta trata (arma e defesa)
+            out.push(trConselho('forja', 'ok', { titulo: fora.length ? `Refino que rende XP já em +${ate}` : `Peças vestidas já em +${ate}`, estado: 'ok', confianca: 'medido',
+                porque: fora.length ? `Arma (Cavaleiro/Paladino), elmo, armadura, escudo, calça e bota em +${ate}. Fora da conta, abaixo de +${ate}: ${trLista(fora)}.`
+                    : `Nenhuma peça vestida abaixo de +${ate}.` }));
+        }
+        // cálculo velho: idadeH ausente = sem data = velho (mesma regra do topo)
+        if (!fj || trVelho(fj.idadeH)) {
+            const temConta = party.length > 0 || Number.isFinite(trNum(foto.nivel));
+            out.push(trConselho('forja', 'ler', { titulo: 'Recalcular a Forja', impacto: temConta ? 0.5 : 0,
+                porque: (!fj ? 'A Forja ainda não foi calculada. ' : Number.isFinite(trNum(fj.idadeH)) ? `O cálculo da Forja tem ${Math.round(Number(fj.idadeH))} h. ` : 'O cálculo da Forja não tem data. ')
+                    + 'Recalcular lê o custo de cada refino e as bases boas do depósito.',
+                acao: { tipo: 'forja-ler', rotulo: 'Recalcular' } }));
+        }
+        // base boa parada no depósito: só a de maior potência vira aviso
+        const bases = (fj && Array.isArray(fj.basesParadas) ? fj.basesParadas : []).filter(x => x && x.nome && trNum(x.potencia) >= b.forja.potBase)
+            .sort((x, y) => Number(y.potencia) - Number(x.potencia));
+        if (bases.length) {
+            const x = bases[0], pot = Number(x.potencia);
+            out.push(trConselho('forja', 'base', { titulo: trCorta(`Base boa parada: ${x.nome} (pot. ${pot})`), impacto: 1, confianca: 'comunidade',
+                porque: `Potência ${pot} ≥ ${b.forja.potBase} (base boa; meta ${b.forja.potMeta}). Regra: ${b.forja.regra}.`
+                    + (bases.length > 1 ? ` Há mais ${bases.length - 1}: ${bases.slice(1, 4).map(y => `${y.nome} (${y.potencia})`).join(', ')}.` : ''),
+                numeros: { nome: x.nome, potencia: pot, n: bases.length },
+                acao: { tipo: 'abrir-forja', item: x.nome, rotulo: 'Forja' } }));
+        }
+        return out;
+    }
+    TR_AGENTES.push({ id: 'forja', nome: 'Forja e refino', icone: '⚒', rodar: trAgenteForja });
+
+    // ── Especialista 10: Dinheiro ($) — FASE 2: recebe em `todos` os conselhos da fase 1. foto.ouroLivre vem da FOTO
+    //    (ouro − 3 × gasto/h da caçada − bênçãos que faltam). Escolhe guloso, dentro do ouro livre, os passos com custo > 0,
+    //    pela ordem (impacto × peso da confiança) ÷ custo EFETIVO (trCustoEfetivo: custo + 3 × custoH). Com a caçada dando prejuízo
+    //    (medidoAtual.ouroH < 0), nada que tem custo por hora entra. O resumo vale 0,1 × a soma dos impactos escolhidos: é um lembrete,
+    //    não pode passar à frente dos próprios passos; no título vai o rótulo curto (conselho.curto, senão o título).
+    //    O melhor que não coube → "Juntar para" (impacto 0; falta = custo − o que sobra). Ouro livre ≤ 0: se o Erros já avisou que o ouro
+    //    acaba (erros:ouro), não repete; erro só com a caçada no prejuízo medido (≥ 5 min); senão é aviso (impacto 0).
+    function trAgenteDinheiro(foto, base, todos) {
+        const livre = trNum(foto.ouroLivre), lista = Array.isArray(todos) ? todos : [], ma = foto.medidoAtual || null;
+        const prejuizo = !!ma && trNum(ma.min) >= 5 && trNum(ma.ouroH) < 0;
+        if (!Number.isFinite(livre)) {
+            return [trConselho('ouro', 'livre', { titulo: 'Ouro livre desconhecido', impacto: 0,
+                porque: 'Sem o ouro e o gasto/h da caçada não dá para planejar compras.' })];
+        }
+        if (livre <= 0) {
+            if (lista.some(c => c && c.id === 'erros:ouro')) return [];
+            return [prejuizo
+                ? trConselho('ouro', 'nao-gaste', { titulo: 'Não gaste: o ouro mal paga a caçada', estado: 'erro', impacto: 3, confianca: 'medido',
+                    porque: `Ouro livre ${trQtd(livre)} e a caçada dá ${trQtd(ma.ouroH)}/h: o ouro não cobre 3 h de gasto (e as bênçãos). Junte antes de comprar qualquer coisa.`,
+                    numeros: { ouroLivre: livre, ouroH: Number(ma.ouroH) } })
+                : trConselho('ouro', 'baixo', { titulo: 'Ouro baixo para comprar agora', impacto: 0,
+                    porque: `Ouro livre ${trQtd(livre)}: o ouro de agora fica de reserva para 3 h de caçada (e as bênçãos). A caçada não dá prejuízo medido; é só esperar juntar.`,
+                    numeros: { ouroLivre: livre } })];
+        }
+        const nota = (c) => Number(c.impacto) * trPeso(c.confianca) / trCustoEfetivo(c);
+        const cand = lista.filter(c => c && c.estado !== 'ok' && trNum(c.impacto) > 0 && Number.isFinite(trCustoEfetivo(c)) && trCustoEfetivo(c) > 0
+            && !(prejuizo && c.numeros && Number(c.numeros.custoH) > 0)).sort((x, y) => nota(y) - nota(x));
+        if (!cand.length) {
+            return [trConselho('ouro', 'ok', { titulo: 'Nada com custo para planejar', estado: 'ok',
+                porque: `Nenhum passo dos outros especialistas custa ouro agora (ouro livre ${trQtd(livre)})` + (prejuizo ? '; com a caçada no prejuízo, nada de custo por hora.' : '.') })];
+        }
+        const escolhidos = [], rotulo = (c) => c.curto || c.titulo;
+        let sobra = livre, fora = null;
+        for (const c of cand) {
+            const ce = trCustoEfetivo(c);
+            if (ce <= sobra) { escolhidos.push(c); sobra -= ce; } else if (!fora) fora = c;
+        }
+        const out = [], total = livre - sobra;
+        if (escolhidos.length) {
+            out.push(trConselho('ouro', 'plano', { impacto: 0.1 * escolhidos.reduce((s, c) => s + Number(c.impacto), 0),
+                titulo: trCorta(`Com ${trQtd(livre)} livres: ${escolhidos.map(rotulo).join(', ')}`),
+                porque: `Pelo ganho por ouro: ${escolhidos.map(c => `${c.titulo} (${trQtd(trCustoEfetivo(c))})`).join('; ')}. Total ${trQtd(total)}; sobram ${trQtd(sobra)}.`
+                    + (escolhidos.some(c => c.numeros && Number(c.numeros.custoH) > 0) ? ' Custo por hora conta 3 h.' : ''),
+                numeros: { escolhidos: escolhidos.map(c => c.id), total, sobra } }));
+        }
+        if (fora) {
+            const ce = trCustoEfetivo(fora), falta = ce - sobra, fim = ` (falta ${trQtd(falta)})`;
+            out.push(trConselho('ouro', 'juntar', { impacto: 0,
+                titulo: trCortaSufixo(`Juntar para: ${rotulo(fora)}`, fim),
+                porque: `${fora.titulo} custa ${trQtd(ce)}` + (escolhidos.length ? `; depois dos passos acima sobram ${trQtd(sobra)}.` : `; o ouro livre é ${trQtd(livre)}.`),
+                numeros: { id: fora.id, custo: ce, sobra, falta } }));
+        }
+        return out;
+    }
+    TR_AGENTES.push({ id: 'ouro', nome: 'Dinheiro', icone: '$', fase: 2, rodar: trAgenteDinheiro });
+    // ── Topo do rank (Task 15): /leaderboard + perfis visíveis (player_profile_result) → foto.topo. Puro: o `t` vem de fora.
+    //    leaderboard = { players: [{ name, level, skills: { melee, distance, magicSorcerer, magicDruid } }] } ou a lista (na ordem do jogo:
+    //    a posição é o índice + 1). perfis = respostas do player_profile ({ name, level, equipmentVisible, characters: [{ vocation,
+    //    equipment: { SLOT: { name, id } } }] }) ou já resumidos ({ nivel, voc }); perfil com o equipamento escondido fica de fora.
+    //    Faixa = [nivel, nivel + TR_TOPO_FAIXA] (sem nível: todos). pos = posição do `nome` (sem diferença de maiúsculas); null fora da lista.
+    //    → { pos, total, top1: { nivel } | null, perto: [{ nome, nivel, skills: { melee, dist, ml: { SORCERER, DRUID } } }],
+    //        perfis: [{ nivel, voc: { VOC: { SLOT: nomeItem } } }], t } — o formato que trAgenteTopo lê (ml do topo é por vocação).
+    const TR_TOPO_FAIXA = 150;
+    // Um perfil (resposta do player_profile ou já resumido) → { nivel, voc: { VOC: { SLOT: nomeItem } } } | null (sem peça à mostra).
+    function trResumoPerfil(p, nivel) {
+        if (!p || typeof p !== 'object' || p.equipmentVisible === false) return null;
+        const lv = trNum(nivel != null ? nivel : p.nivel != null ? p.nivel : p.level);
+        if (!Number.isFinite(lv)) return null;
+        let voc = null;
+        if (p.voc && typeof p.voc === 'object') voc = p.voc; // já resumido
+        else if (Array.isArray(p.characters)) {
+            voc = {};
+            for (const c of p.characters) {
+                if (!c || !c.vocation || !c.equipment || typeof c.equipment !== 'object') continue;
+                const eq = {};
+                for (const [slot, it] of Object.entries(c.equipment)) {
+                    const k = TR_SLOT_JOGO[slot] || slot, n = it && typeof it === 'object' ? it.name : it;
+                    if (TR_SLOTS.includes(k) && n) eq[k] = String(n);
+                }
+                if (Object.keys(eq).length) voc[c.vocation] = eq;
+            }
+        }
+        return voc && Object.keys(voc).length ? { nivel: lv, voc } : null;
+    }
+    const TR_SLOT_JOGO = { feet: 'boots', hand: 'weapon', helmet: 'head', amulet: 'necklace', quiver: 'ammo' }; // nomes do jogo → TR_SLOTS
+    function trResumirTopo(leaderboard, perfis, nivel, t, nome) {
+        const lista = (Array.isArray(leaderboard) ? leaderboard : leaderboard && Array.isArray(leaderboard.players) ? leaderboard.players : [])
+            .filter(p => p && typeof p === 'object' && Number.isFinite(trNum(p.level)));
+        const nv = trNum(nivel), comNivel = Number.isFinite(nv);
+        const naFaixa = (lv) => !comNivel || (trNum(lv) >= nv && trNum(lv) <= nv + TR_TOPO_FAIXA);
+        const eu = trNome(nome), i = eu ? lista.findIndex(p => trNome(p.name) === eu) : -1;
+        const perto = lista.filter(p => naFaixa(p.level) && !(eu && trNome(p.name) === eu)).map(p => {
+            const s = p.skills && typeof p.skills === 'object' ? p.skills : {};
+            const v = (k) => (Number.isFinite(trNum(s[k])) ? Number(s[k]) : null);
+            return { nome: p.name == null ? null : String(p.name), nivel: Number(p.level),
+                     skills: { melee: v('melee'), dist: v('distance'), ml: { SORCERER: v('magicSorcerer'), DRUID: v('magicDruid') } } };
+        });
+        const nivelDe = (p) => { const n = trNum(p.nivel != null ? p.nivel : p.level); if (Number.isFinite(n)) return n; const l = lista.find(x => trNome(x.name) === trNome(p.name)); return l ? Number(l.level) : NaN; };
+        const resumo = [];
+        for (const p of Array.isArray(perfis) ? perfis : []) {
+            if (!p || typeof p !== 'object' || p.equipmentVisible === false) continue;
+            const lv = nivelDe(p);
+            if (!Number.isFinite(lv) || !naFaixa(lv)) continue;
+            const r = trResumoPerfil(p, lv);
+            if (r) resumo.push(r);
+        }
+        return { pos: i >= 0 ? i + 1 : null, total: lista.length, top1: lista.length ? { nivel: Number(lista[0].level) } : null, perto, perfis: resumo, t: trNum(t) > 0 ? Number(t) : 0 };
+    }
+    // ── Foto (Task 14): as partes puras do trFoto/trObservar (o DOM só junta as fontes e chama estas).
+    // Ouro livre: ouro normal (total − travado) − a parte de 3 h de gasto que o travado NÃO cobre − bênçãos que faltam.
+    // O gasto de suprimento sai primeiro do ouro travado (wiki /ouro-e-ouro-travado). gastoH = 0 fora da caçada. Sem ouro → null.
+    function trOuroLivre(ouro, trav, gastoH, custoBencaos) {
+        const o = trNum(ouro);
+        if (!Number.isFinite(o)) return null;
+        const t = Math.max(0, trNum(trav) || 0), g3 = 3 * Math.max(0, trNum(gastoH) || 0), b = Math.max(0, trNum(custoBencaos) || 0);
+        return Math.round(o - t - Math.max(0, g3 - t) - b);
+    }
+    // Mapas: 1 por caçada a partir de várias fontes [{ id, xpH, fonte, origem, t (ms | null), ...resto }].
+    // Prioridade medido > comunidade > wiki > estimado; empate = a mais nova (sem t = a mais velha). Medida ('medido') mais velha que a
+    // janela (14 dias) sai — skill e set mudam; o post da comunidade tem semanas por natureza e o Radar já vem cortado em 7 dias.
+    // → [{ ...resto, id: Number, xpH (inteiro), fonte, origem, idadeH (0,1 h) | null }] (sem o `t`).
+    const TR_MAPA_PESO = { medido: 3, comunidade: 2, wiki: 1, estimado: 0 }, TR_MAPA_JANELA_DIAS = 14;
+    function trMesclarMapas(fontes, agora, janelaDias) {
+        const jan = (janelaDias || TR_MAPA_JANELA_DIAS) * TR_DIA_MS, porId = new Map();
+        for (const e of Array.isArray(fontes) ? fontes : []) {
+            if (!e || typeof e !== 'object') continue;
+            const id = trNum(e.id), xp = trNum(e.xpH), t = trNum(e.t), fonte = trConf(e.fonte);
+            if (!Number.isFinite(id) || !(xp > 0)) continue;
+            if (fonte === 'medido' && t > 0 && agora - t > jan) continue;
+            const m = Object.assign({}, e, { id, xpH: Math.round(xp), fonte, origem: e.origem || null,
+                                             idadeH: t > 0 ? Math.max(0, Math.round((agora - t) / 36e5 * 10) / 10) : null });
+            delete m.t;
+            const a = porId.get(id), pa = a ? TR_MAPA_PESO[a.fonte] : -1, pm = TR_MAPA_PESO[fonte];
+            if (!a || pm > pa || (pm === pa && (m.idadeH ?? Infinity) < (a.idadeH ?? Infinity))) porId.set(id, m);
+        }
+        return [...porId.values()];
+    }
+    // Invasão do dia: inscrito (null quando as 3 janelas de hoje já acabaram: não sei se a inscrição de amanhã abriu) e a próxima (ms)
+    function trLerInvasao(inv, agora) {
+        const prox = inv.proxima && typeof inv.proxima === 'object' ? trNum(inv.proxima.startAtMs) : NaN;
+        return { inscrito: inv.encerrada ? null : !!inv.inscrito, proxima: Number.isFinite(prox) ? prox : null, encerrada: !!inv.encerrada, t: agora };
+    }
+    // O que a foto guarda de UMA mensagem do socket (o trObservar do DOM chama com ESTADO_WS.tr). Muda `x` e o devolve.
+    //   conta (nome, nível, xp, ouro, travado, premiumAte) · bencaos · invasao · ilhas · ampulheta · selo.
+    //   Ouro: account.gold/goldLocked e QUALQUER mensagem com gold/goldLocked no 1º nível (meta_result, mercado, depósito, loja…).
+    //   Outra conta no welcome/resume (account.name diferente) zera tudo antes: o que era da conta velha não vale.
+    const trCopia = (v) => JSON.parse(JSON.stringify(v));
+    function trAnotar(x, o, agora) {
+        if (!x || typeof x !== 'object' || !o || typeof o.type !== 'string' || !o.data || typeof o.data !== 'object') return x;
+        const d = o.data, tipo = o.type, conta = () => x.conta || (x.conta = {});
+        if (tipo === 'frame') { // a cada frame: só dois números, barato
+            const st = d.state && typeof d.state === 'object' ? d.state : null, ch = st && st.character;
+            if (ch && ch.xp != null && Number.isFinite(Number(ch.xp))) conta().xp = Number(ch.xp);
+            if (ch && Number(ch.level) > 0) conta().nivel = Number(ch.level);
+            return x;
+        }
+        const a = d.account && typeof d.account === 'object' ? d.account : null;
+        if (a && a.name && x.conta && x.conta.nome && trNome(a.name) !== trNome(x.conta.nome)) for (const k of Object.keys(x)) delete x[k];
+        const meta = d.meta && typeof d.meta === 'object' ? d.meta : tipo === 'meta_state' ? d : null;
+        if (meta) {
+            if (Array.isArray(meta.blessings)) x.bencaos = { ids: meta.blessings.map(Number).filter(Number.isFinite), t: agora };
+            if (meta.invasao && typeof meta.invasao === 'object') x.invasao = trLerInvasao(meta.invasao, agora);
+        }
+        if (tipo === 'invasion_update' && d.invasao && typeof d.invasao === 'object') x.invasao = trLerInvasao(d.invasao, agora);
+        if (a) {
+            const c = conta();
+            if (a.name) c.nome = String(a.name);
+            if (Number(a.level) > 0) c.nivel = Number(a.level);
+            if (a.xp != null && Number.isFinite(Number(a.xp))) c.xp = Number(a.xp);
+            if (a.gold != null && Number.isFinite(Number(a.gold))) { c.ouro = Number(a.gold); c.tOuro = agora; }
+            if (a.goldLocked != null && Number.isFinite(Number(a.goldLocked))) c.trav = Number(a.goldLocked);
+            if ('premiumUntil' in a) c.premiumAte = a.premiumUntil || null;
+            c.t = agora;
+        }
+        if (d.gold != null && Number.isFinite(Number(d.gold))) { conta().ouro = Number(d.gold); conta().tOuro = agora; }
+        if (d.goldLocked != null && Number.isFinite(Number(d.goldLocked))) conta().trav = Number(d.goldLocked);
+        if (tipo === 'meta_result' && typeof d.premiumUntil === 'string') conta().premiumAte = d.premiumUntil;
+        if (Array.isArray(d.unlockedIslands)) x.ilhas = { lista: d.unlockedIslands.map(String), t: agora };
+        if (tipo === 'ampulheta_state' && d.vocacoes && typeof d.vocacoes === 'object') x.ampulheta = { vocacoes: trCopia(d.vocacoes), resetEm: trNum(d.resetEm), t: agora };
+        if (tipo === 'selo_state') x.selo = { ativo: d.ativo !== false, selos: Array.isArray(d.selos) ? trCopia(d.selos) : [], t: agora };
+        return x;
+    }
+    // Freio do topo (Task 15), por conta: leaderboard a cada 6 h; perfis a cada 24 h; leitura de perfis que parou antes do fim
+    // ou não leu nada (tPerfisParcial) espera só 1 h. Perfil a reler obriga a reler o leaderboard (é dele que sai a faixa). Outra conta/faixa: tudo.
+    const TR_TOPO_LB_H = 6, TR_TOPO_PERFIS_H = 24, TR_TOPO_PARCIAL_H = 1;
+    function trFreioTopo(salvo, agora, mesmaConta) {
+        if (!salvo || typeof salvo !== 'object' || !mesmaConta) return { lerLb: true, lerPerfis: true };
+        const idade = (k) => (trNum(salvo[k]) > 0 ? (agora - Number(salvo[k])) / 36e5 : Infinity);
+        const lerPerfis = !(idade('tPerfis') < TR_TOPO_PERFIS_H) && !(idade('tPerfisParcial') < TR_TOPO_PARCIAL_H);
+        return { lerLb: lerPerfis || !(idade('t') < TR_TOPO_LB_H), lerPerfis };
+    }
+    // Perfis depois de uma leitura r = { lidos, visiveis, parou, novos } (decisão do controlador, 27/11):
+    //   COMPLETA (leu algum e não parou) → só os novos, tPerfis = agora;
+    //   nada lido, ou PAROU antes do fim (cancelada, erro, sem resposta) → os novos JUNTOS com os antigos da mesma conta/faixa (`mesmaConta`),
+    //   sem repetir (o resumo não guarda nome: a chave é nível + itens), até TR_TOPO_MAX_PERFIS; tPerfis fica e tPerfisParcial = agora (1 h).
+    //   Tudo volta resumido ({ nivel, voc }), que é o que o trResumirTopo e o especialista leem.
+    const TR_TOPO_MAX_PERFIS = 25;
+    function trPerfisDepois(salvo, mesmaConta, r, agora) {
+        const velho = mesmaConta && salvo && typeof salvo === 'object' ? salvo : null;
+        const novos = (r && Array.isArray(r.novos) ? r.novos : []).map(p => trResumoPerfil(p)).filter(Boolean);
+        if (r && r.lidos > 0 && !r.parou) return { perfis: novos.slice(0, TR_TOPO_MAX_PERFIS), tPerfis: agora, tPerfisParcial: null };
+        const chave = (p) => p.nivel + '|' + JSON.stringify(Object.keys(p.voc).sort().map(v => [v, Object.keys(p.voc[v]).sort().map(sl => [sl, trNome(p.voc[v][sl])])]));
+        const vistos = new Set(), juntos = [];
+        for (const p of novos.concat((velho && Array.isArray(velho.perfis) ? velho.perfis : []).map(q => trResumoPerfil(q)).filter(Boolean))) {
+            const k = chave(p);
+            if (!vistos.has(k)) { vistos.add(k); juntos.push(p); }
+        }
+        return { perfis: juntos.slice(0, TR_TOPO_MAX_PERFIS), tPerfis: velho && trNum(velho.tPerfis) > 0 ? Number(velho.tPerfis) : null, tPerfisParcial: agora };
+    }
+    // ── UI do treinador (Task 16): partes puras da tela e dos botões (o DOM — telaTreinador/ligarTreinador — só desenha e executa).
+    // trAcaoInfo(acao, foto) → o que o botão "Fazer" faz, sem tocar no jogo:
+    //   modo 'aba' (abre uma aba do helper) · 'tela' (abre a tela do jogo pelo data-testid, nada enviado) ·
+    //   'jogo' (manda a mensagem do protocolo e espera a resposta) · 'helper' (leitura do próprio helper: Forja, topo).
+    //   dois = 2 toques (gasta ouro/coins/wildcards/itens, ou tira a party da caçada); cidade = só na cidade (Silas);
+    //   cacando = só dentro da caçada; motivo = por que o botão fica desligado agora (null = pode).
+    // Todo `acao.tipo` que os especialistas emitem TEM de estar aqui (o teste varre o código e as fotos).
+    const TR_ACAO_ROTULO = { 'ir-mapa': 'Ir', lure: 'Lure', medir: 'Medir', 'abrir-loja': 'Loja', 'prey-escolher': 'Prey aqui', 'prey-trocar': 'Sortear',
+                             'prey-trancar': 'Trancar', bencaos: 'Comprar', ampulheta: 'Ampulheta', selo: 'Selo', 'ler-topo': 'Ler o topo',
+                             'abrir-melhorias': 'Melhorias', 'abrir-equip': 'Equip', 'abrir-aguentar': 'Aguentar', 'abrir-magia': 'Magia', 'abrir-forja': 'Forja',
+                             'abrir-elite': 'Elites', 'boss-trocar': 'Trocar', invasao: 'Inscrever', 'abrir-silas': 'Abrir ilha', 'comprar-mercado': 'Comprar',
+                             'forja-ler': 'Recalcular' };
+    const TR_ACAO_ABA = { 'abrir-melhorias': 'melhorias', 'abrir-equip': 'equip', 'abrir-aguentar': 'sobreviver', 'abrir-magia': 'magia', 'abrir-forja': 'forja' };
+    // ampulheta: a COMPRA (store_buy com a oferta de rules.cash) está "a confirmar" no protocolo e o item da mochila só vem por nome
+    // (sem itemId) — o botão abre a janela de Ampulhetas do jogo (Usar/Comprar lá). abrir-loja/abrir-elite não têm mensagem: são telas.
+    const TR_ACAO_TELA = { 'abrir-loja': 'loja', 'abrir-elite': 'elite', ampulheta: 'ampulheta' };
+    function trAcaoInfo(acao, foto) {
+        if (!acao || typeof acao !== 'object' || !Object.prototype.hasOwnProperty.call(TR_ACAO_ROTULO, acao.tipo)) return null;
+        const f = foto && typeof foto === 'object' ? foto : {}, tipo = acao.tipo, b = TR_BASE;
+        const r = typeof acao.rotulo === 'string' ? acao.rotulo.trim() : '';
+        const info = { tipo, modo: 'jogo', rotulo: r && r.length <= 14 ? r : TR_ACAO_ROTULO[tipo], dois: false, cidade: false, cacando: false, motivo: null, aba: null, tela: null };
+        const o = trNum(f.ouro), normal = Number.isFinite(o) ? o - Math.max(0, trNum(f.ouroTravado) || 0) : null; // o que se gasta (o travado só paga suprimento)
+        const wc = f.prey && typeof f.prey === 'object' ? trNum(f.prey.wildcards) : NaN;
+        const emHunt = f.emHunt === true;
+        if (TR_ACAO_ABA[tipo]) return Object.assign(info, { modo: 'aba', aba: TR_ACAO_ABA[tipo] });
+        if (TR_ACAO_TELA[tipo]) return Object.assign(info, { modo: 'tela', tela: TR_ACAO_TELA[tipo] });
+        switch (tipo) {
+        case 'ler-topo': case 'forja-ler': info.modo = 'helper'; break;
+        case 'ir-mapa':
+            info.dois = emHunt; // sai da caçada de agora
+            if (acao.huntId == null) info.motivo = 'sem mapa';
+            break;
+        case 'lure':
+            info.cacando = true;
+            info.dois = true; // dono, 27/11: subir a lure aumenta o risco e o gasto por hora — 2 toques
+            if (!(trNum(acao.lure) >= 1)) info.motivo = 'lure inválida';
+            else if (!emHunt || !f.hunt || !trMesmoId(f.hunt.id, acao.huntId)) info.motivo = 'só dentro da caçada';
+            break;
+        case 'medir':
+            info.dois = true; // o Scan troca de mapa (5 min em cada)
+            if (!Array.isArray(acao.alvos) || !acao.alvos.length) info.motivo = 'sem mapa para medir';
+            break;
+        case 'prey-escolher':
+            info.dois = true;
+            if (Number.isFinite(wc) && wc < b.prey.escolherWildcards) info.motivo = `faltam wildcards (${wc}/${b.prey.escolherWildcards})`;
+            break;
+        case 'prey-trocar': {
+            const bf = f.prey && f.prey.buffs && f.prey.buffs[acao.voc];
+            info.dois = !(bf && bf.gratis === true); // 1º sorteio do dia grátis; depois 1 wildcard
+            if (info.dois && Number.isFinite(wc) && wc < 1) info.motivo = 'sem wildcard';
+            break;
+        }
+        case 'prey-trancar':
+            info.dois = true; // cada renovação de 2 h gasta 1 wildcard
+            if (Number.isFinite(wc) && wc < b.prey.travaWildcards) info.motivo = 'sem wildcard para renovar';
+            break;
+        case 'bencaos': {
+            info.dois = true;
+            const c = f.bencaos ? trNum(f.bencaos.custoFaltam) : NaN;
+            if (normal != null && c > normal) info.motivo = 'falta ouro';
+            break;
+        }
+        case 'selo':
+            info.cacando = true;
+            // com Abundante já no Selo desta caçada: liga (selo_ligar, cobra por hora); sem pacto: a tela do jogo (o pacto é sorteado
+            // e os debuffs podem matar — o dono olha antes de pagar o Rolar)
+            if (f.selo && trNum(f.selo.abundante) >= 1) info.dois = true;
+            else Object.assign(info, { modo: 'tela', tela: 'selo' });
+            if (!emHunt) info.motivo = 'só dentro da caçada';
+            break;
+        case 'boss-trocar':
+            Object.assign(info, { dois: true, cidade: true });
+            if (emHunt) info.motivo = 'só na cidade (Silas)';
+            else if (!(trNum(acao.qtd) >= 1)) info.motivo = 'nada a trocar';
+            break;
+        case 'invasao': break; // grátis
+        case 'abrir-silas': {
+            Object.assign(info, { dois: true, cidade: true });
+            const il = (b.ilhas || []).find(x => x.id === acao.ilha);
+            if (emHunt) info.motivo = 'só na cidade (Silas)';
+            else if (!il) info.motivo = 'ilha desconhecida';
+            else if (normal != null && (il.ouro || 0) > normal) info.motivo = 'falta ouro';
+            break;
+        }
+        case 'comprar-mercado': {
+            info.dois = true;
+            const itens = Array.isArray(acao.itens) ? acao.itens.filter(x => x && x.nome && trNum(x.qtd) > 0) : [];
+            const total = itens.reduce((s, x) => s + Number(x.qtd) * (trNum(x.preco) > 0 ? Number(x.preco) : 0), 0);
+            if (!itens.length) info.motivo = 'nada a comprar';
+            else if (f.premium && f.premium.ativo === false) info.motivo = 'Mercado só com Premium';
+            else if (normal != null && total > normal) info.motivo = 'falta ouro';
+            break;
+        }
+        default: break;
+        }
+        return info;
+    }
+    // Clique (revisão da Task 16): os 2 toques valem pela foto de AGORA. A tela liga o botão pela foto do cache (até 60 s); se a foto
+    // nova pede 2 toques e o clique não veio do 2º toque (confirmado), não executa: a tela redesenha com o botão de 2 toques.
+    // → { info, executa, aviso }
+    function trDecidirClique(acao, fotoNova, confirmado) {
+        const info = trAcaoInfo(acao, fotoNova);
+        if (!info) return { info: null, executa: false, aviso: 'ação desconhecida' };
+        if (info.motivo) return { info, executa: false, aviso: info.motivo };
+        if (info.dois && confirmado !== true) return { info, executa: false, aviso: 'mudou desde a tela: confirme de novo (2 toques)' };
+        return { info, executa: true, aviso: null };
+    }
+    // A resposta CONFIRMA a ação? (revisão) selo_ligar: o selo_state mostra o Selo DESTA caçada ligado; invasion_join: inscrito === true
+    // no invasion_update (data.invasao) ou no meta_result (data.meta.invasao). true = confirmou · false = respondeu sem confirmar ·
+    // null = ação sem conferência extra (vale o tipo da resposta).
+    function trRespostaConfirma(tipo, data, alvo) {
+        const d = data && typeof data === 'object' ? data : {};
+        if (tipo === 'selo_ligar') return Array.isArray(d.selos) && d.selos.some(z => z && trMesmoId(z.huntId, alvo && alvo.huntId) && z.ligado === true);
+        if (tipo === 'invasion_join') {
+            const inv = d.invasao && typeof d.invasao === 'object' ? d.invasao : d.meta && typeof d.meta === 'object' && d.meta.invasao && typeof d.meta.invasao === 'object' ? d.meta.invasao : null;
+            return !!inv && inv.inscrito === true;
+        }
+        return null;
+    }
+    // Resposta do jogo para UMA ação pendente p = { tipo, rid (null = mensagem sem requestId), espera: [types], alvo? (trRespostaConfirma) }.
+    //   'res' = é a resposta · 'erro' = `error` com o requestId dela (ou sem requestId: o DOM espera 1,2 s pela resposta de verdade) · null = outra.
+    //   meta_result casa também por `action` (= o type enviado), quando vem.
+    function trCasaResposta(p, o) {
+        if (!p || !o || typeof o.type !== 'string') return null;
+        const d = o.data && typeof o.data === 'object' ? o.data : {}, rid = d.requestId != null ? String(d.requestId) : null;
+        if (o.type === 'error') return rid == null || rid === p.rid ? 'erro' : null;
+        if (!Array.isArray(p.espera) || !p.espera.includes(o.type)) return null;
+        if (rid != null && p.rid != null && rid !== p.rid) return null;
+        if (o.type === 'meta_result' && d.action != null && d.action !== p.tipo) return null;
+        if (o.type === 'meta_result' && d.applied === false) return 'res'; // recusa do jogo (Invasão fechada…): o trResposta mostra o notice
+        if (trRespostaConfirma(p.tipo, d, p.alvo) === false) return null; // empurrada e não confirma (outro Selo, Invasão sem inscrito): segue esperando
+        return 'res';
+    }
+    // Compra do "Caçar itens" (comprar-mercado): só ordens de VENDA de outros, das mais baratas, nunca acima do preço do conselho + 10 %,
+    // dentro do ouro normal. livros = { nomeMinúsculo: orders[] } (market_list); meus = Set de ids das minhas ordens.
+    // → { compras: [{ nome, orderId, quantity, unitPrice, total }], faltam: [{ nome, falta, teto }], total }
+    function trPlanoCompra(itens, livros, ouro, meus) {
+        const compras = [], faltam = [], caixa = Number.isFinite(trNum(ouro)) ? Number(ouro) : Infinity;
+        let total = 0;
+        for (const it of Array.isArray(itens) ? itens : []) {
+            if (!it || !it.nome || !(trNum(it.qtd) > 0)) continue;
+            const teto = trNum(it.preco) > 0 ? Math.floor(Number(it.preco) * 1.1) : 0;
+            let resta = Math.floor(Number(it.qtd));
+            const ordens = ((livros && livros[trNome(it.nome)]) || []).filter(x => x && String(x.side).toUpperCase() === 'SELL' && Number(x.quantityRemaining) > 0
+                && Number(x.unitPrice) > 0 && Number(x.unitPrice) <= teto && !(meus && meus.has(x.id))).sort((x, y) => Number(x.unitPrice) - Number(y.unitPrice));
+            for (const x of ordens) {
+                if (resta <= 0) break;
+                const p = Number(x.unitPrice), q = Math.min(resta, Number(x.quantityRemaining), Math.floor((caixa - total) / p));
+                if (q < 1) break;
+                compras.push({ nome: it.nome, orderId: x.id, quantity: q, unitPrice: p, total: q * p });
+                total += q * p; resta -= q;
+            }
+            if (resta > 0) faltam.push({ nome: it.nome, falta: resta, teto });
+        }
+        return { compras, faltam, total };
+    }
+    // O cálculo guardado da tela (TR.ultimo = { t, foto }) está velho? Passou cacheMs ou foi feito sem a conta lida (foto sem nível:
+    // aberto no lobby/F5 — teste ao vivo 27/11, a tela ficava "nada urgente" depois de entrar no jogo até um clique).
+    const trCacheVelho = (u, agora, cacheMs) => !u || !(agora - trNum(u.t) <= cacheMs) || !(u.foto && trNum(u.foto.nivel) > 0);
+    // Idade de um dado em horas → '—' · '<1 h' · '5 h' · '3 d'
+    function trIdadePt(h) {
+        const n = trNum(h);
+        if (!Number.isFinite(n) || n < 0) return '—';
+        return n < 1 ? '<1 h' : n < 48 ? Math.round(n) + ' h' : Math.round(n / 24) + ' d';
+    }
+    // Códigos de erro do servidor (protocolo) em português curto; o DOM cai no texto do Mercado para o resto.
+    const TR_ERRO_PT = { not_in_city: 'só na cidade', too_far: 'longe do NPC', insufficient_gold: 'falta ouro', insufficient_coins: 'faltam coins',
+                         invalid_blessing: 'bênção inválida', invalid_prey: 'prey inválida', prey_replay_em_curso: 'a prey está em replay', no_attempts: 'sem tentativas',
+                         boss_no_attempts: 'sem tentativas do boss', boss_locked: 'boss trancado', boss_week_lock: 'boss já feito nesta semana', boss_cooldown: 'boss em espera',
+                         boss_key_required: 'o boss pede chave', unknown_boss: 'boss desconhecido', island_locked: 'ilha trancada', already_unlocked: 'a ilha já está aberta',
+                         unknown_island: 'ilha desconhecida', invasion_unavailable: 'Invasão fechada agora', selo_off: 'Selo desligado no servidor',
+                         selo_indisponivel: 'Selo indisponível aqui', selo_cheio: 'Selo cheio', selo_incompleto: 'Selo sem pacto', selo_vazio: 'Selo vazio',
+                         selo_perigo: 'Perigo alto: aceite na tela do jogo', feature_disabled: 'recurso desligado no servidor', already_hunting: 'já está caçando',
+                         level_too_low: 'nível baixo', sem_socket: 'socket do jogo fechado', sem_resposta: 'o jogo não respondeu em 8 s (confira antes de repetir)',
+                         nao_aplicado: 'o jogo não aplicou', nao_confirmou: 'não confirmou — confira no jogo' };
+    // Chave de conselho → texto seguro para data-k/data-tr e seletor CSS, REVERSÍVEL (não colide): encodeURIComponent com o '_' e
+    // os sinais que ele deixa passar (!'()*~) também codificados, e o '%' trocado por '_'. Sobram só [A-Za-z0-9._-].
+    // Desfaz com decodeURIComponent(k.replace(/_/g, '%')) (o teste confere).
+    const trK = (s) => encodeURIComponent(String(s == null ? '' : s)).replace(/[_!'()*~]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase()).replace(/%/g, '_');
+    // Invasão sem resposta ao invasion_join (revisão): só conta "inscrito" se o estado guardado MUDOU de não-inscrito para inscrito
+    // depois do envio (antes = cópia de antes de enviar; depois = o de agora, com o t do trLerInvasao).
+    function trInscreveuDepois(antes, depois, tEnvio) {
+        return !!depois && typeof depois === 'object' && depois.inscrito === true && trNum(depois.t) >= trNum(tEnvio) && !(antes && antes.inscrito === true);
+    }
+    // Compra do comprar-mercado com o Mercado INJETADO (o DOM passa mkPedir/mlOuroNormal/MK; o teste passa um Mercado falso).
+    //   d = { pedir(tipo, data) → Promise<{ data } | { erro }>, ouro() → número | null, minhas: Set de ids, parar() → bool, rid() → texto,
+    //         erroTxt(code) → texto, log(msg), pausa() → Promise }
+    //   1) lê o livro de cada item e monta o plano (trPlanoCompra: mais baratas de outros, teto = conselho + 10 %, dentro do ouro);
+    //   2) para cada compra: confere parar(); RELÊ o livro do item (como o pchComprar) e só compra se a ordem ainda está lá pelo MESMO
+    //      preço; a quantidade sai do que resta na ordem e do ouro de agora; a quantidade comprada é a do trade do resultado, quando vem.
+    //      Erro (inclusive sem resposta) para tudo: nunca repete uma ordem.
+    // → { feitas: [{ nome, orderId, quantity, unitPrice, total }], faltam: [{ nome, falta }], parou: texto | null, total }
+    async function trExecutarCompra(itens, d) {
+        const txt = (c) => (d.erroTxt ? d.erroTxt(c) : String(c));
+        const lista = (Array.isArray(itens) ? itens : []).filter(x => x && x.nome && trNum(x.qtd) > 0), livros = {}, feitas = [];
+        const resumo = (parou) => {
+            const faltam = lista.map(it => ({ nome: it.nome, falta: Math.floor(Number(it.qtd)) - feitas.filter(c => c.nome === it.nome).reduce((s, c) => s + c.quantity, 0) })).filter(x => x.falta > 0);
+            return { feitas, faltam, parou, total: feitas.reduce((s, c) => s + c.total, 0) };
+        };
+        for (const it of lista) {
+            const r = await d.pedir('market_list', { asset: 'ITEM', itemName: it.nome });
+            if (r.erro) return resumo(`livro de ${it.nome}: ${txt(r.erro)}`);
+            livros[trNome(it.nome)] = (r.data && r.data.orders) || [];
+        }
+        const ouro0 = d.ouro();
+        if (!Number.isFinite(trNum(ouro0))) return resumo('ouro desconhecido');
+        const plano = trPlanoCompra(lista, livros, ouro0, d.minhas);
+        if (!plano.compras.length) return resumo('nenhum anúncio até o preço do conselho + 10 %');
+        for (const c of plano.compras) {
+            if (d.parar && d.parar()) return resumo('parado por você');
+            const lr = await d.pedir('market_list', { asset: 'ITEM', itemName: c.nome });
+            if (lr.erro) return resumo(`livro de ${c.nome}: ${txt(lr.erro)}`);
+            const ord = ((lr.data && lr.data.orders) || []).find(x => x && x.id === c.orderId);
+            if (!ord || !(Number(ord.quantityRemaining) >= 1) || Number(ord.unitPrice) !== c.unitPrice) continue; // vendida ou preço mudou: não compra
+            const ouro = trNum(d.ouro());
+            if (!Number.isFinite(ouro)) return resumo('ouro desconhecido — parei'); // leitor do ouro sumiu no meio: não é "acabou"
+            const q = Math.min(c.quantity, Number(ord.quantityRemaining), Math.floor(ouro / c.unitPrice));
+            if (q < 1) return resumo('o ouro acabou');
+            const r = await d.pedir('market_execute', { orderId: c.orderId, quantity: q, requestId: d.rid() });
+            if (r.erro) return resumo(`${q} ${c.nome}: ${txt(r.erro)}`);
+            const tq = trNum(r.data && r.data.trade && r.data.trade.quantity), qReal = tq > 0 ? tq : q;
+            feitas.push({ nome: c.nome, orderId: c.orderId, quantity: qReal, unitPrice: c.unitPrice, total: qReal * c.unitPrice });
+            if (d.log) d.log(`comprado ${qReal} ${c.nome} a ${trQtd(c.unitPrice)}`);
+            if (d.pausa) await d.pausa();
+        }
+        return resumo(null);
+    }
+    /* @@TREINADOR-PURO-FIM */
     /* @@ARENA-PURO-INICIO — Sobrevivência (2.57.0): decisões do robô, puras (o tempo é st.tempoMs, sem DOM).
      * st = estado da simulação do cliente (ref.current.st do componente da partida). O mesmo código rodou no simulador
      * (motor do jogo, chunk 8606, no node) em 26/11: fugir sempre = ameaça média 100; moer a multidão + caçar boss +
@@ -12004,6 +13685,7 @@
         }
         delete u.right; delete u.top;
         if (s.logLido === undefined) u.logLido = agora;
+        if (u.aba === 'analise') u.aba = 'treinador'; // 2.67.0 — o ▤ Analisador virou o ▤ Progresso (o treinador)
         return u;
     }
     /* canto de cima/esquerda do trilho no desktop. J = layout do jogo medido
@@ -12101,7 +13783,7 @@
     }
     function voltarAoPadrao() { _arrasto = null; guardarUI({ livre: false, yCel: null }); posicionarCaixa(); avisar(ABA, 'helper de volta ao lugar padrão', 'ok'); }
     /* rótulo de 9 px sob o ícone no celular; sem entrada aqui, usa o nome de ICONES */
-    const ROTULO_CURTO = { autohunt: 'Auto', analise: 'Análise', melhorias: 'Melhor', arena: 'Sobrev' };
+    const ROTULO_CURTO = { autohunt: 'Auto', treinador: 'Progr', progresso: 'Rotina', melhorias: 'Melhor', arena: 'Sobrev' };
     function montarPainel() {
         if ($('#tb-trilho')) return;
         const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
@@ -12360,6 +14042,25 @@
     table.tb-an col.c5{width:4.9em}table.tb-an col.c4{width:4.2em}table.tb-an col.c3{width:3.4em}
     .tb-an-exp .tb-linha{flex-wrap:nowrap}
     .tb-an-exp .tb-linha>span{flex:1 1 auto;min-width:0}
+    /* 2.67.0 — ▤ Progresso (treinador): passos e cartões em linhas curtas; o porquê atrás do "?" */
+    .tr-sit{font-size:var(--tb-fmin);margin:2px 0 4px}
+    .tr-c{display:flex;flex-wrap:wrap;align-items:center;gap:2px 5px;padding:3px 0;border-bottom:1px dotted #1f2531;min-width:0}
+    .tr-c:last-child{border-bottom:0}
+    .tr-passo>.tr-t{flex:1 1 100%;line-height:1.3;overflow-wrap:anywhere}
+    .tr-linha>.tr-t{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--tb-fmin)}
+    .tr-c details.tb-aj{margin:0}
+    .tr-c details.tb-aj[open]{flex:1 1 100%;order:9}
+    .tr-imp{font-size:var(--tb-fmin);font-weight:bold;white-space:nowrap}
+    .tr-custo,.tr-motivo{font-size:var(--tb-fmin);white-space:nowrap}
+    #tb-corpo .tr-fazer{margin:0 0 0 auto;white-space:nowrap}
+    .tr-meta{display:flex;flex-wrap:wrap;gap:3px;margin-bottom:2px}
+    .tr-card{margin:3px 0;border:1px solid #262d3b;border-radius:7px;background:var(--tb-cx);padding:0 6px}
+    .tr-card>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:5px;min-height:var(--tb-alvo)}
+    .tr-card>summary::-webkit-details-marker{display:none}
+    .tr-card[open]>summary{border-bottom:1px solid #262d3b}
+    .tr-ic{width:1.2em;text-align:center;color:var(--tb-ouro)}
+    .tr-n{margin-left:auto;font-size:var(--tb-fmin)}
+    .tr-rod{font-size:var(--tb-fmin);margin-top:4px}
     .tb-an-exp textarea{display:block;width:100%;height:120px;box-sizing:border-box;margin-top:3px;resize:vertical;font:var(--tb-fmin)/1.35 ui-monospace,Consolas,monospace;background:#0d1016;color:var(--tb-texto);border:1px solid var(--tb-borda);border-radius:5px}
     `;
     function garantirCssTelas() {
@@ -12757,7 +14458,7 @@
                 r.sorte ? `<span class="tb-av">sorte +${r.sorte.toLocaleString('pt-BR')}: ${(r.raros || []).map(escHtml).join(', ')}</span>` : '',
                 r.ultimaFalha ? `<span class="tb-ruim">última tentativa (${hora(r.ultimaFalha.t)}): ${escHtml(r.ultimaFalha.erro)}</span>` : ''
             ].filter(Boolean).map(x => `<div>${x}</div>`).join('') + (razaoTexto(r.razao) ? razaoHtml(r.razao, true) : '');
-            /* v2.11 — bestiário no resultado do Scan (aba Progresso): quanto falta para o próximo
+            /* v2.11 — bestiário no resultado do Scan (aba Rotina): quanto falta para o próximo
              * bônus permanente deste mapa, no ritmo de abates medido aqui. pgBestiarioTexto já escapa. */
             const bestiarioDoCartao = r => { try { const t = pgBestiarioTexto(r.id, { [r.id]: { abatesH: r.abatesH } }); return t ? `<div class="tb-mut">${t}</div>` : ''; } catch (e) { return ''; } };
             const cartao = r => `<div class="tb-sc-card ${r.fora ? 'fora' : ''}">
@@ -13061,82 +14762,10 @@
         }
         if (h.monsters && h.monsters.some(m => !BESTIARIO[m.name])) buscarUmaVez('best:' + h.id, () => bestiarioHunt(h).then(() => renderizar()));
     }
-    /* v2.11 (D2) — ANALISADOR: nomes de hunt inteiros (a coluna tinha 1/5 da
-     * tabela e "Barbarian Camp" virava "Barbari an Camp"); agora a hunt leva o
-     * que sobra das colunas numéricas (largura em em, vale no celular) e só
-     * quebra palavra que sozinha não cabe. Título de sessão, hunt e tipo de
-     * frame do socket escapados. A caixa do "copiar JSON" é estado
-     * (_exportacao): com a área de transferência bloqueada ela era o único
-     * lugar dos dados e sumia no repinte seguinte (4 s). */
+    /* 2.67.0 — o ▤ Analisador saiu (virou o ▤ Progresso, o treinador). A COLETA das sessões continua (amostrar/fecharSessao/sessoes:
+     * Radar, Bestiário e o treinador usam); o "copiar JSON" e o "limpar" das sessões ficaram no rodapé do Progresso. A caixa do JSON
+     * é estado (_exportacao): com a área de transferência bloqueada ela é o único lugar dos dados e não pode sumir no repinte. */
     let _exportacao = null; // { texto, copiado: null|true|false, selecionar }
-    function telaAnalise() {
-        garantirCssTelas();
-        const lin = (a, b) => `<div class="tb-lin"><span class="tb-mut">${a}</span><span>${b}</span></div>`;
-        const sinal = n => (n >= 0 ? '+' : '') + milBR(n);
-        let corpo = '';
-        if (SESSAO && SESSAO.amostras.length >= 2) {
-            const a0 = SESSAO.amostras[0], aN = SESSAO.amostras[SESSAO.amostras.length - 1];
-            const dur = Math.max(1, (aN.t - a0.t) / 1000);
-            const ouroH = Math.round((aN.ouro - a0.ouro) / dur * 3600);
-            const expH = (aN.exp != null && a0.exp != null) ? Math.round((aN.exp - a0.exp) / dur * 3600) : null;
-            const ab = (aN.abates != null && a0.abates != null) ? aN.abates - a0.abates : null;
-            const pct = Math.round((aN.mochilaPct || 0) * 100);
-            corpo += `<div class="tb-cx" style="border-color:#2c5c3a"><div class="tb-mut">medindo — ${escHtml(SESSAO.huntTitle)} · ${Math.floor(dur / 60)}m${String(Math.round(dur % 60)).padStart(2, '0')}</div>
-                ${lin('ouro/h', isFinite(ouroH) ? `<b class="${ouroH >= 0 ? 'tb-ok' : 'tb-ruim'}">${ouroH >= 0 ? '+' : ''}${numBR(ouroH)}</b>` : '—')}
-                ${lin('exp/h', numBR(expH))}
-                ${lin('abates', ab != null ? `${numBR(ab)} (${numBR(Math.round(ab / dur * 3600))}/h)` : '—')}
-                ${lin('mochila', `<span class="${pct > 85 ? 'tb-ruim' : pct > 60 ? 'tb-av' : ''}">${pct}%</span>`)}
-                ${pct > 85 ? '<div class="tb-ruim tb-nota">mochila acima de 85%: o loot se perde e a medição sai suja</div>' : ''}</div>`;
-        } else corpo += `<div class="tb-mut">sem medição: liga sozinho ao entrar numa caçada</div>`;
-        const res = resumoPorHunt();
-        if (res.length) {
-            corpo += `<table class="tb-an"><colgroup><col><col class="c5"><col class="c5"><col class="c4"><col class="c3"></colgroup>` +
-              `<thead><tr><th>hunt</th><th>ouro/h</th><th>exp/h</th><th>tempo</th><th>fator</th></tr></thead><tbody>` +
-              res.map(p => `<tr><td>${escHtml(p.hunt)}${p.sujas ? ` <span class="tb-tag tb-ruim">${numBR(p.sujas)} suja${p.sujas > 1 ? 's' : ''}</span>` : ''}${p.regen ? ` <span class="tb-tag">regen</span>` : ''}</td>` +
-                `<td class="${p.ouroH >= 0 ? 'tb-ok' : 'tb-ruim'}">${sinal(p.ouroH)}</td><td>${milBR(p.expH)}</td><td class="tb-mut">${fmtHoras(p.dur / 3600)}</td><td class="tb-av">${numBR(p.fatorMedio, 2)}</td></tr>`).join('') + `</tbody></table>`;
-            const comFator = res.filter(p => p.fatorMedio != null && p.hp);
-            if (comFator.length) corpo += aj('an-curva', `<table class="tb-an"><colgroup><col><col class="c4"><col class="c4"><col class="c4"><col class="c4"></colgroup><thead><tr><th>hunt</th><th>HP</th><th>curva</th><th>medido</th><th>erro</th></tr></thead><tbody>` + comFator.map(p => { const prev = Math.round(fatorDesperdicio(p.hp) * 100) / 100; const erro = Math.round((p.fatorMedio / prev - 1) * 100); return `<tr><td>${escHtml(p.hunt)}</td><td>${numBR(p.hp)}</td><td>${numBR(prev, 2)}</td><td class="tb-av">${numBR(p.fatorMedio, 2)}</td><td class="${Math.abs(erro) < 25 ? 'tb-ok' : 'tb-ruim'}">${erro > 0 ? '+' : ''}${numBR(erro)}%</td></tr>`; }).join('') + `</tbody></table><div class="tb-nota">fator = desperdício real por abate contra a curva 0,47 × HP^0,332 (2 pontos).</div>`, 'calibração');
-        }
-        const tipos = Object.keys(WS.tipos).sort((a, b) => WS.tipos[b] - WS.tipos[a]);
-        const envs = Object.keys(WS.enviados).sort((a, b) => WS.enviados[b].n - WS.enviados[a].n);
-        corpo += aj('an-ws', `socket ${WS.socket ? '<span class="tb-ok">capturado</span>' : '<span class="tb-av">ainda não</span>'} · ${numBR(WS.frames)} frames em ~${Math.max(1, Math.round((Date.now() - WS.desde) / 60000))} min<br>` +
-            (tipos.length ? 'recebidos: ' + tipos.slice(0, 10).map(t => `<span class="tb-tag">${escHtml(t)} ×${numBR(WS.tipos[t])}</span>`).join('') + '<br>' : '') +
-            (envs.length ? 'enviados: ' + envs.map(t => `<span class="tb-tag tb-ok">${escHtml(t)} ×${numBR(WS.enviados[t].n)}</span>`).join('') : 'nenhum frame enviado ainda'), 'websocket');
-        corpo += `<div class="tb-linha" style="margin-top:4px"><button type="button" class="tb-bt mini" id="tb-exportar">copiar JSON</button><button type="button" class="tb-bt mini" id="tb-limpar-sessoes" title="apaga as sessões medidas (pede confirmação)">limpar histórico</button></div>`;
-        if (_exportacao) { corpo += `<div class="tb-an-exp"><div class="tb-linha"><span class="${_exportacao.copiado === false ? 'tb-av' : 'tb-mut'}">${_exportacao.copiado === true ? 'copiado — e também aqui:' : _exportacao.copiado === false ? 'área de transferência bloqueada: selecione e copie daqui' : 'copiando…'}</span>` +
-            `<button type="button" class="tb-bt mini" id="tb-exportar-fechar" style="margin-left:auto" aria-label="fechar a caixa do JSON">fechar</button></div>` +
-            `<textarea id="tb-exportar-caixa" readonly spellcheck="false" aria-label="dados do Analisador em JSON"></textarea></div>`; }
-        return corpo;
-    }
-    /* handlers do Analisador (antes dentro de _renderizar). O texto do JSON
-     * vai para a caixa por .value (não entra no HTML: não pesa na comparação
-     * do repinte nem precisa de escape). */
-    function ligarAnalise() {
-        const exp = $('#tb-exportar');
-        if (exp) { exp.onclick = () => {
-            const dados = JSON.stringify({
-                sessoes: sessoes(), resumo: resumoPorHunt(),
-                ws: { frames: WS.frames, tipos: WS.tipos, binarios: WS.bin,
-                      amostrasRecebidas: WS.amostras, ENVIADOS: WS.enviados }
-            }, null, 2);
-            const x = _exportacao = { texto: dados, copiado: null, selecionar: true };
-            renderizar();
-            /* writeText ainda dentro do clique (o navegador exige o gesto) */
-            let p;
-            try { p = navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(dados) : Promise.reject(new Error('sem clipboard')); } catch (e) { p = Promise.reject(e); }
-            p.then(() => { x.copiado = true; avisar('analise', 'JSON copiado para a área de transferência (e na caixa abaixo)', 'ok'); })
-             .catch(() => { x.copiado = false; x.selecionar = true; avisar('analise', 'área de transferência bloqueada — o JSON está na caixa abaixo do botão', 'erro'); })
-             .finally(renderizar);
-        }; }
-        const caixa = $('#tb-exportar-caixa');
-        if (caixa && _exportacao) {
-            caixa.value = _exportacao.texto;
-            if (_exportacao.selecionar) { _exportacao.selecionar = false; try { caixa.focus({ preventScroll: true }); caixa.select(); } catch { /* caixa fora da página */ } }
-        }
-        const fx = $('#tb-exportar-fechar'); if (fx) fx.onclick = () => { _exportacao = null; renderizar(); };
-        const lim = $('#tb-limpar-sessoes');
-        if (lim) ligarDoisToques(lim, 'limpar-sessoes', 'apagar o histórico?', () => { guardar('sessoes', []); avisar('analise', 'histórico de sessões apagado', 'ok'); renderizar(); });
-    }
     /* v2.4.0 — EQUIP. 4 sub-abas; por slot: atual → melhor (+ganho) e 2
      * motivos; clique expande os atributos (mortos riscados). Seções
      * Dispensáveis e Reservas. NADA equipa nem descarta. */
@@ -13144,7 +14773,7 @@
     /* v2.11 (D2) — vocações e slots em português em todas as telas (o Equip
      * dizia "Knight" num botão, "Cav" na aba ao lado e WEAPON/LEGS nas linhas) */
     const VOC_ROTULO = { KNIGHT: 'Cavaleiro', PALADIN: 'Paladino', SORCERER: 'Feiticeiro', DRUID: 'Druida' };
-    const SLOT_PT = { weapon: 'arma', hand: 'arma', shield: 'escudo', head: 'elmo', helmet: 'elmo', armor: 'armadura', legs: 'calça', boots: 'bota', feet: 'bota', necklace: 'colar', ring: 'anel', ammo: 'munição' };
+    const SLOT_PT = TR_SLOT_PT; // o mesmo objeto do treinador (@@TREINADOR-PURO)
     const slotPt = (s) => SLOT_PT[s] || s;
     /* 28/09: com 0,5 ele sugeria trocar um bonelord shield por outro quase igual (+0,55). */
     const GANHO_MIN = EQUIP_GANHO_TROCA; // abaixo disso é empate técnico: não vale a troca (espaço vazio: qualquer ganho — trocaVale)
@@ -14963,7 +16592,7 @@
         if (semCont) h += `<div class="pg-mut pg-peq">${semCont} caçada(s) do seu nível sem contador conhecido — o jogo manda todos ao conectar (meta) e o da caçada atual a cada segundo.</div>`;
         return h + pgAjudaBestiario();
     }
-    const pgAjudaBestiario = () => `<details class="pg-aj" data-k="pg-best-aj"><summary>? regras</summary><div>Cada caçada tem 3 marcos; vale o MAIOR (não somam). Caçadas diferentes somam. Conta qualquer criatura do elenco, inclusive com o jogo fechado; treino e Elite/Boss não contam; o Reset das estatísticas não apaga. Tempo = abates que faltam ÷ abates/h medidos (ao vivo, Scan ou sessões do Analisador).</div></details>`;
+    const pgAjudaBestiario = () => `<details class="pg-aj" data-k="pg-best-aj"><summary>? regras</summary><div>Cada caçada tem 3 marcos; vale o MAIOR (não somam). Caçadas diferentes somam. Conta qualquer criatura do elenco, inclusive com o jogo fechado; treino e Elite/Boss não contam; o Reset das estatísticas não apaga. Tempo = abates que faltam ÷ abates/h medidos (ao vivo, Scan ou sessões medidas).</div></details>`;
 
     function pgTelaOffline() {
         const al = PROG.meta && PROG.meta.autoLeave && typeof PROG.meta.autoLeave === 'object' ? PROG.meta.autoLeave : null;
@@ -17924,7 +19553,7 @@
             else if (dl) radarAcumular({ tipo: 'delta', huntId: sm.huntId, title: tpTituloResumo(sm), delta: dl });
             if (/death|dead|morr/i.test(String(sm.reason || ''))) {
                 radarAcumular({ tipo: 'morte' });
-                if (sm.huntId != null) { const m = ler('radar_mortes', {}) || {}; const x = m[sm.huntId] || { n: 0 }; m[sm.huntId] = { n: (Date.now() - (x.t || 0) < 7 * 86400000 ? x.n : 0) + 1, t: Date.now() }; guardar('radar_mortes', m); }
+                if (sm.huntId != null) { const m = ler('radar_mortes', {}) || {}; const x = m[sm.huntId] || { n: 0 }; m[sm.huntId] = Object.assign({}, x, { n: (Date.now() - (x.t || 0) < 7 * 86400000 ? x.n : 0) + 1, t: Date.now() }); guardar('radar_mortes', m); } /* 2.67.0: mantém as autópsias (laudos) — o treinador lê as mortes por vocação delas */
             }
             lv.base = null;
             radarSalvarDia(true);
@@ -18935,6 +20564,806 @@
     `;
     function fjGarantirCss() { if (document.getElementById('tb-fj-css')) return; const st = document.createElement('style'); st.id = 'tb-fj-css'; st.textContent = FJ_CSS; (document.head || document.documentElement).appendChild(st); }
     const fjSeloTxt = { vale: '✓ vale', estoque: 'falta gema', ouro: 'falta ouro', nao: 'não vale' };
+    /* @@TREINADOR-INICIO — aba Progresso (2.67.0): a FOTO real da conta para os especialistas puros (@@TREINADOR-PURO) e a leitura do topo.
+     * trFoto() só junta o que o helper JÁ sabe (estado do socket, gavetas da conta, catálogos): nada de rede e nada de simulação
+     * (rankingRodar, estimarMapa, equipAtualizar, fjLer e mkPedir ficam de fora). Cada bloco tem o seu try: um bloco quebrado deixa o campo
+     * como em trFotoVazia() e avisa UMA vez (falhou). A XP é sempre RAW (sem party/premium/prey/boost) — medidoAtual, mapas e sessões
+     * na mesma base, senão o "XP caiu" e o "Onde upar" comparavam ×2,7 com ×1.
+     *
+     * De onde vem cada campo (27/11):
+     *   nivel/xpTotal ........ rail do jogo (rail-level-n) › frame.state.character › account do welcome/resume
+     *   ouro/ouroTravado ..... frame.state.balance (total) e balanceLocked (PROG.estado) › carteira da fibra (wallet.gold/goldLocked)
+     *                          › hud-gold + travado › o último gold/goldLocked visto em qualquer mensagem (trAnotar)
+     *   ouroLivre ............ trOuroLivre: ouro normal − (3 × gasto/h da caçada que o travado não cobre) − bênçãos que faltam
+     *   premium .............. account.premiumUntil (welcome/resume) › meta_result.premiumUntil › MK.premiumAte
+     *   hunt ................. ESTADO_WS.huntId + CAT.hunts; lure = frame.state.lureTier › meta.lureTierByHunt; rec = trRecDe
+     *   medidoAtual .......... frame.analyzer (xpRaw, killsTotal, lootGold, suppliesGold, elapsedMs) por hora
+     *   mapas ................ trMesclarMapas de: Scans limpos (xpRawH) · caçada de agora (≥ 5 min) · sessões do Analisador dos últimos 14 dias
+     *                          (expRawH; as antigas ÷ multiplicador de agora) · Radar guardado (< 7 dias; estimado sem risco alto) · setups do
+     *                          Discord com "raw" no texto. 1 por caçada: medido > comunidade > estimado, empate = a mais nova; medida > 14 dias
+     *                          sai. aberta = unlockedIslands; mortes = radar_mortes[id].n dos últimos 7 dias (lido uma vez por foto)
+     *   party ................ roster do welcome/resume (ESTADO_WS.rosterFull; com mais de 3 min, a fibra via rosterEquip) + skills treinadas;
+     *                          munição = battleConfigs[voc].ammo (não fica no corpo)
+     *   legado ............... skill treinada da party na tabela TR_BASE.legado (nulo só com legacy_state.ativo === false)
+     *   prey ................. PROG.prey/PROG.meta (meta.preyHunt, preyBuffs, wildcards); semCacada só com meta.preyHunt === null lido
+     *   bencaos .............. meta.blessings (ids 2–8) · ampulhetas: ampulheta_state · selo: selo_state (os dois só quando o jogo manda)
+     *   mortes ............... radar_mortes[huntId].laudos (autópsias tipo 'morte', com vocação e t) + o `ended` com motivo de morte sem
+     *                          autópsia perto (1 entrada sem vocação) + RAZAO.mortes da caçada de agora
+     *   sessoes .............. ler('sessoes') (dur em s → durMin); morte = alguma morte da mesma caçada dentro da sessão
+     *   checklist ............ mlChecklist(EQUIP.res) só se o Equip já calculou · bestiario: pgLinhasBestiario + XP/h de mapas
+     *   chaves ............... PROG.chaves (keyBag) com o nome do Elite pelo keyItem de CAT.bosses
+     *   deposito ............. depot_state desta sessão (ESTADO_WS.depotReal) + mochila (MK.bag) · precos: MK.catalogo (minSell > 0)
+     *   invasao .............. meta.invasao / invasion_update · forja: peças vestidas < +4 (gemas de pgRefino 'melhor' × preço da gema de
+     *                          FJ.custos ou fjCustoGemas), idadeH de FJ.t, bases ≥ potBase do depósito/mochila
+     *   topo ................. ler('tr_topo') — por conta (trLerTopo) · ilhas: unlockedIslands × TR_BASE.ilhas */
+    // topo: progresso 'k/n' a cada perfil e cancelar = true para o laço (a tela da Task 16 usa os dois)
+    // ultimo = { t, foto, r, radarH, nSessoes } (cache de 60 s da tela) · agindo = rótulo da ação em curso · pend = ação esperando resposta (trPedir) · acoes = botões da tela
+    const TR = { topo: { lendo: false, status: null, progresso: null, cancelar: false }, esperas: [], avisados: new Set(), ultimo: null, agindo: null, pend: null, acoes: new Map() };
+    const TR_H = 3600000, TR_DIA = 864e5;
+    /* Uma linha em observarRecebido: guarda o que a foto precisa e o helper ainda não guardava (nada é enviado daqui). */
+    function trObservar(o) {
+        if (!o || typeof o.type !== 'string') return;
+        const d = o.data && typeof o.data === 'object' ? o.data : null;
+        if (!d) return;
+        const tipo = o.type, agora = Date.now(), x = ESTADO_WS.tr || (ESTADO_WS.tr = {});
+        // respostas que o trLerTopo espera: player_profile_result casa pelo nome; um `error` derruba a espera mais antiga
+        if (TR.esperas.length && (tipo === 'player_profile_result' || tipo === 'error')) {
+            const e = tipo === 'error' ? TR.esperas[0] : TR.esperas.find(z => z.nome === trNome(d.name));
+            if (e) {
+                clearTimeout(e.timer); TR.esperas = TR.esperas.filter(z => z !== e);
+                if (tipo === 'error') e.rej(new Error('o jogo respondeu erro: ' + (d.code || d.key || '?'))); else e.res(clonar(d));
+            }
+        }
+        // resposta da ação do botão "Fazer" (trPedir): casa pelo requestId/tipo (trCasaResposta, puro)
+        const p = TR.pend;
+        if (p && !p.res) {
+            const k = trCasaResposta(p, o);
+            if (k === 'res') p.res = { type: tipo, data: clonar(d) };
+            else if (k === 'erro' && !p.erro) p.erro = { code: String(d.code || d.key || '?'), t: agora, meu: d.requestId != null && String(d.requestId) === p.rid };
+        }
+        trAnotar(x, o, agora); // conta, bênçãos, Invasão, ilhas, ampulheta, Selo e o ouro de qualquer mensagem (@@TREINADOR-PURO)
+    }
+    const trIlhaCat = (h) => (h && h.island && h.island !== 'tibidle_island' ? String(h.island) : h && h.title ? (trCacada(h.title, TR_BASE) || {}).ilha || null : null);
+    // XP/h raw do texto de um setup do Discord ("950k raw", "140–150k raw", "≈350k (320k raw)"); sem "raw" = null (tem bônus misturado)
+    function trXpRawDeTexto(s) {
+        const m = String(s || '').match(/([\d.,]+)\s*([kKmM])?\s*(?:[–-]\s*([\d.,]+)\s*([kKmM])?)?\s*raw/);
+        if (!m) return null;
+        const mult = (u) => (/m/i.test(u || '') ? 1e6 : /k/i.test(u || '') ? 1e3 : 1);
+        const num = (v) => parseFloat(String(v).replace(',', '.'));
+        const a = num(m[1]) * mult(m[2] || m[4]), b = m[3] ? num(m[3]) * mult(m[4]) : a;
+        const v = (a + b) / 2;
+        return v > 1000 ? Math.round(v) : null;
+    }
+    // "dd/mm" do setup → ms (ano corrente; data no futuro = ano passado)
+    function trDataDdMm(s, agora) {
+        const m = String(s || '').match(/(\d{1,2})\/(\d{1,2})/);
+        if (!m) return null;
+        const hoje = new Date(agora);
+        let t = new Date(hoje.getFullYear(), Number(m[2]) - 1, Number(m[1]), 12).getTime();
+        if (t > agora) t = new Date(hoje.getFullYear() - 1, Number(m[2]) - 1, Number(m[1]), 12).getTime();
+        return t;
+    }
+    // Peça do roster (equipment do jogo) no formato da foto
+    function trPecaFoto(p) {
+        const fj = p.forja && typeof p.forja === 'object' ? p.forja : null, a = p.attrs && typeof p.attrs === 'object' ? p.attrs : {};
+        const pc = { nome: String(p.name), refino: fj ? trNum(fj.refino) || 0 : null, raridade: fj ? trNum(fj.raridade) || 0 : null,
+                     potencia: fj ? potenciaTotal(p) : null,
+                     atributos: fj && Array.isArray(fj.atributos) ? fj.atributos.filter(z => z && z.id).map(z => ({ id: String(z.id), valor: trNum(z.valor) })) : [],
+                     // encaixes: o `imbue` do Tibidle manda (null = a peça não aceita imbuement aqui, mesmo com attrs.imbuementslot — guardian boots, 27/11)
+                     imbuSlots: p.imbue && typeof p.imbue === 'object' ? trNum(p.imbue.slots) || 0 : p.imbue === null ? 0 : trNum(a.imbuementslot) || 0,
+                     imbu: (Array.isArray(p.imbuements) ? p.imbuements : []).filter(Boolean).map(z => (typeof z === 'object' ? String(z.name || z.type || z.id || 'imbuement') : String(z))) };
+        if (a.slotType) pc.duasMaos = a.slotType === 'two-handed';
+        // arco/besta: o ataque que conta é o da munição somado (o arco sozinho tem 2–5); sem ele, o especialista usa o padrão (50)
+        if (trNum(a.attack) > 0 && !trUsaMunicao(pc, TR_BASE)) pc.ataque = Number(a.attack);
+        return pc;
+    }
+    function trFoto() {
+        const f = trFotoVazia(), agora = Date.now(), x = ESTADO_WS.tr || {};
+        f.t = agora;
+        const bloco = (nome, fn) => {
+            try { fn(); } catch (e) { if (!TR.avisados.has(nome)) { TR.avisados.add(nome); falhou('treinador (foto: ' + nome + ')', e); } }
+        };
+        const hs = CAT.hunts || [], huntDe = (id) => hs.find(h => h && trMesmoId(h.id, id)) || null;
+        // regra dos blocos: montar numa variável local e só atribuir ao `f` no fim — um bloco que quebra no meio não deixa campo pela metade
+        bloco('base', () => {
+            const el = tid('rail-level-n') || tid('mobile-hud-level'), nDom = el ? parseInt((el.textContent || '').replace(/\D/g, ''), 10) : NaN;
+            const fr = ESTADO_WS.frame, eh = emHunt();
+            const nivel = nDom > 0 ? nDom : fr && fr.nivel > 0 ? Number(fr.nivel) : x.conta && x.conta.nivel > 0 ? x.conta.nivel : null;
+            Object.assign(f, { nivel, xpTotal: x.conta && x.conta.xp > 0 ? x.conta.xp : null, emHunt: eh, naCidade: !eh });
+        });
+        bloco('ouro', () => {
+            const pe = PROG.estado && agora - PROG.estado.t < 10 * 60000 ? PROG.estado : null, c = x.conta || {};
+            const travMsg = Number.isFinite(c.trav) ? c.trav : null;
+            let ouro = null, trav = null;
+            if (frameFresco() && ESTADO_WS.frame.balance != null) { ouro = Number(ESTADO_WS.frame.balance); trav = pe && pe.trav != null ? pe.trav : travMsg; }
+            if (!Number.isFinite(ouro)) { // na cidade: a carteira do cliente (como mlOuroNormal), só com o estado de verdade (roster cheio)
+                let sh = null;
+                try { sh = lerShellFibra(); } catch { sh = null; }
+                const w = sh && Array.isArray(sh.roster) && sh.roster.length && sh.wallet;
+                if (w && Number.isFinite(Number(w.gold))) { ouro = Number(w.gold); trav = Number(w.goldLocked) || 0; }
+            }
+            if (!Number.isFinite(ouro)) { // o HUD mostra o ouro normal (gold − goldLocked)
+                const el = tid('hud-gold') || tid('mobile-hud-gold'), n = el ? parseInt((el.textContent || '').replace(/\D/g, ''), 10) : NaN;
+                if (n >= 0) { trav = travMsg || 0; ouro = n + trav; }
+            }
+            if (!Number.isFinite(ouro) && Number.isFinite(c.ouro)) { ouro = c.ouro; trav = travMsg; }
+            Object.assign(f, { ouro: Number.isFinite(ouro) ? ouro : null, ouroTravado: Number.isFinite(trav) ? trav : null });
+        });
+        bloco('premium', () => {
+            const ate = x.conta && 'premiumAte' in x.conta ? x.conta.premiumAte : MK.premiumAte;
+            if (ate !== undefined) f.premium = { ativo: mkPremium(ate, agora) === true, ate: ate || null };
+        });
+        bloco('hunt', () => {
+            const id = ESTADO_WS.huntId;
+            if (id == null || ESTADO_WS.boss || !f.emHunt) return;
+            const h = huntDe(id), fr = ESTADO_WS.frame;
+            const lt = h && Array.isArray(h.lureTiers) ? h.lureTiers.map(z => ({ min: trNum(z && z.min), max: trNum(z && z.max) })) : [];
+            const salvo = ESTADO_WS.lureTierByHunt ? trNum(ESTADO_WS.lureTierByHunt[id]) : NaN;
+            const lure = fr && trNum(fr.lureTier) > 0 ? Number(fr.lureTier) : salvo > 0 ? salvo : null;
+            const hunt = { id: Number(id), title: h ? h.title : null, lure, maxLure: lt.length || (h && trNum(h.maxLure) > 0 ? Number(h.maxLure) : null),
+                           lureTiers: lt, levelMin: h && trNum(h.levelMin) > 0 ? Number(h.levelMin) : null, ilha: trIlhaCat(h) };
+            hunt.rec = trRecDe(hunt, TR_BASE);
+            f.hunt = hunt;
+        });
+        bloco('medidoAtual', () => {
+            const an = frameFresco() && ESTADO_WS.frame.an ? ESTADO_WS.frame.an : null;
+            if (!an || !(an.elapsedMs > 0) || ESTADO_WS.boss) return;
+            const h = an.elapsedMs / TR_H;
+            f.medidoAtual = { xpH: Math.round(an.xpRaw / h), ouroH: Math.round((an.lootGold - an.suppliesGold) / h), gastoH: Math.round(an.suppliesGold / h),
+                              lootH: Math.round(an.lootGold / h), abatesH: Math.round(an.kills / h), min: Math.round(an.elapsedMs / 6000) / 10, xpBonusH: Math.round(an.xp / h) };
+        });
+        bloco('bencaos', () => {
+            if (!x.bencaos) return;
+            const ids = new Set(x.bencaos.ids.filter(i => i >= 2 && i <= 8)), b = TR_BASE.bencaos, nv = f.nivel;
+            const comuns = [...ids].filter(i => i <= 6).length, enh = [...ids].filter(i => i >= 7).length;
+            f.bencaos = { tem: ids.size, total: b.n, ids: [...ids].sort((p, q) => p - q),
+                          custoFaltam: nv ? (b.comuns - comuns) * b.preco(nv) + (b.enhanced - enh) * b.precoEnh(nv) : null };
+        });
+        let abertas = null;
+        bloco('ilhas', () => {
+            // a fibra só quando o welcome/resume não foi visto, e só com o estado de verdade (roster cheio): na tela de manutenção/lobby
+            // o estado padrão do cliente traz unlockedIslands [] e tudo virava "fechado" (visto ao vivo em 27/11)
+            let sh = null;
+            if (!x.ilhas) { try { sh = lerShellFibra(); } catch { sh = null; } }
+            const lista = x.ilhas ? x.ilhas.lista : sh && Array.isArray(sh.roster) && sh.roster.length && Array.isArray(sh.unlockedIslands) ? sh.unlockedIslands.map(String) : null;
+            if (lista) f.ilhas = (TR_BASE.ilhas || []).map(i => ({ id: i.id, nome: i.nome, aberta: lista.includes(i.id) }));
+            abertas = lista;
+        });
+        let rmortes = {}; // radar_mortes, lido uma vez por foto (mortes e mapas)
+        bloco('mortes', () => {
+            const rm = ler('radar_mortes', {}) || {}, out = [], desde = agora - 30 * TR_DIA;
+            rmortes = rm;
+            for (const [id, z] of Object.entries(rm)) {
+                if (!z || typeof z !== 'object') continue;
+                const hunt = (huntDe(id) || {}).title || null, huntId = Number.isFinite(trNum(id)) ? Number(id) : null;
+                const laudos = (Array.isArray(z.laudos) ? z.laudos : []).filter(l => l && l.tipo === 'morte' && trNum(l.t) >= desde);
+                for (const l of laudos) out.push({ t: Number(l.t), hunt, huntId, voc: VOCS.includes(l.voc) ? l.voc : null, fonte: 'autópsia' });
+                // o `ended` com motivo de morte conta em z.n/z.t; sem autópsia perto desse t, vira 1 entrada sem vocação
+                if (Number(z.n) > 0 && trNum(z.t) >= desde && !laudos.some(l => Math.abs(Number(l.t) - z.t) <= 60000)) out.push({ t: Number(z.t), hunt, huntId, voc: null, fonte: 'fim da caçada' });
+            }
+            const idAgora = ESTADO_WS.huntId;
+            for (const m of (RAZAO && RAZAO.mortes) || []) {
+                if (idAgora == null || !m || !VOCS.includes(m.voc) || out.some(o => o.voc === m.voc && Math.abs(o.t - m.t) < 5000)) continue;
+                out.push({ t: m.t, hunt: (huntDe(idAgora) || {}).title || null, huntId: Number(idAgora), voc: m.voc, fonte: 'agora' });
+            }
+            f.mortes = out.sort((p, q) => p.t - q.t);
+        });
+        bloco('mapas', () => {
+            const fontes = [], jan = TR_MAPA_JANELA_DIAS * TR_DIA;
+            const add = (id, xpH, fonte, origem, t, title, extra) => fontes.push(Object.assign({ id, xpH, fonte, origem, t, title: title || null }, extra || {}));
+            // Radar guardado (estimativa do ranking; a linha medida também entra). Risco alto/bloqueado fica de fora (o dono morreu num topo do Radar, 02/10).
+            const rank = ler('radar_rank', null);
+            if (rank && Array.isArray(rank.linhas) && agora - (rank.t || 0) < 7 * TR_DIA) {
+                for (const l of rank.linhas) {
+                    if (!l) continue;
+                    const medido = l.fonte === 'medido';
+                    if (!medido && (l.bloqueio && l.bloqueio !== 'ilha fechada' || (l.risco && /alto|bloqueado/.test(l.risco.nivel || '')))) continue;
+                    add(l.id, l.xpH, medido ? 'medido' : 'estimado', 'radar', medido && l.medido && l.medido.t ? l.medido.t : rank.t, l.title, { ouroH: trNum(l.ouroH) || null });
+                }
+            }
+            // setups da comunidade com XP/h RAW no texto (sem "raw" o número tem prey/boost misturado: fica de fora)
+            for (const s of SETUPS_DISCORD) {
+                const xp = s && s.huntId != null && s.estatisticas ? trXpRawDeTexto(s.estatisticas.xpH) : null;
+                if (xp) add(s.huntId, xp, 'comunidade', 'discord', trDataDdMm(s.data, agora), s.hunt, { nivelMedida: trNum(s.estatisticas.nivel) || null, setup: s.id });
+            }
+            // sessões do Analisador (≥ 5 min, terminadas nos últimos 14 dias): média por tempo; as antigas (sem expRawH) ÷ o multiplicador de agora
+            const mult = xpMultiplicador(), porH = {};
+            for (const s of sessoes() || []) {
+                if (!s || s.huntId == null || !(s.dur >= 300) || (trNum(s.inicio) || 0) + s.dur * 1000 < agora - jan) continue;
+                const raw = trNum(s.expRawH) > 0 ? Number(s.expRawH) : trNum(s.expH) > 0 && mult > 0 ? s.expH / mult : null;
+                if (!(raw > 0)) continue;
+                const g = porH[s.huntId] || (porH[s.huntId] = { xp: 0, ouro: 0, dur: 0, t: 0, title: s.hunt });
+                g.xp += raw * s.dur; g.ouro += (trNum(s.ouroH) || 0) * s.dur; g.dur += s.dur; g.t = Math.max(g.t, (s.inicio || 0) + s.dur * 1000);
+            }
+            for (const [id, g] of Object.entries(porH)) add(id, g.xp / g.dur, 'medido', 'sessões', g.t, g.title, { ouroH: Math.round(g.ouro / g.dur) });
+            // Scans limpos: todos entram e o trMesclarMapas fica com o mais recente (não o maior de sempre); > 14 dias sai lá
+            for (const r of Object.values(scanResultados() || {})) {
+                if (r && !r.erro && trNum(r.xpRawH) > 0 && r.id != null) add(r.id, r.xpRawH, 'medido', 'scan', r.t, r.title, { ouroH: trNum(r.ouroH) || null, abatesH: trNum(r.abatesH) || null });
+            }
+            // a caçada de agora (≥ 5 min no analisador) é a medida mais nova
+            if (f.hunt && f.medidoAtual && f.medidoAtual.min >= 5 && f.medidoAtual.xpH > 0) add(f.hunt.id, f.medidoAtual.xpH, 'medido', 'agora', agora, f.hunt.title, { ouroH: f.medidoAtual.ouroH, abatesH: f.medidoAtual.abatesH });
+            f.mapas = trMesclarMapas(fontes, agora).filter(m => m.id !== HUNT_ID_BOSS).map(m => {
+                const h = huntDe(m.id), z = rmortes[m.id];
+                const r = Object.assign(m, { title: h ? h.title : m.title, levelMin: h && trNum(h.levelMin) > 0 ? Number(h.levelMin) : null, ilha: trIlhaCat(h || { title: m.title }) });
+                r.rec = trRecDe(r, TR_BASE);
+                if (abertas) r.aberta = !r.ilha || abertas.includes(r.ilha);
+                r.mortes = z && agora - (trNum(z.t) || 0) < 7 * TR_DIA ? Number(z.n) || 0 : 0; // a mesma janela do radarMortes
+                return r;
+            });
+        });
+        bloco('party', () => {
+            // o roster do welcome/resume envelhece (equipar, forjar): com mais de 3 min, a fibra (rosterEquip, cache de 2 s; sem ela, o mesmo roster)
+            const novo = ESTADO_WS.rosterFull_t > 0 && agora - ESTADO_WS.rosterFull_t <= 3 * 60000;
+            const roster = novo && Array.isArray(ESTADO_WS.rosterFull) && ESTADO_WS.rosterFull.length ? ESTADO_WS.rosterFull : rosterEquip();
+            if (!Array.isArray(roster)) return;
+            const sk = ESTADO_WS.sk || {};
+            f.party = roster.filter(r => r && r.vocation).map(r => {
+                const s = r.skills || {}, t = sk[r.vocation] || {}, eq = {};
+                for (const [slot, p] of Object.entries(r.equipment || {})) {
+                    const k = TR_SLOT_JOGO[slot] || slot;
+                    if (TR_SLOTS.includes(k) && p && p.name) eq[k] = trPecaFoto(p);
+                }
+                // munição não fica no corpo: é a do battle config (o jogo gasta da mochila). Sem ela, o slot fica vazio de verdade.
+                const bc = ESTADO_WS.battleConfigs && ESTADO_WS.battleConfigs[r.vocation];
+                const ammo = bc && bc.ammo ? (typeof bc.ammo === 'object' ? bc.ammo.name : bc.ammo) : null;
+                if (!eq.ammo && ammo) eq.ammo = { nome: String(ammo), refino: null, raridade: null, potencia: null, atributos: [], imbuSlots: 0, imbu: [], doConfig: true };
+                // skill TREINADA: a do frame (meleeT/distT/mlT) quando vista, senão a do roster (o roster já vem sem bônus)
+                const tr = (vT, vR) => (trNum(vT) > 0 ? Number(vT) : Number.isFinite(trNum(vR)) ? Number(vR) : null);
+                return { voc: r.vocation, nivel: trNum(r.level) || null, eq,
+                         skills: { melee: tr(t.meleeT, s.melee), dist: tr(t.distT, s.distance), ml: tr(t.mlT, s.magic), escudo: Number.isFinite(trNum(s.shielding)) ? Number(s.shielding) : null } };
+            });
+        });
+        bloco('legado', () => {
+            if (ESTADO_WS.legado && ESTADO_WS.legado.ativo === false) return; // o jogo disse que o Legado não está ativo
+            const lg = TR_BASE.legado, out = {};
+            const bonus = (n) => (n <= 0 ? 0 : lg.bonus[n - 1] != null ? lg.bonus[n - 1] : n * (n + 3) / 2); // sem teto: n(n+3)/2 (wiki/legado)
+            for (const m of f.party) {
+                const ch = lg.skill[m.voc], s = trNum(m.skills && m.skills[ch]);
+                if (!ch || !Number.isFinite(s)) continue;
+                const ini = ch === 'ml' ? lg.mlInicio : lg.skillInicio, marco = s >= ini ? Math.floor((s - ini) / lg.passo) + 1 : 0, prox = ini + marco * lg.passo;
+                out[m.voc] = { skill: s, marcoAtual: marco, proxMarco: prox, falta: prox - s, bonusAtual: bonus(marco), bonusProx: bonus(marco + 1),
+                               ativo: ESTADO_WS.legado ? !!ESTADO_WS.legado.ativo : null };
+            }
+            f.legado = Object.keys(out).length ? out : null;
+        });
+        bloco('prey', () => {
+            const p = PROG.prey, meta = PROG.meta || {};
+            if (!p) return;
+            const o = { buffs: {}, wildcards: p.wildcards };
+            if (p.cacada && p.cacada.huntId != null) Object.assign(o, { huntId: Number(p.cacada.huntId), huntTitle: p.cacada.titulo, huntLocked: !!p.cacada.locked, huntMsLeft: p.cacada.msLeft });
+            else if ('preyHunt' in meta && meta.preyHunt === null) Object.assign(o, { huntId: null, semCacada: true });
+            for (const [v, b] of Object.entries(p.buffs || {})) if (b) o.buffs[v] = { tipo: b.tipo, tier: b.tier || 0, locked: !!b.locked, msLeft: b.msLeft, gratis: !!b.gratis };
+            f.prey = o;
+        });
+        bloco('ampulhetas', () => {
+            const a = x.ampulheta;
+            if (!a) return;
+            const reset = a.resetEm > 1e12 ? a.resetEm : a.resetEm > 0 ? a.t + a.resetEm : null, virou = reset != null && agora >= reset;
+            const o = {};
+            for (const [v, z] of Object.entries(a.vocacoes)) {
+                if (z && typeof z === 'object') o[v] = { usadasH: virou ? 0 : Math.round((trNum(z.hojeMs) || 0) / TR_H * 100) / 100, treinando: !!z.treinando, temPersonagem: z.temPersonagem !== false };
+            }
+            f.ampulhetas = o;
+        });
+        bloco('selo', () => {
+            const s = x.selo;
+            if (!s || s.ativo === false || !f.hunt) return;
+            const e = (s.selos || []).find(z => z && trMesmoId(z.huntId, f.hunt.id));
+            const ab = e && Array.isArray(e.pactos) ? e.pactos.filter(p => p && /abund/i.test(String(p.buff || ''))) : [];
+            f.selo = { ativo: !!(e && e.ligado), pausa: e ? e.pausa || null : null, abundante: ab.length ? Math.max(...ab.map(p => trNum(p.tier) || 0)) || null : null, huntId: f.hunt.id };
+        });
+        bloco('sessoes', () => {
+            const mult = xpMultiplicador();
+            f.sessoes = (sessoes() || []).filter(s => s && s.dur > 0).slice(-60).map(s => {
+                const rawOk = trNum(s.expRawH) > 0, raw = rawOk ? Number(s.expRawH) : trNum(s.expH) > 0 && mult > 0 ? Math.round(s.expH / mult) : null;
+                const ini = trNum(s.inicio) || 0, fim = ini + s.dur * 1000, huntId = s.huntId != null ? Number(s.huntId) : null;
+                return { hunt: s.hunt || null, huntId, t: ini || null, durMin: Math.round(s.dur / 6) / 10, xpH: raw, xpAprox: !rawOk && raw != null,
+                         ouroH: Number.isFinite(trNum(s.ouroH)) ? Number(s.ouroH) : null, abatesH: trNum(s.abatesH) || null,
+                         morte: f.mortes.some(m => trMesmoId(m.huntId, huntId) && m.t >= ini - 60000 && m.t <= fim + 120000) };
+            });
+        });
+        bloco('checklist', () => { if (EQUIP.res && EQUIP.res.porVoc) f.checklist = mlChecklist(EQUIP.res.porVoc, EQUIP.ctx); });
+        bloco('bestiario', () => {
+            const cont = pgMesclarBestiario(ler('prog_bestiario', {}) || {}, PROG.best);
+            f.bestiario = pgLinhasBestiario(hs, cont, pgMedidos(), f.nivel).map(l => {
+                const id = l.hunt.id, m = f.mapas.find(z => trMesmoId(z.id, id));
+                const aqui = f.hunt && trMesmoId(f.hunt.id, id) && f.medidoAtual && f.medidoAtual.xpH > 0;
+                return { huntId: id, title: l.hunt.title, bonus: l.e.bonus, ganho: l.e.ganho, falta: l.e.falta,
+                         horas: l.horas != null ? Math.round(l.horas * 10) / 10 : null, xpH: aqui ? f.medidoAtual.xpH : m ? m.xpH : null, abatesH: l.abatesH ? Math.round(l.abatesH) : null };
+            });
+        });
+        bloco('chaves', () => {
+            const c = PROG.chaves;
+            if (!c) return;
+            const elites = Object.entries(c.chaves || {}).filter(([, q]) => q > 0).map(([k, q]) => {
+                const b = (CAT.bosses || []).find(z => z && z.kind === 'mini' && trNome(z.keyItem) === trNome(k));
+                return { nome: b ? b.name : k, chave: k, qtd: q };
+            });
+            f.chaves = { usadas: trNum(c.usadas) || 0, max: trNum(c.max) > 0 ? Number(c.max) : null, elites };
+        });
+        bloco('deposito', () => {
+            const dep = {}, soma = (n, q) => { const k = trNome(n), v = trNum(q); if (k && v > 0) dep[k] = (dep[k] || 0) + v; };
+            const d0 = ESTADO_WS.depotReal || (ESTADO_WS.depot && !ESTADO_WS.depot.lembrado ? ESTADO_WS.depot : null);
+            for (const e of (d0 && Array.isArray(d0.entries) ? d0.entries : [])) if (e) soma(e.itemName || e.name, e.count != null ? e.count : 1);
+            for (const [n, q] of Object.entries(MK.bag || {})) soma(n, q);
+            Object.assign(f, { deposito: dep, depositoLido: !!d0 }); // depositoLido false = só a mochila: o depósito não foi lido nesta sessão (na caçada o jogo não manda)
+        });
+        bloco('invasao', () => { if (x.invasao) f.invasao = { inscrito: x.invasao.inscrito, proxima: x.invasao.proxima }; });
+        bloco('forja', () => {
+            const fb = TR_BASE.forja, ate = fb.refinoSeguroAte, abaixo4 = [];
+            // preço de cada gema hoje: o da última leitura da Forja (lastro + fragmento do Mercado) ou criar + 100 fragmentos (wiki/estimado)
+            const cg = FJ.custos || fjCustoGemas(null, MK.catalogo || null, null), g = (k) => (cg[k] && cg[k].custo > 0 ? cg[k].custo : FORJA_GEMA_OURO[k]);
+            for (const m of f.party) {
+                for (const slot of TR_SLOTS) {
+                    const p = m.eq[slot];
+                    if (!p || p.refino == null || p.refino >= ate) continue;
+                    let custo = null;
+                    try { const t = pgRefino(p.refino, ate, 'melhor').total; custo = Math.round(t.T1 * g('refino') + t.T2 * g('refino_maior') + t.G * g('garantia')); } catch { custo = null; }
+                    abaixo4.push({ voc: m.voc, slot, nome: p.nome, refino: p.refino, custo: custo > 0 ? custo : null });
+                }
+            }
+            const dep = ESTADO_WS.depotReal && Array.isArray(ESTADO_WS.depotReal.entries) ? ESTADO_WS.depotReal.entries : ((lembrarDepot() || {}).entries || []);
+            const bases = [];
+            for (const e of dep.concat(Array.isArray(MK.bagInst) ? MK.bagInst : [])) {
+                if (!e || !e.forja || e.forja.potenciaBase == null) continue;
+                const pot = potenciaTotal(e);
+                if (pot >= fb.potBase) bases.push({ nome: String(e.itemName || e.name), potencia: pot });
+            }
+            const forja = { idadeH: FJ.t > 0 ? Math.round((agora - FJ.t) / TR_H * 10) / 10 : null, basesParadas: bases.sort((p, q) => q.potencia - p.potencia).slice(0, 20) };
+            if (f.party.length) forja.abaixo4 = abaixo4; // sem party lida não afirma "tudo em +4"
+            f.forja = forja;
+        });
+        bloco('topo', () => {
+            const tp = ler('tr_topo', null);
+            if (!tp || typeof tp !== 'object') return;
+            const eu = x.conta && x.conta.nome ? x.conta.nome : ESTADO_WS.conta && ESTADO_WS.conta.nome;
+            // gaveta da conta; mesmo assim, leitura de outro nome (gaveta trocada) ou de outra faixa de nível não vale como fresca
+            const outra = (tp.conta && eu && trNome(tp.conta) !== trNome(eu)) || (Number.isFinite(trNum(tp.nivel)) && f.nivel && Math.abs(tp.nivel - f.nivel) > 30);
+            f.topo = Object.assign({}, tp, { idadeH: !outra && tp.t > 0 ? Math.round((agora - tp.t) / TR_H * 10) / 10 : null, pos: outra ? null : tp.pos });
+        });
+        bloco('precos', () => {
+            if (!MK.catalogo) return;
+            const p = {};
+            for (const [k, v] of Object.entries(MK.catalogo)) { const n = trNum(v && v.minSell); if (n > 0) p[k] = n; }
+            f.precos = p;
+        });
+        bloco('ouroLivre', () => {
+            const gastoH = f.emHunt && f.medidoAtual && f.medidoAtual.min >= 1 ? f.medidoAtual.gastoH : 0;
+            f.ouroLivre = trOuroLivre(f.ouro, f.ouroTravado, gastoH, f.bencaos ? f.bencaos.custoFaltam : 0);
+        });
+        return f;
+    }
+    /* ── Topo do rank (Task 15): rede com freio. Só pelo botão do treinador (ação ler-topo), nunca no carregamento da página.
+     *   1) GET /leaderboard (público) → posição, top 1 e as skills da faixa [nível, nível + 150];
+     *   2) player_profile {name} pelo socket (consulta: external_query no próprio cliente) de até 25 nomes da faixa, 1 por segundo,
+     *      parando no 1º erro, sem resposta em 5 s ou com TR.topo.cancelar; só entram perfis com equipamento à mostra de verdade.
+     *   Freio (trFreioTopo, puro): leaderboard a cada 6 h, perfis a cada 24 h; leitura que parou antes do fim (ou não leu nada) espera 1 h
+     *   e JUNTA os perfis novos com os de antes (trPerfisDepois). Outra conta ou outra faixa de nível relê tudo.
+     *   Guarda o resumo (trResumirTopo) POR CONTA em guardar('tr_topo') com t, conta, nivel, tPerfis e tPerfisParcial. Devolve um texto curto. */
+    const TR_TOPO_MAX = 25, TR_TOPO_ESPERA_MS = 5000, TR_TOPO_PASSO_MS = 1000;
+    function trEsperarPerfil(nome) {
+        let e = null;
+        const p = new Promise((res, rej) => {
+            e = { nome: trNome(nome), res, rej, timer: setTimeout(() => { TR.esperas = TR.esperas.filter(z => z !== e); rej(new Error('player_profile sem resposta em 5 s')); }, TR_TOPO_ESPERA_MS) };
+        });
+        TR.esperas.push(e);
+        return { p, cancelar: () => { clearTimeout(e.timer); TR.esperas = TR.esperas.filter(z => z !== e); } };
+    }
+    // perfil com equipamento à mostra DE VERDADE: algum personagem com peça no corpo (equipmentVisible sozinho não basta)
+    const trPerfilVisivel = (r) => !!(r && r.equipmentVisible !== false && Array.isArray(r.characters)
+        && r.characters.some(c => c && c.equipment && typeof c.equipment === 'object' && Object.keys(c.equipment).length));
+    async function trLerTopo(opc) {
+        opc = opc || {};
+        if (TR.topo.lendo) return 'já estou lendo o topo';
+        const agora = Date.now(), x = ESTADO_WS.tr || {};
+        const nome = (x.conta && x.conta.nome) || (ESTADO_WS.conta && ESTADO_WS.conta.nome) || null;
+        const nv = nivelAtual(), nivel = nv > 1 ? nv : x.conta && x.conta.nivel > 0 ? x.conta.nivel : null; // nivelAtual cai em 1 sem leitura
+        if (!(nivel > 0)) return 'sem o nível da conta: entre no jogo e tente de novo';
+        const salvo = ler('tr_topo', null);
+        // outra conta só quando os dois nomes existem e diferem: sem o nome, o freio vale pelo salvo.t (pos fica null)
+        const outraConta = !!(salvo && salvo.conta && nome && trNome(salvo.conta) !== trNome(nome));
+        const mesma = !!(salvo && !outraConta && Math.abs((trNum(salvo.nivel) || 0) - nivel) <= 30);
+        const fr = opc.forcar ? { lerLb: true, lerPerfis: true } : trFreioTopo(salvo, agora, mesma);
+        const idadeH = (k) => (salvo && trNum(salvo[k]) > 0 ? (agora - Number(salvo[k])) / TR_H : Infinity);
+        if (!fr.lerLb && !fr.lerPerfis) {
+            const prox = Math.min(TR_TOPO_LB_H - idadeH('t'), idadeH('tPerfis') < TR_TOPO_PERFIS_H ? Infinity : TR_TOPO_PARCIAL_H - idadeH('tPerfisParcial'));
+            return `topo lido há ${trHorasPt(idadeH('t'))} h: leio de novo em ${trHorasPt(Math.max(0, prox))} h`;
+        }
+        TR.topo.lendo = true; TR.topo.cancelar = false; TR.topo.progresso = null;
+        try {
+            const lb = await buscarJSON('/leaderboard');
+            const lista = Array.isArray(lb) ? lb : lb && Array.isArray(lb.players) ? lb.players : null;
+            if (!lista || !lista.length) throw new Error('o /leaderboard veio vazio');
+            const novos = [];
+            let lidos = 0, visiveis = 0, parou = null;
+            if (fr.lerPerfis) {
+                const banda = lista.filter(p => p && p.name && trNome(p.name) !== trNome(nome) && Number(p.level) >= nivel && Number(p.level) <= nivel + TR_TOPO_FAIXA)
+                    .sort((p, q) => Number(q.level) - Number(p.level)).slice(0, TR_TOPO_MAX);
+                TR.topo.progresso = `0/${banda.length}`;
+                for (const p of banda) {
+                    if (TR.topo.cancelar) { parou = 'cancelado'; break; }
+                    if (!socketAberto()) { parou = 'socket do jogo fechado'; break; }
+                    const w = trEsperarPerfil(p.name);
+                    try { enviarWS({ type: 'player_profile', data: { name: String(p.name) } }); } catch (e) { w.cancelar(); parou = e.message; break; }
+                    try {
+                        const r = await w.p;
+                        lidos++;
+                        if (trPerfilVisivel(r)) { visiveis++; novos.push(Object.assign({ level: Number(p.level) }, r)); }
+                    } catch (e) { parou = e.message; break; }
+                    TR.topo.progresso = `${lidos}/${banda.length}`;
+                    await dorme(TR_TOPO_PASSO_MS);
+                }
+            }
+            const pf = fr.lerPerfis ? trPerfisDepois(salvo, mesma, { lidos, visiveis, parou, novos }, agora)
+                : { perfis: mesma && Array.isArray(salvo.perfis) ? salvo.perfis : [], tPerfis: mesma ? salvo.tPerfis || null : null, tPerfisParcial: mesma ? salvo.tPerfisParcial || null : null };
+            const resumo = Object.assign(trResumirTopo(lista, pf.perfis, nivel, agora, nome), { conta: nome, nivel, tPerfis: pf.tPerfis, tPerfisParcial: pf.tPerfisParcial });
+            guardar('tr_topo', resumo);
+            const pos = resumo.pos ? `você é o ${resumo.pos}º de ${resumo.total}` : `fora dos ${resumo.total} do ranking`;
+            const manteve = fr.lerPerfis && pf.tPerfisParcial === agora && pf.perfis.length > visiveis;
+            const txt = !fr.lerPerfis ? `topo relido (${pos}); perfis de ${trHorasPt(idadeH('tPerfis'))} h atrás`
+                : `topo lido: ${pos}; ${visiveis} de ${lidos} perfis com equipamento à mostra` + (parou ? ` (parei: ${parou})` : '')
+                    + (manteve ? `; juntei com a leitura anterior (${pf.perfis.length} perfis)` : '');
+            TR.topo.status = txt;
+            log('treinador: ' + txt, parou ? 'aviso' : 'ok');
+            return txt;
+        } catch (e) {
+            falhou('treinador (topo)', e);
+            return (TR.topo.status = 'não consegui ler o topo: ' + e.message);
+        } finally { TR.topo.lendo = false; }
+    }
+    /* ── Tela ▤ Progresso (Task 16). trRodar no máximo 1× por minuto (TR.ultimo) ou no "Atualizar"; o template só lê o cache.
+     * Botões: trAcaoInfo (puro) diz o modo de cada ação; trFazer confere de novo NA HORA do clique (foto nova: socket, cidade/caçada,
+     * ouro) e executa. Nada dispara sozinho; nada encadeia: cada "Fazer" é uma ação, e depois a tela recalcula (TR.ultimo = null).
+     * Log: o resultado de cada ação sai como "treinador: …" (avisar = Log + faixa da aba). */
+    const TR_CACHE_MS = 60000, TR_ATUALIZAR_MS = 5000; // a tela recalcula 1× por minuto; o "Atualizar" no máximo a cada 5 s
+    const TR_TRAVA_MAPA = 'Treinador (troca de mapa)', TR_TRAVA_MERCADO = 'Treinador (Mercado)'; // _travaJogo enquanto o treinador mexe
+    // ações que vão pelo socket: recusam com a trava do jogo ocupada (ciclo, Scan, Equip, Forja, Mercado…) ou com boss em andamento
+    const TR_TIPOS_SOCKET = new Set(['lure', 'prey-escolher', 'prey-trocar', 'prey-trancar', 'bencaos', 'selo', 'boss-trocar', 'invasao', 'abrir-silas']);
+    const trOcupado = () => travaJogo() || (ESTADO_WS.boss ? 'boss' : null);
+    // foto → resultado da tela (TR.ultimo); as idades do rodapé são lidas aqui, não no template (o radar_rank guardado é grande)
+    function trCalcular(foto) {
+        const agora = Date.now();
+        let radarH = null, nSessoes = 0;
+        try { const rk = ler('radar_rank', null); radarH = rk && rk.t > 0 ? (agora - rk.t) / TR_H : null; } catch { radarH = null; }
+        try { nSessoes = (sessoes() || []).length; } catch { nSessoes = 0; }
+        TR.ultimo = { t: agora, foto, r: trRodar(foto, TR_BASE), radarH, nSessoes };
+        return TR.ultimo;
+    }
+    function trResultado(forcar) {
+        if (forcar || trCacheVelho(TR.ultimo, Date.now(), TR_CACHE_MS)) trCalcular(trFoto());
+        return TR.ultimo;
+    }
+    function trMetaHtml(c) {
+        const imp = c.estado === 'erro' ? '<span class="tr-imp tb-ruim">corrigir</span>'
+            : Number(c.impacto) > 0 ? `<span class="tr-imp tb-ok">+${trPct(Number(c.impacto))} % XP/h</span>` : '';
+        const custo = Number(c.custo) > 0 ? trQtd(c.custo) : '', ch = c.numeros && Number(c.numeros.custoH) > 0 ? trQtd(c.numeros.custoH) + '/h' : '';
+        const cst = custo || ch ? `<span class="tr-custo ${c.semOuro ? 'tb-ruim' : 'tb-mut'}"${c.semOuro ? ' title="falta ouro livre"' : ''}>${escHtml([custo, ch].filter(Boolean).join(' + '))}</span>` : '';
+        return imp + cst + `<span class="tb-tag">${escHtml(c.confianca || 'estimado')}</span>`;
+    }
+    // botão "Fazer": id em ordem fixa (o mesmo HTML repinta igual); TR.acoes guarda a ação desta geração pela chave (o clique busca lá)
+    function trBotaoHtml(chave, acao, foto, titulo) {
+        const info = acao ? trAcaoInfo(acao, foto) : null;
+        if (!info) return '';
+        const id = 'tr-b-' + TR.acoes.size;
+        TR.acoes.set(id, { acao, chave, dois: info.dois });
+        const motivo = info.motivo || (TR.agindo ? 'espere: ' + TR.agindo : null);
+        let dica = info.modo === 'tela' ? 'abre a tela do jogo' : info.modo === 'aba' ? 'abre a aba do helper' : info.dois ? 'gasta: 2 toques' : '';
+        if (info.tipo === 'ir-mapa') { // decisão do controlador: o "Ir" não mexe na barra nem no kit
+            const h = (CAT.hunts || []).find(x => x && trMesmoId(x.id, acao.huntId));
+            dica = `vai para ${h ? h.title : 'o mapa'} com a lure salva; a barra fica como está` + (info.dois ? ' (2 toques: sai da caçada de agora)' : '');
+        }
+        return `<button type="button" class="tb-bt mini tr-fazer" id="${id}" data-tr="${escHtml(chave)}"${motivo ? ' disabled' : ''} title="${escHtml(motivo || dica)}" aria-label="${escHtml(info.rotulo + ': ' + (titulo || ''))}">${escHtml(info.rotulo)}</button>`
+            + (info.motivo ? `<span class="tb-mut tr-motivo">${escHtml(info.motivo)}</span>` : ''); // o motivo em texto também (no celular não há title)
+    }
+    function telaTreinador() {
+        garantirCssTelas();
+        let u;
+        try { u = trResultado(false); } catch (e) { falhou('treinador (calcular)', e); return '<div class="tb-ruim">não consegui montar a análise (veja o Log)</div>'; }
+        const { foto, r } = u;
+        TR.acoes = new Map();
+        const tp = foto.topo, ma = foto.medidoAtual;
+        const sit = [foto.nivel ? 'nível ' + foto.nivel : null,
+                     tp && tp.pos && tp.idadeH != null ? `${tp.pos}º de ${tp.total}` : null,
+                     trMaValida(ma) ? trQtd(ma.xpH) + ' XP/h raw' : ma && ma.xpH > 0 ? `medindo (${trPct(ma.min)} min)` : null,
+                     Number.isFinite(foto.ouroLivre) ? 'livre ' + trQtd(foto.ouroLivre) : null].filter(Boolean);
+        let h = `<div class="tr-sit tb-mut">${escHtml(sit.join(' · ') || 'entre no jogo para eu ler a conta')}</div>`;
+        if (TR.agindo) h += `<div class="tb-av tr-sit">fazendo: ${escHtml(TR.agindo)}…</div>`;
+        const passos = r.passos.map((c, i) => `<div class="tr-c tr-passo"><span class="tr-t"><b>${i + 1}.</b> ${escHtml(c.titulo)}</span>${trMetaHtml(c)}`
+            + aj('tr-p-' + trK(c.id), escHtml(c.porque || '—')) + trBotaoHtml('p:' + trK(c.id), c.acao, foto, c.titulo) + '</div>').join('');
+        h += `<div class="tb-cx"><b>Próximos passos</b>${passos || '<div class="tb-mut tr-sit">nada urgente: veja os especialistas abaixo</div>'}</div>`;
+        // glifos com texto para leitor de tela
+        const est = { erro: '<span class="tr-est tb-ruim" role="img" aria-label="erro">✗</span>', aviso: '<span class="tr-est tb-av" role="img" aria-label="aviso">⚠</span>',
+                      ok: '<span class="tr-est tb-ok" role="img" aria-label="tudo certo">✓</span>' };
+        h += r.cartoes.map(cd => {
+            const linhas = cd.conselhos.map(c => `<div class="tr-c tr-linha"><span class="tr-t" title="${escHtml(c.titulo)}">${escHtml(c.titulo)}</span>`
+                + aj('tr-c-' + trK(c.id), `<div class="tr-meta">${trMetaHtml(c)}</div>${escHtml(c.porque || '—')}`) + trBotaoHtml('c:' + trK(c.id), c.acao, foto, c.titulo) + '</div>').join('');
+            return `<details class="tr-card" data-k="tr-card-${trK(cd.id)}"><summary><span class="tr-ic" aria-hidden="true">${escHtml(cd.icone)}</span>${escHtml(cd.nome)}${est[cd.estado] || est.aviso}`
+                + `<span class="tb-mut tr-n">${cd.conselhos.length}</span></summary>${linhas || '<div class="tb-mut tr-sit">—</div>'}</details>`;
+        }).join('');
+        // rodapé: idade dos dados, Atualizar, Comparar com o topo (com progresso e Cancelar) e as sessões medidas
+        const medidos = foto.mapas.filter(m => m.fonte === 'medido').length, fj = foto.forja;
+        const idades = [`Radar ${trIdadePt(u.radarH)}`, `Forja ${trIdadePt(fj && fj.idadeH)}`, `Topo ${trIdadePt(tp && tp.idadeH)}`, `${medidos} ${medidos === 1 ? 'mapa medido' : 'mapas medidos'}`];
+        h += `<div class="tr-rod tb-mut">${escHtml(idades.join(' · '))} · calculado ${trIdadeMin(Date.now() - u.t)}</div>`;
+        const lendo = TR.topo.lendo;
+        h += '<div class="tb-linha"><button type="button" class="tb-bt mini" id="tr-atualizar"' + (TR.agindo ? ' disabled' : '') + '>Atualizar</button>'
+            + (lendo ? `<span class="tb-av tr-rod">lendo o topo ${escHtml(TR.topo.progresso || '')}</span><button type="button" class="tb-bt mini" id="tr-cancelar"${TR.topo.cancelar ? ' disabled' : ''}>${TR.topo.cancelar ? 'cancelando…' : 'Cancelar'}</button>`
+                : `<button type="button" class="tb-bt mini" id="tr-topo"${TR.agindo ? ' disabled' : ''}>Comparar com o topo</button>`) + '</div>';
+        if (TR.topo.status && !lendo) h += `<div class="tr-rod tb-mut">${escHtml(TR.topo.status)}</div>`;
+        // as sessões medidas (o Analisador saiu; a coleta continua: Radar, Bestiário e o treinador usam)
+        h += `<div class="tb-linha tr-rod"><span class="tb-mut">sessões: ${u.nSessoes}</span><button type="button" class="tb-bt mini" id="tb-exportar">copiar JSON</button>`
+            + '<button type="button" class="tb-bt mini" id="tb-limpar-sessoes" title="apaga as sessões medidas (2 toques)">limpar</button></div>';
+        if (_exportacao) {
+            h += `<div class="tb-an-exp"><div class="tb-linha"><span class="${_exportacao.copiado === false ? 'tb-av' : 'tb-mut'}">${_exportacao.copiado === true ? 'copiado — e também aqui:' : _exportacao.copiado === false ? 'área de transferência bloqueada: selecione e copie daqui' : 'copiando…'}</span>`
+                + '<button type="button" class="tb-bt mini" id="tb-exportar-fechar" style="margin-left:auto" aria-label="fechar a caixa do JSON">fechar</button></div>'
+                + '<textarea id="tb-exportar-caixa" readonly spellcheck="false" aria-label="sessões medidas em JSON"></textarea></div>';
+        }
+        return `<div id="tr-tela">${h}</div>`;
+    }
+    const trIdadeMin = (ms) => (ms < 60000 ? 'agora' : `há ${Math.round(ms / 60000)} min`);
+    function ligarTreinador() {
+        const c = $('#tb-corpo'); if (!c) return;
+        for (const [id, { chave, dois }] of TR.acoes) {
+            const btn = $('#' + id);
+            if (!btn) continue;
+            if (dois) ligarDoisToques(btn, 'tr:' + chave, 'confirmar?', () => trClique(chave, true)); // só o 2º toque confirma
+            else btn.onclick = () => trClique(chave, false);
+        }
+        const at = $('#tr-atualizar');
+        if (at) at.onclick = () => { if (TR.ultimo && Date.now() - TR.ultimo.t < TR_ATUALIZAR_MS) return; TR.ultimo = null; renderizar(); }; // freio de 5 s
+        const tp = $('#tr-topo'); if (tp) tp.onclick = () => trFazer({ tipo: 'ler-topo' }, false);
+        const cn = $('#tr-cancelar'); if (cn) cn.onclick = () => { TR.topo.cancelar = true; renderizar(); };
+        const exp = $('#tb-exportar');
+        if (exp) {
+            exp.onclick = () => {
+                const dados = JSON.stringify({ sessoes: sessoes(), resumo: resumoPorHunt(),
+                                               ws: { frames: WS.frames, tipos: WS.tipos, binarios: WS.bin, amostrasRecebidas: WS.amostras, ENVIADOS: WS.enviados } }, null, 2);
+                const x = _exportacao = { texto: dados, copiado: null, selecionar: true };
+                renderizar();
+                let p; // writeText ainda dentro do clique (o navegador exige o gesto)
+                try { p = navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(dados) : Promise.reject(new Error('sem clipboard')); } catch (e) { p = Promise.reject(e); }
+                p.then(() => { x.copiado = true; avisar('treinador', 'sessões copiadas para a área de transferência (e na caixa abaixo)', 'ok'); })
+                    .catch(() => { x.copiado = false; x.selecionar = true; avisar('treinador', 'área de transferência bloqueada — o JSON está na caixa abaixo do botão', 'erro'); })
+                    .finally(renderizar);
+            };
+        }
+        const caixa = $('#tb-exportar-caixa');
+        if (caixa && _exportacao) {
+            caixa.value = _exportacao.texto;
+            if (_exportacao.selecionar) { _exportacao.selecionar = false; try { caixa.focus({ preventScroll: true }); caixa.select(); } catch { /* caixa fora da página */ } }
+        }
+        const fx = $('#tb-exportar-fechar'); if (fx) fx.onclick = () => { _exportacao = null; renderizar(); };
+        const lim = $('#tb-limpar-sessoes');
+        if (lim) ligarDoisToques(lim, 'limpar-sessoes', 'apagar?', () => { guardar('sessoes', []); TR.ultimo = null; avisar('treinador', 'histórico de sessões apagado', 'ok'); renderizar(); });
+    }
+    /* Uma ação do jogo pelo socket, esperando a resposta (8 s): { ok, type, data, enviado } | { erro: code }. Uma de cada vez (TR.pend);
+     * o casamento é o trCasaResposta (puro), chamado pelo trObservar: mensagem que não confirma (selo_state de outro Selo, Invasão sem
+     * inscrito === true) é ignorada e a espera segue (opc.alvo = o que a ação pediu). Erro sem requestId: espera 1,2 s pela resposta certa.
+     * Limite aceito (revisão, item 8): um `error` sem requestId de OUTRO fluxo (Mercado, Scan) nessa janela é tomado como desta ação. */
+    async function trPedir(tipo, data, espera, opc) {
+        if (!socketAberto()) return { erro: 'sem_socket' };
+        if (TR.pend) return { erro: 'ocupado' };
+        const semRid = !!(opc && opc.semRid), rid = semRid ? null : mkRid();
+        const p = TR.pend = { tipo, rid, espera, alvo: (opc && opc.alvo) || null, res: null, erro: null };
+        try { enviarWS({ type: tipo, data: semRid ? data : Object.assign({}, data, { requestId: rid }) }); } catch { TR.pend = null; return { erro: 'sem_socket' }; }
+        try { await esperarQue(() => p.res || (p.erro && (p.erro.meu || Date.now() - p.erro.t >= MK_GRACA_ERRO_MS)), MK_PRAZO_MS, 100); }
+        finally { if (TR.pend === p) TR.pend = null; }
+        if (p.res) return { ok: true, type: p.res.type, data: p.res.data, enviado: tipo };
+        if (p.erro) return { erro: p.erro.code };
+        return { erro: 'sem_resposta' };
+    }
+    const trErroTxt = (code) => TR_ERRO_PT[code] || mkErroTexto(code);
+    // resposta → resultado da tela; meta_result com applied:false = o jogo recusou (o notice diz por quê)
+    // alvo = o que a ação pediu ({ huntId } do Selo) para o trRespostaConfirma (defesa a mais: o trCasaResposta já filtra)
+    function trResposta(r, nome, okMsg, alvo) {
+        if (r.erro) return { erro: true, code: r.erro, msg: `${nome}: ${trErroTxt(r.erro)}` };
+        const d = r.data || {};
+        if (r.type === 'meta_result' && d.applied === false) return { erro: true, code: 'nao_aplicado', msg: `${nome}: ${trErroTxt('nao_aplicado')}` + (d.notice && d.notice.key ? ` (${d.notice.key})` : '') };
+        if (trRespostaConfirma(r.enviado, d, alvo) === false) return { erro: true, code: 'nao_confirmou', msg: `${nome}: ${trErroTxt('nao_confirmou')}` };
+        return { msg: okMsg };
+    }
+    /* Telas do jogo (só clica no botão do próprio jogo; nada vai pelo socket). data-testid do bundle de 27/11 (docs/protocolo-treinador.md). */
+    const TR_TELA_PT = { loja: 'a Loja', elite: 'os Elites', ampulheta: 'as Ampulhetas', selo: 'o Selo da Caçada', silas: 'o Silas', invasao: 'a Invasão' };
+    async function trAbrirTela(tela, acao) {
+        const clicar = (el) => { if (!el) return false; try { el.click(); return true; } catch { return false; } };
+        switch (tela) {
+        case 'loja': return clicar(tid('hud-store') || tid('premium-cta')); // hud-store = botão da Loja na barra de cima (bundle 27/11, docs/protocolo-treinador.md)
+        case 'ampulheta': return clicar(tid('ampulheta-placa'));
+        case 'selo': { // ao vivo 27/11: o Selo de cada caçada é o "+" selo-botao-<huntId> no cartão da caçada (lista de CAÇADAS/JOGAR)
+            const id = acao && acao.huntId != null ? String(acao.huntId) : (ESTADO_WS.huntId != null ? String(ESTADO_WS.huntId) : null);
+            if (!id) return false;
+            const botao = () => tid('selo-botao-' + id);
+            if (clicar(botao())) return true;
+            if (!tid('hunts-search') && !clicar(tid('actionbar-explore') || tid('actionbar-hunt'))) return false;
+            const busca = await esperarQue(() => tid('hunts-search'), 3000, 150);
+            let el = await esperarQue(botao, 800, 150);
+            if (!el && busca) { // a busca do jogo é por criatura/item, não pelo nome do mapa ("Fury" acha o Shadow Nexus)
+                const h = ((CAT && CAT.hunts) || []).find(x => x && String(x.id) === id);
+                const bicho = h && Array.isArray(h.monsters) && h.monsters[0] && h.monsters[0].name;
+                if (bicho) {
+                    try { Object.getOwnPropertyDescriptor(Object.getPrototypeOf(busca), 'value').set.call(busca, bicho); busca.dispatchEvent(new Event('input', { bubbles: true })); } catch { /* campo do jogo mudou */ }
+                    el = await esperarQue(botao, 1500, 150);
+                }
+                if (!el && clicar(tid('explore-todas-ilhas'))) el = await esperarQue(botao, 2000, 150); // mapa de outra ilha
+            }
+            return clicar(el);
+        }
+        case 'invasao': return clicar(tid('invasao-icone'));
+        case 'silas': { // na cidade: "falar com o Silas" na tela de caçadas, ou NAVEGAÇÃO › Silas (o personagem anda até ele)
+            if (clicar(tid('explore-falar-silas')) || clicar(tid('nav-quests-ilhas'))) return true;
+            if (!clicar(tid('topmenu-navegacao') || tid('topmenu-sheet-navegacao'))) return false;
+            return clicar(await esperarQue(() => tid('nav-quests-ilhas'), 2000, 100));
+        }
+        case 'elite': { // CAÇADAS (na caçada) ou JOGAR (na cidade) → aba Elite (explore-tab-minibosses)
+            if (!tid('explore-tab-minibosses') && !clicar(tid('actionbar-explore') || tid('actionbar-hunt'))) return false;
+            return clicar(await esperarQue(() => tid('explore-tab-minibosses'), 3000, 150));
+        }
+        default: return false;
+        }
+    }
+    // clique de um botão da tela: a ação vem de TR.acoes pela chave (a geração ATUAL da tela, não a do momento em que o botão foi ligado)
+    function trClique(chave, confirmado) {
+        let acao = null;
+        for (const v of TR.acoes.values()) if (v.chave === chave) { acao = v.acao; break; }
+        if (!acao) { avisar('treinador', 'treinador: a tela mudou — toque de novo', 'erro'); renderizar(); return null; }
+        return trFazer(acao, confirmado);
+    }
+    // confirmado = true só quando o clique veio do 2º toque (ligarDoisToques)
+    async function trFazer(acao, confirmado) {
+        if (!acao) return;
+        if (TR.agindo) { avisar('treinador', 'treinador: espere — ' + TR.agindo, 'erro'); return; }
+        let foto = null;
+        try { foto = trFoto(); } catch { foto = TR.ultimo ? TR.ultimo.foto : null; } // confere com o estado de AGORA, não o do cache
+        const dec = trDecidirClique(acao, foto, confirmado), info = dec.info;
+        if (!dec.executa) {
+            avisar('treinador', `treinador: ${info ? info.rotulo : acao.tipo} — ${dec.aviso}`, 'erro');
+            try { if (foto) trCalcular(foto); else TR.ultimo = null; } catch { TR.ultimo = null; } // redesenha com a foto nova (2 toques, se for o caso)
+            renderizar();
+            return;
+        }
+        if (info.modo === 'aba') {
+            log('treinador: abrir a aba ' + ((ICONES.find(x => x[0] === info.aba) || [])[2] || info.aba), 'info');
+            ABA = info.aba; guardarUI({ aba: info.aba, aberta: true }); renderizar();
+            return;
+        }
+        TR.agindo = info.rotulo; renderizar();
+        if (info.modo === 'tela') {
+            let ok = false;
+            try { ok = await trAbrirTela(info.tela, acao); } finally { TR.agindo = null; }
+            avisar('treinador', ok ? `treinador: abri ${TR_TELA_PT[info.tela]} no jogo` : `treinador: não achei ${TR_TELA_PT[info.tela]} na tela — abra no jogo`, ok ? 'ok' : 'erro');
+            renderizar();
+            return;
+        }
+        let r = null;
+        try { r = await trExecutar(acao); } catch (e) { r = { erro: true, msg: info.rotulo + ': ' + e.message }; falhou('treinador (' + acao.tipo + ')', e); }
+        finally { TR.agindo = null; TR.ultimo = null; }
+        if (r && r.msg) {
+            if (r.jaLogou) AVISOS.treinador = { t: Date.now(), msg: String(r.msg), tipo: r.erro ? 'erro' : 'ok' }; // quem executou já escreveu no Log
+            else avisar('treinador', 'treinador: ' + r.msg, r.erro ? 'erro' : 'ok');
+        }
+        renderizar();
+    }
+    async function trExecutar(acao) {
+        const n = (v) => Number(v), vazio = { erro: true, msg: 'socket do jogo fechado: dê F5 com o helper instalado' };
+        if (TR_TIPOS_SOCKET.has(acao.tipo)) {
+            if (!socketAberto()) return vazio;
+            const ocup = trOcupado(); if (ocup) return { erro: true, msg: `espere o ${ocup} terminar` };
+        }
+        switch (acao.tipo) {
+        case 'ler-topo': {
+            const t = await trLerTopo();
+            return { msg: t, erro: /^não consegui|^sem o nível/.test(t), jaLogou: /^topo lido:|^topo relido/.test(t) };
+        }
+        case 'forja-ler':
+            await fjLer();
+            return FJ.erro ? { erro: true, msg: 'Forja: ' + FJ.erro } : { msg: 'Forja recalculada' };
+        case 'ir-mapa': {
+            // decisão do controlador: só ENTRA no mapa, com a lure salva daquela caçada (lureTierByHunt), sem aplicar kit nem mexer na barra.
+            // scanEntrar encerra a caçada de agora como o helper já faz (stop → ended → start_hunt) e confere a entrada; trava o jogo no meio.
+            const h = (CAT.hunts || []).find(x => x && trMesmoId(x.id, acao.huntId));
+            if (!h) return { erro: true, msg: 'mapa ' + acao.huntId + ' fora do catálogo' };
+            if (!socketAberto()) return vazio;
+            if (trMesmoId(ESTADO_WS.huntId, h.id) && frameFresco()) return { msg: 'já está em ' + h.title };
+            const ocup = trOcupado(); if (ocup) return { erro: true, msg: `espere o ${ocup} terminar` };
+            const salvo = trNum((ESTADO_WS.lureTierByHunt || {})[h.id]), lure = salvo >= 1 ? salvo : 1;
+            log(`treinador: ir para ${h.title} (lure ${lure}; a barra fica como está)`, 'info');
+            _travaJogo = TR_TRAVA_MAPA; renderizar();
+            let r;
+            try { r = await scanEntrar(h, { lure }); } finally { if (_travaJogo === TR_TRAVA_MAPA) _travaJogo = null; }
+            if (r && r.erro) return { erro: true, msg: `não entrei em ${h.title}: ${r.erro}` };
+            return trMesmoId(ESTADO_WS.huntId, h.id) ? { msg: `em ${h.title} (lure ${lure})` } : { erro: true, msg: 'não entrei em ' + h.title + ' (veja o Log)' };
+        }
+        case 'lure': {
+            const lure = n(acao.lure);
+            if (!frameFresco() || !trMesmoId(ESTADO_WS.huntId, acao.huntId)) return { erro: true, msg: 'a lure muda só dentro da caçada' };
+            ESTADO_WS.ultimoErro = null;
+            enviarWS({ type: 'set_lure', data: { tier: lure } }); // tier = índice do degrau (o mesmo do Scan)
+            const ok = await esperarQue(() => frameFresco() && Number(ESTADO_WS.frame.lureTier) === lure, MK_PRAZO_MS, 250); // 8 s, como as outras ações
+            return ok ? { msg: 'lure ' + lure } : { erro: true, msg: `enviei a lure ${lure} e o jogo não confirmou` + (ESTADO_WS.ultimoErro ? ` (${trErroTxt(ESTADO_WS.ultimoErro)})` : '') };
+        }
+        case 'medir': { // Scan de 5 min em cada mapa (memória: rodada de medição = 5 min); o huntId null vem pelo título do catálogo
+            const hs = CAT.hunts || [];
+            const ids = [...new Set((acao.alvos || []).map(a => (a && a.huntId != null ? n(a.huntId) : ((hs.find(x => x && a && trNome(x.title) === trNome(a.title)) || {}).id)))
+                .filter(id => id != null && hs.some(x => x && x.id === id)))];
+            if (!ids.length) return { erro: true, msg: 'nenhum desses mapas está no catálogo' };
+            return scanIniciar({ mapas: ids, minutos: 5, comparar: false, lureMax: false, fim: 'voltar' }) ? { msg: `medindo ${ids.length} ${ids.length > 1 ? 'mapas' : 'mapa'}, 5 min cada, com a lure salva e o modelo do Scan; no fim volta à caçada de agora (aba Scan)` }
+                : { erro: true, msg: 'o Scan não ligou (veja o Log)' };
+        }
+        case 'prey-escolher':
+            return trResposta(await trPedir('prey_hunt_pick', { huntId: n(acao.huntId) }, ['meta_result']), 'prey', 'prey nesta caçada');
+        case 'prey-trocar':
+            return trResposta(await trPedir('prey_buff_roll', { vocation: String(acao.voc) }, ['meta_result']), 'prey', 'prey do ' + trVocPt(acao.voc) + ' sorteada');
+        case 'prey-trancar': {
+            const alvo = acao.alvo === 'hunt' ? 'hunt' : String(acao.alvo || acao.voc);
+            return trResposta(await trPedir('prey_lock_set', { target: alvo, on: true }, ['meta_result']), 'prey', alvo === 'hunt' ? 'caçada da prey trancada' : 'prey do ' + trVocPt(alvo) + ' trancada');
+        }
+        case 'bencaos': // o servidor pode pedir a cidade (não confirmado ao vivo): o not_in_city volta como "só na cidade"
+            return trResposta(await trPedir('buy_all_blessings', {}, ['meta_result']), 'bênçãos', 'bênçãos compradas');
+        case 'selo': { // só chega aqui com Abundante no Selo desta caçada (trAcaoInfo); selo_ligar não leva requestId (protocolo)
+            // só vale o selo_state com o Selo DESTA caçada ligado (os outros são ignorados no trCasaResposta); sem ele em 8 s = não confirmou
+            const alvo = { huntId: acao.huntId }, rr = await trPedir('selo_ligar', { huntId: n(acao.huntId) }, ['selo_state'], { semRid: true, alvo });
+            const r = rr.erro === 'sem_resposta' ? { erro: true, code: 'nao_confirmou', msg: 'Selo: ' + trErroTxt('nao_confirmou') } : trResposta(rr, 'Selo', 'Selo ligado', alvo);
+            if (r.code === 'selo_perigo' || r.code === 'nao_confirmou') await trAbrirTela('selo', acao); // perigo > 5 pede o "aceitar" do dono na tela do jogo
+            return r;
+        }
+        case 'boss-trocar': {
+            if (emHunt()) return { erro: true, msg: 'trocar tentativa só na cidade (Silas)' };
+            const nome = String(acao.nomeJogo || acao.boss), q = Math.floor(n(acao.qtd));
+            const r = trResposta(await trPedir('boss_deliver', { bossName: nome, quantity: q }, ['boss_deliver_result']), nome, `${q} ${q > 1 ? 'tentativas' : 'tentativa'} de ${nome}`);
+            if (r.code === 'too_far' || r.code === 'not_in_city') { if (await trAbrirTela('silas')) r.msg += ' — abri o Silas: toque de novo perto dele'; }
+            return r;
+        }
+        case 'invasao': {
+            // a resposta exata do invasion_join está "a confirmar" no protocolo: só vale inscrito === true no invasion_update/meta (o
+            // trCasaResposta ignora o resto, menos a recusa meta_result applied:false, que volta com o notice); sem resposta, só se o
+            // estado guardado passou de não-inscrito a inscrito DEPOIS do envio
+            const inv0 = ESTADO_WS.tr && ESTADO_WS.tr.invasao ? Object.assign({}, ESTADO_WS.tr.invasao) : null, tEnvio = Date.now();
+            const rr = await trPedir('invasion_join', {}, ['invasion_update', 'meta_result']);
+            const res = rr.erro === 'sem_resposta'
+                ? (trInscreveuDepois(inv0, ESTADO_WS.tr && ESTADO_WS.tr.invasao, tEnvio) ? { msg: 'inscrito na Invasão' } : { erro: true, code: 'nao_confirmou', msg: 'Invasão: ' + trErroTxt('nao_confirmou') })
+                : trResposta(rr, 'Invasão', 'inscrito na Invasão');
+            if (res.code === 'nao_confirmou') { if (await trAbrirTela('invasao')) res.msg += ' (abri o ícone da Invasão)'; }
+            return res;
+        }
+        case 'abrir-silas': {
+            if (emHunt()) return { erro: true, msg: 'abrir ilha só na cidade (Silas)' };
+            const nome = trNomeIlha(TR_BASE, acao.ilha);
+            const r = trResposta(await trPedir('island_deliver', { islandId: String(acao.ilha) }, ['island_deliver_result']), nome, nome + ' aberta');
+            if (r.code === 'too_far' || r.code === 'not_in_city') { if (await trAbrirTela('silas')) r.msg += ' — abri o Silas: toque de novo perto dele'; }
+            return r;
+        }
+        case 'comprar-mercado':
+            return trComprarMercado(acao.itens);
+        default:
+            return { erro: true, msg: 'ação sem execução: ' + acao.tipo };
+        }
+    }
+    /* comprar-mercado: trExecutarCompra (puro, Mercado injetado) com a fila do Mercado (mkPedir dá o ritmo). Segura a trava do jogo
+     * e o MK.ocupado como o anunciar do Mercado; MK.parar (o "parar" do Mercado) é conferido antes de cada compra e zerado no fim.
+     * Ouro normal desconhecido = não compra; as suas ordens nunca lidas = lê antes (pela fila), para não comprar de você mesmo. */
+    async function trComprarMercado(itens) {
+        const imp = mkImpedimento(); if (imp) return { erro: true, msg: 'Mercado: ' + imp }; // socket, Premium e travaJogo() ocupada
+        if (MK.ocupado) return { erro: true, msg: 'o Mercado está ocupado (' + MK.ocupado + ')' };
+        if (mlOuroNormal() == null) return { erro: true, msg: 'ouro desconhecido: abra o Mercado no jogo e tente de novo — nada comprado' };
+        MK.ocupado = 'treinador'; MK.parar = false; _travaJogo = TR_TRAVA_MERCADO;
+        try {
+            if (!Array.isArray(MK.minhas)) {
+                const rm = await mkLerMinhas();
+                if ((rm && rm.erro) || !Array.isArray(MK.minhas)) return { erro: true, msg: 'não li as suas ordens do Mercado' + (rm && rm.erro ? ' (' + mkErroTexto(rm.erro) + ')' : '') + ' — nada comprado' };
+            }
+            const r = await trExecutarCompra(itens, {
+                pedir: mkPedir, ouro: mlOuroNormal, minhas: new Set(MK.minhas.map(o => o && o.id)), parar: () => !!MK.parar, rid: mkRid,
+                erroTxt: (c) => (c === 'sem_resposta' ? 'sem resposta, confira a mochila antes de repetir' : mkErroTexto(c)),
+                log: (m) => log('treinador: ' + m, 'ok'), pausa: () => dorme(400) });
+            const qtd = r.feitas.reduce((s, c) => s + c.quantity, 0), falta = r.faltam.map(x => `${x.falta} ${x.nome}`);
+            return { erro: !r.feitas.length || !!r.parou, msg: (r.feitas.length ? `comprei ${qtd} ${qtd > 1 ? 'itens' : 'item'} por ${mkFmt(r.total)}` : 'nada comprado')
+                + (falta.length ? `; faltam ${falta.join(', ')}` : '') + (r.parou ? '; ' + r.parou : '') };
+        } finally {
+            if (MK.ocupado === 'treinador') MK.ocupado = null;
+            MK.parar = false;
+            if (_travaJogo === TR_TRAVA_MERCADO) _travaJogo = null;
+        }
+    }
+    /* @@TREINADOR-FIM */
     /* @@ARENA-INICIO — aba Sobrevivência ☠ (2.57.0, dono 26/11: "colocar na nossa automação para fazer automaticamente").
      * O robô lê o estado da simulação do cliente (o mesmo que o jogo desenha) e aperta as setas e as teclas 1-2-3 como o jogador:
      * nada novo vai pelo socket — o próprio cliente manda run_keys. Só roda com o dono ligando (como o Auto Hunt).
@@ -19611,6 +22040,7 @@
             mercado: MK.ocupado ? 'av pulsa' : '',
             radar: ler('pch_alerta', null) ? 'ruim pulsa' : RADAR.rodando || MK.ocupado === 'radar' || PCH.lendo ? 'av pulsa' : alertasCfg().vigiar || pchCfg().vigiar ? 'ok' : '', // v2.29.0 — Pechinchas
             forja: FJ.lendo || FJ.forjando || FJ.simulando || FJ.comprando ? 'av pulsa' : '', // v2.25.0
+            treinador: TR.topo.lendo || TR.agindo ? 'av pulsa' : '', // 2.67.0
             arena: ARENA.ligado ? (ARENA.ref && ARENA.ref.st && !ARENA.ref.st.desfecho ? 'ok pulsa' : 'ok') : '' // v2.57.0
         };
         $$('.tb-ico[data-aba]', t).forEach(i => { const on = !!u.aberta && !u.oculto && i.dataset.aba === ABA; i.classList.toggle('on', on); i.setAttribute('aria-pressed', on ? 'true' : 'false'); const d = $('.tb-dot', i); if (d) d.className = 'tb-dot ' + (estado[i.dataset.aba] || ''); });
@@ -19658,7 +22088,7 @@
         const tit = $('#tb-titulo'); if (tit) tit.textContent = (ICONES.find(x => x[0] === ABA) || [])[2] || ABA;
         const mesmaAba = _abaPintada === ABA;
         const html = ABA === 'estado' ? telaEstado() : ABA === 'autohunt' ? telaAutoHunt() : ABA === 'scan' ? telaScan()
-            : ABA === 'magia' ? telaMagia() : ABA === 'analise' ? telaAnalise() : ABA === 'equip' ? telaEquip()
+            : ABA === 'magia' ? telaMagia() : ABA === 'treinador' ? telaTreinador() : ABA === 'equip' ? telaEquip()
             : ABA === 'progresso' ? telaProgresso() : ABA === 'mercado' ? telaMercado() : ABA === 'melhorias' ? telaMelhorias() : ABA === 'radar' ? telaRadar() : ABA === 'forja' ? telaForja() : ABA === 'sobreviver' ? telaSobreviver() : ABA === 'arena' ? telaArena() : `<div id="tb-log"></div>`;
         if (mesmaAba && html === _htmlPintado) { if (ABA === 'log') pintarLog(); return; }
         if (mesmaAba) { const f = campoEmUso(c); if (f) { adiarRepinte(f); return; } }
@@ -19676,7 +22106,7 @@
         _abaPintada = ABA;
         if (ABA === 'estado') ligarEstado(); // v2.11 (D2) — handlers ao lado de cada tela
         if (ABA === 'magia') ligarMagia();
-        if (ABA === 'analise') ligarAnalise();
+        if (ABA === 'treinador') ligarTreinador(); // 2.67.0
         if (ABA === 'equip') ligarEquip();
         if (ABA === 'progresso') ligarProgresso();
         if (ABA === 'mercado') ligarMercado();
@@ -19746,8 +22176,8 @@
          * dispara quando a party ENTRA numa cacada, o que cobre o boot no
          * lobby e a troca de hunt de uma vez. */
         renderizar();
-        // repinta Estado e Analisador sozinhos; as outras só quando o usuário mexe
-        setInterval(() => { try { pintarTrilho(); } catch (e) { } if ((ABA === 'estado' || ABA === 'analise' || ABA === 'autohunt' || (ABA === 'scan' && SCAN.ativo) || (ABA === 'magia' && ler('modelo', 'equilibrado') === 'mana') || (ABA === 'radar' && ler('radar_sub', 'mapas') === 'loot')) && ui().aberta && $('#tb-gaveta') && !$('#tb-ah-pct:focus') && !$('#tb-ah-oz:focus') && !$('#tb-scan-min:focus') && !$('#tb-scan-filtro:focus')) renderizar(); }, 4000);
+        // repinta o Status sozinho (e o Progresso enquanto lê o topo ou faz uma ação); as outras só quando o usuário mexe
+        setInterval(() => { try { pintarTrilho(); } catch (e) { } if ((ABA === 'estado' || (ABA === 'treinador' && (TR.topo.lendo || TR.agindo || trCacheVelho(TR.ultimo, Date.now(), Infinity))) || ABA === 'autohunt' || (ABA === 'scan' && SCAN.ativo) || (ABA === 'magia' && ler('modelo', 'equilibrado') === 'mana') || (ABA === 'radar' && ler('radar_sub', 'mapas') === 'loot')) && ui().aberta && $('#tb-gaveta') && !$('#tb-ah-pct:focus') && !$('#tb-ah-oz:focus') && !$('#tb-scan-min:focus') && !$('#tb-scan-filtro:focus')) renderizar(); }, 4000);
 
         /* o analisador roda SEMPRE, mesmo com a aba fechada — é o que garante
          * que nenhuma caçada passe sem virar dado. Fecha a sessão ao sair da
@@ -19813,7 +22243,10 @@
         // v2.29.0 — Pechinchas (modelo e o estado; comprar NÃO fica exposto)
         pchItensVigiaveis, pchVigiados, pchCandidato, pchLivro, pchAvaliar, get PCH() { return PCH; },
         // v2.17.0 — Invasão (leituras e o plano; o salvar só pelo botão)
-        invPlanoHoje, invPosicoes, invMontarPreset, invResumoReplay, invTemplateDoReplay, invAplicarTemplate, invModelos, get INV() { return INV; }
+        invPlanoHoje, invPosicoes, invMontarPreset, invResumoReplay, invTemplateDoReplay, invAplicarTemplate, invModelos, get INV() { return INV; },
+        // 2.67.0 — treinador (foto, especialistas e o que cada botão faria: só leitura). A leitura do topo (trLerTopo) e as ações
+        // ficam de fora: manda mensagens ao jogo, só pelo botão da aba.
+        trFoto, trRodar, trResumirTopo, trAcaoInfo, TR_BASE, get TR() { return TR; }
     }; }
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar);

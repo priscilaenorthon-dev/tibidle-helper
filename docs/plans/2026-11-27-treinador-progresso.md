@@ -25,6 +25,99 @@ sem dependências), eslint 10, Playwright para o teste ao vivo.
 - Teste ao vivo no Playwright: aba nova + `addInitScript` com guarda em `__tbHelper` (memória `tibidle-testar-versao-nova-aba-limpa`);
   devolver aba limpa no fim; avisar o dono que a sessão do Chrome dele cai.
 
+
+> **Atualização 27/11 (após a revisão das Tasks 2–3, commit c5ee110) — vale para as Tasks 4–17:**
+> - `trRodar(foto, base)` chama `rodar(foto, base, todos)`: agentes de fase 1 recebem `[]`; agentes registrados com `fase: 2`
+>   rodam depois e recebem os conselhos da fase 1. O retorno pode ser array/objeto/null (é normalizado).
+> - `foto.ouroLivre` é calculado pela FOTO (Task 14), não pelo agente Dinheiro. `trFotoVazia()` é o formato canônico.
+> - Unidades: número sem sufixo = pontos de %; fração tem sufixo `Frac` (`bencaos.corteFrac`, `morte.perdaFracSemBencao`, …).
+> - Skills na foto e no TR_BASE: `melee`, `dist`, `ml`, `escudo`. `legado.skillInicio` (60, melee e distância), `legado.mlInicio` (40).
+> - `bosses[].tentativa` é SEMPRE lista `[{ item, qtd }]`. `cacadasTopo[titulo] = { rec, ilha }`; helper `trCacada(titulo, base)`.
+> - `trConselho(agente, id, o)`: `o` não sobrescreve `id`/`agente`.
+
+> **Atualização 27/11 (após a revisão do lote A, Tasks 4–6) — contrato para a foto (Task 14), a UI (Task 15) e os próximos agentes:**
+> - [contrato] **Prey** é da CONTA (`meta.preyHunt`). Foto: `prey = { huntId, huntLocked, huntMsLeft, buffs: { VOC: { tipo, tier, locked, msLeft } }, wildcards }`
+>   (+ `semCacada: true` só quando `meta.preyHunt === null` foi lido de verdade). `tipo` pode vir do jogo (`xp|loot|damage|defense`) ou do helper
+>   (`exp|dano|defesa`): comparar sempre por `trTipoPrey`. `huntId` ausente = não sei → nenhum agente opina sobre "outro mapa".
+>   Ações: `prey-escolher {huntId}`, `prey-trocar {voc}`, `prey-trancar {alvo: 'hunt' | VOC, voc?}` (= `prey_lock_set {target}`).
+> - [contrato] **Ids**: todo id da foto é Number; ainda assim, comparar SEMPRE com `trMesmoId(a, b)` (texto, null nunca casa).
+> - [contrato] **Custo**: `custo` = desembolso ÚNICO em ouro (o que sai ao tocar "Fazer"); custo recorrente vai em `numeros.custoH` (ouro/h).
+>   Ex.: Selo → `custo` = 1 Rolar, `numeros.custoH` = Rolar × peso do tier. Bênçãos → 1 compra das que faltam.
+> - Ação `medir`: `{ tipo: 'medir', alvos: [{ title, huntId | null }] }` (a UI resolve o `huntId` null pelo título).
+> - Ajudantes puros para reusar (não copiar): `trNum`, `trMesmoId`, `trQtd`, `trPct`, `trVocPt`, `trPeso`, `trConf`, `trXpAtual`, `trRecDe`,
+>   `trMortesRecentes`, `trLimitadoPorDano` (exige `medidoAtual.min ≥ 5` e abates > 0), `trDanoParaXp` (teto de spawn; `TR_BASE.xp.xpPorDanoFrac`).
+
+> **Atualização 27/11 (após a revisão do lote B, Tasks 7–9) — escala do chefe e mortes; vale para as Tasks 10–17:**
+> - [contrato] **Escala/chefe**: `nota = impacto × peso da confiança × (0,3 se falta ouro)`; conselho com `estado: 'erro'` tem nota MÍNIMA 4
+>   (`TR_PISO_ERRO`, em `trOrdenar`). Fato lido da foto (slot vazio, ouro acabando, mochila de chaves cheia) usa confiança `'medido'`.
+>   Referência de impacto: ouro acabando 10 · slot vazio 5 · item do topo 3 (comunidade) · item da régua "ficar forte" 2 (comunidade).
+> - [contrato] **Mortes = EVENTOS**: `foto.mortes` tem 1 entrada por vocação; mesma caçada (`trMesmoId(huntId)`; sem os dois ids, o título) e
+>   |Δt| ≤ 60 s (`TR_BASE.morte.eventoS`) = 1 evento → `trEventosMorte(foto, base, dias)`. Nunca contar entradas cruas.
+> - [contrato] **Impacto de morte**: régua única `trImpactoMorte(foto, base, bencaosTem)` → `{ impacto, bruto, ritmo, perda }`;
+>   ritmo = eventos em 7 dias ÷ 7; bruto = ritmo × `trXpPerdidaMorte` ÷ (XP/h × 24) × 100; impacto = min(bruto, 50) (`TR_BASE.morte.tetoImpacto`).
+>   Erros usa as bênçãos que tem; bênçãos = bruto(tem) − bruto(7). O porquê mostra o bruto e "(teto 50 no ranking)" quando cortou.
+>   A perda sem bênção depende do nível (`trPerdaFracMorte`, interpola `morte.perdaFracPorNivel`).
+> - [contrato] **Foto**: `topo.idadeH` ausente = velho (pede `ler-topo`); `hunt.lureTiers[k]` = `{ min, max }`, o agente usa a média;
+>   `eq.weapon.duasMaos` vem de `attrs.slotType === 'two-handed'`; munição só é exigida com arma de `TR_BASE.equip.municaoNomes` (arco/besta).
+>   `topo.perto[].skills.ml` pode ser número ou `{ SORCERER, DRUID }`.
+> - Mensagens "ok" só afirmam o que foi conferido (sem dado nenhum: "Nada a apontar com os dados lidos"). Títulos dinâmicos passam por `trCorta` (≤ 70).
+> - Mais ajudantes para reusar: `trNome` (normalizador de nome), `trPorNome` (objeto por nome; depósito soma, preço pega o 1º), `trPeca(eq, slot)`,
+>   `TR_SLOTS`/`trSlotPt`, `trMediana`, `trXpPerdidaMorte`, `trPerdaFracMorte`, `trEventosMorte`, `trImpactoMorte`, `trDuasMaos`, `trUsaMunicao`,
+>   `trCorta`, `trLista`.
+
+> **Atualização 27/11 (após o lote C, Tasks 10–13) — contrato da foto (Task 14) e da UI (Task 16):**
+> - [contrato] **Sessões**: `foto.sessoes[].durMin` = duração em MINUTOS (era `dur`). A foto converte o `dur` do helper (segundos) ÷ 60.
+>   O "XP caiu" do Erros só usa sessões com `durMin ≥ 5`.
+> - Erros: "(party inteira)" só quando UM evento tem as 4 vocações (eventos separados K+P e S+D listam as vocações).
+> - [contrato] **Bestiário**: `foto.bestiario = [{ huntId, title, bonus, ganho, falta, horas, xpH }]`, 1 linha por caçada (o próximo marco,
+>   de `pgLinhasBestiario`); `bonus` = nome de bônus do jogo (`magicLevel`, `attack`, `melee`, `distance`, `manaRegen`, `maxHealth`, `armor`,
+>   `shielding`…); `horas` = `falta ÷ abates/h medidos` ou `null` (linha ignorada); `xpH` = XP/h do mapa em `foto.mapas` ou `null`
+>   (entra como 'estimado', impacto ÷ 2). A linha do mapa atual é achada por `trMesmoId(huntId, hunt.id)`.
+> - [contrato] **Ilhas**: `foto.ilhas = [{ id | nome, aberta }]`; ilha ausente da lista = aberta (o "Caçar itens" não sugere abrir).
+>   O "onde" do material de ilha vem de `TR_BASE.ilhas[].materiais[].onde` (fonte única); o da tentativa de boss, de `bosses[].onde`.
+>   `TR_BASE.materiais` foi REMOVIDO (duplicava os dois e ninguém lia). Todo material de ilha tem nome próprio (a Inquisition pede as
+>   7 relíquias por nome, 8 de cada — wiki/acesso-as-ilhas), então a falta é contada por `trPorNome` sem exceção.
+> - Títulos com sufixo usam `trCortaSufixo(base, sufixo)` (corta só a base): Bestiário "(~h h)", Forja "(~X, sem risco)", Dinheiro "(falta Y)".
+>   Itens: o ouro fica sempre visível; materiais por extenso enquanto cabem, o resto vira "+ N itens".
+> - Forja: "Peças vestidas já em +4" só quando nada vestido ficou abaixo de +4; se só arma de mago/anel/colar/munição estão abaixo,
+>   o ok vira "Refino que rende XP já em +4" e lista no porquê o que ficou fora da conta.
+
+> **Atualização 27/11 (após a revisão da combinação dos agentes) — chefe, ilha alvo e Dinheiro; vale para as Tasks 14–17:**
+> - [contrato] **Custo efetivo** `trCustoEfetivo(c) = custo + 3 × numeros.custoH` (o mesmo horizonte de 3 h do ouro livre; NaN = 0, Infinity fica).
+>   `trOrdenar`: `semOuro = custoEfetivo > 0 && (custoEfetivo > ouroLivre || ficou fora de ouro:plano.numeros.escolhidos)` — conselho grátis
+>   nunca é penalizado, nem com ouro livre negativo.
+> - [contrato] **Dedupe no chefe**: `numeros.dedupe` (texto). `trOrdenar` junta os do mesmo valor: fica o de maior impacto × peso, que herda
+>   `acao`, `custo` e `numeros.custoH` do outro quando não tem; o passo leva `ids` (todos os ids juntados). Upar (`upar:abrir-ilha`) e
+>   Caçar itens (`itens:ilha-<id>`) usam `dedupe: 'ilha:<id>'` → 1 passo com o impacto do Upar e a ação/custo do Itens. Os cartões mostram os dois.
+> - [contrato] **Ilha alvo única** `trIlhaAlvo(foto, base)` (Upar e Itens): (1) melhor mapa MEDIDO de ilha fechada pela régua xpH × peso,
+>   se ≥ 110 % do melhor aberto e da XP/h de agora (a folga do ir-mapa) — Upar com impacto real `(xpH ÷ agora − 1) × 100` e a confiança da fonte;
+>   (2) sem isso, ilhas fechadas com caçada de Rec acima da de agora e ≤ nível + 20, ordenadas por (materiais sem preço, custo) — Upar com 5
+>   estimado, e só se nenhum mapa aberto medido passa o de agora. Ajudantes `trMapasUpar` e `trCustoIlha`.
+> - [contrato] `TR_BASE.cacadasTopo` passou a ter TODAS as caçadas com Rec da wiki (Rec ≥ 80; `ilha: null` = Tibidle Island); o nome ficou.
+> - Dinheiro: custo efetivo; com `medidoAtual.ouroH < 0` (≥ 5 min) nada com `custoH > 0` entra; custo não finito fica fora. Ouro livre ≤ 0:
+>   com `erros:ouro` nos conselhos → não emite nada; erro "Não gaste" só com prejuízo medido; senão `ouro:baixo` (aviso, impacto 0).
+>   [contrato] Campo opcional `curto` no conselho (rótulo para o plano: "Selo", "bênçãos", "refino <peça>", "abrir <ilha>", "ampulheta do <voc>", o item do topo).
+> - Bestiário: bônus de dano (ML/ataque/corpo a corpo/distância) = `trDanoParaXp(3 × ganho)` (3 % de dano do grupo por +1, estimado);
+>   regen. de mana = ganho ÷ 3; vida 1; armadura/escudo 0,5; tudo ÷ max(1, horas ÷ 10). Mapa atual > 10 h → aviso de impacto 0.
+> - Erros/régua: pula sempre `arma-refino` (Forja); `arma` se já saiu `erros:slot-<voc>`; `potencia` se há `forja.basesParadas`; `imbu` com encaixe livre.
+> - Mult: com a prey em outro mapa (ou sem caçada) não sugere trocar o TIPO; só trazê-la.
+> - Ajudantes comuns (usar em todo agente): `trDanoDeUm(pct)` (= `trDanoParaXp(pct ÷ preyColunas)`), `trParty`, `trVelho(idadeH, maxH = 24)`, `trEhMago`.
+> - Integração em `testes/treinador.test.js` (`cenario()` da revisão, nível 262): A → bota/morte/prey; B → lure no topo; D → "ouro acaba" no topo
+>   e sem Selo no plano; E → o ouro avisado uma vez; G → sem "Não gaste".
+>   `deposito`/`precos` por nome via `trPorNome` (preço > 0 conta; 0/ausente = sem preço → "Caçar").
+> - [contrato] **Forja**: `foto.forja = { abaixo4: [{ voc, slot, nome, refino, custo | null }], idadeH, basesParadas: [{ nome, potencia }] } | null`.
+>   `abaixo4` = só peças VESTIDAS (slot em `TR_SLOTS`; arma de mago pode vir, é pulada); quando existe, vence `party[].eq`.
+>   `idadeH` ausente = velho (pede `forja-ler`, como o topo). `party[].eq.weapon.ataque` = ataque da arma (sem ele, 50).
+>   `basesParadas` = peças do depósito/mochila com potência (o agente só avisa as ≥ `forja.potBase`).
+> - Ações novas para a UI: `abrir-silas { ilha }`, `comprar-mercado { itens: [{ nome, qtd, preco }] }`, `abrir-forja { voc, slot } | { item }`,
+>   `forja-ler`; o Bestiário usa `ir-mapa { huntId }`.
+> - Dinheiro (fase 2): ids `ouro:plano | juntar | nao-gaste | livre | ok`. Resumo vale 0,1 × soma dos impactos escolhidos.
+>   "Juntar para" → `falta = custo − sobra` (o que sobra depois dos escolhidos). No exemplo 400/500/900 mil com 1 M: sobram 100 mil e o de
+>   900 mil precisa de mais **800 mil** (os "100 mil" do enunciado eram a sobra, não a falta).
+> - Ajudantes novos: `TR_BONUS_PT`/`trBonusPt` (bônus do bestiário em português), `trHorasPt`, `TR_BONUS_IMPACTO`, `TR_REFINO_IMPACTO`.
+> - Atenção (Task 16): "Onde upar" (`upar:abrir-ilha`, impacto 5, sem ação) e "Caçar itens" (`itens:ilha-<id>`, impacto 5) podem apontar
+>   a MESMA ilha nos passos; o "Caçar itens" é o que tem custo e ação.
+
 ---
 
 ## Task 1: Descobrir o protocolo e os campos que faltam (pesquisa, sem código)
@@ -220,13 +313,13 @@ foto = {
   legado: { VOC: { skill, marcoAtual, proxMarco, falta, bonusAtual, bonusProx } } | null,
   prey: { buffs: { VOC: { tipo, tier, locked, msLeft, huntId } }, wildcards } | null,
   bencaos: { tem, total } | null, ampulhetas: { VOC: { usadasH } } | null, selo: { ativo, abundante } | null,
-  mortes: [{ t, hunt, voc }], sessoes: [{ hunt, huntId, dur, xpH, ouroH, morte }],
+  mortes: [{ t, hunt, voc }], sessoes: [{ hunt, huntId, durMin, xpH, ouroH, morte }],
   checklist: { VOC: [{ chave, ok, titulo, texto }] } | null,
   bestiario: [{ huntId, title, bonus, ganho, falta, horas, xpH }], chaves: { usadas, max, elites: [{ nome, qtd }] } | null,
   deposito: { nomeItem: qtd }, invasao: { inscrito, janela } | null,
-  forja: { abaixo4: [{ voc, slot, nome, refino, custo }], idadeH, proximo } | null,
+  forja: { abaixo4: [{ voc, slot, nome, refino, custo }], idadeH, proximo, basesParadas: [{ nome, potencia }] } | null,
   topo: { pos, total, top1, perto: [{ nivel, skills }], perfis: [{ nivel, voc: { VOC: { slot: nome } } }], idadeH } | null,
-  precos: { nomeItem: preço }, ilhas: [{ nome, aberta }]
+  precos: { nomeItem: preço }, ilhas: [{ id | nome, aberta }]
 }
 ```
 
