@@ -5,7 +5,7 @@ const fs = require('fs'), path = require('path'), assert = require('assert');
 const src = fs.readFileSync(path.join(__dirname, '..', 'tibidle-helper.user.js'), 'utf8');
 const trecho = (a, b) => { const i = src.indexOf(a), f = src.indexOf(b); assert(i > 0 && f > i, 'marcador ausente: ' + a); return src.slice(i, f); };
 const M = new Function(trecho('/* @@EQUIP-PURO-INICIO */', '/* @@EQUIP-PURO-FIM */') + trecho('/* @@MELHORIAS-INICIO', '/* @@MELHORIAS-FIM */') + trecho('/* @@FORJA-INICIO', '/* @@FORJA-FIM */') +
-    '\nreturn { fjEstoque, fjCustoGemas, fjEstrategias, fjRanking, fjProximoPasso, fjPlanoCompra, forjaSimular, FJ_ITEM_GEMA, fjItemFragmento, FJ_GEMAS, FJ_GANHO_MIN, FJ_VALE_MIN, pontuarPeca, pesosDaVoc };')();
+    '\nreturn { fjCustoBolso, fjEstoque, fjCustoGemas, fjEstrategias, fjRanking, fjProximoPasso, fjPlanoCompra, forjaSimular, FJ_ITEM_GEMA, fjItemFragmento, FJ_GEMAS, FJ_GANHO_MIN, FJ_VALE_MIN, pontuarPeca, pesosDaVoc };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 const F = (r, refino, pot, ...at) => ({ raridade: r, refino, potenciaBase: pot, atributos: at.map(([id, valor]) => ({ id, valor })) });
@@ -419,6 +419,19 @@ t('2.67.4: sem Mercado lido, o refine fragment t1 vale 25 (não 2 mil): gema de 
     assert.strictEqual(c.refino.precoFrag, 25); assert.strictEqual(c.refino.fragEstimado, true);
     assert.strictEqual(c.refino.custo, 10000 + 5 * 70650 + 2500);
     assert.strictEqual(c.raridade.precoFrag, 2000);
+});
+
+t('2.67.6 fjCustoBolso: gema pronta = 0; fragmento = só o ouro de criar; o resto compra; fragmentos soltos descontam', () => {
+    const c = custosCot(), um = c.refino.custo, ouro = c.refino.ouroCriar; // 363.250 + 2.500
+    const nada = M.fjCustoBolso({ refino: 6.35 }, M.fjEstoque({}, []), c);
+    assert.strictEqual(nada.bolso, Math.round(6.35 * um)); assert.strictEqual(nada.cheio, nada.bolso); assert.strictEqual(nada.gemas + nada.fragmentos, 0);
+    const dois = M.fjCustoBolso({ refino: 6.35 }, M.fjEstoque({ 'refine gem t1': 2 }, [{ itemName: 'refine fragment t1', count: 250 }]), c);
+    // 2 prontas (0) + 2,5 gemas de fragmento (só criar) + 1,85 gema comprando tudo
+    assert.strictEqual(dois.bolso, Math.round(4.35 * ouro + (435 - 250) * 25)); assert.strictEqual(dois.gemas, 2); assert.strictEqual(dois.fragmentos, 250);
+    const sobra = M.fjCustoBolso({ refino: 3 }, M.fjEstoque({ 'refine gem t1': 9 }, []), c);
+    assert.strictEqual(sobra.bolso, 0); assert.strictEqual(sobra.gemas, 3, 'usa só o que o plano precisa');
+    const t2 = M.fjCustoBolso({ refino: 1, refino_maior: 2 }, M.fjEstoque({}, [{ itemName: 'refine fragment t2', count: 200 }]), c);
+    assert.strictEqual(t2.bolso, Math.round(um + 2 * c.refino_maior.ouroCriar), 'T2 de fragmento: só o ouro de criar');
 });
 
 console.log(n + ' testes ok' + (process.exitCode ? ' (com falhas)' : ''));

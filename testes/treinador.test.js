@@ -1094,6 +1094,22 @@ t('forja 2.67.4: gemas médias no porquê; TR_BASE.forja.cotacaoCoin dá a gema 
     const g = 10000 + 5 * T.TR_BASE.forja.cotacaoCoin; // FORJA_GEMA_OURO.refino + FJ_COINS_GEMA.refino × cotação
     assert(Math.abs(g - 363262) < 1000, String(g));
 });
+t('forja 2.67.6: estoque desconta — "sai do bolso" e o cheio; gemas no baú = 0 vem na frente; baú não lido avisa', () => {
+    const fj = { abaixo4: [
+        { voc: 'KNIGHT', slot: 'weapon', nome: 'stonecutter axe', refino: 0, custo: 900000, custoCheio: 2306000, gemas: 6.35, usaGemas: 2, usaFrag: 250 },
+        { voc: 'KNIGHT', slot: 'armor', nome: 'magic plate armor', refino: 3, custo: 0, custoCheio: 730000, gemas: 2, usaGemas: 2, usaFrag: 0 }],
+        idadeH: 1, basesParadas: [], estoqueFonte: 'guardado', estoqueIdadeH: 5 };
+    const p = partyForja(); p[0].eq.armor = pc('magic plate armor', 3);
+    const r = refinos(forja(fForja({ party: p, forja: fj })));
+    assert.deepStrictEqual(r.map(c => c.numeros.nome), ['magic plate armor', 'stonecutter axe'], 'de graça vem na frente');
+    assert.strictEqual(r[0].custo, 0); assert.strictEqual(r[0].titulo, 'Refinar magic plate armor +3 → +4 (gemas no baú, falha não cai)');
+    assert(/não precisa comprar nada \(comprando tudo seria ≈ 730 mil\)/.test(r[0].porque), r[0].porque);
+    assert.strictEqual(r[1].custo, 900000); assert.strictEqual(r[1].titulo, 'Refinar stonecutter axe +0 → +4 (~900 mil, falha não cai)');
+    assert(/Com o que você tem \(2 gema\(s\) e 250 fragmentos\), sai do bolso ≈ 900 mil em vez de ≈ 2,3 M comprando tudo/.test(r[1].porque), r[1].porque);
+    assert(/baú lido há 5 h/.test(r[1].porque), r[1].porque);
+    const sem = refinos(forja(fForja({ forja: Object.assign({}, fj, { abaixo4: [fj.abaixo4[0]], estoqueFonte: 'mochila' }) })))[0];
+    assert(/O baú não foi lido: abra o depósito/.test(sem.porque), sem.porque);
+});
 t('forja: ataque ausente → 50; ataque 100 → metade do ganho', () => {
     const p = partyForja(); p[0].eq.weapon.ataque = 100;
     assert(Math.abs(refinos(forja(fForja({ party: p })))[0].impacto - 0.7) < 1e-12);

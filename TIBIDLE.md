@@ -7975,3 +7975,16 @@ no lugar do Haste).
 - Observação: o Atualizar só recalcula com o que o helper já leu (não mede mapa, não lê o topo nem a Forja); para isso existem
   "Comparar com o topo" e os botões dos cartões (Recalcular a Forja, Medir).
 - Teste novo em telas.test.js (807 ok).
+
+## 2.67.6 (28/11) — Forja e treinador contam as gemas e fragmentos que a conta tem
+- Pergunta do dono: "a Forja e Refino do Progresso leva em conta os itens do baú? Ganhei muitos itens de refino na outra conta".
+  Não levava: o treinador sempre dava o custo comprando tudo; a aba Forja usava o estoque no FORJAR e no COMPRAR O QUE FALTA, mas o
+  "~custo" de cada peça era o cheio. E na caçada, depois de um F5, o helper só via a mochila (o jogo não manda o depósito lá).
+- `fjCustoBolso(porGema, estoque, custos)` (FORJA, puro): gema pronta = 0, fragmento = só o ouro de criar, o resto compra; fragmentos
+  soltos descontam. Forja: "do bolso ~X — usa o que você tem (N gemas e M fragmentos)" abaixo do custo da peça, quando economiza ≥ 1 mil.
+- Treinador: `custo` = do bolso, `custoCheio` = comprando tudo; "Com o que você tem (…), sai do bolso ≈ X em vez de ≈ Y" ou "não precisa
+  comprar nada"; com as gemas já no baú o título diz "(gemas no baú, falha não cai)" e o passo vem na frente. Baú não lido → avisa.
+- Baú guardado por conta (`fj_estoque_dep`) a cada depot_state / depot_result / forge_*: serve só para ESTIMAR; o FORJAR continua pelo
+  que o jogo mandou na sessão.
+- O estoque é de cada conta: o que caiu na outra conta só aparece lá (o helper roda por conta).
+- Testes: 809 ok (forja +1, treinador +1).

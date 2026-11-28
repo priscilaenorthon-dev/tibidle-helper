@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.67.5
+// @version      2.67.6
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (treinador: 10 especialistas e os 3 próximos passos para upar) + Rotina (bestiário, prey, plano offline, invasão) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.67.5';
+    const VERSAO = '2.67.6';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -5266,6 +5266,7 @@
             ESTADO_WS.depot = { entries: clonar(d.entries), used: d.used, total: d.total }; ESTADO_WS.depot_t = Date.now();
             ESTADO_WS.depotReal = ESTADO_WS.depot; // v2.29.1 — o depósito inteiro (gemas, fragmentos, pilhas), que a foto do Equip não tem
             lembrarDepot(ESTADO_WS.depot); // v2.23.0 — o Equip usa esta foto na caçada (o jogo não responde ao depot_get lá)
+            try { fjGuardarEstoqueDep(d.entries); } catch (e) { falhou('forja (guardar estoque)', e); } // v2.67.6 — gemas/fragmentos do baú para a caçada
             if (ABA === 'equip') renderizar();
             return;
         }
@@ -9473,6 +9474,25 @@
      * fragmentos a comprar (100 por gema). Sem livro: só a estimativa pelo menor anúncio. Com livro ({gema: orders}): ordens
      * SELL do mais barato ao mais caro, até opc.teto × menor anúncio (1,5× — não paga sobrepreço num livro raso). */
     const FJ_COMPRA_TETO = 1.5;
+    /* v2.67.6 — o que sai DO BOLSO para gastar `porGema` ({gema: quantidade, média}) com o estoque da conta (dono, 28/11: "ganhei muitos
+     * itens de refino; assim evita precisar comprar"). Por gema: as prontas não custam nada; com fragmentos só se paga o ouro de criar; o resto
+     * paga criar + 100 fragmentos do Mercado. Fragmentos contam soltos (os de uma gema incompleta descontam da compra). Devolve
+     * { bolso, cheio, gemas (prontas usadas), fragmentos (usados) }; sem estoque, bolso = cheio. */
+    function fjCustoBolso(porGema, estoque, custos) {
+        const gemas = (estoque && estoque.gemas) || {}, frags = (estoque && estoque.fragmentos) || {};
+        let bolso = 0, cheio = 0, usadasG = 0, usadosF = 0;
+        for (const [g, q0] of Object.entries(porGema || {})) {
+            const q = Number(q0) || 0; if (!(q > 0)) continue;
+            const c = custos && custos[g] ? custos[g] : {}, ouro = Number(c.ouroCriar) || 0, pf = Number(c.precoFrag) || 0;
+            const um = Number(c.custo) > 0 ? Number(c.custo) : ouro + FJ_FRAG_POR_GEMA * pf;
+            cheio += q * um;
+            const prontas = Math.min(q, Math.max(0, Number(gemas[g]) || 0)), criar = q - prontas;
+            const precisaF = criar * FJ_FRAG_POR_GEMA, temF = Math.min(precisaF, Math.max(0, Number(frags[g]) || 0));
+            bolso += criar * ouro + (precisaF - temF) * pf;
+            usadasG += prontas; usadosF += temF;
+        }
+        return { bolso: Math.round(bolso), cheio: Math.round(cheio), gemas: Math.round(usadasG * 10) / 10, fragmentos: Math.round(usadosF) };
+    }
     function fjPlanoCompra(plano, estoque, custos, livros, opc) {
         opc = opc || {}; const gemas = (estoque && estoque.gemas) || {}, frags = (estoque && estoque.fragmentos) || {}, por = (plano && plano.porGema90) || {};
         const itens = [], compras = livros ? [] : null, faltam = {};
@@ -12873,7 +12893,9 @@
     }
     TR_AGENTES.push({ id: 'itens', nome: 'Caçar itens', icone: '⌕', rodar: trAgenteItens });
 
-    // ── Especialista 9: Forja e refino (⚒). foto.forja = { abaixo4: [{ voc, slot, nome, refino, custo }], idadeH, basesParadas: [{ nome, potencia }] } | null.
+    // ── Especialista 9: Forja e refino (⚒). foto.forja = { abaixo4: [{ voc, slot, nome, refino, custo, gemas?, custoCheio?, usaGemas?, usaFrag? }],
+    //    idadeH, basesParadas: [{ nome, potencia }], estoqueFonte?: 'lido'|'guardado'|'mochila', estoqueIdadeH? } | null.
+    //    v2.67.6: custo = DO BOLSO (as gemas e fragmentos que a conta tem descontam); custoCheio = comprando tudo (só quando o estoque ajuda).
     //    Até forja.refinoSeguroAte (+4) a falha não derruba a peça (wiki/forja: 80/70/60/50 %), mas gasta a gema. Sem abaixo4, as peças vêm de party[].eq (custo não calculado).
     //    impacto: arma de Cavaleiro/Paladino = trDanoDeUm((4 − r) ÷ ataque × 100) (+1 de ataque por refino; ataque
     //    ausente = 50); elmo/armadura/escudo/calça/bota 0,5 (estimado); arma de mago fica de fora (o refino dela só dá potência).
@@ -12889,7 +12911,13 @@
         if (fj && Array.isArray(fj.abaixo4)) {
             leu = true;
             pecas = fj.abaixo4.filter(p => p && p.voc && p.slot && trNum(p.refino) < ate)
-                .map(p => ({ voc: p.voc, slot: p.slot, nome: p.nome || (eqDe(p.voc, p.slot) || {}).nome || trSlotPt(p.slot), refino: Number(p.refino), custo: trNum(p.custo) > 0 ? Number(p.custo) : null, gemas: trNum(p.gemas) > 0 ? Number(p.gemas) : null }));
+                .map(p => {
+                    const cheio = trNum(p.custoCheio) > 0 ? Number(p.custoCheio) : null, c = trNum(p.custo);
+                    // com estoque o bolso pode ser 0 (já tem as gemas): o custo continua "calculado"
+                    return { voc: p.voc, slot: p.slot, nome: p.nome || (eqDe(p.voc, p.slot) || {}).nome || trSlotPt(p.slot), refino: Number(p.refino),
+                             custo: c > 0 || (cheio && c === 0) ? c : null, gemas: trNum(p.gemas) > 0 ? Number(p.gemas) : null,
+                             custoCheio: cheio, usaGemas: trNum(p.usaGemas) > 0 ? Number(p.usaGemas) : 0, usaFrag: trNum(p.usaFrag) > 0 ? Number(p.usaFrag) : 0 };
+                });
         } else {
             for (const m of party) {
                 for (const slot of TR_SLOTS) {
@@ -12911,18 +12939,26 @@
             const w = eqDe(p.voc, 'weapon'), atk = trNum(w && w.ataque) > 0 ? Number(w.ataque) : 50, danoPct = (ate - p.refino) / atk * 100;
             cand.push(Object.assign({}, p, { atk, danoPct, imp: trDanoDeUm(danoPct, foto, b) }));
         }
-        cand.sort((x, y) => ((y.custo > 0) - (x.custo > 0)) || (x.custo > 0 ? y.imp / y.custo - x.imp / x.custo : y.imp - x.imp));
+        // com preço primeiro (bolso 0 = de graça: vem na frente); entre os com preço, impacto ÷ custo
+        const temP = (x) => x.custo != null, porM = (x) => (x.custo > 0 ? x.imp / x.custo : Infinity);
+        cand.sort((x, y) => (temP(y) - temP(x)) || (temP(x) ? porM(y) - porM(x) || y.imp - x.imp : y.imp - x.imp));
+        const fonte = fj ? fj.estoqueFonte : null;
         for (const p of cand.slice(0, 3)) {
             const nome = trVocPt(p.voc), arma = p.slot === 'weapon';
             out.push(trConselho('forja', `refino-${p.voc}-${p.slot}`, { confianca: 'wiki', custo: p.custo || 0, impacto: p.imp, curto: 'refino ' + p.nome,
-                titulo: trCortaSufixo(`Refinar ${p.nome} +${p.refino} → +${ate}`, ` (${p.custo ? '~' + trQtd(p.custo) + ', ' : ''}falha não cai)`),
+                titulo: trCortaSufixo(`Refinar ${p.nome} +${p.refino} → +${ate}`, ` (${p.custo === 0 ? 'gemas no baú, ' : p.custo ? '~' + trQtd(p.custo) + ', ' : ''}falha não cai)`),
                 porque: `${p.nome} (${trSlotPt(p.slot)} do ${nome}): até +${ate} a falha não derruba a peça, mas gasta a gema (chance ${b.forja.chT1.slice(p.refino, ate).join('/')} %`
                     + (p.gemas ? `, ~${trPct(p.gemas)} gemas em média` : '') + '). '
                     + (arma ? `Cada refino soma 1 de ataque: +${ate - p.refino} sobre ${p.atk} ≈ +${trPct(p.danoPct)} % de dano do ${nome}`
                         + (p.imp > 0 ? '. ' : ', mas a caçada está limitada por spawn: não vira XP agora. ')
                         : `Refino em ${trSlotPt(p.slot)} soma defesa e +${b.forja.potPorRefino} de potência por nível. `)
-                    + (p.custo ? `Custo ≈ ${trQtd(p.custo)}.` : 'Sem preço: custo não calculado (a aba Forja calcula).'),
-                numeros: { voc: p.voc, slot: p.slot, nome: p.nome, refino: p.refino, ate, custo: p.custo, gemas: p.gemas },
+                    + (p.custo == null ? 'Sem preço: custo não calculado (a aba Forja calcula).'
+                        : p.custoCheio ? `Com o que você tem (${trLista([p.usaGemas ? `${trPct(p.usaGemas)} gema(s)` : '', p.usaFrag ? `${p.usaFrag.toLocaleString('pt-BR')} fragmentos` : ''].filter(Boolean))}), `
+                            + (p.custo > 0 ? `sai do bolso ≈ ${trQtd(p.custo)} em vez de ≈ ${trQtd(p.custoCheio)} comprando tudo.` : `não precisa comprar nada (comprando tudo seria ≈ ${trQtd(p.custoCheio)}).`)
+                        : `Custo ≈ ${trQtd(p.custo)}.`)
+                    + (fonte === 'mochila' ? ' O baú não foi lido: abra o depósito no jogo uma vez para eu contar as gemas e fragmentos de lá.'
+                        : fonte === 'guardado' && fj && Number.isFinite(trNum(fj.estoqueIdadeH)) ? ` (baú lido há ${trIdadePt(Number(fj.estoqueIdadeH))})` : ''),
+                numeros: { voc: p.voc, slot: p.slot, nome: p.nome, refino: p.refino, ate, custo: p.custo, gemas: p.gemas, custoCheio: p.custoCheio, usaGemas: p.usaGemas, usaFrag: p.usaFrag },
                 acao: { tipo: 'abrir-forja', voc: p.voc, slot: p.slot, rotulo: 'Forja' } }));
         }
         if (leu && !cand.length) {
@@ -18052,7 +18088,7 @@
             if (Array.isArray(d.bagInstances)) MK.bagInst = clonar(d.bagInstances);
         }
         /* depot_result traz o depósito novo (depois do depot_withdraw): o Equip também lê ESTADO_WS.depot */
-        if ((t === 'depot_result' || /^forge_/.test(t)) && Array.isArray(d.entries)) { ESTADO_WS.depot = { entries: clonar(d.entries), used: d.used != null ? d.used : (ESTADO_WS.depot || {}).used, total: d.total != null ? d.total : (ESTADO_WS.depot || {}).total }; ESTADO_WS.depot_t = agora; } // v2.25.0: a forja também devolve o depósito
+        if ((t === 'depot_result' || /^forge_/.test(t)) && Array.isArray(d.entries)) { ESTADO_WS.depot = { entries: clonar(d.entries), used: d.used != null ? d.used : (ESTADO_WS.depot || {}).used, total: d.total != null ? d.total : (ESTADO_WS.depot || {}).total }; ESTADO_WS.depot_t = agora; try { fjGuardarEstoqueDep(d.entries); } catch { /* só a foto */ } } // v2.25.0: a forja também devolve o depósito
         if (t === 'market_catalog_result' && Array.isArray(d.items)) { MK.catalogo = Object.fromEntries(d.items.filter(x => x && x.name).map(x => [mkMin(x.name), x])); MK.catalogo_t = agora; }
         else if (t === 'market_my_orders_result' && Array.isArray(d.orders)) {
             /* v2.13.5 — páginas de 50 (01/10: 55 abertas, só a página 0 era lida): a 0 recomeça, as outras somam */
@@ -20446,6 +20482,23 @@
     const fjLastroAtual = () => (FORJA_LASTRO.ouro ? { disponivel: true, ouroPorGema: FORJA_LASTRO.ouro } : null);
     /* v2.67.4 — o último lastro lido (guardado no armazenamento comum, < 7 dias): melhor que a wiki sem a parcela em coins */
     const fjLastroGuardado = () => { const lg = lerComum('forja_lastro', null); return lg && lg.ouro && typeof lg.ouro === 'object' && Date.now() - (Number(lg.t) || 0) < 7 * 864e5 ? { disponivel: true, ouroPorGema: lg.ouro } : null; };
+    /* v2.67.6 — gemas e fragmentos do BAÚ guardados a cada depósito lido (por conta): na caçada o jogo não manda o depósito e, depois de um
+     * F5, o helper só via a mochila. Só para estimar (treinador e "do bolso" da Forja); o FORJAR segue pelo que o jogo mandou na sessão. */
+    function fjGuardarEstoqueDep(entries) {
+        if (!Array.isArray(entries)) return;
+        const e = fjEstoque({}, entries);
+        guardar('fj_estoque_dep', { t: Date.now(), gemas: e.gemas, fragmentos: e.fragmentos });
+    }
+    /* o estoque para ESTIMAR: mochila + depósito desta sessão; sem ele, mochila + o último depósito guardado. fonte: 'lido' | 'guardado' | 'mochila' */
+    function fjEstoqueDaConta() {
+        const b = mkBagAtual(), bag = b ? b.bag : {};
+        const d0 = ESTADO_WS.depot && ESTADO_WS.depot.lembrado ? (ESTADO_WS.depotReal || null) : ESTADO_WS.depot;
+        if (d0 && Array.isArray(d0.entries)) return { estoque: fjEstoque(bag, d0.entries), fonte: 'lido', t: ESTADO_WS.depot_t || Date.now() };
+        const est = fjEstoque(bag, []), g = ler('fj_estoque_dep', null);
+        if (!g || !g.gemas || !g.fragmentos) return { estoque: est, fonte: 'mochila', t: null };
+        for (const k of Object.keys(est.gemas)) { est.gemas[k] += Number(g.gemas[k]) || 0; est.fragmentos[k] += Number(g.fragmentos[k]) || 0; }
+        return { estoque: est, fonte: 'guardado', t: Number(g.t) || null };
+    }
     function fjEstoqueAtual() {
         const b = mkBagAtual();
         /* v2.29.1 — a foto do depósito que o Equip usa na caçada só tem equipamento (lembrado): para gemas e fragmentos vale o último
@@ -21020,13 +21073,21 @@
              * último lastro guardado (< 7 dias) → TR_BASE.forja.cotacaoCoin. */
             const cg = FJ.custos && FJ.custos.lastro ? FJ.custos : fjCustoGemas(fjLastroAtual() || fjLastroGuardado(), MK.catalogo || null, null, { cotacao: fb.cotacaoCoin });
             const g = (k) => (cg[k] && cg[k].custo > 0 ? cg[k].custo : FORJA_GEMA_OURO[k]);
+            // v2.67.6 — o que a conta já tem (mochila + baú desta sessão ou o último guardado) desconta do custo: custo = do bolso, custoCheio = comprando tudo
+            let ec = null; try { ec = fjEstoqueDaConta(); } catch { ec = null; }
+            const cgB = Object.fromEntries(['refino', 'refino_maior', 'garantia'].map(k => [k, { ouroCriar: (cg[k] && cg[k].ouroCriar) || FORJA_GEMA_OURO[k], precoFrag: (cg[k] && cg[k].precoFrag) || 0, custo: g(k) }]));
             for (const m of f.party) {
                 for (const slot of TR_SLOTS) {
                     const p = m.eq[slot];
                     if (!p || p.refino == null || p.refino >= ate) continue;
-                    let custo = null, gemas = null;
-                    try { const t = pgRefino(p.refino, ate, 'melhor').total; custo = Math.round(t.T1 * g('refino') + t.T2 * g('refino_maior') + t.G * g('garantia')); gemas = Math.round((t.T1 + t.T2 + t.G) * 10) / 10; } catch { custo = null; }
-                    abaixo4.push({ voc: m.voc, slot, nome: p.nome, refino: p.refino, custo: custo > 0 ? custo : null, gemas });
+                    let custo = null, gemas = null, b = null;
+                    try {
+                        const t = pgRefino(p.refino, ate, 'melhor').total; custo = Math.round(t.T1 * g('refino') + t.T2 * g('refino_maior') + t.G * g('garantia')); gemas = Math.round((t.T1 + t.T2 + t.G) * 10) / 10;
+                        if (ec) b = fjCustoBolso({ refino: t.T1, refino_maior: t.T2, garantia: t.G }, ec.estoque, cgB);
+                    } catch { custo = null; }
+                    const x = { voc: m.voc, slot, nome: p.nome, refino: p.refino, custo: custo > 0 ? custo : null, gemas };
+                    if (x.custo && b && custo - b.bolso >= 1000) Object.assign(x, { custo: Math.max(0, Math.min(custo, b.bolso)), custoCheio: custo, usaGemas: b.gemas, usaFrag: b.fragmentos });
+                    abaixo4.push(x);
                 }
             }
             const dep = ESTADO_WS.depotReal && Array.isArray(ESTADO_WS.depotReal.entries) ? ESTADO_WS.depotReal.entries : ((lembrarDepot() || {}).entries || []);
@@ -21040,6 +21101,7 @@
             const lgT = (() => { const lg = lerComum('forja_lastro', null); return lg && Number(lg.t) > 0 ? Number(lg.t) : 0; })(), fjT = Math.max(FJ.t || 0, lgT);
             const forja = { idadeH: fjT > 0 ? Math.round((agora - fjT) / TR_H * 10) / 10 : null, basesParadas: bases.sort((p, q) => q.potencia - p.potencia).slice(0, 20) };
             if (f.party.length) forja.abaixo4 = abaixo4; // sem party lida não afirma "tudo em +4"
+            if (ec) { forja.estoqueFonte = ec.fonte; if (ec.t) forja.estoqueIdadeH = Math.round((agora - ec.t) / TR_H * 10) / 10; }
             f.forja = forja;
         });
         bloco('topo', () => {
@@ -21935,6 +21997,14 @@
             `estoque: ${FJ_GEMAS.filter(g => C[g].disponiveis > 0).map(g => FJ_GEMA_PT[g] + ' ×' + C[g].disponiveis).join(' · ') || 'nenhuma gema (nem 100 fragmentos de um tipo)'}`);
         /* B. ranking */
         const sel = FJ.sel ? FJ.rank.find(l => l.peca.iid === FJ.sel) : null;
+        // v2.67.6 — custo com o estoque (gemas prontas = 0; fragmentos = só o ouro de criar): aparece quando economiza ≥ 1 mil
+        //    (o estoque para estimar inclui o último baú guardado: na caçada, depois de um F5, o jogo não manda o depósito)
+        let estB; try { estB = fjEstoqueDaConta().estoque; } catch { estB = FJ.estoque; }
+        const bolsoMemo = new Map(), bolsoDe = (m) => {
+            if (!m || !m.porGema || !estB) return null;
+            if (!bolsoMemo.has(m)) { const b = fjCustoBolso(m.porGema, estB, C); bolsoMemo.set(m, b.cheio - b.bolso >= 1000 ? b : null); }
+            return bolsoMemo.get(m);
+        };
         h += `<h4 style="margin:8px 0 2px">Vale forjar? <span class="tb-mut">(pontos por milhão de ouro; 1 pt = 1 % do dano da party)</span></h4>`;
         FJ.rank.forEach((l, i) => {
             if (i >= 12 && !FJ.abertos.has('fj-mais') && FJ.sel !== l.peca.iid) return;
@@ -21943,6 +22013,7 @@
             h += `<div class="tb-cx" style="margin:3px 0;padding:4px 6px${ehSel ? ';border-color:#c39a34' : ''}">` +
                 `<div class="tb-lin"><span><span class="fj-selo ${l.selo}">${fjSeloTxt[l.selo]}</span> <b>${escHtml(l.peca.nome)}</b> ${rarTag(l.peca)} <span class="tb-mut">${escHtml(VOC_CURTO[l.voc] || l.voc)} · ${escHtml(slotPt(l.slot))} · +${(l.peca.forja && l.peca.forja.refino) || 0} · pot ${numBR(potenciaTotal(l.peca))}${l.potBaixa ? ` <span class="tb-av" title="potência abaixo de ${l.potMin}: refine primeiro (até o +4 é barato); linha só quando a potência chegar — vídeos e Discord, 02/11">pot. baixa</span>` : l.pot >= POTENCIA_BASE_ALTA ? ` <span class="tb-ok" title="potência ≥ ${POTENCIA_BASE_ALTA}: base de forja pela régua da comunidade (Discord, 28/10)">base</span>` : ''} · ${l.peca.origem === 'corpo' ? 'vestida' : escHtml(l.peca.origem)} <span title="id da cópia">#${escHtml(String(l.peca.iid).slice(-6))}</span></span></span>` +
                 `<span>${m ? `<b class="tb-ok">+${fjPt(m.ganhoPt)}</b> <span class="tb-mut">· ~${fjK(m.custoMedio)}</span>` : '<span class="tb-mut">—</span>'}</span></div>` +
+                (bolsoDe(m) ? `<div class="tb-eq-nota"><span class="tb-ok">do bolso ~${fjK(bolsoDe(m).bolso)}</span> <span class="tb-mut">— usa o que você tem${bolsoDe(m).gemas ? ` (${numBR(bolsoDe(m).gemas, 1)} gema(s)` : ' ('}${bolsoDe(m).gemas && bolsoDe(m).fragmentos ? ' e ' : ''}${bolsoDe(m).fragmentos ? numBR(bolsoDe(m).fragmentos) + ' fragmentos' : ''})</span></div>` : '') +
                 (enc ? `<div class="tb-mut tb-eq-nota">${escHtml(enc)}</div>` : '') +
                 (l.vestida ? `<div class="tb-mut tb-eq-nota">no lugar de ${escHtml(l.vestida.nome)} +${(l.vestida.forja && l.vestida.forja.refino) || 0} que ${escHtml(VOC_CURTO[l.voc] || l.voc)} veste${m ? ` — forjada, passa ${fjPt(m.ganhoPt)} dela` : ''}${l.vocs && l.vocs.length > 1 ? ` · avaliada também para ${l.vocs.filter(v => v !== l.voc).map(v => VOC_CURTO[v] || v).join(', ')}` : ''}</div>` : '') +
                 `<div class="tb-mut tb-eq-nota">${m ? escHtml(m.nome) + ' · ' + Math.round(m.chance * 100) + ' % · ' + numBR(m.gemasMedio, 1) + ' gema(s), 90 %: ' + m.gemas90 + ' · ' : ''}${escHtml(l.motivo || '')}</div>` +
