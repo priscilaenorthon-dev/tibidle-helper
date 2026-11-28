@@ -6,7 +6,7 @@ const i = src.indexOf('/* @@TREINADOR-PURO-INICIO'), f = src.indexOf('/* @@TREIN
 assert(i > 0 && f > i, 'trecho @@TREINADOR-PURO não encontrado');
 const T = new Function(src.slice(i, f) + '\nreturn { TR_BASE, TR_AGENTES, trConselho, trOrdenar, trRodar, trFotoVazia, trCacada, trAgenteUpar, trAgenteMult, trAgenteLegado, '
     + 'trMesmoId, trQtd, trLimitadoPorDano, trDanoParaXp, trTipoPrey, trXpAtual, trRecDe, trMortesRecentes, trAgenteTopo, trAgenteErros, trXpPerdidaMorte, trAgenteBoss, trEventosMorte, trImpactoMorte, '
-    + 'trAgenteBestiario, trAgenteItens, trAgenteForja, trAgenteDinheiro, trCortaSufixo, trParty, trVelho, trEhMago, trDanoDeUm, trCustoEfetivo, trResumirTopo, trOuroLivre, trMesclarMapas, trAnotar, trFreioTopo, trPerfisDepois, trAcaoInfo, trCasaResposta, trPlanoCompra, trIdadePt, TR_ACAO_ROTULO, TR_ERRO_PT, trDecidirClique, trRespostaConfirma, trK, trInscreveuDepois, trExecutarCompra };')();
+    + 'trAgenteBestiario, trAgenteItens, trAgenteForja, trAgenteDinheiro, trCortaSufixo, trParty, trVelho, trEhMago, trDanoDeUm, trCustoEfetivo, trResumirTopo, trOuroLivre, trMesclarMapas, trAnotar, trFreioTopo, trPerfisDepois, trAcaoInfo, trCasaResposta, trPlanoCompra, trIdadePt, TR_ACAO_ROTULO, TR_ERRO_PT, trDecidirClique, trRespostaConfirma, trK, trInscreveuDepois, trExecutarCompra, trCacheVelho };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 // agentes falsos: troca os de verdade pelos falsos, roda e devolve os de verdade sempre
@@ -1791,5 +1791,14 @@ ta('trExecutarCompra: ouro some no meio → "ouro desconhecido — parei" (não 
     const d2 = mercadoFalso(livroConch(), { minhas: ['m'] });
     let c2 = 0; d2.ouro = () => (++c2 > 1 ? 1000 : 5e6);
     assert.strictEqual((await T.trExecutarCompra(conch, d2)).parou, 'o ouro acabou', 'ouro conhecido e baixo continua "acabou"');
+});
+t('trCacheVelho: passou o prazo ou a foto não tinha a conta (lobby/F5) → recalcula', () => {
+    const conta = { nivel: 251 };
+    assert.strictEqual(T.trCacheVelho(null, 1000, 60000), true);
+    assert.strictEqual(T.trCacheVelho({ t: 1000, foto: conta }, 30000, 60000), false);
+    assert.strictEqual(T.trCacheVelho({ t: 1000, foto: conta }, 70000, 60000), true, 'prazo');
+    assert.strictEqual(T.trCacheVelho({ t: 1000, foto: { nivel: null } }, 2000, 60000), true, 'aberto no lobby');
+    assert.strictEqual(T.trCacheVelho({ t: 1000, foto: T.trFotoVazia() }, 2000, Infinity), true, 'o vigia de 4 s repinta até a conta chegar');
+    assert.strictEqual(T.trCacheVelho({ t: 1000, foto: conta }, 9e9, Infinity), false);
 });
 process.on('exit', () => { if (!process.exitCode) console.log(`\n${n} testes ok`); });

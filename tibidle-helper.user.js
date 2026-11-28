@@ -13217,6 +13217,9 @@
         }
         return { compras, faltam, total };
     }
+    // O cálculo guardado da tela (TR.ultimo = { t, foto }) está velho? Passou cacheMs ou foi feito sem a conta lida (foto sem nível:
+    // aberto no lobby/F5 — teste ao vivo 27/11, a tela ficava "nada urgente" depois de entrar no jogo até um clique).
+    const trCacheVelho = (u, agora, cacheMs) => !u || !(agora - trNum(u.t) <= cacheMs) || !(u.foto && trNum(u.foto.nivel) > 0);
     // Idade de um dado em horas → '—' · '<1 h' · '5 h' · '3 d'
     function trIdadePt(h) {
         const n = trNum(h);
@@ -21026,7 +21029,7 @@
         return TR.ultimo;
     }
     function trResultado(forcar) {
-        if (forcar || !TR.ultimo || Date.now() - TR.ultimo.t > TR_CACHE_MS) trCalcular(trFoto());
+        if (forcar || trCacheVelho(TR.ultimo, Date.now(), TR_CACHE_MS)) trCalcular(trFoto());
         return TR.ultimo;
     }
     function trMetaHtml(c) {
@@ -22155,7 +22158,7 @@
          * lobby e a troca de hunt de uma vez. */
         renderizar();
         // repinta o Status sozinho (e o Progresso enquanto lê o topo ou faz uma ação); as outras só quando o usuário mexe
-        setInterval(() => { try { pintarTrilho(); } catch (e) { } if ((ABA === 'estado' || (ABA === 'treinador' && (TR.topo.lendo || TR.agindo)) || ABA === 'autohunt' || (ABA === 'scan' && SCAN.ativo) || (ABA === 'magia' && ler('modelo', 'equilibrado') === 'mana') || (ABA === 'radar' && ler('radar_sub', 'mapas') === 'loot')) && ui().aberta && $('#tb-gaveta') && !$('#tb-ah-pct:focus') && !$('#tb-ah-oz:focus') && !$('#tb-scan-min:focus') && !$('#tb-scan-filtro:focus')) renderizar(); }, 4000);
+        setInterval(() => { try { pintarTrilho(); } catch (e) { } if ((ABA === 'estado' || (ABA === 'treinador' && (TR.topo.lendo || TR.agindo || trCacheVelho(TR.ultimo, Date.now(), Infinity))) || ABA === 'autohunt' || (ABA === 'scan' && SCAN.ativo) || (ABA === 'magia' && ler('modelo', 'equilibrado') === 'mana') || (ABA === 'radar' && ler('radar_sub', 'mapas') === 'loot')) && ui().aberta && $('#tb-gaveta') && !$('#tb-ah-pct:focus') && !$('#tb-ah-oz:focus') && !$('#tb-scan-min:focus') && !$('#tb-scan-filtro:focus')) renderizar(); }, 4000);
 
         /* o analisador roda SEMPRE, mesmo com a aba fechada — é o que garante
          * que nenhuma caçada passe sem virar dado. Fecha a sessão ao sair da
