@@ -7826,3 +7826,82 @@ no lugar do Haste).
   escudo pinados não mudaram nada; a arma é que conta). Consequências: (1) não dá para começar no 75 com escudo — a flail é de 2 mãos;
   (2) não precisa trocar o corpo: basta pinar a flail na arma da partida (o jogo lista as cópias do depósito) e o Knight segue caçando
   com stonecutter + escudo. A partida paga não foi feita. Slots devolvidos ao espelho.
+
+## 2.67.0 (27/11) — aba Progresso: o treinador
+- **Por quê**: o dono pediu "uma aba que me ajude mesmo, estou estagnado; a ideia de um jogador profissional de Tibidle". Decisões dele
+  (desenho em `docs/plans/2026-11-27-treinador-progresso-design.md`): especialistas embutidos (regras compiladas + dados ao vivo, nada
+  sai do navegador); otimiza **subir de nível rápido** (ouro só paga a caçada e financia equipamento/forja); executa por botão
+  (2 toques no que gasta). O ícone ▤ (era o Analisador) virou **Progresso = o treinador**; o ⚑ antigo (Bestiário, Invasão, Offline,
+  Prey) continua como **Rotina**. A tela do Analisador saiu; a coleta de sessões continua (Radar, Bestiário e o treinador usam).
+- **Os 10 especialistas** (puros, `@@TREINADOR-PURO`, `f(foto, TR_BASE) → conselhos[]`):
+  1. **Onde upar** — melhor mapa medido do nível (medido > comunidade > wiki > estimado, +10 % para valer a viagem), lure (só com
+     evidência e sem morte; limitada por spawn × dano), ilha alvo única (a mesma do "Caçar itens"), "medir mapas da faixa".
+  2. **Multiplicadores** — Premium, Boost, Prey EXP (caçada da prey, colunas, trava), Selo Abundante, bênçãos.
+  3. **Treino e Legado** — quanto falta de skill/ML para o próximo marco de Legado por vocação e a ampulheta do dia.
+  4. **Set × topo do rank** — o que quem está até 150 níveis acima veste e as skills deles (`/leaderboard` + `player_profile`).
+  5. **Onde estou errando** — mortes e causa (autópsias), prejuízo, slot vazio, imbuement livre, régua "ficar forte" (Melhorias), queda
+     de XP/h contra a melhor sessão do mesmo mapa.
+  6. **Boss e Elite** — chaves/tentativas paradas, boss que a party aguenta, Invasão não inscrita.
+  7. **Bestiário** — marcos de ML/ataque/skill/regen perto, pelo dano do grupo (teto de spawn).
+  8. **Caçar itens** — o que falta para a próxima ilha (Conch, Sigil…): onde cai, preço no Mercado → comprar ou caçar.
+  9. **Forja e refino** — peça vestida abaixo de +4 (barato, sem risco), base 400+ parada, último ranking da Forja.
+  10. **Dinheiro** — o que cabe no ouro livre (reserva de 3 h de gasto) e para que juntar.
+- **O chefe** (`trOrdenar`/`trRodar`): nota = impacto (% de XP/h) × peso da confiança × 0,3 se falta ouro; conselho de **erro** tem
+  piso 4 (um fato não fica atrás de palpite); **dedupe** por `numeros.dedupe` (ex. `ilha:issavi` junta Upar e Caçar itens, herda ação e
+  custo); **custo efetivo** = desembolso + 3 × custo/h. Mostra 3 próximos passos + 10 cartões (✓/⚠/✗), o "por quê" atrás do `?`.
+- **Fontes de dados** (`trFoto`, cada bloco isolado — um que falha não derruba os outros; a XP é sempre RAW): welcome/resume e
+  mensagens empurradas (`ESTADO_WS.tr`: conta, prey, bênçãos, legado, lealdade, party, Selo, Invasão), frame.analyzer (medida de agora),
+  CAT (caçadas, ilhas), sessões dos últimos 14 dias, `scan_resultados`, `radar_rank`, Bestiário (PROG), Equip/Melhorias (`EQUIP.res`,
+  `mlChecklist`), último ranking da Forja (FJ), preços do Mercado (MK), autópsias de morte, `/islands`, topo do rank (`tr_topo`, por conta).
+- **Ações** (`trAcaoInfo` decide o modo na hora do clique, pela foto de AGORA; resultado sempre no Log como "treinador: …"):
+
+  | tipo | o que faz | 2 toques |
+  |---|---|---|
+  | `ir-mapa` | entra no mapa com a lure salva daquela caçada (`scanEntrar`), sem kit, sem barra, sem presets | só caçando (sai da caçada) |
+  | `lure` | `set_lure` dentro da caçada, confere no frame | não |
+  | `medir` | Scan de 5 min em cada mapa | sim |
+  | `prey-escolher` / `prey-trocar` / `prey-trancar` | `prey_hunt_pick` (5 wildcards) / `prey_buff_roll` (1º do dia grátis) / `prey_lock_set` | sim (trocar: só se não for grátis) |
+  | `bencaos` | `buy_all_blessings` | sim |
+  | `selo` | `selo_ligar` só com Abundante já no Selo desta caçada; sem pacto, abre a tela do jogo | sim (ligar) |
+  | `boss-trocar` / `abrir-silas` | `boss_deliver` / `island_deliver` no Silas (cidade) | sim |
+  | `invasao` | `invasion_join` (grátis); recusa (`meta_result applied:false`) volta com o motivo | não |
+  | `comprar-mercado` | compra das ordens mais baratas de outros até conselho + 10 %, relendo o livro antes de cada compra | sim |
+  | `ler-topo` / `forja-ler` | lê `/leaderboard` + até 25 perfis (freio 6 h/24 h, progresso e Cancelar) / recalcula a Forja | não |
+  | `abrir-melhorias`/`-equip`/`-aguentar`/`-magia`/`-forja` | troca para a aba do helper | não |
+
+  **Abrem a tela do jogo** em vez de mandar mensagem: Ampulheta (`ampulheta-placa`: Usar/Comprar lá — a compra está "a confirmar"
+  no protocolo), Loja, Elites, Selo sem pacto, Silas fora do alcance, Invasão sem confirmação. Protocolo em `docs/protocolo-treinador.md`.
+- **Bugs achados no caminho**: `legacy_state`, `loyalty_update` e `party_snapshot` eram tratados como mensagens ENVIADAS (nunca
+  enchiam o estado); a morte do Radar sobrescrevia as autópsias; as sessões passaram a guardar a XP RAW (antes misturavam bônus).
+- **Pesquisa** (`TR_BASE`, cada número com fonte): wiki (79 páginas em `data/wiki-27-11/`: bônus de XP somam, Legado, ampulhetas,
+  prey, Selo, bênçãos, ilhas), comunidade (Discord, mural de presets e YouTube: XP/h por mapa e nível, régua "ficar forte", prey de
+  ataque do Lucasdela, mana leech pelo TV de Souza), o que o projeto mediu (spawn × dano 27/09, sessões), perfis do topo do rank (`data/top-perfis-27-11.json`: nível 297–386 usam quase o
+  mesmo set — a diferença é nível e skill, não item raro).
+- **Teste ao vivo (27/11, 20:47–21:02, u2tag nível 251 em Shadow Nexus lure 3, aba limpa com a 2.67.0 injetada)**:
+  - Trilho: ▤ "Progr" = Progresso, ⚑ "Rotina"; Rotina com Bestiário/Invasão/Offline/Prey desenhando.
+  - Tempo: `trFoto` 0,8–1,7 ms, `trRodar` 0,5–1,0 ms; do clique em Atualizar ao DOM novo 9,8 ms; abrir a aba 2 ms (meta < 100 ms).
+    Log sem erro do helper. Erros do console são da cópia injetada rodando dentro do iframe do Cloudflare (CSP/TrustedHTML) — o
+    `addInitScript` entra em todo frame; o Tampermonkey (`@match`) não.
+  - **3 passos (caçando, Forja não lida)**: "1. A prey não tem caçada — +4,5 % XP/h, estimado — Prey aqui (desligado: faltam
+    wildcards (2/5))"; "2. Refinar stonecutter axe +0 → +4 (~1,3 M, sem risco) — +2 % XP/h, 1,3 M, wiki — Forja"; "3. Refinar hive bow
+    +0 → +4 (~1,3 M, sem risco) — +2 % XP/h, 1,3 M, wiki — Forja". Plausíveis (Knight e Paladino com arma +0 no nível 251; a prey
+    escolhida custa 5 wildcards e a conta tem 2). Depois de LER E RANQUEAR na Forja o refino virou **~2,4 M** (cotação real) e os
+    passos 2–3 passaram a "Cavaleiro: Regen. de mana 0 de 18" e "Paladino: Regen. de mana 8,9 de 18" (+2 %, comunidade, Melhorias):
+    sem a Forja lida, a estimativa do refino fica ~45 % baixa.
+  - Botões: Forja/Melhorias/Aguentar trocam de aba (sem envio); Ampulheta abriu a janela do jogo (só `ampulheta_get`); Comparar com o
+    topo respeitou o freio ("topo lido há 1,3 h: leio de novo em 4,7 h"); Invasão já inscrita (sem botão). **Selo (tela) não achou a
+    aba**: `hunt-aba-selo`/`selo-aba` não existem; o Selo de cada caçada é o "+" `selo-botao-<huntId>` ("Montar o Selo de <mapa>") na
+    lista de CAÇADAS — pendente corrigir o `trAbrirTela('selo')`.
+  - 2 toques: o 1º toque no Ir mostrou "confirmar?", nada foi enviado (espião no `WebSocket.prototype.send`) e voltou a "Ir" em < 5,5 s.
+  - **Ir** (Djinns Marid Territory, Rec 50, marco de bestiário): 2 toques, botões desligados e "fazendo: Ir…" durante; 9,8 s;
+    enviados `stop`, `city_sell_off` (do próprio jogo ao parar), `summary_closed`, `mailbox_get`, `start_hunt` — nenhum preset/perfil/
+    battle-config; entrou com a lure salva (2). Volta a Shadow Nexus pela tela do jogo (busca "Fury", todas as ilhas, hunt-item-222,
+    hunt-confirm): lure 3 de novo.
+  - **Achado e corrigido** (commits à parte, com teste): (1) logo depois de trocar de mapa o analisador tinha 0,4 min = "35 mil XP/h"
+    e o Upar dizia "Shadow Nexus rende 35 mil XP/h" (com outro mapa medido acima mandaria trocar com +1.400 %) → `trMaValida`: a medida
+    de agora só vale com ≥ 5 min; a situação mostra "medindo (N min)". (2) Progresso aberto no lobby (F5) guardava a foto vazia e
+    ficava "nada urgente" depois de entrar até um clique → `trCacheVelho` + o vigia de 4 s repinta até a conta chegar (ao vivo: 1 s
+    depois do ENTRAR NO JOGO já com os passos).
+  - Na cidade: não testado (a party caçando; não se para a caçada só para isso). F5: abrir no lobby não quebra.
+  - Pergunta para o dono: "Lure N" sobe a lure com 1 toque (não gasta ouro direto, mas aumenta risco e gasto/h).
+- Deixado: uma aba limpa (Tampermonkey 2.66.0), Shadow Nexus, lure 3. Testes: 797 no total.
