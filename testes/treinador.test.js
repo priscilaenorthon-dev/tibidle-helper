@@ -325,9 +325,9 @@ t('upar: mapa de ilha fechada não vira ir-mapa; vira "Abrir <ilha>" sem ação'
         const cs = T.trAgenteUpar(f, T.TR_BASE);
         assert.strictEqual(acoes(cs, 'ir-mapa').length, 0);
         const ab = cs.find(c => c.id === 'upar:abrir-ilha');
-        assert(ab, cs.map(c => c.titulo).join(' | ')); assert.strictEqual(ab.numeros.ilha, 'dream_courts'); assert.strictEqual(ab.acao, null);
+        assert(ab, cs.map(c => c.titulo).join(' | ')); assert.strictEqual(ab.numeros.ilha, 'dream_labyrinths'); assert.strictEqual(ab.acao, null);
         assert(Math.abs(ab.impacto - (650 / 540 - 1) * 100) < 1e-9, String(ab.impacto)); // medido: o ganho real
-        assert.strictEqual(ab.numeros.dedupe, 'ilha:dream_courts');
+        assert.strictEqual(ab.numeros.dedupe, 'ilha:dream_labyrinths');
     }
 });
 t('upar: foto.ilhas que não é lista não quebra', () => {
@@ -1375,7 +1375,7 @@ function cenario(o) {
         chaves: { usadas: 10, max: 20, elites: [{ nome: 'Viscous', qtd: 6 }] }, deposito: { 'spectral conch': 2 }, invasao: { inscrito: false },
         forja: { abaixo4: [{ voc: 'KNIGHT', slot: 'weapon', nome: 'stonecutter axe', refino: 0, custo: 1450000 }, { voc: 'KNIGHT', slot: 'ring', nome: 'crystal ring', refino: 0, custo: 300000 }], idadeH: 3, basesParadas: [{ nome: 'avenger', potencia: 450 }] },
         topo: null, precos: { 'stonecutter axe': 3e6 },
-        ilhas: [{ id: 'issavi', aberta: false }, { id: 'marapur', aberta: false }, { id: 'dream_courts', aberta: true }, { id: 'the_inquisition', aberta: true }] }, o || {});
+        ilhas: [{ id: 'issavi', aberta: false }, { id: 'marapur', aberta: false }, { id: 'dream_labyrinths', aberta: true }, { id: 'the_inquisition', aberta: true }] }, o || {});
 }
 const trCustoZero = (c) => T.trCustoEfetivo(c) === 0;
 const top3 = (f) => T.trRodar(f, T.TR_BASE).passos.map(p => p.id);

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.67.2
+// @version      2.67.3
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (treinador: 10 especialistas e os 3 próximos passos para upar) + Rotina (bestiário, prey, plano offline, invasão) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.67.2';
+    const VERSAO = '2.67.3';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -11691,7 +11691,7 @@
             'Inquisition Entrance': { rec: 150, ilha: null }, 'Werebeasts': { rec: 80, ilha: null }, 'Putrid Mummies': { rec: 100, ilha: null },
             'Hero Fortress Underground': { rec: 120, ilha: null }, 'Haunted Nexus Tomb': { rec: 150, ilha: null }, 'Haunted Nexus Temple': { rec: 170, ilha: null },
             'Haunted Nexus Cellar': { rec: 190, ilha: null },
-            "Carnivora's Rocks": { rec: 170, ilha: 'dream_courts' },
+            "Carnivora's Rocks": { rec: 170, ilha: 'dream_labyrinths' },
             'Death Portal': { rec: 100, ilha: 'forgotten_knowledge' }, 'Earth Portal': { rec: 130, ilha: 'forgotten_knowledge' },
             'Energy Portal': { rec: 130, ilha: 'forgotten_knowledge' }, 'Holy Portal': { rec: 150, ilha: 'forgotten_knowledge' },
             'Fire Portal': { rec: 180, ilha: 'forgotten_knowledge' },
@@ -11716,23 +11716,23 @@
             'Killer Caiman Caverns': { rec: 80, ilha: 'zao' }, 'Zao Entrance': { rec: 80, ilha: 'zao' }, 'Frozen Hell': { rec: 100, ilha: 'zao' },
             "Souleater's Canyon": { rec: 100, ilha: 'zao' }, "Lizard Chosen's Dojo": { rec: 110, ilha: 'zao' }, 'Lizard City': { rec: 130, ilha: 'zao' },
             'Zao Caverns': { rec: 130, ilha: 'zao' },
-            'Winter Court': { rec: 200, ilha: 'dream_courts' }, // TODO confirmar id
+            'Winter Court': { rec: 200, ilha: 'dream_labyrinths' }, // id do jogo (CAT.hunts, 28/11)
             'Ice Portal': { rec: 200, ilha: 'forgotten_knowledge' },
             'Hellgorak Seal': { rec: 200, ilha: 'the_inquisition' },
             'Warzone II - Magma Dungeon': { rec: 200, ilha: 'warzone' },
             'Warzone II - Parasite Nest': { rec: 220, ilha: 'warzone' },
             'Kilmaresh Catacombs': { rec: 230, ilha: 'issavi' },
-            'Temple of the Moon Goddess': { rec: 240, ilha: 'marapur' }, // TODO confirmar id
-            'Summer Court': { rec: 250, ilha: 'dream_courts' }, // TODO confirmar id
+            'Temple of the Moon Goddess': { rec: 240, ilha: 'marapur' }, // id do jogo (CAT.hunts, 28/11)
+            'Summer Court': { rec: 250, ilha: 'dream_labyrinths' }, // id do jogo (CAT.hunts, 28/11)
             'Otherworld Zao': { rec: 250, ilha: 'otherworld' },
             'Shadow Nexus': { rec: 250, ilha: 'the_inquisition' },
             'Warzone III - Crystal Caves': { rec: 250, ilha: 'warzone' },
             'Salt Caves': { rec: 280, ilha: 'issavi' },
-            'Seacrest Grounds': { rec: 290, ilha: 'marapur' }, // TODO confirmar id
-            'Buried Cathedral': { rec: 300, ilha: 'dream_courts' }, // TODO confirmar id
+            'Seacrest Grounds': { rec: 290, ilha: 'marapur' }, // id do jogo (CAT.hunts, 28/11)
+            'Buried Cathedral': { rec: 300, ilha: 'dream_labyrinths' }, // id do jogo (CAT.hunts, 28/11)
             'Ruins of Nuur': { rec: 330, ilha: 'issavi' },
-            'Emerald Gardens': { rec: 340, ilha: 'marapur' }, // TODO confirmar id
-            'Dream Talisman': { rec: 350, ilha: 'dream_courts' } }, // TODO confirmar id
+            'Emerald Gardens': { rec: 340, ilha: 'marapur' }, // id do jogo (CAT.hunts, 28/11)
+            'Dream Talisman': { rec: 350, ilha: 'dream_labyrinths' } }, // id do jogo (CAT.hunts, 28/11)
         // XP/h e saldo/h já vistos (raw = sem prey/boost); faixas [mín, máx] onde a fonte deu intervalo; nivel = da party na medida
         medidos: [
             { hunt: 'Shadow Nexus', xpH: 950000, saldoH: [400000, 600000], nivel: [217, 246], fonte: 'comunidade preset 57 (com imbuements; sem imbuement ~zero a zero)' },
@@ -11750,7 +11750,7 @@
         ilhas: [ // wiki/acesso-as-ilhas, dream-courts, marapur
             { nome: 'Issavi', id: 'issavi', ouro: 10e6, materiais: [] },
             { nome: 'Marapur', id: 'marapur', ouro: 10e6, materiais: [{ nome: 'Spectral Conch', qtd: 10, onde: 'Elite Entombed Wraithlord (Haunted Nexus Tomb, Rec 150): 20,83 % ×2' }] }, // TODO confirmar id
-            { nome: 'Dream Courts', id: 'dream_courts', ouro: 15e6, materiais: [{ nome: 'Haunted Sigil', qtd: 10, onde: 'Hollow High Priest (Haunted Nexus Temple, Rec 170) 10,42 % ×2; Wailing Matron (Haunted Nexus Cellar, Rec 190) 20,83 % ×2' }] }, // TODO confirmar id
+            { nome: 'Dream Courts', id: 'dream_labyrinths', ouro: 15e6, materiais: [{ nome: 'Haunted Sigil', qtd: 10, onde: 'Hollow High Priest (Haunted Nexus Temple, Rec 170) 10,42 % ×2; Wailing Matron (Haunted Nexus Cellar, Rec 190) 20,83 % ×2' }] }, // TODO confirmar id
             { nome: 'Otherworld', id: 'otherworld', ouro: 3e6, materiais: [{ nome: 'Thunderscar Spark', qtd: 20, onde: 'Elite Balerion (Thunderscar Peak, Rec 100): 23 % ×4' }] },
             { nome: 'Warzone', id: 'warzone', ouro: 3e6, materiais: [{ nome: 'Warzone Voucher', qtd: 40, onde: 'Upper Spikes Box 10,8 %, Middle Spikes Box 15,2 %, Lower Spikes Box 22,5 % (×3)' }] },
             { nome: 'Forgotten Knowledge', id: 'forgotten_knowledge', ouro: 3e6, materiais: [] },
@@ -11786,7 +11786,7 @@
               vida: 360000, tentativa: [{ item: "Timira's Scale", qtd: 5 }],
               onde: 'Seacrest Grounds / Emerald Gardens, ou 2 tokens na loja de Marapur', drops: 'naga wand/rod (ML +2), naga axe/club (atk 52) 8 %; guardian boots 18 %',
               vale: 'naga wand/rod ML +2 e naga axe/club para o Knight' },
-            { nome: 'Izcandar', nomeJogo: 'Izcandar the Banished', ilha: 'dream_courts', rec: 350, // TODO confirmar id
+            { nome: 'Izcandar', nomeJogo: 'Izcandar the Banished', ilha: 'dream_labyrinths', rec: 350, // id do jogo (CAT.hunts, 28/11)
               vida: 415000, tentativa: [{ item: "Izcandar's Shard", qtd: 5 }],
               onde: 'Buried Cathedral Box 4,17 % / Dream Talisman Box 6,94 %, ou 2 tokens na loja de Dream Courts',
               drops: 'Blade of Summers/Winters, Wardstrider Boots 8 %; nightmare boots 18 %; dwarven armor 21 %', vale: 'o boss mais forte (415k)' },
@@ -11856,8 +11856,8 @@
                     ['Hive Queen Chamber', 12000, 1], ['Putrid Mummies', 12000, 1], ['Ice Portal', 50000, 1], ['Warzone I - Rocky Mountain', 50000, 1], ['Seacrest Grounds', 50000, 1]],
             shielding: [['Gladiators Arena Yalahar', 10000, 1], ['Gargoyles Meriana', 10000, 1], ['Throne of Tafariel', 50000, 1], ['Annihilon Seal', 50000, 1], ['Kilmaresh Catacombs', 50000, 1]] },
         // De onde vem cada material: fonte única em ilhas[].materiais[].onde (ilha) e bosses[].onde (tentativa de boss).
-        tokensIlha: { issavi: { fragmentos: 10, ouro: 20000, coins: 49 }, marapur: { fragmentos: 10, ouro: 20000, coins: 49 }, // wiki/lojas-das-ilhas (preço de 1 token); TODO confirmar id marapur/dream_courts
-                      dream_courts: { fragmentos: 10, ouro: 20000, coins: 49 }, otherworld: { fragmentos: 10, ouro: 20000, coins: 9 } },
+        tokensIlha: { issavi: { fragmentos: 10, ouro: 20000, coins: 49 }, marapur: { fragmentos: 10, ouro: 20000, coins: 49 }, // wiki/lojas-das-ilhas (preço de 1 token); TODO confirmar id marapur/dream_labyrinths
+                      dream_labyrinths: { fragmentos: 10, ouro: 20000, coins: 49 }, otherworld: { fragmentos: 10, ouro: 20000, coins: 9 } },
         // ── Equipamento do topo (nível 297–386 visível em 27/11) e réguas da comunidade
         topoVisto: { KNIGHT: ['Zaoan helmet', 'exotic legs', 'Zaoan legs', 'guardian boots', 'crystal ring', 'Royal Signet', 'stonecutter axe', 'axe of destruction', 'avenger', 'onyx pendant'],
                      PALADIN: ['paladin armor', 'wood cape', 'living vine bow', 'mycological bow'],

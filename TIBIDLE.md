@@ -7936,3 +7936,9 @@ no lugar do Haste).
   de hora guardado). Pactos só de ouro: o treinador não opina. A foto leva `selo.pactos`, `ligado`, `restoMs`.
 - Cache: `selo_state`, `meta_result`, `invasion_update` e `ampulheta_state` zeram o TR.ultimo (a tela recalcula no próximo desenho).
 - Sem teste ao vivo.
+
+## 2.67.3 (28/11) — treinador: id da ilha Dream Courts
+- No jogo (CAT.hunts) as caçadas de Dream Courts são da ilha `dream_labyrinths`, não `dream_courts` (palpite de 27/11). Trocado em todo o
+  TR_BASE (cacadasTopo, ilhas, Izcandar, tokensIlha) e nos testes. `marapur` confirmado. Com o id errado, o "Abrir Dream Courts" mandaria
+  `island_deliver` com id desconhecido.
+
