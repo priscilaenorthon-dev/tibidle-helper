@@ -7942,3 +7942,15 @@ no lugar do Haste).
   TR_BASE (cacadasTopo, ilhas, Izcandar, tokensIlha) e nos testes. `marapur` confirmado. Com o id errado, o "Abrir Dream Courts" mandaria
   `island_deliver` com id desconhecido.
 
+
+## 28/11 (noite) — refino do stonecutter axe do Cavaleiro (+0 → +4), pedido do dono
+- A Forja marcava "não vale" (+0,6 pt por ~3,54 M); o dono mandou refinar mesmo assim, com teto de 3,9 M.
+- COMPRAR O QUE FALTA levou 845 refine fragment t1 a 19–20 = **16,3 mil** (o ≈ 1.690k do botão é a estimativa com o ouro de criar as gemas).
+- FORJAR: 9 gemas, +0→+1 falhou 4× nos 80 %, depois +1, +2, +3 seguidos; +3→+4 falhou 2× nos 50 %. Parou em +3 sem gema
+  ("gasto 3.269,4k" pela conta do helper, que soma a parte em coins pela cotação).
+- **Furo da Forja:** depois do +3, a peça só oferece o plano "linha nova" (~11 M): o refino sozinho até +4 some da lista porque rende
+  < 0,5 pt (FJ_GANHO_MIN). A última tentativa saiu pelo socket: market_execute 100 frag (2 mil) → `forge_craft {gema:'refino', qty:1}`
+  (363 mil de ouro) → `forge_refine {iid, origem:'equipped', vocation:'KNIGHT'}` = **ok, refino 4**. `vocation` em minúsculas dá
+  invalid_message.
+- Ouro: 3.989.589 → 1.106.774 (2,88 M de ouro + as coins das gemas). A party voltou ao Shadow Nexus lure 3 (`start_hunt {huntId:222, lure:3}`).
+- A corrigir no treinador: o custo do refino saía ~1,3 M; a Forja (gema ≈ 363 mil com a cotação) dá ~2,3–3,5 M.
