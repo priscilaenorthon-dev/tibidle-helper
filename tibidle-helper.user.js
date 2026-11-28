@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.67.1
+// @version      2.67.2
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (treinador: 10 especialistas e os 3 próximos passos para upar) + Rotina (bestiário, prey, plano offline, invasão) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.67.1';
+    const VERSAO = '2.67.2';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -11820,7 +11820,21 @@
         selo: { tierCh: [30, 25, 22, 17, 6], perigoPeso: [1, 1, 2, 2, 3], pesoHora: [4.3, 5.8, 7.6, 11.9, 27.5], // wiki/selo-da-cacada, protocolo
                 adicionarMult: [1, 3, 5], perigoConfirma: 6,
                 // Rolar da faixa (faixa = 10 × ⌊Rec/10⌋, mín. 20) — protocolo; faixa 70 → 4.300 (exemplo da wiki)
-                rolar: (rec) => { const fx = Math.max(20, 10 * Math.floor((rec || 0) / 10)); const v = 600 * Math.pow((fx + 5) / 25, 1.8); const q = v >= 10000 ? 1000 : 100; return Math.round(v / q) * q; } },
+                rolar: (rec) => { const fx = Math.max(20, 10 * Math.floor((rec || 0) / 10)); const v = 600 * Math.pow((fx + 5) / 25, 1.8); const q = v >= 10000 ? 1000 : 100; return Math.round(v / q) * q; },
+                // Hora ligada (2.67.2): 100 × arred(Rolar × Σ arred(10 × peso do tier) ÷ 1000) — sai INTEIRA do ouro ao ligar caçando ali
+                // (ou quando o relógio zera); faixa 70, T2 + T3 → 57.600 (wiki/selo-da-cacada)
+                hora(rec, tiers) {
+                    const soma = (tiers || []).reduce((a, t) => a + (t >= 1 && t <= 5 ? Math.round(10 * this.pesoHora[t - 1]) : 0), 0);
+                    return soma ? 100 * Math.round(this.rolar(rec) * soma / 1000) : 0;
+                },
+                // valores por tier [T1..T5] (wiki/selo-da-cacada; ids do protocolo). Buffs × (1 + 0,1 × Perigo); debuffs sem o Perigo.
+                // abundante = xp.seloAbundante (pontos de bônus de XP, somam com party/prey/boost)
+                buffs: { dano_grupo: [5, 10, 15, 22, 30], reducao_dano: [5, 10, 15, 20, 25], rico_t2: [40, 70, 100, 150, 220] },
+                debuffs: { ferozes: [10, 20, 30, 45, 60], resistentes: [10, 15, 20, 30, 40], resilientes: [10, 20, 30, 45, 60],
+                           sedentos: [50, 60, 70, 80, 100], saqueados: [20, 30, 40, 50, 60] },
+                nomes: { abundante: 'Abundante', rico_t1: 'Rico em fragmentos T1', guardiao_generoso: 'Guardião generoso', cacador_bestiario: 'Caçador do bestiário',
+                         dano_grupo: 'Dano do grupo', reducao_dano: 'Redução do dano recebido', rico_t2: 'Rico em fragmentos T2',
+                         ferozes: 'Ferozes', resistentes: 'Resistentes', resilientes: 'Resilientes', sedentos: 'Sedentos', saqueados: 'Saqueados', guardiao_ausente: 'Guardião ausente' } },
         // ── Chaves de Elite
         chaves: { minLureMax: 60, minOutros: 240, mochilaMin: 1, energizarMin: 1.5, chavesDiaTudo: 28, sweepMax: 100 }, // wiki/chaves-e-caixas, elites; comunidade (≈28/dia com tudo)
         // ── Invasão: diária, grátis, 3 janelas (14/18/22h); tokens pela posição no dano do boss
@@ -12281,6 +12295,39 @@
     }
     TR_AGENTES.push({ id: 'upar', nome: 'Onde upar', icone: '⤴', rodar: trAgenteUpar });
 
+    // [contrato] Efeito dos pactos do Selo na XP/h (2.67.2 — ao vivo 28/11 o treinador mandava ligar Abundante T4 com Resilientes T4,
+    // +45 % de vida dos monstros, numa caçada limitada por dano: a XP líquida era NEGATIVA).
+    //   pactos = [{ tier 1–5, buff, debuff }] (ids do protocolo) · perigo = Σ perigoPeso(tier) · cada buff × (1 + seloPerigoFrac × perigo)
+    //   xpBrutoPct = pontos de bônus de XP (Abundante; somam com os +party da party, como o resto do agente: ÷ (100 + party))
+    //   abates: bruto = Π(1 + Dano do grupo) × Π(1 − Resistentes) ÷ Π(1 + Resilientes) →
+    //     limitada por dano (true) = bruto, até a folga do teto de spawn · por spawn (false) = min(1, bruto) · não sei (null) = 1 + (bruto − 1) × xpPorDanoFrac
+    //   xpLiquidoPct = ((1 + bruto/(100 + party)) × killFator − 1) × 100 · custoH = TR_BASE.selo.hora (cobrada inteira ao ligar)
+    //   riscoMorte = Ferozes, ou Resistentes/Resilientes com morte (evento) nos últimos 7 dias
+    function trSeloEfeito(pactos, foto, base) {
+        const b = base || TR_BASE, s = b.selo, f = foto || {};
+        const ps = (Array.isArray(pactos) ? pactos : []).filter(p => p && trNum(p.tier) >= 1 && trNum(p.tier) <= 5)
+            .map(p => ({ tier: Math.round(Number(p.tier)), buff: String(p.buff || ''), debuff: String(p.debuff || '') }));
+        const perigo = ps.reduce((a, p) => a + s.perigoPeso[p.tier - 1], 0), mult = 1 + b.xp.seloPerigoFrac * perigo;
+        const de = (tab, p) => (tab ? tab[p.tier - 1] || 0 : 0), tem = (id) => ps.find(p => p.debuff === id) || null;
+        let A = 0, dano = 1, vida = 1;
+        for (const p of ps) {
+            if (p.buff === 'abundante') A += b.xp.seloAbundante[p.tier - 1] * mult;
+            if (p.buff === 'dano_grupo') dano *= 1 + de(s.buffs.dano_grupo, p) * mult / 100;
+            if (p.debuff === 'resistentes') dano *= 1 - de(s.debuffs.resistentes, p) / 100;
+            if (p.debuff === 'resilientes') vida *= 1 + de(s.debuffs.resilientes, p) / 100;
+        }
+        const rawKill = dano / vida, lim = trLimitadoPorDano(f, b);
+        let killFator;
+        if (lim === true) killFator = Math.min(rawKill, b.spawn.porLure * Number(f.hunt.lure) / Number(f.medidoAtual.abatesH));
+        else if (lim === false) killFator = Math.min(1, rawKill);
+        else killFator = 1 + (rawKill - 1) * b.xp.xpPorDanoFrac;
+        const den = 100 + b.xp.party, xpLiquidoPct = ((1 + A / den) * killFator - 1) * 100;
+        const ferozes = tem('ferozes'), duro = tem('resistentes') || tem('resilientes');
+        const riscoMorte = !!ferozes || (!!duro && trEventosMorte(f, b, 7).length > 0);
+        const sd = tem('sedentos'), sq = tem('saqueados');
+        return { xpBrutoPct: A, killFator, rawKill, lim, xpLiquidoPct, custoH: s.hora(trRecDe(f.hunt, b), ps.map(p => p.tier)), perigo, riscoMorte,
+                 sedentos: sd ? de(s.debuffs.sedentos, sd) : null, saqueados: sq ? de(s.debuffs.saqueados, sq) : null, semChave: !!tem('guardiao_ausente') };
+    }
     // ── Especialista 2: Multiplicadores (✕). Premium, Prey (caçada da conta, tipo e travas), bênçãos e Selo.
     //    Régua do impacto: os bônus de XP SOMAM; +k pontos valem k ÷ (100 + party) da XP/h de agora (premium/prey/boost fora do denominador, simples de propósito).
     //    custo = desembolso ÚNICO em ouro; custo por hora vai em numeros.custoH.
@@ -12379,10 +12426,53 @@
         // custo = 1 Rolar (o 1º pacto); custoH = Rolar × peso do tier (protocolo). Tier desconhecido: T1 × 0,25 (Abundante sai em ~25 % dos pactos).
         const selo = foto.selo && typeof foto.selo === 'object' ? foto.selo : null;
         const rec = trRecDe(hunt, b);
-        if (selo && !selo.ativo && hunt && rec >= 20) {
+        const pactos = selo && Array.isArray(selo.pactos) ? selo.pactos.filter(p => p && trNum(p.tier) >= 1 && trNum(p.tier) <= 5) : [];
+        // 2.67.2: com os pactos desta caçada na foto, a conta é a LÍQUIDA (buff × debuff); sem eles, a estimativa de antes (montar o Selo)
+        if (selo && hunt && rec >= 20 && pactos.length) {
+            const ef = trSeloEfeito(pactos, foto, b), liq = ef.xpLiquidoPct, nm = b.selo.nomes;
+            const ligado = selo.ligado != null ? selo.ligado === true : selo.ativo === true;
+            const efeitoXp = ef.xpBrutoPct > 0 || Math.abs(ef.killFator - 1) > 1e-9;
+            if (efeitoXp) {
+                const nomeDe = (id) => nm[id] || id;
+                const comXp = pactos.filter(p => p.buff === 'abundante' || p.buff === 'dano_grupo').map(p => nomeDe(p.buff));
+                const corta = pactos.filter(p => ['resistentes', 'resilientes'].includes(p.debuff)).map(p => nomeDe(p.debuff));
+                const pior = corta[0] || (pactos.find(p => p.debuff) ? nomeDe(pactos.find(p => p.debuff).debuff) : 'o debuff');
+                const sinal = (v) => (v > 0 ? '+' : v < 0 ? '−' : '') + trPct(Math.abs(v));
+                const limTxt = ef.lim === true ? 'caçada limitada por dano' : ef.lim === false ? 'caçada limitada por spawn'
+                    : `sem saber se a caçada é limitada por dano: conta ${Math.round(b.xp.xpPorDanoFrac * 100)} % do corte`;
+                const conta = `Pactos: ${pactos.map(p => `${nomeDe(p.buff)} × ${nomeDe(p.debuff)} T${Math.round(Number(p.tier))}`).join(', ')}; Perigo ${ef.perigo}. `
+                    + (ef.xpBrutoPct > 0 ? `+${trPct(ef.xpBrutoPct)} de bônus de XP (somam com os +${b.xp.party} da party = ${sinal(ef.xpBrutoPct / den * 100)} % na XP/h). ` : '')
+                    + (Math.abs(ef.killFator - 1) > 1e-9 ? `≈ ${trPct(Math.abs(ef.killFator - 1) * 100)} % ${ef.killFator < 1 ? 'menos' : 'mais'} abates (${corta.length ? corta.join(' e ') + '; ' : ''}${limTxt}). ` : '')
+                    + `XP líquida ≈ ${sinal(liq)} %.`;
+                const avisos = (ef.riscoMorte ? ' Risco de morte: ' + (pactos.some(p => p.debuff === 'ferozes') ? 'Ferozes deixa os monstros bater mais forte.' : 'monstros mais duros e houve morte nesta semana.') : '')
+                    + (ef.sedentos != null ? ` Sedentos: ${ef.sedentos} % de chance de cada poção/runa sair em dobro.` : '')
+                    + (ef.saqueados != null ? ` Saqueados: −${ef.saqueados} % de todo o drop.` : '')
+                    + (ef.semChave ? ' Guardião ausente: sem chave do Elite com o Selo ligado.' : '');
+                const numeros = { rec, perigo: ef.perigo, xpBrutoPct: ef.xpBrutoPct, killFator: ef.killFator, xpLiquidoPct: liq, custoH: ef.custoH, riscoMorte: ef.riscoMorte, ligado };
+                const motivoTitulo = comXp.length ? `${pior} tira mais XP do que o ${comXp[0]} dá` : `${pior} tira XP e nenhum pacto dá XP`;
+                if (ligado && liq > 0) {
+                    out.push(trConselho('mult', 'selo', { titulo: `Selo ligado: ≈ +${trPct(liq)} % de XP líquida`, curto: 'Selo', estado: 'ok', confianca: 'wiki', impacto: liq,
+                        porque: conta + avisos, numeros }));
+                } else if (ligado) {
+                    out.push(trConselho('mult', 'selo', { titulo: trCorta('Desligue o Selo: ' + motivoTitulo), curto: 'Selo', estado: 'erro', confianca: ef.lim === null ? 'estimado' : 'wiki',
+                        impacto: -liq, porque: conta + ` Cada hora ligada ainda custa ≈ ${trQtd(ef.custoH)} de ouro. Desligar guarda os pactos e o resto da hora.` + avisos, numeros,
+                        acao: { tipo: 'selo-desligar', huntId: hunt.id, rotulo: 'Desligar' } }));
+                } else if (liq <= 0) {
+                    out.push(trConselho('mult', 'selo', { titulo: trCorta('Não ligue o Selo: ' + motivoTitulo), curto: 'Selo', confianca: ef.lim === null ? 'estimado' : 'wiki', impacto: 0,
+                        porque: conta + ` E cada hora custaria ≈ ${trQtd(ef.custoH)} de ouro. Role ou limpe os pactos na tela do jogo se quiser outro sorteio.` + avisos, numeros }));
+                } else {
+                    // a hora sai inteira do ouro ao ligar caçando ali; com resto da hora guardado (restoMs), ligar não cobra agora
+                    const custo = trNum(selo.restoMs) > 0 ? 0 : ef.custoH, modelo = Math.abs(ef.rawKill - 1) > 1e-9;
+                    out.push(trConselho('mult', 'selo', { titulo: trCortaSufixo(`Ligar o Selo: ≈ +${trPct(liq)} % de XP líquida`, ` por ≈ ${trQtd(ef.custoH)}/h`), curto: 'Selo',
+                        confianca: modelo && ef.lim === null ? 'estimado' : 'wiki', custo, impacto: liq,
+                        porque: conta + ` Cada hora ligada custa ≈ ${trQtd(ef.custoH)} de ouro, cobrada inteira ao ligar` + (custo ? '' : ' (ainda há resto da hora paga guardado)') + '.' + avisos,
+                        numeros, acao: { tipo: 'selo', huntId: hunt.id, rotulo: 'Selo' } }));
+                }
+            }
+        } else if (selo && !selo.ativo && hunt && rec >= 20) {
             const tierSabido = trNum(selo.abundante) >= 1 && trNum(selo.abundante) <= 5;
             const tier = tierSabido ? Math.round(Number(selo.abundante)) : 1, pct = b.xp.seloAbundante[tier - 1];
-            const custo = b.selo.rolar(rec), custoH = 100 * Math.round(custo * Math.round(10 * b.selo.pesoHora[tier - 1]) / 1000);
+            const custo = b.selo.rolar(rec), custoH = b.selo.hora(rec, [tier]);
             out.push(trConselho('mult', 'selo', { titulo: `Ligar o Selo: +${pct} % de XP por ≈ ${trQtd(custoH)}/h`, curto: 'Selo', confianca: tierSabido ? 'wiki' : 'estimado', custo,
                 impacto: pct / den * 100 * (tierSabido ? 1 : 0.25),
                 porque: (tierSabido ? `Seu Selo aqui tem Abundante T${tier} (+${pct} de XP, × o Perigo). ` : `Abundante T1 dá +${pct} de XP, mas o buff é sorteado (≈ 1 pacto em 4). `)
@@ -13070,7 +13160,7 @@
     //   cacando = só dentro da caçada; motivo = por que o botão fica desligado agora (null = pode).
     // Todo `acao.tipo` que os especialistas emitem TEM de estar aqui (o teste varre o código e as fotos).
     const TR_ACAO_ROTULO = { 'ir-mapa': 'Ir', lure: 'Lure', medir: 'Medir', 'abrir-loja': 'Loja', 'prey-escolher': 'Prey aqui', 'prey-trocar': 'Sortear',
-                             'prey-trancar': 'Trancar', bencaos: 'Comprar', ampulheta: 'Ampulheta', selo: 'Selo', 'ler-topo': 'Ler o topo',
+                             'prey-trancar': 'Trancar', bencaos: 'Comprar', ampulheta: 'Ampulheta', selo: 'Selo', 'selo-desligar': 'Desligar', 'ler-topo': 'Ler o topo',
                              'abrir-melhorias': 'Melhorias', 'abrir-equip': 'Equip', 'abrir-aguentar': 'Aguentar', 'abrir-magia': 'Magia', 'abrir-forja': 'Forja',
                              'abrir-elite': 'Elites', 'boss-trocar': 'Trocar', invasao: 'Inscrever', 'abrir-silas': 'Abrir ilha', 'comprar-mercado': 'Comprar',
                              'forja-ler': 'Recalcular' };
@@ -13128,8 +13218,13 @@
             info.cacando = true;
             // com Abundante já no Selo desta caçada: liga (selo_ligar, cobra por hora); sem pacto: a tela do jogo (o pacto é sorteado
             // e os debuffs podem matar — o dono olha antes de pagar o Rolar)
-            if (f.selo && trNum(f.selo.abundante) >= 1) info.dois = true;
+            // 2.67.2: qualquer pacto conhecido (Dano do grupo também) liga pelo socket; o especialista só manda ligar com XP líquida > 0
+            if (f.selo && (trNum(f.selo.abundante) >= 1 || (Array.isArray(f.selo.pactos) && f.selo.pactos.length))) info.dois = true;
             else Object.assign(info, { modo: 'tela', tela: 'selo' });
+            if (!emHunt) info.motivo = 'só dentro da caçada';
+            break;
+        case 'selo-desligar': // grátis (guarda os pactos e o resto da hora): 1 toque
+            info.cacando = true;
             if (!emHunt) info.motivo = 'só dentro da caçada';
             break;
         case 'boss-trocar':
@@ -13169,12 +13264,13 @@
         if (info.dois && confirmado !== true) return { info, executa: false, aviso: 'mudou desde a tela: confirme de novo (2 toques)' };
         return { info, executa: true, aviso: null };
     }
-    // A resposta CONFIRMA a ação? (revisão) selo_ligar: o selo_state mostra o Selo DESTA caçada ligado; invasion_join: inscrito === true
+    // A resposta CONFIRMA a ação? (revisão) selo_ligar/selo_desligar: o selo_state mostra o Selo DESTA caçada ligado/desligado; invasion_join: inscrito === true
     // no invasion_update (data.invasao) ou no meta_result (data.meta.invasao). true = confirmou · false = respondeu sem confirmar ·
     // null = ação sem conferência extra (vale o tipo da resposta).
     function trRespostaConfirma(tipo, data, alvo) {
         const d = data && typeof data === 'object' ? data : {};
         if (tipo === 'selo_ligar') return Array.isArray(d.selos) && d.selos.some(z => z && trMesmoId(z.huntId, alvo && alvo.huntId) && z.ligado === true);
+        if (tipo === 'selo_desligar') return Array.isArray(d.selos) && d.selos.some(z => z && trMesmoId(z.huntId, alvo && alvo.huntId) && z.ligado === false);
         if (tipo === 'invasion_join') {
             const inv = d.invasao && typeof d.invasao === 'object' ? d.invasao : d.meta && typeof d.meta === 'object' && d.meta.invasao && typeof d.meta.invasao === 'object' ? d.meta.invasao : null;
             return !!inv && inv.inscrito === true;
@@ -20630,6 +20726,8 @@
             else if (k === 'erro' && !p.erro) p.erro = { code: String(d.code || d.key || '?'), key: d.key || null, params: d.params || null, t: agora, meu: d.requestId != null && String(d.requestId) === p.rid };
         }
         trAnotar(x, o, agora); // conta, bênçãos, Invasão, ilhas, ampulheta, Selo e o ouro de qualquer mensagem (@@TREINADOR-PURO)
+        // 2.67.2: Selo/meta/Invasão/ampulheta mudam conselhos: o próximo desenho da tela recalcula (antes ficava até 60 s com o Selo velho)
+        if (tipo === 'selo_state' || tipo === 'meta_result' || tipo === 'invasion_update' || tipo === 'ampulheta_state') TR.ultimo = null;
     }
     const trIlhaCat = (h) => (h && h.island && h.island !== 'tibidle_island' ? String(h.island) : h && h.title ? (trCacada(h.title, TR_BASE) || {}).ilha || null : null);
     // XP/h raw do texto de um setup do Discord ("950k raw", "140–150k raw", "≈350k (320k raw)"); sem "raw" = null (tem bônus misturado)
@@ -20858,7 +20956,10 @@
             if (!s || s.ativo === false || !f.hunt) return;
             const e = (s.selos || []).find(z => z && trMesmoId(z.huntId, f.hunt.id));
             const ab = e && Array.isArray(e.pactos) ? e.pactos.filter(p => p && /abund/i.test(String(p.buff || ''))) : [];
-            f.selo = { ativo: !!(e && e.ligado), pausa: e ? e.pausa || null : null, abundante: ab.length ? Math.max(...ab.map(p => trNum(p.tier) || 0)) || null : null, huntId: f.hunt.id };
+            // 2.67.2: os pactos (tier, buff, debuff) vão inteiros para a conta líquida do treinador (trSeloEfeito); ligado = ativo desta caçada
+            const pactos = e && Array.isArray(e.pactos) ? e.pactos.filter(p => p && typeof p === 'object').map(p => ({ tier: trNum(p.tier), buff: p.buff != null ? String(p.buff) : null, debuff: p.debuff != null ? String(p.debuff) : null })) : [];
+            f.selo = { ativo: !!(e && e.ligado), ligado: !!(e && e.ligado), pausa: e ? e.pausa || null : null, abundante: ab.length ? Math.max(...ab.map(p => trNum(p.tier) || 0)) || null : null,
+                       huntId: f.hunt.id, pactos, restoMs: e && trNum(e.restoMs) > 0 ? Number(e.restoMs) : 0 };
         });
         bloco('sessoes', () => {
             const mult = xpMultiplicador();
@@ -21026,7 +21127,7 @@
     const TR_CACHE_MS = 60000, TR_ATUALIZAR_MS = 5000; // a tela recalcula 1× por minuto; o "Atualizar" no máximo a cada 5 s
     const TR_TRAVA_MAPA = 'Treinador (troca de mapa)', TR_TRAVA_MERCADO = 'Treinador (Mercado)'; // _travaJogo enquanto o treinador mexe
     // ações que vão pelo socket: recusam com a trava do jogo ocupada (ciclo, Scan, Equip, Forja, Mercado…) ou com boss em andamento
-    const TR_TIPOS_SOCKET = new Set(['lure', 'prey-escolher', 'prey-trocar', 'prey-trancar', 'bencaos', 'selo', 'boss-trocar', 'invasao', 'abrir-silas']);
+    const TR_TIPOS_SOCKET = new Set(['lure', 'prey-escolher', 'prey-trocar', 'prey-trancar', 'bencaos', 'selo', 'selo-desligar', 'boss-trocar', 'invasao', 'abrir-silas']);
     const trOcupado = () => travaJogo() || (ESTADO_WS.boss ? 'boss' : null);
     // foto → resultado da tela (TR.ultimo); as idades do rodapé são lidas aqui, não no template (o radar_rank guardado é grande)
     function trCalcular(foto) {
@@ -21312,6 +21413,10 @@
             const r = rr.erro === 'sem_resposta' ? { erro: true, code: 'nao_confirmou', msg: 'Selo: ' + trErroTxt('nao_confirmou') } : trResposta(rr, 'Selo', 'Selo ligado', alvo);
             if (r.code === 'selo_perigo' || r.code === 'nao_confirmou') await trAbrirTela('selo', acao); // perigo > 5 pede o "aceitar" do dono na tela do jogo
             return r;
+        }
+        case 'selo-desligar': { // 2.67.2: selo_desligar {huntId} (sem requestId, protocolo); vale o selo_state com o Selo DESTA caçada desligado
+            const alvo = { huntId: acao.huntId }, rr = await trPedir('selo_desligar', { huntId: n(acao.huntId) }, ['selo_state'], { semRid: true, alvo });
+            return rr.erro === 'sem_resposta' ? { erro: true, code: 'nao_confirmou', msg: 'Selo: ' + trErroTxt('nao_confirmou') } : trResposta(rr, 'Selo', 'Selo desligado', alvo);
         }
         case 'boss-trocar': {
             if (emHunt()) return { erro: true, msg: 'trocar tentativa só na cidade (Silas)' };

@@ -6,7 +6,7 @@ const i = src.indexOf('/* @@TREINADOR-PURO-INICIO'), f = src.indexOf('/* @@TREIN
 assert(i > 0 && f > i, 'trecho @@TREINADOR-PURO não encontrado');
 const T = new Function(src.slice(i, f) + '\nreturn { TR_BASE, TR_AGENTES, trConselho, trOrdenar, trRodar, trFotoVazia, trCacada, trAgenteUpar, trAgenteMult, trAgenteLegado, '
     + 'trMesmoId, trQtd, trLimitadoPorDano, trDanoParaXp, trTipoPrey, trXpAtual, trRecDe, trMortesRecentes, trAgenteTopo, trAgenteErros, trXpPerdidaMorte, trAgenteBoss, trEventosMorte, trImpactoMorte, '
-    + 'trAgenteBestiario, trAgenteItens, trAgenteForja, trAgenteDinheiro, trCortaSufixo, trParty, trVelho, trEhMago, trDanoDeUm, trCustoEfetivo, trResumirTopo, trOuroLivre, trMesclarMapas, trAnotar, trFreioTopo, trPerfisDepois, trAcaoInfo, trCasaResposta, trPlanoCompra, trIdadePt, TR_ACAO_ROTULO, TR_ERRO_PT, trDecidirClique, trRespostaConfirma, trK, trInscreveuDepois, trExecutarCompra, trCacheVelho, trErroDaChave };')();
+    + 'trAgenteBestiario, trAgenteItens, trAgenteForja, trAgenteDinheiro, trCortaSufixo, trParty, trVelho, trEhMago, trDanoDeUm, trCustoEfetivo, trResumirTopo, trOuroLivre, trMesclarMapas, trAnotar, trFreioTopo, trPerfisDepois, trAcaoInfo, trCasaResposta, trPlanoCompra, trIdadePt, TR_ACAO_ROTULO, TR_ERRO_PT, trDecidirClique, trRespostaConfirma, trK, trInscreveuDepois, trExecutarCompra, trCacheVelho, trErroDaChave, trSeloEfeito };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 // agentes falsos: troca os de verdade pelos falsos, roda e devolve os de verdade sempre
@@ -463,6 +463,80 @@ t('mult: Selo de tier desconhecido → Abundante T1 × 0,25, estimado; ligado �
     assert(Math.abs(c.impacto - 4 / 200 * 100 * 0.25) < 1e-9); assert.strictEqual(c.confianca, 'estimado');
     assert.strictEqual(c.numeros.custoH, 100 * Math.round(T.TR_BASE.selo.rolar(250) * 43 / 1000));
     assert.strictEqual(acoes(T.trAgenteMult(foto({ nivel: 238, hunt: huntSN(), selo: { ativo: true } }), T.TR_BASE), 'selo').length, 0);
+});
+// 2.67.2 — Selo pela conta líquida: buff de XP (Abundante × Perigo, somado aos +100 da party) × o que os debuffs tiram dos abates
+const medDano = { xpH: 540000, min: 10, abatesH: 900 }, medSpawn = { xpH: 540000, min: 10, abatesH: 1300 }; // teto lure 4 = 1360; corte 0,85 → 1156
+const fSeloOk = (pactos, o, ma) => {
+    const sl = Object.assign({ ativo: false, ligado: false, pausa: null, abundante: 4, huntId: 1, pactos, restoMs: 0 }, (o && o.selo) || {});
+    return foto(Object.assign({ nivel: 238, emHunt: true, hunt: huntSN(), medidoAtual: ma === undefined ? medDano : ma }, o || {}, { selo: sl }));
+};
+const seloDe = (ft) => T.trAgenteMult(ft, T.TR_BASE).find(c => c.id === 'mult:selo');
+const AB4_RESIL4 = [{ tier: 4, buff: 'abundante', debuff: 'resilientes' }], AB4_SAQ4 = [{ tier: 4, buff: 'abundante', debuff: 'saqueados' }];
+t('Selo (a): Abundante T4 + Resilientes T4 numa caçada limitada por dano → "Não ligue o Selo", impacto 0, sem botão', () => {
+    const c = seloDe(fSeloOk(AB4_RESIL4));
+    assert(c, 'sem conselho do Selo');
+    assert(/^Não ligue o Selo: Resilientes tira mais XP do que o Abundante dá/.test(c.titulo), c.titulo);
+    assert(c.titulo.length <= 70, c.titulo);
+    assert.strictEqual(c.impacto, 0); assert.strictEqual(c.acao, null); assert.strictEqual(c.estado, 'aviso');
+    // +16,8 de bônus (14 × 1,2) somados aos +100 da party = × 1,084; 1,45 de vida → abates × 0,690; líquido ≈ −25,2 %
+    assert(Math.abs(c.numeros.xpBrutoPct - 16.8) < 1e-9, c.numeros.xpBrutoPct);
+    assert(Math.abs(c.numeros.killFator - 1 / 1.45) < 1e-9, c.numeros.killFator);
+    assert(Math.abs(c.numeros.xpLiquidoPct - ((1 + 16.8 / 200) / 1.45 - 1) * 100) < 1e-9, c.numeros.xpLiquidoPct);
+    assert(/16,8/.test(c.porque) && /−25,2/.test(c.porque), c.porque);
+});
+t('Selo (b): Abundante T4 + Saqueados T4 (só loot) → ligar, +8,4 % de XP/h, custo = a hora cobrada ao ligar', () => {
+    const c = seloDe(fSeloOk(AB4_SAQ4));
+    assert(c && c.acao && c.acao.tipo === 'selo', JSON.stringify(c));
+    assert.strictEqual(c.acao.huntId, 1);
+    assert(Math.abs(c.impacto - 16.8 / 200 * 100) < 1e-9, c.impacto);
+    assert.strictEqual(c.custo, 464100); assert.strictEqual(c.numeros.custoH, 464100);
+    assert.strictEqual(c.confianca, 'wiki', 'sem debuff de vida/dano o modelo de abates não entra');
+    assert(/^Ligar o Selo: ≈ \+8,4 % de XP/.test(c.titulo) && /464 mil\/h/.test(c.titulo), c.titulo);
+    assert(c.titulo.length <= 70, c.titulo);
+    assert(/Saqueados/.test(c.porque), c.porque);
+    // hora já paga (restoMs > 0): ligar não cobra agora
+    assert.strictEqual(seloDe(fSeloOk(AB4_SAQ4, { selo: { restoMs: 20 * 60000 } })).custo, 0);
+    // Ferozes = risco de morte: avisa no porquê
+    const fe = seloDe(fSeloOk([{ tier: 4, buff: 'abundante', debuff: 'ferozes' }]));
+    assert(fe.acao && /morte|matar/i.test(fe.porque), fe.porque);
+    assert.strictEqual(fe.numeros.riscoMorte, true);
+});
+t('Selo (c): sem saber se é limitada por dano, o corte dos abates vale × xpPorDanoFrac (estimado)', () => {
+    const ef = T.trSeloEfeito(AB4_RESIL4, fSeloOk(AB4_RESIL4, null, null), T.TR_BASE);
+    const k = 1 - (1 - 1 / 1.45) * T.TR_BASE.xp.xpPorDanoFrac;
+    assert(Math.abs(ef.killFator - k) < 1e-9, ef.killFator);
+    assert(Math.abs(ef.xpLiquidoPct - ((1 + 16.8 / 200) * k - 1) * 100) < 1e-9, ef.xpLiquidoPct);
+    assert.strictEqual(ef.perigo, 2);
+    // limitada por spawn: perder dano ainda derruba abaixo do teto (min(1, bruto)); Dano do grupo não passa do teto
+    assert(Math.abs(T.trSeloEfeito(AB4_RESIL4, fSeloOk(AB4_RESIL4, null, medSpawn), T.TR_BASE).killFator - 1 / 1.45) < 1e-9);
+    assert.strictEqual(T.trSeloEfeito([{ tier: 3, buff: 'dano_grupo', debuff: 'saqueados' }], fSeloOk([], null, medSpawn), T.TR_BASE).killFator, 1);
+    // Dano do grupo × Perigo, limitada por dano: × (1 + 15 × 1,2 %), até a folga do teto (1360 ÷ 900)
+    assert(Math.abs(T.trSeloEfeito([{ tier: 3, buff: 'dano_grupo', debuff: 'saqueados' }], fSeloOk([]), T.TR_BASE).killFator - 1.18) < 1e-9);
+    assert(Math.abs(T.trSeloEfeito([{ tier: 5, buff: 'dano_grupo', debuff: 'saqueados' }, { tier: 5, buff: 'abundante', debuff: 'sedentos' }], fSeloOk([], null, { xpH: 540000, min: 10, abatesH: 1100 }), T.TR_BASE).killFator - 1360 / 1100) < 1e-9, 'teto de spawn (1,48 → 1,236)');
+    // estimado no conselho quando o modelo entra sem a limitação
+    const c = seloDe(fSeloOk([{ tier: 2, buff: 'abundante', debuff: 'resistentes' }, { tier: 5, buff: 'dano_grupo', debuff: 'sedentos' }], null, null));
+    assert(c && c.acao && c.confianca === 'estimado', JSON.stringify(c));
+    // Sedentos/Saqueados/Guardião ausente saem nos números
+    const ef2 = T.trSeloEfeito([{ tier: 5, buff: 'abundante', debuff: 'guardiao_ausente' }, { tier: 2, buff: 'rico_t1', debuff: 'sedentos' }, { tier: 1, buff: 'rico_t2', debuff: 'saqueados' }], fSeloOk([]), T.TR_BASE);
+    assert.deepStrictEqual([ef2.semChave, ef2.sedentos, ef2.saqueados, ef2.perigo], [true, 60, 20, 5]);
+});
+t('Selo (d): ligado com a conta negativa → erro "Desligue o Selo" e o botão selo-desligar; positiva → ok', () => {
+    const c = seloDe(fSeloOk(AB4_RESIL4, { selo: { ativo: true, ligado: true } }));
+    assert.strictEqual(c.estado, 'erro'); assert(/^Desligue o Selo/.test(c.titulo), c.titulo);
+    assert.deepStrictEqual([c.acao.tipo, c.acao.huntId], ['selo-desligar', 1]);
+    assert(Math.abs(c.impacto + ((1 + 16.8 / 200) / 1.45 - 1) * 100) < 1e-9, c.impacto);
+    assert.strictEqual(c.custo, 0);
+    const ok = seloDe(fSeloOk(AB4_SAQ4, { selo: { ativo: true, ligado: true } }));
+    assert.strictEqual(ok.estado, 'ok'); assert(/^Selo ligado: ≈ \+8,4 % de XP/.test(ok.titulo), ok.titulo); assert.strictEqual(ok.acao, null);
+    // pactos só de ouro (sem efeito na XP): o treinador não opina
+    assert.strictEqual(seloDe(fSeloOk([{ tier: 3, buff: 'rico_t1', debuff: 'sedentos' }])), undefined);
+});
+t('Selo (e): trSeloEfeito.custoH = 100 × arred(Rolar × Σ arred(10 × peso) ÷ 1000) — faixa 250 T4 = 464.100', () => {
+    assert.strictEqual(T.trSeloEfeito(AB4_RESIL4, fSeloOk([]), T.TR_BASE).custoH, 464100);
+    // wiki: faixa 70 (Rolar 4.300), um T2 e um T3 = 4.300 × 13,4 = 57.600
+    const f70 = foto({ hunt: huntSN({ rec: 72 }) });
+    assert.strictEqual(T.trSeloEfeito([{ tier: 2, buff: 'abundante', debuff: 'saqueados' }, { tier: 3, buff: 'rico_t1', debuff: 'sedentos' }], f70, T.TR_BASE).custoH, 57600);
+    assert.strictEqual(T.trSeloEfeito([], f70, T.TR_BASE).custoH, 0);
 });
 t('mult: foto vazia → nenhum conselho; registrado em TR_AGENTES', () => {
     assert.deepStrictEqual(T.trAgenteMult(T.trFotoVazia(), T.TR_BASE), []);
@@ -1559,11 +1633,12 @@ t('trAcaoInfo: os tipos que saem do trRodar nas 3 fotos e em fotos sintéticas s
         foto({ nivel: 330, deposito: { "timira's scale": 5 }, forja: { abaixo4: [{ voc: 'KNIGHT', slot: 'armor', nome: 'magma coat', refino: 1, custo: 300000 }], idadeH: 40, basesParadas: [{ nome: 'x', potencia: 450 }] } }),
         fItens({ deposito: { 'spectral conch': 4 }, precos: { 'Spectral Conch': 300000 } }),
         fItens({ deposito: { 'Spectral Conch': 12 } }),
+        fSeloOk(AB4_RESIL4, { selo: { ativo: true, ligado: true } }),
         foto({ nivel: 250, hunt: huntSN(), selo: { ativo: false, abundante: 3 }, legado: { KNIGHT: { skill: 64, marcoAtual: 1, proxMarco: 65, falta: 1, bonusAtual: 2, bonusProx: 5 } } }),
         T.trFotoVazia()
     ];
     for (const ft of sinteticas) anota(T.trRodar(ft, T.TR_BASE));
-    for (const tp of ['ir-mapa', 'abrir-loja', 'ler-topo', 'abrir-elite', 'invasao', 'boss-trocar', 'comprar-mercado', 'abrir-silas', 'abrir-forja', 'forja-ler', 'ampulheta', 'selo'])
+    for (const tp of ['ir-mapa', 'abrir-loja', 'ler-topo', 'abrir-elite', 'invasao', 'boss-trocar', 'comprar-mercado', 'abrir-silas', 'abrir-forja', 'forja-ler', 'ampulheta', 'selo', 'selo-desligar'])
         assert(vistos.has(tp), tp + ' não saiu de nenhuma foto: ' + [...vistos].join());
 });
 t('trAcaoInfo: abas do helper, telas do jogo e rótulo curto', () => {
@@ -1602,6 +1677,10 @@ t('trAcaoInfo: 2 toques no que gasta ou tira da caçada; motivo com a foto de ag
     assert.deepStrictEqual(['modo', 'dois', 'motivo'].map(k => T.trAcaoInfo({ tipo: 'selo', huntId: 1 }, Object.assign({}, caca, { selo: { ativo: false, abundante: 2 } }))[k]), ['jogo', true, null]);
     assert.deepStrictEqual(['modo', 'tela'].map(k => T.trAcaoInfo({ tipo: 'selo', huntId: 1 }, Object.assign({}, caca, { selo: { ativo: false, abundante: null } }))[k]), ['tela', 'selo']);
     assert.strictEqual(T.trAcaoInfo({ tipo: 'selo', huntId: 1 }, foto({ selo: { abundante: 2 } })).motivo, 'só dentro da caçada');
+    // 2.67.2: pacto sem Abundante (Dano do grupo) também liga pelo socket; desligar = 1 toque, só dentro da caçada
+    assert.deepStrictEqual(['modo', 'dois'].map(k => T.trAcaoInfo({ tipo: 'selo', huntId: 1 }, Object.assign({}, caca, { selo: { ativo: false, abundante: null, pactos: [{ tier: 3, buff: 'dano_grupo', debuff: 'saqueados' }] } }))[k]), ['jogo', true]);
+    assert.deepStrictEqual(['modo', 'dois', 'cacando', 'motivo', 'rotulo'].map(k => T.trAcaoInfo({ tipo: 'selo-desligar', huntId: 1 }, caca)[k]), ['jogo', false, true, null, 'Desligar']);
+    assert.strictEqual(T.trAcaoInfo({ tipo: 'selo-desligar', huntId: 1 }, foto({})).motivo, 'só dentro da caçada');
     // Silas: só na cidade; a ilha cobra ouro
     assert.strictEqual(T.trAcaoInfo({ tipo: 'boss-trocar', boss: 'Timira', qtd: 1 }, caca).motivo, 'só na cidade (Silas)');
     assert.deepStrictEqual(['dois', 'cidade', 'motivo'].map(k => T.trAcaoInfo({ tipo: 'boss-trocar', boss: 'Timira', qtd: 1 }, foto({}))[k]), [true, true, null]);
@@ -1683,6 +1762,13 @@ t('trRespostaConfirma: Selo só ligado com o selo DESTA caçada ligado; Invasão
     assert.strictEqual(T.trRespostaConfirma('invasion_join', { invasao: { inscrito: false } }), false);
     assert.strictEqual(T.trRespostaConfirma('invasion_join', { action: 'invasion_join', applied: true }), false, 'meta_result sem a Invasão não confirma');
     assert.strictEqual(T.trRespostaConfirma('buy_all_blessings', {}), null, 'sem conferência extra');
+    // 2.67.2: selo_desligar confirma com o Selo DESTA caçada desligado
+    assert.strictEqual(T.trRespostaConfirma('selo_desligar', selo(222, false), { huntId: 222 }), true);
+    assert.strictEqual(T.trRespostaConfirma('selo_desligar', selo(222, true), { huntId: 222 }), false, 'ainda ligado');
+    assert.strictEqual(T.trRespostaConfirma('selo_desligar', selo(176, false), { huntId: 222 }), false, 'outra caçada');
+    const sd = { tipo: 'selo_desligar', rid: null, espera: ['selo_state'], alvo: { huntId: 222 } };
+    assert.strictEqual(T.trCasaResposta(sd, { type: 'selo_state', data: selo(222, true) }), null);
+    assert.strictEqual(T.trCasaResposta(sd, { type: 'selo_state', data: selo(222, false) }), 'res');
     assert(T.TR_ERRO_PT.nao_confirmou);
 });
 // ── revisão de qualidade da Task 16: respostas empurradas, chave reversível, Invasão "depois do envio" e a compra com Mercado falso

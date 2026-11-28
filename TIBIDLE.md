@@ -7922,3 +7922,17 @@ no lugar do Haste).
   "Selo vazio: faça um pacto primeiro". Selo do treinador também testado ao vivo (abre o Selo da caçada certa, nada enviado).
 - Não testado de propósito (gastaria): sorteio/trava de prey, compra no Mercado pelo treinador, ligar Selo com pacto, Medir (Scan).
 
+
+## 2.67.2 (28/11) — treinador: Selo pela conta líquida (buff × debuff) e hora cobrada ao ligar
+- Achado ao vivo: o treinador mandava "Ligar o Selo: +14 % de XP por ≈ 464 mil/h" com Abundante T4 cujo pacto trazia Resilientes T4
+  (+45 % de vida dos monstros). Numa caçada limitada por dano isso é ≈ 31 % menos abates: a XP líquida ficava NEGATIVA.
+- `trSeloEfeito(pactos, foto, base)` (puro): Perigo (Σ 1,1,2,2,3 por tier) multiplica cada buff; Abundante soma pontos de bônus de XP
+  (÷ 100 + party, a régua do agente); abates = Π(1 + Dano do grupo) × Π(1 − Resistentes) ÷ Π(1 + Resilientes), pela limitação
+  (dano = bruto até o teto de spawn · spawn = min(1, bruto) · sem saber = × xpPorDanoFrac); custoH = `TR_BASE.selo.hora` (100 ×
+  arred(Rolar × Σ arred(10 × peso) ÷ 1000); faixa 250 T4 = 464.100); riscoMorte (Ferozes, ou Resistentes/Resilientes com morte em 7 dias).
+- Conselho: ligado e líquida ≤ 0 → erro "Desligue o Selo…" com botão novo `selo-desligar` (`selo_desligar {huntId}`, 1 toque, confirma
+  pelo `selo_state` com o Selo desta caçada desligado); desligado e ≤ 0 → "Não ligue o Selo: Resilientes tira mais XP do que o Abundante
+  dá" (impacto 0, sem botão); > 0 → "Ligar o Selo: ≈ +X % de XP líquida por ≈ Y/h", custo = a HORA (sai inteira ao ligar; 0 com resto
+  de hora guardado). Pactos só de ouro: o treinador não opina. A foto leva `selo.pactos`, `ligado`, `restoMs`.
+- Cache: `selo_state`, `meta_result`, `invasion_update` e `ampulheta_state` zeram o TR.ultimo (a tela recalcula no próximo desenho).
+- Sem teste ao vivo.
