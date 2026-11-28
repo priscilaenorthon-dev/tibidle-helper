@@ -399,4 +399,26 @@ t('fjRanking 2.43.0: elmo do Feiticeiro a 100 (o refino quase não rende pt para
     assert(r2[0].melhor && !r2[0].melhor.baixa, JSON.stringify(r2[0].melhor && [r2[0].melhor.id, r2[0].melhor.baixa]));
 });
 
+/* ===== 2.67.4: refino parado no meio e custo de reserva ===== */
+const AXE = (r) => ({ iid: 'axe', nome: 'stonecutter axe', slot: 'weapon', attrs: { weaponType: 'axe', attack: 50, defense: 21, slotType: 'two-handed', vocation: 'Knight;true' }, forja: F(0, r, 129) });
+const custosCot = () => M.fjCustoGemas(null, null, M.fjEstoque({}, []), { cotacao: 70650 });
+t('2.67.4: stonecutter axe parado em +3 ainda tem "Refino +4" (terminar), mesmo rendendo < FJ_GANHO_MIN; em +0 o +4 é plano comum', () => {
+    const r4 = (r) => M.fjEstrategias(AXE(r), 'KNIGHT', { nivel: 250 }, custosCot(), { seed: 3, n: 200 }).find(e => e.id === 'refino' && e.alvo.refino === 4);
+    const t3 = r4(3);
+    assert(t3, 'o plano +4 sumia da lista depois do +3 (dono, 28/11)');
+    assert.strictEqual(t3.terminar, true); assert(t3.ganhoPt > 0 && t3.ganhoPt < M.FJ_GANHO_MIN, String(t3.ganhoPt));
+    assert(t3.passos.some(x => /termina o refino começado \(parou em \+3\)/.test(x)), t3.passos.join(' | '));
+    const t0 = r4(0);
+    assert(t0 && !t0.terminar && t0.ganhoPt >= M.FJ_GANHO_MIN);
+    const lr = M.fjRanking({ KNIGHT: [{ peca: AXE(3), slot: 'weapon', atual: AXE(3) }] }, { nivel: 250 }, custosCot(), 5e6, null, { n: 200, seed: 3 });
+    assert(lr.length && lr[0].melhor && lr[0].melhor.terminar, 'no ranking o "terminar" vira o plano escolhido (FORJAR usa ele)');
+    assert.notStrictEqual(lr[0].selo, 'vale', 'continua "não vale": só deixa terminar');
+});
+t('2.67.4: sem Mercado lido, o refine fragment t1 vale 25 (não 2 mil): gema de refino ≈ 363 mil + 2,5 mil; os outros seguem 2 mil', () => {
+    const c = custosCot();
+    assert.strictEqual(c.refino.precoFrag, 25); assert.strictEqual(c.refino.fragEstimado, true);
+    assert.strictEqual(c.refino.custo, 10000 + 5 * 70650 + 2500);
+    assert.strictEqual(c.raridade.precoFrag, 2000);
+});
+
 console.log(n + ' testes ok' + (process.exitCode ? ' (com falhas)' : ''));

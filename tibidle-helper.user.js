@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.67.3
+// @version      2.67.4
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (treinador: 10 especialistas e os 3 próximos passos para upar) + Rotina (bestiário, prey, plano offline, invasão) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.67.3';
+    const VERSAO = '2.67.4';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -9184,6 +9184,9 @@
     }
     /* o que cada gema custa HOJE: ouro de criar (o lastro do jogo: ouro base + coins × cotação; sem ele, a wiki) + 100 fragmentos ao preço do
      * Mercado (menor anúncio do fragmento; sem anúncio, 2 mil). `custo` é o que UMA tentativa custa de verdade; disponiveis = prontas + floor(frag/100). */
+    /* v2.67.4 — preço de reserva por fragmento quando o Mercado não foi lido: refine fragment t1 sai a 19–25 (livro de 28/11, 845 comprados a
+     * 19–20); com os 2 mil genéricos o refino +0→+4 parecia custar 3,5 M em vez de ~2,3 M e o COMPRAR mostrava 1,69 M para 16 mil de compra */
+    const FJ_FRAG_RESERVA = { refino: 25 };
     function fjCustoGemas(lastro, catalogo, estoque, opc) {
         opc = opc || {};
         const ouroJogo = lastro && lastro.disponivel !== false && lastro.ouroPorGema && typeof lastro.ouroPorGema === 'object' ? lastro.ouroPorGema : null;
@@ -9193,7 +9196,7 @@
         for (const g of FJ_GEMAS) {
             const ouroCriar = ouroJogo && Number(ouroJogo[g]) > 0 ? Number(ouroJogo[g]) : FORJA_GEMA_OURO[g] + (cotacao ? FJ_COINS_GEMA[g] * cotacao : 0);
             const c = catalogo ? catalogo[fjItemFragmento(g)] : null, temPreco = !!(c && Number(c.sellOrders) > 0 && Number(c.minSell) > 0);
-            const precoFrag = temPreco ? Number(c.minSell) : PRECO_FRAG_ESTIMADO;
+            const precoFrag = temPreco ? Number(c.minSell) : (FJ_FRAG_RESERVA[g] || PRECO_FRAG_ESTIMADO);
             const prontas = (estoque && estoque.gemas && estoque.gemas[g]) || 0, fragmentos = (estoque && estoque.fragmentos && estoque.fragmentos[g]) || 0;
             const criaveis = Math.floor(fragmentos / FJ_FRAG_POR_GEMA);
             out[g] = { ouroCriar, precoFrag, fragEstimado: !temPreco, custo: ouroCriar + FJ_FRAG_POR_GEMA * precoFrag, prontas, fragmentos, criaveis, disponiveis: prontas + criaveis };
@@ -9224,7 +9227,8 @@
          * não entra como "melhor" no ranking — o refino nunca é baixa (é barato até o +4 e é ele que sobe a potência). */
         const potMin = potenciaBaseForja(ctx), FJ_PLANOS_LINHA = ['faixa', 'encaixe', 'encaixes', 'valor', 'completo'];
         const add = (id, nome, alvo, ganhoPt, passos, extra) => {
-            if (!(ganhoPt >= FJ_GANHO_MIN)) return;
+            // v2.67.4: "terminar o refino" (peça parada entre +1 e +3) entra mesmo abaixo do mínimo — o dono começou e quer chegar ao +4
+            if (!(ganhoPt >= FJ_GANHO_MIN) && !(extra && extra.terminar && ganhoPt > 0)) return;
             const s = sim(alvo);
             if (!(s.sucesso > 0)) return;
             const potFinal = pot0 + 50 * Math.max(0, (Number(alvo.refino) || 0) - refino0), baixa = FJ_PLANOS_LINHA.includes(id) && potFinal < potMin;
@@ -9242,8 +9246,13 @@
         for (let N = refino0 + 1; !ehVarinha && N <= Math.min(10, Math.max(refinoMax, 6)); N++) {
             if (N > refinoMax && faixaEm(N) === faixaEm(refinoMax)) continue;
             const ganho = ptRef(N) - base;
+            /* v2.67.4 — refino PARADO no meio (dono, 28/11: o stonecutter axe ficou em +3 e o plano "+4" sumiu da lista, porque o último
+             * degrau sozinho rende < FJ_GANHO_MIN): o "Refino +4" de uma peça já entre +1 e +3 fica sempre, para terminar o que começou */
+            const terminar = refino0 > 0 && refino0 < refinoMax && N === refinoMax && !(ganho >= FJ_GANHO_MIN);
             add('refino', 'Refino +' + N, { refino: N, garantia: N >= 5 }, ganho,
-                [`Refinar de +${refino0} até +${N}${N >= 5 ? ' (Garantia T1 em toda tentativa do +5 em diante: a falha não derruba)' : ' (até o +4 a falha não derruba)'}: ${stat} +${N - refino0}, potência ${pot0} → ${pot0 + 50 * (N - refino0)} (faixa ${faixaEm(N)})`]);
+                [`Refinar de +${refino0} até +${N}${N >= 5 ? ' (Garantia T1 em toda tentativa do +5 em diante: a falha não derruba)' : ' (até o +4 a falha não derruba)'}: ${stat} +${N - refino0}, potência ${pot0} → ${pot0 + 50 * (N - refino0)} (faixa ${faixaEm(N)})`]
+                    .concat(terminar ? [`termina o refino começado (parou em +${refino0}): sozinho rende pouco, mas é o que falta para o +${refinoMax}`] : []),
+                terminar ? { terminar: true } : undefined);
         }
         /* 2. FAIXA + REFAZER (a jogada da comunidade): linha de skill que a vocação usa; refinar até a faixa que sobe o teto e re-sortear o valor */
         for (const a of f.atributos) {
@@ -9360,7 +9369,7 @@
                 let lacuna = 0;
                 if (x.atual && x.atual.iid !== x.peca.iid) {
                     try { lacuna = Math.max(0, pontuarPeca(mlComRefino(x.atual), voc, ctx).pontos - pontuarPeca(mlComRefino(x.peca), voc, ctx).pontos); } catch (err) { lacuna = 0; } // mlComRefino: o refino conta (a mesma régua das estratégias)
-                    if (lacuna > 0) es = es.map(e => { const g = Math.round((e.ganhoPt - lacuna) * 100) / 100; return Object.assign({}, e, { ganhoPt: g, lacuna, ptPorMilhao: e.custoMedio > 0 ? Math.round(g / e.custoMedio * 1e6 * 100) / 100 : null }); }).filter(e => e.ganhoPt >= FJ_GANHO_MIN);
+                    if (lacuna > 0) es = es.map(e => { const g = Math.round((e.ganhoPt - lacuna) * 100) / 100; return Object.assign({}, e, { ganhoPt: g, lacuna, ptPorMilhao: e.custoMedio > 0 ? Math.round(g / e.custoMedio * 1e6 * 100) / 100 : null }); }).filter(e => e.ganhoPt >= FJ_GANHO_MIN || (e.terminar && e.ganhoPt > 0));
                 }
                 /* v2.43.0: plano de linha "baixa" (potência final abaixo do mínimo da fase) fica na lista, mas nunca é o "melhor" */
                 const uteis = es.filter(e => !e.baixa), cabem = uteis.filter(e => e.cabe !== false), pool = cabem.length ? cabem : uteis;
@@ -11808,6 +11817,7 @@
                  potMin: 350, potBase: 400, potMeta: 600, // comunidade + Forja 2.43 (base 400+, mínimo 350, meta 600)
                  raridadeCh: [55, 35, 20, 10], miticoCh: 3, // wiki/forja (Comum→Incomum … Épico→Lendário; Lendário→Mítico)
                  tierOuro: [250000, 500000, 1000000, 2000000, 4000000], tierCh: [75, 100], // wiki/tiers (1 cópia 75 %, 2 cópias 100 %)
+                 cotacaoCoin: 70650, // v2.67.4: ouro por coin na Forja, medido 28/11 (gema de refino = 10 mil + 5 coins ≈ 363 mil): reserva sem lastro lido
                  custoMedido: { magicPlate0a4: 1450000, de4a5Tentativa: 440000, guardianBoots4IncomumLinha: 2270000, atributoT1: 500000 }, // medido 19/10 e projeto
                  ordem: ['arma + amuleto do Knight', 'magos', 'armadura do Knight'], // comunidade
                  regra: 'refinar até +4 ANTES de sortear linhas; só trabalhar peça com 2 das 3 linhas certas', // wiki/forja + comunidade
@@ -12148,7 +12158,7 @@
     const trUsaMunicao = (peca, base) => trNomeTem(peca, (base || TR_BASE).equip.municaoNomes);
     // Título no limite da tela (70); o resto vai no porquê.
     const trCorta = (s, n) => { const t = String(s), max = n || 70; return t.length <= max ? t : t.slice(0, max - 1).trimEnd() + '…'; };
-    // Corta só a BASE para `base + sufixo` caber em n (70): o sufixo ("(~6 h)", "(~1,2 M, sem risco)", "(falta 800 mil)") fica inteiro.
+    // Corta só a BASE para `base + sufixo` caber em n (70): o sufixo ("(~6 h)", "(~2,3 M, falha não cai)", "(falta 800 mil)") fica inteiro.
     const trCortaSufixo = (base, sufixo, n) => { const suf = String(sufixo || ''); return trCorta(base, Math.max(1, (n || 70) - suf.length)) + suf; };
     // Party da foto (só quem tem vocação) · leitura velha (idadeH ausente/NaN = velho) · vocação maga (ML é a skill do Legado)
     const trParty = (foto) => (Array.isArray(foto && foto.party) ? foto.party : []).filter(m => m && m.voc);
@@ -12864,7 +12874,7 @@
     TR_AGENTES.push({ id: 'itens', nome: 'Caçar itens', icone: '⌕', rodar: trAgenteItens });
 
     // ── Especialista 9: Forja e refino (⚒). foto.forja = { abaixo4: [{ voc, slot, nome, refino, custo }], idadeH, basesParadas: [{ nome, potencia }] } | null.
-    //    Refino até forja.refinoSeguroAte (+4) não tem risco (wiki/forja). Sem abaixo4, as peças vêm de party[].eq (custo não calculado).
+    //    Até forja.refinoSeguroAte (+4) a falha não derruba a peça (wiki/forja: 80/70/60/50 %), mas gasta a gema. Sem abaixo4, as peças vêm de party[].eq (custo não calculado).
     //    impacto: arma de Cavaleiro/Paladino = trDanoDeUm((4 − r) ÷ ataque × 100) (+1 de ataque por refino; ataque
     //    ausente = 50); elmo/armadura/escudo/calça/bota 0,5 (estimado); arma de mago fica de fora (o refino dela só dá potência).
     //    Até 3, por impacto ÷ custo (sem custo, depois, pelo impacto). Cálculo velho (> 24 h ou sem data) → "Recalcular a Forja".
@@ -12879,7 +12889,7 @@
         if (fj && Array.isArray(fj.abaixo4)) {
             leu = true;
             pecas = fj.abaixo4.filter(p => p && p.voc && p.slot && trNum(p.refino) < ate)
-                .map(p => ({ voc: p.voc, slot: p.slot, nome: p.nome || (eqDe(p.voc, p.slot) || {}).nome || trSlotPt(p.slot), refino: Number(p.refino), custo: trNum(p.custo) > 0 ? Number(p.custo) : null }));
+                .map(p => ({ voc: p.voc, slot: p.slot, nome: p.nome || (eqDe(p.voc, p.slot) || {}).nome || trSlotPt(p.slot), refino: Number(p.refino), custo: trNum(p.custo) > 0 ? Number(p.custo) : null, gemas: trNum(p.gemas) > 0 ? Number(p.gemas) : null }));
         } else {
             for (const m of party) {
                 for (const slot of TR_SLOTS) {
@@ -12905,13 +12915,14 @@
         for (const p of cand.slice(0, 3)) {
             const nome = trVocPt(p.voc), arma = p.slot === 'weapon';
             out.push(trConselho('forja', `refino-${p.voc}-${p.slot}`, { confianca: 'wiki', custo: p.custo || 0, impacto: p.imp, curto: 'refino ' + p.nome,
-                titulo: trCortaSufixo(`Refinar ${p.nome} +${p.refino} → +${ate}`, ` (${p.custo ? '~' + trQtd(p.custo) + ', ' : ''}sem risco)`),
-                porque: `${p.nome} (${trSlotPt(p.slot)} do ${nome}): até +${ate} o refino não falha. `
+                titulo: trCortaSufixo(`Refinar ${p.nome} +${p.refino} → +${ate}`, ` (${p.custo ? '~' + trQtd(p.custo) + ', ' : ''}falha não cai)`),
+                porque: `${p.nome} (${trSlotPt(p.slot)} do ${nome}): até +${ate} a falha não derruba a peça, mas gasta a gema (chance ${b.forja.chT1.slice(p.refino, ate).join('/')} %`
+                    + (p.gemas ? `, ~${trPct(p.gemas)} gemas em média` : '') + '). '
                     + (arma ? `Cada refino soma 1 de ataque: +${ate - p.refino} sobre ${p.atk} ≈ +${trPct(p.danoPct)} % de dano do ${nome}`
                         + (p.imp > 0 ? '. ' : ', mas a caçada está limitada por spawn: não vira XP agora. ')
                         : `Refino em ${trSlotPt(p.slot)} soma defesa e +${b.forja.potPorRefino} de potência por nível. `)
                     + (p.custo ? `Custo ≈ ${trQtd(p.custo)}.` : 'Sem preço: custo não calculado (a aba Forja calcula).'),
-                numeros: { voc: p.voc, slot: p.slot, nome: p.nome, refino: p.refino, ate, custo: p.custo },
+                numeros: { voc: p.voc, slot: p.slot, nome: p.nome, refino: p.refino, ate, custo: p.custo, gemas: p.gemas },
                 acao: { tipo: 'abrir-forja', voc: p.voc, slot: p.slot, rotulo: 'Forja' } }));
         }
         if (leu && !cand.length) {
@@ -15155,7 +15166,7 @@
             /* v2.22.0 — o balão de dano recebido por elemento do próprio jogo (party_get_snapshot é consulta: não muda nada) */
             if (emHunt() && socketAberto()) { try { await mkPedir('party_get_snapshot', {}); } catch (e) { falhou('equip (snapshot do grupo)', e); } }
             /* v2.22.0 — cotação real das gemas (forge_lastro é consulta): o custo da forja deixa de usar os preços fixos da wiki */
-            if (socketAberto() && !MK.ocupado) { try { const r = await mkPedir('forge_lastro', {}), dl = r && r.data; if (dl && dl.disponivel !== false && dl.ouroPorGema && typeof dl.ouroPorGema === 'object') { FORJA_LASTRO.ouro = clonar(dl.ouroPorGema); FORJA_LASTRO.t = Date.now(); } /* v2.25.0: lia r.ouroPorGema, que nunca existia */ } catch (e) { falhou('equip (lastro da forja)', e); } }
+            if (socketAberto() && !MK.ocupado) { try { const r = await mkPedir('forge_lastro', {}), dl = r && r.data; if (dl && dl.disponivel !== false && dl.ouroPorGema && typeof dl.ouroPorGema === 'object') { FORJA_LASTRO.ouro = clonar(dl.ouroPorGema); FORJA_LASTRO.t = Date.now(); guardarComum('forja_lastro', { ouro: FORJA_LASTRO.ouro, t: FORJA_LASTRO.t }); } /* v2.25.0: lia r.ouroPorGema, que nunca existia */ } catch (e) { falhou('equip (lastro da forja)', e); } }
             const d = await lerDepot();
             if (d.erro) { EQUIP.aviso = d.erro + ' — ranqueando só o que está no corpo'; log('equip: ' + EQUIP.aviso, 'erro'); }
             else if (d.aviso) EQUIP.aviso = d.aviso;
@@ -20433,6 +20444,8 @@
     const FJ_BANCADA_N = 20;
     const fjOrcamentoPadrao = () => { const o = mlOuroNormal(); return o != null ? Math.floor(o * 0.5) : null; };
     const fjLastroAtual = () => (FORJA_LASTRO.ouro ? { disponivel: true, ouroPorGema: FORJA_LASTRO.ouro } : null);
+    /* v2.67.4 — o último lastro lido (guardado no armazenamento comum, < 7 dias): melhor que a wiki sem a parcela em coins */
+    const fjLastroGuardado = () => { const lg = lerComum('forja_lastro', null); return lg && lg.ouro && typeof lg.ouro === 'object' && Date.now() - (Number(lg.t) || 0) < 7 * 864e5 ? { disponivel: true, ouroPorGema: lg.ouro } : null; };
     function fjEstoqueAtual() {
         const b = mkBagAtual();
         /* v2.29.1 — a foto do depósito que o Equip usa na caçada só tem equipamento (lembrado): para gemas e fragmentos vale o último
@@ -20492,10 +20505,11 @@
             FJ.estoque = fjEstoqueAtual();
             if (FJ.semDepot) FJ.aviso = 'gemas e fragmentos contados só na mochila: o depósito ainda não foi lido nesta sessão (abra-o no jogo e leia de novo)';
             FJ.ouro = mlOuroNormal();
-            FJ.custos = fjCustoGemas(fjLastroAtual(), MK.catalogo || null, FJ.estoque);
+            FJ.custos = fjCustoGemas(fjLastroAtual() || fjLastroGuardado(), MK.catalogo || null, FJ.estoque);
             FJ.rank = fjRanking(fjPecasPorVoc(), EQUIP.ctx, FJ.custos, FJ.ouro, FJ.estoque, { n: 400, seed: 11 });
             if (FJ.orcamento == null) FJ.orcamento = fjOrcamentoPadrao();
             if (!FJ.custos.lastro) FJ.aviso = 'cotação da forja não lida (o jogo não respondeu ao lastro): o ouro de criar gema está pela wiki, sem a parcela em coins';
+            else if (!fjLastroAtual()) FJ.aviso = 'cotação da forja de outro dia (o jogo não respondeu agora): custos pela última leitura';
             if (!MK.catalogo) FJ.aviso = (FJ.aviso ? FJ.aviso + ' · ' : '') + 'preço dos fragmentos estimado (2 mil): aba Mercado → ATUALIZAR para o preço de hoje';
             FJ.t = Date.now();
             const vale = FJ.rank.filter(l => l.selo === 'vale').length;
@@ -21001,14 +21015,18 @@
         bloco('forja', () => {
             const fb = TR_BASE.forja, ate = fb.refinoSeguroAte, abaixo4 = [];
             // preço de cada gema hoje: o da última leitura da Forja (lastro + fragmento do Mercado) ou criar + 100 fragmentos (wiki/estimado)
-            const cg = FJ.custos || fjCustoGemas(null, MK.catalogo || null, null), g = (k) => (cg[k] && cg[k].custo > 0 ? cg[k].custo : FORJA_GEMA_OURO[k]);
+            /* v2.67.4 — sem a Forja lida, a gema saía só com o ouro base da wiki (refino 10 mil + fragmentos ≈ 12 mil) e o refino +0→+4 parecia
+             * barato; o jogo cobra também 5 coins pela cotação (≈ 363 mil em 28/11). Ordem: Forja lida com lastro → lastro desta sessão → o
+             * último lastro guardado (< 7 dias) → TR_BASE.forja.cotacaoCoin. */
+            const cg = FJ.custos && FJ.custos.lastro ? FJ.custos : fjCustoGemas(fjLastroAtual() || fjLastroGuardado(), MK.catalogo || null, null, { cotacao: fb.cotacaoCoin });
+            const g = (k) => (cg[k] && cg[k].custo > 0 ? cg[k].custo : FORJA_GEMA_OURO[k]);
             for (const m of f.party) {
                 for (const slot of TR_SLOTS) {
                     const p = m.eq[slot];
                     if (!p || p.refino == null || p.refino >= ate) continue;
-                    let custo = null;
-                    try { const t = pgRefino(p.refino, ate, 'melhor').total; custo = Math.round(t.T1 * g('refino') + t.T2 * g('refino_maior') + t.G * g('garantia')); } catch { custo = null; }
-                    abaixo4.push({ voc: m.voc, slot, nome: p.nome, refino: p.refino, custo: custo > 0 ? custo : null });
+                    let custo = null, gemas = null;
+                    try { const t = pgRefino(p.refino, ate, 'melhor').total; custo = Math.round(t.T1 * g('refino') + t.T2 * g('refino_maior') + t.G * g('garantia')); gemas = Math.round((t.T1 + t.T2 + t.G) * 10) / 10; } catch { custo = null; }
+                    abaixo4.push({ voc: m.voc, slot, nome: p.nome, refino: p.refino, custo: custo > 0 ? custo : null, gemas });
                 }
             }
             const dep = ESTADO_WS.depotReal && Array.isArray(ESTADO_WS.depotReal.entries) ? ESTADO_WS.depotReal.entries : ((lembrarDepot() || {}).entries || []);

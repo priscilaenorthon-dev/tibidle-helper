@@ -7954,3 +7954,14 @@ no lugar do Haste).
   invalid_message.
 - Ouro: 3.989.589 → 1.106.774 (2,88 M de ouro + as coins das gemas). A party voltou ao Shadow Nexus lure 3 (`start_hunt {huntId:222, lure:3}`).
 - A corrigir no treinador: o custo do refino saía ~1,3 M; a Forja (gema ≈ 363 mil com a cotação) dá ~2,3–3,5 M.
+
+## 2.67.4 (28/11) — custo do refino certo no treinador e "terminar o refino" na Forja
+- **Treinador (⚒ Forja e refino):** sem a aba Forja lida, a gema saía com o ouro base da wiki (refino 10 mil) e sem as 5 coins; agora usa
+  a Forja lida → o lastro desta sessão → o último lastro guardado (`tb_helper_comum_forja_lastro`, < 7 dias) → `TR_BASE.forja.cotacaoCoin`
+  (70.650, medido 28/11). Texto: "sem risco"/"o refino não falha" virou "falha não cai" + chance 80/70/60/50 % e gemas médias.
+  Ao vivo: "Refinar hive bow +0 → +4 (~2,3 M, falha não cai)"; lastro guardado com refino 363.333 (o jogo cobrou 363.262).
+- **Forja:** fragmento sem preço do Mercado valia 2 mil para todo tipo; o refine fragment t1 agora tem reserva de 25 (`FJ_FRAG_RESERVA`)
+  — era daí o "~3.538,8k" e o "COMPRAR ≈ 1.690k" para uma compra de 16 mil. Peça parada entre +1 e +3 mantém o plano "Refino +4"
+  (`terminar: true`) mesmo rendendo < 0,5 pt; continua "não vale", mas o FORJAR consegue terminar. Sem lastro do jogo, a Forja usa o
+  último guardado (aviso "cotação de outro dia").
+- Testes: 806 ok (forja +2, treinador +1).

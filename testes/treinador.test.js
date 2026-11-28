@@ -1082,8 +1082,17 @@ t('forja: stonecutter axe +0 (ataque 50) → refinar com custo, impacto = (4/50 
     const r = refinos(forja(fForja()));
     assert.strictEqual(r.length, 1, 'a wand do Feiticeiro fica de fora'); const c = r[0];
     assert.strictEqual(c.custo, 1200000); assert.strictEqual(c.confianca, 'wiki'); assert(Math.abs(c.impacto - 1.4) < 1e-12, String(c.impacto));
-    assert.strictEqual(c.titulo, 'Refinar stonecutter axe +0 → +4 (~1,2 M, sem risco)');
+    assert.strictEqual(c.titulo, 'Refinar stonecutter axe +0 → +4 (~1,2 M, falha não cai)');
+    assert(/a falha não derruba a peça, mas gasta a gema \(chance 80\/70\/60\/50 %\)/.test(c.porque) && !/não falha/.test(c.porque), c.porque);
     assert.deepStrictEqual([c.acao.tipo, c.acao.voc, c.acao.slot], ['abrir-forja', 'KNIGHT', 'weapon']);
+});
+t('forja 2.67.4: gemas médias no porquê; TR_BASE.forja.cotacaoCoin dá a gema de refino ≈ 363 mil (medido 28/11)', () => {
+    const fj = { abaixo4: [{ voc: 'KNIGHT', slot: 'weapon', nome: 'stonecutter axe', refino: 0, custo: 2306000, gemas: 6.35 }], idadeH: 1, basesParadas: [] };
+    const c = refinos(forja(fForja({ forja: fj })))[0];
+    assert(/~6,4 gemas em média/.test(c.porque), c.porque); assert.strictEqual(c.numeros.gemas, 6.35);
+    assert.strictEqual(c.titulo, 'Refinar stonecutter axe +0 → +4 (~2,3 M, falha não cai)');
+    const g = 10000 + 5 * T.TR_BASE.forja.cotacaoCoin; // FORJA_GEMA_OURO.refino + FJ_COINS_GEMA.refino × cotação
+    assert(Math.abs(g - 363262) < 1000, String(g));
 });
 t('forja: ataque ausente → 50; ataque 100 → metade do ganho', () => {
     const p = partyForja(); p[0].eq.weapon.ataque = 100;
@@ -1097,7 +1106,8 @@ t('forja: sem forja.abaixo4 → deriva do equipamento (custo não calculado); +4
     const r = refinos(cs);
     assert.deepStrictEqual(r.map(c => c.numeros.nome), ['stonecutter axe', 'magic plate armor']); // 1,4 × 0,5 (sem custo: pelo impacto)
     assert(r.every(c => c.custo === 0 && /custo não calculado/.test(c.porque)), r[1].porque);
-    assert.strictEqual(r[1].impacto, 0.5); assert.strictEqual(r[1].titulo, 'Refinar magic plate armor +2 → +4 (sem risco)');
+    assert.strictEqual(r[1].impacto, 0.5); assert.strictEqual(r[1].titulo, 'Refinar magic plate armor +2 → +4 (falha não cai)');
+    assert(/chance 60\/50 %/.test(r[1].porque), r[1].porque);
     assert(!r.some(c => /wand|Zaoan/.test(c.numeros.nome)));
 });
 t('forja: no máximo 3, por impacto ÷ custo', () => {
@@ -1190,7 +1200,7 @@ t('dinheiro: custo efetivo (custo + 3 × custoH); com prejuízo, custo por hora 
     assert.deepStrictEqual(din(foto({ ouroLivre: 1e6 }), lista.slice(1)).map(c => c.id), ['ouro:ok']);
 });
 t('dinheiro: título do plano usa o rótulo curto dos conselhos', () => {
-    const p = din(foto({ ouroLivre: 5e6 }), [T.trConselho('forja', 'r', { titulo: 'Refinar stonecutter axe +0 → +4 (~1,5 M, sem risco)', curto: 'refino stonecutter axe', custo: 1.5e6, impacto: 1, confianca: 'wiki' }),
+    const p = din(foto({ ouroLivre: 5e6 }), [T.trConselho('forja', 'r', { titulo: 'Refinar stonecutter axe +0 → +4 (~1,5 M, falha não cai)', curto: 'refino stonecutter axe', custo: 1.5e6, impacto: 1, confianca: 'wiki' }),
         T.trConselho('mult', 'bencaos', { titulo: 'Comprar as bênçãos (≈ 200 mil de ouro)', curto: 'bênçãos', custo: 2e5, impacto: 3, confianca: 'wiki' })]).find(c => c.id === 'ouro:plano');
     assert.strictEqual(p.titulo, 'Com 5 M livres: bênçãos, refino stonecutter axe');
 });
@@ -1205,12 +1215,12 @@ t('trCortaSufixo: corta só a base e mantém o sufixo inteiro em 70', () => {
     const s = T.trCortaSufixo(LONGO, ' (~6 h)');
     assert.strictEqual(s.length, 70); assert(s.endsWith('… (~6 h)'), s);
 });
-t('títulos longos guardam o sufixo: Bestiário "(~h h)", Forja "(~X, sem risco)", Dinheiro "(falta Y)"', () => {
+t('títulos longos guardam o sufixo: Bestiário "(~h h)", Forja "(~X, falha não cai)", Dinheiro "(falta Y)"', () => {
     const b = best(fBest({ bestiario: [lb(7, LONGO, 'magicLevel', 6, 500000), lb(1, LONGO, 'magicLevel', 8, 540000)] }));
     assert(b.length === 2 && b.every(c => c.titulo.length <= 70 && c.titulo.endsWith(c.estado === 'ok' ? 'aqui (~8 h)' : '(~6 h)')), b.map(c => c.titulo).join(' | '));
     const fj = { abaixo4: [{ voc: 'KNIGHT', slot: 'shield', nome: 'spellbook of the very ancient and extremely long lost order', refino: 0, custo: 1200000 }], idadeH: 1 };
     const r = refinos(forja(fForja({ forja: fj })))[0];
-    assert(r.titulo.length <= 70 && r.titulo.startsWith('Refinar spellbook') && r.titulo.endsWith('… (~1,2 M, sem risco)'), r.titulo);
+    assert(r.titulo.length <= 70 && r.titulo.startsWith('Refinar spellbook') && r.titulo.endsWith('… (~1,2 M, falha não cai)'), r.titulo);
     const j = din(foto({ ouroLivre: 1000 }), [T.trConselho('a', 'x', { titulo: LONGO, custo: 5000, impacto: 1 })]).find(c => c.id === 'ouro:juntar');
     assert(j.titulo.length <= 70 && j.titulo.startsWith('Juntar para: ') && j.titulo.endsWith('(falta 4 mil)'), j.titulo);
 });
