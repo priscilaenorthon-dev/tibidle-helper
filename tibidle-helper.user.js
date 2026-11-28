@@ -13096,6 +13096,7 @@
             break;
         case 'lure':
             info.cacando = true;
+            info.dois = true; // dono, 27/11: subir a lure aumenta o risco e o gasto por hora — 2 toques
             if (!(trNum(acao.lure) >= 1)) info.motivo = 'lure inválida';
             else if (!emHunt || !f.hunt || !trMesmoId(f.hunt.id, acao.huntId)) info.motivo = 'só dentro da caçada';
             break;
@@ -21162,12 +21163,30 @@
     }
     /* Telas do jogo (só clica no botão do próprio jogo; nada vai pelo socket). data-testid do bundle de 27/11 (docs/protocolo-treinador.md). */
     const TR_TELA_PT = { loja: 'a Loja', elite: 'os Elites', ampulheta: 'as Ampulhetas', selo: 'o Selo da Caçada', silas: 'o Silas', invasao: 'a Invasão' };
-    async function trAbrirTela(tela) {
+    async function trAbrirTela(tela, acao) {
         const clicar = (el) => { if (!el) return false; try { el.click(); return true; } catch { return false; } };
         switch (tela) {
         case 'loja': return clicar(tid('hud-store') || tid('premium-cta')); // hud-store = botão da Loja na barra de cima (bundle 27/11, docs/protocolo-treinador.md)
         case 'ampulheta': return clicar(tid('ampulheta-placa'));
-        case 'selo': return clicar(tid('hunt-aba-selo') || tid('selo-aba'));
+        case 'selo': { // ao vivo 27/11: o Selo de cada caçada é o "+" selo-botao-<huntId> no cartão da caçada (lista de CAÇADAS/JOGAR)
+            const id = acao && acao.huntId != null ? String(acao.huntId) : (ESTADO_WS.huntId != null ? String(ESTADO_WS.huntId) : null);
+            if (!id) return false;
+            const botao = () => tid('selo-botao-' + id);
+            if (clicar(botao())) return true;
+            if (!tid('hunts-search') && !clicar(tid('actionbar-explore') || tid('actionbar-hunt'))) return false;
+            const busca = await esperarQue(() => tid('hunts-search'), 3000, 150);
+            let el = await esperarQue(botao, 800, 150);
+            if (!el && busca) { // a busca do jogo é por criatura/item, não pelo nome do mapa ("Fury" acha o Shadow Nexus)
+                const h = ((CAT && CAT.hunts) || []).find(x => x && String(x.id) === id);
+                const bicho = h && Array.isArray(h.monsters) && h.monsters[0] && h.monsters[0].name;
+                if (bicho) {
+                    try { Object.getOwnPropertyDescriptor(Object.getPrototypeOf(busca), 'value').set.call(busca, bicho); busca.dispatchEvent(new Event('input', { bubbles: true })); } catch { /* campo do jogo mudou */ }
+                    el = await esperarQue(botao, 1500, 150);
+                }
+                if (!el && clicar(tid('explore-todas-ilhas'))) el = await esperarQue(botao, 2000, 150); // mapa de outra ilha
+            }
+            return clicar(el);
+        }
         case 'invasao': return clicar(tid('invasao-icone'));
         case 'silas': { // na cidade: "falar com o Silas" na tela de caçadas, ou NAVEGAÇÃO › Silas (o personagem anda até ele)
             if (clicar(tid('explore-falar-silas')) || clicar(tid('nav-quests-ilhas'))) return true;
@@ -21209,7 +21228,7 @@
         TR.agindo = info.rotulo; renderizar();
         if (info.modo === 'tela') {
             let ok = false;
-            try { ok = await trAbrirTela(info.tela); } finally { TR.agindo = null; }
+            try { ok = await trAbrirTela(info.tela, acao); } finally { TR.agindo = null; }
             avisar('treinador', ok ? `treinador: abri ${TR_TELA_PT[info.tela]} no jogo` : `treinador: não achei ${TR_TELA_PT[info.tela]} na tela — abra no jogo`, ok ? 'ok' : 'erro');
             renderizar();
             return;
@@ -21283,7 +21302,7 @@
             // só vale o selo_state com o Selo DESTA caçada ligado (os outros são ignorados no trCasaResposta); sem ele em 8 s = não confirmou
             const alvo = { huntId: acao.huntId }, rr = await trPedir('selo_ligar', { huntId: n(acao.huntId) }, ['selo_state'], { semRid: true, alvo });
             const r = rr.erro === 'sem_resposta' ? { erro: true, code: 'nao_confirmou', msg: 'Selo: ' + trErroTxt('nao_confirmou') } : trResposta(rr, 'Selo', 'Selo ligado', alvo);
-            if (r.code === 'selo_perigo' || r.code === 'nao_confirmou') await trAbrirTela('selo'); // perigo > 5 pede o "aceitar" do dono na tela do jogo
+            if (r.code === 'selo_perigo' || r.code === 'nao_confirmou') await trAbrirTela('selo', acao); // perigo > 5 pede o "aceitar" do dono na tela do jogo
             return r;
         }
         case 'boss-trocar': {
