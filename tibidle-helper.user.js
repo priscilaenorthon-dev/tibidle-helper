@@ -2,7 +2,7 @@
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
 // @version      2.67.0
-// @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (chaves, bestiário, prey, plano offline, forja) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
+// @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (treinador: 10 especialistas e os 3 próximos passos para upar) + Rotina (bestiário, prey, plano offline, invasão) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
 // @updateURL    https://raw.githubusercontent.com/priscilaenorthon-dev/tibidle-helper/main/tibidle-helper.user.js
@@ -451,7 +451,7 @@
             if (!cheioDeVerdade(e)) { falhou('guardar ' + chave.replace(/^tb_helper_/, ''), e); return false; }
             if (!_semEspacoAvisado) {
                 _semEspacoAvisado = true;
-                log('localStorage sem espaço — o que o helper mediu NÃO está sendo salvo (' + chave.replace(/^tb_helper_/, '') + '). Limpe o histórico do Analisador e os resultados do Scan.', 'erro');
+                log('localStorage sem espaço — o que o helper mediu NÃO está sendo salvo (' + chave.replace(/^tb_helper_/, '') + '). Limpe o histórico de sessões (rodapé da aba Progresso) e os resultados do Scan.', 'erro');
             }
             return false;
         }
@@ -6461,7 +6461,7 @@
         const ocup = travaJogo();
         if (ocup) { log('Scan: ' + ocup + ' em andamento — espera terminar', 'erro'); return false; }
         if (ESTADO_WS.boss) { log('Scan: boss em andamento — termina o boss antes', 'erro'); return false; }
-        if (BEST.ativo) { log('Scan: o modo "completar bestiário" está ligado (aba Progresso) — pare ele antes', 'erro'); return false; }
+        if (BEST.ativo) { log('Scan: o modo "completar bestiário" está ligado (aba Rotina) — pare ele antes', 'erro'); return false; }
         ouvirEncerramentos();
         /* v2.11 — FOTO do jogo antes de mexer: mapa, lure e perfis por vocação */
         const cacando = frameFresco() && ESTADO_WS.huntId != null;
@@ -14458,7 +14458,7 @@
                 r.sorte ? `<span class="tb-av">sorte +${r.sorte.toLocaleString('pt-BR')}: ${(r.raros || []).map(escHtml).join(', ')}</span>` : '',
                 r.ultimaFalha ? `<span class="tb-ruim">última tentativa (${hora(r.ultimaFalha.t)}): ${escHtml(r.ultimaFalha.erro)}</span>` : ''
             ].filter(Boolean).map(x => `<div>${x}</div>`).join('') + (razaoTexto(r.razao) ? razaoHtml(r.razao, true) : '');
-            /* v2.11 — bestiário no resultado do Scan (aba Progresso): quanto falta para o próximo
+            /* v2.11 — bestiário no resultado do Scan (aba Rotina): quanto falta para o próximo
              * bônus permanente deste mapa, no ritmo de abates medido aqui. pgBestiarioTexto já escapa. */
             const bestiarioDoCartao = r => { try { const t = pgBestiarioTexto(r.id, { [r.id]: { abatesH: r.abatesH } }); return t ? `<div class="tb-mut">${t}</div>` : ''; } catch (e) { return ''; } };
             const cartao = r => `<div class="tb-sc-card ${r.fora ? 'fora' : ''}">
@@ -16592,7 +16592,7 @@
         if (semCont) h += `<div class="pg-mut pg-peq">${semCont} caçada(s) do seu nível sem contador conhecido — o jogo manda todos ao conectar (meta) e o da caçada atual a cada segundo.</div>`;
         return h + pgAjudaBestiario();
     }
-    const pgAjudaBestiario = () => `<details class="pg-aj" data-k="pg-best-aj"><summary>? regras</summary><div>Cada caçada tem 3 marcos; vale o MAIOR (não somam). Caçadas diferentes somam. Conta qualquer criatura do elenco, inclusive com o jogo fechado; treino e Elite/Boss não contam; o Reset das estatísticas não apaga. Tempo = abates que faltam ÷ abates/h medidos (ao vivo, Scan ou sessões do Analisador).</div></details>`;
+    const pgAjudaBestiario = () => `<details class="pg-aj" data-k="pg-best-aj"><summary>? regras</summary><div>Cada caçada tem 3 marcos; vale o MAIOR (não somam). Caçadas diferentes somam. Conta qualquer criatura do elenco, inclusive com o jogo fechado; treino e Elite/Boss não contam; o Reset das estatísticas não apaga. Tempo = abates que faltam ÷ abates/h medidos (ao vivo, Scan ou sessões medidas).</div></details>`;
 
     function pgTelaOffline() {
         const al = PROG.meta && PROG.meta.autoLeave && typeof PROG.meta.autoLeave === 'object' ? PROG.meta.autoLeave : null;
@@ -21285,7 +21285,7 @@
             const ids = [...new Set((acao.alvos || []).map(a => (a && a.huntId != null ? n(a.huntId) : ((hs.find(x => x && a && trNome(x.title) === trNome(a.title)) || {}).id)))
                 .filter(id => id != null && hs.some(x => x && x.id === id)))];
             if (!ids.length) return { erro: true, msg: 'nenhum desses mapas está no catálogo' };
-            return scanIniciar({ mapas: ids, minutos: 5, comparar: false }) ? { msg: `medindo ${ids.length} ${ids.length > 1 ? 'mapas' : 'mapa'}, 5 min cada (aba Scan)` }
+            return scanIniciar({ mapas: ids, minutos: 5, comparar: false, lureMax: false, fim: 'voltar' }) ? { msg: `medindo ${ids.length} ${ids.length > 1 ? 'mapas' : 'mapa'}, 5 min cada, com a lure salva e o modelo do Scan; no fim volta à caçada de agora (aba Scan)` }
                 : { erro: true, msg: 'o Scan não ligou (veja o Log)' };
         }
         case 'prey-escolher':

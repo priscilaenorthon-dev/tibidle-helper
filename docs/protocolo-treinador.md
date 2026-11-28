@@ -66,7 +66,7 @@ Todas as ações acima têm formato limpo no esquema; nenhuma ficou como "abrir 
 | Ampulhetas | `ampulheta-placa` | `ampulhetas-modal`, `ampulheta-<itemId>-usar`, `ampulheta-<itemId>-comprar`, `ampulheta-compra-ok` |
 | Silas (ilhas e bosses) | `nav-quests-ilhas` (menu NAVEGAÇÃO; só na cidade) ou `explore-falar-silas` | `quests-ilhas-tab-ilhas`, `quests-ilhas-ilha-<id>`, `quests-ilhas-entregar`, `quests-ilhas-tab-bosses`, `quests-ilhas-boss-<nome>`, `quests-ilhas-boss-qty-input` |
 | Invasão | `invasao-icone` | `invasao-inscrever`, `invasao-preset-inscrever`, `invasao-cancelar`, `invasao-confirmar-saida`, `invasao-buff-<id>` |
-| Selo da Caçada | `hunt-aba-selo` / `selo-aba` (tela da caçada) | `selo-adicionar`, `selo-rolar`, `selo-limpar`, `selo-ligar`, `selo-confirmar-aceitar` |
+| Selo da Caçada | `selo-botao-<huntId>` ("+" no cartão da caçada, lista JOGAR/CAÇADAS; ao vivo 27/11) | `selo-adicionar`, `selo-rolar`, `selo-limpar`, `selo-ligar`, `selo-confirmar-aceitar` |
 | Premium | `premium-panel`, `premium-cta` | — |
 | Loja (coins) | `hud-store` (botão dourado da barra de cima; `onClick` abre a loja — conferido no bundle de 27/11, chunk do shell) | `store-card-<id>`, `store-buy-<id>` |
 | Elites | `actionbar-explore` (CAÇADAS, na caçada) ou `actionbar-hunt` (JOGAR, na cidade) → aba `explore-tab-minibosses` (abas `explore-tab-<hunts\|minibosses\|bosses\|tower\|tokens>`, bundle 27/11) | `explore-elite-main` |

@@ -7858,8 +7858,8 @@ no lugar do Haste).
   | tipo | o que faz | 2 toques |
   |---|---|---|
   | `ir-mapa` | entra no mapa com a lure salva daquela caçada (`scanEntrar`), sem kit, sem barra, sem presets | só caçando (sai da caçada) |
-  | `lure` | `set_lure` dentro da caçada, confere no frame | não |
-  | `medir` | Scan de 5 min em cada mapa | sim |
+  | `lure` | `set_lure` dentro da caçada, confere no frame | sim (d1f2550: sobe risco e gasto/h) |
+  | `medir` | Scan de 5 min em cada mapa, com a lure salva (`lureMax: false`), o modelo do Scan e `fim: 'voltar'` | sim |
   | `prey-escolher` / `prey-trocar` / `prey-trancar` | `prey_hunt_pick` (5 wildcards) / `prey_buff_roll` (1º do dia grátis) / `prey_lock_set` | sim (trocar: só se não for grátis) |
   | `bencaos` | `buy_all_blessings` | sim |
   | `selo` | `selo_ligar` só com Abundante já no Selo desta caçada; sem pacto, abre a tela do jogo | sim (ligar) |
@@ -7891,7 +7891,8 @@ no lugar do Haste).
   - Botões: Forja/Melhorias/Aguentar trocam de aba (sem envio); Ampulheta abriu a janela do jogo (só `ampulheta_get`); Comparar com o
     topo respeitou o freio ("topo lido há 1,3 h: leio de novo em 4,7 h"); Invasão já inscrita (sem botão). **Selo (tela) não achou a
     aba**: `hunt-aba-selo`/`selo-aba` não existem; o Selo de cada caçada é o "+" `selo-botao-<huntId>` ("Montar o Selo de <mapa>") na
-    lista de CAÇADAS — pendente corrigir o `trAbrirTela('selo')`.
+    lista de CAÇADAS — corrigido em d1f2550 (abre JOGAR/CAÇADAS, busca pela 1ª criatura do mapa, liga "todas as ilhas" se preciso);
+    AINDA NÃO TESTADO ao vivo.
   - 2 toques: o 1º toque no Ir mostrou "confirmar?", nada foi enviado (espião no `WebSocket.prototype.send`) e voltou a "Ir" em < 5,5 s.
   - **Ir** (Djinns Marid Territory, Rec 50, marco de bestiário): 2 toques, botões desligados e "fazendo: Ir…" durante; 9,8 s;
     enviados `stop`, `city_sell_off` (do próprio jogo ao parar), `summary_closed`, `mailbox_get`, `start_hunt` — nenhum preset/perfil/
@@ -7903,5 +7904,5 @@ no lugar do Haste).
     ficava "nada urgente" depois de entrar até um clique → `trCacheVelho` + o vigia de 4 s repinta até a conta chegar (ao vivo: 1 s
     depois do ENTRAR NO JOGO já com os passos).
   - Na cidade: não testado (a party caçando; não se para a caçada só para isso). F5: abrir no lobby não quebra.
-  - Pergunta para o dono: "Lure N" sobe a lure com 1 toque (não gasta ouro direto, mas aumenta risco e gasto/h).
+  - "Lure N" passou a pedir 2 toques (d1f2550: aumenta risco e gasto/h). Revisão final: "Medir" não herda mais a lure máxima do Scan.
 - Deixado: uma aba limpa (Tampermonkey 2.66.0), Shadow Nexus, lure 3. Testes: 797 no total.

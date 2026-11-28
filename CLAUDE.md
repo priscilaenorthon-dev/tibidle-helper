@@ -29,7 +29,8 @@ Ao mudar comportamento: suba as duas versões juntas e registre no fim do `TIBID
 
 ## Regras do dono (não quebrar)
 - Nada que envia comando ao jogo dispara sozinho — só por botão (2 toques nas ações caras). Exceções: Auto Hunt e Scan quando
-  o dono liga. Abas Progresso e Diagnóstico são só leitura.
+  o dono liga. Abas Rotina (⚑) e Diagnóstico são só leitura; o ▤ Progresso (treinador, 2.67.0) age só por botão, com 2 toques no que
+  custa ouro/coins, troca de mapa ou sobe a lure (dono, 27/11: "o treinador pode fazer tudo").
 - **Teste ao vivo: carta branca** (decisão do dono em 30/09). O Claude pode testar sozinho no navegador do Playwright
   (MCP `playwright`, perfil `.playwright-mcp` com Tampermonkey) ou no Chrome do dono, e rodar qualquer item 🟡/🔴 do roteiro
   (aplicar magia, equipar, Auto Hunt, Scan, anunciar no mercado) sem pedir confirmação. Relatar depois o que fez e o que mudou.

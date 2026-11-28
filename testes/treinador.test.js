@@ -1582,6 +1582,7 @@ t('trAcaoInfo: 2 toques no que gasta ou tira da caçada; motivo com a foto de ag
     assert.strictEqual(T.trAcaoInfo({ tipo: 'ir-mapa' }, caca).motivo, 'sem mapa');
     // lure: só dentro da MESMA caçada
     assert.strictEqual(T.trAcaoInfo({ tipo: 'lure', huntId: 1, lure: 4 }, caca).motivo, null);
+    assert.strictEqual(T.trAcaoInfo({ tipo: 'lure', huntId: 1, lure: 4 }, caca).dois, true, 'lure sobe o risco e o gasto/h: 2 toques (dono, 27/11)');
     assert.strictEqual(T.trAcaoInfo({ tipo: 'lure', huntId: 2, lure: 4 }, caca).motivo, 'só dentro da caçada');
     assert.strictEqual(T.trAcaoInfo({ tipo: 'lure', huntId: 1, lure: 4 }, foto({ hunt: huntSN() })).motivo, 'só dentro da caçada');
     // medir: Scan troca de mapa
