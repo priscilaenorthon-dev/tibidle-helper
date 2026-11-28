@@ -7892,7 +7892,7 @@ no lugar do Haste).
     topo respeitou o freio ("topo lido há 1,3 h: leio de novo em 4,7 h"); Invasão já inscrita (sem botão). **Selo (tela) não achou a
     aba**: `hunt-aba-selo`/`selo-aba` não existem; o Selo de cada caçada é o "+" `selo-botao-<huntId>` ("Montar o Selo de <mapa>") na
     lista de CAÇADAS — corrigido em d1f2550 (abre JOGAR/CAÇADAS, busca pela 1ª criatura do mapa, liga "todas as ilhas" se preciso);
-    AINDA NÃO TESTADO ao vivo.
+    Testado ao vivo na 2.67.0 publicada (28/11): abriu o Selo do Shadow Nexus (ADICIONAR PACTO 39.000), nada enviado ao socket.
   - 2 toques: o 1º toque no Ir mostrou "confirmar?", nada foi enviado (espião no `WebSocket.prototype.send`) e voltou a "Ir" em < 5,5 s.
   - **Ir** (Djinns Marid Territory, Rec 50, marco de bestiário): 2 toques, botões desligados e "fazendo: Ir…" durante; 9,8 s;
     enviados `stop`, `city_sell_off` (do próprio jogo ao parar), `summary_closed`, `mailbox_get`, `start_hunt` — nenhum preset/perfil/
@@ -7906,3 +7906,6 @@ no lugar do Haste).
   - Na cidade: não testado (a party caçando; não se para a caçada só para isso). F5: abrir no lobby não quebra.
   - "Lure N" passou a pedir 2 toques (d1f2550: aumenta risco e gasto/h). Revisão final: "Medir" não herda mais a lure máxima do Scan.
 - Deixado: uma aba limpa (Tampermonkey 2.66.0), Shadow Nexus, lure 3. Testes: 797 no total.
+- **28/11, 2.67.0 publicada (Tampermonkey)**: botões na conta: Prey aqui (desligado, 2/5 wildcards), Forja ×5, Selo, Ampulheta ×3,
+  Aguentar, Ir ×2 (bestiário), Atualizar, Comparar. Selo testado (acima). Sem botão hoje: Medir, bênçãos (as 7 compradas), ilha, boss,
+  Mercado — ficam para quando o treinador oferecer.
