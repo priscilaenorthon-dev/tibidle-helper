@@ -7909,3 +7909,16 @@ no lugar do Haste).
 - **28/11, 2.67.0 publicada (Tampermonkey)**: botões na conta: Prey aqui (desligado, 2/5 wildcards), Forja ×5, Selo, Ampulheta ×3,
   Aguentar, Ir ×2 (bestiário), Atualizar, Comparar. Selo testado (acima). Sem botão hoje: Medir, bênçãos (as 7 compradas), ilha, boss,
   Mercado — ficam para quando o treinador oferecer.
+
+## 2.67.1 (28/11) — treinador: protocolo das ações conferido ao vivo
+- Teste de cada ação em situação em que o jogo TEM que recusar ou que não custa (u2tag, caçando Shadow Nexus, 7 bênçãos, 2 wildcards,
+  Marapur fechada, 4 M de ouro): `buy_all_blessings` → `error invalid_blessing` (key `server.blessing.jaPossuiTodas`, sem requestId);
+  `invasion_join` → `meta_result applied:true` com `meta.invasao.inscrito: true` + `invasion_notice {kind: party_na_fila}` (inscrever de
+  novo é inofensivo); `island_deliver {islandId:'marapur'}` → `not_in_city` (o id 'marapur' é aceito); `boss_deliver` → `not_in_city`;
+  `selo_ligar` sem pacto → `error selo_vazio` (sem requestId); `prey_hunt_pick` com 2 wildcards → `error invalid_prey`
+  (key `server.prey.custoEscolher`, params {custo 5, tem 2}); `ampulheta_get` → `ampulheta_state {vocacoes: {VOC: {temPersonagem, ms,
+  hojeMs, treinando}}}` (a foto leu 0 h usadas nos 4). Tudo casa com o trCasaResposta/trRespostaConfirma.
+- Mudança: o motivo vem da `key`/`params` do servidor quando há (`TR_ERRO_CHAVE`): "já tem as 7 bênçãos", "faltam wildcards (tem 2 de 5)",
+  "Selo vazio: faça um pacto primeiro". Selo do treinador também testado ao vivo (abre o Selo da caçada certa, nada enviado).
+- Não testado de propósito (gastaria): sorteio/trava de prey, compra no Mercado pelo treinador, ligar Selo com pacto, Medir (Scan).
+

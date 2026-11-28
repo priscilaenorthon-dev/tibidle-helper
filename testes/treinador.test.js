@@ -6,7 +6,7 @@ const i = src.indexOf('/* @@TREINADOR-PURO-INICIO'), f = src.indexOf('/* @@TREIN
 assert(i > 0 && f > i, 'trecho @@TREINADOR-PURO não encontrado');
 const T = new Function(src.slice(i, f) + '\nreturn { TR_BASE, TR_AGENTES, trConselho, trOrdenar, trRodar, trFotoVazia, trCacada, trAgenteUpar, trAgenteMult, trAgenteLegado, '
     + 'trMesmoId, trQtd, trLimitadoPorDano, trDanoParaXp, trTipoPrey, trXpAtual, trRecDe, trMortesRecentes, trAgenteTopo, trAgenteErros, trXpPerdidaMorte, trAgenteBoss, trEventosMorte, trImpactoMorte, '
-    + 'trAgenteBestiario, trAgenteItens, trAgenteForja, trAgenteDinheiro, trCortaSufixo, trParty, trVelho, trEhMago, trDanoDeUm, trCustoEfetivo, trResumirTopo, trOuroLivre, trMesclarMapas, trAnotar, trFreioTopo, trPerfisDepois, trAcaoInfo, trCasaResposta, trPlanoCompra, trIdadePt, TR_ACAO_ROTULO, TR_ERRO_PT, trDecidirClique, trRespostaConfirma, trK, trInscreveuDepois, trExecutarCompra, trCacheVelho };')();
+    + 'trAgenteBestiario, trAgenteItens, trAgenteForja, trAgenteDinheiro, trCortaSufixo, trParty, trVelho, trEhMago, trDanoDeUm, trCustoEfetivo, trResumirTopo, trOuroLivre, trMesclarMapas, trAnotar, trFreioTopo, trPerfisDepois, trAcaoInfo, trCasaResposta, trPlanoCompra, trIdadePt, TR_ACAO_ROTULO, TR_ERRO_PT, trDecidirClique, trRespostaConfirma, trK, trInscreveuDepois, trExecutarCompra, trCacheVelho, trErroDaChave };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 // agentes falsos: troca os de verdade pelos falsos, roda e devolve os de verdade sempre
@@ -1801,5 +1801,13 @@ t('trCacheVelho: passou o prazo ou a foto não tinha a conta (lobby/F5) → reca
     assert.strictEqual(T.trCacheVelho({ t: 1000, foto: { nivel: null } }, 2000, 60000), true, 'aberto no lobby');
     assert.strictEqual(T.trCacheVelho({ t: 1000, foto: T.trFotoVazia() }, 2000, Infinity), true, 'o vigia de 4 s repinta até a conta chegar');
     assert.strictEqual(T.trCacheVelho({ t: 1000, foto: conta }, 9e9, Infinity), false);
+});
+t('erros do servidor pela chave (ao vivo 28/11): bênçãos completas, prey sem wildcard, cidade, Selo vazio', () => {
+    assert.strictEqual(T.trErroDaChave('server.blessing.jaPossuiTodas', {}), 'já tem as 7 bênçãos');
+    assert.strictEqual(T.trErroDaChave('server.prey.custoEscolher', { custo: 5, tem: 2 }), 'faltam wildcards (tem 2 de 5)');
+    assert.strictEqual(T.trErroDaChave('server.cidade.soNaCidade'), 'só na cidade');
+    assert(/pacto/.test(T.trErroDaChave('server.selo.vazio')));
+    assert.strictEqual(T.trErroDaChave('server.outra.coisa', {}), null);
+    assert.strictEqual(T.trErroDaChave(null), null);
 });
 process.on('exit', () => { if (!process.exitCode) console.log(`\n${n} testes ok`); });

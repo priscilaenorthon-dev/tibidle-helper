@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.67.0
+// @version      2.67.1
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (treinador: 10 especialistas e os 3 próximos passos para upar) + Rotina (bestiário, prey, plano offline, invasão) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.67.0';
+    const VERSAO = '2.67.1';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -13237,6 +13237,14 @@
                          selo_perigo: 'Perigo alto: aceite na tela do jogo', feature_disabled: 'recurso desligado no servidor', already_hunting: 'já está caçando',
                          level_too_low: 'nível baixo', sem_socket: 'socket do jogo fechado', sem_resposta: 'o jogo não respondeu em 8 s (confira antes de repetir)',
                          nao_aplicado: 'o jogo não aplicou', nao_confirmou: 'não confirmou — confira no jogo' };
+    // Motivo exato pela chave do servidor (ao vivo 28/11: o `code` é genérico — invalid_blessing/invalid_prey —, a `key`/`params` dizem o porquê)
+    const TR_ERRO_CHAVE = {
+        'server.blessing.jaPossuiTodas': () => 'já tem as 7 bênçãos',
+        'server.prey.custoEscolher': (p) => `faltam wildcards (tem ${trNum(p && p.tem) >= 0 ? p.tem : '?'} de ${trNum(p && p.custo) > 0 ? p.custo : 5})`,
+        'server.cidade.soNaCidade': () => 'só na cidade',
+        'server.selo.vazio': () => 'Selo vazio: faça um pacto primeiro (tela do jogo)',
+    };
+    function trErroDaChave(key, params) { const f = key && TR_ERRO_CHAVE[key]; return f ? f(params || {}) : null; }
     // Chave de conselho → texto seguro para data-k/data-tr e seletor CSS, REVERSÍVEL (não colide): encodeURIComponent com o '_' e
     // os sinais que ele deixa passar (!'()*~) também codificados, e o '%' trocado por '_'. Sobram só [A-Za-z0-9._-].
     // Desfaz com decodeURIComponent(k.replace(/_/g, '%')) (o teste confere).
@@ -20619,7 +20627,7 @@
         if (p && !p.res) {
             const k = trCasaResposta(p, o);
             if (k === 'res') p.res = { type: tipo, data: clonar(d) };
-            else if (k === 'erro' && !p.erro) p.erro = { code: String(d.code || d.key || '?'), t: agora, meu: d.requestId != null && String(d.requestId) === p.rid };
+            else if (k === 'erro' && !p.erro) p.erro = { code: String(d.code || d.key || '?'), key: d.key || null, params: d.params || null, t: agora, meu: d.requestId != null && String(d.requestId) === p.rid };
         }
         trAnotar(x, o, agora); // conta, bênçãos, Invasão, ilhas, ampulheta, Selo e o ouro de qualquer mensagem (@@TREINADOR-PURO)
     }
@@ -21148,14 +21156,14 @@
         try { await esperarQue(() => p.res || (p.erro && (p.erro.meu || Date.now() - p.erro.t >= MK_GRACA_ERRO_MS)), MK_PRAZO_MS, 100); }
         finally { if (TR.pend === p) TR.pend = null; }
         if (p.res) return { ok: true, type: p.res.type, data: p.res.data, enviado: tipo };
-        if (p.erro) return { erro: p.erro.code };
+        if (p.erro) return { erro: p.erro.code, key: p.erro.key, params: p.erro.params };
         return { erro: 'sem_resposta' };
     }
-    const trErroTxt = (code) => TR_ERRO_PT[code] || mkErroTexto(code);
+    const trErroTxt = (code, key, params) => trErroDaChave(key, params) || TR_ERRO_PT[code] || mkErroTexto(code);
     // resposta → resultado da tela; meta_result com applied:false = o jogo recusou (o notice diz por quê)
     // alvo = o que a ação pediu ({ huntId } do Selo) para o trRespostaConfirma (defesa a mais: o trCasaResposta já filtra)
     function trResposta(r, nome, okMsg, alvo) {
-        if (r.erro) return { erro: true, code: r.erro, msg: `${nome}: ${trErroTxt(r.erro)}` };
+        if (r.erro) return { erro: true, code: r.erro, msg: `${nome}: ${trErroTxt(r.erro, r.key, r.params)}` };
         const d = r.data || {};
         if (r.type === 'meta_result' && d.applied === false) return { erro: true, code: 'nao_aplicado', msg: `${nome}: ${trErroTxt('nao_aplicado')}` + (d.notice && d.notice.key ? ` (${d.notice.key})` : '') };
         if (trRespostaConfirma(r.enviado, d, alvo) === false) return { erro: true, code: 'nao_confirmou', msg: `${nome}: ${trErroTxt('nao_confirmou')}` };
