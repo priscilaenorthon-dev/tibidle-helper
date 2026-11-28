@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.67.7
+// @version      2.67.8
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (treinador: 10 especialistas e os 3 próximos passos para upar) + Rotina (bestiário, prey, plano offline, invasão) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.67.7';
+    const VERSAO = '2.67.8';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -1027,7 +1027,7 @@
         if (!b) return null;
         return { id: 'boss:' + b.name, title: 'Boss ' + b.name, boss: b.name /* 2.31.0: o nome (era true; danoMapaDaHunt montava 'boss:true') */, levelMin: b.levelMin || 1,
                  lureTiers: [{ min: 1, max: 1 }], maxLure: 1,
-                 monsters: [{ name: b.name, health: b.health, experience: b.experience, weight: 1, elements: b.elements || [] }] };
+                 monsters: [{ name: b.name, health: b.health, experience: b.experience, weight: 1, elements: b.elements || [], damage: b.damage || null }] }; // v2.67.8: damage = os ataques do boss (Aguentar)
     }
     function alvoDoModelo() {
         return ler('modelo', 'equilibrado') === 'boss' ? huntDeBoss(ler('boss_nome', null)) : huntAtual();
@@ -7175,6 +7175,19 @@
      * aguentar o que não é defesa (ML, dano, regen. de mana, capacidade, tiro da wand) vale SB_ATAQUE×: a peça é escolhida para não
      * morrer, e o ataque só desempata. No Cavaleiro a regen. de mana é cura (Wound Cleansing) e conta como defesa. */
     const SB_ATAQUE = 0.25;
+    /* v2.67.8 — piso do elemento principal nos laterais (×SB_FATOR = 0,9 pt por 1 %): o magma coat (8 % fogo) volta a ganhar da peça de +1 ML */
+    const SB_PICO_RESIST = 0.3;
+    /* o elemento mágico principal que o lateral toma: medido (elemVoc) ou o palpite do alvo; null se a magia é pouca ou espalhada */
+    function sbElemPrincipal(R, voc) {
+        const ev = R && R.elemVoc && R.elemVoc[voc];
+        const fr = ev && ev.tomadoS > 0 && ev.frac ? ev.frac : (R && R.elemPalpite) || null;
+        if (!fr) return null;
+        let mag = 0, top = null; for (const e of ELEM) { const v = Number(fr[e]) || 0; mag += v; if (!top || v > (Number(fr[top]) || 0)) top = e; }
+        const fis = ev && ev.tomadoS > 0 ? Number(fr.fisico) || 0 : 0;
+        if (!(mag > 0) || !top) return null;
+        if (ev && ev.tomadoS > 0 && mag / Math.max(1e-9, mag + fis) < 0.2) return null;
+        return (Number(fr[top]) || 0) / mag >= 0.4 ? top : null;
+    }
     const SB_IDS_DEFESA = ['resist_fisica', 'absorbpercentphysical', 'protecao_magica', 'armor', 'defense', 'extradef', 'escudo', 'skillshield', 'max_hp', 'regen_vida', 'cura_propria', 'absorbpercentpoison']
         .concat(ELEM.map(e => 'resist_' + e), ELEM.map(e => 'absorbpercent' + ELEM_EN[e]));
     const VOCS_EQUIP = ['KNIGHT', 'PALADIN', 'SORCERER', 'DRUID'];
@@ -7618,6 +7631,15 @@
         P.hitchance = voc === 'PALADIN' ? _r(s * (1 - fm) * 1.1) : 0;
         P.fase = fase2 ? 2 : 1; // v2.24.0
         /* v2.34.0 — modo AGUENTAR (aba Sobreviver e consumíveis do boss): a defesa pesa SB_FATOR× — a peça é escolhida para sobreviver ao alvo */
+        /* v2.67.8 — O PICO MATA, NÃO A MÉDIA (Shadow Nexus, 28/11: pelo dano médio medido, 4 % de fogo valia 2 pt e +1 ML 3,6 — a aba trocava
+         * a magma monocle pela jade hat e o magma coat pela calopteryx cape, e o fogo do Feiticeiro caía de 23 % para 12,9 %; a comunidade
+         * e o aviso do mapa dizem "set de magma nos magos", o combo de área dá 700–800). No modo Aguentar, nos 3 laterais, o elemento mágico
+         * PRINCIPAL do alvo (≥ 40 % da magia e magia ≥ 20 % do dano) vale pelo menos SB_PICO_RESIST pt por 1 % (antes do ×SB_FATOR). */
+        if (ctx && ctx.sobreviver && voc !== 'KNIGHT') {
+            const top = sbElemPrincipal(R, voc);
+            if (top) for (const k of ['resist_' + top, 'absorbpercent' + ELEM_EN[top]]) P[k] = Math.max(P[k] || 0, SB_PICO_RESIST);
+            if (top === 'terra') P.absorbpercentpoison = P.resist_terra;
+        }
         if (ctx && ctx.sobreviver) { for (const k of SB_IDS_DEFESA) if (P[k]) P[k] = _r(P[k] * SB_FATOR); P.sobreviver = true; }
         return P;
     }
@@ -8580,9 +8602,13 @@
      * mapa de gelo ou de terra. Ordem: (1) o que a comunidade disse do mapa (SB_ELEM_COMUNIDADE, do Discord); (2) a imunidade dos
      * monstros (quem é imune a um elemento costuma bater com ele — vale no Bottom, Hive Queen, Fire Portal; NÃO vale na Lizard City,
      * imune a terra e batendo de fogo), por isso entra só pela metade, misturada com o padrão antigo. A medição de 2 minutos manda. */
+    /* v2.67.8 — revisão pelos ATAQUES do jogo (/hunts/select e /bosses/select, campo damage, 28/11): Draken Walls tem terra e energia do
+     * Spellweaver; Infernatil, terra e morte do Hellhound; Shadow Nexus medido em 04/11 com os magos tomando fogo ~85 %, morte ~8 %, terra
+     * ~6 % e energia 0 (a energia 0,3 de antes não existia); o boss Hive Queen bate FOGO (400–1200) — o terra é da caçada 199. */
     const SB_ELEM_COMUNIDADE = {
-        62: { fogo: 1 }, 192: { fogo: 1 }, 197: { gelo: 1 }, 199: { terra: 1 }, 200: { terra: 1 }, 201: { fogo: 1 }, 222: { fogo: 0.7, energia: 0.3 }, 226: { terra: 1 },
-        'boss:Hive Queen': { terra: 1 }
+        62: { fogo: 1 }, 192: { fogo: 0.6, terra: 0.25, energia: 0.15 }, 197: { gelo: 1 }, 199: { terra: 1 }, 200: { terra: 1 }, 201: { fogo: 0.7, terra: 0.15, morte: 0.15 },
+        222: { fogo: 0.8, morte: 0.1, terra: 0.1 }, 226: { terra: 1 },
+        'boss:Hive Queen': { fogo: 1 }
     };
     /* avisos da comunidade por caçada (Discord, 27/10–18/11): aparecem no Plano da aba Aguentar */
     const SB_AVISOS = {
@@ -8604,6 +8630,11 @@
         const espalha = (base, peso) => { const f = {}; let tot = 0; for (const e of ELEM) tot += Number(base[e]) || 0; if (!(tot > 0)) return null; for (const e of ELEM) f[e] = Math.round(((Number(base[e]) || 0) / tot * peso + (1 - peso) / ELEM.length) * 1000) / 1000; return f; };
         const com = SB_ELEM_COMUNIDADE[alvo.boss ? 'boss:' + alvo.boss : alvo.id];
         if (com) { const frac = espalha(com, 0.88); return { frac, fonte: 'comunidade', elems: Object.keys(com) }; }
+        /* v2.67.8 — OS ATAQUES DO JOGO (monsters[].damage = [{type, min, max}], público): peso × vida × golpe médio por elemento. A auditoria
+         * de 28/11 achou o palpite pela imunidade errado em 8 de 19 mapas e o "fogo por padrão" em 18 de 24 (Tafariel e Madareth são morte,
+         * Ice Portal é terra e morte, Crystal Caves é gelo…). Só ataque físico = "sem dano mágico" (tudo 0), não mais fogo. */
+        const atk = sbElemDosAtaques(alvo.monsters || []);
+        if (atk) return atk;
         const peso = {};
         for (const m of (alvo.monsters || [])) {
             const p = (Number(m.health) || 1) * (Number(m.weight) || 1);
@@ -8615,6 +8646,30 @@
         const est = espalha(peso, 1); if (!est) return null;
         const frac = {}; for (const e of ELEM) frac[e] = Math.round((est[e] * 0.5 + (e === 'fogo' ? 0.5 : 0.1) * 0.5) * 1000) / 1000; // metade imunidade, metade o padrão antigo
         return { frac, fonte: 'imunidade', elems: Object.keys(peso).sort((a, b) => peso[b] - peso[a]) };
+    }
+    const SB_DANO_IGNORA = new Set(['PHYSICAL', 'LIFEDRAIN', 'MANADRAIN', 'DROWN', 'HEALING', 'UNDEFINED']);
+    /* {frac, fonte: 'ataques', elems, golpeMax: {elem: maior golpe}} | {frac: tudo 0, soFisico: true} | null (catálogo sem damage) */
+    function sbElemDosAtaques(monsters) {
+        const peso = {}, golpeMax = {}; let temDano = false;
+        for (const m of (monsters || [])) {
+            if (!m || !Array.isArray(m.damage)) continue;
+            const w = (Number(m.health) || 1) * (Number(m.weight) || 1);
+            for (const x of m.damage) {
+                if (!x) continue;
+                temDano = true;
+                const t = String(x.type || '').toUpperCase().replace(/^COMBAT_/, '').replace(/DAMAGE$/, '');
+                if (SB_DANO_IGNORA.has(t)) continue;
+                const e = SB_ELEM_CAT[t]; if (!e) continue;
+                const med = ((Number(x.min) || 0) + (Number(x.max) || 0)) / 2; if (!(med > 0)) continue;
+                peso[e] = (peso[e] || 0) + w * med;
+                golpeMax[e] = Math.max(golpeMax[e] || 0, Number(x.max) || 0);
+            }
+        }
+        if (!temDano) return null;
+        let tot = 0; for (const e of ELEM) tot += peso[e] || 0;
+        if (!(tot > 0)) { const frac = {}; for (const e of ELEM) frac[e] = 0; return { frac, fonte: 'ataques', elems: [], soFisico: true, golpeMax }; }
+        const frac = {}; for (const e of ELEM) frac[e] = Math.round(((peso[e] || 0) / tot * 0.8 + 0.2 / ELEM.length) * 1000) / 1000;
+        return { frac, fonte: 'ataques', elems: Object.keys(peso).sort((a, b) => peso[b] - peso[a]), golpeMax };
     }
     /* aplica o palpite ao grupo: o que vier medido de OUTROS mapas (elemVoc consolidado) mantém o quanto cada um toma e a parte física,
      * e a parte mágica é repartida pelo palpite deste alvo */
@@ -8709,7 +8764,7 @@
         const tS = Number(P.tomadoS) || 0, fis = P.fisico != null ? Number(P.fisico) : 0.65, prey = ent.prey || {};
         const pct = (x) => Math.round(x * 100);
         const alvoNome = alvo.boss || alvo.title || 'o alvo';
-        if (!ent.medido) out.push({ chave: 'medida', nivel: 'av', titulo: 'Sem medição deste alvo', texto: `O helper ainda não viu ${alvoNome}: a conta abaixo usa a referência (Cavaleiro tomando ${Math.round(tS)}/s, ${pct(fis)} % físico, ${ent.elem && ent.elem.elems && ent.elem.elems.length ? ent.elem.elems.map(e => SB_ELEM_PT[e] || e).join(' e ') + ' nas magias — ' + (ent.elem.fonte === 'comunidade' ? 'dito pela comunidade no Discord' : 'estimativa: os monstros são imunes a esse elemento e costumam bater com ele') : 'fogo nas magias, o padrão dos mapas altos'}). Uma luta ou caçada de 2 minutos com o helper aberto grava o dano real por personagem e elemento, e a tela refaz tudo.` });
+        if (!ent.medido) out.push({ chave: 'medida', nivel: 'av', titulo: 'Sem medição deste alvo', texto: `O helper ainda não viu ${alvoNome}: a conta abaixo usa a referência (Cavaleiro tomando ${Math.round(tS)}/s, ${pct(fis)} % físico, ${ent.elem && ent.elem.soFisico ? 'sem dano mágico: os ataques dos monstros no jogo são só físicos' : ent.elem && ent.elem.elems && ent.elem.elems.length ? ent.elem.elems.map(e => SB_ELEM_PT[e] || e).join(' e ') + ' nas magias — ' + (ent.elem.fonte === 'comunidade' ? 'dito pela comunidade no Discord' : ent.elem.fonte === 'ataques' ? 'pelos ataques dos monstros no jogo' + (ent.elem.golpeMax && ent.elem.golpeMax[ent.elem.elems[0]] ? ` (golpe de até ${Math.round(ent.elem.golpeMax[ent.elem.elems[0]])} de ${SB_ELEM_PT[ent.elem.elems[0]] || ent.elem.elems[0]})` : '') : 'estimativa: os monstros são imunes a esse elemento e costumam bater com ele') : 'fogo nas magias, o padrão dos mapas altos'}). Uma luta ou caçada de 2 minutos com o helper aberto grava o dano real por personagem e elemento, e a tela refaz tudo.` });
         else out.push({ chave: 'medida', nivel: 'ok', titulo: 'O que o alvo faz', texto: `Cavaleiro toma ${Math.round(tS)}/s (${pct(fis)} % corpo a corpo${P.elemVoc && P.elemVoc.KNIGHT ? ', ' + Object.entries(P.elemVoc.KNIGHT.frac || {}).filter(([e]) => e !== 'fisico').sort((a, b) => b[1] - a[1]).slice(0, 2).map(([e, f]) => pct(f) + ' % ' + (SB_ELEM_PT[e] || e)).join(', ') : ''}).` + (ent.mortes > 0 ? ` ${ent.mortes} morte(s) registrada(s) aqui.` : '') + (ent.hpMinK != null ? ` Vida mínima do Cavaleiro já vista: ${Math.round(ent.hpMinK)} %.` : '') });
         /* v2.53.0 — avisos da comunidade deste alvo */
         for (const a of (ent.avisos || [])) { const m = /^([^:]{2,40}):\s*(.*)$/.exec(String(a)); out.push({ chave: 'comunidade', nivel: 'av', titulo: 'Comunidade — ' + (m ? m[1] : 'aviso'), texto: m ? m[2] : String(a) }); }
@@ -21966,7 +22021,7 @@
         const ctx = SB.ctx, muda = [];
         {
             const prot = sbProtecao(SB.res.porVoc, (ctx && ctx.party) || {}, VOCS_EQUIP), icoP = { ruim: '<span class="tb-ruim">✗</span>', av: '<span class="tb-av">⚠</span>', ok: '<span class="tb-ok">✓</span>' };
-            h += `<h4 style="margin:8px 0 2px">Proteção contra o alvo <span class="tb-mut">(${SB.medido ? 'elementos medidos' : SB.elem ? (SB.elem.fonte === 'comunidade' ? 'elemento dito pela comunidade' : 'elemento estimado pela imunidade dos monstros') : 'sem medição'})</span></h4>`;
+            h += `<h4 style="margin:8px 0 2px">Proteção contra o alvo <span class="tb-mut">(${SB.medido ? 'elementos medidos' : SB.elem ? (SB.elem.fonte === 'comunidade' ? 'elemento dito pela comunidade' : SB.elem.fonte === 'ataques' ? (SB.elem.soFisico ? 'só ataque físico, pelo jogo' : 'elemento pelos ataques dos monstros') : 'elemento estimado pela imunidade dos monstros') : 'sem medição'})</span></h4>`;
             for (const p of prot) {
                 if (p.semDano) { h += `<div class="tb-sb-lin"><span class="tb-sb-q">${SB_VOC_ABR[p.voc]}</span><span class="tb-sb-n tb-mut">não apanha aqui</span></div>`; continue; }
                 if (!p.linhas.length) continue;
@@ -21992,6 +22047,10 @@
         h += sbTelaImbu(ctx);
         /* v2.67.7 — os seus anúncios que servem aqui */
         const meusU = sbMeusUteis();
+        if (!meusU.length && SB.meus && !SB.meusAviso) {
+            // conferiu e nada serve: diz quantos anúncios de equipamento olhou (senão parece que não verificou)
+            h += `<div class="tb-mut tb-eq-nota" style="margin-top:6px">seus anúncios: ${SB.meus.n ? `${SB.meus.n} peça(s) de equipamento conferida(s) — nenhuma ganha, com segurança, da que eles vão vestir aqui` : 'nenhum anúncio seu de equipamento'}.</div>`;
+        }
         if (meusU.length || SB.meusAviso) {
             h += `<h4 style="margin:8px 0 2px">Seus anúncios que servem aqui <span class="tb-mut">(tire do Mercado para usar)</span></h4>`;
             for (const o of meusU.slice(0, SB_MERCADO_MAX)) {

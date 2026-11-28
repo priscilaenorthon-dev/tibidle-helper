@@ -5,7 +5,7 @@ const fs = require('fs'), path = require('path'), assert = require('assert');
 const src = fs.readFileSync(path.join(__dirname, '..', 'tibidle-helper.user.js'), 'utf8');
 const trecho = (a, b) => { const i = src.indexOf(a), f = src.indexOf(b); assert(i > 0 && f > i, 'marcador ausente: ' + a); return src.slice(i, f); };
 const M = new Function(trecho('/* @@EQUIP-PURO-INICIO */', '/* @@EQUIP-PURO-FIM */') + trecho('/* @@SOBREVIVER-PURO-INICIO', '/* @@SOBREVIVER-PURO-FIM */') +
-    '\nreturn { sbPartyDoDano, sbConsumiveis, sbPlano, pesosDaVoc, pontuarPeca, SB_IDS_DEFESA, SB_FATOR, SB_ATAQUE, SB_POCOES, imbValor, imbPontos, sbImbuSugestoes, sbElemDoAlvo, sbAplicarPalpite, sbProtecao, sbProtecaoPeca, SB_AVISOS };')();
+    '\nreturn { sbPartyDoDano, sbConsumiveis, sbPlano, pesosDaVoc, pontuarPeca, SB_IDS_DEFESA, SB_FATOR, SB_ATAQUE, SB_POCOES, imbValor, imbPontos, sbImbuSugestoes, sbElemDoAlvo, sbAplicarPalpite, sbProtecao, sbProtecaoPeca, SB_AVISOS, sbElemDosAtaques, sbElemPrincipal, SB_PICO_RESIST };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 const DM = { seg: 1800, sessoes: 2, tomadoH: 900000, mortes: 1, elemPorVoc: { KNIGHT: { tomadoH: 720000, golpesH: 7200, frac: { fisico: 0.62, fogo: 0.3, energia: 0.08 } }, SORCERER: { tomadoH: 90000, golpesH: 0, frac: { fogo: 0.7, energia: 0.3 } }, DRUID: { tomadoH: 90000, frac: { fogo: 1 } } }, crias: [] };
@@ -87,7 +87,9 @@ t('2.35.6 lateral com dano medido: regen. de vida vale 0,5 pt (×3 no aguentar),
     assert(Math.abs(ag.regen_vida - 1.5) < 1e-9, 'aguentar: ' + ag.regen_vida);
     /* 1 % de fogo = o HP/s de fogo que ele deixa de tomar (25/s × 70 % ÷ 100 = 0,175 de regen. de vida). Antes o ×4 da vida fazia
      * a terra legs (regen. de vida 2,5) passar a magma legs (+6 % fogo) no Shadow Nexus (29/10) */
-    assert(Math.abs(ag.resist_fogo / ag.regen_vida - 25 * 0.7 / 100) < 0.005, `fogo/vida ${ag.resist_fogo / ag.regen_vida}`);
+    assert(Math.abs(med.resist_fogo / med.regen_vida - 25 * 0.7 / 100) < 0.005, `fogo/vida ${med.resist_fogo / med.regen_vida}`);
+    // 2.67.8: no aguentar o fogo é o elemento principal do Feiticeiro → piso SB_PICO_RESIST (× SB_FATOR)
+    assert(Math.abs(ag.resist_fogo - M.SB_PICO_RESIST * M.SB_FATOR) < 1e-9, 'piso do fogo no aguentar: ' + ag.resist_fogo);
     const palpite = M.pesosDaVoc('PALADIN', { nivel: 160, party: { tomadoS: 140, fisico: 0.65, golpesS: 2, ladoApanha: 4 } });
     assert(Math.abs(palpite.regen_vida - 2) < 1e-9, 'sem medida do lateral: 0,5 × 4 = ' + palpite.regen_vida);
 });
@@ -100,7 +102,7 @@ t('2.35.6 imbuement: valor pelo efeito do jogo (redução 8, leech bonus/100) ou
     const dh = { name: 'Dragon Hide', category: 6, base: 2 };
     const n = M.imbPontos(dh, 'SORCERER', ctx), a = M.imbPontos(dh, 'SORCERER', ctxA);
     assert(Math.abs(n.pt - 8 * M.pesosDaVoc('SORCERER', ctx).resist_fogo) < 1e-6, 'pt = 8 × peso: ' + n.pt);
-    assert(Math.abs(a.pt / n.pt - M.SB_FATOR) < 0.05, 'aguentar ×3: ' + a.pt / n.pt);
+    assert(Math.abs(a.pt - 8 * M.SB_PICO_RESIST * M.SB_FATOR) < 0.05, 'aguentar: 8 × piso × 3 = ' + a.pt); // 2.67.8: fogo principal tem piso
     assert.strictEqual(n.id, 'imbuement Dragon Hide');
     assert(M.imbPontos({ category: 1, base: 2 }, 'KNIGHT', ctx).pt > 0, 'Vampirism no Cavaleiro vale');
     assert.strictEqual(M.imbPontos({}, 'KNIGHT', ctx), null);
@@ -180,4 +182,38 @@ t('2.53.0 sbProtecao: soma ficha + forja + proteção mágica + imbuement; hoje 
     assert(!r[1].linhas.some(l => l.elem === 'gelo'), 'gelo não bate neste alvo');
     assert(r[2].semDano === true, 'Paladino medido sem dano');
 });
+t('2.67.8 sbElemDosAtaques: peso × vida × golpe médio por elemento; físico/lifedrain fora; só físico = tudo 0 (não fogo); sem damage = null', () => {
+    const d = (type, min, max) => ({ type, min, max });
+    const taf = M.sbElemDosAtaques([{ health: 9000, weight: 2, damage: [d('COMBAT_PHYSICALDAMAGE', 0, 400), d('COMBAT_DEATHDAMAGE', 100, 500)] }]);
+    assert.strictEqual(taf.fonte, 'ataques'); assert.deepStrictEqual(taf.elems, ['morte']);
+    assert(taf.frac.morte > 0.8 && taf.frac.fogo < 0.05, JSON.stringify(taf.frac)); assert.strictEqual(taf.golpeMax.morte, 500);
+    const mix = M.sbElemDosAtaques([{ health: 1000, weight: 1, damage: [d('COMBAT_EARTHDAMAGE', 100, 300)] }, { health: 1000, weight: 1, damage: [d('COMBAT_DEATHDAMAGE', 50, 150), d('COMBAT_LIFEDRAIN', 0, 900)] }]);
+    assert.deepStrictEqual(mix.elems, ['terra', 'morte']); assert(mix.frac.terra > mix.frac.morte, JSON.stringify(mix.frac));
+    const fis = M.sbElemDosAtaques([{ health: 5000, weight: 1, damage: [d('COMBAT_PHYSICALDAMAGE', 0, 250)] }]);
+    assert(fis.soFisico && Object.values(fis.frac).every(v => v === 0), JSON.stringify(fis));
+    assert.strictEqual(M.sbElemDosAtaques([{ health: 5000, weight: 1, elements: [] }]), null);
+    // sbElemDoAlvo: comunidade > ataques > imunidade
+    const alvo = { id: 9002, monsters: [{ health: 4000, weight: 1, elements: [{ type: 'COMBAT_FIREDAMAGE', percent: 100 }], damage: [d('COMBAT_ICEDAMAGE', 200, 600)] }] };
+    const r = M.sbElemDoAlvo(alvo);
+    assert.strictEqual(r.fonte, 'ataques'); assert.deepStrictEqual(r.elems, ['gelo'], 'imune a fogo mas bate de gelo: vale o ataque');
+    assert.deepStrictEqual(M.sbElemDoAlvo({ boss: 'Hive Queen', monsters: [] }).elems, ['fogo'], 'boss Hive Queen bate fogo (o terra é da caçada 199)');
+});
+t('2.67.8 piso do PICO: no aguentar o elemento principal vale ≥ SB_PICO_RESIST por 1 % nos laterais; o Cavaleiro e o elemento secundário não mudam', () => {
+    const party = M.sbPartyDoDano(DM, {}).party; // Feiticeiro: fogo 70 / energia 30; Druida: fogo 100
+    assert.strictEqual(M.sbElemPrincipal(party, 'SORCERER'), 'fogo');
+    const ag = M.pesosDaVoc('SORCERER', { nivel: 250, party, sobreviver: true }), nor = M.pesosDaVoc('SORCERER', { nivel: 250, party });
+    assert(ag.resist_fogo >= M.SB_PICO_RESIST * M.SB_FATOR - 1e-9 && ag.resist_energia < ag.resist_fogo, JSON.stringify([ag.resist_fogo, ag.resist_energia]));
+    assert(nor.resist_fogo < M.SB_PICO_RESIST, 'fora do aguentar nada muda: ' + nor.resist_fogo);
+    const kn = M.pesosDaVoc('KNIGHT', { nivel: 250, party, sobreviver: true }), kn0 = M.pesosDaVoc('KNIGHT', { nivel: 250, party });
+    assert.strictEqual(kn.resist_fogo, kn0.resist_fogo, 'Cavaleiro: o piso não entra (o peso dele é o mesmo dentro e fora do aguentar)');
+    // espalhado (nenhum elemento com 40 % da magia) → sem piso
+    assert.strictEqual(M.sbElemPrincipal({ elemPalpite: { fogo: 0.3, gelo: 0.3, terra: 0.2, energia: 0.2 } }, 'DRUID'), null);
+    // magma coat (8 % fogo, Raro, cura própria 1,9) × capa de +1 ML (regen. vida 1,1, fogo 1,9) no Feiticeiro, Shadow Nexus medido
+    const ctx = { nivel: 250, party, sobreviver: true };
+    const pc = (nome, attrs, atributos) => ({ iid: nome, nome, slot: 'armor', attrs: Object.assign({ slot: 'body', vocation: 'Sorcerer;true, Druid;true' }, attrs), forja: { raridade: 2, refino: 0, atributos } });
+    const magma = M.pontuarPeca(pc('magma coat', { absorbpercentfire: 8, armor: 9 }, [{ id: 'cura_propria', valor: 1.9 }]), 'SORCERER', ctx).pontos;
+    const capa = M.pontuarPeca(pc('calopteryx cape', { magiclevelpoints: 1, armor: 8 }, [{ id: 'regen_vida', valor: 1.1 }, { id: 'resist_fogo', valor: 1.9 }]), 'SORCERER', ctx).pontos;
+    assert(magma > capa, `o magma coat tem que ganhar no aguentar: ${magma} × ${capa}`);
+});
+
 console.log(`\n${n} testes ok`);

@@ -7997,3 +7997,20 @@ no lugar do Haste).
   régua do alvo (defesa 3×). Seção nova "Seus anúncios que servem aqui", com TIRAR DO ANÚNCIO (2 toques → `market_cancel`; o item volta
   para a mochila ou o depósito; a taxa paga não volta). Depois a aba relê (Equip de novo) para o item entrar no EQUIPAR.
 - Teste novo em melhorias.test.js (810 ok).
+
+## 2.67.8 (28/11) — Aguentar: elementos pelos ataques do jogo e o pico do elemento perigoso
+- Varredura pedida pelo dono ("se tá certo os itens recomendados"), feita por um agente com /hunts/select e /bosses/select (públicos,
+  assets v294): o campo `monsters[].damage` / `bosses[].damage` (`[{type, min, max}]`) traz os ataques de cada monstro. A aba errava o
+  elemento principal em ~metade dos mapas 150+ e em 82 de 147 bosses — o palpite pela imunidade errou 8 de 19 mapas e o "fogo por
+  padrão" 18 de 24 (Tafariel e Madareth = morte; Ice Portal = terra e morte; Crystal Caves = gelo; Ashfalor = morte e terra…).
+- `sbElemDosAtaques` (SOBREVIVER-PURO): peso × vida × golpe médio por elemento (físico, lifedrain, manadrain e afogamento fora; veneno =
+  terra); só físico → "sem dano mágico" (tudo 0), não mais fogo. Ordem: medição > comunidade > ataques do jogo > imunidade. `huntDeBoss`
+  passa `damage`. A tela diz "pelos ataques dos monstros no jogo (golpe de até N)".
+- SB_ELEM_COMUNIDADE: boss Hive Queen = FOGO (400–1200; o terra é da caçada 199); Draken Walls ganha terra 0,25 e energia 0,15
+  (Spellweaver); Infernatil terra e morte (Hellhound); Shadow Nexus fogo 0,8 / morte 0,1 / terra 0,1 (medido 04/11: energia 0).
+- Pico: no Shadow Nexus (dano medido) a aba mandava o Feiticeiro trocar magma monocle → jade hat e magma coat → calopteryx cape
+  (fogo 23 % → 12,9 %), porque pela MÉDIA 4 % de fogo valia 2 pt e +1 ML 3,6. No modo Aguentar o elemento mágico principal dos 3
+  laterais (≥ 40 % da magia, magia ≥ 20 % do dano) vale no mínimo `SB_PICO_RESIST` 0,3 pt por 1 % (× 3 = 0,9). O magma coat volta a
+  ganhar. O Cavaleiro não muda.
+- Também: nota "seus anúncios: N peças conferidas — nenhuma ganha…" quando nada dos seus anúncios serve (2.67.7 ficava calada).
+- Testes: 812 ok (sobreviver +2; 2 ajustados ao piso).
