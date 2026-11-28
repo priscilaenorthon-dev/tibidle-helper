@@ -7988,3 +7988,12 @@ no lugar do Haste).
   que o jogo mandou na sessão.
 - O estoque é de cada conta: o que caiu na outra conta só aparece lá (o helper roda por conta).
 - Testes: 809 ok (forja +1, treinador +1).
+
+## 2.67.7 (28/11) — Aguentar: os seus anúncios que servem para o mapa
+- Pedido do dono: "quando eu colocar um mapa, verifica também, além dos itens à venda, se eu anunciei no Mercado um item bom; assim tira
+  do anúncio para eu poder usar". Antes a aba descartava as próprias ordens (`meus`) da lista do Mercado.
+- No LER da aba (só leitura): `market_my_orders` + ficha dos itens; `mlCandidatosMeusAnuncios(minhas, base)` (MELHORIAS, puro) transforma
+  cada ordem aberta de VENDA de equipamento numa peça com `preco 0`, `meu: true`, `precoAnuncio` e a forja da ordem; `mlAvaliar` com a
+  régua do alvo (defesa 3×). Seção nova "Seus anúncios que servem aqui", com TIRAR DO ANÚNCIO (2 toques → `market_cancel`; o item volta
+  para a mochila ou o depósito; a taxa paga não volta). Depois a aba relê (Equip de novo) para o item entrar no EQUIPAR.
+- Teste novo em melhorias.test.js (810 ok).

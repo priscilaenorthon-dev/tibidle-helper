@@ -4,7 +4,7 @@ const fs = require('fs'), path = require('path'), assert = require('assert');
 const src = fs.readFileSync(path.join(__dirname, '..', 'tibidle-helper.user.js'), 'utf8');
 const trecho = (a, b) => { const i = src.indexOf(a), f = src.indexOf(b); assert(i > 0 && f > i, 'marcador ausente: ' + a); return src.slice(i, f); };
 const M = new Function(trecho('/* @@EQUIP-PURO-INICIO */', '/* @@EQUIP-PURO-FIM */') + trecho('/* @@MELHORIAS-INICIO', '/* @@MELHORIAS-FIM */') +
-    '\nreturn { mlCandidatosMercado, mlAvaliar, mlPerdas, distribuirEquip, ML_GANHO_MIN, mlForjar, mlForjaMaisBarata, mlChecklist };')();
+    '\nreturn { mlCandidatosMeusAnuncios, mlCandidatosMercado, mlAvaliar, mlPerdas, distribuirEquip, ML_GANHO_MIN, mlForjar, mlForjaMaisBarata, mlChecklist };')();
 let n = 0;
 const t = (nome, fn) => { try { fn(); n++; console.log('ok  ', nome); } catch (e) { console.log('FAIL', nome, '\n   ', e.message); process.exitCode = 1; } };
 const F = (r, ...at) => ({ raridade: r, atributos: at.map(([id, valor]) => ({ id, valor })) });
@@ -37,6 +37,17 @@ t('candidatos: cópias viram peças com slot, preço e ordem; ignora a sua, a se
                                        amuletos: [copia(3, 'stone skin amulet', 50)], aneis: [copia(4, 'item que nao existe', 10)] }, BASE, new Set([2]));
     assert.deepStrictEqual(c.map(x => [x.orderId, x.slot, x.preco]), [[1, 'boots', 900]]);
     assert.strictEqual(c[0].forja.atributos[0].id, 'regen_mana');
+});
+t('2.67.7 seus anúncios: ordem aberta de VENDA de equipamento vira peça (preço 0, meu, forja da ordem); compra, fechada, pilha sem ficha ficam de fora', () => {
+    const ord = (id, nome, extra) => Object.assign({ id, itemName: nome, status: 'OPEN', side: 'SELL', asset: 'ITEM', quantityRemaining: 1, unitPrice: 4200 }, extra || {});
+    const c = M.mlCandidatosMeusAnuncios([ord('a', 'steel boots', { forja: F(1, ['regen_mana', 3.4]) }), ord('b', 'steel boots', { side: 'BUY' }), ord('c', 'steel boots', { status: 'CLOSED' }),
+        ord('d', 'item que nao existe'), ord('e', 'steel boots', { quantityRemaining: 0 }), ord('f', 'steel boots', { asset: 'COINS' })], BASE);
+    assert.deepStrictEqual(c.map(x => [x.orderId, x.slot, x.preco, x.precoAnuncio, x.meu, x.origem]), [['a', 'boots', 0, 4200, true, 'meu-anuncio']]);
+    assert.strictEqual(c[0].forja.atributos[0].id, 'regen_mana');
+    const r = M.mlAvaliar(cenario(vestidos()), c, null, { ouro: null });
+    const o = r.porVoc.KNIGHT.boots.ofertas[0];
+    assert(o && o.meu === true && o.precoAnuncio === 4200 && o.preco === 0 && o.ganho > 0 && o.recomendada, JSON.stringify(o && [o.meu, o.precoAnuncio, o.ganho, o.recomendada]));
+    assert.strictEqual(M.mlCandidatosMercado({ botas: [copia(9, 'steel boots', 900)] }, BASE)[0].meu, undefined, 'cópia de outro vendedor não é "meu"');
 });
 t('regen. de mana maior à venda (bota de nível acima) vira melhoria; regen. menor só entra como TROCA se a régua ainda ganha ≥ 1 pt (2.34.2)', () => {
     const porVoc = cenario(vestidos());

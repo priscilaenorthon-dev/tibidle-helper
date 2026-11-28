@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.67.6
+// @version      2.67.7
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (treinador: 10 especialistas e os 3 próximos passos para upar) + Rotina (bestiário, prey, plano offline, invasão) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.67.6';
+    const VERSAO = '2.67.7';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -8816,6 +8816,25 @@
     };
     /* copias = {cat: [{orderId, unitPrice, sellerName?, itemName?, instance:{iid,name,forja}}]}; base = {nome: {attrs,…}};
      * meusIds = orderIds do próprio dono (nunca "comprar de si mesmo") → peças do mercado */
+    /* v2.67.7 — OS SEUS ANÚNCIOS (dono, 28/11: "quando eu colocar um mapa, verifica também, além dos itens à venda, se eu anunciei no
+     * mercado um item bom; assim tira do anúncio para eu poder usar"). minhas = market_my_orders (ordem aberta de VENDA de item, com a forja
+     * da cópia em o.forja). Cada uma vira uma peça como as do Mercado, com preco 0 (já é sua: tirar do anúncio não custa ouro; a taxa de 5 %
+     * paga ao anunciar não volta) e meu: true. Sem ficha do item (base) ou sem espaço de equipamento, fica de fora. */
+    function mlCandidatosMeusAnuncios(minhas, base) {
+        const out = [], b = (nome) => (base && (base[nome] || base[String(nome).toLowerCase()])) || null;
+        for (const o of (minhas || [])) {
+            if (!o || o.id == null || o.status !== 'OPEN' || o.side !== 'SELL' || (o.asset != null && o.asset !== 'ITEM') || !(Number(o.quantityRemaining) > 0)) continue;
+            const nome = o.itemName, k = nome ? b(nome) : null;
+            if (!k) continue;
+            const attrs = k.attrs || {}, slot = mlSlotDaBase(attrs, null);
+            if (!slot || !SLOTS_EQUIP.includes(slot)) continue;
+            const peca = { iid: 'meu:' + o.id, nome, slot, attrs, forja: normForja(o.forja), equipPreview: k.equipPreview || null, origem: 'meu-anuncio',
+                           orderId: o.id, preco: 0, precoAnuncio: Number(o.unitPrice) || 0, meu: true, duasMaos: attrs.slotType === 'two-handed' };
+            if (ehTemporaria(peca)) continue;
+            out.push(peca);
+        }
+        return out;
+    }
     function mlCandidatosMercado(copias, base, meusIds) {
         const out = [], vistos = new Set();
         const meus = meusIds instanceof Set ? meusIds : new Set(meusIds || []);
@@ -9028,6 +9047,7 @@
                     const idsForja = new Set(((c.forja && c.forja.atributos) || []).map(a => a.id));
                     const linhasQueValem = r.detalhe.filter(d => idsForja.has(d.id) && Math.abs(d.pt) >= 1).map(d => d.id + ':' + d.valor);
                     ofertas.push({ voc: v, slot: s, orderId: c.orderId, nome: c.nome, cat: c.cat, preco: c.preco, vendedor: c.vendedor, forja: c.forja, linhasQueValem,
+                                   meu: !!c0.meu, precoAnuncio: c0.meu ? c0.precoAnuncio : undefined, // v2.67.7 — o seu anúncio (tirar do Mercado para usar)
                                    pontos: r.pontos, ganho, ouroPorPt: ganho > 0 ? Math.round(c.preco / ganho) : null, pagaH, perdas, trocas, seguro: !perdas.length, // v2.34.2: trocas
                                    cabe: ouro == null ? null : c.preco <= ouro, motivos: r.motivos, duasMaos: !!c.duasMaos,
                                    fontes: fontes.slice(0, 4), soDefesa, refImbuida, refino: Number(c.forja && c.forja.refino) || 0, ficha: mlFichaVarinha(c0),
@@ -21757,7 +21777,7 @@
     /* @@SOBREVIVER-INICIO — aba SOBREVIVER 🛡 (2.34.0): para um mapa de nível 150+ ou um boss/Elite forte, o que vestir (corpo, mochila,
      * depósito) com a defesa pesando 3×, os consumíveis da luta, o que comprar no Mercado e o plano (Protector, prey de defesa,
      * poções, lure). Só lê; EQUIPAR, CONSUMÍVEIS e COMPRAR são botões de 2 toques, só na cidade. */
-    const SB = { alvo: null, res: null, ctx: null, cons: null, mercado: null, plano: null, medido: false, t: 0, lendo: false, erro: null, aviso: null, conf: 0, confCons: 0, todos: false, ocupado: false };
+    const SB = { meus: null, meusAviso: null, alvo: null, res: null, ctx: null, cons: null, mercado: null, plano: null, medido: false, t: 0, lendo: false, erro: null, aviso: null, conf: 0, confCons: 0, todos: false, ocupado: false };
     function sbAlvos() {
         const todos = SB.todos || !!ler('sb_todos', false), nivel = nivelAtual();
         const hunts = (CAT.hunts || []).filter(h => h && h.id !== HUNT_ID_BOSS && Array.isArray(h.monsters) && h.monsters.length && (todos || Math.max(Number(h.levelMin) || 0, Number(h.recommendedLevel) || 0) >= SB_NIVEL_MIN || (nivel && Number(h.levelMin) > nivel - 10)))
@@ -21800,11 +21820,12 @@
                 try { if (MK.taxa == null) { MK.taxa = MK_TAXA_WIKI; MK.taxaWiki = true; } await mkPedir('market_catalog', {}); } catch (e) { falhou('sobreviver (preços do Mercado)', e); }
                 finally { if (MK.ocupado === 'sobreviver') MK.ocupado = null; }
             }
+            await sbLerMeusAnuncios();
             let hpMinK = null; try { for (const r of Object.values(scanResultados() || {})) { if (r && r.id === alvo.id && r.razao && r.razao.porVoc && r.razao.porVoc.KNIGHT && r.razao.porVoc.KNIGHT.hpMin != null) hpMinK = Number(r.razao.porVoc.KNIGHT.hpMin); } } catch { hpMinK = null; }
             const cobre = !!(c.dm && (c.dm.crias || []).some(cr => (cr.magias || []).some(m => Array.isArray(m.celulas) && m.celulas.length >= 18)));
             SB.plano = sbPlano({ nivel: nivelAtual(), party: SB.ctx.party, medido: c.medido, mortes: c.mortes + (alvo.id != null ? (radarMortes(alvo.id) || 0) : 0), hpMinK, prey: sbPreyBuffs(), alvo: { boss: alvo.boss, title: alvo.title, levelMin: alvo.levelMin, recommendedLevel: alvo.recommendedLevel, lureTiers: alvo.lureTiers, maxLure: alvo.maxLure }, celulasCobremTudo: cobre, elem: c.elem, avisos: SB_AVISOS[alvo.boss ? 'boss:' + alvo.boss : alvo.id] || [] });
             SB.elem = c.elem;
-            sbMercadoRecalcular();
+            sbMercadoRecalcular(); sbMeusRecalcular();
             SB.t = Date.now();
             const trocas = Object.values(SB.res.porVoc).reduce((n, v) => n + Object.values(v).filter(eqMexer).length, 0);
             log(`sobreviver: ${alvo.boss ? 'boss ' + alvo.boss : alvo.title} — ${trocas} troca(s) para aguentar, ${SB.cons.length} consumível(is) ${c.medido ? '(dano medido)' : '(sem medição: referência)'}`, 'ok');
@@ -21821,6 +21842,56 @@
         const cands = mlCandidatosMercado(copias, EQUIP.base || {}, meus).filter(c => !ML.compradas.has(c.orderId));
         let pf = null; try { const x = precoFragmento(); pf = x.estimado ? null : x.preco; } catch { pf = null; }
         SB.mercado = mlAvaliar(SB.res.porVoc, cands, SB.ctx, { ouro: mlOuroNormal(), verPerdas: false, precoFrag: pf, sobreviver: true });
+    }
+    /* v2.67.7 — os SEUS anúncios que ajudam a aguentar este alvo (dono, 28/11). Lê as suas ordens (market_my_orders, só leitura, ~1 pedido)
+     * e a ficha dos itens; sem Premium, sem socket ou com o Mercado ocupado, usa a última leitura das ordens. */
+    async function sbLerMeusAnuncios() {
+        SB.meusAviso = null;
+        if (socketAberto() && !MK.ocupado && mkPremiumAgora() !== false) {
+            MK.ocupado = 'sobreviver';
+            try { const r = await mkLerMinhas(); if (r && r.erro) SB.meusAviso = 'suas ordens não vieram (' + mkErroTexto(r.erro) + ')' + (Array.isArray(MK.minhas) ? ' — usei a última leitura' : ''); }
+            catch (e) { falhou('sobreviver (suas ordens)', e); }
+            finally { if (MK.ocupado === 'sobreviver') MK.ocupado = null; }
+        } else if (!Array.isArray(MK.minhas)) SB.meusAviso = mkPremiumAgora() === false ? 'a conta está sem Premium: o Mercado é só Premium' : 'não li as suas ordens (socket ocupado ou fechado)';
+        const nomes = [...new Set((MK.minhas || []).filter(o => o && o.status === 'OPEN' && o.side === 'SELL').map(o => o.itemName).filter(Boolean))];
+        if (nomes.length) { try { EQUIP.base = Object.assign({}, EQUIP.base || {}, await basePorNome(nomes)); } catch (e) { falhou('sobreviver (ficha dos seus anúncios)', e); } }
+    }
+    function sbMeusRecalcular() {
+        SB.meus = null;
+        if (!SB.res || !SB.ctx || !Array.isArray(MK.minhas)) return;
+        const cands = mlCandidatosMeusAnuncios(MK.minhas, EQUIP.base || {});
+        SB.meus = { n: cands.length, res: cands.length ? mlAvaliar(SB.res.porVoc, cands, SB.ctx, { ouro: null, verPerdas: false, sobreviver: true }) : null };
+    }
+    /* as ofertas recomendadas dos seus anúncios, uma por ordem (a mesma ordem pode servir a 2 vocações: fica a de maior ganho) */
+    function sbMeusUteis() {
+        const mr = SB.meus && SB.meus.res, por = new Map();
+        if (!mr) return [];
+        for (const v of VOCS_EQUIP) {
+            for (const x of Object.values(mr.porVoc[v] || {})) {
+                for (const o of (x.ofertas || [])) {
+                    if (!o.recomendada) continue;
+                    const k = String(o.orderId), a = por.get(k);
+                    if (!a || o.ganho > a.ganho) por.set(k, o);
+                }
+            }
+        }
+        return [...por.values()].sort((a, b) => b.ganho - a.ganho);
+    }
+    /* TIRAR DO ANÚNCIO (2 toques): market_cancel da ordem; o item volta para a mochila (ou depósito) e a aba relê para ele entrar no plano */
+    async function sbTirarAnuncio(o) {
+        const imp = mkImpedimento();
+        if (imp) { avisar('sobreviver', 'sobreviver: ' + imp, 'erro'); return; }
+        if (MK.ocupado) { avisar('sobreviver', 'sobreviver: o Mercado está ocupado (' + MK.ocupado + ') — espera terminar', 'erro'); return; }
+        MK.ocupado = 'sobreviver'; SB.ocupado = true; renderizar();
+        let r;
+        try { r = await mkPedir('market_cancel', { orderId: o.orderId, requestId: mkRid() }); }
+        catch (e) { r = { erro: e.message }; }
+        finally { if (MK.ocupado === 'sobreviver') MK.ocupado = null; SB.ocupado = false; }
+        if (r && r.erro) { avisar('sobreviver', `sobreviver: tirar ${o.nome} do anúncio falhou — ${mkErroTexto(r.erro)}`, 'erro'); renderizar(); return; }
+        if (Array.isArray(MK.minhas)) MK.minhas = MK.minhas.filter(x => x.id !== o.orderId);
+        avisar('sobreviver', `sobreviver: ${o.nome} saiu do anúncio e voltou para você (mochila ou depósito; a taxa paga não volta) — relendo para ele entrar no plano`, 'ok');
+        EQUIP.t = 0; // o item voltou: o Equip precisa ler de novo
+        await sbLer();
     }
     async function sbProcurarMercado() {
         await mlProcurar(); // lê as categorias do Mercado (pela aba Melhorias, só leitura) e recalcula o Equip normal
@@ -21919,6 +21990,17 @@
         }
         /* v2.35.6 — imbuements */
         h += sbTelaImbu(ctx);
+        /* v2.67.7 — os seus anúncios que servem aqui */
+        const meusU = sbMeusUteis();
+        if (meusU.length || SB.meusAviso) {
+            h += `<h4 style="margin:8px 0 2px">Seus anúncios que servem aqui <span class="tb-mut">(tire do Mercado para usar)</span></h4>`;
+            for (const o of meusU.slice(0, SB_MERCADO_MAX)) {
+                const det = `${o.nome}${o.refino ? ' +' + o.refino : ''} · anunciado a ${mkFmt(o.precoAnuncio || 0)} · +${numBR(o.ganho, 1)} pt · ${(o.fontes || []).slice(0, 3).map(f => (ROTULO[f.id] || f.id) + ' ' + numBR(f.pt, 1) + ' pt').join(', ')}`;
+                h += `<div class="tb-sb-lin">${sbQuem(o.voc, o.slot)}<span class="tb-sb-n"><span class="tb-sb-nome" style="max-width:130px" title="${escHtml(det)}"><b>${escHtml(o.nome)}</b>${o.refino ? ' +' + o.refino : ''}</span></span><span class="tb-sb-g"><span class="tb-mut">anúncio ${mkFmt(o.precoAnuncio || 0)}</span> · <span class="tb-ok">+${numBR(o.ganho, 1)}</span></span><button type="button" class="tb-bt mini" data-sb-tirar="${escHtml(String(o.orderId))}" ${ocup || MK.ocupado || !socketAberto() ? 'disabled' : ''} title="cancela o anúncio (market_cancel): o item volta para você; a taxa de 5 % paga ao anunciar não volta">TIRAR DO ANÚNCIO</button></div>`;
+            }
+            if (meusU.length) h += `<div class="tb-mut tb-eq-nota">tirar do anúncio = 2 toques; depois a aba relê e o item entra no EQUIPAR.</div>`;
+            if (SB.meusAviso) h += `<div class="tb-av tb-eq-nota">${escHtml(SB.meusAviso)}</div>`;
+        }
         /* mercado */
         h += `<h4 style="margin:8px 0 2px">Comprar no Mercado <span class="tb-mut">(defesa contra este alvo)</span></h4>`;
         if (!SB.mercado) h += `<div class="tb-linha"><button type="button" class="tb-bt" id="tb-sb-mercado" ${ocup || ML.lendo || MK.ocupado || !socketAberto() ? 'disabled' : ''} title="lê as 8 categorias do Mercado (só leitura, ~40 s) e avalia as peças à venda com a defesa pesando 3×">PROCURAR NO MERCADO</button><span class="tb-mut tb-eq-nota">${ML.lendo ? 'lendo o Mercado…' : 'nada lido ainda'}</span></div>`;
@@ -21956,12 +22038,16 @@
     }
     function ligarSobreviver() {
         const corpo = $('#tb-corpo');
-        const sel = $('#tb-sb-alvo'); if (sel) sel.onchange = () => { SB.alvo = sel.value || null; guardar('sb_alvo', SB.alvo); SB.res = null; SB.plano = null; SB.cons = null; SB.mercado = null; SB.erro = null; renderizar(); };
+        const sel = $('#tb-sb-alvo'); if (sel) sel.onchange = () => { SB.alvo = sel.value || null; guardar('sb_alvo', SB.alvo); SB.res = null; SB.plano = null; SB.cons = null; SB.mercado = null; SB.meus = null; SB.erro = null; renderizar(); };
         const td = $('#tb-sb-todos'); if (td) td.onchange = () => { SB.todos = td.checked; guardar('sb_todos', td.checked); renderizar(); };
         const l = $('#tb-sb-ler'); if (l) l.onclick = () => sbLer();
         const e = $('#tb-sb-equipar'); if (e) e.onclick = () => sbEquipar();
         const c = $('#tb-sb-cons'); if (c) c.onclick = () => sbEquiparConsumiveis();
         const m = $('#tb-sb-mercado'); if (m) m.onclick = () => sbProcurarMercado();
+        $$('[data-sb-tirar]', corpo).forEach(b => {
+            const o = sbMeusUteis().find(y => String(y.orderId) === b.dataset.sbTirar);
+            if (o) ligarDoisToques(b, 'sb-tirar-' + b.dataset.sbTirar, 'CONFIRMAR: tirar do anúncio', () => sbTirarAnuncio(o));
+        });
         $$('[data-sb-comprar]', corpo).forEach(b => { b.onclick = () => { const id = b.dataset.sbComprar; let o = null; for (const v of Object.values((SB.mercado && SB.mercado.porVoc) || {})) for (const x of Object.values(v)) { const f = (x.ofertas || []).find(y => String(y.orderId) === id); if (f) o = f; } if (o) ligarDoisToques(b, 'sb-comprar-' + id, 'CONFIRMAR: comprar por ' + mkFmt(o.preco), () => mlComprar(o).then(() => { sbMercadoRecalcular(); renderizar(); })); }; });
     }
     /* item 6 (dono, 28/10): na aba Magia › Boss, os consumíveis que valem para a luta com o boss escolhido */
