@@ -555,6 +555,24 @@ t('Progresso (treinador): "analise" salva abre aqui; 10 cartões, passo com bot�
     assert(botao(W.html(), 'tr-topo') && !botao(W.html(), 'tr-topo').disabled, 'o botão do topo não voltou');
 });
 
+t('Progresso 2.67.5: Atualizar diz a hora e o que mudou; 2º clique dentro de 5 s avisa (não fica mudo); nada vai ao jogo', async () => {
+    const W = criarMundo({ ls: comAba('treinador', { tb_helper_hunt_id: '32' }) });
+    await W.avancar(0);
+    const ws = new W.window.WebSocket('wss://jogo');
+    ws.emitir({ type: 'welcome', data: {} });
+    ws.emitir({ type: 'hunt_started', data: { huntId: 32, state: { party: party4() } } });
+    ws.emitir(frame({ lureTier: 3 }, { elapsedMs: 600000, xpRaw: 50000 }));
+    await W.avancar(0);
+    assert(/calculado às \d\d:\d\d:\d\d/.test(W.html()), 'o rodapé diz a hora do cálculo: ' + (W.html().match(/Radar[^<]*/) || [''])[0]);
+    await W.avancar(6000);
+    const n0 = ws.saida.length;
+    W.el('tr-atualizar').click(); await W.avancar(0);
+    assert(/recalculado às \d\d:\d\d:\d\d · (nada mudou nos próximos passos|os próximos passos mudaram)/.test(W.html()), 'sem retorno do Atualizar: ' + (W.html().match(/tr-rod[^>]*>[^<]*/g) || []).join(' | '));
+    W.el('tr-atualizar').click(); await W.avancar(0);
+    assert(/acabei de recalcular \(há \d+ s\)/.test(W.html()), '2º clique dentro do freio ficou mudo');
+    assert.strictEqual(ws.saida.length, n0, 'o Atualizar não manda nada ao jogo');
+});
+
 t('Progresso: Selo — o 2º toque manda exatamente 1 mensagem; sem resposta em 8 s libera a tela; selo_state empurrado de outro Selo não encerra a espera', async () => {
     const W = criarMundo({ ls: comAba('treinador', { tb_helper_hunt_id: '32' }) });
     await W.avancar(0);

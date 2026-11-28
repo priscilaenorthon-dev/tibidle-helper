@@ -7965,3 +7965,13 @@ no lugar do Haste).
   (`terminar: true`) mesmo rendendo < 0,5 pt; continua "não vale", mas o FORJAR consegue terminar. Sem lastro do jogo, a Forja usa o
   último guardado (aviso "cotação de outro dia").
 - Testes: 806 ok (forja +2, treinador +1).
+
+## 2.67.5 (28/11) — botão Atualizar do ▤ Progresso com retorno
+- O dono achou que o Atualizar não funcionava: ele recalculava calado (o rodapé seguia "calculado agora") e, dentro do freio de 5 s,
+  ignorava o clique sem dizer nada. Conferido ao vivo: clicar não mudava nada na tela.
+- Agora recalcula no clique e mostra "recalculado às HH:MM:SS · os próximos passos mudaram / nada mudou nos próximos passos"; o 2º
+  clique em < 5 s diz "acabei de recalcular (há N s)". Rodapé: "calculado às HH:MM:SS".
+- Rodapé "Forja —" depois de cada F5: a idade da Forja agora também vale pelo lastro guardado (2.67.4), que é de onde sai o custo das gemas.
+- Observação: o Atualizar só recalcula com o que o helper já leu (não mede mapa, não lê o topo nem a Forja); para isso existem
+  "Comparar com o topo" e os botões dos cartões (Recalcular a Forja, Medir).
+- Teste novo em telas.test.js (807 ok).

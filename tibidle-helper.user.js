@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Tibidle Helper (Northon)
 // @namespace    northon.tibidle
-// @version      2.67.4
+// @version      2.67.5
 // @description  Magia (Econômica / Equilibrado / Área / Mana / Boss / Discord, com simulador da fila e da party) + Equip (melhor peça por vocação) + Auto Hunt (mochila cheia → vender sem tocar em equipamento, depot, voltar) + Scan de mapas + Progresso (treinador: 10 especialistas e os 3 próximos passos para upar) + Rotina (bestiário, prey, plano offline, invasão) + Mercado (anunciar do baú: menor anúncio − 1 ou média de 30 dias, nunca abaixo do NPC) + Radar (ranking de mapas, loot ao vivo, alertas de preço, pechinchas de keys e itens de quest, relatório do dia) + Diagnóstico. Tudo que envia comando ao jogo só roda por botão, exceto Auto Hunt e Scan quando ligados.
 // @author       Northon
 // @homepageURL  https://github.com/priscilaenorthon-dev/tibidle-helper
@@ -27,7 +27,7 @@
 (function () {
     'use strict';
 
-    const VERSAO = '2.67.4';
+    const VERSAO = '2.67.5';
     /* v2.25.0 — UMA CÓPIA POR PÁGINA. Duas cópias do helper (Tampermonkey + uma injetada, ou o script instalado duas vezes) dividiam o
      * mesmo painel e cada uma repintava a gaveta com o SEU estado (visto em 19/10: a aba Forja apagava o ranking a cada frame). A primeira
      * que sobe fica; a outra avisa no console e não faz nada. */
@@ -20716,7 +20716,7 @@
      *   topo ................. ler('tr_topo') — por conta (trLerTopo) · ilhas: unlockedIslands × TR_BASE.ilhas */
     // topo: progresso 'k/n' a cada perfil e cancelar = true para o laço (a tela da Task 16 usa os dois)
     // ultimo = { t, foto, r, radarH, nSessoes } (cache de 60 s da tela) · agindo = rótulo da ação em curso · pend = ação esperando resposta (trPedir) · acoes = botões da tela
-    const TR = { topo: { lendo: false, status: null, progresso: null, cancelar: false }, esperas: [], avisados: new Set(), ultimo: null, agindo: null, pend: null, acoes: new Map() };
+    const TR = { topo: { lendo: false, status: null, progresso: null, cancelar: false }, esperas: [], avisados: new Set(), ultimo: null, agindo: null, pend: null, acoes: new Map(), msgAtualizar: null };
     const TR_H = 3600000, TR_DIA = 864e5;
     /* Uma linha em observarRecebido: guarda o que a foto precisa e o helper ainda não guardava (nada é enviado daqui). */
     function trObservar(o) {
@@ -21036,7 +21036,9 @@
                 const pot = potenciaTotal(e);
                 if (pot >= fb.potBase) bases.push({ nome: String(e.itemName || e.name), potencia: pot });
             }
-            const forja = { idadeH: FJ.t > 0 ? Math.round((agora - FJ.t) / TR_H * 10) / 10 : null, basesParadas: bases.sort((p, q) => q.potencia - p.potencia).slice(0, 20) };
+            // v2.67.5: depois de um F5 o FJ.t zera e o rodapé dizia "Forja —"; o lastro guardado (2.67.4) é o que dá o custo das gemas
+            const lgT = (() => { const lg = lerComum('forja_lastro', null); return lg && Number(lg.t) > 0 ? Number(lg.t) : 0; })(), fjT = Math.max(FJ.t || 0, lgT);
+            const forja = { idadeH: fjT > 0 ? Math.round((agora - fjT) / TR_H * 10) / 10 : null, basesParadas: bases.sort((p, q) => q.potencia - p.potencia).slice(0, 20) };
             if (f.party.length) forja.abaixo4 = abaixo4; // sem party lida não afirma "tudo em +4"
             f.forja = forja;
         });
@@ -21210,11 +21212,12 @@
         // rodapé: idade dos dados, Atualizar, Comparar com o topo (com progresso e Cancelar) e as sessões medidas
         const medidos = foto.mapas.filter(m => m.fonte === 'medido').length, fj = foto.forja;
         const idades = [`Radar ${trIdadePt(u.radarH)}`, `Forja ${trIdadePt(fj && fj.idadeH)}`, `Topo ${trIdadePt(tp && tp.idadeH)}`, `${medidos} ${medidos === 1 ? 'mapa medido' : 'mapas medidos'}`];
-        h += `<div class="tr-rod tb-mut">${escHtml(idades.join(' · '))} · calculado ${trIdadeMin(Date.now() - u.t)}</div>`;
+        h += `<div class="tr-rod tb-mut">${escHtml(idades.join(' · '))} · calculado às ${trHora(u.t)}</div>`;
         const lendo = TR.topo.lendo;
         h += '<div class="tb-linha"><button type="button" class="tb-bt mini" id="tr-atualizar"' + (TR.agindo ? ' disabled' : '') + '>Atualizar</button>'
             + (lendo ? `<span class="tb-av tr-rod">lendo o topo ${escHtml(TR.topo.progresso || '')}</span><button type="button" class="tb-bt mini" id="tr-cancelar"${TR.topo.cancelar ? ' disabled' : ''}>${TR.topo.cancelar ? 'cancelando…' : 'Cancelar'}</button>`
                 : `<button type="button" class="tb-bt mini" id="tr-topo"${TR.agindo ? ' disabled' : ''}>Comparar com o topo</button>`) + '</div>';
+        if (TR.msgAtualizar && Date.now() - TR.msgAtualizar.t < 60000) h += `<div class="tr-rod tb-ok" role="status">${escHtml(TR.msgAtualizar.txt)}</div>`;
         if (TR.topo.status && !lendo) h += `<div class="tr-rod tb-mut">${escHtml(TR.topo.status)}</div>`;
         // as sessões medidas (o Analisador saiu; a coleta continua: Radar, Bestiário e o treinador usam)
         h += `<div class="tb-linha tr-rod"><span class="tb-mut">sessões: ${u.nSessoes}</span><button type="button" class="tb-bt mini" id="tb-exportar">copiar JSON</button>`
@@ -21226,7 +21229,7 @@
         }
         return `<div id="tr-tela">${h}</div>`;
     }
-    const trIdadeMin = (ms) => (ms < 60000 ? 'agora' : `há ${Math.round(ms / 60000)} min`);
+    const trHora = (t) => new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     function ligarTreinador() {
         const c = $('#tb-corpo'); if (!c) return;
         for (const [id, { chave, dois }] of TR.acoes) {
@@ -21236,7 +21239,20 @@
             else btn.onclick = () => trClique(chave, false);
         }
         const at = $('#tr-atualizar');
-        if (at) at.onclick = () => { if (TR.ultimo && Date.now() - TR.ultimo.t < TR_ATUALIZAR_MS) return; TR.ultimo = null; renderizar(); }; // freio de 5 s
+        /* v2.67.5 — o dono achou que o Atualizar não funcionava (28/11): recalculava calado e o rodapé seguia "calculado agora". Agora recalcula
+         * no clique, diz a hora e o que mudou nos próximos passos; dentro do freio de 5 s avisa em vez de ignorar. */
+        if (at) {
+            at.onclick = () => {
+                const ag = Date.now();
+                if (TR.ultimo && ag - TR.ultimo.t < TR_ATUALIZAR_MS) { TR.msgAtualizar = { t: ag, txt: `acabei de recalcular (há ${Math.max(1, Math.round((ag - TR.ultimo.t) / 1000))} s)` }; renderizar(); return; }
+                const sig = (u) => (u && u.r && Array.isArray(u.r.passos) ? u.r.passos.map(c => c.id + '|' + c.titulo).join(' ; ') : '');
+                const antes = sig(TR.ultimo);
+                try { trCalcular(trFoto()); } catch (e) { falhou('treinador (atualizar)', e); TR.ultimo = null; }
+                const mudou = antes !== sig(TR.ultimo);
+                TR.msgAtualizar = { t: Date.now(), txt: `recalculado às ${trHora(Date.now())} · ${mudou ? 'os próximos passos mudaram' : 'nada mudou nos próximos passos'}` };
+                renderizar();
+            };
+        }
         const tp = $('#tr-topo'); if (tp) tp.onclick = () => trFazer({ tipo: 'ler-topo' }, false);
         const cn = $('#tr-cancelar'); if (cn) cn.onclick = () => { TR.topo.cancelar = true; renderizar(); };
         const exp = $('#tb-exportar');
